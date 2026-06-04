@@ -191,6 +191,7 @@ class SimpleMQTTServer:
         on_print_command: Callable[[str, dict], None] | None = None,
         model: str = "",
         bind_address: str = "0.0.0.0",  # nosec B104
+        advertise_address: str = "",
         vp_name: str = "",
     ):
         self.serial = serial
@@ -201,6 +202,7 @@ class SimpleMQTTServer:
         self.port = port
         self.on_print_command = on_print_command
         self.bind_address = bind_address
+        self.advertise_address = advertise_address
         self.vp_name = vp_name
         self._log_prefix = f"[{vp_name}] " if vp_name else ""
         self._running = False

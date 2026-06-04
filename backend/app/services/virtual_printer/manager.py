@@ -619,6 +619,7 @@ class VirtualPrinterInstance:
             on_print_command=self.on_print_command,
             model=self.model or DEFAULT_VIRTUAL_PRINTER_MODEL,
             bind_address=bind_addr,
+            advertise_address=advertise_addr,
             vp_name=self.name,
         )
         self._tasks.append(

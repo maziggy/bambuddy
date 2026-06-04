@@ -2414,6 +2414,40 @@ class TestBindServer:
                 key_path=Path("/tmp/key.pem"),  # nosec B108
             )
 
+    @pytest.mark.asyncio
+    async def test_start_server_passes_remote_interface_as_mqtt_advertise_address(self, tmp_path):
+        """Docker bridge can bind on the container IP but advertise the host-facing IP."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=99,
+            name="Bambuddy",
+            mode="immediate",
+            model="BL-P001",
+            access_code="12345678",
+            serial_suffix="391800099",
+            bind_ip="172.24.0.2",
+            remote_interface_ip="192.168.1.50",
+            base_dir=tmp_path,
+        )
+
+        with (
+            patch("backend.app.services.virtual_printer.manager.VirtualPrinterSSDPServer"),
+            patch("backend.app.services.virtual_printer.manager.VirtualPrinterFTPServer"),
+            patch("backend.app.services.virtual_printer.manager.SimpleMQTTServer") as mock_mqtt_cls,
+            patch("backend.app.services.virtual_printer.manager.BindServer"),
+            patch.object(inst._cert_service, "delete_printer_certificate"),
+            patch.object(
+                inst._cert_service,
+                "generate_certificates",
+                return_value=(Path("/tmp/cert.pem"), Path("/tmp/key.pem")),  # nosec B108
+            ),
+        ):
+            await inst.start_server()
+
+            assert mock_mqtt_cls.call_args.kwargs["bind_address"] == "172.24.0.2"
+            assert mock_mqtt_cls.call_args.kwargs["advertise_address"] == "192.168.1.50"
+
 
 class TestResolveModelCodes:
     """Tests for model code resolution (display name → SSDP code)."""

@@ -23,7 +23,7 @@ Identity rewriting at cache time:
 
   - `upgrade_state.sn` (and any other nested dict's `sn` matching the real
     serial) → VP serial
-  - `net.info[*].ip` little-endian uint32 → VP bind IP. BambuStudio reads
+  - `net.info[*].ip` little-endian uint32 → VP advertised IP. BambuStudio reads
     this as the FTP destination IP. Without this the slicer FTPs straight
     to the real printer and bypasses Bambuddy.
   - `ipcam.rtsp_url` is left unchanged: BambuStudio overrides the URL host
@@ -276,12 +276,12 @@ class MQTTBridge:
         self._target_client = current
         self._target_serial = getattr(current, "serial_number", None)
 
-        # Cache printer IP and VP bind IP encoded as little-endian uint32, so we
+        # Cache printer IP and VP advertised IP encoded as little-endian uint32, so we
         # can rewrite `net.info[*].ip` in cached push_status. BambuStudio reads
         # that field for the FTP destination IP — without rewriting, the slicer
         # bypasses the VP and FTPs straight to the real printer.
         target_ip = getattr(current, "ip_address", None)
-        vp_ip = getattr(self._mqtt_server, "bind_address", None)
+        vp_ip = getattr(self._mqtt_server, "advertise_address", None) or getattr(self._mqtt_server, "bind_address", None)
         if target_ip and vp_ip and vp_ip not in ("0.0.0.0", "", None):  # nosec B104
             try:
                 self._target_ip_uint32_le = _ip_to_uint32_le(target_ip)
@@ -372,7 +372,7 @@ class MQTTBridge:
             # stream directly from the printer. On the same LAN this works as
             # long as the slicer's stored access code matches the printer's
             # (i.e. configure the VP with the same access code as its target).
-            # Rewrite real printer IP → VP bind IP in `net.info[*].ip` so the
+            # Rewrite real printer IP → VP advertised IP in `net.info[*].ip` so the
             # slicer's FTP destination resolves to the VP, not the real printer.
             if self._target_ip_uint32_le is not None and self._vp_ip_uint32_le is not None:
                 net = print_data.get("net")

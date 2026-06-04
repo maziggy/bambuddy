@@ -16,7 +16,7 @@ H2D_IP = "192.168.255.133"
 VP_IP = "192.168.255.16"
 
 
-def _make_server(serial: str = VP_SERIAL, bind_address: str = VP_IP) -> SimpleMQTTServer:
+def _make_server(serial: str = VP_SERIAL, bind_address: str = VP_IP, advertise_address: str = "") -> SimpleMQTTServer:
     return SimpleMQTTServer(
         serial=serial,
         access_code="deadbeef",
@@ -24,6 +24,7 @@ def _make_server(serial: str = VP_SERIAL, bind_address: str = VP_IP) -> SimpleMQ
         key_path=Path("/tmp/unused.key"),  # nosec B108
         model="O1D",
         bind_address=bind_address,
+        advertise_address=advertise_address,
     )
 
 
@@ -195,8 +196,7 @@ class TestPushStatusCache:
 
     @pytest.mark.asyncio
     async def test_net_info_ip_rewritten_to_vp_ip(self):
-        """BambuStudio reads `net.info[].ip` (LE uint32) for the FTP destination —
-        must be rewritten to the VP's bind IP or the slicer bypasses the VP."""
+        """BambuStudio reads `net.info[].ip` (LE uint32) for the FTP destination."""
         server = _make_server(bind_address=VP_IP)
         bridge = _make_bridge(server)
         await bridge.start()
@@ -217,6 +217,31 @@ class TestPushStatusCache:
         cached = bridge.get_latest_print_state()
         assert cached["net"]["info"][0]["ip"] == vp_le
         assert cached["net"]["info"][1]["ip"] == 0  # untouched
+
+        await bridge.stop()
+
+    @pytest.mark.asyncio
+    async def test_net_info_ip_prefers_advertised_vp_ip(self):
+        """Docker bridge binds inside the container but must advertise the host IP."""
+        bind_ip = "172.24.0.2"
+        advertise_ip = "192.168.1.50"
+        server = _make_server(bind_address=bind_ip, advertise_address=advertise_ip)
+        bridge = _make_bridge(server)
+        await bridge.start()
+
+        payload = json.dumps(
+            {
+                "print": {
+                    "command": "push_status",
+                    "net": {"info": [{"ip": _ip_to_uint32_le(H2D_IP), "mask": 0xFFFFFF}]},
+                }
+            }
+        ).encode()
+        bridge._on_printer_raw(f"device/{H2D_SERIAL}/report", payload)
+        await asyncio.sleep(0.01)
+
+        cached = bridge.get_latest_print_state()
+        assert cached["net"]["info"][0]["ip"] == _ip_to_uint32_le(advertise_ip)
 
         await bridge.stop()
 

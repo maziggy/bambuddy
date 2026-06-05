@@ -3573,6 +3573,7 @@ function PrinterCard({
               const regularAms = amsData.filter(ams => ams.tray.length > 1);
               const htAms = amsData.filter(ams => ams.tray.length === 1);
               const isDualNozzle = printer.nozzle_count === 2 || status?.temperatures?.nozzle_2 !== undefined;
+              const filamentSlotClass = 'w-14 shrink-0';
 
               return (
                 <div className="mt-3">
@@ -3588,7 +3589,7 @@ function PrinterCard({
                   <div className="space-y-3">
                     {/* Row 1-2: Regular AMS (4-tray) in 2-column grid */}
                     {regularAms.length > 0 && (
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="flex flex-wrap gap-2">
                         {regularAms.map((ams) => {
                         const mappedExtruderId = amsExtruderMap[String(ams.id)];
                         const normalizedId = ams.id >= 128 ? ams.id - 128 : ams.id;
@@ -3597,7 +3598,7 @@ function PrinterCard({
                         const isRightNozzle = extruderId === 0;
 
                         return (
-                          <div key={ams.id} className="p-2 bg-bambu-dark rounded-[10px]">
+                          <div key={ams.id} className="w-fit p-2 bg-bambu-dark rounded-[10px]">
                             {/* Header: Label + Stats (no icon) */}
                             <div className="mb-2 flex w-full min-h-7 items-center justify-between gap-2 rounded-lg bg-bambu-dark-secondary px-2 py-1">
                               <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -3710,7 +3711,7 @@ function PrinterCard({
                               </div>
                             )}
                             {/* Slots grid: 4 columns - always render 4 slots */}
-                            <div className="grid grid-cols-4 gap-1">
+                            <div className="inline-grid grid-cols-[repeat(4,3.5rem)] gap-1">
                               {[0, 1, 2, 3].map((slotIdx) => {
                                 // Find tray data for this slot (may be undefined if data incomplete)
                                 // Use array index if available, as tray.id may not always be set
@@ -3788,7 +3789,7 @@ function PrinterCard({
                                 // Slot visual content (goes inside hover card)
                                 const slotVisual = (
                                   <div
-                                    className={`bg-bambu-dark-secondary rounded-lg p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}
+                                    className={`w-full bg-bambu-dark-secondary rounded-lg p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}
                                   >
                                     {/* Filament color circle with 1-based slot number centered inside */}
                                     <FilamentSlotCircle
@@ -3818,7 +3819,7 @@ function PrinterCard({
 
                                 // Wrapper with menu button, dropdown, and loading overlay (outside hover card)
                                 return (
-                                  <div key={slotIdx} className="relative group">
+                                  <div key={slotIdx} className={`relative group ${filamentSlotClass}`}>
                                     {/* Loading overlay during RFID re-read */}
                                     {isRefreshing && (
                                       <div className="absolute inset-0 bg-bambu-dark-tertiary/80 rounded flex items-center justify-center z-20">
@@ -3980,7 +3981,7 @@ function PrinterCard({
 
                     {/* Row 3: HT AMS + External spools (same style as regular AMS, 4 across) */}
                     {(htAms.length > 0 || status.vt_tray.length > 0) && (
-                      <div className="grid grid-cols-4 gap-2">
+                      <div className="flex flex-wrap gap-2">
                       {/* HT AMS units - name/badge top, slot left, stats right */}
                       {htAms.map((ams) => {
                         const mappedExtruderId = amsExtruderMap[String(ams.id)];
@@ -4052,7 +4053,7 @@ function PrinterCard({
                         // Slot visual content (goes inside hover card)
                         const slotVisual = (
                           <div
-                            className={`bg-bambu-dark-secondary rounded-lg p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}
+                            className={`w-full bg-bambu-dark-secondary rounded-lg p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}
                           >
                             {/* Filament color circle with 1-based slot number centered inside */}
                             <FilamentSlotCircle
@@ -4081,7 +4082,7 @@ function PrinterCard({
                         );
 
                         return (
-                          <div key={ams.id} className="p-2 bg-bambu-dark rounded-[10px]">
+                          <div key={ams.id} className="w-fit p-2 bg-bambu-dark rounded-[10px]">
                             {/* Row 1: Label + Nozzle + Drying */}
                             <div className="mb-2 flex w-full min-h-7 items-center gap-1.5 rounded-lg bg-bambu-dark-secondary px-2 py-1">
                               {/* AMS name — hover to see serial, firmware, and edit friendly name */}
@@ -4160,7 +4161,7 @@ function PrinterCard({
                             {/* Row 2: Slot (left) + Stats (right stacked) */}
                             <div className="flex gap-1.5 max-[550px]:flex-col max-[550px]:items-start">
                               {/* Slot wrapper with loading overlay */}
-                              <div className="relative group flex-1 max-[550px]:w-full">
+                              <div className={`relative group ${filamentSlotClass}`}>
                                 {/* Loading overlay during RFID re-read */}
                                 {isHtRefreshing && (
                                   <div className="absolute inset-0 bg-bambu-dark-tertiary/80 rounded flex items-center justify-center z-20">
@@ -4343,11 +4344,11 @@ function PrinterCard({
                       })}
                       {/* External spool(s) - grouped in one card like regular AMS */}
                       {status.vt_tray.length > 0 && (
-                        <div className={`p-2 bg-bambu-dark rounded-[10px] ${status.vt_tray.length === 1 ? 'max-w-[50%]' : ''}`}>
+                        <div className="w-fit p-2 bg-bambu-dark rounded-[10px]">
                           <div className="mb-2 flex w-full min-h-7 items-center gap-1.5 rounded-lg bg-bambu-dark-secondary px-2 py-1">
                             <span className="block min-w-0 flex-1 truncate text-[10px] text-white font-medium">{t('printers.external')}</span>
                           </div>
-                          <div className={`grid ${status.vt_tray.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} gap-1`}>
+                          <div className={`inline-grid ${status.vt_tray.length > 1 ? 'grid-cols-[repeat(2,3.5rem)]' : 'grid-cols-[3.5rem]'} gap-1`}>
                             {[...status.vt_tray].sort((a, b) => (a.id ?? 254) - (b.id ?? 254)).map((extTray) => {
                               const extTrayId = extTray.id ?? 254;
                               // On dual-nozzle (H2C/H2D), tray_now=254 means "external spool"
@@ -4410,7 +4411,7 @@ function PrinterCard({
                               const isEmpty = !extTray.tray_type;
                               const emptyKind = getEmptySlotKind(extTray);
                               const extSlotContent = (
-                                <div className={`bg-bambu-dark-secondary rounded-lg p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isExtActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}>
+                                <div className={`w-full bg-bambu-dark-secondary rounded-lg p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isExtActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}>
                                   {/* Filament color circle with 1-based slot number centered inside */}
                                   <FilamentSlotCircle
                                     trayColor={extTray.tray_color}
@@ -4438,7 +4439,7 @@ function PrinterCard({
                               );
 
                               return (
-                                <div key={extTrayId} className="relative group">
+                                <div key={extTrayId} className={`relative group ${filamentSlotClass}`}>
                                   {!isEmpty ? (
                                     <FilamentHoverCard
                                       data={extFilamentData}

@@ -817,7 +817,17 @@ function getEmptySlotKind(tray: { tray_type?: string | null; state?: number | nu
 }
 
 
-function CoverImage({ url, printName, className = 'w-20 h-20' }: { url: string | null; printName?: string; className?: string }) {
+function CoverImage({
+  url,
+  printName,
+  className = 'w-20 h-20',
+  radiusClass = 'rounded-lg',
+}: {
+  url: string | null;
+  printName?: string;
+  className?: string;
+  radiusClass?: string;
+}) {
   const { t } = useTranslation();
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
@@ -840,7 +850,7 @@ function CoverImage({ url, printName, className = 'w-20 h-20' }: { url: string |
   return (
     <>
       <div
-        className={`${className} flex-shrink-0 rounded-lg overflow-hidden bg-bambu-dark-tertiary flex items-center justify-center ${cacheBustedUrl && loaded ? 'cursor-pointer' : ''}`}
+        className={`${className} flex-shrink-0 ${radiusClass} overflow-hidden bg-bambu-dark-tertiary flex items-center justify-center ${cacheBustedUrl && loaded ? 'cursor-pointer' : ''}`}
         onClick={() => cacheBustedUrl && loaded && setShowOverlay(true)}
       >
         {cacheBustedUrl && !error ? (
@@ -2899,7 +2909,7 @@ function PrinterCard({
                   const progress = isActivePrint ? (status.progress || 0) : 0;
 
                   return (
-                    <div className="mb-3 p-2 bg-bambu-dark rounded-lg relative overflow-hidden">
+                    <div className="mb-3 px-2 py-2 bg-bambu-dark rounded-lg relative overflow-hidden">
                       <button
                         onClick={() => setShowSkipObjectsModal(true)}
                         disabled={!isActivePrint || (status.printable_objects_count ?? 0) < 2 || !hasPermission('printers:control')}
@@ -2930,6 +2940,7 @@ function PrinterCard({
                           url={isActivePrint ? status.cover_url : null}
                           printName={printName || undefined}
                           className="w-24 h-24 max-[520px]:w-20 max-[520px]:h-20"
+                          radiusClass="rounded-md"
                         />
                         <div className="flex h-24 max-[520px]:h-20 min-w-0 flex-1 flex-col justify-between pr-8">
                           <div className="flex min-h-[18px] items-center gap-2">

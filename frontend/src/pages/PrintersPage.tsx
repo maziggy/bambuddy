@@ -2693,7 +2693,7 @@ function PrinterCard({
         {/* Header */}
         <div className={getSpacing()}>
           {/* Top row: Image, Name, Menu */}
-          <div className={`flex items-start justify-between gap-2 ${viewMode === 'expanded' ? 'rounded-[10px] bg-bambu-dark p-2' : ''}`}>
+          <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-3 min-w-0 flex-1">
               {/* Printer Model Image */}
               <img
@@ -2768,7 +2768,7 @@ function PrinterCard({
 
           {/* Badges row - only in expanded mode */}
           {viewMode === 'expanded' && (
-            <div className="mt-2 rounded-[10px] bg-bambu-dark p-2">
+            <div className="mt-2">
               <div className="flex flex-wrap items-center gap-2">
               {/* Connection status badge */}
               <span

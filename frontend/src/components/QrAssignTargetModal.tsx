@@ -115,7 +115,14 @@ function LiveScanner({
     let lastScan = 0;
     const INTERVAL_MS = 200;
     const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    // Guarded: jsdom (test env) throws on getContext without the canvas package.
+    // The camera never starts there anyway, so a null ctx is harmless.
+    let ctx: CanvasRenderingContext2D | null = null;
+    try {
+      ctx = canvas.getContext('2d', { willReadFrequently: true });
+    } catch {
+      ctx = null;
+    }
     const BD = (globalThis as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
     let detector = BD ? new BD({ formats: ['qr_code'] }) : null;
 

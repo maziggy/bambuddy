@@ -2,13 +2,14 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useOutletContext } from 'react-router-dom';
-import { Search, X, Package } from 'lucide-react';
+import { Search, X, Package, QrCode } from 'lucide-react';
 import { api } from '../../api/client';
 import type { InventorySpool } from '../../api/client';
 import { resolveSpoolColorName, getSwatchStyle, spoolColorString } from '../../utils/colors';
 import { formatSlotLabel } from '../../utils/amsHelpers';
 import { InventorySpoolInfoCard } from '../../components/spoolbuddy/InventorySpoolInfoCard';
 import { AssignToAmsModal } from '../../components/spoolbuddy/AssignToAmsModal';
+import { QrAssignTargetModal } from '../../components/QrAssignTargetModal';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -70,6 +71,7 @@ export function SpoolBuddyInventoryPage() {
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | null>(null);
   const [showAssignAmsModal, setShowAssignAmsModal] = useState(false);
+  const [qrTargetModalOpen, setQrTargetModalOpen] = useState(false);
 
   const { data: spoolmanSettings } = useQuery({
     queryKey: ['spoolman-settings'],
@@ -164,10 +166,24 @@ export function SpoolBuddyInventoryPage() {
     });
   }, [activeSpools, filterMode, searchQuery, assignedSpoolIds]);
 
+  const storageSuggestions = useMemo(
+    () => Array.from(new Set((spools ?? []).map((s) => s.storage_location).filter((x): x is string => !!x))).sort(),
+    [spools],
+  );
+
   return (
     <div className="h-full flex flex-col">
       {/* Search + filter pills */}
       <div className="px-3 pt-3 pb-2 space-y-2.5">
+        {/* Scan-to-location (#1574) */}
+        <button
+          onClick={() => setQrTargetModalOpen(true)}
+          className="w-full flex items-center justify-center gap-2 py-2 bg-bambu-green/20 border border-bambu-green text-bambu-green rounded-lg text-sm font-medium hover:bg-bambu-green/30 transition-colors"
+        >
+          <QrCode className="w-4 h-4" />
+          {t('inventory.qrAssign.button')}
+        </button>
+
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
@@ -278,6 +294,15 @@ export function SpoolBuddyInventoryPage() {
           </>
         );
       })()}
+
+      {qrTargetModalOpen && (
+        <QrAssignTargetModal
+          isOpen={qrTargetModalOpen}
+          onClose={() => setQrTargetModalOpen(false)}
+          spoolmanMode={spoolmanMode}
+          storageSuggestions={storageSuggestions}
+        />
+      )}
     </div>
   );
 }

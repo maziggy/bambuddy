@@ -35,6 +35,17 @@ describe('computePopoverPosition (#1447)', () => {
     expect(pos.left).toBe(middleTrigger.right - 240); // 200
   });
 
+  it('can center-align the popover to the trigger', () => {
+    const pos = computePopoverPosition({
+      triggerRect: middleTrigger,
+      popoverWidth: 240,
+      estimatedHeight: 320,
+      horizontalAlign: 'center',
+      ...viewport,
+    });
+    expect(pos.left).toBe(300);
+  });
+
   it('flips above when the popover would overflow the bottom of the viewport', () => {
     // Trigger near the bottom — bottom=700 + gap 4 + height 320 = 1024 > 768.
     const bottomTrigger = { top: 680, bottom: 700, left: 400, right: 440 };

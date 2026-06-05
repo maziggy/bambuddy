@@ -3669,7 +3669,7 @@ function PrinterCard({
                                           setDryingPopoverModuleType(ams.module_type);
                                           setDryingPopoverAmsId(ams.id);
                                           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                          setDryingPopoverPos(computePopoverPosition({ triggerRect: rect, popoverWidth: DRYING_POPOVER_WIDTH, estimatedHeight: DRYING_POPOVER_ESTIMATED_HEIGHT }));
+                                          setDryingPopoverPos(computePopoverPosition({ triggerRect: rect, popoverWidth: DRYING_POPOVER_WIDTH, estimatedHeight: DRYING_POPOVER_ESTIMATED_HEIGHT, horizontalAlign: 'center' }));
                                         }
                                       }}
                                       className={`ml-1 flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-colors max-[550px]:ml-0 ${
@@ -4123,7 +4123,7 @@ function PrinterCard({
                                         setDryingPopoverModuleType(ams.module_type);
                                         setDryingPopoverAmsId(ams.id);
                                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                        setDryingPopoverPos(computePopoverPosition({ triggerRect: rect, popoverWidth: DRYING_POPOVER_WIDTH, estimatedHeight: DRYING_POPOVER_ESTIMATED_HEIGHT }));
+                                        setDryingPopoverPos(computePopoverPosition({ triggerRect: rect, popoverWidth: DRYING_POPOVER_WIDTH, estimatedHeight: DRYING_POPOVER_ESTIMATED_HEIGHT, horizontalAlign: 'center' }));
                                       }
                                     }}
                                     className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-colors ${
@@ -5357,7 +5357,7 @@ function PrinterCard({
               {/* Header */}
               <div className="shrink-0 flex items-center justify-center gap-2 px-3 py-2.5">
                 <Flame className="w-3.5 h-3.5 text-bambu-green" />
-                <span className="text-xs text-white font-medium text-center">{t('printers.drying.start')}</span>
+                <span className="text-sm text-white font-medium text-center">{t('printers.drying.start')}</span>
               </div>
               <div className="shrink-0 h-px bg-bambu-dark-tertiary" />
               {/* Body */}

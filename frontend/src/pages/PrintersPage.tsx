@@ -4697,7 +4697,7 @@ function PrinterCard({
                         : 'bg-bambu-dark-tertiary text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary/80'
                   }`}
                 >
-                  A
+                  <Clock className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => {

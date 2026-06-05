@@ -2920,7 +2920,7 @@ function PrinterCard({
                   const progress = isActivePrint ? (status.progress || 0) : 0;
 
                   return (
-                    <div className="px-2 py-2 bg-bambu-dark rounded-lg relative overflow-hidden">
+                    <div className="p-2 bg-bambu-dark rounded-[10px] relative overflow-hidden">
                       <button
                         onClick={() => setShowSkipObjectsModal(true)}
                         disabled={!isActivePrint || (status.printable_objects_count ?? 0) < 2 || !hasPermission('printers:control')}
@@ -2951,7 +2951,7 @@ function PrinterCard({
                           url={isActivePrint ? status.cover_url : null}
                           printName={printName || undefined}
                           className="w-24 h-24 max-[520px]:w-20 max-[520px]:h-20"
-                          radiusClass="rounded-md"
+                          radiusClass="rounded-[2px]"
                         />
                         <div className="flex h-24 max-[520px]:h-20 min-w-0 flex-1 flex-col justify-between pt-1 pr-8">
                           <div className="flex min-h-[18px] items-center gap-2">

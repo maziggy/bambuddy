@@ -35,6 +35,7 @@ import {
   ChevronDown,
   Filter,
   Pencil,
+  ArrowLeft,
   ArrowUp,
   ArrowDown,
   Layers,
@@ -1462,6 +1463,7 @@ function PrinterCard({
   selectionMode = false,
   isSelected = false,
   onToggleSelect,
+  onOpenCompactCard,
 }: {
   printer: Printer;
   hideIfDisconnected?: boolean;
@@ -1495,6 +1497,7 @@ function PrinterCard({
   selectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelect?: (id: number) => void;
+  onOpenCompactCard?: (id: number) => void;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -2425,6 +2428,13 @@ function PrinterCard({
     }
   };
 
+  const handleCardClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (viewMode !== 'compact' || selectionMode) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, select, textarea, [role="button"]')) return;
+    onOpenCompactCard?.(printer.id);
+  };
+
   const footerActionButtonClass = '!h-8 !min-h-8 !px-2 !py-0';
   const footerIconButtonClass = '!h-8 !min-h-8 !w-8 !px-0 !py-0';
 
@@ -2531,7 +2541,9 @@ function PrinterCard({
 
   return (
     <Card
-      className={`relative flex h-full flex-col ${isSelected ? 'ring-2 ring-bambu-green' : ''} ${selectionMode ? 'cursor-pointer' : ''}`}
+      id={`printer-card-${printer.id}`}
+      className={`relative flex h-full flex-col ${isSelected ? 'ring-2 ring-bambu-green' : ''} ${selectionMode || viewMode === 'compact' ? 'cursor-pointer' : ''}`}
+      onClick={handleCardClick}
       onDragEnter={handleCardDragEnter}
       onDragOver={handleCardDragOver}
       onDragLeave={handleCardDragLeave}
@@ -2891,6 +2903,7 @@ function PrinterCard({
                     : hasProblem
                       ? 100
                       : 0;
+                const isActiveCompactPrint = status.state === 'RUNNING' || status.state === 'PAUSE';
                 const compactProgressClass = hasProblem
                   ? 'bg-status-error'
                   : status.state === 'PAUSE'
@@ -2898,13 +2911,16 @@ function PrinterCard({
                     : 'bg-bambu-green';
 
                 return (
-                  <div className="relative mt-2">
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-bambu-dark-tertiary">
+                  <div className="relative mt-2 flex items-center gap-2">
+                    <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-bambu-dark-tertiary">
                       <div
                         className={`${compactProgressClass} h-1.5 rounded-full transition-all`}
                         style={{ width: `${compactProgress}%` }}
                       />
                     </div>
+                    <span className={`w-9 shrink-0 text-right text-[11px] leading-none ${isActiveCompactPrint ? 'text-white' : 'text-bambu-gray'}`}>
+                      {isActiveCompactPrint ? `${Math.round(compactProgress)}%` : '---%'}
+                    </span>
                   </div>
                 );
               })()
@@ -6615,6 +6631,36 @@ export function PrintersPage() {
   });
   // Derive viewMode from cardSize: S=compact, M/L/XL=expanded
   const viewMode: ViewMode = cardSize === 1 ? 'compact' : 'expanded';
+  const [compactDrilldownPrinterId, setCompactDrilldownPrinterId] = useState<number | null>(null);
+  const scrollPrinterIntoView = useCallback((printerId: number) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const card = document.getElementById(`printer-card-${printerId}`);
+        if (!card) return;
+        const fixedHeaderHeight = document.querySelector('header')?.getBoundingClientRect().height ?? 56;
+        const top = card.getBoundingClientRect().top + window.scrollY - fixedHeaderHeight - 16;
+        window.scrollTo({
+          top: Math.max(0, top),
+          behavior: 'smooth',
+        });
+      });
+    });
+  }, []);
+  const openCompactCard = useCallback((printerId: number) => {
+    setCompactDrilldownPrinterId(printerId);
+    setCardSize(2);
+    localStorage.setItem('printerCardSize', '2');
+    scrollPrinterIntoView(printerId);
+  }, [scrollPrinterIntoView]);
+  const returnToCompactCards = useCallback(() => {
+    const printerId = compactDrilldownPrinterId;
+    setCompactDrilldownPrinterId(null);
+    setCardSize(1);
+    localStorage.setItem('printerCardSize', '1');
+    if (printerId != null) {
+      scrollPrinterIntoView(printerId);
+    }
+  }, [compactDrilldownPrinterId, scrollPrinterIntoView]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [locationFilter, setLocationFilter] = useState<string>('all');
@@ -7278,6 +7324,7 @@ export function PrintersPage() {
             <button
               key={label}
               onClick={() => {
+                setCompactDrilldownPrinterId(null);
                 setCardSize(size);
                 localStorage.setItem('printerCardSize', String(size));
               }}
@@ -7558,6 +7605,7 @@ export function PrintersPage() {
                       selectionMode={selectionMode}
                       isSelected={selectedPrinterIds.has(printer.id)}
                       onToggleSelect={toggleSelect}
+                      onOpenCompactCard={openCompactCard}
                     />
                   ))}
                 </div>
@@ -7602,9 +7650,22 @@ export function PrintersPage() {
               selectionMode={selectionMode}
               isSelected={selectedPrinterIds.has(printer.id)}
               onToggleSelect={toggleSelect}
+              onOpenCompactCard={openCompactCard}
             />
           ))}
         </div>
+      )}
+
+      {cardSize === 2 && compactDrilldownPrinterId != null && (
+        <button
+          type="button"
+          onClick={returnToCompactCards}
+          className="fixed bottom-5 left-1/2 z-40 inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 py-2 text-sm font-medium text-white shadow-xl transition-colors hover:bg-bambu-dark-tertiary"
+          title={t('common.back', 'Back')}
+        >
+          <ArrowLeft className="w-4 h-4" />
+          {t('common.back', 'Back')}
+        </button>
       )}
 
       {showAddModal && (

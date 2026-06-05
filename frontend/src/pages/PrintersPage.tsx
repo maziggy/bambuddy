@@ -30,7 +30,6 @@ import {
   AlertCircle,
   Terminal,
   Power,
-  PowerOff,
   Zap,
   Wrench,
   ChevronDown,
@@ -4674,88 +4673,51 @@ function PrinterCard({
               </span>
               <div className="flex-1 h-[2px] bg-bambu-dark-tertiary" />
             </div>
-            <div className="flex items-center gap-3">
-              {/* Plug name and status */}
+            <div className="flex items-center gap-2 rounded-[10px] bg-bambu-dark p-2">
+              {/* Plug name */}
               <div className="flex items-center gap-2 min-w-0">
                 <Zap className="w-4 h-4 text-bambu-gray flex-shrink-0" />
                 <span className="text-sm text-white truncate">{smartPlug.name}</span>
-                {plugStatus && (
-                  <span
-                    className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
-                      plugStatus.state === 'ON'
-                        ? 'bg-bambu-green/20 text-bambu-green'
-                        : plugStatus.state === 'OFF'
-                        ? 'bg-red-500/20 text-red-400'
-                        : 'bg-bambu-gray/20 text-bambu-gray'
-                    }`}
-                  >
-                    {plugStatus.state || '?'}
-                    {plugStatus.state === 'ON' && plugStatus.energy?.power != null && (
-                      <span className="text-yellow-400 ml-1.5">· {Math.round(plugStatus.energy.power)}W</span>
-                    )}
-                  </span>
-                )}
               </div>
 
               {/* Spacer */}
               <div className="flex-1" />
 
-              {/* Power buttons */}
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setShowPowerOnConfirm(true)}
-                  disabled={powerControlMutation.isPending || plugStatus?.state === 'ON' || !hasPermission('smart_plugs:control')}
-                  className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
-                    !hasPermission('smart_plugs:control')
-                      ? 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
-                      : plugStatus?.state === 'ON'
-                        ? 'bg-bambu-green text-white'
-                        : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary'
-                  }`}
-                  title={!hasPermission('smart_plugs:control') ? t('printers.permission.noSmartPlugControl') : undefined}
-                >
-                  <Power className="w-3 h-3" />
-                  On
-                </button>
-                <button
-                  onClick={() => setShowPowerOffConfirm(true)}
-                  disabled={powerControlMutation.isPending || plugStatus?.state === 'OFF' || !hasPermission('smart_plugs:control')}
-                  className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
-                    !hasPermission('smart_plugs:control')
-                      ? 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
-                      : plugStatus?.state === 'OFF'
-                        ? 'bg-red-500/30 text-red-400'
-                        : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary'
-                  }`}
-                  title={!hasPermission('smart_plugs:control') ? t('printers.permission.noSmartPlugControl') : undefined}
-                >
-                  <PowerOff className="w-3 h-3" />
-                  Off
-                </button>
-              </div>
-
-              {/* Auto-off toggle */}
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className={`text-xs hidden sm:inline ${smartPlug.auto_off_executed ? 'text-bambu-green' : 'text-bambu-gray'}`}>
-                  {smartPlug.auto_off_executed ? 'Auto-off done' : 'Auto-off'}
-                </span>
+              <div className="flex items-center gap-2">
+                {/* Auto-off */}
                 <button
                   onClick={() => toggleAutoOffMutation.mutate(!smartPlug.auto_off)}
                   disabled={toggleAutoOffMutation.isPending || smartPlug.auto_off_executed || !hasPermission('smart_plugs:control')}
                   title={!hasPermission('smart_plugs:control') ? t('printers.permission.noSmartPlugControl') : (smartPlug.auto_off_executed ? t('printers.autoOffExecuted') : t('printers.autoOffAfterPrint'))}
-                  className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${
+                  className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                     !hasPermission('smart_plugs:control')
-                      ? 'bg-bambu-dark-tertiary/50 cursor-not-allowed'
-                      : smartPlug.auto_off_executed
-                        ? 'bg-bambu-green/50 cursor-not-allowed'
-                        : smartPlug.auto_off ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+                      ? 'bg-bambu-dark-tertiary/50 text-bambu-gray/50'
+                      : smartPlug.auto_off || smartPlug.auto_off_executed
+                        ? 'bg-bambu-green/20 text-bambu-green hover:bg-bambu-green/30'
+                        : 'bg-bambu-dark-tertiary text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary/80'
                   }`}
                 >
-                  <span
-                    className={`absolute top-[2px] left-[2px] w-4 h-4 bg-white rounded-full transition-transform ${
-                      smartPlug.auto_off || smartPlug.auto_off_executed ? 'translate-x-4' : 'translate-x-0'
-                    }`}
-                  />
+                  A
+                </button>
+                <button
+                  onClick={() => {
+                    if (plugStatus?.state === 'ON') {
+                      setShowPowerOffConfirm(true);
+                    } else {
+                      setShowPowerOnConfirm(true);
+                    }
+                  }}
+                  disabled={powerControlMutation.isPending || !hasPermission('smart_plugs:control')}
+                  className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                    !hasPermission('smart_plugs:control')
+                      ? 'bg-bambu-dark-tertiary/50 text-bambu-gray/50'
+                      : plugStatus?.state === 'ON'
+                        ? 'bg-bambu-green/20 text-bambu-green hover:bg-bambu-green/30'
+                        : 'bg-bambu-dark-tertiary text-bambu-gray hover:text-white hover:bg-bambu-dark-tertiary/80'
+                  }`}
+                  title={!hasPermission('smart_plugs:control') ? t('printers.permission.noSmartPlugControl') : (plugStatus?.state === 'ON' ? 'Turn off' : 'Turn on')}
+                >
+                  <Zap className="w-4 h-4" />
                 </button>
               </div>
             </div>

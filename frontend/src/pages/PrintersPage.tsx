@@ -2586,13 +2586,13 @@ function PrinterCard({
         {/* Header */}
         <div className={getSpacing()}>
           {/* Top row: Image, Name, Menu */}
-          <div className="flex items-start justify-between gap-2">
+          <div className={`flex items-start justify-between gap-2 ${viewMode === 'expanded' ? 'rounded-[10px] bg-bambu-dark p-2' : ''}`}>
             <div className="flex items-center gap-3 min-w-0 flex-1">
               {/* Printer Model Image */}
               <img
                 src={getPrinterImage(printer.model)}
                 alt={printer.model || t('common.printer')}
-                className={`object-contain rounded-lg bg-bambu-dark flex-shrink-0 ${getImageSize()}`}
+                className={`object-contain rounded-lg flex-shrink-0 ${getImageSize()}`}
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">

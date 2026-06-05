@@ -3705,7 +3705,7 @@ function PrinterCard({
                             </div>
                             {/* Drying status bar */}
                             {ams.dry_time > 0 && (
-                              <div className="mb-2 flex items-center gap-2 rounded-lg bg-amber-500/10 px-2 py-1 text-[9px]">
+                              <div className="mb-1 flex items-center gap-2 rounded-lg bg-amber-500/10 px-2 py-1 text-[9px]">
                                 <Flame className="w-3 h-3 text-amber-400 shrink-0" />
                                 <span className="text-amber-400 font-medium">{t('printers.drying.active')}</span>
                                 <span className="text-amber-300/70">
@@ -4156,7 +4156,7 @@ function PrinterCard({
                             </div>
                             {/* HT AMS drying status bar */}
                             {ams.dry_time > 0 && (
-                              <div className="mb-2 flex items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg bg-amber-500/10 px-2 py-1 text-[9px]">
+                              <div className="mb-1 flex items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg bg-amber-500/10 px-2 py-1 text-[9px]">
                                 <Flame className="w-3 h-3 text-amber-400 shrink-0" />
                                 <span className="text-amber-300/70 text-[8px] truncate">
                                   {ams.dry_time >= 60

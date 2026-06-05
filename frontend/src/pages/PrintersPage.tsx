@@ -2458,7 +2458,7 @@ function PrinterCard({
     isRefreshing?: boolean;
     includeRfid?: boolean;
   }) => {
-    if (status?.state === 'RUNNING') return null;
+    const printerBusy = status?.state === 'RUNNING';
 
     return (
       <>
@@ -2471,11 +2471,11 @@ function PrinterCard({
             }`}
             onClick={(e) => {
               e.stopPropagation();
-              if (!hasPermission('printers:ams_rfid')) return;
+              if (printerBusy || !hasPermission('printers:ams_rfid')) return;
               refreshAmsSlotMutation.mutate({ amsId, slotId });
             }}
-            disabled={isRefreshing || !hasPermission('printers:ams_rfid')}
-            title={!hasPermission('printers:ams_rfid') ? t('printers.permission.noAmsRfid') : undefined}
+            disabled={printerBusy || isRefreshing || !hasPermission('printers:ams_rfid')}
+            title={printerBusy ? t('printers.bedJog.disabledWhilePrinting') : !hasPermission('printers:ams_rfid') ? t('printers.permission.noAmsRfid') : undefined}
           >
             <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
             {t('printers.rfid.reread')}
@@ -2489,11 +2489,11 @@ function PrinterCard({
           }`}
           onClick={(e) => {
             e.stopPropagation();
-            if (!hasPermission('printers:control')) return;
+            if (printerBusy || !hasPermission('printers:control')) return;
             loadAmsTrayMutation.mutate({ trayId: loadTrayId });
           }}
-          disabled={!hasPermission('printers:control')}
-          title={!hasPermission('printers:control') ? t('printers.permission.noControl') : undefined}
+          disabled={printerBusy || !hasPermission('printers:control')}
+          title={printerBusy ? t('printers.bedJog.disabledWhilePrinting') : !hasPermission('printers:control') ? t('printers.permission.noControl') : undefined}
         >
           <LogIn className="w-3 h-3" />
           {t('printers.ams.load')}
@@ -2506,11 +2506,11 @@ function PrinterCard({
           }`}
           onClick={(e) => {
             e.stopPropagation();
-            if (!hasPermission('printers:control')) return;
+            if (printerBusy || !hasPermission('printers:control')) return;
             unloadAmsMutation.mutate();
           }}
-          disabled={!hasPermission('printers:control')}
-          title={!hasPermission('printers:control') ? t('printers.permission.noControl') : undefined}
+          disabled={printerBusy || !hasPermission('printers:control')}
+          title={printerBusy ? t('printers.bedJog.disabledWhilePrinting') : !hasPermission('printers:control') ? t('printers.permission.noControl') : undefined}
         >
           <LogOut className="w-3 h-3" />
           {t('printers.ams.unload')}
@@ -3599,8 +3599,8 @@ function PrinterCard({
                         return (
                           <div key={ams.id} className="p-2 bg-bambu-dark rounded-[10px]">
                             {/* Header: Label + Stats (no icon) */}
-                            <div className="mb-2 flex min-h-7 items-center justify-between gap-2 rounded-lg bg-bambu-dark-secondary px-2 py-1">
-                              <div className="flex min-w-0 items-center gap-1.5">
+                            <div className="mb-2 flex w-full min-h-7 items-center justify-between gap-2 rounded-lg bg-bambu-dark-secondary px-2 py-1">
+                              <div className="flex min-w-0 flex-1 items-center gap-1.5">
                                 {/* AMS name — hover to see serial, firmware, and edit friendly name */}
                                 <AmsNameHoverCard
                                   ams={ams}
@@ -3634,17 +3634,19 @@ function PrinterCard({
                                     />
                                   )}
                                   {ams.temp != null && (
-                                    <TemperatureIndicator
-                                      temp={ams.temp}
-                                      goodThreshold={amsThresholds?.tempGood}
-                                      fairThreshold={amsThresholds?.tempFair}
-                                      onClick={() => setAmsHistoryModal({
-                                        amsId: ams.id,
-                                        amsLabel: getAmsLabel(ams.id, ams.tray.length),
-                                        mode: 'temperature',
-                                      })}
-                                      compact
-                                    />
+                                    <div className="mr-1 max-[550px]:mr-0">
+                                      <TemperatureIndicator
+                                        temp={ams.temp}
+                                        goodThreshold={amsThresholds?.tempGood}
+                                        fairThreshold={amsThresholds?.tempFair}
+                                        onClick={() => setAmsHistoryModal({
+                                          amsId: ams.id,
+                                          amsLabel: getAmsLabel(ams.id, ams.tray.length),
+                                          mode: 'temperature',
+                                        })}
+                                        compact
+                                      />
+                                    </div>
                                   )}
                                   {/* Drying button — only for AMS 2 Pro (n3f) and AMS-HT (n3s) */}
                                   {status.supports_drying && (ams.module_type === 'n3f' || ams.module_type === 'n3s') && hasPermission('printers:control') && (
@@ -4081,23 +4083,25 @@ function PrinterCard({
                         return (
                           <div key={ams.id} className="p-2 bg-bambu-dark rounded-[10px]">
                             {/* Row 1: Label + Nozzle + Drying */}
-                            <div className="mb-2 flex min-h-7 items-center gap-1.5 rounded-lg bg-bambu-dark-secondary px-2 py-1">
+                            <div className="mb-2 flex w-full min-h-7 items-center gap-1.5 rounded-lg bg-bambu-dark-secondary px-2 py-1">
                               {/* AMS name — hover to see serial, firmware, and edit friendly name */}
-                              <AmsNameHoverCard
-                                ams={ams}
-                                printerId={printer.id}
-                                label={getAmsLabel(ams.id, ams.tray.length)}
-                                amsLabels={amsLabels}
-                                canEdit={hasPermission('printers:update')}
-                                onSaved={refetchAmsLabels}
-                              >
-                                <span className="block truncate text-[10px] text-white font-medium cursor-default select-none">
-                                  {amsLabels?.[ams.id] || getAmsLabel(ams.id, ams.tray.length)}
-                                </span>
-                              </AmsNameHoverCard>
-                              {isDualNozzle && (isLeftNozzle || isRightNozzle) && (
-                                <NozzleBadge side={isLeftNozzle ? 'L' : 'R'} />
-                              )}
+                              <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                                <AmsNameHoverCard
+                                  ams={ams}
+                                  printerId={printer.id}
+                                  label={getAmsLabel(ams.id, ams.tray.length)}
+                                  amsLabels={amsLabels}
+                                  canEdit={hasPermission('printers:update')}
+                                  onSaved={refetchAmsLabels}
+                                >
+                                  <span className="block truncate text-[10px] text-white font-medium cursor-default select-none">
+                                    {amsLabels?.[ams.id] || getAmsLabel(ams.id, ams.tray.length)}
+                                  </span>
+                                </AmsNameHoverCard>
+                                {isDualNozzle && (isLeftNozzle || isRightNozzle) && (
+                                  <NozzleBadge side={isLeftNozzle ? 'L' : 'R'} />
+                                )}
+                              </div>
                               {/* Drying button for HT AMS */}
                               {status.supports_drying && (ams.module_type === 'n3f' || ams.module_type === 'n3s') && hasPermission('printers:control') && (
                                 <div className="relative ml-auto">
@@ -4340,8 +4344,8 @@ function PrinterCard({
                       {/* External spool(s) - grouped in one card like regular AMS */}
                       {status.vt_tray.length > 0 && (
                         <div className={`p-2 bg-bambu-dark rounded-[10px] ${status.vt_tray.length === 1 ? 'max-w-[50%]' : ''}`}>
-                          <div className="mb-2 flex min-h-7 items-center gap-1.5 rounded-lg bg-bambu-dark-secondary px-2 py-1">
-                            <span className="text-[10px] text-white font-medium">{t('printers.external')}</span>
+                          <div className="mb-2 flex w-full min-h-7 items-center gap-1.5 rounded-lg bg-bambu-dark-secondary px-2 py-1">
+                            <span className="block min-w-0 flex-1 truncate text-[10px] text-white font-medium">{t('printers.external')}</span>
                           </div>
                           <div className={`grid ${status.vt_tray.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} gap-1`}>
                             {[...status.vt_tray].sort((a, b) => (a.id ?? 254) - (b.id ?? 254)).map((extTray) => {

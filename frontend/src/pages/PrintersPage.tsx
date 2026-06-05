@@ -2531,7 +2531,7 @@ function PrinterCard({
         <MoreVertical className="w-4 h-4" />
       </Button>
       {showMenu && (
-        <div className="absolute right-0 bottom-full mb-2 w-48 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg z-20">
+        <div className="absolute left-0 bottom-full mb-2 w-48 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg z-20">
           <button
             className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
               hasPermission('printers:update')
@@ -4603,7 +4603,7 @@ function PrinterCard({
             </div>
             <div className="flex items-center gap-2 rounded-[10px] bg-bambu-dark p-2">
               {/* Plug name */}
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-2 min-w-0 pl-1">
                 <Zap className="w-4 h-4 text-bambu-gray flex-shrink-0" />
                 <span className="text-sm text-white truncate">{smartPlug.name}</span>
               </div>
@@ -4688,59 +4688,61 @@ function PrinterCard({
         {viewMode === 'expanded' && (
           <div className="mt-auto pt-4">
             <div className="mb-3 h-[2px] bg-bambu-dark-tertiary" />
-            <div className="flex items-center justify-end gap-2 flex-wrap">
-              {/* Camera Button */}
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  if (cameraViewMode === 'embedded' && onOpenEmbeddedCamera) {
-                    onOpenEmbeddedCamera(printer.id, printer.name);
-                  } else {
-                    // Use saved window state or defaults
-                    const saved = localStorage.getItem('cameraWindowState');
-                    const state = saved ? JSON.parse(saved) : { width: 640, height: 400 };
-                    const features = [
-                      `width=${state.width}`,
-                      `height=${state.height}`,
-                      state.left !== undefined ? `left=${state.left}` : '',
-                      state.top !== undefined ? `top=${state.top}` : '',
-                      // No `noopener`: same-origin popup needs opener so the browser
-                      // copies sessionStorage (auth token) into the new window.
-                      'menubar=no,toolbar=no,location=no,status=no',
-                    ].filter(Boolean).join(',');
-                    window.open(`/camera/${printer.id}`, `camera-${printer.id}`, features);
-                  }
-                }}
-                disabled={!status?.connected || !hasPermission('camera:view')}
-                title={!hasPermission('camera:view') ? t('printers.permission.noCamera') : (cameraViewMode === 'embedded' ? t('printers.openCameraOverlay') : t('printers.openCameraWindow'))}
-                className={footerIconButtonClass}
-              >
-                <Video className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowFileManager(true)}
-                disabled={!isConnected || !hasPermission('printers:files')}
-                title={!hasPermission('printers:files') ? t('printers.permission.noFiles') : t('printers.browseFiles')}
-                className={footerIconButtonClass}
-              >
-                <HardDrive className="w-4 h-4" />
-              </Button>
-              {isConnected && status?.state !== 'RUNNING' && status?.state !== 'PAUSE' && (
-                <Button
-                  size="sm"
-                  onClick={() => setShowUploadForPrint(true)}
-                  disabled={!hasPermission('printers:control')}
-                  title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('common.print')}
-                  className={`${footerActionButtonClass} !bg-bambu-green hover:!bg-bambu-green/80 !text-white`}
-                >
-                  <PrinterIcon className="w-4 h-4" />
-                  {t('common.print')}
-                </Button>
-              )}
+            <div className="flex items-center justify-between gap-2">
               {printerActionsMenu}
+              <div className="flex items-center justify-end gap-2 flex-wrap">
+                {/* Camera Button */}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    if (cameraViewMode === 'embedded' && onOpenEmbeddedCamera) {
+                      onOpenEmbeddedCamera(printer.id, printer.name);
+                    } else {
+                      // Use saved window state or defaults
+                      const saved = localStorage.getItem('cameraWindowState');
+                      const state = saved ? JSON.parse(saved) : { width: 640, height: 400 };
+                      const features = [
+                        `width=${state.width}`,
+                        `height=${state.height}`,
+                        state.left !== undefined ? `left=${state.left}` : '',
+                        state.top !== undefined ? `top=${state.top}` : '',
+                        // No `noopener`: same-origin popup needs opener so the browser
+                        // copies sessionStorage (auth token) into the new window.
+                        'menubar=no,toolbar=no,location=no,status=no',
+                      ].filter(Boolean).join(',');
+                      window.open(`/camera/${printer.id}`, `camera-${printer.id}`, features);
+                    }
+                  }}
+                  disabled={!status?.connected || !hasPermission('camera:view')}
+                  title={!hasPermission('camera:view') ? t('printers.permission.noCamera') : (cameraViewMode === 'embedded' ? t('printers.openCameraOverlay') : t('printers.openCameraWindow'))}
+                  className={footerIconButtonClass}
+                >
+                  <Video className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowFileManager(true)}
+                  disabled={!isConnected || !hasPermission('printers:files')}
+                  title={!hasPermission('printers:files') ? t('printers.permission.noFiles') : t('printers.browseFiles')}
+                  className={footerIconButtonClass}
+                >
+                  <HardDrive className="w-4 h-4" />
+                </Button>
+                {isConnected && status?.state !== 'RUNNING' && status?.state !== 'PAUSE' && (
+                  <Button
+                    size="sm"
+                    onClick={() => setShowUploadForPrint(true)}
+                    disabled={!hasPermission('printers:control')}
+                    title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('common.print')}
+                    className={`${footerActionButtonClass} !bg-bambu-green hover:!bg-bambu-green/80 !text-white`}
+                  >
+                    <PrinterIcon className="w-4 h-4" />
+                    {t('common.print')}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}

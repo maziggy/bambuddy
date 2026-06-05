@@ -2595,32 +2595,50 @@ function PrinterCard({
                 className={`object-contain rounded-lg flex-shrink-0 ${getImageSize()}`}
               />
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <h3 className={`font-semibold text-white ${getTitleSize()}`}>{printer.name}</h3>
-                  {/* Connection indicator dot for compact mode */}
-                  {viewMode === 'compact' && (() => {
-                    const hmsErrors = status?.connected && status.hms_errors ? filterKnownHMSErrors(status.hms_errors) : [];
-                    const hasSevere = hmsErrors.some(e => e.severity <= 2);
-                    const hasWarning = hmsErrors.length > 0;
-                    const pipColor = !status?.connected
-                      ? 'bg-status-error'
-                      : hasSevere
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <h3 className={`font-semibold text-white ${getTitleSize()}`}>{printer.name}</h3>
+                    {/* Connection indicator dot for compact mode */}
+                    {viewMode === 'compact' && (() => {
+                      const hmsErrors = status?.connected && status.hms_errors ? filterKnownHMSErrors(status.hms_errors) : [];
+                      const hasSevere = hmsErrors.some(e => e.severity <= 2);
+                      const hasWarning = hmsErrors.length > 0;
+                      const pipColor = !status?.connected
                         ? 'bg-status-error'
+                        : hasSevere
+                          ? 'bg-status-error'
+                          : hasWarning
+                            ? 'bg-status-warning'
+                            : 'bg-status-ok';
+                      const pipTitle = !status?.connected
+                        ? t('printers.connection.offline')
                         : hasWarning
-                          ? 'bg-status-warning'
-                          : 'bg-status-ok';
-                    const pipTitle = !status?.connected
-                      ? t('printers.connection.offline')
-                      : hasWarning
-                        ? `${hmsErrors.length} HMS ${hmsErrors.length === 1 ? 'error' : 'errors'}`
-                        : t('printers.connection.connected');
-                    return (
-                      <div
-                        className={`w-2 h-2 rounded-full flex-shrink-0 ${pipColor}`}
-                        title={pipTitle}
-                      />
-                    );
-                  })()}
+                          ? `${hmsErrors.length} HMS ${hmsErrors.length === 1 ? 'error' : 'errors'}`
+                          : t('printers.connection.connected');
+                      return (
+                        <div
+                          className={`w-2 h-2 rounded-full flex-shrink-0 ${pipColor}`}
+                          title={pipTitle}
+                        />
+                      );
+                    })()}
+                  </div>
+                  {viewMode === 'compact' && showClearPlateButton && (
+                    <button
+                      type="button"
+                      onClick={() => clearPlateMutation.mutate()}
+                      disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
+                      aria-label={t('printers.plateStatus.markCleared')}
+                      className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md bg-yellow-500/20 border border-yellow-400/40 text-yellow-400 hover:bg-yellow-500/30 transition-colors disabled:opacity-50"
+                      title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
+                    >
+                      {clearPlateMutation.isPending ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <PlateClearedIcon className="w-3 h-3" />
+                      )}
+                    </button>
+                  )}
                 </div>
                 <p className="text-sm text-bambu-gray">
                   {printer.model || 'Unknown Model'}
@@ -2862,45 +2880,33 @@ function PrinterCard({
           <>
             {/* Compact: Simple status bar */}
             {viewMode === 'compact' ? (
-              <div className="mt-2">
-                {(status.state === 'RUNNING' || status.state === 'PAUSE') ? (
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 bg-bambu-dark-tertiary rounded-full h-1.5">
+              (() => {
+                const hmsErrors = status.hms_errors ? filterKnownHMSErrors(status.hms_errors) : [];
+                const hasProblem = status.state === 'FAILED' || hmsErrors.length > 0;
+                const compactProgress = status.state === 'RUNNING' || status.state === 'PAUSE'
+                  ? Math.max(0, Math.min(100, status.progress || 0))
+                  : showClearPlateButton
+                    ? 100
+                    : hasProblem
+                      ? 100
+                      : 0;
+                const compactProgressClass = hasProblem
+                  ? 'bg-status-error'
+                  : status.state === 'PAUSE'
+                    ? 'bg-status-warning'
+                    : 'bg-bambu-green';
+
+                return (
+                  <div className="relative mt-2">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-bambu-dark-tertiary">
                       <div
-                        className={`${status.state === 'PAUSE' ? 'bg-status-warning' : 'bg-bambu-green'} h-1.5 rounded-full transition-all`}
-                        style={{ width: `${status.progress || 0}%` }}
+                        className={`${compactProgressClass} h-1.5 rounded-full transition-all`}
+                        style={{ width: `${compactProgress}%` }}
                       />
                     </div>
-                    <div className="flex flex-shrink-0 items-center gap-1.5">
-                      <span className="text-xs text-white">{Math.round(status.progress || 0)}%</span>
-                      {plateStatusPill}
-                    </div>
                   </div>
-                ) : (
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0 flex-1 flex items-center gap-1.5">
-                      <p className="min-w-0 truncate text-xs text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
-                      {plateStatusPill}
-                    </div>
-                    {showClearPlateButton && (
-                      <button
-                        type="button"
-                        onClick={() => clearPlateMutation.mutate()}
-                        disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
-                        aria-label={t('printers.plateStatus.markCleared')}
-                        className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-yellow-500/20 border border-yellow-400/40 text-yellow-400 hover:bg-yellow-500/30 transition-colors disabled:opacity-50"
-                        title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
-                      >
-                        {clearPlateMutation.isPending ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <PlateClearedIcon className="w-3 h-3" />
-                        )}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
+                );
+              })()
             ) : (
               /* Expanded: Full status section */
               <>

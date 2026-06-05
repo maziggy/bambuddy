@@ -178,6 +178,26 @@ async function request<T>(
   return await response.json();
 }
 
+/** Upload a CSV to the spool import endpoint (#1576). Multipart, so it bypasses
+ *  `request<T>()` (which sends JSON): the browser must set the form-data
+ *  boundary itself. `dryRun` toggles preview-only vs. real import. */
+async function uploadSpoolsCsv<T>(file: File, dryRun: boolean): Promise<T> {
+  const form = new FormData();
+  form.append('file', file);
+  const headers: Record<string, string> = {};
+  if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+  const response = await fetch(`${API_BASE}/inventory/spools/import${dryRun ? '?dry_run=true' : ''}`, {
+    method: 'POST',
+    headers,
+    body: form,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
 // Camera diagnostic result (#1395 follow-up). Returned by
 // POST /printers/{id}/camera/diagnose; the frontend modal renders one
 // row per stage and looks up the summary code in i18n for the user-
@@ -2621,6 +2641,39 @@ export interface SpoolmanBulkCreateResult {
   failed_count: number;
 }
 
+// ── CSV import/export (#1576) ──────────────────────────────────────────────
+/** One row's outcome from the import preview / real import. */
+export interface CsvImportRow {
+  row_number: number;
+  status: 'valid' | 'error' | 'skipped';
+  reason: string | null;
+  material: string | null;
+  brand: string | null;
+  color_name: string | null;
+  rgba: string | null;
+  /** rgba/extra_colors/effect_type were filled from the Color Catalog. */
+  resolved_color: boolean;
+}
+
+/** Dry-run preview: per-row classification, no rows written. */
+export interface CsvImportPreview {
+  columns: string[];
+  total: number;
+  valid_count: number;
+  error_count: number;
+  skipped_count: number;
+  rows: CsvImportRow[];
+  warnings: string[];
+}
+
+/** Summary returned after a real (non-dry-run) import. */
+export interface CsvImportResult {
+  created: number;
+  skipped: number;
+  errors: number;
+  error_rows: CsvImportRow[];
+}
+
 export interface SpoolUsageRecord {
   id: number;
   spool_id: number;
@@ -4872,6 +4925,31 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ spool: data, quantity }),
     }),
+  // ── CSV import/export (#1576) ────────────────────────────────────────────
+  // dry_run=true → preview (no write); omitted → real import. Both share one
+  // multipart upload helper; see `uploadSpoolsCsv` below.
+  importSpoolsCsvPreview: (file: File): Promise<CsvImportPreview> => uploadSpoolsCsv<CsvImportPreview>(file, true),
+  importSpoolsCsv: (file: File): Promise<CsvImportResult> => uploadSpoolsCsv<CsvImportResult>(file, false),
+  exportSpoolsCsv: async (): Promise<void> => {
+    const headers: Record<string, string> = {};
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const response = await fetch(`${API_BASE}/inventory/spools/export`, { headers });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    const disposition = response.headers.get('Content-Disposition');
+    const filename = parseContentDispositionFilename(disposition) || 'bambuddy_inventory.csv';
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  },
   updateSpool: (id: number, data: Partial<Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>>) =>
     request<InventorySpool>(`/inventory/spools/${id}`, {
       method: 'PATCH',

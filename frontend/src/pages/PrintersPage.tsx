@@ -2899,7 +2899,7 @@ function PrinterCard({
                   const progress = isActivePrint ? (status.progress || 0) : 0;
 
                   return (
-                    <div className="mb-3 p-2.5 bg-bambu-dark rounded-lg relative overflow-hidden">
+                    <div className="mb-3 p-2 bg-bambu-dark rounded-lg relative overflow-hidden">
                       <button
                         onClick={() => setShowSkipObjectsModal(true)}
                         disabled={!isActivePrint || (status.printable_objects_count ?? 0) < 2 || !hasPermission('printers:control')}
@@ -2925,30 +2925,30 @@ function PrinterCard({
                           </span>
                         )}
                       </button>
-                      <div className="flex items-stretch gap-3 min-h-[112px]">
+                      <div className="flex items-stretch gap-2">
                         <CoverImage
                           url={isActivePrint ? status.cover_url : null}
                           printName={printName || undefined}
-                          className="w-24 max-[520px]:w-20 min-h-[112px]"
+                          className="w-24 h-24 max-[520px]:w-20 max-[520px]:h-20"
                         />
-                        <div className="flex min-w-0 flex-1 flex-col justify-center pr-8">
-                          <div className="mb-1 flex min-h-[20px] items-center gap-2">
+                        <div className="flex h-24 max-[520px]:h-20 min-w-0 flex-1 flex-col justify-between pr-8">
+                          <div className="flex min-h-[18px] items-center gap-2">
                             <p className="min-w-0 truncate text-sm text-bambu-gray">{getStatusDisplay(status.state, status.stg_cur_name)}</p>
                             {plateStatusPill}
                           </div>
-                          <p className={`min-h-[20px] truncate text-sm ${isActivePrint ? 'text-white' : 'text-bambu-gray/70'}`}>
+                          <p className={`min-h-[18px] truncate text-sm ${isActivePrint ? 'text-white' : 'text-bambu-gray/70'}`}>
                             {printName || t('printers.noActiveJob', 'No active job')}
                           </p>
-                          <div className="mt-2 flex items-center justify-between text-sm">
-                            <div className="mr-3 h-2 flex-1 rounded-full bg-bambu-dark-tertiary">
+                          <div className="flex items-center justify-between text-sm">
+                            <div className="mr-2 h-2 flex-1 rounded-full bg-bambu-dark-tertiary">
                               <div
                                 className={`${isActivePrint ? (status.state === 'PAUSE' ? 'bg-status-warning' : 'bg-bambu-green') : 'bg-bambu-dark-tertiary'} h-2 rounded-full transition-all`}
                                 style={{ width: `${progress}%` }}
                               />
                             </div>
-                            <span className={isActivePrint ? 'text-white' : 'text-bambu-gray'}>{isActivePrint ? `${Math.round(progress)}%` : '—'}</span>
+                            <span className={isActivePrint ? 'text-white' : 'text-bambu-gray'}>{isActivePrint ? `${Math.round(progress)}%` : '---%'}</span>
                           </div>
-                          <div className="mt-2 flex min-h-[18px] items-center gap-3 text-xs text-bambu-gray">
+                          <div className="flex min-h-[16px] items-center gap-2 text-xs text-bambu-gray">
                             {isActivePrint ? (
                               <>
                                 {status.remaining_time != null && status.remaining_time > 0 && (

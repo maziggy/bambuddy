@@ -7,6 +7,7 @@ import { api } from '../../api/client';
 import type { InventorySpool } from '../../api/client';
 import { resolveSpoolColorName, getSwatchStyle, spoolColorString } from '../../utils/colors';
 import { formatSlotLabel } from '../../utils/amsHelpers';
+import { distinctStorageLocations } from '../../utils/inventorySearch';
 import { InventorySpoolInfoCard } from '../../components/spoolbuddy/InventorySpoolInfoCard';
 import { AssignToAmsModal } from '../../components/spoolbuddy/AssignToAmsModal';
 import { QrAssignTargetModal } from '../../components/QrAssignTargetModal';
@@ -166,10 +167,7 @@ export function SpoolBuddyInventoryPage() {
     });
   }, [activeSpools, filterMode, searchQuery, assignedSpoolIds]);
 
-  const storageSuggestions = useMemo(
-    () => Array.from(new Set((spools ?? []).map((s) => s.storage_location).filter((x): x is string => !!x))).sort(),
-    [spools],
-  );
+  const storageSuggestions = useMemo(() => distinctStorageLocations(spools), [spools]);
 
   return (
     <div className="h-full flex flex-col">

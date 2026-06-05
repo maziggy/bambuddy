@@ -55,6 +55,33 @@ function targetLocationLabel(target: AssignTarget): string {
  * platform BarcodeDetector; fall back to jsQR (downscaling huge stills for speed
  * — a focused QR survives the downscale).
  */
+/**
+ * Draw a frame/bitmap onto a canvas and decode a QR with jsQR. getContext is
+ * guarded because jsdom (test env) throws without the canvas package; the
+ * caller owns the canvas so the live loop can reuse one across frames.
+ */
+function decodeCanvas(
+  canvas: HTMLCanvasElement,
+  source: CanvasImageSource,
+  w: number,
+  h: number,
+  inversionAttempts: 'dontInvert' | 'attemptBoth',
+): string | undefined {
+  if (w <= 0 || h <= 0) return undefined;
+  canvas.width = w;
+  canvas.height = h;
+  let ctx: CanvasRenderingContext2D | null = null;
+  try {
+    ctx = canvas.getContext('2d', { willReadFrequently: true });
+  } catch {
+    ctx = null;
+  }
+  if (!ctx) return undefined;
+  ctx.drawImage(source, 0, 0, w, h);
+  const img = ctx.getImageData(0, 0, w, h);
+  return jsQR(img.data, w, h, { inversionAttempts })?.data ?? undefined;
+}
+
 async function decodeImageBlob(blob: Blob): Promise<string | undefined> {
   const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
   try {
@@ -67,18 +94,12 @@ async function decodeImageBlob(blob: Blob): Promise<string | undefined> {
         /* BarcodeDetector present but unusable — fall through to jsQR */
       }
     }
+    // Downscale huge stills so jsQR stays fast — a focused QR survives it.
     const maxSide = 1600;
     const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
     const w = Math.max(1, Math.round(bitmap.width * scale));
     const h = Math.max(1, Math.round(bitmap.height * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return undefined;
-    ctx.drawImage(bitmap, 0, 0, w, h);
-    const img = ctx.getImageData(0, 0, w, h);
-    return jsQR(img.data, w, h, { inversionAttempts: 'attemptBoth' })?.data ?? undefined;
+    return decodeCanvas(document.createElement('canvas'), bitmap, w, h, 'attemptBoth');
   } finally {
     bitmap.close?.();
   }
@@ -114,15 +135,7 @@ function LiveScanner({
     let busy = false;
     let lastScan = 0;
     const INTERVAL_MS = 200;
-    const canvas = document.createElement('canvas');
-    // Guarded: jsdom (test env) throws on getContext without the canvas package.
-    // The camera never starts there anyway, so a null ctx is harmless.
-    let ctx: CanvasRenderingContext2D | null = null;
-    try {
-      ctx = canvas.getContext('2d', { willReadFrequently: true });
-    } catch {
-      ctx = null;
-    }
+    const canvas = document.createElement('canvas'); // reused across frames
     const BD = (globalThis as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
     let detector = BD ? new BD({ formats: ['qr_code'] }) : null;
 
@@ -135,17 +148,8 @@ function LiveScanner({
           detector = null; // exists but unusable — fall back to jsQR
         }
       }
-      if (!ctx) return undefined;
-      const w = video.videoWidth;
-      const h = video.videoHeight;
-      if (!w || !h) return undefined;
-      canvas.width = w;
-      canvas.height = h;
-      ctx.drawImage(video, 0, 0, w, h);
-      const img = ctx.getImageData(0, 0, w, h);
-      // 'dontInvert' (cheapest) for the hot loop; the one-shot photo path uses
-      // the thorough 'attemptBoth'.
-      return jsQR(img.data, w, h, { inversionAttempts: 'dontInvert' })?.data ?? undefined;
+      // 'dontInvert' (cheapest) for the hot loop; the photo path uses 'attemptBoth'.
+      return decodeCanvas(canvas, video, video.videoWidth, video.videoHeight, 'dontInvert');
     };
 
     const tick = () => {

@@ -1,6 +1,17 @@
 import type { InventorySpool } from '../api/client';
 
 /**
+ * Distinct, trimmed, sorted, non-empty `storage_location` values across spools.
+ * Used for storage-location autocomplete / filter options. Trims so accidental
+ * trailing whitespace doesn't surface as a separate option (#1400).
+ */
+export function distinctStorageLocations(spools: InventorySpool[] | undefined): string[] {
+  return Array.from(
+    new Set((spools ?? []).map((s) => s.storage_location?.trim()).filter((x): x is string => !!x)),
+  ).sort();
+}
+
+/**
  * Return true when spool matches the search query across all searchable text fields.
  * Case-insensitive. Empty query always returns true.
  */

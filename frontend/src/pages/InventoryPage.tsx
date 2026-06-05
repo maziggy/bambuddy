@@ -26,7 +26,7 @@ import { resolveSpoolColorName } from '../utils/colors';
 import { getCurrencySymbol } from '../utils/currency';
 import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
 import { formatSlotLabel } from '../utils/amsHelpers';
-import { filterSpoolsByQuery } from '../utils/inventorySearch';
+import { filterSpoolsByQuery, distinctStorageLocations } from '../utils/inventorySearch';
 import { aggregateGroupSpool } from '../utils/inventoryGrouping';
 
 type ArchiveFilter = 'active' | 'archived';
@@ -535,10 +535,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   // Distinct, sorted storage locations for the QR-assign storage autocomplete —
   // memoized so re-renders (search/sort/poll) don't re-walk the full spool list
   // or hand the modal a fresh array reference each time.
-  const storageSuggestions = useMemo(
-    () => Array.from(new Set((spools ?? []).map((s) => s.storage_location).filter((x): x is string => !!x))).sort(),
-    [spools],
-  );
+  const storageSuggestions = useMemo(() => distinctStorageLocations(spools), [spools]);
 
   // Deep-link: open edit modal for ?spool=<id>
   // Prefer the already-loaded spool list (no extra API call); fall back to a
@@ -970,9 +967,8 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     const nameB = (catalogMap[b]?.name || '').toLowerCase();
     return nameA.localeCompare(nameB);
   });
-  // #1400: storage-location distinct values. `.trim()` so accidental
-  // trailing whitespace doesn't show up as a separate option.
-  const uniqueStorageLocations = [...new Set(spools?.map((s) => s.storage_location?.trim()).filter(Boolean) as string[] || [])].sort();
+  // #1400: storage-location distinct values for the filter datalist.
+  const uniqueStorageLocations = distinctStorageLocations(spools);
   const hasUnsetStorageLocation = (spools ?? []).some((s) => !s.storage_location?.trim());
 
   // Check if any filters are non-default

@@ -51,7 +51,7 @@ export function parseSpoolIdFromQr(raw: string): number | null {
   // Fall back to a query-style match anywhere in the string — also covers a URL
   // that parsed but carried `spool` in a hash fragment (e.g. a hash router).
   if (!spoolParam) {
-    const m = text.match(/[?&]spool=(\d+)\b/) ?? text.match(/\bspool=(\d+)\b/);
+    const m = text.match(/(?:[?&]|\b)spool=(\d+)/);
     spoolParam = m ? m[1] : null;
   }
 

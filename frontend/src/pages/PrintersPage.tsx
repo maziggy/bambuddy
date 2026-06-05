@@ -3188,8 +3188,8 @@ function PrinterCard({
               const isPrinting = isRunning || isPaused;
               const isControlBusy = stopPrintMutation.isPending || pausePrintMutation.isPending || resumePrintMutation.isPending;
               const useFullWidthPrintControls = cardSize === 2;
+              const useWideSpeedControl = cardSize === 2;
               const iconControlClass = 'flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
-              const splitControlClass = 'flex h-8 items-center justify-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
               const printControlClass = `flex h-8 items-center justify-center gap-1 px-3 rounded-lg text-xs font-medium transition-colors ${useFullWidthPrintControls ? 'flex-1' : ''}`;
 
               return (
@@ -3204,7 +3204,7 @@ function PrinterCard({
 
                   <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-2">
                     {/* Left: Secondary controls */}
-                    <div className="flex flex-wrap items-center gap-2 min-w-0">
+                    <div className={`flex flex-wrap items-center gap-2 min-w-0 ${useWideSpeedControl ? 'w-full' : ''}`}>
                       <button
                         onClick={() => chamberLightMutation.mutate(!status.chamber_light)}
                         disabled={!status.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
@@ -3264,52 +3264,6 @@ function PrinterCard({
                           </div>
                         );
                       })()}
-
-                      {/* Print Speed */}
-                      {(() => (
-                        <div className="relative">
-                          <button
-                            onClick={() => setShowSpeedMenu(showSpeedMenu === printer.id ? null : printer.id)}
-                            disabled={!isPrinting || !hasPermission('printers:control')}
-                            className={`${iconControlClass} ${
-                              isPrinting
-                                ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
-                                : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
-                            }`}
-                            title={isPrinting ? t('printers.speed.title') : undefined}
-                          >
-                            <Gauge className="w-4 h-4" />
-                          </button>
-                          {showSpeedMenu === printer.id && (
-                            <>
-                              <div className="fixed inset-0 z-40" onClick={() => setShowSpeedMenu(null)} />
-                              <div className="absolute bottom-full left-0 mb-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg py-1 min-w-[130px]">
-                                {([
-                                  { mode: 1, label: t('printers.speed.silent') },
-                                  { mode: 2, label: t('printers.speed.standard') },
-                                  { mode: 3, label: t('printers.speed.sport') },
-                                  { mode: 4, label: t('printers.speed.ludicrous') },
-                                ] as const).map(({ mode, label }) => (
-                                  <button
-                                    key={mode}
-                                    onClick={() => {
-                                      printSpeedMutation.mutate(mode);
-                                      setShowSpeedMenu(null);
-                                    }}
-                                    className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
-                                      status.speed_level === mode
-                                        ? 'text-bambu-green bg-bambu-green/10'
-                                        : 'text-white hover:bg-bambu-dark-tertiary'
-                                    }`}
-                                  >
-                                    {label}
-                                  </button>
-                                ))}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      ))()}
 
                       {/* Bed Jog (Z-axis) — compact badge, popover holds the actual controls */}
                       {(() => {
@@ -3389,13 +3343,11 @@ function PrinterCard({
                         );
                       })()}
 
-                      <div className="w-px h-5 bg-bambu-dark-tertiary" />
-
                       <div className={`inline-flex rounded-lg ${printer.plate_detection_enabled ? 'ring-1 ring-green-500' : ''}`}>
                         <button
                           onClick={handleTogglePlateDetection}
                           disabled={!status.connected || plateDetectionMutation.isPending || !hasPermission('printers:update')}
-                          className={`${splitControlClass} rounded-r-none ${
+                          className={`${iconControlClass} rounded-r-none ${
                             printer.plate_detection_enabled
                               ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20'
                               : 'bg-bambu-dark text-bambu-gray/50 hover:bg-bambu-dark-tertiary hover:text-white'
@@ -3407,7 +3359,6 @@ function PrinterCard({
                           ) : (
                             <ScanSearch className="w-4 h-4" />
                           )}
-                          {t('printers.plateDetection.shortLabel', 'Plate')}
                         </button>
                         <button
                           onClick={handleOpenPlateManagement}
@@ -3426,6 +3377,53 @@ function PrinterCard({
                           )}
                         </button>
                       </div>
+
+                      {/* Print Speed */}
+                      {(() => (
+                        <div className={`relative ${useWideSpeedControl ? 'min-w-0 flex-1' : ''}`}>
+                          <button
+                            onClick={() => setShowSpeedMenu(showSpeedMenu === printer.id ? null : printer.id)}
+                            disabled={!isPrinting || !hasPermission('printers:control')}
+                            className={`${useWideSpeedControl ? 'flex h-8 w-full items-center justify-center gap-1 px-3 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed' : iconControlClass} ${
+                              isPrinting
+                                ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
+                                : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
+                            }`}
+                            title={isPrinting ? t('printers.speed.title') : undefined}
+                          >
+                            <Gauge className="w-4 h-4" />
+                            {useWideSpeedControl && <span>{t('printers.speed.title')}</span>}
+                          </button>
+                          {showSpeedMenu === printer.id && (
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={() => setShowSpeedMenu(null)} />
+                              <div className="absolute bottom-full left-0 mb-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg py-1 min-w-[130px]">
+                                {([
+                                  { mode: 1, label: t('printers.speed.silent') },
+                                  { mode: 2, label: t('printers.speed.standard') },
+                                  { mode: 3, label: t('printers.speed.sport') },
+                                  { mode: 4, label: t('printers.speed.ludicrous') },
+                                ] as const).map(({ mode, label }) => (
+                                  <button
+                                    key={mode}
+                                    onClick={() => {
+                                      printSpeedMutation.mutate(mode);
+                                      setShowSpeedMenu(null);
+                                    }}
+                                    className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                                      status.speed_level === mode
+                                        ? 'text-bambu-green bg-bambu-green/10'
+                                        : 'text-white hover:bg-bambu-dark-tertiary'
+                                    }`}
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      ))()}
 
                     </div>
 

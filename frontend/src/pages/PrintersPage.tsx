@@ -3647,7 +3647,6 @@ function PrinterCard({
                             try { return sessionStorage.getItem(warnedKey) === '1'; }
                             catch { return false; }
                           })();
-                          setShowBedJogMenu(null);
                           if (warned) {
                             bedJogMutation.mutate({ distance: signed, force: true });
                           } else {
@@ -3655,7 +3654,6 @@ function PrinterCard({
                           }
                         };
                         const requestXyJog = (x: number, y: number) => {
-                          setShowBedJogMenu(null);
                           xyJogMutation.mutate({ x, y });
                         };
                         return (
@@ -3675,8 +3673,13 @@ function PrinterCard({
                             {showBedJogMenu === printer.id && (
                               <>
                                 <div className="fixed inset-0 z-40" onClick={() => setShowBedJogMenu(null)} />
-                                <div className="absolute bottom-full left-0 mb-1 z-50 min-w-[194px] rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-2 shadow-lg">
-                                  <div className="mb-2 flex items-center gap-2">
+                                <div className="absolute bottom-full left-0 mb-1 z-50 flex w-[230px] flex-col overflow-hidden rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-2xl">
+                                  <div className="shrink-0 px-3 py-2.5 text-center text-sm font-medium text-white">
+                                    Jog controls
+                                  </div>
+                                  <div className="h-px bg-bambu-dark-tertiary" />
+                                  <div className="flex justify-center px-3 py-2.5">
+                                    <div className="flex items-center justify-center gap-3">
                                     <div className="grid grid-cols-3 gap-1">
                                       <div />
                                       <button
@@ -3726,7 +3729,7 @@ function PrinterCard({
                                       </button>
                                       <div />
                                     </div>
-                                    <div className="flex flex-col gap-1">
+                                    <div className="flex flex-col items-center gap-1">
                                       <button
                                         onClick={() => requestZJog(-1)}
                                         disabled={bedJogMutation.isPending}
@@ -3735,6 +3738,9 @@ function PrinterCard({
                                       >
                                         <ArrowUp className="w-4 h-4" />
                                       </button>
+                                      <div className="flex h-8 w-8 items-center justify-center rounded bg-bambu-dark text-bambu-gray/80">
+                                        <Layers className="w-4 h-4" />
+                                      </div>
                                       <button
                                         onClick={() => requestZJog(1)}
                                         disabled={bedJogMutation.isPending}
@@ -3744,11 +3750,14 @@ function PrinterCard({
                                         <ArrowDown className="w-4 h-4" />
                                       </button>
                                     </div>
+                                    </div>
                                   </div>
-                                  <div className="text-[9px] uppercase tracking-wider text-bambu-gray/70 px-1 mb-1">
-                                    {t('printers.bedJog.step')}
-                                  </div>
-                                  <div className="flex gap-1">
+                                  <div className="h-px bg-bambu-dark-tertiary" />
+                                  <div className="px-3 pt-2.5 pb-3">
+                                    <div className="mb-1 text-[9px] uppercase tracking-wider text-bambu-gray/70">
+                                      {t('printers.bedJog.step')}
+                                    </div>
+                                    <div className="flex gap-1">
                                     {[1, 10, 50].map((step) => (
                                       <button
                                         key={step}
@@ -3762,6 +3771,7 @@ function PrinterCard({
                                         {step}
                                       </button>
                                     ))}
+                                    </div>
                                   </div>
                                 </div>
                               </>

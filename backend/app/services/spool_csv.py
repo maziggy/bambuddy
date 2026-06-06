@@ -51,6 +51,16 @@ CSV_COLUMNS = [
     "note",
 ]
 
+# Upload ceiling for the import endpoint. A spool inventory CSV is a few KB
+# even with thousands of rows; 5 MB is a generous cap that still refuses an
+# OOM-sized body before it's read into memory.
+MAX_CSV_IMPORT_BYTES = 5 * 1024 * 1024
+
+# Spreadsheet formula-injection guard. A cell whose first character is one of
+# these is treated as a formula by Excel / LibreOffice / Sheets; we prefix it
+# with a single quote on export so the value renders as literal text.
+_FORMULA_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
 # Columns whose CSV cell must be coerced to a number before SpoolCreate sees it.
 # DictReader hands us strings; SpoolCreate wants int/float. Empty cell → omit
 # the field (falls back to the schema default / None).
@@ -76,6 +86,10 @@ class ImportRowResult(BaseModel):
     color_name: str | None = None
     rgba: str | None = None
     resolved_color: bool = False
+    # True when the colour was resolved from a catalog entry of a DIFFERENT
+    # material (no exact material match existed). Surfaced so the preview can
+    # warn the user the colour came from another material's variant.
+    cross_material_color: bool = False
     spool: dict | None = None
 
 
@@ -158,13 +172,13 @@ async def _load_color_catalog(db: AsyncSession) -> list[ColorCatalogEntry]:
 
 def _resolve_color(
     catalog: list[ColorCatalogEntry], brand: str | None, color_name: str | None, material: str | None
-) -> tuple[str, str | None, str | None] | None:
+) -> tuple[str, str | None, str | None, bool] | None:
     """Match brand + color_name against the preloaded catalog (case-insensitive).
 
-    Returns (rgba, extra_colors, effect_type) on a match, else None. Prefers an
-    entry whose material matches; falls back to any material. Pulls
-    extra_colors/effect_type too so multi-colour and effect spools resolve fully
-    from a brand + name pair.
+    Returns (rgba, extra_colors, effect_type, cross_material) on a match, else
+    None. Prefers an entry whose material matches; if none does it falls back to
+    another material's entry and sets cross_material=True so the caller can warn
+    that the colour came from a different material's variant.
     """
     if not brand or not color_name:
         return None
@@ -180,16 +194,15 @@ def _resolve_color(
     ]
     if not matches:
         return None
-    # Prefer a material-specific entry; fall back to the first of any material.
-    row = next(
-        (e for e in matches if material_l and e.material and e.material.lower() == material_l),
-        matches[0],
-    )
+
+    exact = next((e for e in matches if material_l and e.material and e.material.lower() == material_l), None)
+    row = exact if exact is not None else matches[0]
+    cross_material = exact is None
 
     rgba = _normalize_rgba(row.hex_color)
     if rgba is None:
         return None
-    return rgba, row.extra_colors, row.effect_type
+    return rgba, row.extra_colors, row.effect_type, cross_material
 
 
 def _readable_validation_error(exc: ValidationError) -> str:
@@ -318,6 +331,18 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
                         row_error = f"{field} must be a number (got '{value}')"
                         break
 
+        # Bounds check: weight_used must be within [0, label_weight]. The schema
+        # accepts any float, so a negative or over-full value would otherwise be
+        # imported silently. label_weight falls back to the schema default when
+        # the CSV omits it.
+        if row_error is None and "weight_used" in data:
+            used = data["weight_used"]
+            label = data.get("label_weight", 1000)
+            if used < 0:
+                row_error = f"weight_used cannot be negative (got {used})"
+            elif used > label:
+                row_error = f"weight_used ({used}) exceeds label_weight ({label})"
+
         # `last_used` is an ORM-only timestamp (not on SpoolCreate); parse it
         # here and apply it to the validated dict after the SpoolCreate gate.
         last_used: datetime | None = None
@@ -329,6 +354,7 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
                     row_error = f"last_used must be an ISO date/time (got '{last_used_cell}')"
 
         resolved_color = False
+        cross_material_color = False
         if row_error is None:
             # Colour precedence: explicit rgba wins; else resolve brand+name
             # from the catalog; else leave blank.
@@ -342,7 +368,7 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
             else:
                 resolved = _resolve_color(catalog, brand, color_name, material)
                 if resolved is not None:
-                    rgba_val, extra_val, effect_val = resolved
+                    rgba_val, extra_val, effect_val, cross_material_color = resolved
                     data["rgba"] = rgba_val
                     # CSV-supplied extra_colors/effect_type take precedence over
                     # the catalog's; only fill from catalog when absent.
@@ -399,6 +425,7 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
                 color_name=color_name,
                 rgba=spool.rgba,
                 resolved_color=resolved_color,
+                cross_material_color=cross_material_color,
                 spool=spool_data,
             )
         )
@@ -427,8 +454,20 @@ def serialize(spools: list[Spool]) -> bytes:
     writer = csv.writer(output)
     writer.writerow(CSV_COLUMNS)
     for spool in spools:
-        writer.writerow([_cell_value(spool, col) for col in CSV_COLUMNS])
+        writer.writerow([_sanitize_cell(_cell_value(spool, col)) for col in CSV_COLUMNS])
     return output.getvalue().encode("utf-8")
+
+
+def _sanitize_cell(value: str) -> str:
+    """Neutralise spreadsheet formula injection.
+
+    A free-text field (note, color_name) starting with =, +, -, @, tab, or CR
+    is evaluated as a formula by Excel/Sheets/LibreOffice when the CSV is
+    opened. Prefixing with a single quote forces it to render as literal text.
+    """
+    if value and value[0] in _FORMULA_INJECTION_PREFIXES:
+        return "'" + value
+    return value
 
 
 def _cell_value(spool: Spool, col: str) -> str:

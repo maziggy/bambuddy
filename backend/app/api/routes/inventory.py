@@ -39,6 +39,7 @@ from backend.app.schemas.spool import (
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
 from backend.app.services.spool_csv import (
+    MAX_CSV_IMPORT_BYTES,
     ImportPreview,
     ImportResult,
     parse_and_validate,
@@ -969,14 +970,20 @@ async def export_spools_csv(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ):
     """Export the active inventory as CSV (same schema the importer accepts)."""
+    from datetime import datetime, timezone
+
     query = select(Spool).where(Spool.archived_at.is_(None)).order_by(Spool.material, Spool.brand, Spool.color_name)
     result = await db.execute(query)
     spools = list(result.scalars().all())
     content = serialize(spools)
+    # Date-stamp the filename so repeat exports don't overwrite each other in
+    # the browser's default download folder.
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    filename = f"bambuddy_inventory_{stamp}.csv"
     return Response(
         content=content,
         media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="bambuddy_inventory.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -995,7 +1002,27 @@ async def import_spools_csv(
     only the valid rows in a single transaction (invalid rows are skipped, the
     user fixes the CSV and re-uploads), returning an ImportResult summary.
     """
+    # Cap the upload before reading it all into memory — a CSV inventory is
+    # tiny, so anything past a few MB is either a mistake or an OOM attempt.
+    if file.size is not None and file.size > MAX_CSV_IMPORT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "code": "csv_import_too_large",
+                "message": f"CSV file exceeds the {MAX_CSV_IMPORT_BYTES // (1024 * 1024)} MB limit.",
+            },
+        )
     raw = await file.read()
+    # file.size can be None for chunked uploads with no Content-Length; the
+    # read above is bounded by the same cap.
+    if len(raw) > MAX_CSV_IMPORT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "code": "csv_import_too_large",
+                "message": f"CSV file exceeds the {MAX_CSV_IMPORT_BYTES // (1024 * 1024)} MB limit.",
+            },
+        )
     preview = await parse_and_validate(raw, db)
 
     if dry_run:

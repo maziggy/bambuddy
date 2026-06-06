@@ -1124,24 +1124,28 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           <p className="text-bambu-gray mt-1">{t('inventory.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* CSV import/export (#1576). Local inventory only — Spoolman has
-              its own data store, so these are hidden in Spoolman mode. */}
-          {!spoolmanMode && (
-            <>
-              <Button variant="secondary" onClick={() => setCsvImportOpen(true)}>
-                <Upload className="w-4 h-4" />
-                {t('inventory.csv.importButton', 'Import CSV')}
-              </Button>
-              <Button
-                variant="secondary"
-                disabled={exportingCsv}
-                onClick={handleExportCsv}
-              >
-                {exportingCsv ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                {t('inventory.csv.exportButton', 'Export CSV')}
-              </Button>
-            </>
-          )}
+          {/* CSV import/export (#1576). Operates on Bambuddy's local inventory.
+              In Spoolman mode the buttons stay visible (feature parity) but are
+              disabled with a hint pointing at Spoolman's own CSV export, since
+              Spoolman owns the data store in that mode. */}
+          <Button
+            variant="secondary"
+            disabled={spoolmanMode}
+            onClick={() => setCsvImportOpen(true)}
+            title={spoolmanMode ? t('inventory.csv.spoolmanHint', 'In Spoolman mode, use Spoolman\'s built-in CSV import/export.') : undefined}
+          >
+            <Upload className="w-4 h-4" />
+            {t('inventory.csv.importButton', 'Import CSV')}
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={spoolmanMode || exportingCsv}
+            onClick={handleExportCsv}
+            title={spoolmanMode ? t('inventory.csv.spoolmanHint', 'In Spoolman mode, use Spoolman\'s built-in CSV import/export.') : undefined}
+          >
+            {exportingCsv ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            {t('inventory.csv.exportButton', 'Export CSV')}
+          </Button>
           <Button
             variant="secondary"
             disabled={filteredSpools.length === 0}

@@ -3679,6 +3679,8 @@ export default {
       colStatus: 'Status',
       colColor: 'Cor',
       colorResolved: 'Cor preenchida pelo catálogo',
+      colorCrossMaterial: 'Cor obtida de um material diferente — sem correspondência exata no catálogo',
+      spoolmanHint: 'No modo Spoolman, use a importação/exportação CSV integrada do Spoolman.',
       importValidRows: 'Importar {{count}} linhas válidas',
       noValidRows: 'Nenhuma linha válida',
       importing: 'Importando…',

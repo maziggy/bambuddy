@@ -193,7 +193,11 @@ async function uploadSpoolsCsv<T>(file: File, dryRun: boolean): Promise<T> {
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `HTTP ${response.status}`);
+    // detail may be a plain string or a structured {code, message} object
+    // (e.g. the 413 too-large response). Surface the human message either way.
+    const detail = error?.detail;
+    const message = typeof detail === 'string' ? detail : detail?.message;
+    throw new Error(message || `HTTP ${response.status}`);
   }
   return response.json();
 }
@@ -2653,6 +2657,9 @@ export interface CsvImportRow {
   rgba: string | null;
   /** rgba/extra_colors/effect_type were filled from the Color Catalog. */
   resolved_color: boolean;
+  /** The catalog match came from a different material's variant (no exact
+   *  material match). Shown as a warning in the preview. */
+  cross_material_color: boolean;
 }
 
 /** Dry-run preview: per-row classification, no rows written. */

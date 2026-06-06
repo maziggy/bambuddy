@@ -184,6 +184,98 @@ class TestInventoryCsvColorResolution:
         assert row["rgba"] == "123456ff"
         assert row["resolved_color"] is False
 
+    async def test_cross_material_fallback_is_flagged(self, async_client: AsyncClient, db_session: AsyncSession):
+        # Catalog only has a PLA variant of this colour; a PETG row resolves it
+        # via cross-material fallback and must be flagged.
+        db_session.add(
+            ColorCatalogEntry(manufacturer="Polymaker", color_name="Jade White", hex_color="#E8E8E8", material="PLA")
+        )
+        await db_session.commit()
+
+        csv_text = "material,brand,color_name\nPETG,Polymaker,Jade White\n"
+
+        response = await async_client.post("/api/v1/inventory/spools/import?dry_run=true", files=_csv_upload(csv_text))
+
+        assert response.status_code == 200, response.text
+        row = response.json()["rows"][0]
+        assert row["resolved_color"] is True
+        assert row["cross_material_color"] is True
+        assert row["rgba"] == "e8e8e8ff"
+
+    async def test_exact_material_match_not_flagged(self, async_client: AsyncClient, db_session: AsyncSession):
+        db_session.add(
+            ColorCatalogEntry(manufacturer="Polymaker", color_name="Jade White", hex_color="#E8E8E8", material="PETG")
+        )
+        await db_session.commit()
+
+        csv_text = "material,brand,color_name\nPETG,Polymaker,Jade White\n"
+
+        response = await async_client.post("/api/v1/inventory/spools/import?dry_run=true", files=_csv_upload(csv_text))
+
+        assert response.status_code == 200, response.text
+        row = response.json()["rows"][0]
+        assert row["resolved_color"] is True
+        assert row["cross_material_color"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestInventoryCsvReviewFollowups:
+    """Covers the maintainer-requested hardening (PR #1659 review)."""
+
+    async def test_oversized_upload_rejected_413(self, async_client: AsyncClient):
+        # Build a body just over the 5 MB cap.
+        from backend.app.services.spool_csv import MAX_CSV_IMPORT_BYTES
+
+        header = "material\n"
+        filler = "PLA\n" * ((MAX_CSV_IMPORT_BYTES // 4) + 10)
+        big = header + filler
+
+        response = await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(big))
+
+        assert response.status_code == 413, response.text
+        detail = response.json()["detail"]
+        assert detail["code"] == "csv_import_too_large"
+
+    async def test_weight_used_negative_is_error(self, async_client: AsyncClient):
+        csv_text = "material,color_name,rgba,weight_used\nPLA,X,ffffffff,-5\n"
+
+        response = await async_client.post("/api/v1/inventory/spools/import?dry_run=true", files=_csv_upload(csv_text))
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["error_count"] == 1
+        assert "weight_used" in data["rows"][0]["reason"]
+
+    async def test_weight_used_exceeds_label_is_error(self, async_client: AsyncClient):
+        csv_text = "material,color_name,rgba,label_weight,weight_used\nPLA,X,ffffffff,1000,1500\n"
+
+        response = await async_client.post("/api/v1/inventory/spools/import?dry_run=true", files=_csv_upload(csv_text))
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["error_count"] == 1
+        assert "exceeds" in data["rows"][0]["reason"]
+
+    async def test_export_neutralises_formula_injection(self, async_client: AsyncClient, db_session: AsyncSession):
+        # A note starting with '=' must be prefixed with a quote on export so
+        # spreadsheets don't evaluate it as a formula.
+        db_session.add(Spool(material="PLA", color_name="X", rgba="ffffffff", note="=SUM(A1:A9)"))
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/inventory/spools/export")
+
+        assert response.status_code == 200, response.text
+        assert "'=SUM(A1:A9)" in response.text
+
+    async def test_export_filename_is_date_stamped(self, async_client: AsyncClient):
+        response = await async_client.get("/api/v1/inventory/spools/export")
+
+        assert response.status_code == 200, response.text
+        disposition = response.headers.get("content-disposition", "")
+        assert "bambuddy_inventory_" in disposition
+        assert disposition.rstrip('"').endswith(".csv")
+
 
 @pytest.mark.asyncio
 @pytest.mark.integration

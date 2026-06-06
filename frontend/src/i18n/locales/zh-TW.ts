@@ -3679,6 +3679,8 @@ export default {
       colStatus: '狀態',
       colColor: '顏色',
       colorResolved: '已從目錄填入顏色',
+      colorCrossMaterial: '顏色取自其他材料 — 目錄中無精確匹配',
+      spoolmanHint: '在 Spoolman 模式下，請使用 Spoolman 內建的 CSV 匯入/匯出。',
       importValidRows: '匯入 {{count}} 個有效列',
       noValidRows: '沒有有效列',
       importing: '正在匯入…',

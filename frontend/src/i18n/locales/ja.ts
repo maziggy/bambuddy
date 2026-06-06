@@ -3691,6 +3691,8 @@ export default {
       colStatus: 'ステータス',
       colColor: '色',
       colorResolved: 'カタログから色を補完',
+      colorCrossMaterial: '別の素材から色を取得しました — カタログに完全一致なし',
+      spoolmanHint: 'Spoolmanモードでは、Spoolman内蔵のCSVインポート/エクスポートを使用してください。',
       importValidRows: '有効な{{count}}行をインポート',
       noValidRows: '有効な行がありません',
       importing: 'インポート中…',

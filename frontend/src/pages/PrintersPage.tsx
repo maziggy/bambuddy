@@ -3257,20 +3257,19 @@ function PrinterCard({
                       <NozzleRackCard slots={status.nozzle_rack} filamentInfo={filamentInfo} />
                     )}
                   </div>
-                  <div className="mt-2 flex items-stretch gap-1.5">
+                  <div className="mt-2 flex items-center gap-1.5">
                     {fanItems.map(({ key, label, value, Icon, activeClass }) => {
                       const active = value > 0;
                       return (
                         <div
                           key={key}
-                          className="text-center px-2 py-1 bg-bambu-dark rounded-lg flex-1 min-w-0 flex flex-col justify-center items-center"
+                          className="px-2 py-1 bg-bambu-dark rounded-lg flex-1 min-w-0 flex items-center justify-center gap-1"
                           title={label}
                         >
-                          <Icon className={`w-3 h-3 mb-0.5 ${active ? activeClass : 'text-bambu-gray/50'}`} />
-                          <p className="text-[8px] text-bambu-gray truncate max-w-full">{label}</p>
-                          <p className={`text-[10px] leading-tight ${active ? 'text-white' : 'text-bambu-gray/50'}`}>
+                          <Icon className={`w-3 h-3 shrink-0 ${active ? activeClass : 'text-bambu-gray/50'}`} />
+                          <span className={`text-[10px] leading-none ${active ? 'text-white' : 'text-bambu-gray/50'}`}>
                             {value}%
-                          </p>
+                          </span>
                         </div>
                       );
                     })}

@@ -547,6 +547,11 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     }
   }, [showToast, t]);
 
+  // Shown as the tooltip on both CSV buttons when they're disabled in Spoolman mode.
+  const spoolmanCsvHint = spoolmanMode
+    ? t('inventory.csv.spoolmanHint', 'In Spoolman mode, use Spoolman\'s built-in CSV import/export.')
+    : undefined;
+
   // Deep-link: open edit modal for ?spool=<id>
   // Prefer the already-loaded spool list (no extra API call); fall back to a
   // targeted fetch for the rare case where the full list hasn't arrived yet.
@@ -1132,7 +1137,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
             variant="secondary"
             disabled={spoolmanMode}
             onClick={() => setCsvImportOpen(true)}
-            title={spoolmanMode ? t('inventory.csv.spoolmanHint', 'In Spoolman mode, use Spoolman\'s built-in CSV import/export.') : undefined}
+            title={spoolmanCsvHint}
           >
             <Upload className="w-4 h-4" />
             {t('inventory.csv.importButton', 'Import CSV')}
@@ -1141,7 +1146,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
             variant="secondary"
             disabled={spoolmanMode || exportingCsv}
             onClick={handleExportCsv}
-            title={spoolmanMode ? t('inventory.csv.spoolmanHint', 'In Spoolman mode, use Spoolman\'s built-in CSV import/export.') : undefined}
+            title={spoolmanCsvHint}
           >
             {exportingCsv ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             {t('inventory.csv.exportButton', 'Export CSV')}

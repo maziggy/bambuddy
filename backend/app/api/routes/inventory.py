@@ -978,8 +978,7 @@ async def export_spools_csv(
     content = serialize(spools)
     # Date-stamp the filename so repeat exports don't overwrite each other in
     # the browser's default download folder.
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
-    filename = f"bambuddy_inventory_{stamp}.csv"
+    filename = f"bambuddy_inventory_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
     return Response(
         content=content,
         media_type="text/csv",
@@ -1002,27 +1001,24 @@ async def import_spools_csv(
     only the valid rows in a single transaction (invalid rows are skipped, the
     user fixes the CSV and re-uploads), returning an ImportResult summary.
     """
-    # Cap the upload before reading it all into memory — a CSV inventory is
-    # tiny, so anything past a few MB is either a mistake or an OOM attempt.
+
+    def _too_large() -> HTTPException:
+        return HTTPException(
+            status_code=413,
+            detail={
+                "code": "csv_import_too_large",
+                "message": f"CSV file exceeds the {MAX_CSV_IMPORT_BYTES // (1024 * 1024)} MB limit.",
+            },
+        )
+
+    # Reject by declared size before reading the body into memory; then re-check
+    # the actual length, since file.size is None for chunked uploads with no
+    # Content-Length.
     if file.size is not None and file.size > MAX_CSV_IMPORT_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail={
-                "code": "csv_import_too_large",
-                "message": f"CSV file exceeds the {MAX_CSV_IMPORT_BYTES // (1024 * 1024)} MB limit.",
-            },
-        )
+        raise _too_large()
     raw = await file.read()
-    # file.size can be None for chunked uploads with no Content-Length; the
-    # read above is bounded by the same cap.
     if len(raw) > MAX_CSV_IMPORT_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail={
-                "code": "csv_import_too_large",
-                "message": f"CSV file exceeds the {MAX_CSV_IMPORT_BYTES // (1024 * 1024)} MB limit.",
-            },
-        )
+        raise _too_large()
     preview = await parse_and_validate(raw, db)
 
     if dry_run:

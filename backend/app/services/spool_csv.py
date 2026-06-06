@@ -67,6 +67,10 @@ _FORMULA_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 _INT_COLUMNS = {"label_weight", "nozzle_temp_min", "nozzle_temp_max"}
 _FLOAT_COLUMNS = {"cost_per_kg", "weight_used"}
 
+# label_weight default, pulled from the schema so the weight_used bounds check
+# stays in sync if the schema default ever changes.
+_DEFAULT_LABEL_WEIGHT = SpoolCreate.model_fields["label_weight"].default
+
 
 class ImportRowResult(BaseModel):
     """Per-row outcome of a parse+validate pass.
@@ -196,7 +200,7 @@ def _resolve_color(
         return None
 
     exact = next((e for e in matches if material_l and e.material and e.material.lower() == material_l), None)
-    row = exact if exact is not None else matches[0]
+    row = exact or matches[0]
     cross_material = exact is None
 
     rgba = _normalize_rgba(row.hex_color)
@@ -269,7 +273,9 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
         idx = col_index.get(field)
         if idx is None or idx >= len(row):
             return ""
-        return row[idx].strip()
+        # Strip whitespace, then undo any export-side formula-injection quoting
+        # so export → import round-trips without accumulating a leading quote.
+        return _desanitize_cell(row[idx].strip())
 
     rows: list[ImportRowResult] = []
     valid = error = skipped = 0
@@ -337,7 +343,7 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
         # the CSV omits it.
         if row_error is None and "weight_used" in data:
             used = data["weight_used"]
-            label = data.get("label_weight", 1000)
+            label = data.get("label_weight", _DEFAULT_LABEL_WEIGHT)
             if used < 0:
                 row_error = f"weight_used cannot be negative (got {used})"
             elif used > label:
@@ -464,9 +470,25 @@ def _sanitize_cell(value: str) -> str:
     A free-text field (note, color_name) starting with =, +, -, @, tab, or CR
     is evaluated as a formula by Excel/Sheets/LibreOffice when the CSV is
     opened. Prefixing with a single quote forces it to render as literal text.
+    `_desanitize_cell` is the exact inverse, applied on import.
     """
     if value and value[0] in _FORMULA_INJECTION_PREFIXES:
         return "'" + value
+    return value
+
+
+def _desanitize_cell(value: str) -> str:
+    """Undo `_sanitize_cell` on import so the round-trip is lossless.
+
+    Export prefixes formula-looking cells with a single quote; strip exactly
+    that quote back off when the next character is one of the guarded prefixes,
+    so `'=SUM(A1)` reads back as `=SUM(A1)` and the value doesn't accumulate a
+    leading quote on every export→import cycle. A quote followed by anything
+    else is left untouched — only the prefix `_sanitize_cell` could have added
+    is removed.
+    """
+    if len(value) >= 2 and value[0] == "'" and value[1] in _FORMULA_INJECTION_PREFIXES:
+        return value[1:]
     return value
 
 

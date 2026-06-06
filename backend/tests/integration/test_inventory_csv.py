@@ -268,6 +268,33 @@ class TestInventoryCsvReviewFollowups:
         assert response.status_code == 200, response.text
         assert "'=SUM(A1:A9)" in response.text
 
+    async def test_formula_injection_round_trips_without_quote_accumulation(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        # The export quote-guard must be undone on import so a formula-looking
+        # note survives export → import unchanged (no accumulating leading ').
+        db_session.add(Spool(material="PLA", color_name="X", rgba="ffffffff", note="=SUM(A1)"))
+        await db_session.commit()
+
+        export = await async_client.get("/api/v1/inventory/spools/export")
+        assert export.status_code == 200, export.text
+        assert "'=SUM(A1)" in export.text  # guarded on export
+
+        # Wipe, re-import the exact export, and confirm the note is restored
+        # to its original value (not "'=SUM(A1)").
+        existing = await db_session.execute(select(Spool))
+        for spool in existing.scalars().all():
+            await db_session.delete(spool)
+        await db_session.commit()
+
+        response = await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(export.text))
+        assert response.status_code == 200, response.text
+        assert response.json()["created"] == 1
+
+        result = await db_session.execute(select(Spool))
+        spool = result.scalars().one()
+        assert spool.note == "=SUM(A1)"  # original value, no leading quote
+
     async def test_export_filename_is_date_stamped(self, async_client: AsyncClient):
         response = await async_client.get("/api/v1/inventory/spools/export")
 

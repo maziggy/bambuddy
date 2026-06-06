@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.core.config import settings
 from backend.app.core.database import async_session, run_with_retry
+from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
@@ -1762,13 +1763,21 @@ class PrintScheduler:
         return False
 
     async def _check_previous_success(self, db: AsyncSession, item: PrintQueueItem) -> bool:
-        """Check if the previous print on this printer succeeded."""
-        # Find the most recent completed queue item for this printer
+        """Check if the previous print on this printer succeeded.
+
+        A user-cancelled predecessor is treated as neutral — `cancelled` is a
+        deliberate action, not a failure, so subsequent items should still
+        dispatch (#1667). `skipped` is excluded from the lookback entirely:
+        a skip isn't an actual print attempt, so it must not gate downstream
+        items — counting it as a failed predecessor was the cascade bug that
+        let a single cancellation block 18 items over 3 days for the reporter.
+        Only `failed` and `aborted` — real print-attempt failures — block.
+        """
         result = await db.execute(
             select(PrintQueueItem)
             .where(PrintQueueItem.printer_id == item.printer_id)
             .where(PrintQueueItem.id != item.id)
-            .where(PrintQueueItem.status.in_(["completed", "failed", "skipped", "aborted"]))
+            .where(PrintQueueItem.status.in_(["completed", "failed", "cancelled", "aborted"]))
             .order_by(PrintQueueItem.completed_at.desc())
             .limit(1)
         )
@@ -1778,7 +1787,7 @@ class PrintScheduler:
         if not prev_item:
             return True
 
-        return prev_item.status == "completed"
+        return prev_item.status in ("completed", "cancelled")
 
     async def _power_off_if_needed(self, db: AsyncSession, item: PrintQueueItem):
         """Power off printer if auto_off_after is enabled (waits for cooldown)."""
@@ -2196,14 +2205,15 @@ class PrintScheduler:
             # that would otherwise cause the item to re-dispatch as a reprint
             # of the just-finished job (#1078).
             if pre_state:
-                asyncio.create_task(
+                spawn_background_task(
                     self._watchdog_print_start(
                         item.id,
                         item.printer_id,
                         pre_state,
                         pre_subtask_id,
                         pre_gcode_file,
-                    )
+                    ),
+                    name=f"watchdog-print-start-{item.id}",
                 )
 
             # Get estimated time for notification

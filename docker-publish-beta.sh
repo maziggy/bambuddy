@@ -43,10 +43,14 @@ NC='\033[0m' # No Color
 # Parse arguments
 VERSION=""
 PARALLEL=false
+SKIP_SIDECARS=false
 for arg in "$@"; do
     case $arg in
         --parallel)
             PARALLEL=true
+            ;;
+        --skip-sidecars)
+            SKIP_SIDECARS=true
             ;;
         *)
             if [ -z "$VERSION" ]; then
@@ -191,3 +195,23 @@ echo "  docker pull ${GHCR_IMAGE}:${VERSION}"
 echo "  docker pull ${GHCR_IMAGE}:beta"
 echo ""
 echo -e "${YELLOW}Reminder: Set package to Private in GitHub → Packages → Settings${NC}"
+
+# ============================================================
+# Sidecar images (orca-slicer-api + bambu-studio-api) — beta channel = GHCR private
+# ============================================================
+SIDECAR_SCRIPT="/opt/claude/projects/orca-slicer-api/docker-publish-sidecars.sh"
+if [ "$SKIP_SIDECARS" = true ]; then
+    echo ""
+    echo -e "${YELLOW}Skipping sidecar images (--skip-sidecars).${NC}"
+elif [ ! -x "$SIDECAR_SCRIPT" ]; then
+    echo ""
+    echo -e "${YELLOW}Sidecar helper not found at ${SIDECAR_SCRIPT} — skipping sidecar build.${NC}"
+else
+    echo ""
+    echo -e "${GREEN}================================================${NC}"
+    echo -e "${GREEN}  Publishing sidecar images (beta channel)${NC}"
+    echo -e "${GREEN}================================================${NC}"
+    SIDECAR_ARGS="--channel beta --version ${VERSION}"
+    [ "$PARALLEL" = true ] && SIDECAR_ARGS="$SIDECAR_ARGS --parallel"
+    "$SIDECAR_SCRIPT" $SIDECAR_ARGS
+fi

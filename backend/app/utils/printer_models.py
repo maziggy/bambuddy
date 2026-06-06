@@ -15,6 +15,9 @@ PRINTER_MODEL_MAP = {
     "Bambu Lab A1": "A1",
     "Bambu Lab A1 Mini": "A1 Mini",
     "Bambu Lab A1 mini": "A1 Mini",
+    # Bambu cloud rolled out a terse model-code rename mid-2026 (#1649);
+    # 3MFs prepared with newer cloud presets may carry this short form.
+    "Bambu Lab A1M": "A1 Mini",
     "Bambu Lab H2D": "H2D",
     "Bambu Lab H2D Pro": "H2D Pro",
     "Bambu Lab H2C": "H2C",

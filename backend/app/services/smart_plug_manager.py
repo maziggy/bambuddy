@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.tasks import spawn_background_task
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.rest_smart_plug import rest_smart_plug_service
@@ -340,7 +341,7 @@ class SmartPlugManager:
         logger.info("Scheduling turn-off for plug '%s' in %s seconds", plug.name, delay_seconds)
 
         # Mark as pending in database (survives restarts)
-        asyncio.create_task(self._mark_auto_off_pending(plug.id, True))
+        spawn_background_task(self._mark_auto_off_pending(plug.id, True), name=f"plug-auto-off-pending-{plug.id}")
 
         task = asyncio.create_task(
             self._delayed_off(
@@ -419,7 +420,7 @@ class SmartPlugManager:
         logger.info("Scheduling temperature-based turn-off for plug '%s' (threshold: %s°C)", plug.name, temp_threshold)
 
         # Mark as pending in database (survives restarts)
-        asyncio.create_task(self._mark_auto_off_pending(plug.id, True))
+        spawn_background_task(self._mark_auto_off_pending(plug.id, True), name=f"plug-auto-off-pending-{plug.id}")
 
         task = asyncio.create_task(
             self._temp_based_off(
@@ -579,7 +580,7 @@ class SmartPlugManager:
             self._pending_off[plug_id].cancel()
             del self._pending_off[plug_id]
             # Clear pending state in database
-            asyncio.create_task(self._mark_auto_off_pending(plug_id, False))
+            spawn_background_task(self._mark_auto_off_pending(plug_id, False), name=f"plug-auto-off-pending-{plug_id}")
 
     def cancel_all_pending(self):
         """Cancel all pending turn-off tasks."""

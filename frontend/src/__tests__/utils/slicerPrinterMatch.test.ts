@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildCompatibilityIndex,
+  matchesPrinterModelSuffix,
   presetCompatibility,
   EMPTY_COMPATIBILITY_INDEX,
   type CompatibilityBundle,
@@ -422,6 +423,66 @@ describe('presetCompatibility — nozzle filtering on @BBL name fallback', () =>
   it('flags 0.4 process on 0.8 printer (sanity check across the third common size)', () => {
     expect(
       presetCompatibility({ name: '0.20mm Standard @BBL X1C' }, 'process', X1C_08, index),
+    ).toBe('mismatch');
+  });
+});
+
+describe('matchesPrinterModelSuffix (#1649)', () => {
+  it('matches the canonical short code against itself', () => {
+    expect(matchesPrinterModelSuffix('X1C', 'X1C')).toBe(true);
+  });
+
+  it('is case-insensitive on both sides', () => {
+    expect(matchesPrinterModelSuffix('x1c', 'X1C')).toBe(true);
+    expect(matchesPrinterModelSuffix('a1 mini', 'A1 Mini')).toBe(true);
+  });
+
+  it('matches Bambu cloud rename A1M against the long form A1 Mini', () => {
+    expect(matchesPrinterModelSuffix('A1M', 'A1 Mini')).toBe(true);
+  });
+
+  it('matches the long form A1 Mini against the short Bambu cloud code A1M', () => {
+    expect(matchesPrinterModelSuffix('A1 Mini', 'A1M')).toBe(true);
+  });
+
+  it('does NOT match A1M against A1 (different printer, must not collapse)', () => {
+    expect(matchesPrinterModelSuffix('A1M', 'A1')).toBe(false);
+  });
+
+  it('does NOT match A1 against A1 Mini', () => {
+    expect(matchesPrinterModelSuffix('A1', 'A1 Mini')).toBe(false);
+  });
+
+  it('does NOT match unrelated models', () => {
+    expect(matchesPrinterModelSuffix('X1C', 'P1S')).toBe(false);
+  });
+});
+
+describe('presetCompatibility with Bambu cloud A1M rename (#1649)', () => {
+  const A1_MINI = 'Bambu Lab A1 mini 0.4 nozzle';
+  const A1 = 'Bambu Lab A1 0.4 nozzle';
+  const idx = buildCompatibilityIndex([], PRINTER_MODELS);
+
+  it('matches a cloud preset using the new @BBL A1M suffix against an A1 Mini printer', () => {
+    // The slicer-mirrored case: technopaw's report — A1 Mini cloud presets
+    // newly ship as "Bambu PLA Basic @BBL A1M ..." and used to be filtered
+    // out by the model check that compared "A1M" vs "A1 mini" verbatim.
+    expect(
+      presetCompatibility({ name: 'Bambu PLA Basic @BBL A1M' }, 'filament', A1_MINI, idx),
+    ).toBe('match');
+  });
+
+  it('matches a 0.4-nozzle process with @BBL A1M against an A1 Mini printer', () => {
+    expect(
+      presetCompatibility({ name: '0.20mm Standard @BBL A1M' }, 'process', A1_MINI, idx),
+    ).toBe('match');
+  });
+
+  it('does NOT match @BBL A1M against an A1 (non-mini) printer', () => {
+    // The alias must not collapse two physically different printers — A1
+    // and A1 Mini ship distinct profile sets.
+    expect(
+      presetCompatibility({ name: '0.20mm Standard @BBL A1M' }, 'process', A1, idx),
     ).toBe('mismatch');
   });
 });

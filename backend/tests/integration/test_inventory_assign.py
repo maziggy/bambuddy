@@ -1141,3 +1141,137 @@ class TestAssignSpoolEmptyDetection:
         body = response.json()
         assert body["pending_config"] is False
         assert body["configured"] is True
+
+
+class TestAssignSpoolPfcnCloudPreset:
+    """Assign path for PFCN-prefix cloud presets (#1648).
+
+    PFCN is a third Bambu cloud preset shape alongside PFUS (cloud user-created)
+    and GFS (Bambu official) — used for cloud-shared / partner-uploaded
+    presets like Polymaker's "(Custom)" Bambu Lab H2D variants. Before #1648
+    the assign path skipped the cloud-detail lookup and left the raw PFCN
+    string in tray_info_idx, which the printer's calibration table can't
+    resolve. ConfigureAmsSlotModal rescued each assignment by doing the lookup
+    itself, making "Configure" feel like a mandatory follow-up step.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_pfcn_falls_back_to_generic_when_cloud_unavailable(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        """When cloud auth isn't available (e.g. user not logged into Bambu Cloud),
+        the raw PFCN must be discarded as slicer-invalid and the slot configures
+        with the spool's generic material id (PLA → GFL99). Pre-fix behaviour
+        was to leak the raw PFCN, which the slicer can't resolve."""
+        printer = await printer_factory(name="H2D")
+        spool = await spool_factory(slicer_filament="PFCN80e80c1f79db85", material="PLA")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+
+        status = _make_mock_status(ams_data=[{"id": 2, "tray": [{"id": 3, "tray_info_idx": "", "tray_type": "PLA"}]}])
+
+        with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = status
+
+            response = await async_client.post(
+                "/api/v1/inventory/assignments",
+                json={"spool_id": spool.id, "printer_id": printer.id, "ams_id": 2, "tray_id": 3},
+            )
+
+            assert response.status_code == 200
+            call_kwargs = mock_client.ams_set_filament_setting.call_args
+            # PFCN never leaks into tray_info_idx — must resolve to the
+            # generic-material fallback when cloud lookup couldn't.
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFL99"
+            assert not call_kwargs.kwargs["tray_info_idx"].startswith("PFCN")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_pfcn_spool_reuses_valid_slot_preset(self, async_client: AsyncClient, printer_factory, spool_factory):
+        """Symmetry with the PFUS case: when the spool's PFCN is discarded as
+        slicer-invalid, the slot's existing valid P-prefix preset is reused
+        if material matches — preserves calibration context instead of
+        resetting to generic."""
+        printer = await printer_factory(name="H2D")
+        spool = await spool_factory(slicer_filament="PFCN80e80c1f79db85", material="PLA")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+
+        status = _make_mock_status(
+            ams_data=[{"id": 2, "tray": [{"id": 3, "tray_info_idx": "P4d64437", "tray_type": "PLA"}]}]
+        )
+
+        with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = status
+
+            response = await async_client.post(
+                "/api/v1/inventory/assignments",
+                json={"spool_id": spool.id, "printer_id": printer.id, "ams_id": 2, "tray_id": 3},
+            )
+
+            assert response.status_code == 200
+            call_kwargs = mock_client.ams_set_filament_setting.call_args
+            assert call_kwargs.kwargs["tray_info_idx"] == "P4d64437"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_pfcn_resolves_to_filament_id_via_cloud_lookup(
+        self, async_client: AsyncClient, printer_factory, spool_factory
+    ):
+        """When the user is authenticated against Bambu Cloud, the PFCN setting_id
+        triggers the same cloud-detail lookup as PFUS / GFS — extracts the real
+        filament_id from `detail["filament_id"]` and ships that as
+        tray_info_idx. This is the happy path the Configure modal already had
+        but the assign path didn't, #1648."""
+        printer = await printer_factory(name="H2D")
+        spool = await spool_factory(slicer_filament="PFCN80e80c1f79db85", material="PLA")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+
+        status = _make_mock_status(ams_data=[{"id": 2, "tray": [{"id": 3, "tray_info_idx": "", "tray_type": "PLA"}]}])
+
+        # Cloud responds with a real filament_id for the PFCN preset — exactly
+        # what the Configure modal already exploits.
+        mock_cloud = MagicMock()
+        mock_cloud.is_authenticated = True
+
+        async def fake_get_detail(setting_id):
+            assert setting_id == "PFCN80e80c1f79db85"
+            return {"filament_id": "GFL05", "name": "Polymaker PLA Matte"}
+
+        async def fake_close():
+            return None
+
+        mock_cloud.get_setting_detail = fake_get_detail
+        mock_cloud.close = fake_close
+
+        async def fake_build_cloud(_db, _user):
+            return mock_cloud
+
+        with (
+            patch("backend.app.services.printer_manager.printer_manager") as mock_pm,
+            patch("backend.app.api.routes.cloud.build_authenticated_cloud", new=fake_build_cloud),
+        ):
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = status
+
+            response = await async_client.post(
+                "/api/v1/inventory/assignments",
+                json={"spool_id": spool.id, "printer_id": printer.id, "ams_id": 2, "tray_id": 3},
+            )
+
+            assert response.status_code == 200
+            call_kwargs = mock_client.ams_set_filament_setting.call_args
+            # tray_info_idx is the resolved cloud filament_id; setting_id is the
+            # original PFCN (which the slicer needs separately).
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFL05"
+            assert call_kwargs.kwargs["setting_id"] == "PFCN80e80c1f79db85"

@@ -207,6 +207,104 @@ class TestVirtualPrinterInstance:
         instance._mqtt.set_gcode_state.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_on_print_command_schedules_finish_release_non_proxy(self, instance):
+        """#1658: Bambu Studio 2.7.x flipped the slicer's Send flow to
+        FTP → FTP → MQTT project_file. Under that order the synthetic
+        project_file ack overwrites the FINISH set by #1280 in
+        ``on_file_received`` back to PREPARE, leaving the slicer's
+        "Downloading" modal stuck forever. Re-firing FINISH a moment after
+        the ack releases the modal.
+        """
+        instance.mode = "archive"
+        instance._mqtt = MagicMock()
+        instance._mqtt.set_gcode_state = MagicMock()
+
+        with patch.object(instance, "_delayed_finish_release", new_callable=AsyncMock) as mock_delayed:
+            await instance.on_print_command("test.3mf", {"command": "project_file"})
+
+        mock_delayed.assert_called_once()
+        # First positional arg should be the filename; second is the delay seconds.
+        args = mock_delayed.call_args.args
+        assert args[0] == "test.3mf"
+        assert isinstance(args[1], int | float)
+
+    @pytest.mark.asyncio
+    async def test_on_print_command_proxy_mode_does_not_reschedule_finish(self, instance):
+        """Proxy mode hands push_status straight from the real printer through
+        the bridge. Re-firing a synthetic FINISH would clobber a real
+        PREPARE / RUNNING transition coming back from the printer, so the
+        scheduler is exempt for proxy mode."""
+        instance.mode = "proxy"
+        instance._mqtt = MagicMock()
+
+        with patch.object(instance, "_delayed_finish_release", new_callable=AsyncMock) as mock_delayed:
+            await instance.on_print_command("test.3mf", {"command": "project_file"})
+
+        mock_delayed.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_print_command_no_mqtt_does_not_schedule(self, instance):
+        """If the MQTT server isn't running yet (transient race during boot),
+        the scheduler must skip silently — no AttributeError, no orphan task."""
+        instance.mode = "queue"
+        instance._mqtt = None
+
+        # Should not raise.
+        await instance.on_print_command("test.3mf", {"command": "project_file"})
+        assert instance._finish_release_task is None
+
+    @pytest.mark.asyncio
+    async def test_schedule_finish_release_cancels_previous_timer(self, instance):
+        """A slicer that fires project_file twice (e.g. retry after a transient
+        FTP hiccup) must only result in one FINISH transition — the earlier
+        in-flight timer is cancelled when the next one is scheduled."""
+        instance.mode = "queue"
+        instance._mqtt = MagicMock()
+
+        instance._schedule_finish_release("first.3mf", delay=10.0)
+        first_task = instance._finish_release_task
+        assert first_task is not None
+
+        instance._schedule_finish_release("second.3mf", delay=10.0)
+        second_task = instance._finish_release_task
+
+        assert second_task is not first_task
+        # Give the loop one tick so the cancelled task settles.
+        await asyncio.sleep(0)
+        assert first_task.cancelled() or first_task.done()
+        # Clean up the still-pending second task so the test doesn't leak it.
+        second_task.cancel()
+        try:
+            await second_task
+        except asyncio.CancelledError:
+            pass
+
+    @pytest.mark.asyncio
+    async def test_delayed_finish_release_sets_finish_state(self, instance):
+        """End-to-end: after the delay elapses, set_gcode_state is called with
+        FINISH and prepare_percent=100, matching the wire-format the slicer's
+        Print flow consumes to release "Downloading"."""
+        instance._mqtt = MagicMock()
+        instance._mqtt.set_gcode_state = MagicMock()
+
+        await instance._delayed_finish_release("queued.3mf", delay=0.0)
+
+        instance._mqtt.set_gcode_state.assert_called_once_with("FINISH", filename="queued.3mf", prepare_percent="100")
+
+    @pytest.mark.asyncio
+    async def test_on_print_command_no_filename_does_not_schedule(self, instance):
+        """A project_file command without a subtask_name (defensive — real
+        slicers always send one) must not schedule a no-op FINISH that would
+        carry an empty filename on the next 1 Hz push."""
+        instance.mode = "queue"
+        instance._mqtt = MagicMock()
+
+        with patch.object(instance, "_delayed_finish_release", new_callable=AsyncMock) as mock_delayed:
+            await instance.on_print_command("", {"command": "project_file"})
+
+        mock_delayed.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_archive_file_skips_non_3mf(self, instance):
         """Verify non-3MF files are skipped and cleaned up."""
         instance._session_factory = MagicMock()

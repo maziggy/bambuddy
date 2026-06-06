@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from backend.app.core.config import settings as app_settings
 from backend.app.models.virtual_printer import (
     VP_MODE_ARCHIVE,
+    VP_MODE_PROXY,
     VP_MODE_QUEUE,
     normalize_vp_mode,
 )
@@ -204,6 +205,10 @@ class VirtualPrinterInstance:
         self._ssdp_proxy: SSDPProxy | None = None
         self._tasks: list[asyncio.Task] = []
 
+        # Pending timer that re-fires gcode_state=FINISH after a project_file
+        # ack. See ``_schedule_finish_release`` for the #1658 rationale.
+        self._finish_release_task: asyncio.Task | None = None
+
     @property
     def serial(self) -> str:
         """Full serial number for this virtual printer."""
@@ -285,9 +290,17 @@ class VirtualPrinterInstance:
         modes ignore the print command, so we skip the stash there to keep
         the dict from accumulating one entry per print over the VP's
         uptime.
+
+        Also schedules the #1658 follow-up that re-fires gcode_state=FINISH a
+        moment after the synthetic project_file ack — for every non-proxy
+        mode — so the slicer's "Downloading" UI releases on the slicer's
+        FTP-first-then-MQTT send order.
         """
         logger.info("[VP %s] Print command for: %s", self.name, filename)
-        if normalize_vp_mode(self.mode) != VP_MODE_QUEUE:
+        mode = normalize_vp_mode(self.mode)
+        if mode != VP_MODE_PROXY and filename and self._mqtt is not None:
+            self._schedule_finish_release(filename)
+        if mode != VP_MODE_QUEUE:
             return
         # Drop the oldest stash if the cache is growing — happens when the
         # slicer sends project_file for a filename whose FTP upload was
@@ -306,6 +319,48 @@ class VirtualPrinterInstance:
         event = self._slicer_print_options_events.get(filename)
         if event:
             event.set()
+
+    def _schedule_finish_release(self, filename: str, delay: float = 1.5) -> None:
+        """Re-set gcode_state=FINISH on the VP after the project_file ack.
+
+        #1280 set FINISH after the FTP upload completes — that was correct
+        for the slicer flow at the time (MQTT project_file → FTP → done).
+        Bambu Studio 2.7.x flipped the order to FTP → FTP → MQTT project_file,
+        which means ``_send_print_response`` runs *after* the FINISH set in
+        ``on_file_received`` and overwrites the state back to PREPARE. The
+        slicer's 1 Hz status stream then carries PREPARE forever and the
+        send modal sits at "Downloading" until the VP is restarted (#1658).
+
+        Re-firing FINISH after a short delay closes the gap: the slicer sees
+        the synthetic PREPARE in the project_file ack (and likely one PREPARE
+        push on the 1 Hz cycle), then the next push carries FINISH and the
+        modal releases. Proxy mode is exempt — there the real printer drives
+        the state through the bridge and a synthetic FINISH would clobber a
+        real PREPARE/RUNNING transition coming back from the printer.
+
+        Cancels any in-flight timer before scheduling a new one so a slicer
+        that fires project_file twice in quick succession only ends in one
+        FINISH.
+        """
+        if self._mqtt is None:
+            return
+        if self._finish_release_task is not None and not self._finish_release_task.done():
+            self._finish_release_task.cancel()
+        self._finish_release_task = asyncio.create_task(
+            self._delayed_finish_release(filename, delay),
+            name=f"vp-{self.id}-finish-release",
+        )
+
+    async def _delayed_finish_release(self, filename: str, delay: float) -> None:
+        """Sleep, then set gcode_state=FINISH. Used by ``_schedule_finish_release``."""
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+        if self._mqtt is None:
+            return
+        self._mqtt.set_gcode_state("FINISH", filename=filename, prepare_percent="100")
+        logger.debug("[VP %s] Re-set gcode_state=FINISH after project_file ack (%s)", self.name, filename)
 
     async def _archive_file(self, file_path: Path, source_ip: str) -> None:
         """Archive file immediately."""
@@ -832,6 +887,9 @@ class VirtualPrinterInstance:
 
     async def stop_server(self) -> None:
         """Stop server-mode services."""
+        if self._finish_release_task is not None and not self._finish_release_task.done():
+            self._finish_release_task.cancel()
+            self._finish_release_task = None
         if self._mqtt_bridge:
             try:
                 await self._mqtt_bridge.stop()

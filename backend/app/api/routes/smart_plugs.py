@@ -12,6 +12,7 @@ from backend.app.api.routes.settings import get_setting
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.tasks import spawn_background_task
 from backend.app.models.printer import Printer
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.models.user import User
@@ -249,14 +250,16 @@ async def start_tasmota_scan(
 
     Auto-detects local network if no IP range provided.
     """
-    import asyncio
 
     # Auto-detect network
     from_ip, to_ip = get_local_network_range()
     timeout = request.timeout if request else 1.0
 
     # Start scan in background
-    asyncio.create_task(tasmota_scanner.scan_range(from_ip, to_ip, timeout))
+    spawn_background_task(
+        tasmota_scanner.scan_range(from_ip, to_ip, timeout),
+        name="tasmota-scan",
+    )
 
     # Return immediate status
     scanned, total = tasmota_scanner.progress

@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.compat import StrEnum
+from backend.app.core.tasks import spawn_background_task
 from backend.app.core.websocket import ws_manager
 from backend.app.models.printer import Printer
 from backend.app.services.bambu_ftp import (
@@ -258,14 +259,15 @@ class FirmwareUpdateService:
         await self._broadcast_progress(printer_id, state)
 
         # Run the upload in background
-        asyncio.create_task(
+        spawn_background_task(
             self._do_upload(
                 printer_id=printer_id,
                 ip_address=printer.ip_address,
                 access_code=printer.access_code,
                 model=model,
                 target_version=target_version,
-            )
+            ),
+            name=f"firmware-upload-{printer_id}",
         )
 
         return True

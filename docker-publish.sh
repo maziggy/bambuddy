@@ -49,6 +49,7 @@ VERSION=""
 PARALLEL=false
 PUSH_GHCR=true
 PUSH_DOCKERHUB=true
+SKIP_SIDECARS=false
 for arg in "$@"; do
     case $arg in
         --parallel)
@@ -59,6 +60,9 @@ for arg in "$@"; do
             ;;
         --dockerhub-only)
             PUSH_GHCR=false
+            ;;
+        --skip-sidecars)
+            SKIP_SIDECARS=true
             ;;
         *)
             if [ -z "$VERSION" ]; then
@@ -281,4 +285,26 @@ fi
 if [ "$PUSH_DOCKERHUB" = true ]; then
     echo "  docker pull ${DOCKERHUB_IMAGE}:${VERSION}"
     echo "  docker pull ${IMAGE_NAME}:${VERSION}  # shorthand"
+fi
+
+# ============================================================
+# Sidecar images (orca-slicer-api + bambu-studio-api)
+# ============================================================
+SIDECAR_SCRIPT="/opt/claude/projects/orca-slicer-api/docker-publish-sidecars.sh"
+if [ "$SKIP_SIDECARS" = true ]; then
+    echo ""
+    echo -e "${YELLOW}Skipping sidecar images (--skip-sidecars).${NC}"
+elif [ ! -x "$SIDECAR_SCRIPT" ]; then
+    echo ""
+    echo -e "${YELLOW}Sidecar helper not found at ${SIDECAR_SCRIPT} — skipping sidecar build.${NC}"
+else
+    echo ""
+    echo -e "${GREEN}================================================${NC}"
+    echo -e "${GREEN}  Publishing sidecar images (stable channel)${NC}"
+    echo -e "${GREEN}================================================${NC}"
+    SIDECAR_ARGS="--channel stable --version ${VERSION}"
+    [ "$PARALLEL" = true ]        && SIDECAR_ARGS="$SIDECAR_ARGS --parallel"
+    [ "$PUSH_GHCR" = false ]      && SIDECAR_ARGS="$SIDECAR_ARGS --dockerhub-only"
+    [ "$PUSH_DOCKERHUB" = false ] && SIDECAR_ARGS="$SIDECAR_ARGS --ghcr-only"
+    "$SIDECAR_SCRIPT" $SIDECAR_ARGS
 fi

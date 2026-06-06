@@ -72,6 +72,7 @@ from backend.app.api.routes.maintenance import _get_printer_maintenance_internal
 from backend.app.api.routes.support import init_debug_logging
 from backend.app.core.config import APP_VERSION, settings as app_settings
 from backend.app.core.database import async_session, engine, init_db
+from backend.app.core.tasks import spawn_background_task
 from backend.app.core.websocket import ws_manager
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.services.archive import ArchiveService, peek_plate_index_in_3mf, swap_plate_suffix
@@ -823,7 +824,10 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     # the same connection don't re-trigger reconciliation.
     if state.connected and not _printer_reconciled_since_connect.get(printer_id, False):
         _printer_reconciled_since_connect[printer_id] = True
-        asyncio.create_task(reconcile_stale_active_prints(printer_id))
+        spawn_background_task(
+            reconcile_stale_active_prints(printer_id),
+            name=f"reconcile-stale-prints-{printer_id}",
+        )
     elif not state.connected and _printer_reconciled_since_connect.get(printer_id, False):
         # Re-arm so the next reconnect triggers reconciliation again.
         _printer_reconciled_since_connect[printer_id] = False
@@ -3839,7 +3843,10 @@ async def on_print_complete(printer_id: int, data: dict):
                                 except Exception as e:
                                     logger.warning("Failed to power off plug %s for printer %s: %s", plug_id, pid, e)
 
-                    asyncio.create_task(cooldown_and_poweroff(printer_id, [p.id for p in enabled_plugs]))
+                    spawn_background_task(
+                        cooldown_and_poweroff(printer_id, [p.id for p in enabled_plugs]),
+                        name=f"cooldown-poweroff-{printer_id}",
+                    )
     except Exception as e:
         logging.getLogger(__name__).warning(f"Queue item update failed: {e}")
 
@@ -4024,8 +4031,7 @@ async def on_print_complete(printer_id: int, data: dict):
             except Exception as e:
                 logger.warning("[NOTIFY-BG] Failed to send notification without archive: %s", e, exc_info=True)
 
-        task = asyncio.create_task(_notify_no_archive())
-        task.add_done_callback(lambda _t: None)
+        spawn_background_task(_notify_no_archive(), name="notify-no-archive")
         return
 
     log_timing("Archive lookup")
@@ -4363,9 +4369,9 @@ async def on_print_complete(printer_id: int, data: dict):
             logger.warning("[PHOTO-BG] Failed: %s", e)
             return None
 
-    asyncio.create_task(_background_energy_calculation())
+    spawn_background_task(_background_energy_calculation(), name="background-energy-calc")
     # Photo capture task - result will be used by notifications
-    photo_task = asyncio.create_task(_background_finish_photo())
+    photo_task = spawn_background_task(_background_finish_photo(), name="background-finish-photo")
     log_timing("Background tasks scheduled (energy, photo)")
 
     # Also run smart plug, notifications, and maintenance as background tasks
@@ -4544,8 +4550,8 @@ async def on_print_complete(printer_id: int, data: dict):
         except Exception as e:
             logger.warning("[MAINT-BG] Failed: %s", e)
 
-    asyncio.create_task(_background_smart_plug())
-    asyncio.create_task(_background_maintenance_check())
+    spawn_background_task(_background_smart_plug(), name="background-smart-plug")
+    spawn_background_task(_background_maintenance_check(), name="background-maintenance-check")
 
     # Notification task waits for photo capture to complete first (with timeout).
     # When a timelapse was recording, photo sourcing polls the per-print
@@ -4572,7 +4578,7 @@ async def on_print_complete(printer_id: int, data: dict):
         except Exception as e:
             logger.error("[PHOTO-NOTIFY] Notification sending failed: %s", e, exc_info=True)
 
-    asyncio.create_task(_photo_then_notify())
+    spawn_background_task(_photo_then_notify(), name="photo-then-notify")
 
     # Stitch external camera layer timelapse if session was active
     print_status = data.get("status", "completed")
@@ -4611,7 +4617,7 @@ async def on_print_complete(printer_id: int, data: dict):
             except Exception:
                 pass  # Best-effort timelapse session cancellation on error
 
-    asyncio.create_task(_background_layer_timelapse())
+    spawn_background_task(_background_layer_timelapse(), name="background-layer-timelapse")
 
     log_timing("All background tasks scheduled")
 
@@ -4621,7 +4627,10 @@ async def on_print_complete(printer_id: int, data: dict):
         # Schedule timelapse scan as background task with retries
         # The printer needs time to encode the video after print completion
         baseline = _timelapse_baselines.pop(printer_id, None)
-        asyncio.create_task(_scan_for_timelapse_with_retries(archive_id, baseline))
+        spawn_background_task(
+            _scan_for_timelapse_with_retries(archive_id, baseline),
+            name=f"scan-timelapse-{archive_id}",
+        )
         log_timing("Timelapse scan scheduled")
 
     logger.info("[CALLBACK] on_print_complete finished for printer %s, archive %s", printer_id, archive_id)
@@ -5442,7 +5451,7 @@ async def lifespan(app: FastAPI):
                 logging.warning("Failed to auto-connect to Spoolman: %s", e)
 
     # Start the print scheduler
-    asyncio.create_task(print_scheduler.run())
+    spawn_background_task(print_scheduler.run(), name="print-scheduler")
 
     # Start background dispatch worker for send/start operations
     await background_dispatch.start()

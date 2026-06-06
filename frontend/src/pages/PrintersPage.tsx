@@ -3302,10 +3302,8 @@ function PrinterCard({
               const isPaused = status.state === 'PAUSE';
               const isPrinting = isRunning || isPaused;
               const isControlBusy = stopPrintMutation.isPending || pausePrintMutation.isPending || resumePrintMutation.isPending;
-              const useFullWidthPrintControls = cardSize === 2;
-              const useWideSpeedControl = cardSize === 2;
               const iconControlClass = 'flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
-              const printControlClass = `flex h-8 items-center justify-center gap-1 px-3 rounded-lg text-xs font-medium transition-colors ${useFullWidthPrintControls ? 'flex-1' : ''}`;
+              const printControlClass = 'flex h-8 w-20 items-center justify-center gap-1 px-2 rounded-lg text-xs font-medium transition-colors';
 
               return (
                 <div className="mt-3">
@@ -3319,7 +3317,7 @@ function PrinterCard({
 
                   <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-2">
                     {/* Left: Secondary controls */}
-                    <div className={`flex flex-wrap items-center gap-2 min-w-0 ${useWideSpeedControl ? 'w-full' : ''}`}>
+                    <div className="flex flex-wrap items-center gap-2 min-w-0">
                       <button
                         onClick={() => chamberLightMutation.mutate(!status.chamber_light)}
                         disabled={!status.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
@@ -3495,11 +3493,11 @@ function PrinterCard({
 
                       {/* Print Speed */}
                       {(() => (
-                        <div className={`relative ${useWideSpeedControl ? 'min-w-0 flex-1' : ''}`}>
+                        <div className="relative">
                           <button
                             onClick={() => setShowSpeedMenu(showSpeedMenu === printer.id ? null : printer.id)}
                             disabled={!isPrinting || !hasPermission('printers:control')}
-                            className={`${useWideSpeedControl ? 'flex h-8 w-full items-center justify-center gap-1 px-3 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed' : iconControlClass} ${
+                            className={`${iconControlClass} ${
                               isPrinting
                                 ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
                                 : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
@@ -3507,7 +3505,6 @@ function PrinterCard({
                             title={isPrinting ? t('printers.speed.title') : undefined}
                           >
                             <Gauge className="w-4 h-4" />
-                            {useWideSpeedControl && <span>{t('printers.speed.title')}</span>}
                           </button>
                           {showSpeedMenu === printer.id && (
                             <>
@@ -3543,24 +3540,7 @@ function PrinterCard({
                     </div>
 
                     {/* Right: Print Control Buttons */}
-                    <div className={`flex items-center gap-2 ${useFullWidthPrintControls ? 'basis-full w-full' : 'flex-shrink-0 max-[550px]:self-start'}`}>
-                      {/* Stop button */}
-                      <button
-                        onClick={() => setShowStopConfirm(true)}
-                        disabled={!isPrinting || isControlBusy || !hasPermission('printers:control')}
-                        className={`
-                          ${printControlClass}
-                          ${isPrinting && hasPermission('printers:control')
-                            ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                            : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
-                          }
-                        `}
-                        title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('printers.stop')}
-                      >
-                        <Square className="w-3 h-3" />
-                        {t('printers.stop')}
-                      </button>
-
+                    <div className="ml-auto flex items-center justify-end gap-2 flex-shrink-0">
                       {/* Pause/Resume button */}
                       <button
                         onClick={() => isPaused ? setShowResumeConfirm(true) : setShowPauseConfirm(true)}
@@ -3578,6 +3558,23 @@ function PrinterCard({
                       >
                         {isPaused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
                         {isPaused ? t('printers.resume') : t('printers.pause')}
+                      </button>
+
+                      {/* Stop button */}
+                      <button
+                        onClick={() => setShowStopConfirm(true)}
+                        disabled={!isPrinting || isControlBusy || !hasPermission('printers:control')}
+                        className={`
+                          ${printControlClass}
+                          ${isPrinting && hasPermission('printers:control')
+                            ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                            : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
+                          }
+                        `}
+                        title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('printers.stop')}
+                      >
+                        <Square className="w-3 h-3" />
+                        {t('printers.stop')}
                       </button>
                     </div>
                   </div>

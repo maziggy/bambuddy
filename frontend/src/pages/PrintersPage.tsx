@@ -3565,6 +3565,7 @@ function PrinterCard({
               const isPaused = status.state === 'PAUSE';
               const isPrinting = isRunning || isPaused;
               const isControlBusy = stopPrintMutation.isPending || pausePrintMutation.isPending || resumePrintMutation.isPending;
+              const unavailablePrintActionClass = 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed opacity-50';
               const iconControlClass = 'flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
               const printControlClass = 'flex h-8 w-20 items-center justify-center gap-1 px-2 rounded-lg text-xs font-medium transition-colors';
 
@@ -3897,16 +3898,19 @@ function PrinterCard({
                     {/* Right: Print Control Buttons */}
                     <div className="ml-auto flex items-center justify-end gap-2 flex-shrink-0">
                       {/* Pause/Resume button */}
+                      {(() => {
+                        const pauseUnavailable = !isPrinting || isControlBusy || !hasPermission('printers:control');
+                        return (
                       <button
                         onClick={() => isPaused ? setShowResumeConfirm(true) : setShowPauseConfirm(true)}
-                        disabled={!isPrinting || isControlBusy || !hasPermission('printers:control')}
+                        disabled={pauseUnavailable}
                         className={`
                           ${printControlClass}
-                          ${isPrinting && hasPermission('printers:control')
-                            ? isPaused
+                          ${pauseUnavailable
+                            ? unavailablePrintActionClass
+                            : isPaused
                               ? 'bg-bambu-green/20 text-bambu-green hover:bg-bambu-green/30'
                               : 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'
-                            : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
                           }
                         `}
                         title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (isPaused ? t('printers.resume') : t('printers.pause'))}
@@ -3914,16 +3918,21 @@ function PrinterCard({
                         {isPaused ? <Play className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
                         {isPaused ? t('printers.resume') : t('printers.pause')}
                       </button>
+                        );
+                      })()}
 
                       {/* Stop button */}
+                      {(() => {
+                        const stopUnavailable = !isPrinting || isControlBusy || !hasPermission('printers:control');
+                        return (
                       <button
                         onClick={() => setShowStopConfirm(true)}
-                        disabled={!isPrinting || isControlBusy || !hasPermission('printers:control')}
+                        disabled={stopUnavailable}
                         className={`
                           ${printControlClass}
-                          ${isPrinting && hasPermission('printers:control')
-                            ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                            : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
+                          ${stopUnavailable
+                            ? unavailablePrintActionClass
+                            : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
                           }
                         `}
                         title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('printers.stop')}
@@ -3931,6 +3940,8 @@ function PrinterCard({
                         <Square className="w-3 h-3" />
                         {t('printers.stop')}
                       </button>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>

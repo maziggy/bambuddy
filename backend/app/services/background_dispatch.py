@@ -20,6 +20,7 @@ from sqlalchemy import select
 
 from backend.app.core.config import settings
 from backend.app.core.database import async_session
+from backend.app.core.tasks import spawn_background_task
 from backend.app.core.websocket import ws_manager
 from backend.app.models.library import LibraryFile
 from backend.app.models.printer import Printer
@@ -629,7 +630,10 @@ class BackgroundDispatchService:
                         progress_state["last_emit"] = now
                         progress_state["last_bytes"] = uploaded
                         loop.call_soon_threadsafe(
-                            lambda u=uploaded, t=total: asyncio.create_task(self._set_active_upload_progress(job, u, t))
+                            lambda u=uploaded, t=total: spawn_background_task(
+                                self._set_active_upload_progress(job, u, t),
+                                name=f"upload-progress-{job.id}",
+                            )
                         )
 
                 if ftp_retry_enabled:
@@ -828,7 +832,10 @@ class BackgroundDispatchService:
                         progress_state["last_emit"] = now
                         progress_state["last_bytes"] = uploaded
                         loop.call_soon_threadsafe(
-                            lambda u=uploaded, t=total: asyncio.create_task(self._set_active_upload_progress(job, u, t))
+                            lambda u=uploaded, t=total: spawn_background_task(
+                                self._set_active_upload_progress(job, u, t),
+                                name=f"upload-progress-{job.id}",
+                            )
                         )
 
                 if ftp_retry_enabled:

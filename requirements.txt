@@ -79,6 +79,17 @@ idna>=3.15
 # HTTP client (used for OIDC token exchange)
 httpx>=0.26.0
 
+# HTTP client with browser TLS-fingerprint impersonation. Used only for
+# the bambulab.com firmware-download page in services/firmware_check.py:
+# Bambu's Cloudflare WAF gates the page behind a JA3/TLS-fingerprint
+# challenge that plain httpx/requests can't pass (#1666). curl_cffi
+# replays Chrome's ClientHello bytes so the TLS handshake clears CF;
+# the HTTP-layer User-Agent stays honest Bambuddy/1.0 per our compliance
+# commitment. Soft dependency — if it fails to import (rare platforms,
+# constrained installs), firmware_check degrades gracefully to wiki-only
+# version detection and logs a warning at startup.
+curl_cffi>=0.7.0
+
 # Transitive pin: urllib3 2.6.3 has CVE-2026-44431 and CVE-2026-44432;
 # 2.7.0+ is the fixed release. Direct pin here because none of our
 # top-level deps require >=2.7.0 yet, so without this the resolver

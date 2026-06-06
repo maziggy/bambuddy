@@ -1,6 +1,5 @@
 """API routes for File Manager (Library) functionality."""
 
-import asyncio
 import base64
 import binascii
 import contextlib
@@ -30,6 +29,7 @@ from backend.app.core.auth import (
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session, get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.print_queue import PrintQueueItem
@@ -1611,7 +1611,7 @@ async def scan_external_folder(
     # folder_cache.values() covers the root + every pre-existing subfolder
     # + every subfolder created during this scan. all_folder_ids on its own
     # would miss the newly-created ones (it's snapshotted before the walk).
-    asyncio.create_task(
+    spawn_background_task(
         _backfill_external_stl_thumbnails(list(set(folder_cache.values()))),
         name=f"stl-backfill-folder-{folder_id}",
     )

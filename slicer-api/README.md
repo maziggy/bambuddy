@@ -16,7 +16,7 @@ Enable the API path by:
 
 ```bash
 cd slicer-api/
-cp .env.example .env       # edit ports / versions if you like
+cp .env.example .env       # edit ports if you like
 
 # OrcaSlicer only (default profile):
 docker compose up -d
@@ -28,9 +28,15 @@ curl http://localhost:3001/health   # bambu-studio-api
 curl http://localhost:3003/health   # orca-slicer-api
 ```
 
-First build downloads the slicer's AppImage (~110 MB OrcaSlicer, ~220 MB
-BambuStudio) and compiles the Node wrapper. Takes 3–8 minutes per service.
-Subsequent runs reuse the local image — instant start.
+First start pulls pre-built images from GHCR (~110 MB OrcaSlicer,
+~220 MB BambuStudio). No local build, no git in the BuildKit worker,
+works on QNAP / Synology / Container Station out of the box.
+
+Both images are `linux/amd64` only. OrcaSlicer's ARM64 build is on hold
+pending an upstream extraction fix; BambuStudio doesn't publish ARM64
+at all. For ARM64 hosts (Raspberry Pi 4/5, Apple Silicon Linux), run
+the sidecar on a separate x86_64 box and point Bambuddy at it via the
+**Sidecar URL** field — the sidecar doesn't need to live next to Bambuddy.
 
 ## Ports
 
@@ -55,32 +61,40 @@ In the Bambuddy UI: **Settings → Slicer**:
 Leaving the URL field blank uses the `SLICER_API_URL` /
 `BAMBU_STUDIO_API_URL` environment defaults from Bambuddy's config.
 
-## Where the source lives
+## Where the images live
 
-Both images build from the
+Pre-built images are published to two registries on every Bambuddy
+stable release:
+
+- `ghcr.io/maziggy/orca-slicer-api:latest` / `docker.io/maziggy/orca-slicer-api:latest`
+- `ghcr.io/maziggy/bambu-studio-api:latest` / `docker.io/maziggy/bambu-studio-api:latest`
+
+Each release also publishes a versioned tag (`:bambuddy-X.Y.Z`) so you
+can pin to the sidecar that shipped alongside a specific Bambuddy
+release — set `SIDECAR_TAG=bambuddy-0.2.5` in `.env`.
+
+Both images are built from the
 [`maziggy/orca-slicer-api`](https://github.com/maziggy/orca-slicer-api)
-fork (`bambuddy/profile-resolver` branch). The Compose file uses
-Docker's git build context, so you don't need to clone it manually —
-Docker pulls the repo at build time.
-
-The fork patches AFKFelix's upstream wrapper with the `inherits:`
-chain resolver, `from: "User"` → `"system"` rewrite, `# ` clone-prefix
-strip, and sentinel-value strip — all empirically required to slice
-real GUI exports without segfaulting the CLI. Once those land
-upstream, this Compose file can be flipped to pull from
-`ghcr.io/afkfelix/orca-slicer-api` directly.
+fork (`bambuddy/profile-resolver` branch). The fork patches AFKFelix's
+upstream wrapper with the `inherits:` chain resolver, `from: "User"`
+→ `"system"` rewrite, `# ` clone-prefix strip, and sentinel-value
+strip — all empirically required to slice real GUI exports without
+segfaulting the CLI. Once those land upstream, the compose file can be
+flipped back to `ghcr.io/afkfelix/orca-slicer-api`.
 
 ## Updating
 
-Bump the versions in `.env`, then:
-
 ```bash
-docker compose --profile bambu build --no-cache
+docker compose pull
 docker compose --profile bambu up -d
 ```
 
-`--no-cache` is needed because the Dockerfile downloads the AppImage
-inline; Docker won't re-fetch it on a version change otherwise.
+That's it — Compose pulls the current `:latest` (or whatever
+`SIDECAR_TAG` you've pinned to) and recreates the containers.
+
+To roll back to the sidecar that shipped with a previous Bambuddy
+release, set `SIDECAR_TAG=bambuddy-X.Y.Z` in `.env` and re-run the two
+commands above.
 
 ## Troubleshooting
 

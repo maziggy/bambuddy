@@ -132,7 +132,15 @@ async def apply_spool_to_slot_via_mqtt(
 
     if sf:
         base_sf = sf.split("_")[0] if "_" in sf else sf
-        if base_sf.startswith("GFS") or base_sf.startswith("PFUS"):
+        # Cloud-side preset IDs in three known shapes:
+        #   GFS…   — Bambu official cloud preset
+        #   PFUS…  — cloud user-created preset
+        #   PFCN…  — cloud shared / partner preset (e.g. Polymaker's
+        #            "(Custom)" Bambu Lab H2D variant, #1648)
+        # All three need a cloud-detail lookup to extract the underlying
+        # filament_id; without it the raw cloud id ends up in tray_info_idx
+        # and the printer's calibration table can't resolve it.
+        if base_sf.startswith("GFS") or base_sf.startswith("PFUS") or base_sf.startswith("PFCN"):
             setting_id = base_sf
             try:
                 from backend.app.api.routes.cloud import build_authenticated_cloud
@@ -210,7 +218,7 @@ async def apply_spool_to_slot_via_mqtt(
                     setting_id = filament_id_to_setting_id(fid)
                     break
 
-    # Defend against tray_info_idx values the slicer cannot resolve. Two
+    # Defend against tray_info_idx values the slicer cannot resolve. Three
     # shapes leak through and must be discarded so the generic-material
     # fallback below can rescue the slot:
     #   1. Literal material names ("PLA", "PETG-CF") that pass through
@@ -223,10 +231,16 @@ async def apply_spool_to_slot_via_mqtt(
     #      replay path in main.py.on_ams_change passes current_user=None,
     #      which skips cloud auth and leaves the raw PFUS in tray_info_idx —
     #      overwriting the correctly-configured slot from the original assign.
+    #   3. PFCN-prefix cloud shared / partner presets (e.g. Polymaker's
+    #      "(Custom)" H2D variants, #1648) — same shape problem as PFUS.
     # Valid tray_info_idx values: "GF" + letter + digits (Bambu official) or
-    # "P" followed by hex (user/local presets, NOT "PFUS").
+    # "P" followed by hex (user/local presets, NOT "PFUS" or "PFCN").
     _known_materials = set(MATERIAL_TEMPS.keys()) | set(_GENERIC_FILAMENT_IDS.keys())
-    if tray_info_idx and (tray_info_idx.upper() in _known_materials or tray_info_idx.startswith("PFUS")):
+    if tray_info_idx and (
+        tray_info_idx.upper() in _known_materials
+        or tray_info_idx.startswith("PFUS")
+        or tray_info_idx.startswith("PFCN")
+    ):
         tray_info_idx = ""
         setting_id = ""
 
@@ -235,6 +249,7 @@ async def apply_spool_to_slot_via_mqtt(
             current_tray_info_idx
             and current_tray_info_idx not in _generic_id_values
             and not current_tray_info_idx.startswith("PFUS")
+            and not current_tray_info_idx.startswith("PFCN")
             and current_tray_info_idx.upper() not in _known_materials
             and current_tray_type
             and current_tray_type.upper() == tray_type.upper()

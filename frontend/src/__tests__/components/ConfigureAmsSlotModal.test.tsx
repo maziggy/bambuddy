@@ -323,6 +323,37 @@ describe('ConfigureAmsSlotModal', () => {
     expect(screen.queryByText(/Bambu PLA Basic @BBL X1C/)).not.toBeInTheDocument();
   });
 
+  it('treats Bambu cloud rename @BBL A1M as a match for A1 Mini (#1649)', async () => {
+    // Bambu cloud shifted A1 Mini filament profiles from
+    // "Bambu PLA Basic @BBL A1 Mini ..." to the terse "@BBL A1M" mid-2026.
+    // Without an alias-aware compare, the model filter strips every cloud
+    // profile from the picker when the user selects an A1 Mini printer.
+    (api.getCloudSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      filament: [
+        { setting_id: 'GFA00_A1M', name: 'Bambu PLA Basic @BBL A1M', filament_id: 'GFA00' },
+        { setting_id: 'GFA00_A1', name: 'Bambu PLA Basic @BBL A1', filament_id: 'GFA00' },
+      ],
+    });
+    render(<ConfigureAmsSlotModal {...defaultProps} printerModel="A1 Mini" />);
+    await waitFor(() => {
+      expect(screen.getByText('Bambu PLA Basic @BBL A1M')).toBeInTheDocument();
+    });
+    // The A1 (non-mini) preset must still be filtered out — the alias
+    // table must not collapse two physically distinct printers.
+    expect(screen.queryByText('Bambu PLA Basic @BBL A1')).not.toBeInTheDocument();
+  });
+
+  it('still filters cross-model cloud profiles when the printer is A1 Mini', async () => {
+    // Sanity check that the alias addition didn't accidentally widen the
+    // matcher: an X1C cloud preset stays hidden when the picker is for an
+    // A1 Mini printer.
+    render(<ConfigureAmsSlotModal {...defaultProps} printerModel="A1 Mini" />);
+    await waitFor(() => {
+      expect(screen.getByText(/Configure AMS/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Bambu PLA Basic @BBL X1C')).not.toBeInTheDocument();
+  });
+
   it('shows current preset even when it does not match model filter', async () => {
     // Render with printerModel="H2D" but savedPresetId pointing to the X1C preset
     const slotInfo = {

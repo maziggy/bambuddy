@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { X, Loader2, Settings2, ChevronDown, CheckCircle2, RotateCcw } from 'lucide-react';
 import { api } from '../api/client';
 import type { KProfile } from '../api/client';
+import { matchesPrinterModelSuffix } from '../utils/slicerPrinterMatch';
 import { Button } from './Button';
 
 interface SlotInfo {
@@ -583,7 +584,7 @@ export function ConfigureAmsSlotModal({
         if (query && !op.name.toLowerCase().includes(query)) continue;
         if (printerModel) {
           const presetModel = extractPresetModel(op.name);
-          if (presetModel && presetModel.toUpperCase() !== printerModel.toUpperCase()) continue;
+          if (presetModel && !matchesPrinterModelSuffix(presetModel, printerModel)) continue;
         }
         // All Orca Cloud profiles are user-authored, so isUser is always true.
         items.push({ id: orcaId, name: op.name, source: 'orca_cloud', isUser: true });
@@ -601,10 +602,12 @@ export function ConfigureAmsSlotModal({
           || (trayIdx && (cp.setting_id === trayIdx || convertToTrayInfoIdx(cp.setting_id) === trayIdx));
         // Search filter applies to ALL presets (including saved) — no bypass
         if (query && !cp.name.toLowerCase().includes(query)) continue;
-        // Filter by printer model if set (skip for current preset)
+        // Filter by printer model if set (skip for current preset). Uses the
+        // alias-aware match so Bambu's "A1 Mini" → "A1M" cloud rename (#1649)
+        // doesn't hide A1 Mini cloud profiles.
         if (!isCurrentPreset && printerModel) {
           const presetModel = extractPresetModel(cp.name);
-          if (presetModel && presetModel.toUpperCase() !== printerModel.toUpperCase()) continue;
+          if (presetModel && !matchesPrinterModelSuffix(presetModel, printerModel)) continue;
         }
         items.push({ id: cp.setting_id, name: cp.name, source: 'cloud', isUser: isUserPreset(cp.setting_id) });
       }

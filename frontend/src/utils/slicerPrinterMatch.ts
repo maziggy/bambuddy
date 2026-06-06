@@ -62,6 +62,35 @@ function normalizePresetName(name: string): string {
   return name.replace(/^#\s*/, '').trim();
 }
 
+// Bambu cloud started shipping terse model codes in `@BBL <code>` suffixes
+// mid-2026 — the most visible one is "A1 Mini" → "A1M" (#1649, reported by
+// @technopaw). User-authored profiles still use the long display name, so
+// both shapes have to match the same printer. The table is uppercase-normalised
+// for case-insensitive lookups; add a row when a future rename is spotted via
+// `/api/v1/cloud/settings`. Keep narrow on purpose — wide-net aliasing
+// (e.g. "X1" ⇄ "X1C") would silently group truly distinct printers.
+const PRINTER_MODEL_SUFFIX_ALIASES: Record<string, readonly string[]> = {
+  'A1 MINI': ['A1M'],
+};
+
+/**
+ * True when ``presetSuffix`` (the token extracted from a "@BBL <code>" or
+ * preset-name suffix) refers to the same printer as ``printerModel``
+ * (the display name selected in the picker). Case-insensitive; consults
+ * the alias table for short codes Bambu introduced after the long forms
+ * shipped (#1649).
+ */
+export function matchesPrinterModelSuffix(presetSuffix: string, printerModel: string): boolean {
+  const p = presetSuffix.toUpperCase();
+  const m = printerModel.toUpperCase();
+  if (p === m) return true;
+  const aliasesOfM = PRINTER_MODEL_SUFFIX_ALIASES[m];
+  if (aliasesOfM && aliasesOfM.includes(p)) return true;
+  const aliasesOfP = PRINTER_MODEL_SUFFIX_ALIASES[p];
+  if (aliasesOfP && aliasesOfP.includes(m)) return true;
+  return false;
+}
+
 /**
  * Invert the backend's PRINTER_MODEL_MAP into the shape the @BBL fallback
  * needs: short code → printer-preset fragment (the part of "Bambu Lab X1
@@ -187,7 +216,14 @@ function classifyByBambuName(
   const inferredModel = bambuModelByShortCode[parsed.token] ?? parsed.token;
   const selectedParts = extractPrinterPresetModel(selectedPrinterName);
   if (!selectedParts) return 'unknown';
-  if (normalizeModelFragment(selectedParts.model) !== normalizeModelFragment(inferredModel)) {
+  // The raw inferred model and the printer-preset fragment may differ only by
+  // the Bambu short-code rename (e.g. preset token "A1M" vs printer "A1 Mini").
+  // ``matchesPrinterModelSuffix`` consults the alias table before declaring a
+  // mismatch — see #1649.
+  if (
+    normalizeModelFragment(selectedParts.model) !== normalizeModelFragment(inferredModel)
+    && !matchesPrinterModelSuffix(parsed.token, selectedParts.model)
+  ) {
     return 'mismatch';
   }
   // Nozzle compare — only when we have a usable size from the printer

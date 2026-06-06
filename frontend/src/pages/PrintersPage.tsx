@@ -6956,6 +6956,16 @@ function PowerDropdownItem({
 
 export function PrintersPage() {
   const { t } = useTranslation();
+  const { resolvedMode, darkAccent, lightAccent } = useTheme();
+  const activeAccent = resolvedMode === 'dark' ? darkAccent : lightAccent;
+  const accentButtonClass = {
+    green: 'bg-green-500 text-white hover:bg-green-400 border-green-400/60',
+    teal: 'bg-teal-500 text-white hover:bg-teal-400 border-teal-400/60',
+    blue: 'bg-blue-500 text-white hover:bg-blue-400 border-blue-400/60',
+    orange: 'bg-orange-500 text-white hover:bg-orange-400 border-orange-400/60',
+    purple: 'bg-purple-500 text-white hover:bg-purple-400 border-purple-400/60',
+    red: 'bg-red-500 text-white hover:bg-red-400 border-red-400/60',
+  }[activeAccent];
   const [showAddModal, setShowAddModal] = useState(false);
   const [hideDisconnected, setHideDisconnected] = useState(() => {
     return localStorage.getItem('hideDisconnectedPrinters') === 'true';
@@ -8004,7 +8014,7 @@ export function PrintersPage() {
         <button
           type="button"
           onClick={returnToCompactCards}
-          className="fixed bottom-5 left-1/2 z-40 inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-bambu-dark-tertiary bg-bambu-dark-secondary px-4 py-2 text-sm font-medium text-white shadow-xl transition-colors hover:bg-bambu-dark-tertiary"
+          className={`fixed bottom-5 left-1/2 z-40 inline-flex -translate-x-1/2 items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium shadow-xl transition-colors ${accentButtonClass}`}
           title={t('common.back', 'Back')}
         >
           <ArrowLeft className="w-4 h-4" />

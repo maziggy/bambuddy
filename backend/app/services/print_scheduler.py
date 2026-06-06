@@ -1763,13 +1763,21 @@ class PrintScheduler:
         return False
 
     async def _check_previous_success(self, db: AsyncSession, item: PrintQueueItem) -> bool:
-        """Check if the previous print on this printer succeeded."""
-        # Find the most recent completed queue item for this printer
+        """Check if the previous print on this printer succeeded.
+
+        A user-cancelled predecessor is treated as neutral — `cancelled` is a
+        deliberate action, not a failure, so subsequent items should still
+        dispatch (#1667). `skipped` is excluded from the lookback entirely:
+        a skip isn't an actual print attempt, so it must not gate downstream
+        items — counting it as a failed predecessor was the cascade bug that
+        let a single cancellation block 18 items over 3 days for the reporter.
+        Only `failed` and `aborted` — real print-attempt failures — block.
+        """
         result = await db.execute(
             select(PrintQueueItem)
             .where(PrintQueueItem.printer_id == item.printer_id)
             .where(PrintQueueItem.id != item.id)
-            .where(PrintQueueItem.status.in_(["completed", "failed", "skipped", "aborted"]))
+            .where(PrintQueueItem.status.in_(["completed", "failed", "cancelled", "aborted"]))
             .order_by(PrintQueueItem.completed_at.desc())
             .limit(1)
         )
@@ -1779,7 +1787,7 @@ class PrintScheduler:
         if not prev_item:
             return True
 
-        return prev_item.status == "completed"
+        return prev_item.status in ("completed", "cancelled")
 
     async def _power_off_if_needed(self, db: AsyncSession, item: PrintQueueItem):
         """Power off printer if auto_off_after is enabled (waits for cooldown)."""

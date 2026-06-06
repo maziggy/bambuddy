@@ -2186,7 +2186,7 @@ export default {
     defaultPrinterDescription: 'Diesen Drucker für Uploads, Nachdrucke und andere Vorgänge vorauswählen.',
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
-    sidebarOrderDescription: 'Elemente in der Seitenleiste per Drag & Drop neu anordnen. Hier auf Standardreihenfolge zurücksetzen.',
+    sidebarOrderDescription: 'Nutze das Seitenleisten-Layout, um Elemente neu anzuordnen, Sichtbarkeit zurückzusetzen und benutzerdefinierte Links zu verwalten.',
     setDefault: 'Standard setzen',
     sidebarOrderSetDefaultHint: 'Standard setzen übernimmt die aktuelle Menüreihenfolge für Benutzer, die ihre noch nicht angepasst haben.',
     sidebarDefaultSet: 'Standard-Menüreihenfolge wurde festgelegt.',
@@ -5140,6 +5140,17 @@ export default {
 
   // External Links
   externalLinks: {
+    title: 'Seitenleisten-Links',
+    sidebarLayout: 'Seitenleisten-Layout',
+    sidebarLayoutDescription: 'Integrierte Seiten ein- oder ausblenden, externe Links hinzufügen und Elemente ziehen, um die Seitenleisten-Navigation neu zu ordnen.',
+    systemPages: 'Bambuddy-Seiten',
+    externalLinks: 'Externe Links',
+    visibleInSidebar: 'In Seitenleiste sichtbar',
+    hiddenFromSidebar: 'In Seitenleiste ausgeblendet',
+    requiredInSidebar: 'In Seitenleiste erforderlich',
+    hidePage: 'Seite ausblenden',
+    showPage: 'Seite anzeigen',
+    settingsCannotBeHidden: 'Einstellungen können nicht ausgeblendet werden',
     noLinksConfigured: 'Keine externen Links konfiguriert',
     deleteLink: 'Link löschen',
     removeCustomIcon: 'Benutzerdefiniertes Symbol entfernen',

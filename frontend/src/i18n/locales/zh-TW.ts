@@ -2186,7 +2186,7 @@ export default {
     defaultPrinterDescription: '為上傳、重印和其他操作預選此印表機。',
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
-    sidebarOrderDescription: '拖曳側邊欄項目以重新排序。在此處重設為預設順序。',
+    sidebarOrderDescription: '使用側邊欄版面配置重新排序項目、重設可見性並管理自訂連結。',
     setDefault: '設為預設',
     sidebarOrderSetDefaultHint: '設為預設將目前選單順序套用於尚未自訂的使用者。',
     sidebarDefaultSet: '已設定預設選單順序。',
@@ -5128,6 +5128,17 @@ export default {
 
   // External Links
   externalLinks: {
+    title: '側邊欄連結',
+    sidebarLayout: '側邊欄版面配置',
+    sidebarLayoutDescription: '顯示或隱藏內建頁面、加入外部連結，並拖曳項目以重新排序側邊欄導覽。',
+    systemPages: 'Bambuddy 頁面',
+    externalLinks: '外部連結',
+    visibleInSidebar: '顯示於側邊欄',
+    hiddenFromSidebar: '隱藏於側邊欄',
+    requiredInSidebar: '側邊欄中必須顯示',
+    hidePage: '隱藏頁面',
+    showPage: '顯示頁面',
+    settingsCannotBeHidden: '設定無法隱藏',
     noLinksConfigured: '未設定外部連結',
     deleteLink: '刪除連結',
     removeCustomIcon: '移除自訂圖示',

@@ -2185,7 +2185,7 @@ export default {
     defaultPrinterDescription: 'アップロード、再印刷、その他の操作でこのプリンターを事前選択します。',
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
-    sidebarOrderDescription: 'サイドバーの項目をドラッグして並べ替え。ここでデフォルトの順序にリセット。',
+    sidebarOrderDescription: 'サイドバーレイアウトで項目の並べ替え、表示状態のリセット、カスタムリンクの管理を行います。',
     setDefault: 'デフォルト設定',
     sidebarOrderSetDefaultHint: 'デフォルト設定は、まだカスタマイズしていないユーザーに現在のメニュー順序を適用します。',
     sidebarDefaultSet: 'デフォルトメニュー順序を設定しました。',
@@ -5141,6 +5141,17 @@ export default {
 
   // External Links
   externalLinks: {
+    title: 'サイドバーリンク',
+    sidebarLayout: 'サイドバーレイアウト',
+    sidebarLayoutDescription: '組み込みページの表示/非表示を切り替え、外部リンクを追加し、項目をドラッグしてサイドバーナビゲーションを並べ替えます。',
+    systemPages: 'Bambuddyページ',
+    externalLinks: '外部リンク',
+    visibleInSidebar: 'サイドバーに表示',
+    hiddenFromSidebar: 'サイドバーで非表示',
+    requiredInSidebar: 'サイドバーで必須',
+    hidePage: 'ページを非表示',
+    showPage: 'ページを表示',
+    settingsCannotBeHidden: '設定は非表示にできません',
     noLinksConfigured: '外部リンクが設定されていません',
     deleteLink: 'リンクを削除',
     removeCustomIcon: 'カスタムアイコンを削除',

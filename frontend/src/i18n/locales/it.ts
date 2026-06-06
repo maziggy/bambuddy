@@ -2141,7 +2141,7 @@ export default {
     defaultPrinterDescription: 'Preseleziona questa stampante per upload, ristampe e altre operazioni.',
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
-    sidebarOrderDescription: 'Trascina gli elementi nella barra laterale per riordinare. Ripristina l\'ordine predefinito qui.',
+    sidebarOrderDescription: 'Usa il layout della barra laterale per riordinare gli elementi, ripristinare la visibilità e gestire i link personalizzati.',
     setDefault: 'Imposta predefinito',
     sidebarOrderSetDefaultHint: 'Imposta predefinito applica l\'ordine attuale del menu agli utenti che non hanno ancora personalizzato il proprio.',
     sidebarDefaultSet: 'L\'ordine predefinito del menu è stato impostato.',
@@ -5129,6 +5129,17 @@ export default {
 
   // External Links
   externalLinks: {
+    title: 'Link della barra laterale',
+    sidebarLayout: 'Layout della barra laterale',
+    sidebarLayoutDescription: 'Mostra o nascondi le pagine integrate, aggiungi link esterni e trascina gli elementi per riordinare la navigazione laterale.',
+    systemPages: 'Pagine Bambuddy',
+    externalLinks: 'Link esterni',
+    visibleInSidebar: 'Visibile nella barra laterale',
+    hiddenFromSidebar: 'Nascosto nella barra laterale',
+    requiredInSidebar: 'Obbligatorio nella barra laterale',
+    hidePage: 'Nascondi pagina',
+    showPage: 'Mostra pagina',
+    settingsCannotBeHidden: 'Le impostazioni non possono essere nascoste',
     noLinksConfigured: 'Nessun link esterno configurato',
     deleteLink: 'Elimina link',
     removeCustomIcon: 'Rimuovi icona personalizzata',

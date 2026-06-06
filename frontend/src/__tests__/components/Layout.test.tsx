@@ -2,15 +2,21 @@
  * Tests for the Layout component.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
 import { render } from '../utils';
 import { Layout } from '../../components/Layout';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY } from '../../utils/sidebarLayout';
 
 describe('Layout', () => {
   beforeEach(() => {
+    vi.mocked(localStorage.getItem).mockReset();
+    vi.mocked(localStorage.setItem).mockReset();
+    vi.mocked(localStorage.removeItem).mockReset();
+    vi.mocked(localStorage.clear).mockReset();
+    localStorage.clear();
     server.use(
       http.get('/api/v1/printers/', () => {
         return HttpResponse.json([
@@ -101,6 +107,23 @@ describe('Layout', () => {
         const settingsLink = document.querySelector('a[href="/settings"]');
         expect(settingsLink).toBeInTheDocument();
       });
+    });
+
+    it('hides system nav items stored in sidebar layout preferences', async () => {
+      vi.mocked(localStorage.getItem).mockImplementation((key) => {
+        if (key === SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY) return JSON.stringify(['printers']);
+        return null;
+      });
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        const sidebar = document.querySelector('aside');
+        expect(sidebar).toBeInTheDocument();
+        expect(sidebar?.querySelector('a[href="/inventory"]')).toBeInTheDocument();
+      });
+
+      expect(document.querySelector('aside a[href="/"]')).toBeNull();
     });
   });
 

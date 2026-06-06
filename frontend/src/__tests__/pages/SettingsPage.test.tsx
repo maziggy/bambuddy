@@ -2,13 +2,14 @@
  * Tests for the SettingsPage component.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { SettingsPage } from '../../pages/SettingsPage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY, SIDEBAR_ORDER_KEY } from '../../utils/sidebarLayout';
 
 const mockSettings = {
   auto_archive: true,
@@ -41,6 +42,11 @@ describe('SettingsPage', () => {
     // switch in one test (e.g. clicking "Workflow") doesn't carry into
     // sibling tests that expect to land on the default General tab.
     window.history.replaceState({}, '', '/');
+    vi.mocked(localStorage.getItem).mockReset();
+    vi.mocked(localStorage.setItem).mockReset();
+    vi.mocked(localStorage.removeItem).mockReset();
+    vi.mocked(localStorage.clear).mockReset();
+    localStorage.clear();
 
     server.use(
       http.get('/api/v1/settings/', () => {
@@ -70,6 +76,9 @@ describe('SettingsPage', () => {
       }),
       http.get('/api/v1/auth/status', () => {
         return HttpResponse.json({ auth_enabled: false, requires_setup: false });
+      }),
+      http.get('/api/v1/external-links/', () => {
+        return HttpResponse.json([]);
       })
     );
   });
@@ -171,6 +180,180 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Check for updates')).toBeInTheDocument();
         expect(screen.getByText('Check printer firmware')).toBeInTheDocument();
       });
+    });
+
+    it('hides a Bambuddy sidebar page from Sidebar Layout', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await screen.findByRole('heading', { name: 'Sidebar Layout' });
+      await screen.findAllByText('Visible in sidebar');
+
+      vi.mocked(localStorage.setItem).mockClear();
+      await user.click((await screen.findAllByLabelText('Hide page'))[0]);
+
+      expect(localStorage.setItem).toHaveBeenCalledWith(SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY, JSON.stringify(['printers']));
+      expect(screen.getByText('Hidden from sidebar')).toBeInTheDocument();
+    });
+
+    it('shows a previously hidden Bambuddy sidebar page from Sidebar Layout', async () => {
+      vi.mocked(localStorage.getItem).mockImplementation((key) => {
+        if (key === SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY) return JSON.stringify(['printers']);
+        return null;
+      });
+
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await screen.findByRole('heading', { name: 'Sidebar Layout' });
+      await screen.findByText('Hidden from sidebar');
+
+      vi.mocked(localStorage.setItem).mockClear();
+      await user.click(await screen.findByLabelText('Show page'));
+
+      expect(localStorage.setItem).toHaveBeenCalledWith(SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY, JSON.stringify([]));
+      expect(screen.getAllByText('Visible in sidebar').length).toBeGreaterThan(0);
+    });
+
+    it('does not allow Settings to be hidden from Sidebar Layout', async () => {
+      render(<SettingsPage />);
+
+      await screen.findByRole('heading', { name: 'Sidebar Layout' });
+      await screen.findByText('Required in sidebar');
+
+      const settingsVisibilityButton = await screen.findByLabelText('Settings cannot be hidden');
+      expect(settingsVisibilityButton).toBeDisabled();
+      expect(screen.getByText('Required in sidebar')).toBeInTheDocument();
+    });
+
+    it('presents external links and Bambuddy pages in saved sidebar order', async () => {
+      vi.mocked(localStorage.getItem).mockImplementation((key) => {
+        if (key === SIDEBAR_ORDER_KEY) return JSON.stringify(['ext-7', 'printers', 'settings']);
+        return null;
+      });
+      server.use(
+        http.get('/api/v1/external-links/', () =>
+          HttpResponse.json([
+            {
+              id: 7,
+              name: 'Docs',
+              url: 'https://docs.example.test',
+              icon: 'Link',
+              open_in_new_tab: true,
+              custom_icon: null,
+              sort_order: 0,
+              created_at: '2026-01-01T00:00:00Z',
+              updated_at: '2026-01-01T00:00:00Z',
+            },
+          ]),
+        ),
+      );
+
+      render(<SettingsPage />);
+
+      await screen.findByRole('heading', { name: 'Sidebar Layout' });
+      const docs = await screen.findByText('Docs');
+      const printers = screen.getAllByText('Printers').find(element => element.closest('[draggable="true"]'));
+
+      expect(printers).toBeDefined();
+      expect(docs.compareDocumentPosition(printers) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('saves mixed Sidebar Layout order when items are dragged', async () => {
+      server.use(
+        http.get('/api/v1/external-links/', () =>
+          HttpResponse.json([
+            {
+              id: 7,
+              name: 'Docs',
+              url: 'https://docs.example.test',
+              icon: 'Link',
+              open_in_new_tab: true,
+              custom_icon: null,
+              sort_order: 0,
+              created_at: '2026-01-01T00:00:00Z',
+              updated_at: '2026-01-01T00:00:00Z',
+            },
+          ]),
+        ),
+      );
+
+      render(<SettingsPage />);
+
+      await screen.findByRole('heading', { name: 'Sidebar Layout' });
+      const docsRow = (await screen.findByText('Docs')).closest('[draggable="true"]');
+      const printersRow = screen.getAllByText('Printers')
+        .find(element => element.closest('[draggable="true"]'))
+        ?.closest('[draggable="true"]');
+
+      expect(docsRow).not.toBeNull();
+      expect(printersRow).not.toBeNull();
+
+      vi.mocked(localStorage.setItem).mockClear();
+      const dataTransfer = {
+        effectAllowed: '',
+        dropEffect: '',
+        setData: vi.fn(),
+      };
+      fireEvent.dragStart(docsRow!, { dataTransfer });
+      fireEvent.dragOver(printersRow!, { dataTransfer });
+      fireEvent.drop(printersRow!, { dataTransfer });
+
+      expect(localStorage.setItem).toHaveBeenCalledWith(
+        SIDEBAR_ORDER_KEY,
+        JSON.stringify(['ext-7', 'printers', 'inventory', 'archives', 'queue', 'projects', 'files', 'makerworld', 'profiles', 'maintenance', 'stats', 'settings']),
+      );
+    });
+
+    it('resets Sidebar Layout to all pages first and configured links at the bottom', async () => {
+      vi.mocked(localStorage.getItem).mockImplementation((key) => {
+        if (key === SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY) return JSON.stringify(['printers', 'stats']);
+        if (key === SIDEBAR_ORDER_KEY) return JSON.stringify(['ext-7', 'settings', 'printers']);
+        return null;
+      });
+      server.use(
+        http.get('/api/v1/external-links/', () =>
+          HttpResponse.json([
+            {
+              id: 7,
+              name: 'Docs',
+              url: 'https://docs.example.test',
+              icon: 'Link',
+              open_in_new_tab: true,
+              custom_icon: null,
+              sort_order: 0,
+              created_at: '2026-01-01T00:00:00Z',
+              updated_at: '2026-01-01T00:00:00Z',
+            },
+          ]),
+        ),
+      );
+
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      const heading = await screen.findByRole('heading', { name: 'Sidebar Layout' });
+      const card = heading.closest('#card-sidebar-links');
+      expect(card).not.toBeNull();
+      await screen.findByText('Docs');
+
+      vi.mocked(localStorage.setItem).mockClear();
+      await user.click(within(card as HTMLElement).getByRole('button', { name: /reset/i }));
+
+      expect(localStorage.setItem).toHaveBeenCalledWith(SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY, JSON.stringify([]));
+      expect(localStorage.setItem).toHaveBeenCalledWith(
+        SIDEBAR_ORDER_KEY,
+        JSON.stringify(['printers', 'inventory', 'archives', 'queue', 'projects', 'files', 'makerworld', 'profiles', 'maintenance', 'stats', 'settings', 'ext-7']),
+      );
+
+      const settingsRow = screen.getAllByText('Settings')
+        .find(element => element.closest('[draggable="true"]'))
+        ?.closest('[draggable="true"]');
+      const docsRow = screen.getByText('Docs').closest('[draggable="true"]');
+      expect(settingsRow).not.toBeNull();
+      expect(docsRow).not.toBeNull();
+      expect(settingsRow!.compareDocumentPosition(docsRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.queryByText('Hidden from sidebar')).not.toBeInTheDocument();
     });
   });
 

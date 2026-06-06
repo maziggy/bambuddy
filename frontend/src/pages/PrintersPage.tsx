@@ -3613,9 +3613,9 @@ function PrinterCard({
                         const isRightNozzle = extruderId === 0;
 
                         return (
-                          <div key={ams.id} className="w-fit p-2 bg-bambu-dark rounded-[10px]">
+                          <div key={ams.id} className="w-fit p-2 bg-bambu-dark rounded-[10px] space-y-1">
                             {/* Header: Label + Stats (no icon) */}
-                            <div className="mb-2 flex w-full min-h-7 items-center justify-between gap-2 rounded-lg bg-bambu-dark-secondary px-2 py-1">
+                            <div className="flex w-full min-h-7 items-center justify-between gap-2 rounded-lg bg-bambu-dark-secondary px-2 py-1">
                               <div className="flex min-w-0 flex-1 items-center gap-1.5">
                                 {/* AMS name — hover to see serial, firmware, and edit friendly name */}
                                 <AmsNameHoverCard
@@ -3705,7 +3705,7 @@ function PrinterCard({
                             </div>
                             {/* Drying status bar */}
                             {ams.dry_time > 0 && (
-                              <div className="mb-1 flex items-center gap-2 rounded-lg bg-amber-500/10 px-2 py-1 text-[9px]">
+                              <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 px-2 py-1 text-[9px]">
                                 <Flame className="w-3 h-3 text-amber-400 shrink-0" />
                                 <span className="text-amber-400 font-medium">{t('printers.drying.active')}</span>
                                 <span className="text-amber-300/70">
@@ -3726,7 +3726,7 @@ function PrinterCard({
                               </div>
                             )}
                             {/* Slots grid: 4 columns - always render 4 slots */}
-                            <div className="inline-grid grid-cols-[repeat(4,3.5rem)] gap-1">
+                            <div className="grid w-fit grid-cols-[repeat(4,3.5rem)] gap-1">
                               {[0, 1, 2, 3].map((slotIdx) => {
                                 // Find tray data for this slot (may be undefined if data incomplete)
                                 // Use array index if available, as tray.id may not always be set
@@ -4097,9 +4097,9 @@ function PrinterCard({
                         );
 
                         return (
-                          <div key={ams.id} className="w-fit p-2 bg-bambu-dark rounded-[10px]">
+                          <div key={ams.id} className="w-fit p-2 bg-bambu-dark rounded-[10px] space-y-1">
                             {/* Row 1: Label + Nozzle + Drying */}
-                            <div className="mb-2 flex w-full min-h-7 items-center gap-1.5 rounded-lg bg-bambu-dark-secondary px-2 py-1">
+                            <div className="flex w-full min-h-7 items-center gap-1.5 rounded-lg bg-bambu-dark-secondary px-2 py-1">
                               {/* AMS name — hover to see serial, firmware, and edit friendly name */}
                               <div className="flex min-w-0 flex-1 items-center gap-1.5">
                                 <AmsNameHoverCard
@@ -4156,7 +4156,7 @@ function PrinterCard({
                             </div>
                             {/* HT AMS drying status bar */}
                             {ams.dry_time > 0 && (
-                              <div className="mb-1 flex items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg bg-amber-500/10 px-2 py-1 text-[9px]">
+                              <div className="flex items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg bg-amber-500/10 px-2 py-1 text-[9px]">
                                 <Flame className="w-3 h-3 text-amber-400 shrink-0" />
                                 <span className="text-amber-300/70 text-[8px] truncate">
                                   {ams.dry_time >= 60
@@ -4359,11 +4359,11 @@ function PrinterCard({
                       })}
                       {/* External spool(s) - grouped in one card like regular AMS */}
                       {status.vt_tray.length > 0 && (
-                        <div className="w-fit p-2 bg-bambu-dark rounded-[10px]">
-                          <div className="mb-2 flex w-full min-h-7 items-center gap-1.5 rounded-lg bg-bambu-dark-secondary px-2 py-1">
+                        <div className="w-fit p-2 bg-bambu-dark rounded-[10px] space-y-1">
+                          <div className="flex w-full min-h-7 items-center gap-1.5 rounded-lg bg-bambu-dark-secondary px-2 py-1">
                             <span className="block min-w-0 flex-1 truncate text-[10px] text-white font-medium">{t('printers.external')}</span>
                           </div>
-                          <div className={`inline-grid ${status.vt_tray.length > 1 ? 'grid-cols-[repeat(2,3.5rem)]' : 'grid-cols-[3.5rem]'} gap-1`}>
+                          <div className={`grid w-fit ${status.vt_tray.length > 1 ? 'grid-cols-[repeat(2,3.5rem)]' : 'grid-cols-[3.5rem]'} gap-1`}>
                             {[...status.vt_tray].sort((a, b) => (a.id ?? 254) - (b.id ?? 254)).map((extTray) => {
                               const extTrayId = extTray.id ?? 254;
                               // On dual-nozzle (H2C/H2D), tray_now=254 means "external spool"

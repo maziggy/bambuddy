@@ -4444,6 +4444,10 @@ export default {
       title: '强制颜色匹配',
       description: '拒绝派发到没有完全相同耗材类型和颜色的打印机。默认关闭 — 不启用时，队列仅按型号匹配，可能选到颜色错误的打印机。',
     },
+    gcodeInjection: {
+      title: 'G-code 注入',
+      description: '将“设置”中按型号配置的 G-code 片段应用到此 VP 的作业。默认关闭。',
+    },
     tailscaleDisabled: {
       title: 'Tailscale 集成',
       description: '启用以将此 VP 标记为通过 Tailscale 公开。显示主机的 Tailscale 地址，以便您知道要粘贴到切片器中的 IP。CA 导入步骤保持不变 — 此开关对证书无影响。',

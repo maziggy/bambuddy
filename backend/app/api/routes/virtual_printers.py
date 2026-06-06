@@ -39,6 +39,7 @@ class VirtualPrinterCreate(BaseModel):
     target_printer_id: int | None = None
     auto_dispatch: bool = True
     queue_force_color_match: bool = False
+    gcode_injection: bool = False
     bind_ip: str | None = None
     remote_interface_ip: str | None = None
 
@@ -52,6 +53,7 @@ class VirtualPrinterUpdate(BaseModel):
     target_printer_id: int | None = None
     auto_dispatch: bool | None = None
     queue_force_color_match: bool | None = None
+    gcode_injection: bool | None = None
     bind_ip: str | None = None
     remote_interface_ip: str | None = None
     tailscale_disabled: bool | None = None
@@ -94,6 +96,7 @@ def _vp_to_dict(vp, status: dict | None = None) -> dict:
         "target_printer_id": vp.target_printer_id,
         "auto_dispatch": vp.auto_dispatch,
         "queue_force_color_match": vp.queue_force_color_match,
+        "gcode_injection": vp.gcode_injection,
         "bind_ip": vp.bind_ip,
         "remote_interface_ip": vp.remote_interface_ip,
         "tailscale_disabled": vp.tailscale_disabled,
@@ -229,6 +232,7 @@ async def create_virtual_printer(
         target_printer_id=body.target_printer_id,
         auto_dispatch=body.auto_dispatch,
         queue_force_color_match=body.queue_force_color_match,
+        gcode_injection=body.gcode_injection,
         bind_ip=body.bind_ip,
         remote_interface_ip=body.remote_interface_ip,
         serial_suffix=new_suffix,
@@ -406,6 +410,8 @@ async def update_virtual_printer(
         vp.auto_dispatch = body.auto_dispatch
     if body.queue_force_color_match is not None:
         vp.queue_force_color_match = body.queue_force_color_match
+    if body.gcode_injection is not None:
+        vp.gcode_injection = body.gcode_injection
     if body.bind_ip is not None:
         vp.bind_ip = body.bind_ip
     if body.remote_interface_ip is not None:

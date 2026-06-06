@@ -134,6 +134,7 @@ class VirtualPrinterInstance:
         target_printer_id: int | None = None,
         auto_dispatch: bool = True,
         queue_force_color_match: bool = False,
+        gcode_injection: bool = False,
         bind_ip: str = "",
         remote_interface_ip: str = "",
         tailscale_disabled: bool = True,
@@ -156,6 +157,7 @@ class VirtualPrinterInstance:
         self.target_printer_id = target_printer_id
         self.auto_dispatch = auto_dispatch
         self.queue_force_color_match = queue_force_color_match
+        self.gcode_injection = gcode_injection
         self.bind_ip = bind_ip
         self.remote_interface_ip = remote_interface_ip
         self.tailscale_disabled = tailscale_disabled
@@ -653,6 +655,11 @@ class VirtualPrinterInstance:
                         vibration_cali=vibration_cali,
                         layer_inspect=layer_inspect,
                         timelapse=timelapse,
+                        # Per-VP opt-in for auto-print G-code injection (#1516).
+                        # Default off; when on, the scheduler still no-ops unless
+                        # gcode_snippets are configured for the target model, so it's
+                        # effectively "inject when enabled AND snippets exist".
+                        gcode_injection=self.gcode_injection,
                     )
                     db.add(queue_item)
                     await db.commit()
@@ -1226,6 +1233,7 @@ class VirtualPrinterManager:
                     target_printer_id=vp.target_printer_id,
                     auto_dispatch=vp.auto_dispatch,
                     queue_force_color_match=vp.queue_force_color_match,
+                    gcode_injection=vp.gcode_injection,
                     bind_ip=vp.bind_ip or "",
                     remote_interface_ip=vp.remote_interface_ip or "",
                     tailscale_disabled=vp.tailscale_disabled,

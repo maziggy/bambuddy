@@ -4445,6 +4445,10 @@ export default {
       title: 'Forcer la correspondance des couleurs',
       description: 'Refuser l\'envoi vers une imprimante qui n\'a pas exactement le type de filament et la couleur chargés. Désactivé par défaut — sans cela, la file d\'attente utilise uniquement la correspondance par modèle et peut choisir une imprimante avec la mauvaise couleur.',
     },
+    gcodeInjection: {
+      title: 'Injection G-code',
+      description: 'Applique les extraits de G-code configurés par modèle dans les Paramètres aux travaux de ce VP. Désactivé par défaut.',
+    },
     tailscaleDisabled: {
       title: 'Intégration Tailscale',
       description: 'Activez pour marquer ce VP comme exposé via Tailscale. Affiche l\'adresse Tailscale de l\'hôte pour que vous sachiez quelle IP coller dans le slicer. L\'étape d\'import CA est inchangée — cette bascule n\'a aucun effet sur les certificats.',

@@ -4419,6 +4419,10 @@ export default {
       title: 'Renk eşleşmesini zorla',
       description: 'Tam olarak doğru filament türü ve rengi yüklü olmayan bir yazıcıya sevk etmeyi reddet. Varsayılan olarak kapalı — bu olmadan kuyruk yalnızca model eşleşmesi kullanır ve yanlış renk yüklü bir yazıcı seçebilir.',
     },
+    gcodeInjection: {
+      title: 'G-code enjeksiyonu',
+      description: "Ayarlar'da model bazında yapılandırılan G-code parçacıklarını bu VP'nin işlerine uygular. Varsayılan olarak kapalı.",
+    },
     tailscaleDisabled: {
       title: 'Tailscale entegrasyonu',
       description: "Bu VP'yi Tailscale üzerinden açıkta olarak işaretlemek için etkinleştirin. Dilimleyiciye hangi IP'yi yapıştıracağınızı bilmeniz için ana bilgisayarın Tailscale adresini gösterir. CA içe aktarma adımı değişmedi — bu anahtarın sertifikalar üzerinde etkisi yoktur.",

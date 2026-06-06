@@ -4455,6 +4455,10 @@ export default {
       title: 'Farbabgleich erzwingen',
       description: 'Druckaufträge nur an Drucker senden, bei denen der genaue Filament-Typ und die genaue Farbe geladen sind. Standardmäßig deaktiviert — ohne diese Option verwendet die Warteschlange nur den Drucker-Modell-Abgleich und wählt möglicherweise einen Drucker mit der falschen Farbe.',
     },
+    gcodeInjection: {
+      title: 'G-code-Injektion',
+      description: 'Wendet die in den Einstellungen pro Modell konfigurierten G-code-Snippets auf Jobs dieses VP an. Standardmäßig aus.',
+    },
     tailscaleDisabled: {
       title: 'Tailscale-Integration',
       description: 'Aktivieren, um diesen VP als per Tailscale erreichbar zu markieren. Zeigt die Tailscale-Adresse des Hosts an, damit du weißt, welche IP du im Slicer eintragen musst. Der CA-Import bleibt unverändert — diese Option hat keinen Einfluss auf Zertifikate.',

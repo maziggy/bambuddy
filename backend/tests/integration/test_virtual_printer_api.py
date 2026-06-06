@@ -353,6 +353,53 @@ class TestVirtualPrinterAutoDispatchAPI:
         assert get_resp.json()["auto_dispatch"] is False
 
 
+class TestVirtualPrinterGcodeInjectionAPI:
+    """Integration tests for gcode_injection (#1516) on /api/v1/virtual-printers endpoints."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_virtual_printer_gcode_injection_default_off(self, async_client: AsyncClient):
+        """Verify creating a VP without gcode_injection defaults to false (opt-in)."""
+        response = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "TestDefaultInjection",
+                "mode": "queue",
+                "access_code": "12345678",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["gcode_injection"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_virtual_printer_gcode_injection(self, async_client: AsyncClient):
+        """Verify gcode_injection can be toggled via PUT and persists."""
+        create_resp = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "TestToggleInjection",
+                "mode": "queue",
+                "access_code": "12345678",
+            },
+        )
+        assert create_resp.status_code == 200
+        vp_id = create_resp.json()["id"]
+        assert create_resp.json()["gcode_injection"] is False
+
+        update_resp = await async_client.put(
+            f"/api/v1/virtual-printers/{vp_id}",
+            json={"gcode_injection": True},
+        )
+        assert update_resp.status_code == 200
+        assert update_resp.json()["gcode_injection"] is True
+
+        get_resp = await async_client.get(f"/api/v1/virtual-printers/{vp_id}")
+        assert get_resp.status_code == 200
+        assert get_resp.json()["gcode_injection"] is True
+
+
 class TestVirtualPrinterTailscaleToggleAPI:
     """The Tailscale toggle is informational — toggling either way always succeeds.
 

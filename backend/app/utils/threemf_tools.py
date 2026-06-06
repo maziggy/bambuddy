@@ -651,9 +651,13 @@ def inject_gcode_into_3mf(
 
             if start_gcode:
                 resolved = _substitute_placeholders(start_gcode, header)
+                # Log the post-substitution snippet so the actually-injected G-code
+                # (placeholders like {max_layer_z} already resolved) is visible at DEBUG.
+                logger.debug("G-code injection [%s]: resolved START snippet:\n%s", target_gcode, resolved)
                 gcode_content = _inject_start_at_marker(gcode_content, resolved)
             if end_gcode:
                 resolved = _substitute_placeholders(end_gcode, header)
+                logger.debug("G-code injection [%s]: resolved END snippet:\n%s", target_gcode, resolved)
                 gcode_content = _inject_end_before_marker(gcode_content, resolved)
 
             # The printer validates the plate gcode against an embedded

@@ -4444,6 +4444,10 @@ export default {
       title: 'Forza corrispondenza colori',
       description: 'Rifiuta di inviare a una stampante che non ha esattamente il tipo di filamento e il colore caricato. Disattivato per impostazione predefinita — senza questo, la coda usa solo la corrispondenza per modello e potrebbe scegliere una stampante con il colore sbagliato.',
     },
+    gcodeInjection: {
+      title: 'Iniezione G-code',
+      description: 'Applica gli snippet G-code configurati per modello nelle Impostazioni ai lavori di questo VP. Disattivato per impostazione predefinita.',
+    },
     tailscaleDisabled: {
       title: 'Integrazione Tailscale',
       description: 'Abilita per contrassegnare questo VP come esposto tramite Tailscale. Mostra l\'indirizzo Tailscale dell\'host così sai quale IP incollare nello slicer. Il passo di importazione CA è invariato — questo toggle non ha effetto sui certificati.',

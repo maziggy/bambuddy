@@ -4444,6 +4444,10 @@ export default {
       title: 'Forçar correspondência de cor',
       description: 'Recusa enviar para uma impressora que não tenha exatamente o tipo e cor de filamento carregados. Desativado por padrão — sem isto, a fila usa apenas correspondência por modelo e pode escolher uma impressora com a cor errada carregada.',
     },
+    gcodeInjection: {
+      title: 'Injeção de G-code',
+      description: 'Aplica os trechos de G-code configurados por modelo nas Configurações aos trabalhos deste VP. Desativado por padrão.',
+    },
     tailscaleDisabled: {
       title: 'Integração Tailscale',
       description: 'Ative para marcar este VP como exposto via Tailscale. Mostra o endereço Tailscale do host para você saber qual IP colar no fatiador. A etapa de importação CA é inalterada — este toggle não afeta certificados.',

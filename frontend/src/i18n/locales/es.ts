@@ -4464,6 +4464,10 @@ export default {
       title: 'Forzar la coincidencia de color',
       description: 'Negarse a enviar a una impresora que no tiene cargados el tipo y el color exactos de filamento. Desactivado de forma predeterminada — sin esto, la cola usa la coincidencia solo por modelo y puede elegir una impresora con el color equivocado cargado.',
     },
+    gcodeInjection: {
+      title: 'Inyección de G-code',
+      description: 'Aplica los fragmentos de G-code configurados por modelo en Ajustes a los trabajos de esta IV. Desactivado de forma predeterminada.',
+    },
     tailscaleDisabled: {
       title: 'Integración con Tailscale',
       description: 'Actívelo para marcar esta IV como expuesta a través de Tailscale. Muestra la dirección de Tailscale del host para que sepa qué IP pegar en el laminador. El paso de importación de la CA no cambia — este interruptor no tiene ningún efecto sobre los certificados.',

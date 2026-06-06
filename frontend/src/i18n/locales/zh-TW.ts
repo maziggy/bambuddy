@@ -4444,6 +4444,10 @@ export default {
       title: '強制顏色匹配',
       description: '拒絕派發到沒有完全相同耗材類型和顏色的印表機。預設關閉 — 不啟用時，佇列僅按型號匹配，可能選到顏色錯誤的印表機。',
     },
+    gcodeInjection: {
+      title: 'G-code 注入',
+      description: '將「設定」中依型號設定的 G-code 片段套用到此 VP 的作業。預設關閉。',
+    },
     tailscaleDisabled: {
       title: 'Tailscale 整合',
       description: '啟用以將此 VP 標記為透過 Tailscale 公開。顯示主機的 Tailscale 位址，以便您知道要貼上到切片器中的 IP。CA 匯入步驟保持不變 — 此切換對憑證無影響。',

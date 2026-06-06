@@ -4468,6 +4468,10 @@ export default {
       title: 'Force color match',
       description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong color loaded.',
     },
+    gcodeInjection: {
+      title: 'G-code injection',
+      description: 'Apply the per-model G-code snippets configured in Settings to jobs from this VP. Off by default.',
+    },
     tailscaleDisabled: {
       title: 'Tailscale integration',
       description: 'Enable to mark this VP as exposed over Tailscale. Shows the host\'s Tailscale address so you know which IP to paste into the slicer. The CA-import step is unchanged — this toggle has no effect on certificates.',

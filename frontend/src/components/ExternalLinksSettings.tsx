@@ -6,10 +6,13 @@ import { api } from '../api/client';
 import type { ExternalLink } from '../api/client';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
+import { Toggle } from './Toggle';
 import { AddExternalLinkModal } from './AddExternalLinkModal';
 import { ConfirmModal } from './ConfirmModal';
 import { getIconByName } from './IconPicker';
 import { defaultNavItems } from './Layout';
+import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import {
   getHiddenSidebarSystemItemIds,
   getSidebarOrder,
@@ -24,6 +27,8 @@ type SidebarLayoutItem =
 export function ExternalLinksSettings() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { authEnabled, hasPermission } = useAuth();
+  const { showToast } = useToast();
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingLink, setEditingLink] = useState<ExternalLink | null>(null);
   const [deletingLink, setDeletingLink] = useState<ExternalLink | null>(null);
@@ -41,6 +46,29 @@ export function ExternalLinksSettings() {
     mutationFn: (id: number) => api.deleteExternalLink(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['external-links'] });
+    },
+  });
+
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+    enabled: authEnabled && hasPermission('settings:update'),
+  });
+
+  const updateDefaultSidebarMutation = useMutation({
+    mutationFn: (defaultSidebarOrder: string) => api.updateSettings({ default_sidebar_order: defaultSidebarOrder }),
+    onSuccess: (_data, defaultSidebarOrder) => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      queryClient.invalidateQueries({ queryKey: ['default-sidebar-order'] });
+      showToast(
+        defaultSidebarOrder
+          ? t('settings.sidebarDefaultSet')
+          : t('settings.sidebarDefaultCleared'),
+        'success'
+      );
+    },
+    onError: () => {
+      showToast(t('settings.sidebarDefaultFailed'), 'error');
     },
   });
 
@@ -145,6 +173,14 @@ export function ExternalLinksSettings() {
     saveSidebarOrder(resetOrder);
   };
 
+  const handleToggleDefaultSidebarOrder = (enabled: boolean) => {
+    const currentOrder = layoutItems.map(item => item.id);
+    updateDefaultSidebarMutation.mutate(enabled ? JSON.stringify({
+      order: currentOrder,
+      hiddenSystemItemIds,
+    }) : '');
+  };
+
   const toggleSystemItemVisibility = (id: string) => {
     if (id === 'settings') return;
 
@@ -157,6 +193,9 @@ export function ExternalLinksSettings() {
     saveHiddenSidebarSystemItemIds(nextIds);
   };
 
+  const canSetDefaultSidebarOrder = authEnabled && hasPermission('settings:update');
+  const isDefaultSidebarEnabled = !!settings?.default_sidebar_order;
+
   return (
     <>
       <Card id="card-sidebar-links">
@@ -166,7 +205,17 @@ export function ExternalLinksSettings() {
               <Link2 className="w-5 h-5 text-bambu-green" />
               <h2 className="text-lg font-semibold text-white">{t('externalLinks.sidebarLayout')}</h2>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-3 shrink-0">
+              {canSetDefaultSidebarOrder && (
+                <label className="flex items-center gap-2 text-sm text-bambu-gray">
+                  <span>{t('settings.setDefault')}</span>
+                  <Toggle
+                    checked={isDefaultSidebarEnabled}
+                    onChange={handleToggleDefaultSidebarOrder}
+                    disabled={updateDefaultSidebarMutation.isPending}
+                  />
+                </label>
+              )}
               <Button variant="secondary" size="sm" onClick={resetSidebarLayout} className="whitespace-nowrap">
                 <RotateCcw className="w-4 h-4" />
                 {t('settings.reset')}

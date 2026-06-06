@@ -10,6 +10,7 @@ import { SettingsPage } from '../../pages/SettingsPage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import { SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY, SIDEBAR_ORDER_KEY } from '../../utils/sidebarLayout';
+import { setAuthToken } from '../../api/client';
 
 const mockSettings = {
   auto_archive: true,
@@ -47,12 +48,13 @@ describe('SettingsPage', () => {
     vi.mocked(localStorage.removeItem).mockReset();
     vi.mocked(localStorage.clear).mockReset();
     localStorage.clear();
+    setAuthToken(null);
 
     server.use(
       http.get('/api/v1/settings/', () => {
         return HttpResponse.json(mockSettings);
       }),
-      http.patch('/api/v1/settings/', async ({ request }) => {
+      http.put('/api/v1/settings/', async ({ request }) => {
         const body = await request.json();
         return HttpResponse.json({ ...mockSettings, ...body });
       }),
@@ -354,6 +356,70 @@ describe('SettingsPage', () => {
       expect(docsRow).not.toBeNull();
       expect(settingsRow!.compareDocumentPosition(docsRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(screen.queryByText('Hidden from sidebar')).not.toBeInTheDocument();
+    });
+
+    it('sets the current Sidebar order as the backend default for settings admins', async () => {
+      let defaultSidebarOrderPayload: string | null = null;
+      vi.mocked(localStorage.getItem).mockImplementation((key) => {
+        if (key === SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY) return JSON.stringify(['stats']);
+        return null;
+      });
+
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false }),
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 1,
+            username: 'admin',
+            role: 'admin',
+            is_active: true,
+            is_admin: false,
+            groups: [{ id: 1, name: 'Administrators' }],
+            permissions: ['settings:update'],
+            created_at: '2026-01-01T00:00:00Z',
+          }),
+        ),
+        http.get('/api/v1/settings/', () =>
+          HttpResponse.json({ ...mockSettings, default_sidebar_order: '' }),
+        ),
+        http.put('/api/v1/settings/', async ({ request }) => {
+          const body = await request.json() as { default_sidebar_order?: string };
+          defaultSidebarOrderPayload = body.default_sidebar_order ?? null;
+          return HttpResponse.json({ ...mockSettings, ...body });
+        }),
+      );
+      setAuthToken('test-token');
+
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      const heading = await screen.findByRole('heading', { name: 'Sidebar' });
+      const card = heading.closest('#card-sidebar-links');
+      expect(card).not.toBeNull();
+
+      await user.click(within(card as HTMLElement).getByRole('switch', { name: 'Set Default' }));
+
+      await waitFor(() => {
+        expect(defaultSidebarOrderPayload).not.toBeNull();
+      });
+      expect(JSON.parse(defaultSidebarOrderPayload!)).toEqual({
+        order: [
+          'printers',
+          'inventory',
+          'archives',
+          'queue',
+          'projects',
+          'files',
+          'makerworld',
+          'profiles',
+          'maintenance',
+          'stats',
+          'settings',
+        ],
+        hiddenSystemItemIds: ['stats'],
+      });
     });
   });
 

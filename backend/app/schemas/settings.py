@@ -533,6 +533,11 @@ class AppSettingsUpdate(BaseModel):
             raise ValueError("default_sidebar_order must be valid JSON or empty")
         if isinstance(parsed, dict):
             order = parsed.get("order")
+            hidden_system_item_ids = parsed.get("hiddenSystemItemIds", [])
+            if not isinstance(hidden_system_item_ids, list) or not all(
+                isinstance(item, str) for item in hidden_system_item_ids
+            ):
+                raise ValueError("sidebar hidden system item IDs must be an array of strings")
         elif isinstance(parsed, list):
             order = parsed
         else:

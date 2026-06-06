@@ -17,7 +17,14 @@ import { Card, CardHeader, CardContent } from './Card';
 import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
 import { BugReportBubble } from './BugReportBubble';
-import { getHiddenSidebarSystemItemIds, getSidebarOrder, isExternalSidebarItemId, saveSidebarOrder, SIDEBAR_LAYOUT_CHANGED_EVENT } from '../utils/sidebarLayout';
+import {
+  getHiddenSidebarSystemItemIds,
+  getSidebarOrder,
+  isExternalSidebarItemId,
+  saveHiddenSidebarSystemItemIds,
+  saveSidebarOrder,
+  SIDEBAR_LAYOUT_CHANGED_EVENT,
+} from '../utils/sidebarLayout';
 
 
 interface NavItem {
@@ -131,6 +138,12 @@ export function Layout() {
       if (filtered.length > 0) {
         setSidebarOrder(filtered);
         saveSidebarOrder(filtered);
+        const hiddenIds = Array.isArray(parsed) ? [] : parsed.hiddenSystemItemIds;
+        if (Array.isArray(hiddenIds)) {
+          const filteredHiddenIds = hiddenIds.filter((id: string) => typeof id === 'string' && validIds.has(id) && id !== 'settings');
+          setHiddenSystemItemIds(filteredHiddenIds);
+          saveHiddenSidebarSystemItemIds(filteredHiddenIds);
+        }
         localStorage.setItem(appliedKey, '1');
       }
     } catch (e) {

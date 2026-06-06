@@ -5129,7 +5129,7 @@ export default {
   // External Links
   externalLinks: {
     title: '侧边栏链接',
-    sidebarLayout: '侧边栏布局',
+    sidebarLayout: '侧边栏',
     sidebarLayoutDescription: '显示或隐藏内置页面，添加外部链接，并拖动项目以重新排序侧边栏导航。',
     systemPages: 'Bambuddy 页面',
     externalLinks: '外部链接',

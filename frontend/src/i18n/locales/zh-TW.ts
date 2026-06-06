@@ -5129,7 +5129,7 @@ export default {
   // External Links
   externalLinks: {
     title: '側邊欄連結',
-    sidebarLayout: '側邊欄版面配置',
+    sidebarLayout: '側邊欄',
     sidebarLayoutDescription: '顯示或隱藏內建頁面、加入外部連結，並拖曳項目以重新排序側邊欄導覽。',
     systemPages: 'Bambuddy 頁面',
     externalLinks: '外部連結',

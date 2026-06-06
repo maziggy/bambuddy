@@ -5141,7 +5141,7 @@ export default {
   // External Links
   externalLinks: {
     title: 'Seitenleisten-Links',
-    sidebarLayout: 'Seitenleisten-Layout',
+    sidebarLayout: 'Seitenleiste',
     sidebarLayoutDescription: 'Integrierte Seiten ein- oder ausblenden, externe Links hinzufügen und Elemente ziehen, um die Seitenleisten-Navigation neu zu ordnen.',
     systemPages: 'Bambuddy-Seiten',
     externalLinks: 'Externe Links',

@@ -182,11 +182,11 @@ describe('SettingsPage', () => {
       });
     });
 
-    it('hides a Bambuddy sidebar page from Sidebar Layout', async () => {
+    it('hides a Bambuddy sidebar page from Sidebar', async () => {
       const user = userEvent.setup();
       render(<SettingsPage />);
 
-      await screen.findByRole('heading', { name: 'Sidebar Layout' });
+      await screen.findByRole('heading', { name: 'Sidebar' });
       await screen.findAllByText('Visible in sidebar');
 
       vi.mocked(localStorage.setItem).mockClear();
@@ -196,7 +196,7 @@ describe('SettingsPage', () => {
       expect(screen.getByText('Hidden from sidebar')).toBeInTheDocument();
     });
 
-    it('shows a previously hidden Bambuddy sidebar page from Sidebar Layout', async () => {
+    it('shows a previously hidden Bambuddy sidebar page from Sidebar', async () => {
       vi.mocked(localStorage.getItem).mockImplementation((key) => {
         if (key === SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY) return JSON.stringify(['printers']);
         return null;
@@ -205,7 +205,7 @@ describe('SettingsPage', () => {
       const user = userEvent.setup();
       render(<SettingsPage />);
 
-      await screen.findByRole('heading', { name: 'Sidebar Layout' });
+      await screen.findByRole('heading', { name: 'Sidebar' });
       await screen.findByText('Hidden from sidebar');
 
       vi.mocked(localStorage.setItem).mockClear();
@@ -215,10 +215,10 @@ describe('SettingsPage', () => {
       expect(screen.getAllByText('Visible in sidebar').length).toBeGreaterThan(0);
     });
 
-    it('does not allow Settings to be hidden from Sidebar Layout', async () => {
+    it('does not allow Settings to be hidden from Sidebar', async () => {
       render(<SettingsPage />);
 
-      await screen.findByRole('heading', { name: 'Sidebar Layout' });
+      await screen.findByRole('heading', { name: 'Sidebar' });
       await screen.findByText('Required in sidebar');
 
       const settingsVisibilityButton = await screen.findByLabelText('Settings cannot be hidden');
@@ -251,7 +251,7 @@ describe('SettingsPage', () => {
 
       render(<SettingsPage />);
 
-      await screen.findByRole('heading', { name: 'Sidebar Layout' });
+      await screen.findByRole('heading', { name: 'Sidebar' });
       const docs = await screen.findByText('Docs');
       const printers = screen.getAllByText('Printers').find(element => element.closest('[draggable="true"]'));
 
@@ -259,7 +259,7 @@ describe('SettingsPage', () => {
       expect(docs.compareDocumentPosition(printers) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
-    it('saves mixed Sidebar Layout order when items are dragged', async () => {
+    it('saves mixed Sidebar order when items are dragged', async () => {
       server.use(
         http.get('/api/v1/external-links/', () =>
           HttpResponse.json([
@@ -280,7 +280,7 @@ describe('SettingsPage', () => {
 
       render(<SettingsPage />);
 
-      await screen.findByRole('heading', { name: 'Sidebar Layout' });
+      await screen.findByRole('heading', { name: 'Sidebar' });
       const docsRow = (await screen.findByText('Docs')).closest('[draggable="true"]');
       const printersRow = screen.getAllByText('Printers')
         .find(element => element.closest('[draggable="true"]'))
@@ -305,7 +305,7 @@ describe('SettingsPage', () => {
       );
     });
 
-    it('resets Sidebar Layout to all pages first and configured links at the bottom', async () => {
+    it('resets Sidebar to all pages first and configured links at the bottom', async () => {
       vi.mocked(localStorage.getItem).mockImplementation((key) => {
         if (key === SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY) return JSON.stringify(['printers', 'stats']);
         if (key === SIDEBAR_ORDER_KEY) return JSON.stringify(['ext-7', 'settings', 'printers']);
@@ -332,7 +332,7 @@ describe('SettingsPage', () => {
       const user = userEvent.setup();
       render(<SettingsPage />);
 
-      const heading = await screen.findByRole('heading', { name: 'Sidebar Layout' });
+      const heading = await screen.findByRole('heading', { name: 'Sidebar' });
       const card = heading.closest('#card-sidebar-links');
       expect(card).not.toBeNull();
       await screen.findByText('Docs');

@@ -5131,7 +5131,7 @@ export default {
   // External Links
   externalLinks: {
     title: 'Liens de la barre latérale',
-    sidebarLayout: 'Disposition de la barre latérale',
+    sidebarLayout: 'Barre latérale',
     sidebarLayoutDescription: 'Affichez ou masquez les pages intégrées, ajoutez des liens externes et faites glisser les éléments pour réorganiser la navigation latérale.',
     systemPages: 'Pages Bambuddy',
     externalLinks: 'Liens externes',

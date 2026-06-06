@@ -5085,7 +5085,7 @@ export default {
   // Harici Bağlantılar
   externalLinks: {
     title: 'Kenar çubuğu bağlantıları',
-    sidebarLayout: 'Kenar çubuğu düzeni',
+    sidebarLayout: 'Kenar çubuğu',
     sidebarLayoutDescription: 'Yerleşik sayfaları gösterin veya gizleyin, harici bağlantılar ekleyin ve kenar çubuğu gezinmesini yeniden sıralamak için öğeleri sürükleyin.',
     systemPages: 'Bambuddy sayfaları',
     externalLinks: 'Harici bağlantılar',

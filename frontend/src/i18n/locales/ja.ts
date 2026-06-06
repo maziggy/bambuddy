@@ -5142,7 +5142,7 @@ export default {
   // External Links
   externalLinks: {
     title: 'サイドバーリンク',
-    sidebarLayout: 'サイドバーレイアウト',
+    sidebarLayout: 'サイドバー',
     sidebarLayoutDescription: '組み込みページの表示/非表示を切り替え、外部リンクを追加し、項目をドラッグしてサイドバーナビゲーションを並べ替えます。',
     systemPages: 'Bambuddyページ',
     externalLinks: '外部リンク',

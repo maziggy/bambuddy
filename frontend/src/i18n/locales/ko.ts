@@ -4849,7 +4849,7 @@ export default {
   },
   externalLinks: {
     title: '사이드바 링크',
-    sidebarLayout: '사이드바 레이아웃',
+    sidebarLayout: '사이드바',
     sidebarLayoutDescription: '기본 제공 페이지를 표시하거나 숨기고, 외부 링크를 추가하고, 항목을 드래그하여 사이드바 탐색 순서를 변경하세요.',
     systemPages: 'Bambuddy 페이지',
     externalLinks: '외부 링크',

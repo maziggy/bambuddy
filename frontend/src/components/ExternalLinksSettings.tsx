@@ -171,7 +171,7 @@ export function ExternalLinksSettings() {
                 <RotateCcw className="w-4 h-4" />
                 {t('settings.reset')}
               </Button>
-              <Button variant="secondary" size="sm" onClick={() => setShowAddModal(true)} className="whitespace-nowrap">
+              <Button size="sm" onClick={() => setShowAddModal(true)} className="whitespace-nowrap">
                 <Plus className="w-4 h-4" />
                 Add Link
               </Button>

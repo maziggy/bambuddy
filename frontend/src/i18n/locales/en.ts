@@ -2196,7 +2196,7 @@ export default {
     defaultPrinterDescription: 'Pre-select this printer for uploads, reprints, and other operations.',
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
-    sidebarOrderDescription: 'Use Sidebar Layout to reorder items, reset visibility, and manage custom links.',
+    sidebarOrderDescription: 'Use Sidebar to reorder items, reset visibility, and manage custom links.',
     setDefault: 'Set Default',
     sidebarOrderSetDefaultHint: 'Set default applies the current menu order to users who haven\'t customized theirs.',
     sidebarDefaultSet: 'Default menu order has been set.',
@@ -5162,7 +5162,7 @@ export default {
   // External Links
   externalLinks: {
     title: 'Sidebar Links',
-    sidebarLayout: 'Sidebar Layout',
+    sidebarLayout: 'Sidebar',
     sidebarLayoutDescription: 'Show or hide built-in pages, add external links, and drag items to reorder the sidebar navigation.',
     systemPages: 'Bambuddy pages',
     externalLinks: 'External links',

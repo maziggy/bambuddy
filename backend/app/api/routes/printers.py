@@ -2971,6 +2971,39 @@ async def bed_jog(
     return {"success": True, "message": f"Bed jog {distance:+.1f} mm sent"}
 
 
+@router.post("/{printer_id}/xy-jog")
+async def xy_jog(
+    printer_id: int,
+    x: float = Query(0, description="Signed relative X movement in mm"),
+    y: float = Query(0, description="Signed relative Y movement in mm"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Move the toolhead by a relative X/Y distance."""
+    if (x == 0 and y == 0) or abs(x) > 200 or abs(y) > 200:
+        raise HTTPException(400, "X/Y movement must be non-zero and ≤ 200 mm per axis")
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    axes = []
+    if x:
+        axes.append(f"X{x:.2f}")
+    if y:
+        axes.append(f"Y{y:.2f}")
+
+    if not client.send_gcode("\n".join(["G91", f"G1 {' '.join(axes)} F6000", "G90"])):
+        raise HTTPException(500, "Failed to send XY jog command")
+
+    return {"success": True, "message": f"XY jog X{x:+.1f} Y{y:+.1f} mm sent"}
+
+
 @router.post("/{printer_id}/home-axes")
 async def home_axes(
     printer_id: int,

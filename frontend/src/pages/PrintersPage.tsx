@@ -36,6 +36,7 @@ import {
   Filter,
   Pencil,
   ArrowLeft,
+  ArrowRight,
   ArrowUp,
   ArrowDown,
   Layers,
@@ -64,7 +65,7 @@ import {
   Gauge,
   DoorOpen,
   DoorClosed,
-  MoveVertical,
+  Move,
   LogIn,
   LogOut,
   MoreHorizontal,
@@ -2223,6 +2224,13 @@ function PrinterCard({
       showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
   });
 
+  const xyJogMutation = useMutation({
+    mutationFn: ({ x, y }: { x: number; y: number }) =>
+      api.xyJog(printer.id, x, y),
+    onError: (error: Error) =>
+      showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
+  });
+
   const homeAxesMutation = useMutation({
     mutationFn: (axes: 'z' | 'xy' | 'all') => api.homeAxes(printer.id, axes),
     onSuccess: () => {
@@ -3626,12 +3634,13 @@ function PrinterCard({
                         );
                       })()}
 
-                      {/* Bed Jog (Z-axis) — compact badge, popover holds the actual controls */}
+                      {/* Movement — compact badge, popover holds XY, Z, and home controls */}
                       {(() => {
                         const canControl = hasPermission('printers:control');
                         const disabled = isPrinting || !canControl;
                         const bambuIsPlateBelow = true; // positive Z moves plate away from nozzle
-                        const requestJog = (direction: 1 | -1) => {
+                        const jogButtonClass = 'flex h-8 w-8 items-center justify-center rounded bg-indigo-500/15 text-indigo-300 transition-colors hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50';
+                        const requestZJog = (direction: 1 | -1) => {
                           const signed = direction * bedJogStep * (bambuIsPlateBelow ? 1 : -1);
                           const warnedKey = `bambuddy.bedJog.warned.${printer.id}`;
                           const warned = (() => {
@@ -3645,6 +3654,10 @@ function PrinterCard({
                             setShowNotHomedModal({ distance: signed });
                           }
                         };
+                        const requestXyJog = (x: number, y: number) => {
+                          setShowBedJogMenu(null);
+                          xyJogMutation.mutate({ x, y });
+                        };
                         return (
                           <div className="relative">
                             <button
@@ -3657,27 +3670,80 @@ function PrinterCard({
                               }`}
                               title={!canControl ? t('printers.permission.noControl') : isPrinting ? t('printers.bedJog.disabledWhilePrinting') : `${t('printers.bedJog.title')} (${bedJogStep}mm)`}
                             >
-                              <MoveVertical className="w-4 h-4" />
+                              <Move className="w-4 h-4" />
                             </button>
                             {showBedJogMenu === printer.id && (
                               <>
                                 <div className="fixed inset-0 z-40" onClick={() => setShowBedJogMenu(null)} />
-                                <div className="absolute bottom-full left-0 mb-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg p-2 min-w-[140px]">
-                                  <div className="flex items-center justify-between gap-1 mb-2">
-                                    <button
-                                      onClick={() => requestJog(-1)}
-                                      className="flex-1 flex items-center justify-center py-1.5 rounded bg-indigo-500/15 hover:bg-indigo-500/30 text-indigo-300"
-                                      aria-label={t('printers.bedJog.up')}
-                                    >
-                                      <ArrowUp className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={() => requestJog(1)}
-                                      className="flex-1 flex items-center justify-center py-1.5 rounded bg-indigo-500/15 hover:bg-indigo-500/30 text-indigo-300"
-                                      aria-label={t('printers.bedJog.down')}
-                                    >
-                                      <ArrowDown className="w-4 h-4" />
-                                    </button>
+                                <div className="absolute bottom-full left-0 mb-1 z-50 min-w-[194px] rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-2 shadow-lg">
+                                  <div className="mb-2 flex items-center gap-2">
+                                    <div className="grid grid-cols-3 gap-1">
+                                      <div />
+                                      <button
+                                        onClick={() => requestXyJog(0, bedJogStep)}
+                                        disabled={xyJogMutation.isPending}
+                                        className={jogButtonClass}
+                                        aria-label="Move Y forward"
+                                      >
+                                        <ArrowUp className="w-4 h-4" />
+                                      </button>
+                                      <div />
+                                      <button
+                                        onClick={() => requestXyJog(-bedJogStep, 0)}
+                                        disabled={xyJogMutation.isPending}
+                                        className={jogButtonClass}
+                                        aria-label="Move X left"
+                                      >
+                                        <ArrowLeft className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setShowBedJogMenu(null);
+                                          homeAxesMutation.mutate('all');
+                                        }}
+                                        disabled={homeAxesMutation.isPending}
+                                        className={jogButtonClass}
+                                        aria-label={t('printers.bedJog.homeZ')}
+                                      >
+                                        <Home className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={() => requestXyJog(bedJogStep, 0)}
+                                        disabled={xyJogMutation.isPending}
+                                        className={jogButtonClass}
+                                        aria-label="Move X right"
+                                      >
+                                        <ArrowRight className="w-4 h-4" />
+                                      </button>
+                                      <div />
+                                      <button
+                                        onClick={() => requestXyJog(0, -bedJogStep)}
+                                        disabled={xyJogMutation.isPending}
+                                        className={jogButtonClass}
+                                        aria-label="Move Y back"
+                                      >
+                                        <ArrowDown className="w-4 h-4" />
+                                      </button>
+                                      <div />
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                      <button
+                                        onClick={() => requestZJog(-1)}
+                                        disabled={bedJogMutation.isPending}
+                                        className={jogButtonClass}
+                                        aria-label={t('printers.bedJog.up')}
+                                      >
+                                        <ArrowUp className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={() => requestZJog(1)}
+                                        disabled={bedJogMutation.isPending}
+                                        className={jogButtonClass}
+                                        aria-label={t('printers.bedJog.down')}
+                                      >
+                                        <ArrowDown className="w-4 h-4" />
+                                      </button>
+                                    </div>
                                   </div>
                                   <div className="text-[9px] uppercase tracking-wider text-bambu-gray/70 px-1 mb-1">
                                     {t('printers.bedJog.step')}

@@ -34,22 +34,31 @@ services:
     #  - "6000:6000"                  # Virtual printer file transfer tunnel
     #  - "322:322"                    # Virtual printer RTSP camera (X1/H2/P2; proxy mode + non-proxy modes with a target printer)
     #  - "2024-2026:2024-2026"        # Virtual printer proprietary ports (A1/P1S)
-    #  - "50000-51000:50000-51000"    # Virtual printer FTP passive data (widened from 50000-50100 for multi-VP headroom)
+    #  - "50000-50029:50000-50029"    # Virtual printer FTP passive data (3 VPs × 10-port slice)
     #
-    # ⚠️  Bridge-mode + Docker's default userland proxy: the 1001-port FTP
-    # passive range spawns ~2000 docker-proxy host processes (IPv4+IPv6
-    # × 1001 ports), each pinning ~3.5 MB of host RAM, for a ~3.5 GB
-    # footprint that doesn't show up in `docker stats` because it's
-    # host-level, not container-level (#1646). Linux's host-mode default
-    # above sidesteps this entirely. If you genuinely need bridge mode
-    # (e.g. Docker Desktop on macOS/Windows), set
-    #     { "userland-proxy": false }
-    # in /etc/docker/daemon.json and restart Docker. Confirmed to clear
-    # the issue by the reporter; the kernel does NAT directly via
-    # iptables/nftables, no per-port host process needed. Only side-
-    # effect is that connections originating from 127.0.0.1 on the host
-    # itself can't reach the container — fine for nearly every
-    # Bambuddy install.
+    # FTP passive-mode port slicing (#1646): non-proxy VPs (Archive / Review /
+    # Queue modes) get a 10-port slice each, allocated by VP id — VP 1 →
+    # 50000-50009, VP 2 → 50010-50019, VP 3 → 50020-50029, etc. The default
+    # exposure above covers 3 VPs; widen the range to cover more
+    # (`50000-500N9` where N = vp_count - 1). Proxy-mode VPs forward the
+    # real printer's full 50000-50100 range — if you use proxy mode, expose
+    # `50000-50100:50000-50100` instead.
+    #
+    # Why narrow this matters on bridge mode: with Docker's default
+    # userland-proxy (true), every exposed port spawns one docker-proxy host
+    # process per address family (IPv4 + IPv6). The original 1001-port range
+    # spawned ~2000 such processes, pinning ~3.5 GB of host RAM that doesn't
+    # appear in `docker stats` (host-level, not container-level). 30 ports
+    # → ~60 processes → ~210 MB instead.
+    #
+    # Bridge mode is the normal setup for any Linux host that runs
+    # Bambuddy alongside other services (NAS, multi-tenant Docker VM,
+    # Synology DSM, Unraid) — `network_mode: host` would conflict with
+    # ports those other services already bind. Bambuddy uses host mode by
+    # default because SSDP printer discovery needs L2 multicast, but it's
+    # a deliberate trade-off, not a security-blind default; setups that
+    # forgo discovery (add printers by IP) can stay on bridge with the
+    # narrowed range above.
     volumes:
       - bambuddy_data:/app/data
       - bambuddy_logs:/app/logs

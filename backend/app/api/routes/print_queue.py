@@ -1041,7 +1041,7 @@ async def start_queue_item(
     item_id: int,
     skip_filament_check: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_OWN),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_OWN),
 ):
     """Manually start a staged (manual_start) queue item.
 
@@ -1086,6 +1086,14 @@ async def start_queue_item(
     # Print Anyway / no deficit: clear the flags and let the scheduler dispatch.
     item.manual_start = False
     item.filament_short = False
+    # Credit the clicker as the item's owner when no prior owner is set —
+    # VP-uploaded queue items arrive over FTP unattributed, so without this
+    # the print log's User column stays blank even when auth is on
+    # (#1670). An item that already has a creator (UI-added queue items)
+    # keeps that attribution; the dispatcher is not promoted over the
+    # original uploader.
+    if user is not None and item.created_by_id is None:
+        item.created_by_id = user.id
     await db.commit()
     await db.refresh(item, ["archive", "printer", "library_file", "created_by", "batch"])
 

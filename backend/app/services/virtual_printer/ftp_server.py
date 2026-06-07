@@ -561,17 +561,40 @@ class FTPSession:
         await self.send(226, "Transfer complete")
 
 
-class VirtualPrinterFTPServer:
-    """Implicit FTPS server that accepts uploads from slicers."""
+PASSIVE_PORT_BASE = 50000
+PASSIVE_SLICE_SIZE = 10
+PASSIVE_MAX_SLOTS = 100
 
-    # Passive-mode data port range. Widened from 50000-50100 (101 ports) to
-    # 50000-51000 (1001 ports) so concurrent transfers across multiple VPs
-    # — particularly when a VP falls back to bind 0.0.0.0 (manager.py picks
-    # this when bind_ip is unset) — don't collide. With 101 ports and 10
-    # random pick attempts per session, birthday-style collisions hit
-    # under load; 1001 ports gives multi-VP setups headroom.
-    PASSIVE_PORT_MIN = 50000
-    PASSIVE_PORT_MAX = 51000
+
+def compute_passive_port_slice(vp_id: int) -> tuple[int, int]:
+    """Return the (min, max) passive-mode data port range for VP `vp_id`.
+
+    Each VP gets a unique non-overlapping slice so bridge-mode Docker users
+    only need to expose `PASSIVE_SLICE_SIZE * <vp count>` ports instead of
+    the full historical 1001-port pool (#1646 — wide pool × Docker's
+    userland-proxy spawned ~2000 host processes at ~3.5 GB RAM). vp_id is
+    taken modulo PASSIVE_MAX_SLOTS so installs that have churned through
+    many VPs over time still produce a valid in-range slice; a same-slot
+    collision falls back to the existing per-session 10-attempt random
+    retry, which is the pre-#1646 behaviour and recovers gracefully.
+    """
+    slot = (max(vp_id, 1) - 1) % PASSIVE_MAX_SLOTS
+    port_min = PASSIVE_PORT_BASE + slot * PASSIVE_SLICE_SIZE
+    port_max = port_min + PASSIVE_SLICE_SIZE - 1
+    return port_min, port_max
+
+
+class VirtualPrinterFTPServer:
+    """Implicit FTPS server that accepts uploads from slicers.
+
+    Each VP is given a small non-overlapping passive-mode data-port slice
+    via `passive_port_min/passive_port_max` (typically computed by
+    `compute_passive_port_slice(vp_id)` at the call site). The slice is
+    intentionally narrow — 10 ports per VP fits Bambu-style one-passive-
+    socket-per-upload sessions with safe headroom, and bridge-mode docker
+    setups only have to expose `N_vps * 10` ports instead of the historical
+    1001-port pool (#1646).
+    """
 
     def __init__(
         self,
@@ -583,6 +606,8 @@ class VirtualPrinterFTPServer:
         on_file_received: Callable[[Path, str], None] | None = None,
         bind_address: str = "0.0.0.0",  # nosec B104
         vp_name: str = "",
+        passive_port_min: int = PASSIVE_PORT_BASE,
+        passive_port_max: int = PASSIVE_PORT_BASE + PASSIVE_SLICE_SIZE - 1,
     ):
         """Initialize the FTPS server.
 
@@ -595,6 +620,11 @@ class VirtualPrinterFTPServer:
             on_file_received: Callback when file upload completes (path, source_ip)
             bind_address: IP address to bind to (default 0.0.0.0)
             vp_name: Virtual printer name for log identification
+            passive_port_min: Low end of this VP's passive-mode data port slice
+                (inclusive). Per-VP slicing eliminates cross-VP collisions on
+                shared 0.0.0.0 binds without paying for a 1001-port pool (#1646).
+            passive_port_max: High end of the slice (inclusive). Defaults
+                produce a 10-port window starting at PASSIVE_PORT_BASE.
         """
         self.upload_dir = upload_dir
         self.access_code = access_code
@@ -604,6 +634,8 @@ class VirtualPrinterFTPServer:
         self.on_file_received = on_file_received
         self.bind_address = bind_address
         self.vp_name = vp_name
+        self.passive_port_min = passive_port_min
+        self.passive_port_max = passive_port_max
         self._server: asyncio.Server | None = None
         self._running = False
         # Set after the socket is bound and the server is accepting connections,
@@ -673,8 +705,8 @@ class VirtualPrinterFTPServer:
             logger.info("Implicit FTPS server started on port %s", self.port)
             logger.info(
                 "FTP passive data port range: %s-%s",
-                self.PASSIVE_PORT_MIN,
-                self.PASSIVE_PORT_MAX,
+                self.passive_port_min,
+                self.passive_port_max,
             )
             if self._pasv_address:
                 logger.info("FTP PASV address override: %s", self._pasv_address)
@@ -707,7 +739,7 @@ class VirtualPrinterFTPServer:
             access_code=self.access_code,
             ssl_context=self._ssl_context,
             on_file_received=self.on_file_received,
-            passive_port_range=(self.PASSIVE_PORT_MIN, self.PASSIVE_PORT_MAX),
+            passive_port_range=(self.passive_port_min, self.passive_port_max),
             pasv_address=self._pasv_address,
             bind_address=self.bind_address,
             vp_name=self.vp_name,

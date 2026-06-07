@@ -20,7 +20,7 @@ from backend.app.models.virtual_printer import (
 )
 from backend.app.services.virtual_printer.bind_server import BindServer
 from backend.app.services.virtual_printer.certificate import CertificateService
-from backend.app.services.virtual_printer.ftp_server import VirtualPrinterFTPServer
+from backend.app.services.virtual_printer.ftp_server import VirtualPrinterFTPServer, compute_passive_port_slice
 from backend.app.services.virtual_printer.mqtt_bridge import MQTTBridge
 from backend.app.services.virtual_printer.mqtt_server import SimpleMQTTServer
 from backend.app.services.virtual_printer.ssdp_server import SSDPProxy, VirtualPrinterSSDPServer
@@ -749,7 +749,12 @@ class VirtualPrinterInstance:
 
         self._tasks = []
 
-        # FTP server
+        # FTP server. Each VP gets a non-overlapping passive-mode port slice
+        # derived from its DB id so bridge-mode Docker users only have to
+        # expose a narrow range (#1646). Default slice is 10 ports per VP;
+        # see ftp_server.compute_passive_port_slice for the wrap-around
+        # behaviour on installs with very high VP ids.
+        passive_port_min, passive_port_max = compute_passive_port_slice(self.id)
         self._ftp = VirtualPrinterFTPServer(
             upload_dir=self.upload_dir,
             access_code=self.access_code,
@@ -758,6 +763,8 @@ class VirtualPrinterInstance:
             on_file_received=self.on_file_received,
             bind_address=bind_addr,
             vp_name=self.name,
+            passive_port_min=passive_port_min,
+            passive_port_max=passive_port_max,
         )
         self._tasks.append(
             asyncio.create_task(

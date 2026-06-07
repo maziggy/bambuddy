@@ -5439,8 +5439,10 @@ function PrinterCard({
                 // margin). When the popover is taller than that space — short
                 // viewport, landscape phone, zoomed-in — the body scrolls and
                 // the footer stays pinned, so the Start button is always
-                // reachable (#1458 / #1447 follow-up).
-                maxHeight: `calc(100vh - ${dryingPopoverPos.top}px - 8px)`,
+                // reachable (#1458 / #1447 follow-up). dvh (not vh) so iOS
+                // Safari's bottom toolbar overlay doesn't clip the footer
+                // (#1669, iPhone 17 Safari).
+                maxHeight: `calc(100dvh - ${dryingPopoverPos.top}px - 8px)`,
               }}
               onClick={e => e.stopPropagation()}
             >

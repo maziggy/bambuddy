@@ -46,11 +46,22 @@ export interface ComputePopoverPositionOpts {
  * doesn't push the popover off-screen.
  */
 export function computePopoverPosition(opts: ComputePopoverPositionOpts): PopoverPosition {
+  // iOS Safari's bottom URL/toolbar overlay is excluded from window.innerHeight
+  // but included in the layout viewport, so a popover anchored against
+  // innerHeight gets its footer clipped behind the toolbar (#1669, iPhone 17
+  // Safari). visualViewport reflects the actually-visible area when the
+  // toolbar is up; fall back to innerHeight where it isn't available.
+  const visualHeight =
+    typeof window !== 'undefined' && window.visualViewport
+      ? window.visualViewport.height
+      : typeof window !== 'undefined'
+        ? window.innerHeight
+        : 0;
   const {
     triggerRect,
     popoverWidth,
     estimatedHeight,
-    viewportHeight = window.innerHeight,
+    viewportHeight = visualHeight,
     viewportWidth = window.innerWidth,
     margin = 8,
     gap = 4,

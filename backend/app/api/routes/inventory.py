@@ -1049,6 +1049,49 @@ async def import_spools_csv(
     )
 
 
+@router.get("/spools/by-tag", response_model=SpoolResponse)
+async def get_spool_by_tag(
+    tray_uuid: str | None = None,
+    tag_uid: str | None = None,
+    include_archived: bool = False,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """Find a single spool by its NFC ``tray_uuid`` and/or ``tag_uid``.
+
+    Lets NFC inventory integrations dedupe a scan without listing the whole
+    inventory. ``tray_uuid`` is the primary identifier (it matches the value the
+    AMS reports over MQTT), so it is tried first; ``tag_uid`` is the fallback.
+    At least one identifier must be supplied. Returns 404 when nothing matches.
+
+    Requires ``inventory:read``, which for API keys is granted by either a
+    read-status or a Manage-Inventory scope (#1663) — so a key that can already
+    create/update spools can read them back too.
+    """
+    normalized_tray_uuid = normalize_tray_uuid(tray_uuid) or None
+    normalized_tag_uid = normalize_tag_uid(tag_uid) or None
+
+    if not normalized_tray_uuid and not normalized_tag_uid:
+        raise HTTPException(400, "Provide tray_uuid and/or tag_uid")
+
+    base_query = select(Spool).options(selectinload(Spool.k_profiles))
+    if not include_archived:
+        base_query = base_query.where(Spool.archived_at.is_(None))
+
+    for column, value in (
+        (Spool.tray_uuid, normalized_tray_uuid),
+        (Spool.tag_uid, normalized_tag_uid),
+    ):
+        if not value:
+            continue
+        result = await db.execute(base_query.where(func.upper(column) == value).order_by(Spool.id))
+        spool = result.scalars().first()
+        if spool:
+            return spool
+
+    raise HTTPException(404, "Spool not found")
+
+
 @router.get("/spools/{spool_id}", response_model=SpoolResponse)
 async def get_spool(
     spool_id: int,

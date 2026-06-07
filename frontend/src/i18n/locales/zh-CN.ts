@@ -3680,6 +3680,7 @@ export default {
       colColor: '颜色',
       colorResolved: '已从目录填充颜色',
       colorCrossMaterial: '颜色取自其他材料 — 目录中无精确匹配',
+      duplicateExisting: '已存在具有此材料、品牌和颜色的料卷 — 仍会作为新料卷导入',
       spoolmanHint: '在 Spoolman 模式下，请使用 Spoolman 内置的 CSV 导入/导出。',
       importValidRows: '导入 {{count}} 个有效行',
       noValidRows: '没有有效行',

@@ -33,6 +33,8 @@ from backend.app.schemas.spool import SpoolCreate
 # import — `weight_used` is the source of truth, and accepting both would let
 # them contradict. `last_used` is a timestamp the model carries but SpoolCreate
 # does not, so import applies it to the ORM object directly (see persist path).
+# `storage_location`, `category` and `low_stock_threshold_pct` are SpoolCreate
+# fields included so a round-trip preserves them (they'd otherwise be lost).
 CSV_COLUMNS = [
     "material",
     "brand",
@@ -49,6 +51,9 @@ CSV_COLUMNS = [
     "nozzle_temp_max",
     "last_used",
     "note",
+    "storage_location",
+    "category",
+    "low_stock_threshold_pct",
 ]
 
 # Upload ceiling for the import endpoint. A spool inventory CSV is a few KB
@@ -64,7 +69,7 @@ _FORMULA_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 # Columns whose CSV cell must be coerced to a number before SpoolCreate sees it.
 # DictReader hands us strings; SpoolCreate wants int/float. Empty cell → omit
 # the field (falls back to the schema default / None).
-_INT_COLUMNS = {"label_weight", "nozzle_temp_min", "nozzle_temp_max"}
+_INT_COLUMNS = {"label_weight", "nozzle_temp_min", "nozzle_temp_max", "low_stock_threshold_pct"}
 _FLOAT_COLUMNS = {"cost_per_kg", "weight_used"}
 
 # label_weight default, pulled from the schema so the weight_used bounds check
@@ -94,6 +99,11 @@ class ImportRowResult(BaseModel):
     # material (no exact material match existed). Surfaced so the preview can
     # warn the user the colour came from another material's variant.
     cross_material_color: bool = False
+    # True when an active spool with the same material+brand+color_name already
+    # exists. Informational only — the import still creates the row (there's no
+    # unique constraint); the preview warns so a double-click / re-upload of the
+    # same CSV doesn't silently duplicate the inventory.
+    duplicate_of_existing: bool = False
     spool: dict | None = None
 
 
@@ -174,15 +184,38 @@ async def _load_color_catalog(db: AsyncSession) -> list[ColorCatalogEntry]:
     return list(result.scalars().all())
 
 
+def _spool_key(material: str | None, brand: str | None, color_name: str | None) -> tuple[str, str, str]:
+    """Case/space-insensitive identity used for the duplicate soft-warn."""
+    return (
+        (material or "").strip().lower(),
+        (brand or "").strip().lower(),
+        (color_name or "").strip().lower(),
+    )
+
+
+async def _load_existing_spool_keys(db: AsyncSession) -> set[tuple[str, str, str]]:
+    """Load material+brand+color_name keys of active spools for the dup warning.
+
+    Spool has no unique constraint, so a double-click or re-upload of the same
+    CSV would silently duplicate the inventory. We pull the active spools' keys
+    once and let the preview flag matching rows — informational only, the import
+    still creates them.
+    """
+    result = await db.execute(select(Spool.material, Spool.brand, Spool.color_name).where(Spool.archived_at.is_(None)))
+    return {_spool_key(m, b, c) for m, b, c in result.all()}
+
+
 def _resolve_color(
     catalog: list[ColorCatalogEntry], brand: str | None, color_name: str | None, material: str | None
 ) -> tuple[str, str | None, str | None, bool] | None:
     """Match brand + color_name against the preloaded catalog (case-insensitive).
 
     Returns (rgba, extra_colors, effect_type, cross_material) on a match, else
-    None. Prefers an entry whose material matches; if none does it falls back to
-    another material's entry and sets cross_material=True so the caller can warn
-    that the colour came from a different material's variant.
+    None. Prefers an entry whose material matches the row; a catalog entry with
+    a NULL material is the project's "matches any material" convention and counts
+    as an exact match too. Only when neither exists does it fall back to another
+    material's entry and set cross_material=True so the caller can warn that the
+    colour came from a different material's variant.
     """
     if not brand or not color_name:
         return None
@@ -199,7 +232,10 @@ def _resolve_color(
     if not matches:
         return None
 
-    exact = next((e for e in matches if material_l and e.material and e.material.lower() == material_l), None)
+    exact = next(
+        (e for e in matches if e.material is None or (material_l and e.material.lower() == material_l)),
+        None,
+    )
     row = exact or matches[0]
     cross_material = exact is None
 
@@ -265,9 +301,11 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
     if "material" not in col_index:
         return _empty_preview(warnings + ["Required column 'material' is missing from the header."])
 
-    # Pull the catalog once; per-row colour resolution matches against this
-    # list in memory instead of issuing a SELECT per row.
+    # Pull the catalog and the existing-spool keys once; per-row colour
+    # resolution and the duplicate soft-warn both match in memory rather than
+    # issuing a SELECT per row.
     catalog = await _load_color_catalog(db)
+    existing_keys = await _load_existing_spool_keys(db)
 
     def cell(row: list[str], field: str) -> str:
         idx = col_index.get(field)
@@ -313,7 +351,7 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
         row_error: str | None = None
 
         # Plain text passthrough columns.
-        for field in ("subtype", "effect_type", "extra_colors", "note"):
+        for field in ("subtype", "effect_type", "extra_colors", "note", "storage_location", "category"):
             value = cell(raw_row, field)
             if value:
                 data[field] = value
@@ -432,6 +470,7 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
                 rgba=spool.rgba,
                 resolved_color=resolved_color,
                 cross_material_color=cross_material_color,
+                duplicate_of_existing=_spool_key(material, brand, color_name) in existing_keys,
                 spool=spool_data,
             )
         )

@@ -217,6 +217,27 @@ class TestInventoryCsvColorResolution:
         assert row["resolved_color"] is True
         assert row["cross_material_color"] is False
 
+    async def test_generic_material_catalog_entry_not_flagged(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        # A NULL-material catalog entry is the project's "matches any material"
+        # convention — resolving a PLA row from it is an exact match, not a
+        # cross-material fallback, so it must not raise the yellow warning.
+        db_session.add(
+            ColorCatalogEntry(manufacturer="Polymaker", color_name="Jade White", hex_color="#E8E8E8", material=None)
+        )
+        await db_session.commit()
+
+        csv_text = "material,brand,color_name\nPLA,Polymaker,Jade White\n"
+
+        response = await async_client.post("/api/v1/inventory/spools/import?dry_run=true", files=_csv_upload(csv_text))
+
+        assert response.status_code == 200, response.text
+        row = response.json()["rows"][0]
+        assert row["resolved_color"] is True
+        assert row["cross_material_color"] is False
+        assert row["rgba"] == "e8e8e8ff"
+
 
 @pytest.mark.asyncio
 @pytest.mark.integration
@@ -421,3 +442,79 @@ class TestInventoryCsvUsageColumns:
         data = response.json()
         assert data["error_count"] == 1
         assert "last_used" in data["rows"][0]["reason"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestInventoryCsvExtraColumns:
+    async def test_storage_category_threshold_round_trip(self, async_client: AsyncClient, db_session: AsyncSession):
+        # storage_location / category / low_stock_threshold_pct must survive an
+        # export → import cycle (would otherwise be silently lost).
+        db_session.add(
+            Spool(
+                material="PLA",
+                brand="Polymaker",
+                color_name="White",
+                rgba="ffffffff",
+                storage_location="Shelf B3",
+                category="Production",
+                low_stock_threshold_pct=20,
+            )
+        )
+        await db_session.commit()
+
+        csv_text = (await async_client.get("/api/v1/inventory/spools/export")).text
+        for spool in (await db_session.execute(select(Spool))).scalars().all():
+            await db_session.delete(spool)
+        await db_session.commit()
+
+        response = await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+        assert response.status_code == 200, response.text
+        assert response.json()["created"] == 1
+
+        spool = (await db_session.execute(select(Spool))).scalars().one()
+        assert spool.storage_location == "Shelf B3"
+        assert spool.category == "Production"
+        assert spool.low_stock_threshold_pct == 20
+
+    async def test_low_stock_threshold_out_of_range_is_error(self, async_client: AsyncClient):
+        # SpoolCreate bounds low_stock_threshold_pct to 1..99; the CSV path must
+        # reject an out-of-range value rather than persist it.
+        csv_text = "material,color_name,rgba,low_stock_threshold_pct\nPLA,White,ffffffff,150\n"
+
+        response = await async_client.post("/api/v1/inventory/spools/import?dry_run=true", files=_csv_upload(csv_text))
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["error_count"] == 1
+        assert "low_stock_threshold_pct" in data["rows"][0]["reason"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestInventoryCsvDuplicateWarning:
+    async def test_existing_spool_flags_duplicate_but_still_imports(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        db_session.add(Spool(material="PLA", brand="Polymaker", color_name="Jade White", rgba="e8e8e8ff"))
+        await db_session.commit()
+
+        # Row 1 matches the existing spool (case-insensitively); row 2 is new.
+        csv_text = (
+            "material,brand,color_name,rgba\n"
+            "pla,polymaker,jade white,e8e8e8ff\n"  # duplicate of existing
+            "PETG,OtherBrand,Black,000000ff\n"  # new
+        )
+
+        response = await async_client.post("/api/v1/inventory/spools/import?dry_run=true", files=_csv_upload(csv_text))
+
+        assert response.status_code == 200, response.text
+        rows = response.json()["rows"]
+        assert rows[0]["duplicate_of_existing"] is True
+        assert rows[1]["duplicate_of_existing"] is False
+
+        # Soft-warn only: a real import still creates the duplicate row.
+        real = await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+        assert real.json()["created"] == 2
+        all_spools = (await db_session.execute(select(Spool))).scalars().all()
+        assert len(all_spools) == 3  # 1 pre-existing + 2 imported

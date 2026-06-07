@@ -3681,6 +3681,7 @@ export default {
       colColor: 'Renk',
       colorResolved: 'Renk katalogdan dolduruldu',
       colorCrossMaterial: 'Renk farklı bir malzemeden alındı — katalogda tam eşleşme yok',
+      duplicateExisting: 'Bu malzeme, marka ve renkte bir makara zaten var — yine de yeni makara olarak içe aktarılacak',
       spoolmanHint: 'Spoolman modunda Spoolman\'ın yerleşik CSV içe/dışa aktarımını kullanın.',
       importValidRows: '{{count}} geçerli satırı içe aktar',
       noValidRows: 'Geçerli satır yok',

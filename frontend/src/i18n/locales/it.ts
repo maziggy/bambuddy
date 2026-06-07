@@ -3680,6 +3680,7 @@ export default {
       colColor: 'Colore',
       colorResolved: 'Colore compilato dal catalogo',
       colorCrossMaterial: 'Colore preso da un materiale diverso — nessuna corrispondenza esatta nel catalogo',
+      duplicateExisting: 'Esiste già una bobina con questo materiale, marca e colore — verrà comunque importata come nuova bobina',
       spoolmanHint: 'In modalità Spoolman, usa l\'importazione/esportazione CSV integrata di Spoolman.',
       importValidRows: 'Importa {{count}} righe valide',
       noValidRows: 'Nessuna riga valida',

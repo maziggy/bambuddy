@@ -1,7 +1,8 @@
 import { useState, useRef, type DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Upload, X, FileText, Loader2, CheckCircle, XCircle, MinusCircle, Wand2, AlertTriangle } from 'lucide-react';
+import { Upload, X, FileText, Loader2, CheckCircle, XCircle, MinusCircle, Wand2, AlertTriangle, Copy } from 'lucide-react';
 import { api, type CsvImportPreview, type CsvImportRow } from '../api/client';
+import { getSwatchStyle } from '../utils/colors';
 import { Button } from './Button';
 
 interface SpoolCsvImportModalProps {
@@ -186,7 +187,7 @@ export function SpoolCsvImportModal({ onClose, onImported }: SpoolCsvImportModal
                                 {row.rgba && (
                                   <span
                                     className="inline-block w-4 h-4 rounded-full border border-bambu-dark-tertiary flex-shrink-0"
-                                    style={{ backgroundColor: `#${row.rgba.slice(0, 6)}` }}
+                                    style={getSwatchStyle(row.rgba)}
                                   />
                                 )}
                                 <span className="text-white">{row.color_name || '—'}</span>
@@ -198,6 +199,11 @@ export function SpoolCsvImportModal({ onClose, onImported }: SpoolCsvImportModal
                                 {row.cross_material_color && (
                                   <span title={t('inventory.csv.colorCrossMaterial', 'Color taken from a different material — no exact match in catalog')}>
                                     <AlertTriangle className="w-3.5 h-3.5 text-yellow-500 flex-shrink-0" />
+                                  </span>
+                                )}
+                                {row.duplicate_of_existing && (
+                                  <span title={t('inventory.csv.duplicateExisting', 'A spool with this material, brand and color already exists — it will still be imported as a new spool')}>
+                                    <Copy className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
                                   </span>
                                 )}
                               </div>

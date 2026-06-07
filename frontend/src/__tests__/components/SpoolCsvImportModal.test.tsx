@@ -21,9 +21,9 @@ const preview: CsvImportPreview = {
   skipped_count: 0,
   warnings: [],
   rows: [
-    { row_number: 1, status: 'valid', reason: null, material: 'PLA', brand: 'Polymaker', color_name: 'White', rgba: 'ffffffff', resolved_color: false, cross_material_color: false },
-    { row_number: 2, status: 'error', reason: 'material is required', material: null, brand: 'Polymaker', color_name: 'X', rgba: null, resolved_color: false, cross_material_color: false },
-    { row_number: 3, status: 'valid', reason: null, material: 'PETG', brand: 'Brand', color_name: 'Jade', rgba: 'e8e8e8ff', resolved_color: true, cross_material_color: true },
+    { row_number: 1, status: 'valid', reason: null, material: 'PLA', brand: 'Polymaker', color_name: 'White', rgba: 'ffffffff', resolved_color: false, cross_material_color: false, duplicate_of_existing: false },
+    { row_number: 2, status: 'error', reason: 'material is required', material: null, brand: 'Polymaker', color_name: 'X', rgba: null, resolved_color: false, cross_material_color: false, duplicate_of_existing: false },
+    { row_number: 3, status: 'valid', reason: null, material: 'PETG', brand: 'Brand', color_name: 'Jade', rgba: 'e8e8e8ff', resolved_color: true, cross_material_color: true, duplicate_of_existing: false },
   ],
 };
 

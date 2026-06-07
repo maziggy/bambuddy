@@ -59,6 +59,10 @@ _GENERIC_ID_VALUES = set(GENERIC_FILAMENT_IDS.values())
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
+# Bounded read size for the CSV import body so a chunked upload with no
+# Content-Length can't stream past the cap into memory before we notice.
+_CSV_UPLOAD_CHUNK_BYTES = 64 * 1024
+
 # FilamentColors.xyz API
 FILAMENT_COLORS_API = "https://filamentcolors.xyz/api"
 
@@ -1011,15 +1015,18 @@ async def import_spools_csv(
             },
         )
 
-    # Reject by declared size before reading the body into memory; then re-check
-    # the actual length, since file.size is None for chunked uploads with no
-    # Content-Length.
+    # Reject by declared size first (fast path when Content-Length is set), then
+    # read in bounded chunks and bail the moment the accumulated body crosses the
+    # cap — file.size is None for chunked uploads, so the loop is what actually
+    # keeps an oversized stream from filling memory.
     if file.size is not None and file.size > MAX_CSV_IMPORT_BYTES:
         raise _too_large()
-    raw = await file.read()
-    if len(raw) > MAX_CSV_IMPORT_BYTES:
-        raise _too_large()
-    preview = await parse_and_validate(raw, db)
+    raw = bytearray()
+    while chunk := await file.read(_CSV_UPLOAD_CHUNK_BYTES):
+        raw.extend(chunk)
+        if len(raw) > MAX_CSV_IMPORT_BYTES:
+            raise _too_large()
+    preview = await parse_and_validate(bytes(raw), db)
 
     if dry_run:
         return preview

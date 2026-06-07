@@ -3483,6 +3483,7 @@ export default {
       colColor: '색상',
       colorResolved: '카탈로그에서 색상 채움',
       colorCrossMaterial: '다른 재료에서 색상을 가져옴 — 카탈로그에 정확히 일치하는 항목 없음',
+      duplicateExisting: '이 재료, 브랜드, 색상의 스풀이 이미 존재합니다 — 그래도 새 스풀로 가져옵니다',
       spoolmanHint: 'Spoolman 모드에서는 Spoolman의 기본 CSV 가져오기/내보내기를 사용하세요.',
       importValidRows: '유효한 {{count}}개 행 가져오기',
       noValidRows: '유효한 행 없음',

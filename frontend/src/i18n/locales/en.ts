@@ -3695,6 +3695,7 @@ export default {
       colColor: 'Color',
       colorResolved: 'Color filled from catalog',
       colorCrossMaterial: 'Color taken from a different material — no exact match in catalog',
+      duplicateExisting: 'A spool with this material, brand and color already exists — it will still be imported as a new spool',
       spoolmanHint: 'In Spoolman mode, use Spoolman\'s built-in CSV import/export.',
       importValidRows: 'Import {{count}} valid rows',
       noValidRows: 'No valid rows',

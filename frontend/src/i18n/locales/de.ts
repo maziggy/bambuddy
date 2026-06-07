@@ -3692,6 +3692,7 @@ export default {
       colColor: 'Farbe',
       colorResolved: 'Farbe aus Katalog übernommen',
       colorCrossMaterial: 'Farbe von einem anderen Material übernommen — keine exakte Übereinstimmung im Katalog',
+      duplicateExisting: 'Eine Spule mit diesem Material, dieser Marke und Farbe existiert bereits — sie wird trotzdem als neue Spule importiert',
       spoolmanHint: 'Im Spoolman-Modus den integrierten CSV-Import/-Export von Spoolman verwenden.',
       importValidRows: '{{count}} gültige Zeilen importieren',
       noValidRows: 'Keine gültigen Zeilen',

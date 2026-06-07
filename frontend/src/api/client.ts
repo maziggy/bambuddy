@@ -2660,6 +2660,9 @@ export interface CsvImportRow {
   /** The catalog match came from a different material's variant (no exact
    *  material match). Shown as a warning in the preview. */
   cross_material_color: boolean;
+  /** An active spool with the same material+brand+color already exists.
+   *  Informational only — the import still creates the row. */
+  duplicate_of_existing: boolean;
 }
 
 /** Dry-run preview: per-row classification, no rows written. */

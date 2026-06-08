@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -20,6 +20,7 @@ import { AddNotificationModal } from '../components/AddNotificationModal';
 import { NotificationTemplateEditor } from '../components/NotificationTemplateEditor';
 import { NotificationLogViewer } from '../components/NotificationLogViewer';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { ApiKeyQRCodeModal } from '../components/ApiKeyQRCodeModal';
 import { CreateUserAdvancedAuthModal } from '../components/CreateUserAdvancedAuthModal';
 import { LdapUserPicker } from '../components/LdapUserPicker';
 import { SpoolmanSettings } from '../components/SpoolmanSettings';
@@ -208,6 +209,7 @@ export function SettingsPage() {
     can_update_energy_cost: false,
   });
   const [createdAPIKey, setCreatedAPIKey] = useState<string | null>(null);
+  const [showApiKeyQR, setShowApiKeyQR] = useState(false);
   const [showDeleteAPIKeyConfirm, setShowDeleteAPIKeyConfirm] = useState<number | null>(null);
   const [testApiKey, setTestApiKey] = useState('');
 
@@ -3710,7 +3712,18 @@ export function SettingsPage() {
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => setCreatedAPIKey(null)}
+                          onClick={() => setShowApiKeyQR(true)}
+                        >
+                          <QrCode className="w-4 h-4" />
+                          {t('settings.apiKeyQrButton')}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setShowApiKeyQR(false);
+                            setCreatedAPIKey(null);
+                          }}
                         >
                           {t('common.dismiss')}
                         </Button>
@@ -3719,6 +3732,16 @@ export function SettingsPage() {
                   </div>
                 </CardContent>
               </Card>
+            )}
+
+            {/* QR code with base URL + key for mobile clients. Prefer the
+                configured External URL; fall back to the current origin. */}
+            {showApiKeyQR && createdAPIKey && (
+              <ApiKeyQRCodeModal
+                apiKey={createdAPIKey}
+                baseUrl={localSettings?.external_url || undefined}
+                onClose={() => setShowApiKeyQR(false)}
+              />
             )}
 
             {/* Create Key Form */}

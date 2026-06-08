@@ -4,14 +4,14 @@ Bambuddy is sustainable thanks to people who put their money where their use is.
 
 If you'd like to support Bambuddy:
 
-- **GitHub Sponsors** (recurring, 5 tiers from $5/mo to $500/mo) — https://github.com/sponsors/maziggy
+- **GitHub Sponsors** (recurring, 5 tiers from $5/mo to $300/mo) — https://github.com/sponsors/maziggy
 - **Ko-fi** (one-time or recurring) — https://ko-fi.com/maziggy
 
 If you sponsor and your name isn't here within 48h, please write an email to martin@bambuddy.cool or open an Issue on the main repo.
 
 ---
 
-## Corporate Sponsors ($500/mo+)
+## Corporate Sponsors ($300/mo+)
 
 *None yet — be the first. Your logo on the bambuddy.cool homepage and press.html, plus co-marketing.*
 

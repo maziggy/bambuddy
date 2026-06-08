@@ -1,6 +1,6 @@
 // Bambuddy Service Worker
-const CACHE_NAME = 'bambuddy-v29';
-const STATIC_CACHE = 'bambuddy-static-v28';
+const CACHE_NAME = 'bambuddy-v30';
+const STATIC_CACHE = 'bambuddy-static-v29';
 
 // Static assets to cache on install
 const STATIC_ASSETS = [
@@ -31,12 +31,17 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// Activate event - clean up old caches, then force-reload any controlled
-// windows so they pick up the new bundle. Important for the SpoolBuddy kiosk
-// (Pi + Chromium-in-kiosk-mode, no devtools, no manual reload control):
-// without this hop, restarting Chromium installs the new SW but the existing
-// document keeps running the previously-cached bundle until a navigation
-// happens — which on a locked kiosk never occurs.
+// Activate event - clean up old caches and claim existing clients.
+//
+// The forced reload that picks up a new bundle on already-open clients (the
+// kiosk deploy-pickup scenario) lives in sw-register.js via a
+// `controllerchange` listener, gated on whether the page already had a SW
+// controller at load time. That gate distinguishes first-install (where a
+// reload would race the in-flight React mount — observed on every fresh
+// *.demo.bambuddy.cool subdomain, and in Firefox the activate's waitUntil
+// hung on `client.navigate` until the document load was aborted with a
+// Corrupted-Content error) from upgrade-on-existing-client (where the reload
+// is wanted).
 self.addEventListener('activate', (event) => {
   console.log('[SW] Activating service worker...');
   event.waitUntil(
@@ -50,25 +55,7 @@ self.addEventListener('activate', (event) => {
             return caches.delete(name);
           }),
       );
-      // Take control immediately.
       await self.clients.claim();
-      // Force a fresh navigation in any window that this SW now controls.
-      // ``client.navigate(client.url)`` re-requests the page through the
-      // network-first fetch handler, picking up the new index.html + the
-      // new content-hashed JS bundle. Guarded so the very first install on
-      // a never-controlled client doesn't trigger an unwanted reload.
-      const clients = await self.clients.matchAll({ type: 'window' });
-      for (const client of clients) {
-        try {
-          if (client.url && typeof client.navigate === 'function') {
-            await client.navigate(client.url);
-          }
-        } catch (e) {
-          // Some browsers reject navigate on cross-origin or detached
-          // clients — swallow so one bad client doesn't break the rest.
-          console.warn('[SW] Forced reload skipped for client:', client.url, e);
-        }
-      }
     })(),
   );
 });

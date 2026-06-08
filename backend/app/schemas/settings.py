@@ -245,6 +245,10 @@ class AppSettings(BaseModel):
         default=False, description="Default first layer inspection option for new prints"
     )
     default_timelapse: bool = Field(default=False, description="Default timelapse option for new prints")
+    default_nozzle_offset_cali: bool = Field(
+        default=True,
+        description="Default nozzle offset calibration option for new prints (dual-nozzle printers only)",
+    )
 
     # Staggered batch start for multi-printer jobs
     stagger_group_size: int = Field(
@@ -404,6 +408,7 @@ class AppSettingsUpdate(BaseModel):
     default_vibration_cali: bool | None = None
     default_layer_inspect: bool | None = None
     default_timelapse: bool | None = None
+    default_nozzle_offset_cali: bool | None = None
     stagger_group_size: int | None = Field(default=None, ge=1, le=50)
     stagger_interval_minutes: int | None = Field(default=None, ge=1, le=60)
     require_plate_clear: bool | None = None

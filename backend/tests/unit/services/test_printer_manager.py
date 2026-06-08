@@ -377,6 +377,7 @@ class TestPrinterManager:
             vibration_cali=True,
             layer_inspect=False,
             use_ams=True,
+            nozzle_offset_cali=False,
         )
         assert result is True
 

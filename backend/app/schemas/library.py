@@ -208,6 +208,7 @@ class FilePrintRequest(BaseModel):
     layer_inspect: bool = False
     timelapse: bool = False
     use_ams: bool = True
+    nozzle_offset_cali: bool = True  # Dual-nozzle printers only — MQTT-gated (#1682)
     # Project to associate the resulting archive with
     project_id: int | None = None
     # When true, delete the LibraryFile row + disk file after the archive has

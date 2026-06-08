@@ -695,6 +695,7 @@ class BackgroundDispatchService:
                     vibration_cali=job.options.get("vibration_cali", True),
                     layer_inspect=job.options.get("layer_inspect", False),
                     use_ams=job.options.get("use_ams", True),
+                    nozzle_offset_cali=job.options.get("nozzle_offset_cali", False),
                 )
 
                 if not started:
@@ -898,6 +899,7 @@ class BackgroundDispatchService:
                     vibration_cali=job.options.get("vibration_cali", True),
                     layer_inspect=job.options.get("layer_inspect", False),
                     use_ams=job.options.get("use_ams", True),
+                    nozzle_offset_cali=job.options.get("nozzle_offset_cali", False),
                 )
 
                 if not started:

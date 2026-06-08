@@ -40,6 +40,10 @@ class PrintQueueItemCreate(BaseModel):
     layer_inspect: bool = False
     timelapse: bool = False
     use_ams: bool = True
+    # Nozzle offset calibration — dual-nozzle printers only (#1682). Default True
+    # matches BambuStudio's default; the MQTT layer ignores the flag on
+    # single-nozzle printers so the wire value stays "skip" there.
+    nozzle_offset_cali: bool = True
     # Auto-print G-code injection
     gcode_injection: bool = False
     # Batch: create multiple copies (creates a batch if > 1)
@@ -67,6 +71,7 @@ class PrintQueueItemUpdate(BaseModel):
     layer_inspect: bool | None = None
     timelapse: bool | None = None
     use_ams: bool | None = None
+    nozzle_offset_cali: bool | None = None
     # Auto-print G-code injection
     gcode_injection: bool | None = None
 
@@ -100,6 +105,7 @@ class PrintQueueItemResponse(BaseModel):
     layer_inspect: bool = False
     timelapse: bool = False
     use_ams: bool = True
+    nozzle_offset_cali: bool = True
     status: Literal["pending", "printing", "completed", "failed", "skipped", "cancelled"]
     started_at: UTCDatetime
     completed_at: UTCDatetime
@@ -171,6 +177,7 @@ class PrintQueueBulkUpdate(BaseModel):
     layer_inspect: bool | None = None
     timelapse: bool | None = None
     use_ams: bool | None = None
+    nozzle_offset_cali: bool | None = None
     # Auto-print G-code injection
     gcode_injection: bool | None = None
 

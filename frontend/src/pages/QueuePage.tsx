@@ -124,7 +124,7 @@ function BulkEditModal({
   t,
 }: {
   selectedCount: number;
-  printers: { id: number; name: string }[];
+  printers: { id: number; name: string; nozzle_count?: number }[];
   onSave: (data: Partial<PrintQueueBulkUpdate>) => void;
   onClose: () => void;
   isSaving: boolean;
@@ -141,6 +141,12 @@ function BulkEditModal({
   const [layerInspect, setLayerInspect] = useState<boolean | 'unchanged'>('unchanged');
   const [timelapse, setTimelapse] = useState<boolean | 'unchanged'>('unchanged');
   const [useAms, setUseAms] = useState<boolean | 'unchanged'>('unchanged');
+  const [nozzleOffsetCali, setNozzleOffsetCali] = useState<boolean | 'unchanged'>('unchanged');
+
+  // Show the dual-nozzle-only toggle when the user has at least one
+  // dual-nozzle printer registered (H2D/H2D Pro/H2C/X2D). Single-nozzle
+  // queues never see it — the MQTT layer ignores the field anyway.
+  const hasDualNozzlePrinter = printers.some(p => p.nozzle_count === 2);
 
   const handleSave = () => {
     const data: Partial<PrintQueueBulkUpdate> = {};
@@ -154,12 +160,14 @@ function BulkEditModal({
     if (layerInspect !== 'unchanged') data.layer_inspect = layerInspect;
     if (timelapse !== 'unchanged') data.timelapse = timelapse;
     if (useAms !== 'unchanged') data.use_ams = useAms;
+    if (nozzleOffsetCali !== 'unchanged') data.nozzle_offset_cali = nozzleOffsetCali;
     onSave(data);
   };
 
   const hasChanges = printerId !== 'unchanged' || manualStart !== 'unchanged' || autoOffAfter !== 'unchanged' ||
     requirePreviousSuccess !== 'unchanged' || bedLevelling !== 'unchanged' || flowCali !== 'unchanged' ||
-    vibrationCali !== 'unchanged' || layerInspect !== 'unchanged' || timelapse !== 'unchanged' || useAms !== 'unchanged';
+    vibrationCali !== 'unchanged' || layerInspect !== 'unchanged' || timelapse !== 'unchanged' || useAms !== 'unchanged' ||
+    nozzleOffsetCali !== 'unchanged';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -219,6 +227,9 @@ function BulkEditModal({
               <TriStateToggle label={t('queue.bulkEdit.layerInspection')} value={layerInspect} onChange={setLayerInspect} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.timelapse')} value={timelapse} onChange={setTimelapse} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.useAms')} value={useAms} onChange={setUseAms} t={t} />
+              {hasDualNozzlePrinter && (
+                <TriStateToggle label={t('queue.bulkEdit.nozzleOffsetCali')} value={nozzleOffsetCali} onChange={setNozzleOffsetCali} t={t} />
+              )}
             </div>
           </div>
         </div>
@@ -1583,7 +1594,7 @@ export function QueuePage() {
       {showBulkEditModal && (
         <BulkEditModal
           selectedCount={selectedItems.length}
-          printers={printers?.map(p => ({ id: p.id, name: p.name })) || []}
+          printers={printers?.map(p => ({ id: p.id, name: p.name, nozzle_count: p.nozzle_count })) || []}
           onSave={(data) => {
             if (Object.keys(data).length > 0) {
               bulkUpdateMutation.mutate({ item_ids: selectedItems, ...data });

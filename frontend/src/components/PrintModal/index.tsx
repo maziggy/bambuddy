@@ -100,6 +100,7 @@ export function PrintModal({
         vibration_cali: queueItem.vibration_cali ?? DEFAULT_PRINT_OPTIONS.vibration_cali,
         layer_inspect: queueItem.layer_inspect ?? DEFAULT_PRINT_OPTIONS.layer_inspect,
         timelapse: queueItem.timelapse ?? DEFAULT_PRINT_OPTIONS.timelapse,
+        nozzle_offset_cali: queueItem.nozzle_offset_cali ?? DEFAULT_PRINT_OPTIONS.nozzle_offset_cali,
       };
     }
     return DEFAULT_PRINT_OPTIONS;
@@ -237,6 +238,7 @@ export function PrintModal({
       vibration_cali: settings.default_vibration_cali ?? DEFAULT_PRINT_OPTIONS.vibration_cali,
       layer_inspect: settings.default_layer_inspect ?? DEFAULT_PRINT_OPTIONS.layer_inspect,
       timelapse: settings.default_timelapse ?? DEFAULT_PRINT_OPTIONS.timelapse,
+      nozzle_offset_cali: settings.default_nozzle_offset_cali ?? DEFAULT_PRINT_OPTIONS.nozzle_offset_cali,
     });
   }, [settings, mode]);
 
@@ -917,6 +919,23 @@ export function PrintModal({
     isLibraryFile || (isMultiPlate ? selectedPlate !== null : true)
   );
 
+  // Dual-nozzle gate for the Nozzle Offset Calibration toggle (#1682).
+  // Mirrors backend `DUAL_NOZZLE_MODELS` so model-based assignment can show
+  // the toggle without a specific printer selected. For printer-mode we rely
+  // on the canonical `nozzle_count` field auto-detected from MQTT.
+  const DUAL_NOZZLE_MODELS = useMemo(
+    () => new Set(['H2D', 'H2DPRO', 'H2C', 'X2D']),
+    [],
+  );
+  const showDualNozzleOptions = useMemo(() => {
+    if (assignmentMode === 'model') {
+      if (!targetModel) return false;
+      return DUAL_NOZZLE_MODELS.has(targetModel.toUpperCase().replace(/[\s-]/g, ''));
+    }
+    if (!printers || selectedPrinters.length === 0) return false;
+    return selectedPrinters.some(id => printers.find(p => p.id === id)?.nozzle_count === 2);
+  }, [assignmentMode, targetModel, printers, selectedPrinters, DUAL_NOZZLE_MODELS]);
+
   return (
     <div
       className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
@@ -1067,7 +1086,12 @@ export function PrintModal({
 
             {/* Print options */}
             {(mode === 'reprint' || effectivePrinterCount > 0 || (assignmentMode === 'model' && targetModel)) && (
-              <PrintOptionsPanel options={printOptions} onChange={setPrintOptions} defaultExpanded={!!initialSelectedPrinterIds?.length} />
+              <PrintOptionsPanel
+                options={printOptions}
+                onChange={setPrintOptions}
+                defaultExpanded={!!initialSelectedPrinterIds?.length}
+                showDualNozzleOptions={showDualNozzleOptions}
+              />
             )}
 
             {/* Quantity — create multiple copies (batch). Hidden for multi-printer selection. */}

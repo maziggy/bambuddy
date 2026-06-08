@@ -1015,6 +1015,7 @@ export default {
       layerInspection: '첫 번째 층 검사',
       timelapse: '타임랩스',
       useAms: 'AMS 사용',
+      nozzleOffsetCali: '노즐 오프셋 보정',
       applyChanges: '변경사항 적용',
       selectAll: '전체 선택',
       deselectAll: '전체 해제',
@@ -1728,6 +1729,8 @@ export default {
     defaultLayerInspectDesc: '첫 번째 층 AI 검사',
     defaultTimelapse: '타임랩스',
     defaultTimelapseDesc: '타임랩스 영상 녹화',
+    defaultNozzleOffsetCali: '노즐 오프셋 보정',
+    defaultNozzleOffsetCaliDesc: '익스트루더 간 노즐 오프셋 보정',
     staggeredStart: '엇갈린 시작',
     staggeredStartDescription: '다중 프린터 일괄 시작 시 기본 그룹 크기 및 간격. 인쇄 모달에서 배치별로 재정의할 수 있습니다.',
     plateClear: '플레이트 비움 확인',
@@ -3544,6 +3547,7 @@ export default {
     assignSpool: '스풀 할당',
     unassignSpool: '할당 해제',
     assignSuccess: '스풀 할당 및 AMS 슬롯 구성됨',
+    assignPendingInsert: '할당됨. 스풀을 삽입하면 슬롯이 구성됩니다.',
     assignFailed: '스풀 할당 실패',
     selectSpool: '이 슬롯에 할당할 스풀 선택',
     assigned: '할당됨',
@@ -4231,7 +4235,7 @@ export default {
     },
     archiveNameSource: {
       title: '아카이브 이름 출처',
-      description: '가상 프린터를 통해 파일이 도착할 때 새 아카이브의 이름 지정 방법을 선택합니다. "메타데이터"는 3MF의 슬라이서 내장 제목을 사용합니다(기본값). "파일 이름"은 Bambu Studio가 FTP를 통해 전송한 파일 이름을 사용합니다.',
+      description: '가상 프린터를 통해 파일이 도착할 때 새 아카이브의 이름 지정 방법을 선택합니다. "메타데이터"는 3MF의 슬라이서 내장 제목을 사용합니다(기본값). "파일 이름"은 Bambu Studio가 FTP를 통해 전송한 파일 이름을 사용합니다. 참고: Bambu Studio는 3MF에 제목 필드가 있을 경우 "프린터로 보내기" 대화 상자에 입력한 이름을 해당 값으로 덮어쓰므로, 두 모드 모두 동일한 문자열이 표시되는 경우가 많습니다.',
       metadata: '메타데이터',
       filename: '파일 이름'
     },

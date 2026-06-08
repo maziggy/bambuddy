@@ -134,6 +134,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "default_vibration_cali",
             "default_layer_inspect",
             "default_timelapse",
+            "default_nozzle_offset_cali",
             "ldap_enabled",
             "ldap_auto_provision",
         ]:

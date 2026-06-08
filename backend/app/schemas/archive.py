@@ -240,3 +240,4 @@ class ReprintRequest(BaseModel):
     layer_inspect: bool = False
     timelapse: bool = False
     use_ams: bool = True  # Not exposed in UI, but needed for API
+    nozzle_offset_cali: bool = True  # Dual-nozzle printers only — MQTT-gated (#1682)

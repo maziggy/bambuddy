@@ -768,6 +768,7 @@ export default {
       noDownload: 'Pas d\'autorisation de téléchargement',
       noCopyLink: 'Pas d\'autorisation de copie lien',
       noDelete: 'Pas d\'autorisation de suppression',
+      noEdit: 'Pas d\'autorisation de modification',
       noCreate: 'Pas d\'autorisation de création',
     },
     platePicker: {
@@ -930,6 +931,17 @@ export default {
       deleteEntryConfirm: 'Cette entrée sera retirée du journal et ses contributions en filament, temps et coût disparaîtront des statistiques rapides. L\'archive correspondante (le cas échéant) n\'est pas affectée. Cette action est irréversible.',
       entryDeleted: 'Entrée du journal d\'impression supprimée',
       entryDeleteFailed: 'Échec de la suppression de l\'entrée du journal d\'impression',
+      editEntryTitle: 'Modifier l\'entrée du journal d\'impression',
+      editEntryDescription: 'Classez cette impression. Le widget Analyse des échecs regroupe par ces valeurs, ce qui répercute immédiatement la mise à jour dans les statistiques.',
+      entryUpdated: 'Entrée du journal mise à jour',
+      entryUpdateFailed: 'Échec de la mise à jour de l\'entrée du journal',
+      statuses: {
+        completed: 'Terminée',
+        failed: 'Échouée',
+        stopped: 'Arrêtée',
+        cancelled: 'Annulée',
+        skipped: 'Ignorée',
+      },
     },
   },
 

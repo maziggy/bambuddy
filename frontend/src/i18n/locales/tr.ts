@@ -768,6 +768,7 @@ export default {
       noDownload: 'Arşivleri indirme izniniz yok',
       noCopyLink: 'İndirme bağlantılarını kopyalama izniniz yok',
       noDelete: 'Bu arşivi silme izniniz yok',
+      noEdit: 'Bu girişi düzenleme izniniz yok',
       noCreate: 'Arşiv oluşturma izniniz yok',
     },
     platePicker: {
@@ -930,6 +931,17 @@ export default {
       deleteEntryConfirm: 'Bu giriş günlükten kaldırılacak ve filament, süre ve maliyet katkıları Hızlı İstatistikler\'den çıkarılacak. İlgili arşiv (varsa) etkilenmez. Bu işlem geri alınamaz.',
       entryDeleted: 'Baskı günlüğü girişi silindi',
       entryDeleteFailed: 'Baskı günlüğü girişi silinemedi',
+      editEntryTitle: 'Baskı günlüğü girişini düzenle',
+      editEntryDescription: 'Bu baskıyı sınıflandırın. Hata Analizi widget\'ı bu değerlere göre gruplandırır, böylece güncellemeler istatistiklere anında yansır.',
+      entryUpdated: 'Baskı günlüğü girişi güncellendi',
+      entryUpdateFailed: 'Baskı günlüğü girişi güncellenemedi',
+      statuses: {
+        completed: 'Tamamlandı',
+        failed: 'Başarısız',
+        stopped: 'Durduruldu',
+        cancelled: 'İptal edildi',
+        skipped: 'Atlandı',
+      },
     },
   },
 

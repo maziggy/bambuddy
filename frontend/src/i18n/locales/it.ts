@@ -768,6 +768,7 @@ export default {
       noDownload: 'Non hai il permesso di scaricare archivi',
       noCopyLink: 'Non hai il permesso di copiare link download',
       noDelete: 'Non hai il permesso di eliminare questo archivio',
+      noEdit: 'Non hai il permesso di modificare questa voce',
       noCreate: 'Non hai il permesso di creare archivi',
     },
     platePicker: {
@@ -930,6 +931,17 @@ export default {
       deleteEntryConfirm: 'Questa voce verrà rimossa dal registro e i suoi contributi di filamento, tempo e costo verranno scartati dalle statistiche rapide. L\'archivio corrispondente (se presente) non è interessato. Questa azione non può essere annullata.',
       entryDeleted: 'Voce del registro stampe eliminata',
       entryDeleteFailed: 'Impossibile eliminare la voce del registro stampe',
+      editEntryTitle: 'Modifica voce del registro stampe',
+      editEntryDescription: 'Classifica questa stampa. Il widget Analisi guasti raggruppa per questi valori, quindi gli aggiornamenti vengono riflessi immediatamente nelle statistiche.',
+      entryUpdated: 'Voce del registro aggiornata',
+      entryUpdateFailed: 'Impossibile aggiornare la voce del registro',
+      statuses: {
+        completed: 'Completata',
+        failed: 'Fallita',
+        stopped: 'Fermata',
+        cancelled: 'Annullata',
+        skipped: 'Saltata',
+      },
     },
   },
 

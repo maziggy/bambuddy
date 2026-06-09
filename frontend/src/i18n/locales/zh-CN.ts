@@ -768,6 +768,7 @@ export default {
       noDownload: '您没有下载归档的权限',
       noCopyLink: '您没有复制下载链接的权限',
       noDelete: '您没有删除此归档的权限',
+      noEdit: '您没有编辑此条目的权限',
       noCreate: '您没有创建归档的权限',
     },
     platePicker: {
@@ -930,6 +931,17 @@ export default {
       deleteEntryConfirm: '此条目将从日志中删除，其耗材、时间和成本贡献也将从快速统计中移除。对应的归档（如果有）不受影响。此操作无法撤销。',
       entryDeleted: '已删除打印日志条目',
       entryDeleteFailed: '删除打印日志条目失败',
+      editEntryTitle: '编辑打印日志条目',
+      editEntryDescription: '对这次打印进行分类。故障分析小部件按这些值分组，因此更新会立即反映在统计数据中。',
+      entryUpdated: '已更新打印日志条目',
+      entryUpdateFailed: '更新打印日志条目失败',
+      statuses: {
+        completed: '已完成',
+        failed: '失败',
+        stopped: '已停止',
+        cancelled: '已取消',
+        skipped: '已跳过',
+      },
     },
   },
 

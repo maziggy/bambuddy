@@ -767,6 +767,7 @@ export default {
       noDownload: 'アーカイブをダウンロードする権限がありません',
       noCopyLink: 'ダウンロードリンクをコピーする権限がありません',
       noDelete: 'このアーカイブを削除する権限がありません',
+      noEdit: 'このエントリを編集する権限がありません',
       noCreate: 'アーカイブを作成する権限がありません',
     },
     platePicker: {
@@ -929,6 +930,17 @@ export default {
       deleteEntryConfirm: 'このエントリはログから削除され、フィラメント、時間、コストの寄与はクイック統計から除外されます。対応するアーカイブ（ある場合）は影響を受けません。この操作は取り消せません。',
       entryDeleted: '印刷ログのエントリを削除しました',
       entryDeleteFailed: '印刷ログのエントリを削除できませんでした',
+      editEntryTitle: '印刷ログのエントリを編集',
+      editEntryDescription: 'この印刷を分類します。失敗分析ウィジェットはこれらの値でグループ化されるため、更新は即座に統計に反映されます。',
+      entryUpdated: '印刷ログのエントリを更新しました',
+      entryUpdateFailed: '印刷ログのエントリを更新できませんでした',
+      statuses: {
+        completed: '完了',
+        failed: '失敗',
+        stopped: '停止',
+        cancelled: 'キャンセル',
+        skipped: 'スキップ',
+      },
     },
   },
 

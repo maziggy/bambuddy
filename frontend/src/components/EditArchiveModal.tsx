@@ -7,8 +7,11 @@ import type { Archive } from '../api/client';
 import { Button } from './Button';
 import { PrintLogTable } from './PrintLogTable';
 
-// Keys for failure reasons - translated at render time
-const FAILURE_REASON_KEYS = [
+// Keys for failure reasons - translated at render time.
+// Exported so the Print Log per-row classification editor (#1687 part 4)
+// can share the same vocabulary as the Archive Edit modal — the backend
+// PATCH /print-log/{id} validator gates writes against this exact list.
+export const FAILURE_REASON_KEYS = [
   'adhesionFailure',
   'spaghettiDetached',
   'layerShift',

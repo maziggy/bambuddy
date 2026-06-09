@@ -725,6 +725,7 @@ export default {
       noDownload: '아카이브를 다운로드할 권한이 없습니다',
       noCopyLink: '다운로드 링크를 복사할 권한이 없습니다',
       noDelete: '이 아카이브를 삭제할 권한이 없습니다',
+      noEdit: '이 항목을 편집할 권한이 없습니다',
       noCreate: '아카이브를 만들 권한이 없습니다'
     },
     platePicker: {
@@ -865,7 +866,18 @@ export default {
       deleteEntryTitle: '인쇄 로그 항목 삭제',
       deleteEntryConfirm: '이 항목이 로그에서 삭제되며 필라멘트, 시간 및 비용 기여도가 빠른 통계에서 제외됩니다. 해당 아카이브(있는 경우)는 영향을 받지 않습니다. 이 작업은 취소할 수 없습니다.',
       entryDeleted: '인쇄 로그 항목이 삭제되었습니다',
-      entryDeleteFailed: '인쇄 로그 항목 삭제 실패'
+      entryDeleteFailed: '인쇄 로그 항목 삭제 실패',
+      editEntryTitle: '인쇄 로그 항목 편집',
+      editEntryDescription: '이 인쇄를 분류합니다. 실패 분석 위젯이 이 값으로 그룹화하므로 업데이트가 통계에 즉시 반영됩니다.',
+      entryUpdated: '인쇄 로그 항목이 업데이트되었습니다',
+      entryUpdateFailed: '인쇄 로그 항목 업데이트 실패',
+      statuses: {
+        completed: '완료됨',
+        failed: '실패',
+        stopped: '중지됨',
+        cancelled: '취소됨',
+        skipped: '건너뜀'
+      }
     },
     runLog: {
       title: '인쇄 기록',

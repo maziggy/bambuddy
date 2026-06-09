@@ -768,6 +768,7 @@ export default {
       noDownload: 'Sie haben keine Berechtigung, Archive herunterzuladen',
       noCopyLink: 'Sie haben keine Berechtigung, Download-Links zu kopieren',
       noDelete: 'Sie haben keine Berechtigung, dieses Archiv zu löschen',
+      noEdit: 'Sie haben keine Berechtigung, diesen Eintrag zu bearbeiten',
       noCreate: 'Sie haben keine Berechtigung, Archive zu erstellen',
     },
     platePicker: {
@@ -930,6 +931,17 @@ export default {
       deleteEntryConfirm: 'Dieser Eintrag wird aus dem Protokoll entfernt und sein Filament-, Zeit- und Kostenbeitrag verschwindet aus den Schnellstatistiken. Das zugehörige Archiv (falls vorhanden) ist nicht betroffen. Diese Aktion kann nicht rückgängig gemacht werden.',
       entryDeleted: 'Druckprotokoll-Eintrag gelöscht',
       entryDeleteFailed: 'Druckprotokoll-Eintrag konnte nicht gelöscht werden',
+      editEntryTitle: 'Druckprotokoll-Eintrag bearbeiten',
+      editEntryDescription: 'Diesen Druckdurchlauf klassifizieren. Das Fehleranalyse-Widget gruppiert nach diesen Werten, sodass Aktualisierungen sofort in die Statistik einfließen.',
+      entryUpdated: 'Druckprotokoll-Eintrag aktualisiert',
+      entryUpdateFailed: 'Druckprotokoll-Eintrag konnte nicht aktualisiert werden',
+      statuses: {
+        completed: 'Abgeschlossen',
+        failed: 'Fehlgeschlagen',
+        stopped: 'Gestoppt',
+        cancelled: 'Abgebrochen',
+        skipped: 'Übersprungen',
+      },
     },
   },
 

@@ -4381,6 +4381,18 @@ export const api = {
     request<{ deleted: number }>('/print-log/', { method: 'DELETE' }),
   deletePrintLogEntry: (id: number) =>
     request<{ status: string; id: number }>(`/print-log/${id}`, { method: 'DELETE' }),
+  // Edit failure_reason / status on a single Print Log row (#1687 part 4).
+  // Distinct from updateArchive: archives describe the model, log entries
+  // describe a single print event. Orphan entries (no archive_id) have no
+  // archive to reach through and this is the only path to classify them.
+  updatePrintLogEntry: (
+    id: number,
+    body: { failure_reason?: string | null; status?: string },
+  ) =>
+    request<PrintLogEntry>(`/print-log/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
 
   // Settings
   getSettings: () => request<AppSettings>('/settings/'),

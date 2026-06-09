@@ -768,6 +768,7 @@ export default {
       noDownload: 'You do not have permission to download archives',
       noCopyLink: 'You do not have permission to copy download links',
       noDelete: 'You do not have permission to delete this archive',
+      noEdit: 'You do not have permission to edit this entry',
       noCreate: 'You do not have permission to create archives',
     },
     platePicker: {
@@ -930,6 +931,17 @@ export default {
       deleteEntryConfirm: 'This entry will be removed from the log and its filament, time, and cost contributions will drop out of Quick Stats. The matching archive (if any) is not affected. This action cannot be undone.',
       entryDeleted: 'Print log entry deleted',
       entryDeleteFailed: 'Failed to delete print log entry',
+      editEntryTitle: 'Edit print log entry',
+      editEntryDescription: 'Classify this print run. The Failure Analysis widget groups by these values, so updates flow through to stats immediately.',
+      entryUpdated: 'Print log entry updated',
+      entryUpdateFailed: 'Failed to update print log entry',
+      statuses: {
+        completed: 'Completed',
+        failed: 'Failed',
+        stopped: 'Stopped',
+        cancelled: 'Cancelled',
+        skipped: 'Skipped',
+      },
     },
   },
 

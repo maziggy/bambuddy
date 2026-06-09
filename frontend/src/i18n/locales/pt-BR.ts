@@ -768,6 +768,7 @@ export default {
       noDownload: 'Você não tem permissão para baixar arquivos',
       noCopyLink: 'Você não tem permissão para copiar links de download',
       noDelete: 'Você não tem permissão para excluir este arquivo',
+      noEdit: 'Você não tem permissão para editar esta entrada',
       noCreate: 'Você não tem permissão para criar arquivos',
     },
     platePicker: {
@@ -930,6 +931,17 @@ export default {
       deleteEntryConfirm: 'Esta entrada será removida do registro e suas contribuições de filamento, tempo e custo desaparecerão das estatísticas rápidas. O arquivo correspondente (se houver) não é afetado. Esta ação não pode ser desfeita.',
       entryDeleted: 'Entrada do registro de impressão excluída',
       entryDeleteFailed: 'Falha ao excluir entrada do registro de impressão',
+      editEntryTitle: 'Editar entrada do registro de impressão',
+      editEntryDescription: 'Classifique esta impressão. O widget Análise de falhas agrupa por esses valores, então as atualizações são refletidas nas estatísticas imediatamente.',
+      entryUpdated: 'Entrada do registro atualizada',
+      entryUpdateFailed: 'Falha ao atualizar a entrada do registro',
+      statuses: {
+        completed: 'Concluída',
+        failed: 'Falhou',
+        stopped: 'Parada',
+        cancelled: 'Cancelada',
+        skipped: 'Ignorada',
+      },
     },
   },
 

@@ -606,6 +606,207 @@ class TestPrintLogEntryDelete:
         assert set(survivors) == {a.id, c.id}
 
 
+class TestPrintLogEntryUpdate:
+    """Tests for ``PATCH /print-log/{entry_id}`` (#1687 part 4).
+
+    Pin the route's contracts: (1) GET serialiser actually surfaces
+    ``failure_reason`` (previously it was silently dropped from the response
+    even when set in the DB); (2) PATCH persists ``failure_reason`` and
+    ``status``; (3) unknown vocabulary returns 400 rather than getting stored
+    as raw garbage; (4) missing IDs return 404.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_surfaces_failure_reason(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Pre-fix the GET endpoint built PrintLogEntrySchema without
+        ``failure_reason`` even though the column was populated, so the Print
+        Log table couldn't render what the Failure Analysis widget already
+        groups by. Regression guard for the silent-drop bug.
+        """
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, status="failed")
+        entry = (
+            await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        ).scalar_one()
+        entry.failure_reason = "spaghettiDetached"
+        await db_session.commit()
+
+        body = (await async_client.get("/api/v1/print-log/")).json()
+        match = next(item for item in body["items"] if item["id"] == entry.id)
+        assert match["failure_reason"] == "spaghettiDetached"
+        # archive_id should also flow through so the frontend can tell orphan
+        # entries apart from archive-linked ones.
+        assert match["archive_id"] == archive.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_sets_failure_reason(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, status="failed")
+        entry = (
+            await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        ).scalar_one()
+        assert entry.failure_reason is None
+
+        resp = await async_client.patch(
+            f"/api/v1/print-log/{entry.id}",
+            json={"failure_reason": "cloggedNozzle"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["failure_reason"] == "cloggedNozzle"
+
+        await db_session.refresh(entry)
+        assert entry.failure_reason == "cloggedNozzle"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_can_clear_failure_reason(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Empty-string failure_reason stores back as NULL (the column's
+        nullable=True intent is preserved end-to-end)."""
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, status="failed")
+        entry = (
+            await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        ).scalar_one()
+        entry.failure_reason = "warping"
+        await db_session.commit()
+
+        resp = await async_client.patch(
+            f"/api/v1/print-log/{entry.id}",
+            json={"failure_reason": ""},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["failure_reason"] is None
+
+        await db_session.refresh(entry)
+        assert entry.failure_reason is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_rejects_unknown_failure_reason(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Unknown values must 400 — otherwise the UI would render raw garbage
+        because the i18n layer maps the value back through the canonical
+        vocabulary."""
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, status="failed")
+        entry = (
+            await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        ).scalar_one()
+
+        resp = await async_client.patch(
+            f"/api/v1/print-log/{entry.id}",
+            json={"failure_reason": "completely-made-up"},
+        )
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_updates_status(self, async_client: AsyncClient, archive_factory, printer_factory, db_session):
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, status="completed")
+        entry = (
+            await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        ).scalar_one()
+        entry.status = "completed"
+        await db_session.commit()
+
+        resp = await async_client.patch(
+            f"/api/v1/print-log/{entry.id}",
+            json={"status": "failed", "failure_reason": "layerShift"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "failed"
+        assert resp.json()["failure_reason"] == "layerShift"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_rejects_unknown_status(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, status="failed")
+        entry = (
+            await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        ).scalar_one()
+
+        resp = await async_client.patch(
+            f"/api/v1/print-log/{entry.id}",
+            json={"status": "bogus-status"},
+        )
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_404_when_missing(self, async_client: AsyncClient):
+        resp = await async_client.patch(
+            "/api/v1/print-log/999999",
+            json={"failure_reason": "cloggedNozzle"},
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_works_on_orphan_entry(self, async_client: AsyncClient, printer_factory, db_session):
+        """Orphan log entries (no archive_id) are the actual reason this
+        endpoint exists — the Archive Edit modal can't reach them. Make sure
+        the PATCH works for those rows specifically."""
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        orphan = PrintLogEntry(
+            archive_id=None,
+            print_name="failed-before-archive-created",
+            printer_id=printer.id,
+            status="failed",
+            failure_reason=None,
+        )
+        db_session.add(orphan)
+        await db_session.commit()
+        await db_session.refresh(orphan)
+        assert orphan.archive_id is None
+
+        resp = await async_client.patch(
+            f"/api/v1/print-log/{orphan.id}",
+            json={"failure_reason": "powerFailure"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["failure_reason"] == "powerFailure"
+        assert resp.json()["archive_id"] is None
+
+
 class TestArchivesSlimAPI:
     """Integration tests for /api/v1/archives/slim endpoint."""
 

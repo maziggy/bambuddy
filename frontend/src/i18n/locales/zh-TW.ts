@@ -768,6 +768,7 @@ export default {
       noDownload: '您沒有下載歸檔的權限',
       noCopyLink: '您沒有複製下載連結的權限',
       noDelete: '您沒有刪除此歸檔的權限',
+      noEdit: '您沒有編輯此條目的權限',
       noCreate: '您沒有建立歸檔的權限',
     },
     platePicker: {
@@ -930,6 +931,17 @@ export default {
       deleteEntryConfirm: '此條目將從日誌中刪除，其耗材、時間與成本貢獻也將從快速統計中移除。對應的歸檔（如有）不受影響。此操作無法復原。',
       entryDeleted: '已刪除列印日誌條目',
       entryDeleteFailed: '刪除列印日誌條目失敗',
+      editEntryTitle: '編輯列印日誌條目',
+      editEntryDescription: '對這次列印進行分類。故障分析小工具按這些值分組，因此更新會立即反映在統計數據中。',
+      entryUpdated: '已更新列印日誌條目',
+      entryUpdateFailed: '更新列印日誌條目失敗',
+      statuses: {
+        completed: '已完成',
+        failed: '失敗',
+        stopped: '已停止',
+        cancelled: '已取消',
+        skipped: '已略過',
+      },
     },
   },
 

@@ -1356,9 +1356,17 @@ class PrintScheduler:
         status = printer_manager.get_status(printer_id)
         current_state = getattr(status, "state", None) if status else None
         current_subtask_id = getattr(status, "subtask_id", None) if status else None
-        transitioned = (current_state is not None and current_state != pre_state) or (
-            pre_subtask_id is not None and current_subtask_id is not None and current_subtask_id != pre_subtask_id
+        # Guard: only count subtask_id change as "transitioned" when the printer
+        # is NOT IDLE. A P1S echoes back the new subtask_id from a project_file
+        # command even when it rejects the command (e.g. HMS error active), so
+        # IDLE + new subtask_id is a rejection echo, not confirmation (#XXXX).
+        subtask_advanced = (
+            pre_subtask_id is not None
+            and current_subtask_id is not None
+            and current_subtask_id != pre_subtask_id
+            and current_state != "IDLE"
         )
+        transitioned = (current_state is not None and current_state != pre_state) or subtask_advanced
 
         if transitioned and elapsed >= self._dispatch_min_cooldown:
             self._dispatch_holds.pop(printer_id, None)
@@ -1393,6 +1401,22 @@ class PrintScheduler:
         idle = state.state in ("IDLE", "FINISH", "FAILED")
         if not idle:
             logger.debug("Printer %d: not idle — state=%s", printer_id, state.state)
+            return False
+
+        # Block dispatch when the printer has active fatal/serious HMS errors.
+        # Bambu firmware silently rejects project_file commands while an HMS
+        # error is unacknowledged, leaving the queue item stuck in 'printing'.
+        # Only block on severity 1 (fatal) and 2 (serious) — severity 3/4 are
+        # informational and don't prevent the printer from accepting jobs.
+        blocking_hms = [e for e in state.hms_errors if getattr(e, "severity", 0) <= 2]
+        if blocking_hms:
+            logger.warning(
+                "Printer %d: skipping dispatch — %d blocking HMS error(s) active (clear them to resume)",
+                printer_id,
+                len(blocking_hms),
+            )
+            return False
+
         return idle
 
     async def _get_setting(self, db: AsyncSession, key: str) -> str | None:
@@ -2339,6 +2363,14 @@ class PrintScheduler:
         """
         deadline = time.monotonic() + timeout
         last_status = None
+        logger.info(
+            "Queue item %s: watchdog started for printer %d (pre_state=%s, pre_subtask_id=%s, timeout=%.0fs)",
+            queue_item_id,
+            printer_id,
+            pre_state,
+            pre_subtask_id,
+            timeout,
+        )
         while time.monotonic() < deadline:
             await asyncio.sleep(poll_interval)
             status = printer_manager.get_status(printer_id)
@@ -2347,6 +2379,11 @@ class PrintScheduler:
                 # in-memory dispatch hold too so a fresh dispatch can retry
                 # once the printer comes back; the hard timeout would
                 # otherwise hold the printer unnecessarily.
+                logger.info(
+                    "Queue item %s: watchdog — printer %d disconnected, releasing hold without revert",
+                    queue_item_id,
+                    printer_id,
+                )
                 scheduler._release_dispatch_hold(printer_id)
                 return
             last_status = status
@@ -2360,11 +2397,20 @@ class PrintScheduler:
                 # queue item stuck in 'printing' forever (#1370).
                 scheduler._release_dispatch_hold(printer_id)
                 return
-            if pre_subtask_id is not None and status.subtask_id is not None and status.subtask_id != pre_subtask_id:
+            if (
+                pre_subtask_id is not None
+                and status.subtask_id is not None
+                and status.subtask_id != pre_subtask_id
+                and status.state != "IDLE"
+            ):
                 # Printer picked up the job (subtask_id advanced). H2D can
                 # sit at FINISH for ~50 s after accepting project_file
                 # before transitioning to PREPARE, but the subtask_id flips
                 # to our submission_id almost immediately (#1078).
+                # Guard: skip this exit path if printer is still IDLE — P1S
+                # echoes back the new subtask_id even for rejected commands
+                # (HMS error active), so IDLE + new subtask_id is a rejection
+                # echo, not confirmation that the print started (#XXXX).
                 scheduler._release_dispatch_hold(printer_id)
                 return
 

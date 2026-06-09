@@ -3013,6 +3013,20 @@ export interface UserEmailPreferences {
   notify_print_stopped: boolean;
 }
 
+// Onboarding tour state (see docs/onboarding-tour-plan.md Appendix B).
+// `status` is null for users who have not yet seen the welcome modal;
+// `snoozed_until` is ISO 8601 when status === 'snoozed', otherwise null.
+export interface OnboardingResponse {
+  status: string | null;
+  snoozed_until: string | null;
+}
+
+export interface OnboardingUpdate {
+  status: string;
+  /** Required when status === 'snoozed', forbidden otherwise. */
+  snoozed_until?: string | null;
+}
+
 // Auth types
 export interface LoginRequest {
   username: string;
@@ -3438,6 +3452,16 @@ export const api = {
     request<{ message: string }>('/users/me/change-password', {
       method: 'POST',
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
+
+  // Onboarding tour state (see docs/onboarding-tour-plan.md Appendix B).
+  // GET returns the current user's tour status; PATCH updates it.
+  getOnboarding: () =>
+    request<OnboardingResponse>('/users/me/onboarding'),
+  updateOnboarding: (data: OnboardingUpdate) =>
+    request<OnboardingResponse>('/users/me/onboarding', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
     }),
 
   // User Email Notifications

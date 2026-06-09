@@ -33,6 +33,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { Button } from '../components/Button';
+import { WikiHelpIcon } from '../components/WikiHelpIcon';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { api, type ArchiveSlim } from '../api/client';
@@ -1177,6 +1178,7 @@ export function StatsPage() {
           <p className="text-bambu-gray mt-1">{t('stats.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <WikiHelpIcon path="features/statistics" />
           {/* Hidden widgets button - toggles panel in Dashboard */}
           {hiddenCount > 0 && (
             <Button

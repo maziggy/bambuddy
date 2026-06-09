@@ -34,6 +34,7 @@ from backend.app.models.user import User
 from backend.app.models.user_otp_code import UserOTPCode
 from backend.app.models.user_totp import UserTOTP
 from backend.app.schemas.auth import ChangePasswordRequest, GroupBrief, UserCreate, UserResponse, UserUpdate
+from backend.app.schemas.onboarding import OnboardingResponse, OnboardingUpdate
 from backend.app.services.email_service import (
     create_welcome_email_from_template,
     generate_secure_password,
@@ -526,3 +527,55 @@ async def change_own_password(
             pass  # Decode failure is harmless — token is already invalidated by password_changed_at
 
     return {"message": "Password changed successfully"}
+
+
+@router.get("/me/onboarding", response_model=OnboardingResponse)
+async def get_own_onboarding(
+    current_user: User | None = Depends(get_current_user_optional),
+):
+    """Return the current user's onboarding tour state.
+
+    Frontend polls this on app boot to decide whether to show the welcome
+    modal, snooze it, or skip straight to the dashboard. See
+    docs/onboarding-tour-plan.md Appendix B for the state model.
+    """
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+    return OnboardingResponse(
+        status=current_user.onboarding_status,
+        snoozed_until=current_user.onboarding_snoozed_until,
+    )
+
+
+@router.patch("/me/onboarding", response_model=OnboardingResponse)
+async def update_own_onboarding(
+    update: OnboardingUpdate,
+    current_user: User | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the current user's onboarding tour state."""
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+
+    result = await db.execute(select(User).where(User.id == current_user.id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    user.onboarding_status = update.status
+    user.onboarding_snoozed_until = update.snoozed_until
+    await db.commit()
+
+    return OnboardingResponse(
+        status=user.onboarding_status,
+        snoozed_until=user.onboarding_snoozed_until,
+    )

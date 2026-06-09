@@ -160,7 +160,7 @@ function LoginForm({ onSuccess, t }: { onSuccess: () => void; t: TFunction }) {
   const isPending = loginMutation.isPending || verifyMutation.isPending || tokenMutation.isPending;
 
   return (
-    <Card className="max-w-md mx-auto">
+    <Card data-tour="bambu-cloud-sync" className="max-w-md mx-auto">
       <CardContent>
         <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-bambu-green/20 mb-3">

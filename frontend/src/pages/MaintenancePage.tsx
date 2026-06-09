@@ -41,6 +41,7 @@ import type { MaintenanceStatus, PrinterMaintenanceOverview, MaintenanceType, Pe
 import { getMaintenanceWikiUrl } from '../utils/maintenanceWikiUrls';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
+import { WikiHelpIcon } from '../components/WikiHelpIcon';
 import { Toggle } from '../components/Toggle';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
@@ -1230,23 +1231,26 @@ export function MaintenancePage() {
   return (
     <div className="p-4 md:p-8">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-          <Wrench className="w-7 h-7 text-bambu-green" />
-          {t('maintenance.title')}
-        </h1>
-        <p className="text-bambu-gray mt-1">
-          {activeTab === 'status' ? (
-            <>
-              {totalDue > 0 && <span className="text-red-400">{t('maintenance.dueCount', { count: totalDue })}</span>}
-              {totalDue > 0 && totalWarning > 0 && ' · '}
-              {totalWarning > 0 && <span className="text-amber-400">{t('maintenance.warningCount', { count: totalWarning })}</span>}
-              {totalDue === 0 && totalWarning === 0 && <span className="text-bambu-green">{t('maintenance.allOk')}</span>}
-            </>
-          ) : (
-            t('maintenance.configureSettings')
-          )}
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <Wrench className="w-7 h-7 text-bambu-green" />
+            {t('maintenance.title')}
+          </h1>
+          <p className="text-bambu-gray mt-1">
+            {activeTab === 'status' ? (
+              <>
+                {totalDue > 0 && <span className="text-red-400">{t('maintenance.dueCount', { count: totalDue })}</span>}
+                {totalDue > 0 && totalWarning > 0 && ' · '}
+                {totalWarning > 0 && <span className="text-amber-400">{t('maintenance.warningCount', { count: totalWarning })}</span>}
+                {totalDue === 0 && totalWarning === 0 && <span className="text-bambu-green">{t('maintenance.allOk')}</span>}
+              </>
+            ) : (
+              t('maintenance.configureSettings')
+            )}
+          </p>
+        </div>
+        <WikiHelpIcon path="features/maintenance" />
       </div>
 
       {/* Tabs */}

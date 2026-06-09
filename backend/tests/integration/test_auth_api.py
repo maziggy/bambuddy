@@ -991,3 +991,182 @@ class TestInputLengthValidation:
         )
         # Schema accepts it; auth may reject with 401 (auth disabled) or 400
         assert response.status_code != 422
+
+
+class TestOnboardingAPI:
+    """Integration tests for /api/v1/users/me/onboarding endpoints.
+
+    See docs/onboarding-tour-plan.md Appendix B for the state model.
+    """
+
+    @pytest.fixture
+    async def user_token(self, async_client: AsyncClient):
+        """Enable auth, create a regular user, return their bearer token."""
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "onboardingadmin",
+                "admin_password": "AdminPass1!",
+            },
+        )
+
+        admin_login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "onboardingadmin", "password": "AdminPass1!"},
+        )
+        admin_token = admin_login.json()["access_token"]
+
+        await async_client.post(
+            "/api/v1/users/",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"username": "onboardinguser", "password": "Userpass123!"},
+        )
+
+        user_login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "onboardinguser", "password": "Userpass123!"},
+        )
+        return user_login.json()["access_token"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_returns_null_for_new_user(self, async_client: AsyncClient, user_token: str):
+        """A newly-created user has no onboarding status set yet (welcome modal eligible)."""
+        response = await async_client.get(
+            "/api/v1/users/me/onboarding",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] is None
+        assert body["snoozed_until"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_sets_dismissed(self, async_client: AsyncClient, user_token: str):
+        """PATCH with status=dismissed persists and is returned by subsequent GET."""
+        response = await async_client.patch(
+            "/api/v1/users/me/onboarding",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={"status": "dismissed"},
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "dismissed"
+
+        followup = await async_client.get(
+            "/api/v1/users/me/onboarding",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        assert followup.json()["status"] == "dismissed"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_sets_snoozed_with_timestamp(self, async_client: AsyncClient, user_token: str):
+        """PATCH with status=snoozed + snoozed_until persists both fields."""
+        response = await async_client.patch(
+            "/api/v1/users/me/onboarding",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={"status": "snoozed", "snoozed_until": "2026-06-15T12:00:00+00:00"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "snoozed"
+        assert body["snoozed_until"] is not None
+        assert body["snoozed_until"].startswith("2026-06-15T12:00:00")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_snoozed_without_timestamp_rejected(self, async_client: AsyncClient, user_token: str):
+        """status=snoozed without snoozed_until is a 422 — UI must supply both."""
+        response = await async_client.patch(
+            "/api/v1/users/me/onboarding",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={"status": "snoozed"},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_non_snoozed_with_timestamp_rejected(self, async_client: AsyncClient, user_token: str):
+        """snoozed_until is meaningful only for snoozed status — reject otherwise."""
+        response = await async_client.patch(
+            "/api/v1/users/me/onboarding",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={"status": "dismissed", "snoozed_until": "2026-06-15T12:00:00+00:00"},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_tour_in_progress_with_step_id(self, async_client: AsyncClient, user_token: str):
+        """tour_in_progress:<step_id> is accepted so the tour can resume on next session."""
+        response = await async_client.patch(
+            "/api/v1/users/me/onboarding",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={"status": "tour_in_progress:1.2"},
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "tour_in_progress:1.2"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_completed_tour(self, async_client: AsyncClient, user_token: str):
+        """status=completed_tour is the happy-path terminal state."""
+        response = await async_client.patch(
+            "/api/v1/users/me/onboarding",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={"status": "completed_tour"},
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "completed_tour"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_invalid_status_rejected(self, async_client: AsyncClient, user_token: str):
+        """Arbitrary status strings outside the allowed set are 422."""
+        response = await async_client.patch(
+            "/api/v1/users/me/onboarding",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={"status": "nonsense"},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_dismissed_at_migration_rejected(self, async_client: AsyncClient, user_token: str):
+        """dismissed_at_migration is set only by the column-add migration, never by clients."""
+        response = await async_client.patch(
+            "/api/v1/users/me/onboarding",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={"status": "dismissed_at_migration"},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_tour_in_progress_malformed_step_id_rejected(self, async_client: AsyncClient, user_token: str):
+        """Step IDs with characters outside the allowlist are 422."""
+        response = await async_client.patch(
+            "/api/v1/users/me/onboarding",
+            headers={"Authorization": f"Bearer {user_token}"},
+            json={"status": "tour_in_progress:step with spaces"},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_requires_auth(self, async_client: AsyncClient):
+        """No bearer token → 401."""
+        response = await async_client.get("/api/v1/users/me/onboarding")
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_patch_requires_auth(self, async_client: AsyncClient):
+        """No bearer token → 401 (route is authenticated even though it has no permission gate)."""
+        response = await async_client.patch(
+            "/api/v1/users/me/onboarding",
+            json={"status": "dismissed"},
+        )
+        assert response.status_code == 401

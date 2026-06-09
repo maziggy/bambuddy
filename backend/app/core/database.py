@@ -425,6 +425,26 @@ async def _api_keys_column_exists(conn, column_name: str) -> bool:
     return result.scalar_one_or_none() is not None
 
 
+async def _users_column_exists(conn, column_name: str) -> bool:
+    """Return True if the named column exists on ``users``.
+
+    Mirrors ``_api_keys_column_exists`` — gates one-shot backfills against
+    the column-add migration so the UPDATE doesn't replay on every startup
+    and clobber post-migration NULLs (which would re-mark new users as
+    ``dismissed_at_migration`` and stop the welcome tour from ever showing).
+    """
+    from sqlalchemy import text
+
+    if is_sqlite():
+        result = await conn.execute(text("PRAGMA table_info(users)"))
+        return any(row[1] == column_name for row in result)
+    result = await conn.execute(
+        text("SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = :col"),
+        {"col": column_name},
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def _migrate_normalize_printer_ids(conn) -> None:
     from sqlalchemy import text
 
@@ -2909,6 +2929,33 @@ async def run_migrations(conn):
         await _safe_execute(conn, "ALTER TABLE users ADD COLUMN orca_cloud_pending_at DATETIME")
     else:
         await _safe_execute(conn, "ALTER TABLE users ADD COLUMN IF NOT EXISTS orca_cloud_pending_at TIMESTAMP")
+
+    # Migration: Add onboarding tour state columns (see
+    # docs/onboarding-tour-plan.md Appendices B + D). VARCHAR(64) is wide
+    # enough for the longest legal value (`tour_in_progress:<step_id>` with
+    # step_id capped at 40 chars by the OnboardingUpdate schema). DATETIME
+    # is SQLite-only — Postgres rejects it, same constraint as the
+    # password_changed_at + orca_cloud migrations above.
+    onboarding_existed = await _users_column_exists(conn, "onboarding_status")
+    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN onboarding_status VARCHAR(64)")
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE users ADD COLUMN onboarding_snoozed_until DATETIME")
+    else:
+        await _safe_execute(
+            conn,
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_snoozed_until TIMESTAMP",
+        )
+
+    # One-shot backfill: existing users predate the tour, so mark them
+    # 'dismissed_at_migration' to prevent the welcome modal from popping for
+    # already-onboarded users. Gated so re-runs don't clobber post-migration
+    # NULLs — the frontend uses NULL as the signal to show the welcome modal
+    # to new users.
+    if not onboarding_existed:
+        async with conn.begin_nested():
+            await conn.execute(
+                text("UPDATE users SET onboarding_status = 'dismissed_at_migration' WHERE onboarding_status IS NULL")
+            )
 
     # Data migration: drop the embedded 3MF Title (`print_name`) from library
     # file metadata so the FileManager displays the filename, not the title (#1489).

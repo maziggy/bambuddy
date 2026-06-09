@@ -2528,6 +2528,7 @@ function PrinterCard({
             {/* Menu button */}
             <div className="relative flex-shrink-0">
               <Button
+                data-tour="printer-customize"
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowMenu(!showMenu)}
@@ -2629,6 +2630,7 @@ function PrinterCard({
             <div className="flex flex-wrap items-center gap-2 mt-2">
               {/* Connection status badge */}
               <span
+                data-tour="printer-status-pill"
                 className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs ${
                   status?.connected
                     ? 'bg-status-ok/20 text-status-ok'
@@ -2888,7 +2890,7 @@ function PrinterCard({
               /* Expanded: Full status section */
               <>
                 {/* Current Print or Idle Placeholder */}
-                <div className="mb-4 p-3 bg-bambu-dark rounded-lg relative">
+                <div data-tour="printer-status-row" className="mb-4 p-3 bg-bambu-dark rounded-lg relative">
                   {/* Skip Objects button - top right corner, always visible */}
                   <button
                     onClick={() => setShowSkipObjectsModal(true)}
@@ -3130,7 +3132,7 @@ function PrinterCard({
               const chamberFan = status.big_fan2_speed;
 
               return (
-                <div className="mt-3">
+                <div data-tour="printer-controls" className="mt-3">
                   {/* Section Header */}
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">
@@ -3427,7 +3429,7 @@ function PrinterCard({
               const isDualNozzle = printer.nozzle_count === 2 || status?.temperatures?.nozzle_2 !== undefined;
 
               return (
-                <div className="mt-3">
+                <div data-tour="printer-ams-row" className="mt-3">
                   {/* Section Header */}
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">
@@ -4750,6 +4752,7 @@ function PrinterCard({
               </Button>
               {/* Camera Button */}
               <Button
+                data-tour="printer-camera"
                 variant="secondary"
                 size="sm"
                 onClick={() => {
@@ -7433,6 +7436,7 @@ export function PrintersPage() {
         </div>
       )}
       <Button
+        data-tour="add-printer-button"
         onClick={() => setShowAddModal(true)}
         disabled={!hasPermission('printers:create')}
         title={!hasPermission('printers:create') ? t('printers.permission.noAdd') : undefined}

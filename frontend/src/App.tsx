@@ -31,6 +31,8 @@ import { ToastProvider } from './contexts/ToastContext';
 import { SliceJobTrackerProvider } from './contexts/SliceJobTrackerContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ColorCatalogProvider } from './contexts/ColorCatalogContext';
+import { OnboardingProvider } from './contexts/OnboardingContext';
+import { OnboardingFlow } from './components/onboarding/OnboardingFlow';
 import { SpoolBuddyLayout } from './components/spoolbuddy/SpoolBuddyLayout';
 import { SpoolBuddyDashboard } from './pages/spoolbuddy/SpoolBuddyDashboard';
 import { SpoolBuddyAmsPage } from './pages/spoolbuddy/SpoolBuddyAmsPage';
@@ -165,8 +167,10 @@ function App() {
             <ThemeProvider>
             <ColorCatalogProvider>
             <SliceJobTrackerProvider>
+            <OnboardingProvider>
             <StreamTokenSync />
             <BrowserRouter>
+              <OnboardingFlow />
               <Routes>
                 {/* Setup page - only accessible if auth not enabled */}
                 <Route path="/setup" element={<SetupRoute><SetupPage /></SetupRoute>} />
@@ -217,6 +221,7 @@ function App() {
                 </Route>
               </Routes>
             </BrowserRouter>
+            </OnboardingProvider>
             </SliceJobTrackerProvider>
             </ColorCatalogProvider>
             </ThemeProvider>

@@ -67,6 +67,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import type { Archive, PrintLogEntry, ProjectListItem } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
+import { WikiHelpIcon } from '../components/WikiHelpIcon';
 import { PrintModal } from '../components/PrintModal';
 import { UploadModal } from '../components/UploadModal';
 import { PurgeArchivesModal } from '../components/PurgeArchivesModal';
@@ -3274,6 +3275,7 @@ export function ArchivesPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <WikiHelpIcon path="features/archives" />
           {/* Export dropdown */}
           <div className="relative">
             <Button

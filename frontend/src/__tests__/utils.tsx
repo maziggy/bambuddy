@@ -10,6 +10,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { ThemeProvider } from '../contexts/ThemeContext';
 import { ToastProvider } from '../contexts/ToastContext';
 import { AuthProvider } from '../contexts/AuthContext';
+import { OnboardingProvider } from '../contexts/OnboardingContext';
 
 // Create a new QueryClient for each test
 function createTestQueryClient() {
@@ -43,7 +44,13 @@ function AllProviders({ children }: AllProvidersProps) {
             AuthProvider". */}
         <AuthProvider>
           <ThemeProvider>
-            <ToastProvider>{children}</ToastProvider>
+            <ToastProvider>
+              {/* OnboardingProvider lives inside AuthProvider in App.tsx so
+                  it can read auth state; tests mirror that. Components using
+                  `useOnboarding()` (Layout's TourLauncher, the onboarding
+                  modals) throw without it. */}
+              <OnboardingProvider>{children}</OnboardingProvider>
+            </ToastProvider>
           </ThemeProvider>
         </AuthProvider>
       </BrowserRouter>

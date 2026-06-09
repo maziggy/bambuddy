@@ -61,6 +61,7 @@ import { getBedTypeInfo } from '../utils/bedType';
 import type { PrintQueueItem, PrintQueueBulkUpdate, Permission } from '../api/client';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
+import { WikiHelpIcon } from '../components/WikiHelpIcon';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { PrintModal } from '../components/PrintModal';
 import { useToast } from '../contexts/ToastContext';
@@ -1160,6 +1161,7 @@ export function QueuePage() {
           </h1>
           <p className="text-bambu-gray mt-1">{t('queue.subtitle')}</p>
         </div>
+        <WikiHelpIcon path="features/queue" />
       </div>
 
       {/* Summary Stats */}

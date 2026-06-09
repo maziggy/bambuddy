@@ -13,6 +13,7 @@ import { ForecastPanel } from '../components/ForecastPanel';
 import { api, spoolbuddyApi, ApiError } from '../api/client';
 import type { InventorySpool, SpoolCatalogEntry } from '../api/client';
 import { Button } from '../components/Button';
+import { WikiHelpIcon } from '../components/WikiHelpIcon';
 import { FilamentSwatch } from '../components/FilamentSwatch';
 import { buildFilamentBackground } from '../components/filamentSwatchHelpers';
 import {SpoolFormModal, type SpoolFormMode} from '../components/SpoolFormModal';
@@ -1129,6 +1130,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           <p className="text-bambu-gray mt-1">{t('inventory.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
+          <WikiHelpIcon path="features/inventory" />
           {/* CSV import/export (#1576). Operates on Bambuddy's local inventory.
               In Spoolman mode the buttons stay visible (feature parity) but are
               disabled with a hint pointing at Spoolman's own CSV export, since
@@ -2381,7 +2383,7 @@ function EmptyFilterState({
         }
       </p>
       {!hasFilters && (
-        <Button onClick={onAddSpool}>
+        <Button data-tour="add-spool-button" onClick={onAddSpool}>
           <Package className="w-4 h-4" />
           {t('inventory.addSpool')}
         </Button>

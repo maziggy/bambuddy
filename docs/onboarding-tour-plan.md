@@ -55,8 +55,10 @@
 
 ## Phase 1 - Critical setup (everyone needs these)
 
-### Step 1.1 - Authentication setup
-**Anchor:** Settings → Auth tab (`/settings?tab=auth`, `[data-tour="auth-card"]`)
+### Step 1.1 - Authentication setup ~~(implementation)~~
+**REMOVED from the live tour 2026-06-08.** The /setup page already prompts every fresh install for the auth choice, and users who deliberately ran with auth off should not be nudged to enable it. Step content kept here for design reference only; the auth-card anchor stays in the codebase in case a future surface (e.g. a privacy-and-security checkup) wants to reuse it.
+
+**Original anchor:** Settings → Users tab → Auth toggle card (`/settings?tab=users`, `[data-tour="auth-card"]`).
 **Conditions to show:** `auth_enabled === false` AND user is first admin
 **Content:**
 - BB "Thinking" expression
@@ -175,50 +177,24 @@
 **Buttons:** `Sign in to Bambu` / `Skip (use built-in defaults)`
 **Links:** wiki/features/profiles, wiki/security/credential-storage
 
-### Step 2.4 - The print queue
-**Anchor:** Queue page (`/queue`), `[data-tour="add-to-queue-button"]`
-**Content:**
-- "Queue prints across all your printers."
-- Three things the queue can do, with a one-line example each:
-  1. **Manual queue** — drag-and-drop files, pick which printer runs them.
-  2. **Auto-dispatch** — Bambuddy assigns queued jobs to idle printers automatically based on AMS / build-plate / capacity.
-  3. **Auto-drying** — queued PETG / PA jobs trigger AMS pre-drying so the spool is ready when dispatch fires (Queue Auto-Drying, see wiki/features/queue-drying).
-- "Power features for later: dependencies (`require_previous_success`), scheduled prints, batch jobs."
-**Buttons:** `Weiter` / `Show me how to add my first job` → opens Add to Queue modal
-**Links:** wiki/features/queue, wiki/features/queue-drying
+### Step 2.4 - Sidebar overview (collapsed from former 2.4-2.7)
 
-### Step 2.5 - Archives + statistics
-**Anchor:** Archives page (`/archives`), then Stats (`/stats`)
-**Content:**
-- "Every finished print is archived automatically."
-- Two-screen mini-tour:
-  - **Archives** — thumbnail, timelapse video, finish photo, gcode, sliced 3MF, runtime, weight, filaments used per slot. "Re-print directly from any archive."
-  - **Statistics** — print hours, filament used (by brand / material / color), energy cost, time-saved, success rate.
-- "Cost tracking pulls electricity price from settings — set it once and stats compute energy spend per print."
-**Buttons:** `Weiter`
-**Links:** wiki/features/archives, wiki/features/statistics
-
-### Step 2.6 - Maintenance tracking
-**Anchor:** Maintenance page (`/maintenance`), `[data-tour="add-maintenance-task"]`
+**Anchor:** sidebar, sequential 2-second focus highlights on each entry
 **Content:**
 - BB "Helpful" pose
-- "Bambuddy tracks consumables and maintenance per printer."
-- Examples: nozzle wear (by print hours), belt tension (by month), hotend swap (by filament weight), grease (by print count).
-- "Built-in tasks cover the standard intervals — add your own for custom maintenance."
-- Notifications fire via the same channel as print events (see Step 3.8).
-**Buttons:** `Weiter` / `Show me the defaults` → highlights default-task list
-**Links:** wiki/features/maintenance
-
-### Step 2.7 - File library + projects
-**Anchor:** File Manager (`/files`)
-**Content:**
-- "Your library lives here — upload 3MF, gcode, STL; group into projects; send to any printer."
-- Two sub-highlights:
-  - **Files page** — flat browser, upload, tag, search, send-to.
-  - **Projects page** — group files into a logical project (multi-plate models, multi-part assemblies). Track which plates are printed; mark project complete when done.
-- "External library folders (see Phase 3) let you mount a NAS share if your files don't live inside the container."
+- Headline: "Here's the rest of Bambuddy"
+- Six one-line callouts, no full per-page sub-tour:
+  1. **Print Queue** (`/queue`) — drag-and-drop jobs, auto-dispatch to idle printers, auto-drying for PETG/PA (Queue Auto-Drying, wiki/features/queue-drying).
+  2. **Archives** (`/archives`) — every finished print stored with timelapse, finish photo, gcode, 3MF; re-print from any row.
+  3. **Statistics** (`/stats`) — hours, filament by brand/material/color, energy cost (set electricity price once), success rate.
+  4. **Maintenance** (`/maintenance`) — nozzle wear, belt tension, hotend swap, grease intervals; built-in defaults + custom tasks. Notifications via the same channel as print events (see Step 3.8).
+  5. **Files** (`/files`) — 3MF/gcode/STL library, upload, tag, search, send-to-printer. External library folders for NAS mounts (see Phase 3.3).
+  6. **Projects** (`/projects`) — group files into logical projects, track which plates are printed.
+- Outro: "Every page has a `?` icon top-right that opens the matching wiki page in-context — full feature docs without leaving Bambuddy."
 **Buttons:** `Weiter`
-**Links:** wiki/features/library, wiki/features/projects
+**Links:** wiki/features/queue, wiki/features/archives, wiki/features/statistics, wiki/features/maintenance, wiki/features/library, wiki/features/projects
+
+**Rationale for the collapse (2026-06-08):** former steps 2.5/2.6/2.7 were "this page exists" content, not actionable setup. The inline `?` help icon (see Appendix G) carries that load without four extra mandatory modals.
 
 ---
 
@@ -374,9 +350,10 @@ Required selectors (full list — track in code review):
 - `[data-tour="auth-card"]` — SettingsPage auth tab
 - `[data-tour="add-spool-button"]` — InventoryPage
 - `[data-tour="bambu-cloud-sync"]` — ProfilesPage
-- `[data-tour="add-to-queue-button"]` — QueuePage
-- `[data-tour="add-maintenance-task"]` — MaintenancePage
-- `[data-tour="help-icon"]` — Sidebar bottom (NEW, to be added)
+- `[data-tour="sidebar-queue"]`, `[data-tour="sidebar-archives"]`, `[data-tour="sidebar-stats"]`, `[data-tour="sidebar-maintenance"]`, `[data-tour="sidebar-files"]`, `[data-tour="sidebar-projects"]` — Sidebar entries highlighted sequentially in Step 2.4. Wired via `data-tour={\`sidebar-${id}\`}` on the shared `NavLink`, so the attribute lands on every navItem; the tour script only targets these six.
+- `[data-tour="help-icon"]` — Sidebar bottom, on the `TourLauncher` BB button. Clicking it sets status to `tour_in_progress:<first step>` so the engine relaunches from step 0.
+
+**Anchor backstop test:** `frontend/src/__tests__/onboarding-anchors.test.ts` greps each anchor's source file and asserts presence. Source-level rather than DOM-render because most anchor hosts are gated by route + permission + sub-tab state that the engine's own tests will cover. Failures call out which anchor / which file so refactors can self-correct.
 
 A vitest test walks the tour against the rendered DOM and asserts every anchor resolves. PRs that change a component carrying a tour anchor have to either keep the anchor or update the tour script.
 
@@ -437,8 +414,10 @@ Expressions needed:
 - Thinking — Step 1.1
 - Focused — Step 1.3
 - Excited — Step 2.2 ("first spool added!" celebration)
-- Helpful — Steps 2.3, 2.6, 3.5
+- Helpful — Steps 2.3, 2.4, 3.5
 - Curious — Phase 3 gates
+
+**No new warning expression (decided 2026-06-08).** Red callouts in Step 1.2 (LAN-only / Dev mode / Docker bridge) use the system warning triangle inside the callout chrome. BB stays in "Almost there" pose for the surrounding step — friendly mascot + warning glyph reads "important but not scary."
 
 Branding elements: BB logo, leaf, filament spool, guidance arrow, setup checklist, foundation block — all already on the sheet.
 
@@ -460,10 +439,44 @@ GitHub `invalid`-tagged issues this tour explicitly addresses:
 
 ---
 
-## Open questions
+## Appendix G - Frontend `<WikiHelpIcon>` component
 
-1. Should Step 1.2 include an interactive "test the access code without saving" button (calls a one-shot MQTT connect with the entered creds), so users get instant feedback before committing the printer row?
-2. Should Phase 3 be entirely opt-in (the user clicks "Show me power features" from Phase 5) instead of inline at the end of Phase 2?
-3. Should the SpoolBuddy steps (kiosk-related) appear in the main tour, or only after SpoolBuddy hardware is detected on the network?
-4. What's the right balance between "tour the page" (Phase 2.4 - 2.7) and "tooltips on the page itself"? Some of these could be inline help instead of tour steps.
-5. Does the mascot character set need a "wrong" / "warning" expression for the inline red callouts in Step 1.2, or do plain icons work?
+New shared component, rendered top-right of every sidebar page that previously had a dedicated tour step. Carries the discovery load that former Steps 2.5/2.6/2.7 used to carry inside the tour.
+
+- Props: `path` (wiki page slug, e.g. `features/queue`).
+- Glyph: small `?` icon, consistent across all pages.
+- Click behaviour: opens the wiki page in an in-app modal iframe against `https://wiki.bambuddy.cool`; falls back to `target="_blank"` if iframe is blocked.
+- Pages requiring it at ship: Queue, Archives, Statistics, Maintenance, Files, Projects, Inventory. Add to additional pages as they grow.
+
+Backed by zero new backend routes — the wiki is already publicly hosted.
+
+---
+
+## Implementation status (2026-06-08)
+
+**Shipped end-to-end:**
+- Backend: `users.onboarding_status` + `users.onboarding_snoozed_until` columns, inline migration with `dismissed_at_migration` backfill, `GET` + `PATCH /api/v1/users/me/onboarding`, OnboardingResponse/OnboardingUpdate schemas with snooze-coherence validation. SQLite + Postgres both verified.
+- Frontend anchors: 26 `data-tour="..."` attributes — every step in the engine resolves. Backed by `src/__tests__/onboarding-anchors.test.ts`.
+- i18n: full `onboarding.*` namespace shipped across all 11 locales (en + de/es/fr/it/ja/ko/pt-BR/tr/zh-CN/zh-TW), 138 keys.
+- `<WikiHelpIcon>`: shipped (Appendix G), integrated on Queue / Archives / Stats / Maintenance / Files / Projects / Inventory.
+- `OnboardingProvider` context: GET on auth-settle, localStorage fallback when auth is off, `loadFailed` gate so backend outages do not pop the welcome modal.
+- Phase 0 welcome + about modals.
+- Tour engine: **25-step path** covering every plan phase that has a real UI to anchor. Per-step route navigation, anchor polling with 3s timeout, dimmed spotlight cutout, back / next / skip / Escape, modal positioning that flips around sidebar vs page anchors, pre-render skip gate so no flash of skipped content.
+- Step order: add-printer → verify-connection → (card sub-tour ×5) → add-spool → bambu-cloud → (sidebar overview ×6) → vp → slicer-api → makerworld → obico → integrations → notifications → users → groups → sso → outro.
+- Conditional skipping: `printerCount` (skips add-printer when one exists; skips verify-connection + card sub-tour when none); `hasPermission` (skips makerworld step when the user lacks `makerworld:view`); `authEnabled` (gates users / groups / sso). The onboarding overlay also suppresses itself on `/setup`, `/login`, `/spoolbuddy/*`, `/camera/*`, `/overlay/*` and while `requiresSetup === true`, so fresh installs walk through /setup uninterrupted.
+- BB mascot: 5 distinct poses sliced from `screenshots/bb_bambuddy.webp` (started / walk / almost / allset / help) + hero, plus `MascotIcon` component. Per-step pose mapping in `tourSteps.ts`.
+- `TourLauncher` BB icon in the sidebar footer that relaunches the tour from step 0.
+
+**Intentionally NOT shipped:**
+- Phase 3.3 external library roots — no UI card today, configuration is env-var only (`BAMBUDDY_EXTERNAL_ROOTS`). Add the step when the UI ships.
+- Phase 3.7 Tailscale — no dedicated Settings card today. Add the step when one exists.
+- Per-pose mascot expressions (Happy / Thinking / Focused / Excited / Helpful / Curious) — pose covers the major moments; the expressions row is overkill for this surface.
+- Runtime verification against an auth-off Bambuddy — localStorage path is wired and unit-tested but not yet driven through a live browser session.
+
+## Resolved design decisions (2026-06-08)
+
+1. **Access-code pre-save test (Q1):** Not added. Step 1.3 verifies MQTT/FTP/RTSP immediately after save and Connection Diagnostic surfaces wrong-code errors cleanly — duplicate dry-run code path not worth the marginal time saving.
+2. **Phase 3 placement (Q2):** Stays inline with per-step "Interested?" gates. Hiding power features behind a Phase 5 "show me more" link defeats Goal #3 (surface major features for discovery).
+3. **SpoolBuddy step (Q3):** No dedicated step, no hardware-detection gate. SpoolBuddy stays as one of three input methods in Step 2.2 (RFID / SpoolBuddy kiosk / manual). Aligns with the [[spoolbuddy-what-it-is]] positioning — filament management, not a kiosk feature.
+4. **Tour-vs-tooltip for former 2.4-2.7 (Q4):** Collapsed into the new single Step 2.4 "Sidebar overview." Each affected page gets a `<WikiHelpIcon>` (Appendix G). Cuts ~4 modals from the mandatory path.
+5. **Mascot warning expression (Q5):** Not added. Red callouts in Step 1.2 use the system warning triangle; BB stays in "Almost there" pose for the surrounding step.

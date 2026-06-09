@@ -2736,7 +2736,7 @@ export function SettingsPage() {
         {/* Right Column - Home Assistant & MQTT Publishing */}
         <div className="flex-1 lg:max-w-xl space-y-3">
           {/* Home Assistant Integration */}
-          <Card id="card-ha">
+          <Card id="card-ha" data-tour="integrations-card">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -4030,7 +4030,7 @@ export function SettingsPage() {
 
       {/* Virtual Printer Tab */}
       {activeTab === 'virtual-printer' && (
-        <div id="card-vp">
+        <div id="card-vp" data-tour="vp-card">
           <VirtualPrinterList />
         </div>
       )}
@@ -4280,7 +4280,7 @@ export function SettingsPage() {
           {/* Right Column */}
           <div className="lg:w-1/2 space-y-3">
           {/* Slicer */}
-          <Card id="card-slicer">
+          <Card id="card-slicer" data-tour="slicer-api-card">
             <CardHeader>
               <h3 className="text-base font-semibold text-white flex items-center gap-2">
                 <Cog className="w-4 h-4 text-bambu-green" />
@@ -5061,7 +5061,7 @@ export function SettingsPage() {
           {usersSubTab === 'users' && (
           <>
           {/* Auth Toggle Header */}
-          <Card>
+          <Card data-tour="auth-card">
             <CardContent className="py-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -5179,6 +5179,7 @@ export function SettingsPage() {
                       </h3>
                       {hasPermission('users:create') && (
                         <Button
+                          data-tour="add-user-button"
                           size="sm"
                           onClick={() => {
                             setShowCreateUserModal(true);
@@ -5255,7 +5256,7 @@ export function SettingsPage() {
 
               {/* Right Column: Groups */}
               <div>
-                <Card>
+                <Card data-tour="groups-section">
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <h3 className="text-lg font-semibold text-white flex items-center gap-2" id="card-groups">
@@ -5389,7 +5390,7 @@ export function SettingsPage() {
           )}
 
           {usersSubTab === 'oidc' && isAdmin && (
-            <div className="max-w-3xl">
+            <div className="max-w-3xl" data-tour="sso-section">
               <OIDCProviderSettings />
             </div>
           )}
@@ -5933,7 +5934,7 @@ export function SettingsPage() {
 
       {/* Backup Tab */}
       {activeTab === 'failure-detection' && (
-        <div id="card-failure-detection">
+        <div id="card-failure-detection" data-tour="obico-card">
           <FailureDetectionSettings />
         </div>
       )}

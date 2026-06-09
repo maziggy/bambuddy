@@ -54,6 +54,7 @@ import type {
   Permission,
 } from '../api/client';
 import { Button } from '../components/Button';
+import { WikiHelpIcon } from '../components/WikiHelpIcon';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { PrintModal } from '../components/PrintModal';
 import { ModelViewerModal } from '../components/ModelViewerModal';
@@ -1457,6 +1458,7 @@ export function FileManagerPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <WikiHelpIcon path="features/library" />
           {/* View mode toggle */}
           <div className="flex items-center bg-bambu-dark rounded-lg p-1">
             <button

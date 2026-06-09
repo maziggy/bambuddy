@@ -59,6 +59,11 @@ class User(Base):
     orca_cloud_pending_state: Mapped[str | None] = mapped_column(String(32), nullable=True, default=None)
     orca_cloud_pending_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
+    # Onboarding tour state. See docs/onboarding-tour-plan.md Appendix B for the
+    # state model — null means the welcome modal has not been shown yet.
+    onboarding_status: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+    onboarding_snoozed_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+
     # Relationship to groups through association table
     groups: Mapped[list[Group]] = relationship(
         "Group",

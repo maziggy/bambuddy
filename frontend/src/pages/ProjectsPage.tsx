@@ -27,6 +27,7 @@ import {
 import { api } from '../api/client';
 import type { ProjectListItem, ProjectCreate, ProjectUpdate, ProjectImport, Permission } from '../api/client';
 import { Button } from '../components/Button';
+import { WikiHelpIcon } from '../components/WikiHelpIcon';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -1043,7 +1044,8 @@ export function ProjectsPage() {
             {t('projects.subtitle')}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <WikiHelpIcon path="features/projects" />
           <Button
             variant="secondary"
             onClick={handleImportClick}

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
 import { InstallAppButton } from './InstallAppButton';
+import { TourLauncher } from './onboarding/TourLauncher';
 import { SwitchbarPopover } from './SwitchbarPopover';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { api, supportApi, pendingUploadsApi, type Permission } from '../api/client';
@@ -647,6 +648,7 @@ export function Layout() {
                   >
                     <NavLink
                       to={to}
+                      data-tour={`sidebar-${id}`}
                       className={({ isActive }) =>
                         `flex items-center ${isSidebarCompact || sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group ${
                           isActive
@@ -739,6 +741,7 @@ export function Layout() {
                   </span>
                 )}
                 <InstallAppButton />
+                <TourLauncher />
                 <a
                   href="https://github.com/maziggy/bambuddy"
                   target="_blank"

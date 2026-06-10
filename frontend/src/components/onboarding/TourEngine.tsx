@@ -221,6 +221,13 @@ export function TourEngine() {
   const modalPos = computeModalPosition(anchorRect);
   const isLastStep = stepIndex === TOUR_STEPS.length - 1;
   const isFirstStep = stepIndex === 0;
+  // Step counter shows visible position, not raw index — when add-printer
+  // auto-skips because the user already has printers, the next step is the
+  // user's first visible one and should render as "1 / N", not "2 / N".
+  const visibleTotal = TOUR_STEPS.filter((s) => !s.skipIf?.(skipContext)).length;
+  const visiblePosition = TOUR_STEPS.slice(0, stepIndex + 1).filter(
+    (s) => !s.skipIf?.(skipContext),
+  ).length;
 
   return (
     <>
@@ -240,7 +247,7 @@ export function TourEngine() {
           <div className="flex items-center gap-3 mb-3">
             <MascotIcon pose={step.pose ?? 'hero'} className="w-12 h-12 flex-shrink-0" />
             <div className="text-xs text-bambu-gray">
-              {stepIndex + 1} / {TOUR_STEPS.length}
+              {visiblePosition} / {visibleTotal}
             </div>
           </div>
           <h3 id="tour-step-title" className="text-lg font-semibold text-white mb-2">

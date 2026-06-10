@@ -1,0 +1,66 @@
+name: Windows Installer
+
+# Build the Windows installer .exe.
+#
+# Triggers:
+#   - Tag push matching v* (release builds, uploaded as a release asset)
+#   - Manual dispatch (for testing the build pipeline)
+#
+# The installer is unsigned until SignPath OSS approval lands. Once it
+# does, add the SignPath GitHub Action between the ISCC step and the
+# upload step.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup --version=6.2.2 --no-progress -y
+        shell: pwsh
+
+      - name: Stage installer artifacts
+        working-directory: installers/windows
+        run: python build.py
+        shell: pwsh
+
+      - name: Compile installer (ISCC)
+        working-directory: installers/windows
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" bambuddy.iss
+        shell: pwsh
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bambuddy-windows-installer
+          path: installers/windows/build/output/*.exe
+          if-no-files-found: error
+
+      - name: Attach installer to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installers/windows/build/output/*.exe
+          fail_on_unmatched_files: true

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
@@ -140,6 +140,7 @@ export function SpoolBuddyDashboard() {
   const { sbState, selectedPrinterId } = useOutletContext<SpoolBuddyOutletContext>();
   const { t } = useTranslation();
   const { showToast } = useToast();
+  const navigate = useNavigate();
 
   const { data: spoolmanSettings } = useQuery({
     queryKey: ['spoolman-settings'],
@@ -172,6 +173,13 @@ export function SpoolBuddyDashboard() {
     refetchIntervalInBackground: false,
   });
 
+  const { data: internalAssignments = [] } = useQuery({
+    queryKey: ['spool-assignments-all'],
+    queryFn: () => api.getAssignments(),
+    enabled: !spoolmanMode,
+    staleTime: 30 * 1000,
+  });
+
   // Fetch printers and their statuses for the status badges
   const { data: printers = [] } = useQuery({
     queryKey: ['printers'],
@@ -186,6 +194,7 @@ export function SpoolBuddyDashboard() {
       select: (data: PrinterStatus) => ({
         connected: data?.connected,
         awaiting_plate_clear: data?.awaiting_plate_clear === true,
+        ams: data?.ams ?? [],
       }),
     })),
   });
@@ -199,6 +208,47 @@ export function SpoolBuddyDashboard() {
       pending: statusQueries[i]?.data?.awaiting_plate_clear === true,
     }))
     .filter((row: { pending: boolean }) => row.pending);
+
+
+  const unmappedSpoolPrinters = useMemo(() => {
+    return printers
+      .map((printer: Printer, i: number) => {
+        const amsUnits = statusQueries[i]?.data?.ams ?? [];
+        let count = 0;
+
+        for (const unit of amsUnits) {
+          for (const tray of unit.tray ?? []) {
+            const occupied =
+              tray.state === 10 ||
+              tray.state === 11 ||
+              !!tray.tray_type ||
+              !!tray.tray_color ||
+              !!tray.tag_uid ||
+              !!tray.tray_uuid ||
+              (tray.remain != null && tray.remain > 0);
+
+            if (!occupied || tray.state === 9) continue;
+
+            const assigned = spoolmanMode
+              ? spoolmanSlotAssignments.some(a =>
+                  a.printer_id === printer.id &&
+                  a.ams_id === unit.id &&
+                  a.tray_id === tray.id
+                )
+              : internalAssignments.some(a =>
+                  a.printer_id === printer.id &&
+                  a.ams_id === unit.id &&
+                  a.tray_id === tray.id
+                );
+
+            if (!assigned) count += 1;
+          }
+        }
+
+        return { printer, count };
+      })
+      .filter(row => row.count > 0);
+  }, [printers, statusQueries, spoolmanSlotAssignments, internalAssignments, spoolmanMode]);
 
   const queryClient = useQueryClient();
   const clearPlateMutation = useMutation({
@@ -566,6 +616,35 @@ export function SpoolBuddyDashboard() {
               {/* Plate-ready pills — same compact size as the printer badges above so
                   the row stays scannable when multiple printers finish at once.
                   Wraps via flex-wrap. Each pill is independently tappable. */}
+
+              {unmappedSpoolPrinters.length > 0 && (
+                <div
+                  className="mt-2 flex flex-wrap gap-2"
+                  data-testid="spool-assign-section"
+                  aria-label={t('spoolbuddy.dashboard.spoolAssignLabel', 'Spool assignments needed')}
+                >
+                  {unmappedSpoolPrinters.map(({ printer, count }) => (
+                    <button
+                      key={printer.id}
+                      type="button"
+                      onClick={() => navigate('/spoolbuddy/ams')}
+                      data-testid={`spool-assign-button-${printer.id}`}
+                      title={t('spoolbuddy.dashboard.spoolAssignNeeded', 'Spool assignment needed: {{name}}', { name: printer.name })}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 active:bg-sky-500/30 border border-sky-500/30 text-sky-200 transition-colors"
+                    >
+                      <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M12 9v4" />
+                        <path d="M12 17h.01" />
+                        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                      </svg>
+                      <span className="text-xs truncate max-w-[100px]">{printer.name}</span>
+                      <span className="text-xs opacity-70" aria-hidden="true">·</span>
+                      <span className="text-xs font-medium">Assign {count}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {platesPending.length > 0 && (
                 <div
                   className="mt-2 flex flex-wrap gap-2"

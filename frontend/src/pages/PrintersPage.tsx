@@ -1808,10 +1808,15 @@ function PrinterCard({
   });
   const lastPrint = lastPrints?.[0];
   const isPrintingOrPaused = status?.state === 'RUNNING' || status?.state === 'PAUSE';
-  const needsPlateClear = requirePlateClear && status?.awaiting_plate_clear === true;
+  // The awaiting flag blocks queue dispatch even when require_plate_clear is
+  // disabled (farm mode raises it only after failed/aborted/cancelled prints,
+  // where the push-off end-gcode never ran), so the Clear Plate button must
+  // always be reachable while the flag is set or the queue stalls forever.
+  const needsPlateClear = status?.awaiting_plate_clear === true;
   const showClearPlateButton = status?.connected && needsPlateClear && !isPrintingOrPaused;
   const plateStatus = (() => {
-    if (!requirePlateClear || !status?.connected) return null;
+    if (!status?.connected) return null;
+    if (!requirePlateClear && !status.awaiting_plate_clear) return null;
     if (isPrintingOrPaused) {
       return {
         label: t('printers.plateStatus.inUse'),

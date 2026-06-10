@@ -130,6 +130,76 @@ class TestPlateClearGate:
         mock_pm.set_awaiting_plate_clear.assert_any_call(1, True)
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("status", "should_raise"),
+        [("completed", False), ("failed", True), ("aborted", True), ("cancelled", True)],
+        ids=["completed-skipped", "failed-raised", "aborted-raised", "cancelled-raised"],
+    )
+    async def test_farm_mode_gate_raised_only_for_non_completed(self, status, should_raise):
+        """With require_plate_clear=false (farm mode) a completed print clears
+        its own plate via the push-off end-gcode, so the gate must not stall
+        the queue. Failed/aborted/cancelled prints never ran their end-gcode —
+        the partial part is still on the bed — so the gate must be raised and
+        hold dispatch until the user clears the bed."""
+        from contextlib import ExitStack
+
+        tasks_before = set(asyncio.all_tasks())
+
+        with ExitStack() as stack:
+            mock_pm = self._setup_mocks(stack)
+
+            # Re-wire the session mock so the require_plate_clear settings read
+            # returns "false" while every other query keeps returning None.
+            mock_session_maker = stack.enter_context(patch("backend.app.main.async_session"))
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock()
+
+            async def _fake_execute(query, *args, **kwargs):
+                result = MagicMock()
+                try:
+                    rendered = str(query.compile(compile_kwargs={"literal_binds": True}))
+                except Exception:
+                    rendered = str(query)
+                if "require_plate_clear" in rendered:
+                    result.scalar_one_or_none = MagicMock(return_value=MagicMock(value="false"))
+                else:
+                    result.scalar_one_or_none = MagicMock(return_value=None)
+                return result
+
+            mock_session.execute = AsyncMock(side_effect=_fake_execute)
+            mock_session_maker.return_value = mock_session
+
+            from backend.app.main import on_print_complete
+
+            await on_print_complete(
+                1,
+                {
+                    "status": status,
+                    "filename": "/data/Metadata/test.gcode",
+                    "subtask_name": "Test",
+                    "timelapse_was_active": False,
+                },
+            )
+
+            for task in asyncio.all_tasks() - tasks_before:
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+
+        true_calls = [c for c in mock_pm.set_awaiting_plate_clear.call_args_list if c.args[1] is True]
+        if should_raise:
+            assert true_calls, f"Gate must be raised for terminal status '{status}' in farm mode"
+        else:
+            assert true_calls == [], (
+                "Gate must not be raised for a completed print in farm mode "
+                "(push-off end-gcode already cleared the plate); "
+                f"set_awaiting_plate_clear(1, True) was called {len(true_calls)} time(s)."
+            )
+
+    @pytest.mark.asyncio
     async def test_plate_clear_gate_not_raised_for_unknown_status(self):
         """Defence in depth: an unknown / not-terminal status string from a
         future firmware revision must not silently raise the gate. The flag is

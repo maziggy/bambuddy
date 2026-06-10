@@ -3130,7 +3130,31 @@ async def on_print_complete(printer_id: int, data: dict):
     # Auto Off power cycles and Bambuddy restarts.
     _final_status = data.get("status", "completed")
     if _final_status in ("completed", "failed", "aborted", "cancelled"):
-        printer_manager.set_awaiting_plate_clear(printer_id, True)
+        _raise_gate = True
+        if _final_status == "completed":
+            # Farm mode (require_plate_clear=false): a completed print clears its
+            # own plate via the push-off end-gcode, so raising the gate would only
+            # stall the queue until a pointless manual ack. Failed/aborted/cancelled
+            # prints never reach their end-gcode — the partial part is still on the
+            # bed — so for those the gate is raised regardless of the setting and
+            # the scheduler holds dispatch until the user acknowledges the plate
+            # is clear (the flag itself now means "bed needs manual attention").
+            try:
+                from backend.app.models.settings import Settings
+
+                async with async_session() as db:
+                    result = await db.execute(
+                        select(Settings).where(Settings.key == "require_plate_clear")
+                    )
+                    setting = result.scalar_one_or_none()
+                    if setting is not None and setting.value.lower() == "false":
+                        _raise_gate = False
+            except Exception as e:
+                logger.warning(
+                    "Failed to read require_plate_clear setting, raising plate-clear gate: %s", e
+                )
+        if _raise_gate:
+            printer_manager.set_awaiting_plate_clear(printer_id, True)
 
     # MQTT relay - publish print complete
     try:

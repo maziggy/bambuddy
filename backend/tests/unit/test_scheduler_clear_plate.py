@@ -251,18 +251,37 @@ class TestSchedulerIdleCheckWithPlateCleared:
         assert scheduler._is_printer_idle(1) is False
 
     @patch("backend.app.services.print_scheduler.printer_manager")
-    def test_finish_state_idle_when_require_plate_clear_disabled(self, mock_pm, scheduler):
-        """FINISH is idle when require_plate_clear=False, regardless of awaiting flag."""
+    def test_finish_state_not_idle_when_awaiting_even_if_require_plate_clear_disabled(
+        self, mock_pm, scheduler
+    ):
+        """The awaiting flag blocks dispatch even with require_plate_clear=False.
+
+        In farm mode the flag is only raised for prints that ended without
+        running their push-off end-gcode (failed/aborted/cancelled), so the
+        bed is fouled and dispatch must hold until the user acks the plate.
+        """
         mock_pm.is_connected.return_value = True
         mock_pm.get_status.return_value = MagicMock(state="FINISH")
         mock_pm.is_awaiting_plate_clear.return_value = True
-        assert scheduler._is_printer_idle(1, require_plate_clear=False) is True
+        assert scheduler._is_printer_idle(1, require_plate_clear=False) is False
 
     @patch("backend.app.services.print_scheduler.printer_manager")
-    def test_failed_state_idle_when_require_plate_clear_disabled(self, mock_pm, scheduler):
+    def test_failed_state_not_idle_when_awaiting_even_if_require_plate_clear_disabled(
+        self, mock_pm, scheduler
+    ):
         mock_pm.is_connected.return_value = True
         mock_pm.get_status.return_value = MagicMock(state="FAILED")
         mock_pm.is_awaiting_plate_clear.return_value = True
+        assert scheduler._is_printer_idle(1, require_plate_clear=False) is False
+
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    def test_finish_state_idle_when_not_awaiting_and_require_plate_clear_disabled(
+        self, mock_pm, scheduler
+    ):
+        """Farm-mode happy path: completed prints don't raise the flag, so FINISH dispatches."""
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_status.return_value = MagicMock(state="FINISH")
+        mock_pm.is_awaiting_plate_clear.return_value = False
         assert scheduler._is_printer_idle(1, require_plate_clear=False) is True
 
     @patch("backend.app.services.print_scheduler.printer_manager")

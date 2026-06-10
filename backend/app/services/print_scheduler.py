@@ -1433,7 +1433,13 @@ class PrintScheduler:
         # job — even if the printer currently reports IDLE. After Auto Off cycles the
         # printer, it boots back into IDLE with no memory of the previous finish; without
         # the persisted awaiting flag we'd bypass the confirmation prompt (#961).
-        if require_plate_clear and printer_manager.is_awaiting_plate_clear(printer_id):
+        #
+        # The flag blocks dispatch even when require_plate_clear is disabled: in farm
+        # mode the gate is only raised for prints that ended WITHOUT running their
+        # push-off end-gcode (failed/aborted/cancelled — see on_print_complete in
+        # main.py), so the partial part is still on the bed and dispatching would
+        # start the next job onto a fouled plate.
+        if printer_manager.is_awaiting_plate_clear(printer_id):
             logger.debug(
                 "Printer %d: not idle — awaiting plate-clear acknowledgment (state=%s)",
                 printer_id,

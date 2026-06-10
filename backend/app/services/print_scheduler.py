@@ -294,8 +294,21 @@ class PrintScheduler:
                             )
                             continue
 
-                    # Compute AMS mapping if not already set
-                    if not item.ams_mapping:
+                    # Compute AMS mapping if not set, or recompute if the cached
+                    # mapping points at a slot that has since run out (auto-remap).
+                    needs_mapping = not item.ams_mapping
+                    if not needs_mapping:
+                        try:
+                            existing = json.loads(item.ams_mapping)
+                            if not self._validate_ams_mapping(item.printer_id, existing):
+                                logger.info(
+                                    "Queue item %s: cached AMS mapping has empty slot(s), remapping",
+                                    item.id,
+                                )
+                                needs_mapping = True
+                        except (json.JSONDecodeError, TypeError):
+                            needs_mapping = True
+                    if needs_mapping:
                         computed_mapping = await self._compute_ams_mapping_for_printer(db, item.printer_id, item)
                         if computed_mapping:
                             item.ams_mapping = json.dumps(computed_mapping)
@@ -423,9 +436,21 @@ class PrintScheduler:
                             db=db,
                         )
 
-                        # Compute AMS mapping for the assigned printer if not already set
-                        # This is critical for model-based jobs where mapping wasn't computed upfront
-                        if not item.ams_mapping:
+                        # Compute AMS mapping for the assigned printer if not set,
+                        # or recompute if the cached mapping points at an empty slot (auto-remap).
+                        needs_mapping = not item.ams_mapping
+                        if not needs_mapping:
+                            try:
+                                existing = json.loads(item.ams_mapping)
+                                if not self._validate_ams_mapping(printer_id, existing):
+                                    logger.info(
+                                        "Queue item %s: cached AMS mapping has empty slot(s), remapping",
+                                        item.id,
+                                    )
+                                    needs_mapping = True
+                            except (json.JSONDecodeError, TypeError):
+                                needs_mapping = True
+                        if needs_mapping:
                             computed_mapping = await self._compute_ams_mapping_for_printer(db, printer_id, item)
                             if computed_mapping:
                                 item.ams_mapping = json.dumps(computed_mapping)
@@ -997,6 +1022,24 @@ class PrintScheduler:
                 )
 
         return filaments
+
+    def _validate_ams_mapping(self, printer_id: int, mapping: list[int]) -> bool:
+        """Return True if every non-(-1) slot in mapping is currently loaded and not confirmed empty.
+
+        A slot is considered invalid when:
+        - Its global_tray_id is not present in the printer's current loaded filaments
+          (the physical spool was removed), or
+        - The printer's firmware reports remain==0 for that slot (RFID-confirmed runout).
+
+        remain==-1 (non-RFID / unknown) is treated as valid — we don't block dispatches
+        for spools whose remaining weight we can't measure.
+        """
+        status = printer_manager.get_status(printer_id)
+        if not status:
+            return True  # Can't validate — don't block dispatch
+        loaded = self._build_loaded_filaments(status)
+        valid_ids = {f["global_tray_id"] for f in loaded if f.get("remain", -1) != 0}
+        return all(tray_id == -1 or tray_id in valid_ids for tray_id in mapping)
 
     def _normalize_color(self, color: str | None) -> str:
         """Normalize color to #RRGGBB format."""

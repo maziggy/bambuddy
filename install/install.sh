@@ -519,6 +519,15 @@ create_systemd_service() {
 
     log_info "Creating systemd service..."
 
+    # ProtectHome=true hides /home/* from the service, which breaks ExecStart
+    # when INSTALL_PATH lives under /home (issue #1685). Loosen to read-only in
+    # that case so the venv binary is still resolvable; ReadWritePaths below
+    # re-grants writes for the install/data/log dirs.
+    local protect_home="true"
+    if [[ "$INSTALL_PATH" == /home/* ]]; then
+        protect_home="read-only"
+    fi
+
     cat > /tmp/bambuddy.service << EOF
 [Unit]
 Description=BamBuddy - Bambu Lab Print Management
@@ -552,7 +561,7 @@ AmbientCapabilities=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=$protect_home
 ReadWritePaths=$DATA_DIR $LOG_DIR $INSTALL_PATH
 
 [Install]

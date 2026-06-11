@@ -1,9 +1,13 @@
 """Tests for the unified slicer-presets endpoint helpers.
 
-The endpoint stitches together three preset sources (cloud / local /
-standard) with name-based dedup. These tests pin the dedup logic, the
-cloud-status mapping, and the per-user / sidecar caches at the
-helper level — full HTTP integration is covered by the routes test.
+The endpoint stitches together four preset sources (local / orca_cloud /
+cloud / standard). It does NOT dedup across tiers — every tier surfaces
+its full list so the user can pick any source. Bambu Cloud filament
+metadata is enriched from same-named entries in the other tiers so it
+can still score in the SliceModal's auto-pick. These tests pin the
+enrich behaviour, the cloud-status mapping, and the per-user / sidecar
+caches at the helper level — full HTTP integration is covered by the
+routes test.
 """
 
 from __future__ import annotations
@@ -28,50 +32,31 @@ def _slot(items: list[tuple[str, str, str]]) -> dict[str, list[UnifiedPreset]]:
     }
 
 
-class TestDedupeByName:
-    """Cloud > local > standard, by ``name``, order preserved within tier."""
+class TestEnrichCloudMetadata:
+    """No cross-tier dedup — every tier's full list comes back; Bambu Cloud
+    filament metadata is enriched from same-named entries in other tiers."""
 
-    def test_cloud_wins_over_local_and_standard(self):
+    def test_same_name_in_all_tiers_appears_in_every_tier(self):
+        """Critical regression guard for #1712: a user who has imported a
+        local profile AND signed in to Orca AND has Bambu Cloud with the
+        same name should see it under EACH source, not just the highest-
+        priority tier. The order is used for auto-pick + group rendering;
+        it is NOT used to hide profiles."""
+        orca = _slot([("oid1", "Bambu PLA Basic", "orca_cloud")])
         cloud = _slot([("cid1", "Bambu PLA Basic", "cloud")])
         local = _slot([("lid1", "Bambu PLA Basic", "local")])
         standard = _slot([("Bambu PLA Basic", "Bambu PLA Basic", "standard")])
 
-        _oc, c, l_, s = sp._dedupe_by_name(_slot([]), cloud, local, standard)
+        oc, c, l_, s = sp._enrich_cloud_metadata(orca, cloud, local, standard)
 
+        assert [p.source for p in l_["printer"]] == ["local"]
+        assert [p.source for p in oc["printer"]] == ["orca_cloud"]
         assert [p.source for p in c["printer"]] == ["cloud"]
-        assert l_["printer"] == []
-        assert s["printer"] == []
-
-    def test_local_filtered_only_when_present_in_cloud(self):
-        cloud = _slot([("cid1", "Custom PLA", "cloud")])
-        local = _slot(
-            [
-                ("lid1", "Custom PLA", "local"),  # filtered (in cloud)
-                ("lid2", "My Workhorse PLA", "local"),  # kept
-            ]
-        )
-        standard = _slot([])
-
-        _oc, _c, l_, _s = sp._dedupe_by_name(_slot([]), cloud, local, standard)
-        assert [p.name for p in l_["printer"]] == ["My Workhorse PLA"]
-
-    def test_standard_filtered_against_both_higher_tiers(self):
-        cloud = _slot([("c1", "A", "cloud")])
-        local = _slot([("l1", "B", "local")])
-        standard = _slot(
-            [
-                ("A", "A", "standard"),  # filtered (in cloud)
-                ("B", "B", "standard"),  # filtered (in local)
-                ("C", "C", "standard"),  # kept
-            ]
-        )
-
-        _oc, _c, _l, s = sp._dedupe_by_name(_slot([]), cloud, local, standard)
-        assert [p.name for p in s["printer"]] == ["C"]
+        assert [p.source for p in s["printer"]] == ["standard"]
 
     def test_preserves_order_within_tier(self):
-        """A tier's input order must be preserved in its output — nothing in
-        the dedupe pass should sort, reverse, or otherwise reorder entries."""
+        """A tier's input order must be preserved — nothing in the enrich
+        pass should sort, reverse, or otherwise reorder entries."""
         cloud = _slot(
             [
                 ("c1", "Z-First", "cloud"),
@@ -79,25 +64,95 @@ class TestDedupeByName:
                 ("c3", "M-Third", "cloud"),
             ]
         )
-        _oc, c, _l, _s = sp._dedupe_by_name(_slot([]), cloud, _slot([]), _slot([]))
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(_slot([]), cloud, _slot([]), _slot([]))
         assert [p.name for p in c["printer"]] == ["Z-First", "A-Second", "M-Third"]
 
-    def test_dedupe_is_per_slot(self):
-        """A name colliding across DIFFERENT slots must NOT cross-filter —
-        a "Custom" filament shouldn't hide a "Custom" printer."""
+    def test_bambu_cloud_filament_metadata_backfilled_from_local(self):
+        """Bambu Cloud's list response omits filament_type/colour for
+        rate-limit reasons. A same-named local entry's metadata fills in
+        so the cloud entry can still score in pickFilamentForSlot."""
+        local = {
+            "printer": [],
+            "process": [],
+            "filament": [
+                UnifiedPreset(
+                    id="lp1",
+                    name="Bambu PLA Basic",
+                    source="local",
+                    filament_type="PLA",
+                    filament_colour="#FF0000",
+                )
+            ],
+        }
         cloud = {
             "printer": [],
             "process": [],
-            "filament": [UnifiedPreset(id="cf1", name="Custom", source="cloud")],
+            "filament": [UnifiedPreset(id="cp1", name="Bambu PLA Basic", source="cloud")],
         }
-        local = {
-            "printer": [UnifiedPreset(id="lp1", name="Custom", source="local")],
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(_slot([]), cloud, local, _slot([]))
+        # Cloud entry now carries the local entry's metadata.
+        assert c["filament"][0].filament_type == "PLA"
+        assert c["filament"][0].filament_colour == "#FF0000"
+        # Local entry is untouched.
+        assert local["filament"][0].filament_type == "PLA"
+
+    def test_bambu_cloud_metadata_falls_back_through_orca_and_standard(self):
+        """When local doesn't carry the name, orca_cloud / standard fill in."""
+        orca = {
+            "printer": [],
             "process": [],
-            "filament": [],
+            "filament": [
+                UnifiedPreset(
+                    id="o1",
+                    name="Bambu PLA Basic",
+                    source="orca_cloud",
+                    filament_type="PLA",
+                    filament_colour="#00FF00",
+                )
+            ],
         }
-        _oc, _c, l_, _s = sp._dedupe_by_name(_slot([]), cloud, local, _slot([]))
-        # The filament-tier collision must NOT remove the printer-tier "Custom".
-        assert [p.name for p in l_["printer"]] == ["Custom"]
+        cloud = {
+            "printer": [],
+            "process": [],
+            "filament": [UnifiedPreset(id="cp1", name="Bambu PLA Basic", source="cloud")],
+        }
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(orca, cloud, _slot([]), _slot([]))
+        assert c["filament"][0].filament_type == "PLA"
+        assert c["filament"][0].filament_colour == "#00FF00"
+
+    def test_bambu_cloud_keeps_its_own_metadata_when_present(self):
+        """If Bambu Cloud already has filament_type / filament_colour the
+        enrich pass must not overwrite them with a different same-named
+        entry's values."""
+        local = {
+            "printer": [],
+            "process": [],
+            "filament": [
+                UnifiedPreset(
+                    id="lp1",
+                    name="Bambu PLA Basic",
+                    source="local",
+                    filament_type="PETG",
+                    filament_colour="#000000",
+                )
+            ],
+        }
+        cloud = {
+            "printer": [],
+            "process": [],
+            "filament": [
+                UnifiedPreset(
+                    id="cp1",
+                    name="Bambu PLA Basic",
+                    source="cloud",
+                    filament_type="PLA",
+                    filament_colour="#FFFFFF",
+                )
+            ],
+        }
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(_slot([]), cloud, local, _slot([]))
+        assert c["filament"][0].filament_type == "PLA"
+        assert c["filament"][0].filament_colour == "#FFFFFF"
 
 
 def _user_with_cloud_auth(user_id: int = 1) -> MagicMock:

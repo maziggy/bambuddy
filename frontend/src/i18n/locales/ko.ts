@@ -592,6 +592,12 @@ export default {
   },
   archives: {
     title: '인쇄 아카이브',
+    no3mfBanner: {
+      title: '최근 일부 인쇄가 썸네일과 함께 아카이브되지 않았습니다',
+      body: '슬라이서가 프린터의 SD 카드에 .gcode.3mf 파일을 남기지 않아서 Bambuddy가 썸네일이나 슬라이서 메타데이터를 가져올 수 없었습니다. 일반적으로 슬라이서 (Bambu Studio / OrcaSlicer 장치 탭)에서 "전송된 파일을 외부 저장소에 저장"이 꺼져 있을 때 발생합니다.',
+      docsLink: '설치 단계 4 보기',
+      dismissLabel: '이 알림 닫기'
+    },
     searchPlaceholder: '아카이브 검색...',
     filterByPrinter: '프린터별 필터',
     filterByStatus: '상태별 필터',
@@ -725,6 +731,7 @@ export default {
       noDownload: '아카이브를 다운로드할 권한이 없습니다',
       noCopyLink: '다운로드 링크를 복사할 권한이 없습니다',
       noDelete: '이 아카이브를 삭제할 권한이 없습니다',
+      noEdit: '이 항목을 편집할 권한이 없습니다',
       noCreate: '아카이브를 만들 권한이 없습니다'
     },
     platePicker: {
@@ -861,7 +868,22 @@ export default {
       clearLogConfirm: '모든 인쇄 로그 항목이 영구적으로 삭제됩니다. 아카이브와 대기열 항목은 영향받지 않습니다. 이 작업은 취소할 수 없습니다. 계속하시겠습니까?',
       clearLogButton: '모두 지우기',
       cleared: '{{count}}개 로그 항목이 지워졌습니다',
-      clearFailed: '인쇄 로그 지우기 실패'
+      clearFailed: '인쇄 로그 지우기 실패',
+      deleteEntryTitle: '인쇄 로그 항목 삭제',
+      deleteEntryConfirm: '이 항목이 로그에서 삭제되며 필라멘트, 시간 및 비용 기여도가 빠른 통계에서 제외됩니다. 해당 아카이브(있는 경우)는 영향을 받지 않습니다. 이 작업은 취소할 수 없습니다.',
+      entryDeleted: '인쇄 로그 항목이 삭제되었습니다',
+      entryDeleteFailed: '인쇄 로그 항목 삭제 실패',
+      editEntryTitle: '인쇄 로그 항목 편집',
+      editEntryDescription: '이 인쇄를 분류합니다. 실패 분석 위젯이 이 값으로 그룹화하므로 업데이트가 통계에 즉시 반영됩니다.',
+      entryUpdated: '인쇄 로그 항목이 업데이트되었습니다',
+      entryUpdateFailed: '인쇄 로그 항목 업데이트 실패',
+      statuses: {
+        completed: '완료됨',
+        failed: '실패',
+        stopped: '중지됨',
+        cancelled: '취소됨',
+        skipped: '건너뜀'
+      }
     },
     runLog: {
       title: '인쇄 기록',
@@ -1015,6 +1037,7 @@ export default {
       layerInspection: '첫 번째 층 검사',
       timelapse: '타임랩스',
       useAms: 'AMS 사용',
+      nozzleOffsetCali: '노즐 오프셋 보정',
       applyChanges: '변경사항 적용',
       selectAll: '전체 선택',
       deselectAll: '전체 해제',
@@ -1728,6 +1751,8 @@ export default {
     defaultLayerInspectDesc: '첫 번째 층 AI 검사',
     defaultTimelapse: '타임랩스',
     defaultTimelapseDesc: '타임랩스 영상 녹화',
+    defaultNozzleOffsetCali: '노즐 오프셋 보정',
+    defaultNozzleOffsetCaliDesc: '익스트루더 간 노즐 오프셋 보정',
     staggeredStart: '엇갈린 시작',
     staggeredStartDescription: '다중 프린터 일괄 시작 시 기본 그룹 크기 및 간격. 인쇄 모달에서 배치별로 재정의할 수 있습니다.',
     plateClear: '플레이트 비움 확인',
@@ -1802,7 +1827,10 @@ export default {
     newWindow: '새 창',
     embeddedOverlay: '내장 오버레이',
     preferredSlicer: '선호하는 슬라이서',
-    preferredSlicerDescription: '파일을 열 슬라이서 앱을 선택하세요',
+    preferredSlicerDescription: 'API 사이드카를 통한 앱 내 슬라이싱에 사용되는 슬라이서',
+    openInSlicerLabel: '슬라이서에서 열기',
+    openInSlicerInherit: 'API 슬라이서와 동일',
+    openInSlicerDescription: "'슬라이서에서 열기' 버튼이 사용하는 데스크톱 슬라이서입니다. 'API 슬라이서와 동일'로 두어 상속하거나 로컬에서 사용할 다른 슬라이서를 선택하세요.",
     orcaslicerKnownIssuesWarning: 'OrcaSlicer 2.3.2 / 2.4.0-dev에는 Bambu 제작 3MF 파일 슬라이싱을 차단하는 알려진 CLI 버그가 있습니다. 업스트림 수정이 출시될 때까지 Bambu Studio를 사용하는 것이 좋습니다.',
     useSlicerApi: '슬라이서 API 사용',
     useSlicerApiDescription: '켜면 "슬라이스" 작업이 앱 내 슬라이서 모달을 열고 슬라이서 API 사이드카를 호출합니다. 끄면 URI 스킴을 통해 데스크톱 슬라이서로 전달합니다.',
@@ -3467,6 +3495,31 @@ export default {
         color: '색상 순'
       }
     },
+    csv: {
+      importButton: 'CSV 가져오기',
+      exportButton: 'CSV 내보내기',
+      modalTitle: 'CSV에서 스풀 가져오기',
+      selectFile: 'CSV 파일을 선택하거나 여기로 끌어다 놓으세요',
+      dragHint: '헤더: material(필수), brand, subtype, color_name, rgba, …',
+      parsing: '파일을 읽는 중…',
+      previewError: 'CSV 파일을 읽을 수 없습니다',
+      validCount: '유효 {{count}}개',
+      errorCount: '오류 {{count}}개',
+      skippedCount: '건너뜀 {{count}}개',
+      colRow: '행',
+      colStatus: '상태',
+      colColor: '색상',
+      colorResolved: '카탈로그에서 색상 채움',
+      colorCrossMaterial: '다른 재료에서 색상을 가져옴 — 카탈로그에 정확히 일치하는 항목 없음',
+      duplicateExisting: '이 재료, 브랜드, 색상의 스풀이 이미 존재합니다 — 그래도 새 스풀로 가져옵니다',
+      spoolmanHint: 'Spoolman 모드에서는 Spoolman의 기본 CSV 가져오기/내보내기를 사용하세요.',
+      importValidRows: '유효한 {{count}}개 행 가져오기',
+      noValidRows: '유효한 행 없음',
+      importing: '가져오는 중…',
+      importSuccess: '{{count}}개 스풀을 가져왔습니다',
+      importError: '가져오기 실패',
+      exportError: '내보내기 실패',
+    },
     addSpool: '스풀 추가',
     editSpool: '스풀 편집',
     copySpool: '스풀 복사',
@@ -3519,6 +3572,7 @@ export default {
     assignSpool: '스풀 할당',
     unassignSpool: '할당 해제',
     assignSuccess: '스풀 할당 및 AMS 슬롯 구성됨',
+    assignPendingInsert: '할당됨. 스풀을 삽입하면 슬롯이 구성됩니다.',
     assignFailed: '스풀 할당 실패',
     selectSpool: '이 슬롯에 할당할 스풀 선택',
     assigned: '할당됨',
@@ -3728,6 +3782,7 @@ export default {
     used: '사용됨',
     remainingUnit: '남음',
     slotEmpty: '비어 있음',
+    slotUnconfigured: '?',
     emptySlotReset: '필라멘트가 할당되지 않음'
   },
   printModal: {
@@ -4206,7 +4261,7 @@ export default {
     },
     archiveNameSource: {
       title: '아카이브 이름 출처',
-      description: '가상 프린터를 통해 파일이 도착할 때 새 아카이브의 이름 지정 방법을 선택합니다. "메타데이터"는 3MF의 슬라이서 내장 제목을 사용합니다(기본값). "파일 이름"은 Bambu Studio가 FTP를 통해 전송한 파일 이름을 사용합니다.',
+      description: '가상 프린터를 통해 파일이 도착할 때 새 아카이브의 이름 지정 방법을 선택합니다. "메타데이터"는 3MF의 슬라이서 내장 제목을 사용합니다(기본값). "파일 이름"은 Bambu Studio가 FTP를 통해 전송한 파일 이름을 사용합니다. 참고: Bambu Studio는 3MF에 제목 필드가 있을 경우 "프린터로 보내기" 대화 상자에 입력한 이름을 해당 값으로 덮어쓰므로, 두 모드 모두 동일한 문자열이 표시되는 경우가 많습니다.',
       metadata: '메타데이터',
       filename: '파일 이름'
     },
@@ -4884,6 +4939,8 @@ export default {
     noMatchingPresets: '일치하는 프리셋을 찾을 수 없습니다.',
     custom: '사용자 지정',
     builtin: '기본 제공',
+    orcaCloud: 'Orca Cloud',
+    bambuCloud: 'Bambu Cloud',
     settingsSentToPrinter: '설정이 프린터로 전송됨',
     filamentProfile: '필라멘트 프로필',
     kProfileLabel: 'K 프로필 (압력 전진)',
@@ -5662,6 +5719,12 @@ export default {
         title: '파일 전송 포트 (FTPS 990)',
         pass: '연결 가능 — 인쇄 파일 전송이 작동합니다.',
         warn: '포트 990에 연결할 수 없습니다. 모니터링은 작동할 수 있지만 프린터로 파일 전송에 실패합니다. 포트 990이 차단되지 않았는지 확인하세요.'
+      },
+      external_storage: {
+        title: '전송된 파일을 외부 저장소에 저장 (설치 단계 4)',
+        pass: '프린터가 이 옵션이 켜져 있다고 보고합니다 — 전송된 파일이 SD 카드에 저장되며 아카이브에 썸네일과 슬라이서 메타데이터가 포함됩니다.',
+        fail: '프린터가 이 옵션이 꺼져 있다고 보고합니다. "전송된 파일을 외부 저장소에 저장"을 활성화하세요 — 최신 펌웨어 (P2S 01.02 / Bambu Studio 2.6 이상)에서는 프린터의 인쇄 설정에 토글이 있고, 이전 버전에서는 Bambu Studio / OrcaSlicer의 장치 탭에 있습니다. 이 옵션이 없으면 아카이브된 모든 인쇄물에 썸네일과 슬라이서 메타데이터가 없습니다.',
+        skip: '확인되지 않음 — 활성 MQTT 연결이 필요합니다. 이 설정이 슬라이서에만 존재하는 이전 슬라이서에서는 프린터가 보고하지 않으므로, 옵션이 꺼져 있어도 이 검사는 통과합니다 — 설치 단계 4를 수동으로 확인하세요.'
       },
       port_rtsps: {
         title: '카메라 포트 (RTSPS 322)',

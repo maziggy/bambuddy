@@ -2,8 +2,8 @@ import json
 import logging
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +38,13 @@ from backend.app.schemas.spool import (
     normalize_extra_colors,
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
+from backend.app.services.spool_csv import (
+    MAX_CSV_IMPORT_BYTES,
+    ImportPreview,
+    ImportResult,
+    parse_and_validate,
+    serialize,
+)
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
     MATERIAL_TEMPS,
@@ -51,6 +58,10 @@ logger = logging.getLogger(__name__)
 _GENERIC_ID_VALUES = set(GENERIC_FILAMENT_IDS.values())
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
+
+# Bounded read size for the CSV import body so a chunked upload with no
+# Content-Length can't stream past the cap into memory before we notice.
+_CSV_UPLOAD_CHUNK_BYTES = 64 * 1024
 
 # FilamentColors.xyz API
 FILAMENT_COLORS_API = "https://filamentcolors.xyz/api"
@@ -383,48 +394,23 @@ async def apply_spool_to_slot_via_mqtt(
         )
 
     # Persist slot preset mapping for UI display (preset_name on hover card).
-    try:
-        from backend.app.models.slot_preset import SlotPresetMapping
+    # Shared with the RFID auto-assign path — both must keep this row in sync
+    # with the currently-assigned spool, otherwise the slot card surfaces the
+    # previous spool's preset name (the PrintersPage display chain consults
+    # slot_preset_mappings.preset_name first).
+    from backend.app.services.slot_preset_writer import upsert_slot_preset_for_spool
 
-        preset_name = spool.slicer_filament_name or tray_sub_brands or tray_type
-        preset_source = "cloud"
-        if sf:
-            base_sf_mapping = sf.split("_")[0] if "_" in sf else sf
-            try:
-                int(base_sf_mapping)
-                preset_id_to_save = f"local_{base_sf_mapping}"
-                preset_source = "local"
-            except (ValueError, TypeError):
-                preset_id_to_save = filament_id_to_setting_id(tray_info_idx) if tray_info_idx else setting_id
-        else:
-            preset_id_to_save = filament_id_to_setting_id(tray_info_idx) if tray_info_idx else ""
-
-        if preset_id_to_save:
-            existing_mapping = await db.execute(
-                select(SlotPresetMapping).where(
-                    SlotPresetMapping.printer_id == printer_id,
-                    SlotPresetMapping.ams_id == ams_id,
-                    SlotPresetMapping.tray_id == tray_id,
-                )
-            )
-            mapping = existing_mapping.scalar_one_or_none()
-            if mapping:
-                mapping.preset_id = preset_id_to_save
-                mapping.preset_name = preset_name
-                mapping.preset_source = preset_source
-            else:
-                mapping = SlotPresetMapping(
-                    printer_id=printer_id,
-                    ams_id=ams_id,
-                    tray_id=tray_id,
-                    preset_id=preset_id_to_save,
-                    preset_name=preset_name,
-                    preset_source=preset_source,
-                )
-                db.add(mapping)
-            await db.commit()
-    except Exception as e:
-        logger.warning("Failed to save slot preset mapping for spool %d: %s", spool.id, e)
+    await upsert_slot_preset_for_spool(
+        db=db,
+        spool=spool,
+        printer_id=printer_id,
+        ams_id=ams_id,
+        tray_id=tray_id,
+        tray_info_idx=tray_info_idx,
+        tray_sub_brands=tray_sub_brands,
+        tray_type=tray_type,
+        setting_id=setting_id,
+    )
 
     logger.info(
         "Auto-configured AMS slot ams=%d tray=%d for spool %d on printer %d",
@@ -950,6 +936,92 @@ async def list_spools(
     query = query.order_by(Spool.material, Spool.brand, Spool.color_name)
     result = await db.execute(query)
     return list(result.scalars().all())
+
+
+# ── CSV import / export (#1576) ──────────────────────────────────────────────
+# Declared before the dynamic `/spools/{spool_id}` route below so the literal
+# `export` / `import` segments match here instead of being parsed as an int id.
+
+
+@router.get("/spools/export")
+async def export_spools_csv(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """Export the active inventory as CSV (same schema the importer accepts)."""
+    from datetime import datetime, timezone
+
+    query = select(Spool).where(Spool.archived_at.is_(None)).order_by(Spool.material, Spool.brand, Spool.color_name)
+    result = await db.execute(query)
+    spools = list(result.scalars().all())
+    content = serialize(spools)
+    # Date-stamp the filename so repeat exports don't overwrite each other in
+    # the browser's default download folder.
+    filename = f"bambuddy_inventory_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/spools/import", response_model=ImportPreview | ImportResult)
+async def import_spools_csv(
+    file: UploadFile = File(...),
+    dry_run: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Import spools from a CSV file.
+
+    With ``dry_run=true`` returns an ImportPreview (per-row valid/error/skipped,
+    colours resolved) and writes nothing — the UI shows this before the user
+    confirms. With ``dry_run=false`` it validates the same way and then persists
+    only the valid rows in a single transaction (invalid rows are skipped, the
+    user fixes the CSV and re-uploads), returning an ImportResult summary.
+    """
+
+    def _too_large() -> HTTPException:
+        return HTTPException(
+            status_code=413,
+            detail={
+                "code": "csv_import_too_large",
+                "message": f"CSV file exceeds the {MAX_CSV_IMPORT_BYTES // (1024 * 1024)} MB limit.",
+            },
+        )
+
+    # Reject by declared size first (fast path when Content-Length is set), then
+    # read in bounded chunks and bail the moment the accumulated body crosses the
+    # cap — file.size is None for chunked uploads, so the loop is what actually
+    # keeps an oversized stream from filling memory.
+    if file.size is not None and file.size > MAX_CSV_IMPORT_BYTES:
+        raise _too_large()
+    raw = bytearray()
+    while chunk := await file.read(_CSV_UPLOAD_CHUNK_BYTES):
+        raw.extend(chunk)
+        if len(raw) > MAX_CSV_IMPORT_BYTES:
+            raise _too_large()
+    preview = await parse_and_validate(bytes(raw), db)
+
+    if dry_run:
+        return preview
+
+    created = 0
+    for row in preview.rows:
+        if row.status == "valid" and row.spool is not None:
+            db.add(Spool(**row.spool))
+            created += 1
+
+    if created:
+        await db.commit()
+        await ws_manager.broadcast({"type": "inventory_changed"})
+
+    return ImportResult(
+        created=created,
+        skipped=preview.skipped_count,
+        errors=preview.error_count,
+        error_rows=[r for r in preview.rows if r.status == "error"],
+    )
 
 
 @router.get("/spools/{spool_id}", response_model=SpoolResponse)

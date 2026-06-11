@@ -50,7 +50,9 @@ function makeUnit(overrides: Partial<AMSUnit> = {}): AMSUnit {
       makeTray({ id: 0, tray_color: 'FF0000FF', tray_type: 'PLA', remain: 80 }),
       makeTray({ id: 1, tray_color: '00FF00FF', tray_type: 'PETG', remain: 50 }),
       makeTray({ id: 2, tray_color: '0000FFFF', tray_type: 'ABS', remain: 10 }),
-      makeTray({ id: 3, tray_color: null, tray_type: '', remain: -1 }),
+      // state=9 = firmware-confirmed empty (#1694: vs state=null which would
+      // be "spool loaded but unconfigured", labelled "?" in the UI).
+      makeTray({ id: 3, tray_color: null, tray_type: '', remain: -1, state: 9 } as Partial<AMSTray> & { state: number }),
     ],
     serial_number: 'AMS001',
     sw_ver: '1.0.0',
@@ -88,8 +90,27 @@ describe('AmsUnitCard', () => {
     expect(screen.getByText('ABS')).toBeDefined();
   });
 
-  it('shows "Empty" for empty slot', () => {
+  it('shows "Empty" for firmware-confirmed empty slot (state 9/10)', () => {
     render(<AmsUnitCard unit={makeUnit()} activeSlot={null} />);
+    expect(screen.getByText('Empty')).toBeDefined();
+  });
+
+  it('shows "?" for loaded-but-unconfigured slot (#1694)', () => {
+    // No state reported by firmware + empty tray_type = spool loaded into the
+    // slot but no material assigned. Reporter on a 3-AMS P1S saw these slots
+    // mislabelled as "Empty" because the prior logic only checked tray_type.
+    const unit = makeUnit({
+      tray: [
+        makeTray({ id: 0, tray_type: 'PLA', remain: 80 }),
+        makeTray({ id: 1, tray_color: null, tray_type: '', remain: -1 } as Partial<AMSTray> & { state?: number }),
+        makeTray({ id: 2, tray_type: 'ABS', remain: 10 }),
+        makeTray({ id: 3, tray_color: null, tray_type: '', remain: -1, state: 9 } as Partial<AMSTray> & { state: number }),
+      ],
+    });
+    render(<AmsUnitCard unit={unit} activeSlot={null} />);
+    expect(screen.getByText('?')).toBeDefined();
+    // The firmware-empty slot still reads "Empty" — the two states are visually
+    // distinct, not collapsed.
     expect(screen.getByText('Empty')).toBeDefined();
   });
 

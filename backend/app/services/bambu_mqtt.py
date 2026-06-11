@@ -2100,6 +2100,26 @@ class BambuMQTTClient:
         # bit 8 = 1 → LEFT extruder (active_extruder=1)
         if "device" in data and isinstance(data.get("device"), dict):
             device = data["device"]
+            # One-shot identification probe: surface whatever the firmware uses to
+            # name itself so an unknown model in a support bundle becomes self-
+            # diagnosing. INFO level so it shows up without debug logging. Falls
+            # back to dumping device.keys() if none of the known fields are present
+            # (so a future Bambu rename like `model_name` is still observable).
+            if not getattr(self, "_device_id_logged", False):
+                id_fields = {
+                    k: device.get(k)
+                    for k in ("dev_model_name", "dev_product_name", "dev_id", "project_name")
+                    if k in device
+                }
+                if id_fields:
+                    logger.info("[%s] Device identification: %s", self.serial_number, id_fields)
+                else:
+                    logger.info(
+                        "[%s] Device identification: no known id fields; device.keys=%s",
+                        self.serial_number,
+                        sorted(device.keys()),
+                    )
+                self._device_id_logged = True
             if "extruder" in device and "state" in device["extruder"]:
                 state_val = device["extruder"]["state"]
                 # Extract bit 8 for extruder position
@@ -3300,6 +3320,7 @@ class BambuMQTTClient:
         layer_inspect: bool = False,
         timelapse: bool = False,
         use_ams: bool = True,
+        nozzle_offset_cali: bool = False,
     ):
         """Start a print job on the printer.
 
@@ -3316,6 +3337,8 @@ class BambuMQTTClient:
             vibration_cali: Vibration compensation calibration
             layer_inspect: First layer AI inspection
             use_ams: Use AMS for automatic filament changes
+            nozzle_offset_cali: Run nozzle offset calibration before print
+                (dual-nozzle printers only — silently ignored on single-nozzle).
         """
         if self._client and self.state.connected:
             # Bambu print command format — matches Bambu Studio's format.
@@ -3442,7 +3465,11 @@ class BambuMQTTClient:
                     # regardless of the flow_cali toggle (#1478).
                     "extrude_cali_flag": 1 if flow_cali else 2,
                     "extrude_cali_manual_mode": 0,
-                    "nozzle_offset_cali": 2,
+                    # 1 = run, 2 = skip. BambuStudio exposes the toggle only for
+                    # dual-nozzle machines (H2D/H2D Pro/H2C/X2D); on single-nozzle
+                    # printers we always send 2 so firmware never wastes cycles
+                    # on a calibration their head doesn't support (#1682).
+                    "nozzle_offset_cali": 1 if (nozzle_offset_cali and is_dual_nozzle) else 2,
                     "subtask_name": filename.replace(".3mf", "").replace(".gcode", ""),
                     "profile_id": "0",
                     "project_id": submission_id,

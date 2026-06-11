@@ -392,10 +392,15 @@ describe('SliceModal', () => {
     });
   });
 
-  it('renders a "sign in" banner when cloud_status is not_authenticated', async () => {
+  it('omits the cloud banner when status is not_authenticated (#1712)', async () => {
+    // A signed-out user (Bambu or Orca) shouldn't get a permanent "sign in"
+    // nag at the top of every slice. Sign-in lives on the Profiles page; the
+    // modal stays silent unless a previously-signed-in session actually broke
+    // (expired / unreachable).
     mockApi.getSlicerPresets.mockResolvedValue(
       makeUnified({
         cloud_status: 'not_authenticated',
+        orca_cloud_status: 'not_authenticated',
         local: fullThreeTier.local,
         standard: fullThreeTier.standard,
       }),
@@ -405,9 +410,8 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent(/Sign in to Bambu Cloud/i);
-    });
+    await waitFor(() => expect(screen.getByText('Imported X1C 0.4')).toBeDefined());
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('renders an "expired" banner when cloud_status is expired', async () => {

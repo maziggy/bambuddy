@@ -38,15 +38,14 @@ interface SliceModalProps {
 
 type Slot = 'printer' | 'process' | 'filament';
 
-// SliceModal-specific tier priority: orca_cloud → local → cloud → standard.
-// Imported (local) profiles are surfaced before Bambu Cloud because they're
-// metadata-tagged (Bambu Cloud isn't, by design — see
-// `_fetch_cloud_presets`'s rate-limit note). Orca Cloud comes first because
-// its sync_pull response inlines metadata too AND represents the user's
-// most-recently-curated source. Standard is the bundled fallback. This is
-// distinct from the listing endpoint's dedup order and only affects what
-// the SliceModal renders / pre-picks.
-const SLICE_MODAL_TIER_ORDER = ['orca_cloud', 'local', 'cloud', 'standard'] as const;
+// Lookup priority: local → orca_cloud → cloud → standard. Local imports
+// outrank everything else because the user explicitly imported them for
+// this install; Orca Cloud comes next; Bambu Cloud after that; standard
+// (bundled) is the final fallback. The backend does NOT dedup tiers —
+// every group renders its full set so the user can pick a same-named
+// preset from a lower-priority source if they want to override the
+// auto-pick.
+const SLICE_MODAL_TIER_ORDER = ['local', 'orca_cloud', 'cloud', 'standard'] as const;
 
 function pickDefault(by: UnifiedPresetsResponse, slot: Slot): PresetRef | null {
   for (const tier of SLICE_MODAL_TIER_ORDER) {
@@ -117,8 +116,8 @@ function pickProcessDefault(
 }
 
 const TIER_BONUS: Record<PresetSource, number> = {
-  orca_cloud: 1.75,
-  local: 1.5,
+  local: 1.75,
+  orca_cloud: 1.5,
   cloud: 1.0,
   standard: 0.5,
 };
@@ -999,7 +998,12 @@ function CloudStatusBanner({
   cloudName?: 'bambu' | 'orca';
 }) {
   const { t } = useTranslation();
-  if (status === 'ok') return null;
+  // `ok` is the happy path. `not_authenticated` is silenced too: a user who
+  // hasn't signed in (or has explicitly logged out — #1712) doesn't need a
+  // permanent nag at the top of the modal; sign-in lives on the Profiles
+  // page if they want it. Only `expired` and `unreachable` surface — those
+  // are real breakage states a previously-signed-in user needs to see.
+  if (status === 'ok' || status === 'not_authenticated') return null;
 
   // Same status vocabulary for both Bambu and Orca Cloud — only the
   // user-facing text varies. The fallbacks below name each cloud explicitly
@@ -1008,10 +1012,6 @@ function CloudStatusBanner({
   const messages =
     cloudName === 'orca'
       ? {
-          not_authenticated: {
-            key: 'slice.orcaCloud.notAuthenticated',
-            fallback: 'Sign in to Orca Cloud (Profiles → Orca Cloud) to see your Orca presets.',
-          },
           expired: {
             key: 'slice.orcaCloud.expired',
             fallback: 'Orca Cloud session expired — sign in again to refresh your Orca presets.',
@@ -1022,10 +1022,6 @@ function CloudStatusBanner({
           },
         }
       : {
-          not_authenticated: {
-            key: 'slice.cloud.notAuthenticated',
-            fallback: 'Sign in to Bambu Cloud (Settings → Profiles → Cloud) to see your cloud presets.',
-          },
           expired: {
             key: 'slice.cloud.expired',
             fallback: 'Bambu Cloud session expired — sign in again to refresh your cloud presets.',
@@ -1036,11 +1032,7 @@ function CloudStatusBanner({
           },
         };
 
-  const tones: Record<Exclude<SlicerCloudStatus, 'ok'>, { tone: string; icon: typeof Cloud }> = {
-    not_authenticated: {
-      tone: 'border-bambu-dark-tertiary/40 bg-bambu-dark text-bambu-gray',
-      icon: Cloud,
-    },
+  const tones: Record<'expired' | 'unreachable', { tone: string; icon: typeof Cloud }> = {
     expired: {
       tone: 'border-amber-700/40 bg-amber-900/20 text-amber-200',
       icon: CloudOff,
@@ -1149,8 +1141,8 @@ function PresetDropdown({
   // empty sections collapse out.
   const { sections, otherEntries } = useMemo(() => {
     const tiers: { key: keyof UnifiedPresetsResponse; label: string; fallback: string }[] = [
-      { key: 'orca_cloud', label: 'slice.tier.orcaCloud', fallback: 'Orca Cloud' },
       { key: 'local', label: 'slice.tier.local', fallback: 'Imported' },
+      { key: 'orca_cloud', label: 'slice.tier.orcaCloud', fallback: 'Orca Cloud' },
       { key: 'cloud', label: 'slice.tier.cloud', fallback: 'Bambu Cloud' },
       { key: 'standard', label: 'slice.tier.standard', fallback: 'Standard' },
     ];

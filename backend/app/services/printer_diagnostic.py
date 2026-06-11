@@ -18,6 +18,7 @@ from backend.app.models.printer import Printer
 from backend.app.schemas.printer import DiagnosticCheck, PrinterDiagnosticResult
 from backend.app.services.discovery import is_running_in_docker
 from backend.app.services.printer_manager import printer_manager
+from backend.app.utils.printer_models import has_external_storage
 
 logger = logging.getLogger(__name__)
 
@@ -160,8 +161,41 @@ async def run_connection_diagnostic(
                 )
             )
 
-    # --- MQTT credentials / connection ---
+    # --- External storage (printer-side "Store sent files on external storage") ---
+    # Install step 4. The setting has two variants depending on
+    # firmware/slicer combo: on newer firmware the toggle lives on the
+    # printer (P2S 01.02 / BambuStudio 2.6+), on older versions it's
+    # purely a slicer-side preference.
+    #
+    # For the printer-side variant, `home_flag` bit 11 is pushed on every
+    # status report and parsed into state.store_to_sdcard (bambu_mqtt.py
+    # line 153). That's the signal here — instant, no FTP I/O.
+    #
+    # For the slicer-side variant, the printer never hears about it and
+    # this check will pass even when the user is missing step 4. That gap
+    # is covered separately by the "no_3mf_available" archive-fallback
+    # banner. An FTP upload-and-verify probe was tried and rejected — the
+    # /cache directory is always writable from Bambuddy regardless of
+    # either toggle, so the probe always passes and detects nothing.
+    #
+    # Skip entirely on models with no external-storage slot at all (A1
+    # and A1 Mini). They never set home_flag bit 11, so a naive read of
+    # `store_to_sdcard` would fall through to a false `fail` for every
+    # A1-series user (#1703).
     state = printer_manager.get_status(printer.id) if printer else None
+    model_has_slot = has_external_storage(getattr(printer, "model", None)) if printer else True
+    if not model_has_slot or state is None or not state.connected:
+        checks.append(DiagnosticCheck(id="external_storage", status="skip"))
+    elif getattr(state, "store_to_sdcard", None) is True:
+        checks.append(DiagnosticCheck(id="external_storage", status="pass"))
+    elif getattr(state, "store_to_sdcard", None) is False:
+        checks.append(DiagnosticCheck(id="external_storage", status="fail"))
+    else:
+        # State exists but the field was never populated — skip rather than
+        # report a false fail.
+        checks.append(DiagnosticCheck(id="external_storage", status="skip"))
+
+    # --- MQTT credentials / connection ---
     if not mqtt_ok:
         # Can't reach the broker at all — the port check already reported it.
         checks.append(DiagnosticCheck(id="mqtt_auth", status="skip"))

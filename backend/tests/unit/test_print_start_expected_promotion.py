@@ -18,7 +18,9 @@ from backend.app.main import (
     _expected_print_creators,
     _expected_print_registered_at,
     _expected_prints,
+    _get_start_plate_id,
     _print_ams_mappings,
+    _print_plate_ids,
     register_expected_print,
 )
 
@@ -30,12 +32,14 @@ def _clear_dicts():
     _expected_print_registered_at.clear()
     _expected_print_creators.clear()
     _print_ams_mappings.clear()
+    _print_plate_ids.clear()
     _active_prints.clear()
     yield
     _expected_prints.clear()
     _expected_print_registered_at.clear()
     _expected_print_creators.clear()
     _print_ams_mappings.clear()
+    _print_plate_ids.clear()
     _active_prints.clear()
 
 
@@ -68,6 +72,24 @@ class TestRegisterExpectedPrint:
 
         ts = _expected_print_registered_at[(1, "test.3mf")]
         assert before <= ts <= after
+
+    def test_stores_plate_id(self):
+        """plate_id is registered so usage tracking can scope multi-plate 3MFs (#1697)."""
+        register_expected_print(1, "test.3mf", archive_id=10, plate_id=2)
+        assert _print_plate_ids[10] == 2
+
+    def test_no_plate_id_when_none(self):
+        """Direct-Print of a single-plate file passes plate_id=None; nothing stored."""
+        register_expected_print(1, "test.3mf", archive_id=10, plate_id=None)
+        assert 10 not in _print_plate_ids
+
+    def test_get_start_plate_id_reads_back(self):
+        register_expected_print(1, "test.3mf", archive_id=10, plate_id=3)
+        assert _get_start_plate_id(10) == 3
+
+    def test_get_start_plate_id_returns_none_for_unregistered(self):
+        assert _get_start_plate_id(10) is None
+        assert _get_start_plate_id(None) is None
 
 
 class TestExpectedPrintDetection:
@@ -337,5 +359,81 @@ class TestAMSMappingInjection:
             ut_session.ams_mapping = _stored_map
 
         assert ut_session.ams_mapping == [5, 6]  # unchanged
+
+        _active_sessions.clear()
+
+
+class TestPlateIdInjection:
+    """Verify plate_id injection into usage tracker session for direct-Print of
+    a non-first plate from a multi-plate 3MF (#1697)."""
+
+    def test_injection_into_session(self):
+        """plate_id from _print_plate_ids gets injected when session has none."""
+        from datetime import datetime, timezone
+
+        from backend.app.services.usage_tracker import PrintSession, _active_sessions
+
+        _active_sessions.clear()
+
+        # Session created by on_print_start before expected-print promotion;
+        # plate_id is None because no queue item was found (direct-Print path).
+        session = PrintSession(
+            printer_id=1,
+            print_name="Box",
+            started_at=datetime.now(timezone.utc),
+            tray_remain_start={},
+            tray_now_at_start=-1,
+            spool_assignments={},
+            ams_mapping=None,
+            plate_id=None,
+        )
+        _active_sessions[1] = session
+
+        register_expected_print(1, "Box.3mf", archive_id=54, plate_id=2)
+
+        # Mirror the injection branch from main.py.
+        _stored_plate_id = _print_plate_ids.get(54)
+        assert _stored_plate_id == 2
+
+        ut_session = _active_sessions.get(1)
+        assert ut_session is not None
+        assert ut_session.plate_id is None  # before injection
+
+        ut_session.plate_id = _stored_plate_id  # injection
+        assert ut_session.plate_id == 2
+
+        _active_sessions.clear()
+
+    def test_no_injection_when_session_already_has_plate_id(self):
+        """Queue path: on_print_start already captured plate_id from queue_item;
+        don't overwrite with the dict value."""
+        from datetime import datetime, timezone
+
+        from backend.app.services.usage_tracker import PrintSession, _active_sessions
+
+        _active_sessions.clear()
+
+        session = PrintSession(
+            printer_id=1,
+            print_name="Box",
+            started_at=datetime.now(timezone.utc),
+            tray_remain_start={},
+            tray_now_at_start=-1,
+            spool_assignments={},
+            ams_mapping=None,
+            plate_id=3,  # captured from queue_item by on_print_start
+        )
+        _active_sessions[1] = session
+
+        register_expected_print(1, "Box.3mf", archive_id=54, plate_id=2)
+
+        _stored_plate_id = _print_plate_ids.get(54)
+        ut_session = _active_sessions.get(1)
+
+        # Guard: don't overwrite if session already has a plate_id
+        if ut_session and ut_session.plate_id is None:
+            ut_session.plate_id = _stored_plate_id
+
+        assert ut_session.plate_id == 3  # queue value preserved
 
         _active_sessions.clear()

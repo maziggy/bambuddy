@@ -670,14 +670,18 @@ class BackgroundDispatchService:
                         "Failed to upload file to printer. Check if SD card is inserted and properly formatted (FAT32/exFAT)."
                     )
 
+                # Resolve plate_id before register so usage tracking can scope the
+                # 3MF parse to the dispatched plate at print-start (#1697). Pure
+                # transform of file_path + options, safe to reorder.
+                plate_id = self._resolve_plate_id(file_path, job.options.get("plate_id"))
+
                 register_expected_print(
                     job.printer_id,
                     remote_filename,
                     job.source_id,
                     ams_mapping=job.options.get("ams_mapping"),
+                    plate_id=plate_id,
                 )
-
-                plate_id = self._resolve_plate_id(file_path, job.options.get("plate_id"))
 
                 self._raise_if_cancel_requested(job)
 
@@ -695,6 +699,7 @@ class BackgroundDispatchService:
                     vibration_cali=job.options.get("vibration_cali", True),
                     layer_inspect=job.options.get("layer_inspect", False),
                     use_ams=job.options.get("use_ams", True),
+                    nozzle_offset_cali=job.options.get("nozzle_offset_cali", False),
                 )
 
                 if not started:
@@ -873,14 +878,17 @@ class BackgroundDispatchService:
                         "Failed to upload file to printer. Check if SD card is inserted and properly formatted (FAT32/exFAT)."
                     )
 
+                # Resolve plate_id before register so usage tracking can scope the
+                # 3MF parse to the dispatched plate at print-start (#1697).
+                plate_id = self._resolve_plate_id(file_path, job.options.get("plate_id"))
+
                 register_expected_print(
                     job.printer_id,
                     remote_filename,
                     archive.id,
                     ams_mapping=job.options.get("ams_mapping"),
+                    plate_id=plate_id,
                 )
-
-                plate_id = self._resolve_plate_id(file_path, job.options.get("plate_id"))
 
                 self._raise_if_cancel_requested(job)
 
@@ -898,6 +906,7 @@ class BackgroundDispatchService:
                     vibration_cali=job.options.get("vibration_cali", True),
                     layer_inspect=job.options.get("layer_inspect", False),
                     use_ams=job.options.get("use_ams", True),
+                    nozzle_offset_cali=job.options.get("nozzle_offset_cali", False),
                 )
 
                 if not started:

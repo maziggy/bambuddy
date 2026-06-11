@@ -149,6 +149,40 @@ class TestPrintQueueAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_add_to_queue_with_skip_filament_check(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """PrintModal "Print Anyway" persists skip_filament_check on creation (#1698-followup)."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+
+        data = {
+            "printer_id": printer.id,
+            "archive_id": archive.id,
+            "skip_filament_check": True,
+        }
+        response = await async_client.post("/api/v1/queue/", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["skip_filament_check"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_skip_filament_check_defaults_false(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Default add-to-queue has skip_filament_check=False — no silent bypass."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+
+        data = {"printer_id": printer.id, "archive_id": archive.id}
+        response = await async_client.post("/api/v1/queue/", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["skip_filament_check"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_add_to_queue_with_project_id(
         self, async_client: AsyncClient, printer_factory, archive_factory, db_session
     ):
@@ -582,6 +616,53 @@ class TestQueueStartEndpoint:
         # Helper not called on the bypass path — we trust the operator's
         # decision to print anyway.
         assert called_with == {}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_start_with_skip_flag_persists_acknowledgement(
+        self,
+        async_client: AsyncClient,
+        queue_item_factory,
+        db_session,
+    ):
+        """skip_filament_check=true sets the persistent flag on the queue item
+        so the scheduler doesn't re-flag it on the next tick (#1698-followup).
+
+        Without persistence the route's flag-clearing only survives until the
+        next scheduler tick re-runs the deficit check on identical spool
+        state and re-promotes the item — the user has to click Play+Confirm
+        every single tick.
+        """
+        item = await queue_item_factory(manual_start=True, filament_short=True)
+        assert item.skip_filament_check is False
+
+        response = await async_client.post(f"/api/v1/queue/{item.id}/start?skip_filament_check=true")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["skip_filament_check"] is True
+
+        await db_session.refresh(item)
+        assert item.skip_filament_check is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_start_without_skip_flag_does_not_set_acknowledgement(
+        self,
+        async_client: AsyncClient,
+        queue_item_factory,
+        db_session,
+    ):
+        """A successful Play click with no deficit must NOT silently set the
+        acknowledgement flag — only an explicit Print Anyway should.
+        """
+        item = await queue_item_factory(manual_start=False, filament_short=False)
+        assert item.skip_filament_check is False
+
+        response = await async_client.post(f"/api/v1/queue/{item.id}/start")
+        assert response.status_code == 200
+
+        await db_session.refresh(item)
+        assert item.skip_filament_check is False
 
 
 class TestQueueCancelEndpoint:

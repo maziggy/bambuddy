@@ -1763,13 +1763,21 @@ class PrintScheduler:
         return False
 
     async def _check_previous_success(self, db: AsyncSession, item: PrintQueueItem) -> bool:
-        """Check if the previous print on this printer succeeded."""
-        # Find the most recent completed queue item for this printer
+        """Check if the previous print on this printer succeeded.
+
+        A user-cancelled predecessor is treated as neutral — `cancelled` is a
+        deliberate action, not a failure, so subsequent items should still
+        dispatch (#1667). `skipped` is excluded from the lookback entirely:
+        a skip isn't an actual print attempt, so it must not gate downstream
+        items — counting it as a failed predecessor was the cascade bug that
+        let a single cancellation block 18 items over 3 days for the reporter.
+        Only `failed` and `aborted` — real print-attempt failures — block.
+        """
         result = await db.execute(
             select(PrintQueueItem)
             .where(PrintQueueItem.printer_id == item.printer_id)
             .where(PrintQueueItem.id != item.id)
-            .where(PrintQueueItem.status.in_(["completed", "failed", "skipped", "aborted"]))
+            .where(PrintQueueItem.status.in_(["completed", "failed", "cancelled", "aborted"]))
             .order_by(PrintQueueItem.completed_at.desc())
             .limit(1)
         )
@@ -1779,7 +1787,7 @@ class PrintScheduler:
         if not prev_item:
             return True
 
-        return prev_item.status == "completed"
+        return prev_item.status in ("completed", "cancelled")
 
     async def _power_off_if_needed(self, db: AsyncSession, item: PrintQueueItem):
         """Power off printer if auto_off_after is enabled (waits for cooldown)."""
@@ -1838,6 +1846,14 @@ class PrintScheduler:
         since been swapped to one with enough material clears the flag here
         so the next scheduler tick dispatches it.
         """
+        # User has explicitly acknowledged the deficit ("Print Anyway") —
+        # don't re-flag, don't even compute. Without this short-circuit the
+        # scheduler bounces between "user said anyway" (route clears
+        # manual_start) and "scheduler re-blocked" (this method re-flags it
+        # on identical spool state) (#1698-followup).
+        if item.skip_filament_check:
+            return False
+
         try:
             deficit = await compute_deficit_for_queue_item(db, item)
         except Exception as e:
@@ -1874,6 +1890,23 @@ class PrintScheduler:
             item.filament_short = False
             await db.commit()
         return False
+
+    async def _propagate_owner_to_printer_manager(self, db: AsyncSession, item: PrintQueueItem) -> None:
+        """Hand the queue item's owner to printer_manager so the
+        print-complete callback can credit the user in PrintLogEntry (#1670).
+
+        No-ops when the item has no `created_by_id` or the referenced user
+        row is missing (e.g. user deleted between queue-add and dispatch —
+        in that case the print log row falls back to the existing un-credited
+        behaviour rather than crashing the dispatch).
+        """
+        if not item.created_by_id:
+            return
+        from backend.app.models.user import User
+
+        owner = await db.get(User, item.created_by_id)
+        if owner:
+            printer_manager.set_current_print_user(item.printer_id, owner.id, owner.username)
 
     async def _start_print(self, db: AsyncSession, item: PrintQueueItem):
         """Upload file and start print for a queue item.
@@ -2118,7 +2151,18 @@ class PrintScheduler:
                 archive.id,
                 ams_mapping=ams_mapping,
                 created_by_id=item.created_by_id,
+                plate_id=item.plate_id,
             )
+
+        # Propagate the queue item's owner into printer_manager so the
+        # print-complete callback can credit the user in the PrintLogEntry
+        # (#1670). The dispatch path in `background_dispatch.py` does the
+        # equivalent for archive/library "Print" flows; the queue path was
+        # missing this hop, which left the print log's User column blank
+        # for any print started from the queue. `created_by_id` is set
+        # either at queue-add time (UI-added items) or when the user
+        # clicks the manual-start button (#1670 fix in print_queue.py).
+        await self._propagate_owner_to_printer_manager(db, item)
 
         # IMPORTANT: Set status to "printing" BEFORE sending the print command.
         # This prevents phantom reprints if the backend crashes/restarts after the
@@ -2171,6 +2215,7 @@ class PrintScheduler:
             layer_inspect=item.layer_inspect,
             timelapse=effective_timelapse,
             use_ams=item.use_ams,
+            nozzle_offset_cali=item.nozzle_offset_cali,
         )
 
         if started:
@@ -2280,31 +2325,39 @@ class PrintScheduler:
         pre_subtask_id: str | None = None,
         pre_gcode_file: str | None = None,
         timeout: float = 90.0,
+        phase_b_timeout: float = 180.0,
         poll_interval: float = 3.0,
     ) -> None:
         """Revert a queue item if the printer never acknowledges the start command.
 
         Bambuddy optimistically marks the queue item as "printing" right after the
-        MQTT project_file publish succeeds locally. If the printer drops/ignores the
-        command (half-broken MQTT session — #887/#936), the state never transitions
-        and the item would otherwise stay stuck in "printing" forever (#967).
+        MQTT project_file publish succeeds locally. The watchdog runs in two phases:
 
-        Exit paths (printer picked up the job — no revert):
-          - gcode_state changed from pre_state, OR
-          - subtask_id advanced past pre_subtask_id — the printer echoes our
-            per-dispatch identity back on push_status, so a subtask_id change is
-            a definitive "command landed" signal even while state is still FINISH.
-            H2D can sit at FINISH for ~50 s after accepting project_file before
-            transitioning to PREPARE, which used to trip the state-only watchdog
-            and caused the scheduler to revert + re-dispatch the item; the next
-            successful dispatch then looked like a reprint of the just-finished
-            job (#1078).
+        Phase A (up to ``timeout``): wait for either an active-state transition
+        or a ``subtask_id`` advance past ``pre_subtask_id``. State alone is the
+        primary signal; subtask_id advance handles the H2D case where state can
+        sit at FINISH for ~50 s after the printer accepted ``project_file``
+        before flipping to PREPARE (#1078). If neither happens, the MQTT publish
+        was lost on a half-broken session (#887/#936) — revert and force
+        reconnect (the #967 recovery path).
 
-        Timeout raised from 45 s → 90 s as belt-and-braces for slow transitions
-        that also don't emit an early subtask_id tick.
+        Phase B (up to ``phase_b_timeout``, only if Phase A exited on subtask_id
+        alone): keep watching for the active-state transition. subtask_id alone
+        proves the file landed but not that the printer started — and a printer
+        that accepts the command but stays at IDLE/FINISH indefinitely (e.g.
+        cloud+LAN re-auth dance after a power cycle on old firmware, #1678)
+        used to leave the queue item stuck in 'printing' forever because the
+        old watchdog returned success as soon as subtask_id advanced. If Phase
+        B times out, revert the queue item so the user can retry without
+        restarting Bambuddy. Skip ``force_reconnect`` here: the file landed and
+        a forced reconnect mid-parse triggers 0500_4003 (#1150).
+
+        Phase A timeout raised from 45 s → 90 s as belt-and-braces for slow
+        transitions that also don't emit an early subtask_id tick.
         """
-        deadline = time.monotonic() + timeout
         last_status = None
+        landed_on_subtask = False
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             await asyncio.sleep(poll_interval)
             status = printer_manager.get_status(printer_id)
@@ -2327,14 +2380,28 @@ class PrintScheduler:
                 scheduler._release_dispatch_hold(printer_id)
                 return
             if pre_subtask_id is not None and status.subtask_id is not None and status.subtask_id != pre_subtask_id:
-                # Printer picked up the job (subtask_id advanced). H2D can
-                # sit at FINISH for ~50 s after accepting project_file
-                # before transitioning to PREPARE, but the subtask_id flips
-                # to our submission_id almost immediately (#1078).
-                scheduler._release_dispatch_hold(printer_id)
-                return
+                # Phase A exit — printer accepted the file (subtask_id flipped
+                # to our submission id). Don't return yet: the printer may
+                # have accepted the command but never actually start (e.g.
+                # cloud+LAN re-auth dance after a power cycle, #1678). Phase
+                # B watches for the active-state transition.
+                landed_on_subtask = True
+                break
 
-        # No transition. Revert the item so the scheduler can retry.
+        if landed_on_subtask:
+            phase_b_deadline = time.monotonic() + phase_b_timeout
+            while time.monotonic() < phase_b_deadline:
+                await asyncio.sleep(poll_interval)
+                status = printer_manager.get_status(printer_id)
+                if not status:
+                    scheduler._release_dispatch_hold(printer_id)
+                    return
+                last_status = status
+                if status.state in _ACTIVE_PRINT_STATES:
+                    scheduler._release_dispatch_hold(printer_id)
+                    return
+
+        # No active-state transition. Revert the item so the scheduler can retry.
         # Drop the in-memory hold so the retry isn't blocked by it.
         scheduler._release_dispatch_hold(printer_id)
 
@@ -2375,24 +2442,44 @@ class PrintScheduler:
             # session breaks ongoing prints on the same printer.
             return
 
+        total_timeout = timeout + (phase_b_timeout if landed_on_subtask else 0.0)
         if revert_outcome == "reverted":
-            logger.warning(
-                "Queue item %s: printer %d did not respond to print command within "
-                "%.0fs (state still %s, subtask_id still %s) — reverted to 'pending' "
-                "for retry (#967)",
-                queue_item_id,
-                printer_id,
-                timeout,
-                pre_state,
-                pre_subtask_id,
-            )
+            if landed_on_subtask:
+                logger.warning(
+                    "Queue item %s: printer %d accepted project_file (subtask_id "
+                    "advanced) but never transitioned to an active state within "
+                    "%.0fs — printer wedged post-acceptance; reverted to 'pending' "
+                    "for retry (#1678)",
+                    queue_item_id,
+                    printer_id,
+                    total_timeout,
+                )
+            else:
+                logger.warning(
+                    "Queue item %s: printer %d did not respond to print command within "
+                    "%.0fs (state still %s, subtask_id still %s) — reverted to 'pending' "
+                    "for retry (#967)",
+                    queue_item_id,
+                    printer_id,
+                    timeout,
+                    pre_state,
+                    pre_subtask_id,
+                )
 
-        # Same #1150 / #887/#936 discriminator as background_dispatch: if the
-        # printer's gcode_file changed since pre-dispatch, the project_file
-        # command landed and the printer is parsing — a forced reconnect
-        # mid-parse triggers 0500_4003. If gcode_file is unchanged, the
-        # publish was silently swallowed (#887/#936) and the original
-        # force_reconnect recovery is what we want.
+        # Phase B was entered iff subtask_id advanced, which means the
+        # project_file landed on the printer. A forced reconnect at this point
+        # would interrupt the printer's parse and trigger 0500_4003 (#1150) —
+        # skip the recovery entirely.
+        if landed_on_subtask:
+            return
+
+        # Phase A timeout path — same #1150 / #887/#936 discriminator as
+        # background_dispatch: if the printer's gcode_file changed since
+        # pre-dispatch, the project_file command landed and the printer is
+        # parsing — a forced reconnect mid-parse triggers 0500_4003. If
+        # gcode_file is unchanged, the publish was silently swallowed
+        # (#887/#936) and the original force_reconnect recovery is what we
+        # want.
         client = printer_manager.get_client(printer_id)
         current_gcode_file = getattr(last_status, "gcode_file", None) if last_status else None
         publish_landed = current_gcode_file is not None and current_gcode_file != pre_gcode_file

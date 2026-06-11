@@ -9,10 +9,13 @@ import copy
 import hmac
 import json
 import logging
+import socket
 import ssl
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from backend.app.services.virtual_printer._debug import dump_wire
 
 if TYPE_CHECKING:
     from backend.app.services.virtual_printer.mqtt_bridge import MQTTBridge
@@ -44,6 +47,7 @@ MODEL_PRODUCT_NAMES = {
     "BL-P002": "X1",
     "C13": "X1E",
     "N6": "X2D",
+    "N9": "A2L",
     "C11": "P1P",
     "C12": "P1S",
     "N7": "P2S",
@@ -519,10 +523,14 @@ class SimpleMQTTServer:
 
         authenticated = False
         # Per-packet read timeout. Before CONNECT we default to 60 s so a
-        # client that opens TCP but never sends anything still gets reaped;
-        # after CONNECT the value is updated to 1.5× the keepalive the
-        # client negotiated (MQTT spec §4.4). ``None`` means no timeout,
-        # which is what spec §3.1.2.10 mandates for keep_alive == 0.
+        # client that opens TCP but never sends anything still gets reaped.
+        # After CONNECT we drop the application-level read timeout entirely
+        # and rely on TCP keepalive (SO_KEEPALIVE) to detect dead connections
+        # — this matches real Bambu firmware, which does not enforce MQTT
+        # spec §4.4's 1.5× idle disconnect (#1548 round 2). OrcaSlicer's
+        # MQTT client on some platforms does not emit PINGREQ at all on idle
+        # connections; the same install that stays connected to a real P1S
+        # indefinitely was disconnecting from us at keepalive×1.5.
         read_timeout: float | None = 60.0
 
         try:
@@ -565,13 +573,29 @@ class SimpleMQTTServer:
                         self._record_auth_failure(source_ip)
                         break
                     self._clear_auth_failures(source_ip)
-                    # Honour the client's negotiated keepalive (#1548). Before
-                    # this fix, the hardcoded 60 s above would close
-                    # OrcaSlicer's idle connection at the keepalive boundary
-                    # instead of waiting 1.5× as the spec requires — Orca
-                    # sends PINGREQ within its own keepalive interval but
-                    # we'd already have closed the socket.
-                    read_timeout = keep_alive * 1.5 if keep_alive > 0 else None
+                    # Drop the application-level read timeout; rely on
+                    # SO_KEEPALIVE below for dead-connection detection.
+                    # Real Bambu firmware does the same — accept any
+                    # negotiated keepalive but never enforce §4.4's 1.5×
+                    # disconnect on the otherwise-idle MQTT session
+                    # (#1548 round 2). keep_alive is logged for support
+                    # bundles but no longer drives a disconnect.
+                    read_timeout = None
+                    logger.info(
+                        "%sMQTT client %s authenticated (negotiated keepalive=%ds, idle disconnect disabled)",
+                        self._log_prefix,
+                        client_id,
+                        keep_alive,
+                    )
+                    # Enable TCP keepalive so a hard network drop is detected
+                    # by the OS within a few minutes rather than waiting for
+                    # the next outbound write to ECONNRESET.
+                    sock = writer.get_extra_info("socket")
+                    if sock is not None:
+                        try:
+                            sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                        except OSError as e:
+                            logger.debug("%sFailed to set SO_KEEPALIVE on %s: %s", self._log_prefix, client_id, e)
                     # Register client for periodic status pushes; start with
                     # self.serial as the fallback until we learn the slicer's
                     # preferred serial from the first SUBSCRIBE/PUBLISH.
@@ -890,6 +914,7 @@ class SimpleMQTTServer:
                 print_block["total_layer_num"] = 0
                 print_block["print_error"] = 0
                 status = {"print": print_block}
+                dump_wire(self.vp_name, "out", status)
                 await self._publish_to_report(writer, status, serial or self.serial)
                 return
 

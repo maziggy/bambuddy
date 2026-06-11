@@ -427,6 +427,39 @@ async def list_archives(
     return result
 
 
+@router.get("/no-3mf-warning")
+async def no_3mf_warning(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+):
+    """Whether to nudge the user about install step 4 ("Store sent files on
+    external storage"). True iff any archive in the last 30 days was created
+    via the no-3MF fallback path — that's the deterministic symptom of the
+    slicer-side variant of the setting being off.
+
+    Complements the connection-diagnostic ``external_storage`` check, which
+    only catches the printer-side variant of the setting. On older slicers
+    where the toggle lives only in BambuStudio, the printer never reports it
+    and the diagnostic passes — this endpoint surfaces the symptom instead.
+
+    Dismissal is handled client-side via localStorage (one-shot): once the
+    user has been told, no further nudge until they clear browser storage.
+    The backend stays stateless.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    result = await db.execute(
+        select(PrintArchive.extra_data).where(
+            PrintArchive.created_at >= cutoff,
+            PrintArchive.deleted_at.is_(None),
+            PrintArchive.extra_data.isnot(None),
+        )
+    )
+    for (extra_data,) in result.all():
+        if extra_data and extra_data.get("no_3mf_available"):
+            return {"has_fallback": True}
+    return {"has_fallback": False}
+
+
 @router.get("/slim", response_model=list[ArchiveSlim])
 async def list_archives_slim(
     date_from: date | None = Query(None),
@@ -3268,7 +3301,14 @@ async def get_archive_plates(
                 root = ET.fromstring(content)
 
                 for plate_elem in root.findall(".//plate"):
-                    plate_info = {"filaments": [], "prediction": None, "weight": None, "name": None, "objects": []}
+                    plate_info = {
+                        "filaments": [],
+                        "prediction": None,
+                        "weight": None,
+                        "name": None,
+                        "objects": [],
+                        "bed_type": None,
+                    }
 
                     # Get plate index from metadata
                     plate_index = None
@@ -3290,6 +3330,10 @@ async def get_archive_plates(
                                 plate_info["weight"] = float(value)
                             except ValueError:
                                 pass  # Skip non-numeric filament weight
+                        elif key == "curr_bed_type" and value:
+                            # Per-plate bed type so the PrintModal can show the
+                            # right plate alongside each option (#1281).
+                            plate_info["bed_type"] = value.strip()
 
                     # Get filaments used in this plate
                     for filament_elem in plate_elem.findall("filament"):
@@ -3391,6 +3435,7 @@ async def get_archive_plates(
                         "print_time_seconds": meta.get("prediction"),
                         "filament_used_grams": meta.get("weight"),
                         "filaments": meta.get("filaments", []),
+                        "bed_type": meta.get("bed_type"),
                     }
                 )
 

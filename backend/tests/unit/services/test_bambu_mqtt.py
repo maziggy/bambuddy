@@ -2753,6 +2753,67 @@ class TestTrayNowDualNozzleH2DActiveExtruder(_H2DFixtureMixin):
 
 
 # ---------------------------------------------------------------------------
+# 8. Device identification probe (#1684 enabler)
+# ---------------------------------------------------------------------------
+
+
+class TestDeviceIdentificationProbe:
+    """One-shot INFO log of any device.* identification fields the firmware
+    sends. Lets a new-model support bundle self-disclose the internal model
+    code (e.g. dev_model_name='N2L') without a separate debug build.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST_PROBE",
+            access_code="12345678",
+        )
+
+    def _device_payload(self, device):
+        return {"print": {"device": device}}
+
+    def test_logs_known_id_fields_once(self, mqtt_client, caplog):
+        import logging
+
+        caplog.set_level(logging.INFO, logger="backend.app.services.bambu_mqtt")
+        mqtt_client._process_message(
+            self._device_payload({"dev_model_name": "N2S", "dev_product_name": "Bambu Lab A1"})
+        )
+        matches = [r for r in caplog.records if "Device identification" in r.getMessage()]
+        assert len(matches) == 1
+        msg = matches[0].getMessage()
+        assert "dev_model_name" in msg and "N2S" in msg
+        assert "dev_product_name" in msg
+
+    def test_one_shot_does_not_repeat(self, mqtt_client, caplog):
+        import logging
+
+        caplog.set_level(logging.INFO, logger="backend.app.services.bambu_mqtt")
+        payload = self._device_payload({"dev_model_name": "N2S"})
+        mqtt_client._process_message(payload)
+        mqtt_client._process_message(payload)
+        mqtt_client._process_message(payload)
+        matches = [r for r in caplog.records if "Device identification" in r.getMessage()]
+        assert len(matches) == 1
+
+    def test_fallback_dumps_keys_when_no_known_fields(self, mqtt_client, caplog):
+        """Future Bambu rename (e.g. model_name without dev_ prefix) still surfaces."""
+        import logging
+
+        caplog.set_level(logging.INFO, logger="backend.app.services.bambu_mqtt")
+        mqtt_client._process_message(self._device_payload({"model_name": "MysteryModel", "extruder": {"state": 0}}))
+        matches = [r for r in caplog.records if "Device identification" in r.getMessage()]
+        assert len(matches) == 1
+        msg = matches[0].getMessage()
+        assert "no known id fields" in msg
+        assert "model_name" in msg and "extruder" in msg
+
+
+# ---------------------------------------------------------------------------
 # 8. H2D Full multi-message sequences
 # ---------------------------------------------------------------------------
 
@@ -3825,6 +3886,61 @@ class TestStartPrintAmsMapping:
         # flow_cali on → extrude_cali_flag=1 so the printer runs the
         # flow-dynamics calibration instead of reusing the stored PA value.
         assert cmd["extrude_cali_flag"] == 1
+
+    def test_nozzle_offset_cali_default_is_skip(self, mqtt_client):
+        """Default `nozzle_offset_cali=False` → wire value `2` (skip).
+
+        Matches the legacy behavior on every model: BambuStudio sends `2`
+        unless the user enabled the toggle for a dual-nozzle machine. The
+        legacy hardcoded value before #1682 was `2` for everyone — this
+        test pins that default so we don't regress.
+        """
+        mqtt_client.model = "P1S"
+        mqtt_client.start_print("test.3mf")
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["nozzle_offset_cali"] == 2
+
+    def test_nozzle_offset_cali_ignored_on_single_nozzle(self, mqtt_client):
+        """Single-nozzle printer: `nozzle_offset_cali=True` is silently dropped.
+
+        H2S is in the H2 firmware family but single-nozzle. The toggle has
+        no physical meaning on single-nozzle machines and the UI gates it
+        behind `nozzle_count==2`. Even if a stale queue item from when the
+        printer was misidentified as dual carries the flag, the MQTT layer
+        must downgrade it so firmware never tries to calibrate a head it
+        doesn't have (#1682).
+        """
+        mqtt_client.model = "P1S"
+        mqtt_client.start_print("test.3mf", nozzle_offset_cali=True)
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["nozzle_offset_cali"] == 2
+
+    def test_nozzle_offset_cali_honored_on_dual_nozzle(self, mqtt_client):
+        """Dual-nozzle printer (H2D): `nozzle_offset_cali=True` → wire value `1`.
+
+        H2D is in `DUAL_NOZZLE_MODELS`. The toggle controls whether the
+        printer runs the nozzle-offset calibration pass before the print
+        starts. `1`=run, `2`=skip — matches BambuStudio's encoding (#1682).
+        """
+        mqtt_client.model = "H2D"
+        mqtt_client.start_print("test.3mf", nozzle_offset_cali=True)
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["nozzle_offset_cali"] == 1
+
+    def test_nozzle_offset_cali_false_on_dual_nozzle(self, mqtt_client):
+        """Dual-nozzle printer (H2D Pro): `nozzle_offset_cali=False` → `2` (skip).
+
+        Same wire encoding as legacy. Critical for users like #1682 who run
+        diamond nozzles and need to keep the calibration off.
+        """
+        mqtt_client.model = "H2D Pro"
+        mqtt_client.start_print("test.3mf", nozzle_offset_cali=False)
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["nozzle_offset_cali"] == 2
 
 
 class TestStartPrintUniqueIdentityFields:

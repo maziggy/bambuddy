@@ -669,7 +669,7 @@ async def _collect_support_info() -> dict:
     in_docker = is_running_in_docker()
 
     info = {
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "app": {
             "version": APP_VERSION,
             "debug_mode": settings.debug,

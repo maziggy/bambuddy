@@ -1,5 +1,6 @@
 """Unit tests for Spoolman tracking service helpers."""
 
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -183,8 +184,14 @@ class TestStorePrintData:
     @pytest.mark.asyncio
     async def test_prefers_explicit_ams_mapping_over_queue_mapping(self):
         db = AsyncMock()
+        # store_print_data now queries the queue item unconditionally (to pick up
+        # plate_id for multi-plate 3MFs, #1697), then deletes any stale spoolman
+        # row before inserting the new one. Two execute calls in that order.
+        queue_item = SimpleNamespace(ams_mapping=json.dumps([2, -1, -1, -1]), plate_id=None)
+        queue_result = MagicMock()
+        queue_result.scalar_one_or_none.return_value = queue_item
         delete_result = MagicMock()
-        db.execute = AsyncMock(side_effect=[delete_result])
+        db.execute = AsyncMock(side_effect=[queue_result, delete_result])
         db.add = MagicMock()
         db.commit = AsyncMock()
 
@@ -220,4 +227,48 @@ class TestStorePrintData:
         db.add.assert_called_once()
         tracking = db.add.call_args.args[0]
         assert tracking.slot_to_tray == [1, -1, -1, -1]
-        db.execute.assert_called_once()
+        assert db.execute.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_passes_queue_plate_id_to_3mf_extract(self):
+        """Multi-plate 3MFs queued for one plate must only count that plate's filament (#1697)."""
+        db = AsyncMock()
+        queue_item = SimpleNamespace(ams_mapping=None, plate_id=2)
+        queue_result = MagicMock()
+        queue_result.scalar_one_or_none.return_value = queue_item
+        delete_result = MagicMock()
+        db.execute = AsyncMock(side_effect=[queue_result, delete_result])
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            raw_data={"ams": [{"id": 0, "tray": [{"id": 0, "tray_type": "PLA"}]}]}
+        )
+
+        mock_settings = MagicMock()
+        mock_path = MagicMock()
+        mock_path.exists.return_value = True
+        mock_settings.base_dir.__truediv__.return_value = mock_path
+
+        extract_mock = MagicMock(return_value=[{"slot_id": 1, "used_g": 190.0, "type": "PETG", "color": "#888888"}])
+
+        with (
+            patch("backend.app.services.spoolman_tracking.app_settings", mock_settings),
+            patch("backend.app.api.routes.settings.get_setting", AsyncMock(side_effect=["true", "true"])),
+            patch("backend.app.utils.threemf_tools.extract_filament_usage_from_3mf", extract_mock),
+            patch("backend.app.utils.threemf_tools.extract_layer_filament_usage_from_3mf", return_value=None),
+            patch("backend.app.utils.threemf_tools.extract_filament_properties_from_3mf", return_value={}),
+        ):
+            await store_print_data(
+                printer_id=1,
+                archive_id=15,
+                file_path="archives/test.3mf",
+                db=db,
+                printer_manager=printer_manager,
+                ams_mapping=[1, -1, -1, -1],
+            )
+
+        # plate_id=2 must be passed as the second positional arg
+        assert extract_mock.call_count == 1
+        assert extract_mock.call_args.args[1] == 2

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { PlateSelectorProps } from './types';
 import { formatDuration } from '../../utils/date';
 import { withStreamToken } from '../../api/client';
+import { getBedTypeInfo } from '../../utils/bedType';
 
 /**
  * Plate selection grid for multi-plate 3MF files.
@@ -96,6 +97,18 @@ export function PlateSelector({
                     : `${plate.filaments.length} filament${plate.filaments.length !== 1 ? 's' : ''}`}
                   {plate.print_time_seconds != null ? ` • ${formatDuration(plate.print_time_seconds)}` : ''}
                 </p>
+                {(() => {
+                  // Per-plate bed-type badge so multi-plate prints make the
+                  // required plate explicit at scheduling time (#1281).
+                  const bed = getBedTypeInfo(plate.bed_type);
+                  if (!bed) return null;
+                  return (
+                    <p className="text-xs text-bambu-gray flex items-center gap-1 mt-0.5 truncate" title={bed.label}>
+                      <img src={bed.icon} alt="" className="w-3.5 h-3.5 object-contain flex-shrink-0" />
+                      <span className="truncate">{bed.label}</span>
+                    </p>
+                  );
+                })()}
               </div>
               {!multiSelect && isSelected && (
                 <Check className="w-4 h-4 text-bambu-green flex-shrink-0" />

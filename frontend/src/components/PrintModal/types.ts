@@ -48,6 +48,7 @@ export interface PrintOptions {
   vibration_cali: boolean;
   layer_inspect: boolean;
   timelapse: boolean;
+  nozzle_offset_cali: boolean;
 }
 
 /**
@@ -59,6 +60,7 @@ export const DEFAULT_PRINT_OPTIONS: PrintOptions = {
   vibration_cali: true,
   layer_inspect: false,
   timelapse: false,
+  nozzle_offset_cali: true,
 };
 
 /**
@@ -109,6 +111,7 @@ export interface PlateInfo {
   }>;
   print_time_seconds: number | null;
   filament_used_grams: number | null;
+  bed_type?: string | null;  // Build plate type for this plate, e.g. "Textured PEI Plate" (#1281)
 }
 
 /**
@@ -203,6 +206,9 @@ export interface PrintOptionsProps {
   options: PrintOptions;
   onChange: (options: PrintOptions) => void;
   defaultExpanded?: boolean;
+  /** Show the dual-nozzle-only options (nozzle offset calibration). Default false.
+   *  Pass true when at least one selected printer is dual-nozzle. */
+  showDualNozzleOptions?: boolean;
 }
 
 /**

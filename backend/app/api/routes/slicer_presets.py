@@ -173,11 +173,10 @@ async def _fetch_cloud_presets(
         # one-by-one trips Bambu's limiter and returns 429 on every request
         # for users with large preset libraries (#1150 follow-up).
         #
-        # The dedup pass (see _dedupe_by_name) compensates: when a cloud entry
-        # wins over a same-named local entry, the cloud entry inherits the
-        # local entry's filament_type / filament_colour. So cloud presets that
-        # also exist locally still get metadata-aware pre-pick in the
-        # SliceModal; cloud-only presets fall back to plain priority order.
+        # The metadata-enrich pass (see _enrich_cloud_metadata) compensates:
+        # a Bambu Cloud entry without its own filament_type/colour inherits
+        # those values from a same-named local / orca_cloud / standard entry
+        # so it can still score for type/colour matches in pickFilamentForSlot.
         _cloud_cache[cache_key] = (now, slots)
         return slots, "ok"
     finally:
@@ -420,7 +419,7 @@ async def _resolve_slicer_api_url(db: AsyncSession) -> str | None:
     return url or None
 
 
-def _dedupe_by_name(
+def _enrich_cloud_metadata(
     orca_cloud: dict[str, list[UnifiedPreset]],
     cloud: dict[str, list[UnifiedPreset]],
     local: dict[str, list[UnifiedPreset]],
@@ -431,26 +430,29 @@ def _dedupe_by_name(
     dict[str, list[UnifiedPreset]],
     dict[str, list[UnifiedPreset]],
 ]:
-    """Filter so each preset name appears in exactly one tier.
+    """Backfill Bambu Cloud filament metadata; do NOT dedup tiers.
 
-    Precedence: ``orca_cloud > cloud > local > standard``. Orca Cloud is
-    highest because a user who set up Orca sync is explicitly curating
-    those profiles for use here; Bambu Cloud follows for the same reason
-    one tier down. Order within each tier is preserved.
+    Every tier surfaces its full list — a name that exists in both ``local``
+    and ``orca_cloud`` shows up in BOTH dropdown groups so the user can pick
+    either source. Tier ORDER (``local > orca_cloud > cloud > standard``)
+    is communicated by the SliceModal's group rendering and by the
+    name-collision fallback in ``findPresetByName``; this function does not
+    enforce it.
 
-    Filament metadata merges across tiers: a Bambu Cloud entry without its
-    own ``filament_type`` / ``filament_colour`` (Bambu Cloud doesn't surface
+    Filament metadata merge: a Bambu Cloud entry without its own
+    ``filament_type`` / ``filament_colour`` (Bambu Cloud doesn't surface
     these in the list response for rate-limiting reasons — see
-    :func:`_fetch_cloud_presets`) inherits values from the same-named local
-    or standard entry. Orca Cloud already carries metadata inline, so no
-    backfill is needed for it.
+    :func:`_fetch_cloud_presets`) inherits values from a same-named entry
+    in ``local`` / ``orca_cloud`` / ``standard``. This is the only reason
+    this function exists post-#1712 — without the enrich the Bambu Cloud
+    tier can't score in ``pickFilamentForSlot``.
     """
-    # Build a name → metadata lookup from the tiers that carry it (orca_cloud,
-    # local, standard). Bambu cloud is intentionally skipped — it doesn't
-    # populate filament_type/colour in the list response. Take whichever
-    # non-empty entry shows up first.
+    # Build a name → metadata lookup from the tiers that carry it (local,
+    # orca_cloud, standard). Bambu cloud is intentionally skipped — it
+    # doesn't populate filament_type/colour in the list response. Take
+    # whichever non-empty entry shows up first.
     metadata_by_name: dict[str, tuple[str | None, str | None]] = {}
-    for tier in (orca_cloud, local, standard):
+    for tier in (local, orca_cloud, standard):
         for p in tier["filament"]:
             if p.name in metadata_by_name:
                 continue
@@ -466,27 +468,7 @@ def _dedupe_by_name(
             if p.filament_colour is None and c is not None:
                 p.filament_colour = c
 
-    deduped_cloud = _empty_slots()
-    deduped_local = _empty_slots()
-    deduped_standard = _empty_slots()
-    for slot in ("printer", "process", "filament"):
-        seen = {p.name for p in orca_cloud[slot]}
-        for p in cloud[slot]:
-            if p.name in seen:
-                continue
-            deduped_cloud[slot].append(p)
-            seen.add(p.name)
-        for p in local[slot]:
-            if p.name in seen:
-                continue
-            deduped_local[slot].append(p)
-            seen.add(p.name)
-        for p in standard[slot]:
-            if p.name in seen:
-                continue
-            deduped_standard[slot].append(p)
-            seen.add(p.name)
-    return orca_cloud, deduped_cloud, deduped_local, deduped_standard
+    return orca_cloud, cloud, local, standard
 
 
 @router.get("/printer-models")
@@ -541,7 +523,7 @@ async def list_unified_presets(
     local = await _fetch_local_presets(db)
     standard = await _fetch_bundled_presets(db, refresh=refresh)
 
-    orca_cloud, cloud, local, standard = _dedupe_by_name(orca_cloud, cloud, local, standard)
+    orca_cloud, cloud, local, standard = _enrich_cloud_metadata(orca_cloud, cloud, local, standard)
 
     return UnifiedPresetsResponse(
         orca_cloud=UnifiedPresetsBySlot(**orca_cloud),

@@ -25,6 +25,10 @@ export interface PlateMetadata {
   print_time_seconds: number | null;
   filament_used_grams: number | null;
   filaments: PlateFilament[];
+  // Per-plate build plate type so multi-plate prints can show the right
+  // plate at scheduling time (#1281). Falls back to null for older 3MFs
+  // that don't carry curr_bed_type in slice_info.config.
+  bed_type?: string | null;
 }
 
 // Printer / process preset names the source 3MF was prepared with, read from

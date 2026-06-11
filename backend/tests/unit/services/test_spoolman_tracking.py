@@ -1,5 +1,6 @@
 """Unit tests for Spoolman tracking service helpers."""
 
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -213,8 +214,14 @@ class TestStorePrintData:
     @pytest.mark.asyncio
     async def test_prefers_explicit_ams_mapping_over_queue_mapping(self):
         db = AsyncMock()
+        # store_print_data now queries the queue item unconditionally (to pick up
+        # plate_id for multi-plate 3MFs, #1697), then deletes any stale spoolman
+        # row before inserting the new one. Two execute calls in that order.
+        queue_item = SimpleNamespace(ams_mapping=json.dumps([2, -1, -1, -1]), plate_id=None)
+        queue_result = MagicMock()
+        queue_result.scalar_one_or_none.return_value = queue_item
         delete_result = MagicMock()
-        db.execute = AsyncMock(side_effect=[delete_result])
+        db.execute = AsyncMock(side_effect=[queue_result, delete_result])
         db.add = MagicMock()
         db.commit = AsyncMock()
 
@@ -250,7 +257,7 @@ class TestStorePrintData:
         db.add.assert_called_once()
         tracking = db.add.call_args.args[0]
         assert tracking.slot_to_tray == [1, -1, -1, -1]
-        db.execute.assert_called_once()
+        assert db.execute.await_count == 2
 
     @pytest.mark.asyncio
     async def test_stores_tracking_when_disable_weight_sync_is_false(self):

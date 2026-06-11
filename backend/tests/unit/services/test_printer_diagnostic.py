@@ -30,8 +30,12 @@ def _port_probe(overrides=None):
     return _probe
 
 
-def _state(*, connected=True, developer_mode=True):
-    return types.SimpleNamespace(connected=connected, developer_mode=developer_mode)
+def _state(*, connected=True, developer_mode=True, store_to_sdcard=True):
+    return types.SimpleNamespace(
+        connected=connected,
+        developer_mode=developer_mode,
+        store_to_sdcard=store_to_sdcard,
+    )
 
 
 class _Env:
@@ -81,8 +85,8 @@ class _Env:
         return False
 
 
-def _printer(ip="192.168.1.50"):
-    return types.SimpleNamespace(id=1, ip_address=ip)
+def _printer(ip="192.168.1.50", model=None):
+    return types.SimpleNamespace(id=1, ip_address=ip, model=model)
 
 
 class TestSameSubnet:
@@ -101,7 +105,10 @@ class TestSameSubnet:
 
 class TestExistingPrinter:
     async def test_all_healthy(self):
-        with _Env(state=_state(connected=True, developer_mode=True), report_messages_since_connect=42):
+        with _Env(
+            state=_state(connected=True, developer_mode=True, store_to_sdcard=True),
+            report_messages_since_connect=42,
+        ):
             result = await run_connection_diagnostic("192.168.1.50", printer=_printer())
         s = _statuses(result)
         assert result.overall == "ok"
@@ -111,6 +118,7 @@ class TestExistingPrinter:
             "port_rtsps": "pass",
             "network_mode": "pass",
             "subnet": "pass",
+            "external_storage": "pass",
             "mqtt_auth": "pass",
             "developer_mode": "pass",
             "printer_publishing": "pass",
@@ -236,3 +244,78 @@ class TestPreAddFlow:
         with _Env():
             result = await run_connection_diagnostic("192.168.1.50")
         assert _statuses(result)["mqtt_auth"] == "skip"
+
+
+class TestExternalStorageCheck:
+    """Install step 4 — "Store sent files on external storage".
+
+    Detected via ``state.store_to_sdcard`` (parsed from MQTT push_status
+    ``home_flag`` bit 11). Only catches the printer-side variant of the
+    setting on newer firmware (P2S 01.02 / Studio 2.6+) — the older
+    slicer-side variant is undetectable from outside the slicer and is
+    covered separately by the no-3MF archive-fallback banner.
+    """
+
+    async def test_passes_when_store_to_sdcard_true(self):
+        with _Env(state=_state(store_to_sdcard=True)):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer())
+        assert _statuses(result)["external_storage"] == "pass"
+
+    async def test_fails_when_store_to_sdcard_false(self):
+        # Bit 11 reported as 0 -> printer-side toggle is off. Overall
+        # escalates to "problems" because a fail is present.
+        with _Env(state=_state(store_to_sdcard=False)):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer())
+        assert _statuses(result)["external_storage"] == "fail"
+        assert result.overall == "problems"
+
+    async def test_skips_when_disconnected(self):
+        # State exists (we have a saved printer) but the MQTT connection
+        # dropped, so the latest store_to_sdcard value can't be trusted.
+        with _Env(state=_state(connected=False, store_to_sdcard=True)):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer())
+        assert _statuses(result)["external_storage"] == "skip"
+
+    async def test_skips_pre_add_flow(self):
+        # No saved printer -> no state -> nothing to read. The check has
+        # to skip; pre-add can't probe this without a live MQTT session.
+        with _Env():
+            result = await run_connection_diagnostic(
+                "192.168.1.50",
+                serial_number="01P",
+                access_code="probe-code",
+            )
+        assert _statuses(result)["external_storage"] == "skip"
+
+    async def test_skips_when_field_missing(self):
+        # State exists and is connected but store_to_sdcard was never
+        # populated (firmware that doesn't push home_flag). Skip rather
+        # than fabricate a False from a missing field.
+        bare = types.SimpleNamespace(connected=True, developer_mode=True)
+        with _Env(state=bare):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer())
+        assert _statuses(result)["external_storage"] == "skip"
+
+    async def test_skips_on_a1_no_external_storage_slot(self):
+        # Regression for #1703: A1 and A1 Mini ship without a MicroSD slot
+        # at all, so home_flag bit 11 is never set and a naive read would
+        # report `fail` for every A1-series user. The model-aware skip
+        # branch suppresses that — and the overall result must NOT escalate
+        # to "problems" purely because of this check.
+        with _Env(state=_state(store_to_sdcard=False)):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="A1"))
+        assert _statuses(result)["external_storage"] == "skip"
+        assert result.overall == "ok"
+
+    async def test_skips_on_a1_mini_no_external_storage_slot(self):
+        with _Env(state=_state(store_to_sdcard=False)):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="A1 Mini"))
+        assert _statuses(result)["external_storage"] == "skip"
+
+    async def test_still_fails_on_x1c_when_toggle_off(self):
+        # Sanity: the model-aware skip MUST NOT silently let X1C-class
+        # printers off the hook. The store_to_sdcard=False path is the
+        # one real bit of value this check provides for those models.
+        with _Env(state=_state(store_to_sdcard=False)):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="X1C"))
+        assert _statuses(result)["external_storage"] == "fail"

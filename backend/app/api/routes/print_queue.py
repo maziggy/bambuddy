@@ -36,7 +36,7 @@ from backend.app.schemas.print_queue import (
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.notification_service import notification_service
 from backend.app.utils.printer_models import normalize_printer_model, normalize_printer_model_id
-from backend.app.utils.threemf_tools import extract_filament_usage_from_3mf
+from backend.app.utils.threemf_tools import extract_bed_type_from_3mf, extract_filament_usage_from_3mf
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +199,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "auto_off_after": item.auto_off_after,
         "manual_start": item.manual_start,
         "filament_short": bool(item.filament_short),
+        "skip_filament_check": bool(item.skip_filament_check),
         "ams_mapping": ams_mapping_parsed,
         "plate_id": item.plate_id,
         "bed_levelling": item.bed_levelling,
@@ -207,6 +208,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "layer_inspect": item.layer_inspect,
         "timelapse": item.timelapse,
         "use_ams": item.use_ams,
+        "nozzle_offset_cali": item.nozzle_offset_cali,
         "status": item.status,
         "started_at": item.started_at,
         "completed_at": item.completed_at,
@@ -244,6 +246,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
             response.layer_height = item.archive.layer_height
             response.nozzle_diameter = item.archive.nozzle_diameter
             response.sliced_for_model = item.archive.sliced_for_model
+            response.bed_type = item.archive.bed_type
             if item.plate_id:
                 archive_path = settings.base_dir / item.archive.file_path
                 if archive_path.exists():
@@ -251,10 +254,13 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
                     plate_weight = sum(
                         f["used_g"] for f in extract_filament_usage_from_3mf(archive_path, item.plate_id)
                     )
+                    plate_bed = extract_bed_type_from_3mf(archive_path, item.plate_id)
                     if plate_time is not None:
                         response.print_time_seconds = plate_time
                     if plate_weight > 0:
                         response.filament_used_grams = plate_weight
+                    if plate_bed:
+                        response.bed_type = plate_bed
     if item.library_file:
         response.library_file_name = (
             item.library_file.file_metadata.get("print_name") if item.library_file.file_metadata else None
@@ -271,6 +277,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
             response.layer_height = item.library_file.file_metadata.get("layer_height")
             response.nozzle_diameter = item.library_file.file_metadata.get("nozzle_diameter")
             response.sliced_for_model = item.library_file.file_metadata.get("sliced_for_model")
+            response.bed_type = item.library_file.file_metadata.get("bed_type")
         if item.plate_id:
             lib_path = Path(item.library_file.file_path)
             library_file_path = lib_path if lib_path.is_absolute() else settings.base_dir / item.library_file.file_path
@@ -279,10 +286,13 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
                 plate_weight = sum(
                     f["used_g"] for f in extract_filament_usage_from_3mf(library_file_path, item.plate_id)
                 )
+                plate_bed = extract_bed_type_from_3mf(library_file_path, item.plate_id)
                 if plate_time is not None:
                     response.print_time_seconds = plate_time
                 if plate_weight > 0:
                     response.filament_used_grams = plate_weight
+                if plate_bed:
+                    response.bed_type = plate_bed
     if item.printer:
         response.printer_name = item.printer.name
     return response
@@ -530,6 +540,7 @@ async def add_to_queue(
             require_previous_success=data.require_previous_success,
             auto_off_after=data.auto_off_after,
             manual_start=data.manual_start,
+            skip_filament_check=data.skip_filament_check,
             ams_mapping=ams_mapping_json,
             plate_id=data.plate_id,
             bed_levelling=data.bed_levelling,
@@ -538,6 +549,7 @@ async def add_to_queue(
             layer_inspect=data.layer_inspect,
             timelapse=data.timelapse,
             use_ams=data.use_ams,
+            nozzle_offset_cali=data.nozzle_offset_cali,
             gcode_injection=data.gcode_injection,
             project_id=data.project_id,
             position=max_pos + 1 + i,
@@ -1041,7 +1053,7 @@ async def start_queue_item(
     item_id: int,
     skip_filament_check: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_OWN),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_OWN),
 ):
     """Manually start a staged (manual_start) queue item.
 
@@ -1086,6 +1098,20 @@ async def start_queue_item(
     # Print Anyway / no deficit: clear the flags and let the scheduler dispatch.
     item.manual_start = False
     item.filament_short = False
+    # Persist the user's "Print Anyway" decision so the scheduler does not
+    # immediately re-flag this item on the next tick (#1698-followup). The
+    # pre-fix behaviour bounced between "user said anyway" and
+    # "scheduler re-blocked on same deficit" forever.
+    if skip_filament_check:
+        item.skip_filament_check = True
+    # Credit the clicker as the item's owner when no prior owner is set —
+    # VP-uploaded queue items arrive over FTP unattributed, so without this
+    # the print log's User column stays blank even when auth is on
+    # (#1670). An item that already has a creator (UI-added queue items)
+    # keeps that attribution; the dispatcher is not promoted over the
+    # original uploader.
+    if user is not None and item.created_by_id is None:
+        item.created_by_id = user.id
     await db.commit()
     await db.refresh(item, ["archive", "printer", "library_file", "created_by", "batch"])
 

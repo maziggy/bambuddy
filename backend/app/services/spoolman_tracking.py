@@ -189,6 +189,7 @@ async def store_print_data(
     db,
     printer_manager,
     ams_mapping: list[int] | None = None,
+    plate_id: int | None = None,
 ):
     """Store Spoolman tracking data at print start (persisted to database).
 
@@ -196,6 +197,13 @@ async def store_print_data(
     how the internal Filament Inventory works. The legacy AMS-remain%-based sync
     is no longer used as a weight writer (#1119), so this runs whenever Spoolman
     is enabled regardless of the deprecated `spoolman_disable_weight_sync` flag.
+
+    ``plate_id``, when set, scopes the 3MF filament extract to a single plate so
+    queue / direct-Print dispatch of plate N of a multi-plate file doesn't
+    attribute every plate's filament to the printed spool (#1697). When unset,
+    the queue item's plate_id (if any) is used; otherwise the whole-file sum is
+    extracted, which is correct for direct prints that target the first/only
+    plate of a single-plate file.
     """
     from backend.app.api.routes.settings import get_setting
     from backend.app.models.active_print_spoolman import ActivePrintSpoolman
@@ -219,8 +227,20 @@ async def store_print_data(
         logger.debug("[SPOOLMAN] 3MF file not found: %s", full_path)
         return
 
-    # Extract per-filament usage from 3MF (total usage per slot)
-    filament_usage = extract_filament_usage_from_3mf(full_path)
+    # Resolve the queue item once — used both for the plate-scoped 3MF parsing
+    # fallback (#1697: multi-plate file dispatched for one plate must only count
+    # that plate's filament) and for the ams_mapping fallback below.
+    queue_result = await db.execute(
+        select(PrintQueueItem).where(PrintQueueItem.archive_id == archive_id).where(PrintQueueItem.status == "printing")
+    )
+    queue_item = queue_result.scalar_one_or_none()
+    # Caller-supplied plate_id wins (direct-Print path); fall back to the queue
+    # item's plate_id (queue dispatch path).
+    effective_plate_id = plate_id if plate_id is not None else (queue_item.plate_id if queue_item is not None else None)
+
+    # Extract per-filament usage from 3MF (total usage for the dispatched plate,
+    # or the whole file for direct/library prints with no plate_id).
+    filament_usage = extract_filament_usage_from_3mf(full_path, effective_plate_id)
     if not filament_usage:
         logger.debug("[SPOOLMAN] No filament usage data in 3MF for archive %s", archive_id)
         return
@@ -234,18 +254,11 @@ async def store_print_data(
     # Prefer the explicit mapping captured from the print command, then fall back
     # to any queue mapping stored for scheduled/reprint jobs.
     slot_to_tray = ams_mapping if ams_mapping is not None else None
-    if not slot_to_tray:
-        queue_result = await db.execute(
-            select(PrintQueueItem)
-            .where(PrintQueueItem.archive_id == archive_id)
-            .where(PrintQueueItem.status == "printing")
-        )
-        queue_item = queue_result.scalar_one_or_none()
-        if queue_item and queue_item.ams_mapping:
-            try:
-                slot_to_tray = json.loads(queue_item.ams_mapping)
-            except json.JSONDecodeError:
-                pass  # Ignore malformed AMS mapping; fall back to default slot assignment
+    if not slot_to_tray and queue_item and queue_item.ams_mapping:
+        try:
+            slot_to_tray = json.loads(queue_item.ams_mapping)
+        except json.JSONDecodeError:
+            pass  # Ignore malformed AMS mapping; fall back to default slot assignment
 
     # Parse G-code for per-layer filament usage (for accurate partial usage tracking)
     layer_usage = extract_layer_filament_usage_from_3mf(full_path)

@@ -41,6 +41,8 @@ import logging
 import socket
 from typing import TYPE_CHECKING
 
+from backend.app.services.virtual_printer._debug import dump_wire
+
 if TYPE_CHECKING:
     from backend.app.services.bambu_mqtt import BambuMQTTClient
     from backend.app.services.printer_manager import PrinterManager
@@ -634,6 +636,7 @@ class MQTTBridge:
                     ):
                         new_state["ams"] = _merge_ams_dict(prev["ams"], new_state["ams"])
             self._latest_print_state = new_state
+            dump_wire(self.vp_name, "in", new_state)
             return
 
         # info.get_version responses → cache the module list so the synthetic

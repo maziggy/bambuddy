@@ -1276,6 +1276,37 @@ class TestPrintFileUploadValidation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_library_get_gcode_recovers_legacy_gcode_type_for_3mf(
+        self, async_client: AsyncClient, db_session
+    ):
+        """Sliced library rows created by older code stored
+        ``file_type='gcode'`` even though the payload was a `.gcode.3mf`
+        ZIP. The preview endpoint must inspect the filename and extract
+        embedded G-code instead of returning ZIP bytes as text."""
+        from backend.app.models.library import LibraryFile
+
+        with tempfile.NamedTemporaryFile(suffix=".gcode.3mf", delete=False) as tmp:
+            tmp.write(self._valid_3mf_bytes(name="Metadata/plate_1.gcode"))
+            tmp_path = tmp.name
+
+        lib_file = LibraryFile(
+            filename="legacy-sliced.gcode.3mf",
+            file_path=tmp_path,
+            file_type="gcode",
+            file_size=Path(tmp_path).stat().st_size,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        response = await async_client.get(f"/api/v1/library/files/{lib_file.id}/gcode")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        assert b"G28" in response.content
+        assert not response.content.startswith(b"PK")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_library_still_accepts_non_print_extensions(self, async_client: AsyncClient, db_session):
         """STL / image / other non-print uploads bypass the validator
         entirely — Bambuddy is also a library, not just a print dispatcher."""

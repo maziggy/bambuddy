@@ -3681,9 +3681,9 @@ async def slice_and_persist(
         file_path=to_relative_path(out_path),
         # Sliced output is a `.gcode.3mf` zip with embedded G-code, but the
         # user-facing meaning is "ready-to-print G-code" — using "gcode"
-        # gives it the same badge as plain .gcode files and distinguishes
-        # it from un-sliced `.3mf` source models.
-        file_type="gcode",
+        # Keep the compound type so preview/download paths know the payload
+        # must be opened as a ZIP rather than returned as plain-text G-code.
+        file_type="gcode.3mf",
         file_size=len(result.content),
         file_hash=hashlib.sha256(result.content).hexdigest(),
         thumbnail_path=thumbnail_relative,
@@ -4435,9 +4435,9 @@ async def get_gcode(
     if not abs_path or not abs_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
-    if file.file_type == "gcode":
-        return FastAPIFileResponse(str(abs_path), media_type="text/plain")
-    elif file.file_type in ("3mf", "gcode.3mf"):
+    is_gcode_3mf = file.file_type in ("3mf", "gcode.3mf") or file.filename.lower().endswith(".gcode.3mf")
+
+    if is_gcode_3mf:
         # Extract gcode from 3mf zip container. `.gcode.3mf` sliced outputs
         # carry the same `Metadata/plate_*.gcode` entries as a `.3mf`, so
         # the unzip path is identical — just had to expand the gate.
@@ -4453,6 +4453,8 @@ async def get_gcode(
                 return Response(content=gcode_content, media_type="text/plain")
         except zipfile.BadZipFile:
             raise HTTPException(status_code=400, detail="Invalid 3MF file")
+    elif file.file_type == "gcode":
+        return FastAPIFileResponse(str(abs_path), media_type="text/plain")
     else:
         raise HTTPException(status_code=400, detail="Unsupported file type")
 

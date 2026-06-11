@@ -194,7 +194,7 @@ async def _origin_points_at_repo(git_path: str, git_config: list[str], base_dir,
             "remote",
             "get-url",
             "origin",
-            cwd=str(base_dir),
+            cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -556,6 +556,7 @@ async def _perform_update(target_ref: str):
 
     try:
         base_dir = settings.base_dir
+        app_dir = settings.app_dir
 
         # Find git executable (may not be in PATH when running as systemd service)
         git_path = _find_executable("git")
@@ -570,8 +571,10 @@ async def _perform_update(target_ref: str):
 
         logger.info("Using git at: %s", git_path)
 
-        # Git config to avoid safe.directory issues
-        git_config = ["-c", f"safe.directory={base_dir}"]
+        # safe.directory must point at the working tree (app_dir).
+        # When systemd sets DATA_DIR=<install>/data, base_dir != app_dir and
+        # data/ may be on a separate mount — git won't cross filesystem boundaries.
+        git_config = ["-c", f"safe.directory={app_dir}"]
 
         _update_status = {
             "status": "downloading",
@@ -593,7 +596,7 @@ async def _perform_update(target_ref: str):
         # correct repo are preserved; only missing / wrong / corrupted
         # origins get reset to HTTPS.
         https_url = f"https://github.com/{GITHUB_REPO}.git"
-        if not await _origin_points_at_repo(git_path, git_config, base_dir, GITHUB_REPO):
+        if not await _origin_points_at_repo(git_path, git_config, app_dir, GITHUB_REPO):
             process = await asyncio.create_subprocess_exec(
                 git_path,
                 *git_config,
@@ -601,7 +604,7 @@ async def _perform_update(target_ref: str):
                 "set-url",
                 "origin",
                 https_url,
-                cwd=str(base_dir),
+                cwd=str(app_dir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -635,7 +638,7 @@ async def _perform_update(target_ref: str):
             "--tags",
             "--force",
             "origin",
-            cwd=str(base_dir),
+            cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -671,7 +674,7 @@ async def _perform_update(target_ref: str):
             "reset",
             "--hard",
             target_ref,
-            cwd=str(base_dir),
+            cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -697,11 +700,6 @@ async def _perform_update(target_ref: str):
 
         # Install Python dependencies — must run from the source-code directory
         # (where requirements.txt lives), not the data dir. On native installs
-        # systemd sets DATA_DIR=INSTALL_PATH/data, so `base_dir` is the data dir,
-        # not the working tree. `git reset` above worked from base_dir because
-        # git walks up looking for .git, but `pip install -r requirements.txt`
-        # needs the file in cwd literally.
-        app_dir = settings.app_dir
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-m",

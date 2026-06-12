@@ -350,6 +350,7 @@ class AppSettingsUpdate(BaseModel):
     spoolman_report_partial_usage: bool | None = None
     disable_filament_warnings: bool | None = None
     prefer_lowest_filament: bool | None = None
+    prefer_recently_used_filament: bool | None = None
     check_updates: bool | None = None
     check_printer_firmware: bool | None = None
     include_beta_updates: bool | None = None

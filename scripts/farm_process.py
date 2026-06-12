@@ -32,7 +32,7 @@ USAGE
 OPTIONS
 -------
   -o / --output            Output filename
-  --cooldown-temp INT      Bed release temp C              (default: 25)
+  --cooldown-temp INT      Bed release temp C              (default: 40)
   --push-speed INT         Center push feedrate mm/min     (default: 300)
   --push-x FLOAT           Push X centre mm               (default: auto)
   --lane-offset FLOAT      Left/right lane offset from X centre mm (default: 60)
@@ -492,8 +492,8 @@ def main():
     )
     parser.add_argument("input", help="Input .gcode.3mf file")
     parser.add_argument("-o", "--output",        default=None)
-    parser.add_argument("--cooldown-temp",       type=int,   default=35,
-                        help="Bed release temp C (default: 35)")
+    parser.add_argument("--cooldown-temp",       type=int,   default=40,
+                        help="Bed release temp C (default: 40)")
     parser.add_argument("--push-speed",          type=int,   default=300,
                         help="Center push feedrate mm/min (default: 300)")
     parser.add_argument("--push-x",              type=float, default=None,
@@ -681,7 +681,7 @@ def process_inplace(path: Path, plate_id: int = 1) -> None:
     end_block = (
         "; FEATURE: Custom\n"
         "; MACHINE_END_GCODE_START\n"
-        + build_end_sequence(max_z=max_z, cooldown_temp=35, push_x=push_x)
+        + build_end_sequence(max_z=max_z, cooldown_temp=40, push_x=push_x)
         + "; EXECUTABLE_BLOCK_END\n"
     )
 

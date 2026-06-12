@@ -33,7 +33,7 @@ OPTIONS
 -------
   -o / --output            Output filename
   --cooldown-temp INT      Bed release temp C              (default: 40)
-  --push-speed INT         Center push feedrate mm/min     (default: 300)
+  --push-speed INT         Center push feedrate mm/min     (default: 2000)
   --push-x FLOAT           Push X centre mm               (default: auto)
   --lane-offset FLOAT      Left/right lane offset from X centre mm (default: 60)
   --test                   Test mode flag
@@ -134,7 +134,7 @@ def build_end_sequence(
     max_z,
     cooldown_temp,
     push_x,
-    push_speed=300,
+    push_speed=2000,
     lane_offset=60,
     nozzle_target=0,
     flex_cycles=3,
@@ -274,7 +274,7 @@ def build_end_sequence(
     a("")
     a("; center lane (X{})".format(cx))
     a("G1 X{} Y230 F1200 ; center push start position".format(cx))
-    a("G1 X{} Y{} F{} ; push off center (slow)".format(cx, BED_Y_FRONT, push_speed))
+    a("G1 X{} Y{} F{} ; push off center".format(cx, BED_Y_FRONT, push_speed))
     a("")
     a("; right lane (X{})".format(rx))
     a("G1 X{} Y200 F2000".format(cx))
@@ -494,8 +494,8 @@ def main():
     parser.add_argument("-o", "--output",        default=None)
     parser.add_argument("--cooldown-temp",       type=int,   default=40,
                         help="Bed release temp C (default: 40)")
-    parser.add_argument("--push-speed",          type=int,   default=300,
-                        help="Center push feedrate mm/min (default: 300)")
+    parser.add_argument("--push-speed",          type=int,   default=2000,
+                        help="Center push feedrate mm/min (default: 2000)")
     parser.add_argument("--push-x",              type=float, default=None,
                         help="Push X centre mm (default: auto)")
     parser.add_argument("--lane-offset",         type=float, default=60.0,

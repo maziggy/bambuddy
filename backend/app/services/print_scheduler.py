@@ -157,6 +157,11 @@ class PrintScheduler:
             # Read plate-clear setting once per queue check
             require_plate_clear = await self._get_bool_setting(db, "require_plate_clear", default=True)
 
+            # When "prefer recently-used spool" is on, the slot pick must be made fresh at
+            # dispatch against the printer's current last-loaded tray — so force a recompute
+            # even when the item already has a cached mapping (see _compute_ams_mapping_for_printer).
+            prefer_recent_enabled = await self._get_bool_setting(db, "prefer_recently_used_filament")
+
             if not items:
                 # No pending items — still check auto-drying on idle printers
                 await self._check_auto_drying(db, [], set(), require_plate_clear=require_plate_clear)
@@ -296,7 +301,9 @@ class PrintScheduler:
 
                     # Compute AMS mapping if not set, or recompute if the cached
                     # mapping points at a slot that has since run out (auto-remap).
-                    needs_mapping = not item.ams_mapping
+                    # Also recompute unconditionally when "prefer recently-used spool" is on
+                    # so the pick tracks the printer's current last-loaded tray.
+                    needs_mapping = not item.ams_mapping or prefer_recent_enabled
                     if not needs_mapping:
                         try:
                             existing = json.loads(item.ams_mapping)
@@ -438,7 +445,9 @@ class PrintScheduler:
 
                         # Compute AMS mapping for the assigned printer if not set,
                         # or recompute if the cached mapping points at an empty slot (auto-remap).
-                        needs_mapping = not item.ams_mapping
+                        # Also recompute unconditionally when "prefer recently-used spool" is on
+                        # so the pick tracks the printer's current last-loaded tray.
+                        needs_mapping = not item.ams_mapping or prefer_recent_enabled
                         if not needs_mapping:
                             try:
                                 existing = json.loads(item.ams_mapping)
@@ -892,9 +901,28 @@ class PrintScheduler:
         if prefer_lowest:
             inventory_remain_overrides = await self._build_inventory_remain_overrides(db, printer_id, loaded_filaments)
 
+        # Check if user prefers the most-recently-used spool (finish one spool before
+        # starting another). The signal is the printer's currently/last-loaded tray:
+        # last_loaded_tray survives the unload→255 at print end, and follows the AMS
+        # through mid-print auto-fallback, so it points at the spool physically in use.
+        prefer_recent = await self._get_bool_setting(db, "prefer_recently_used_filament")
+        preferred_tray: int | None = None
+        if prefer_recent:
+            lt = getattr(status, "last_loaded_tray", -1)
+            tn = getattr(status, "tray_now", 255)
+            if lt is not None and lt >= 0:
+                preferred_tray = lt
+            elif (0 <= tn <= 15) or (128 <= tn <= 135) or tn == 254:
+                preferred_tray = tn
+
         # Compute mapping: match required filaments to available slots
         return self._match_filaments_to_slots(
-            filament_reqs, loaded_filaments, prefer_lowest, inventory_remain_overrides
+            filament_reqs,
+            loaded_filaments,
+            prefer_lowest,
+            inventory_remain_overrides,
+            prefer_recent,
+            preferred_tray,
         )
 
     def _build_override_direct_mapping(self, force_overrides: list[dict], status) -> list[int] | None:
@@ -1216,12 +1244,30 @@ class PrintScheduler:
         remain = f.get("remain", -1)
         return (1, float(remain) if remain is not None and remain >= 0 else 101.0, slot_order)
 
+    @staticmethod
+    def _prefer_recent_sort_key(f: dict, preferred_tray: int | None) -> tuple[int, int]:
+        """Sort key for the "Prefer Recently-Used Spool" preference.
+
+        Floats the slot the printer most recently fed from (``preferred_tray`` =
+        the printer's ``last_loaded_tray``/``tray_now``) to the front so the farm
+        keeps draining one spool before starting another. Everything else keeps
+        the deterministic AMS slot-position order via ``_slot_priority``, so when
+        there's no known preference (e.g. fresh after a service restart) behaviour
+        is identical to the pre-existing lowest-slot pick.
+        """
+        gtid = f.get("global_tray_id")
+        slot_order = PrintScheduler._slot_priority(f.get("ams_id"), f.get("tray_id"))
+        is_preferred = preferred_tray is not None and preferred_tray >= 0 and gtid == preferred_tray
+        return (0 if is_preferred else 1, slot_order)
+
     def _match_filaments_to_slots(
         self,
         required: list[dict],
         loaded: list[dict],
         prefer_lowest: bool = False,
         inventory_remain_overrides: dict[int, float] | None = None,
+        prefer_recent: bool = False,
+        preferred_tray: int | None = None,
     ) -> list[int] | None:
         """Match required filaments to loaded filaments and build AMS mapping.
 
@@ -1268,10 +1314,14 @@ class PrintScheduler:
             if req_nozzle_id is not None:
                 available = [f for f in available if f.get("extruder_id") == req_nozzle_id]
 
-            # Sort by remaining filament (ascending) so lowest-remain spool wins .find().
-            # Inventory-tracked spools sort before MQTT-only ones (#1508); see
-            # _prefer_lowest_sort_key for the full rationale.
-            if prefer_lowest:
+            # Order candidates so the first match wins .find(). "Prefer recently-used"
+            # (the printer's last-loaded tray) takes precedence over "prefer lowest
+            # remaining" when both are enabled. Otherwise sort by remaining filament
+            # (ascending); inventory-tracked spools sort before MQTT-only ones (#1508);
+            # see _prefer_lowest_sort_key for the full rationale.
+            if prefer_recent:
+                available.sort(key=lambda f: self._prefer_recent_sort_key(f, preferred_tray))
+            elif prefer_lowest:
                 available.sort(key=lambda f: self._prefer_lowest_sort_key(f, inventory_remain_overrides))
 
             # Check if tray_info_idx is unique among available trays
@@ -1290,7 +1340,9 @@ class PrintScheduler:
                         f"Non-unique tray_info_idx={req_tray_info_idx} found in {len(idx_matches)} trays, "
                         f"using color matching among trays: {[f['global_tray_id'] for f in idx_matches]}"
                     )
-                    if prefer_lowest:
+                    if prefer_recent:
+                        idx_matches.sort(key=lambda f: self._prefer_recent_sort_key(f, preferred_tray))
+                    elif prefer_lowest:
                         idx_matches.sort(key=lambda f: self._prefer_lowest_sort_key(f, inventory_remain_overrides))
                     # Use color matching within this subset
                     for f in idx_matches:

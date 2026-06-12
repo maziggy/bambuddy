@@ -1647,6 +1647,8 @@ export default {
     disableFilamentWarningsDesc: 'Don\'t show warnings about insufficient filament when printing or queueing',
     preferLowestFilament: 'Prefer lowest remaining filament',
     preferLowestFilamentDesc: 'When multiple spools match, use the one with the least filament remaining',
+    preferRecentlyUsedFilament: 'Prefer recently-used spool',
+    preferRecentlyUsedFilamentDesc: 'When multiple spools match, keep using the slot this printer last fed from so one spool is finished before the next is started (best for non-RFID spools)',
     trackingModeBuiltIn: 'Built-in Inventory',
     trackingModeBuiltInDesc: 'RFID auto-matching and usage tracking included',
     trackingModeSpoolmanDesc: 'External filament management server',

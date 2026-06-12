@@ -41,6 +41,12 @@ class AppSettings(BaseModel):
         default=False,
         description="When multiple AMS spools match, prefer the one with lowest remaining filament",
     )
+    prefer_recently_used_filament: bool = Field(
+        default=False,
+        description="When multiple AMS spools match, prefer the slot this printer most recently "
+        "fed from (finish one spool before starting another). Designed for non-RFID spools where "
+        "remaining weight is unknown.",
+    )
 
     # Updates
     check_updates: bool = Field(default=True, description="Automatically check for updates on startup")

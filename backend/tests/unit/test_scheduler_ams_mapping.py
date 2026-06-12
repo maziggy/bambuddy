@@ -505,6 +505,115 @@ class TestPreferLowestFilament:
         assert result == [254]  # Should pick external spool (10%) over AMS (80%)
 
 
+class TestPreferRecentlyUsedFilament:
+    """Test prefer_recently_used_filament sorting in _match_filaments_to_slots.
+
+    The signal is ``preferred_tray`` — the printer's currently/last-loaded tray
+    (last_loaded_tray, which survives the unload at print end and follows the AMS
+    through mid-print auto-fallback). The matching slot floats to the front so the
+    farm keeps draining one spool before starting the next.
+    """
+
+    @pytest.fixture
+    def scheduler(self):
+        return PrintScheduler()
+
+    def test_prefer_recent_picks_last_loaded_tray(self, scheduler):
+        """When enabled, the slot matching last_loaded_tray wins over lower slot order."""
+        required = [{"slot_id": 1, "type": "PLA", "color": "#FF0000"}]
+        loaded = [
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 0, "ams_id": 0, "tray_id": 0},
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 2, "ams_id": 0, "tray_id": 2},
+        ]
+
+        result = scheduler._match_filaments_to_slots(
+            required, loaded, prefer_recent=True, preferred_tray=2
+        )
+        assert result == [2]  # last-loaded tray 2 wins over lower-slot tray 0
+
+    def test_prefer_recent_disabled_picks_first(self, scheduler):
+        """When disabled, falls back to slot-position order (first match)."""
+        required = [{"slot_id": 1, "type": "PLA", "color": "#FF0000"}]
+        loaded = [
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 0, "ams_id": 0, "tray_id": 0},
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 2, "ams_id": 0, "tray_id": 2},
+        ]
+
+        result = scheduler._match_filaments_to_slots(
+            required, loaded, prefer_recent=False, preferred_tray=2
+        )
+        assert result == [0]  # default lowest-slot pick
+
+    def test_prefer_recent_unknown_tray_falls_back_to_slot_order(self, scheduler):
+        """preferred_tray=None (e.g. fresh after a service restart) → slot order."""
+        required = [{"slot_id": 1, "type": "PLA", "color": "#FF0000"}]
+        loaded = [
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 0, "ams_id": 0, "tray_id": 0},
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 2, "ams_id": 0, "tray_id": 2},
+        ]
+
+        result = scheduler._match_filaments_to_slots(
+            required, loaded, prefer_recent=True, preferred_tray=None
+        )
+        assert result == [0]  # no preference → lowest slot
+
+    def test_prefer_recent_follows_auto_switch(self, scheduler):
+        """Models the runout auto-switch: the print started on slot 0 but ended
+        feeding from slot 2, so last_loaded_tray=2 and the next print prefers 2."""
+        required = [{"slot_id": 1, "type": "PETG", "color": "#000000"}]
+        loaded = [
+            {"type": "PETG", "color": "#000000", "global_tray_id": 0, "ams_id": 0, "tray_id": 0},
+            {"type": "PETG", "color": "#000000", "global_tray_id": 2, "ams_id": 0, "tray_id": 2},
+        ]
+
+        result = scheduler._match_filaments_to_slots(
+            required, loaded, prefer_recent=True, preferred_tray=2
+        )
+        assert result == [2]
+
+    def test_prefer_recent_within_tray_info_idx_subset(self, scheduler):
+        """Should also float the preferred tray within a non-unique tray_info_idx subset."""
+        required = [{"slot_id": 1, "type": "PLA", "color": "#FFFFFF", "tray_info_idx": "GFA00"}]
+        loaded = [
+            {"type": "PLA", "color": "#FFFFFF", "global_tray_id": 0, "ams_id": 0, "tray_id": 0, "tray_info_idx": "GFA00"},
+            {"type": "PLA", "color": "#FFFFFF", "global_tray_id": 2, "ams_id": 0, "tray_id": 2, "tray_info_idx": "GFA00"},
+        ]
+
+        result = scheduler._match_filaments_to_slots(
+            required, loaded, prefer_recent=True, preferred_tray=2
+        )
+        assert result == [2]
+
+    def test_prefer_recent_only_among_compatible_slots(self, scheduler):
+        """If the last-loaded tray holds an incompatible filament, the preference
+        is moot and a compatible slot is chosen by normal rules."""
+        required = [{"slot_id": 1, "type": "PLA", "color": "#FF0000"}]
+        loaded = [
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 0, "ams_id": 0, "tray_id": 0},
+            {"type": "PETG", "color": "#00FF00", "global_tray_id": 2, "ams_id": 0, "tray_id": 2},
+        ]
+
+        # preferred_tray=2 is PETG (incompatible); the PLA slot 0 is the only match.
+        result = scheduler._match_filaments_to_slots(
+            required, loaded, prefer_recent=True, preferred_tray=2
+        )
+        assert result == [0]
+
+    def test_prefer_recent_takes_precedence_over_lowest(self, scheduler):
+        """When both preferences are on, recently-used wins over lowest-remaining."""
+        required = [{"slot_id": 1, "type": "PLA", "color": "#FF0000"}]
+        loaded = [
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 0, "ams_id": 0, "tray_id": 0, "remain": 10},
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 2, "ams_id": 0, "tray_id": 2, "remain": 90},
+        ]
+
+        # Lowest-remaining would pick tray 0 (10%); recently-used overrides to tray 2.
+        result = scheduler._match_filaments_to_slots(
+            required, loaded, prefer_lowest=True, prefer_recent=True, preferred_tray=2
+        )
+        assert result == [2]
+
+
 class TestPreferLowestInventoryOverride:
     """Tests for the #1508 inventory-aware sort: when the user has bound a
     Bambuddy inventory spool to an AMS slot, that spool's remaining weight

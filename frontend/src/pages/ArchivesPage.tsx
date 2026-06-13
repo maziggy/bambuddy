@@ -186,6 +186,15 @@ function ArchiveCard({
   // #1343: when true, the delete also drops the row from Quick Stats. Default
   // off — soft delete preserves the archive's filament/time/cost contribution.
   const [deletePurgeStats, setDeletePurgeStats] = useState(false);
+  // #1734: pre-flight count of related queue items so the confirm modal can
+  // tell the user how many will be removed and disable the button if any are
+  // currently printing (the server 409s in that case).
+  const deleteImpactQuery = useQuery({
+    queryKey: ['archive', archive.id, 'delete-impact'],
+    queryFn: () => api.getArchiveDeleteImpact(archive.id),
+    enabled: showDeleteConfirm,
+    staleTime: 0,
+  });
   const [showEdit, setShowEdit] = useState(false);
   const [showPrintLog, setShowPrintLog] = useState(false);
   const [showTimelapse, setShowTimelapse] = useState(false);
@@ -1287,6 +1296,7 @@ function ArchiveCard({
           message={t('archives.modal.deleteConfirm', { name: archive.print_name || archive.filename })}
           confirmText={t('archives.modal.deleteButton')}
           variant="danger"
+          confirmDisabled={(deleteImpactQuery.data?.currently_printing ?? 0) > 0}
           onConfirm={() => {
             deleteMutation.mutate(deletePurgeStats);
             setShowDeleteConfirm(false);
@@ -1297,6 +1307,25 @@ function ArchiveCard({
             setDeletePurgeStats(false);
           }}
         >
+          {/* #1734: warn the user when related queue items will also be removed,
+              and block the action entirely if any are currently printing. */}
+          {(deleteImpactQuery.data?.related_queue_items ?? 0) > 0 && (
+            <div
+              className={
+                (deleteImpactQuery.data?.currently_printing ?? 0) > 0
+                  ? 'text-sm text-red-400 mb-2'
+                  : 'text-sm text-amber-400 mb-2'
+              }
+            >
+              {(deleteImpactQuery.data?.currently_printing ?? 0) > 0
+                ? t('archives.modal.deleteBlockedByPrinting', {
+                    count: deleteImpactQuery.data!.currently_printing,
+                  })
+                : t('archives.modal.deleteQueueItemsWarning', {
+                    count: deleteImpactQuery.data!.related_queue_items,
+                  })}
+            </div>
+          )}
           {/* #1343: opt-in checkbox — by default the archive is soft-deleted,
               so its filament / time / cost contribution stays in Quick Stats. */}
           <label className="flex items-start gap-2 cursor-pointer text-sm text-bambu-gray">
@@ -1563,6 +1592,14 @@ function ArchiveListRow({
   // #1343: opt-in "Also remove from statistics" checkbox state. Default off
   // — soft delete keeps the archive's contribution to Quick Stats.
   const [deletePurgeStats, setDeletePurgeStats] = useState(false);
+  // #1734: pre-flight count of related queue items for the delete modal.
+  // Same shape as the card-view sibling above.
+  const deleteImpactQuery = useQuery({
+    queryKey: ['archive', archive.id, 'delete-impact'],
+    queryFn: () => api.getArchiveDeleteImpact(archive.id),
+    enabled: showDeleteConfirm,
+    staleTime: 0,
+  });
   const navigate = useNavigate();
   const [showReprint, setShowReprint] = useState(false);
   const [showSliceModal, setShowSliceModal] = useState(false);
@@ -2273,6 +2310,7 @@ function ArchiveListRow({
           message={t('archives.modal.deleteConfirm', { name: archive.print_name || archive.filename })}
           confirmText={t('archives.modal.deleteButton')}
           variant="danger"
+          confirmDisabled={(deleteImpactQuery.data?.currently_printing ?? 0) > 0}
           onConfirm={() => {
             deleteMutation.mutate(deletePurgeStats);
             setShowDeleteConfirm(false);
@@ -2283,6 +2321,25 @@ function ArchiveListRow({
             setDeletePurgeStats(false);
           }}
         >
+          {/* #1734: warn the user when related queue items will also be removed,
+              and block the action entirely if any are currently printing. */}
+          {(deleteImpactQuery.data?.related_queue_items ?? 0) > 0 && (
+            <div
+              className={
+                (deleteImpactQuery.data?.currently_printing ?? 0) > 0
+                  ? 'text-sm text-red-400 mb-2'
+                  : 'text-sm text-amber-400 mb-2'
+              }
+            >
+              {(deleteImpactQuery.data?.currently_printing ?? 0) > 0
+                ? t('archives.modal.deleteBlockedByPrinting', {
+                    count: deleteImpactQuery.data!.currently_printing,
+                  })
+                : t('archives.modal.deleteQueueItemsWarning', {
+                    count: deleteImpactQuery.data!.related_queue_items,
+                  })}
+            </div>
+          )}
           {/* #1343: opt-in checkbox — by default the archive is soft-deleted,
               so its filament / time / cost contribution stays in Quick Stats. */}
           <label className="flex items-start gap-2 cursor-pointer text-sm text-bambu-gray">

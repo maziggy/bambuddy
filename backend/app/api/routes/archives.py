@@ -1479,6 +1479,35 @@ async def get_archive(
     return archive_to_response(archive, duplicates, run_aggregate=run_aggregates.get(archive.id))
 
 
+@router.get("/{archive_id}/delete-impact")
+async def get_archive_delete_impact(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
+):
+    """Pre-flight for the delete-confirm modal (#1734).
+
+    Returns the number of related queue items the user is about to remove
+    AND whether any of them are currently printing (which would block the
+    delete with a 409 — surfaced to the modal so it can disable the
+    confirm button instead of failing on submit). Cheap, single endpoint —
+    not folded into the archive GET response so the much larger list
+    endpoint isn't forced to run the same query per row.
+    """
+    user, can_read_all = auth_result
+    service = ArchiveService(db)
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
+    from backend.app.services.archive import _count_related_queue_items
+
+    total, printing = await _count_related_queue_items(db, archive.id)
+    return {"related_queue_items": total, "currently_printing": printing}
+
+
 @router.get("/{archive_id}/runs", response_model=PrintLogResponse)
 async def list_archive_runs(
     archive_id: int,
@@ -1926,7 +1955,14 @@ async def delete_archive(
         )
     ),
 ):
-    """Delete an archive (soft by default; ``?purge_stats=true`` to hard-delete)."""
+    """Delete an archive (soft by default; ``?purge_stats=true`` to hard-delete).
+
+    Both delete paths now cascade to related ``print_queue`` rows (#1734) —
+    hard delete via the ``ON DELETE CASCADE`` FK, soft delete via the
+    ``_delete_related_queue_items`` helper. A 409 guard blocks the delete
+    when any related queue item is currently mid-print so the dispatcher
+    doesn't lose its metadata trail under the running print.
+    """
     user, can_modify_all = auth_result
 
     # Get archive first to check ownership
@@ -1939,6 +1975,20 @@ async def delete_archive(
     if not can_modify_all:
         if archive.created_by_id != user.id:
             raise HTTPException(403, "You can only delete your own archives")
+
+    # #1734: block delete when any related queue item is currently printing.
+    # Both soft and hard delete are gated — an in-flight print needs its
+    # backing archive to stay around for the metadata trail (filament,
+    # plate, ams_mapping). The user can stop the print first, then retry.
+    from backend.app.services.archive import _count_related_queue_items
+
+    _related_total, related_printing = await _count_related_queue_items(db, archive_id)
+    if related_printing > 0:
+        raise HTTPException(
+            409,
+            f"Cannot delete archive — {related_printing} related queue item(s) are "
+            f"currently printing. Stop the print first, then retry.",
+        )
 
     service = ArchiveService(db)
     if purge_stats:

@@ -2008,13 +2008,25 @@ class TestAbortedStatusNormalisation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_soft_delete_archive_cancels_pending_queue_items(
+    async def test_soft_delete_archive_deletes_all_related_queue_items(
         self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
     ):
-        """Soft-deleting an archive cancels its pending queue items with a
-        clear reason. The 3MF is gone from disk so the item can never
-        dispatch — leaving it in 'pending' would 404-storm the queue page
-        and confuse the user about why nothing prints."""
+        """Soft-deleting an archive removes every related queue item, regardless
+        of status (#1734). Pre-#1734 only ``pending`` rows were flipped to
+        ``cancelled`` and stayed in the DB, surprising users who expected the
+        queue lines to disappear with the archive — especially on multi-plate
+        Send All uploads (#1733), where ONE archive backed N queue items and
+        soft-deleting the archive left N "cancelled" rows behind. The change
+        keeps the printing guard (a row with ``status='printing'`` blocks the
+        delete one layer up at the API route), so we never delete the row of
+        an actively-running print here.
+
+        Print history lives in ``PrintLogEntry`` (FK ``ON DELETE SET NULL``) —
+        the audit trail survives independently of the queue rows.
+        """
+        from sqlalchemy import select
+
+        from backend.app.models.print_queue import PrintQueueItem
         from backend.app.services.archive import ArchiveService
 
         printer = await printer_factory()
@@ -2025,12 +2037,18 @@ class TestAbortedStatusNormalisation:
         service = ArchiveService(db_session)
         assert await service.soft_delete_archive(archive.id) is True
 
-        await db_session.refresh(pending)
-        await db_session.refresh(completed)
-        assert pending.status == "cancelled"
-        assert pending.waiting_reason == "Source archive deleted"
-        # Historical rows untouched — they're audit-trail.
-        assert completed.status == "completed"
+        # Every queue row that referenced this archive is gone — both the
+        # pending and the completed rows. Print history (PrintLogEntry) is
+        # the authoritative record and is preserved by the FK SET NULL.
+        remaining = (
+            (await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id.in_([pending.id, completed.id]))))
+            .scalars()
+            .all()
+        )
+        assert remaining == [], (
+            "Soft-deleting the archive must delete every related queue row, "
+            f"got {[(r.id, r.status) for r in remaining]} still present"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.integration

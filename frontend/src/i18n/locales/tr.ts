@@ -864,6 +864,8 @@ export default {
       deleteConfirm: '"{{name}}" silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
       deleteButton: 'Sil',
       deletePurgeStats: 'Ayrıca bu baskıyı Hızlı İstatistiklerden de kaldır (filament, süre, maliyet, enerji)',
+      deleteQueueItemsWarning: 'Bu arşive bağlı {{count}} kuyruk öğesi de kaldırılacak.',
+      deleteBlockedByPrinting: 'Silinemiyor — {{count}} kuyruk öğesi şu anda yazdırılıyor. Önce yazdırmayı durdurun, ardından tekrar deneyin.',
       removeSource3mf: 'Kaynak 3MF Kaldır',
       removeSource3mfConfirm: '"{{name}}" dosyasından kaynak 3MF dosyasını kaldırmak istediğinizden emin misiniz? Bu, orijinal dilimleyici proje dosyasını silecek.',
       removeButton: 'Kaldır',

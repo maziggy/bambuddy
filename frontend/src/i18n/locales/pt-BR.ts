@@ -864,6 +864,8 @@ export default {
       deleteConfirm: 'Tem certeza de que deseja excluir "{{name}}"? Esta ação não pode ser desfeita.',
       deleteButton: 'Excluir',
       deletePurgeStats: 'Remover também esta impressão das Quick Stats (filamento, tempo, custo, energia)',
+      deleteQueueItemsWarning: '{{count}} item(ns) de fila vinculado(s) a este arquivo também serão removidos.',
+      deleteBlockedByPrinting: 'Não é possível excluir — {{count}} item(ns) de fila estão imprimindo agora. Pare a impressão primeiro e tente novamente.',
       removeSource3mf: 'Remover Source 3MF',
       removeSource3mfConfirm: 'Tem certeza de que deseja remover o arquivo source 3MF de "{{name}}"? Isso excluirá o arquivo original do projeto do fatiador.',
       removeButton: 'Remover',

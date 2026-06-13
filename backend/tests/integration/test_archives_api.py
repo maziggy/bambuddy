@@ -296,6 +296,64 @@ class TestArchivesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_delete_archive_blocked_when_related_queue_item_printing(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1734: archive delete must 409 when a related queue item is currently
+        mid-print — deleting the archive would strip the dispatcher's metadata
+        trail (filament / plate / ams_mapping) out from under the running print.
+        Both soft and hard delete are gated by the same precondition.
+        """
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id)
+        db_session.add(PrintQueueItem(printer_id=printer.id, archive_id=archive.id, status="printing", position=1))
+        await db_session.commit()
+
+        soft = await async_client.delete(f"/api/v1/archives/{archive.id}")
+        assert soft.status_code == 409
+        assert "printing" in soft.json()["detail"].lower()
+
+        hard = await async_client.delete(f"/api/v1/archives/{archive.id}?purge_stats=true")
+        assert hard.status_code == 409
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_delete_impact_reports_counts(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1734: the delete-impact pre-flight endpoint reports the total
+        number of related queue items AND how many are currently printing,
+        so the frontend can both warn the user before they confirm AND
+        disable the confirm button when the printing count is non-zero.
+        """
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id)
+        # Build a mixed-status set the way a Send All upload + later in-flight
+        # dispatch looks at the wire (#1733).
+        db_session.add_all(
+            [
+                PrintQueueItem(printer_id=printer.id, archive_id=archive.id, status="pending", position=1),
+                PrintQueueItem(printer_id=printer.id, archive_id=archive.id, status="pending", position=2),
+                PrintQueueItem(printer_id=printer.id, archive_id=archive.id, status="printing", position=3),
+            ]
+        )
+        # An unrelated archive's queue rows must not bleed into the count.
+        other = await archive_factory(printer.id)
+        db_session.add(PrintQueueItem(printer_id=printer.id, archive_id=other.id, status="pending", position=4))
+        await db_session.commit()
+
+        resp = await async_client.get(f"/api/v1/archives/{archive.id}/delete-impact")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["related_queue_items"] == 3
+        assert body["currently_printing"] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_soft_delete_preserves_stats_contribution(
         self, async_client: AsyncClient, archive_factory, printer_factory, db_session
     ):

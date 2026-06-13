@@ -670,7 +670,12 @@ class TestPushStatusCache:
                                 {"id": "0", "tray": [{"id": "0", "tray_type": "PLA"}]},
                                 {"id": "1", "tray": [{"id": "0", "tray_type": "PETG"}]},
                             ],
-                            "tray_exist_bits": "3",
+                            # bit 0 (AMS 0 slot 0) + bit 4 (AMS 1 slot 0) = 0x11.
+                            # `_on_printer_raw` now applies the #1726 bitmask
+                            # cleanup to the cached state, so the test fixture
+                            # must declare both loaded slots — same shape the
+                            # real printer sends.
+                            "tray_exist_bits": "11",
                         },
                     }
                 }
@@ -701,6 +706,181 @@ class TestPushStatusCache:
         # Unit 1 survives the incremental.
         assert "1" in units
         assert units["1"]["tray"][0]["tray_type"] == "PETG"
+
+        await bridge.stop()
+
+    @pytest.mark.asyncio
+    async def test_tray_exist_bits_clears_empty_slots_in_slicer_cache(self):
+        """#1726 (reported by @needo37): the bridge cache forwards the real
+        printer's raw AMS payload to the slicer. Without the empty-slot
+        cleanup that bambu_mqtt.py applies to Bambuddy's internal state, the
+        cached units carried stale `tray_type` / `tray_color` /
+        `tray_info_idx` for slots whose `tray_exist_bits` bit was 0 — and
+        BambuStudio's Sync rendered those empty slots as phantom loaded
+        filaments. After the fix the bridge runs the same shared
+        ``apply_tray_exist_bits`` helper before storing the cache.
+        """
+        server = _make_server()
+        bridge = _make_bridge(server)
+        await bridge.start()
+
+        # Pushall: AMS 0 has slots 0/1/2/3; only slots 1, 2, 3 are loaded.
+        # Slot 0 carries stale data (RFID/color/material from a previously
+        # loaded spool). `tray_exist_bits` = 0xe = 0b1110 → bit 0 unset.
+        bridge._on_printer_raw(
+            f"device/{H2D_SERIAL}/report",
+            json.dumps(
+                {
+                    "print": {
+                        "command": "push_status",
+                        "ams": {
+                            "ams": [
+                                {
+                                    "id": "0",
+                                    "tray": [
+                                        {
+                                            "id": "0",
+                                            "tray_type": "PLA",
+                                            "tray_color": "FF0000FF",
+                                            "tray_info_idx": "GFL00",
+                                            "tag_uid": "1234567890abcdef",
+                                            "tray_uuid": "abcdef1234567890abcdef1234567890",
+                                            "remain": 75,
+                                            "state": "11",
+                                        },
+                                        {"id": "1", "tray_type": "PETG", "tray_color": "00FF00FF"},
+                                        {"id": "2", "tray_type": "ABS", "tray_color": "0000FFFF"},
+                                        {"id": "3", "tray_type": "TPU", "tray_color": "FFFF00FF"},
+                                    ],
+                                }
+                            ],
+                            "tray_exist_bits": "e",
+                        },
+                    }
+                }
+            ).encode(),
+        )
+        await asyncio.sleep(0.01)
+
+        cached = bridge.get_latest_print_state()
+        slot0 = cached["ams"]["ams"][0]["tray"][0]
+        # Empty slot: stale per-tray fields wiped, state promoted to 9.
+        assert slot0["state"] == 9, "empty slot must be promoted to state=9"
+        assert slot0["tray_type"] == ""
+        assert slot0["tray_color"] == ""
+        assert slot0["tray_info_idx"] == ""
+        assert slot0["tag_uid"] == "0000000000000000"
+        assert slot0["tray_uuid"] == "00000000000000000000000000000000"
+        assert slot0["remain"] == 0
+        # Loaded slots preserved.
+        assert cached["ams"]["ams"][0]["tray"][1]["tray_type"] == "PETG"
+        assert cached["ams"]["ams"][0]["tray"][2]["tray_type"] == "ABS"
+        assert cached["ams"]["ams"][0]["tray"][3]["tray_type"] == "TPU"
+
+        await bridge.stop()
+
+    @pytest.mark.asyncio
+    async def test_tray_exist_bits_shutdown_guard_preserves_cache(self):
+        """#765 shutdown guard mirrored at the bridge: when the printer
+        powers off it sends all-zero `tray_exist_bits` paired with
+        `power_on_flag=False`. Wiping the cache on that pattern would
+        propagate phantom empties to every slicer reconnect until the
+        printer powers back on and pushes a real state. Skip cleanup
+        on the shutdown-shaped payload."""
+        server = _make_server()
+        bridge = _make_bridge(server)
+        await bridge.start()
+
+        # 1. Normal pushall — all four slots loaded.
+        bridge._on_printer_raw(
+            f"device/{H2D_SERIAL}/report",
+            json.dumps(
+                {
+                    "print": {
+                        "command": "push_status",
+                        "ams": {
+                            "ams": [
+                                {
+                                    "id": "0",
+                                    "tray": [
+                                        {"id": str(i), "tray_type": "PLA", "tray_color": f"{i:02x}{i:02x}{i:02x}FF"}
+                                        for i in range(4)
+                                    ],
+                                }
+                            ],
+                            "tray_exist_bits": "f",
+                            "power_on_flag": True,
+                        },
+                    }
+                }
+            ).encode(),
+        )
+        await asyncio.sleep(0.01)
+
+        # 2. Shutdown-shaped push: tray_exist_bits=0 + power_on_flag=False.
+        bridge._on_printer_raw(
+            f"device/{H2D_SERIAL}/report",
+            json.dumps(
+                {
+                    "print": {
+                        "command": "push_status",
+                        "ams": {
+                            "tray_exist_bits": "0",
+                            "power_on_flag": False,
+                        },
+                    }
+                }
+            ).encode(),
+        )
+        await asyncio.sleep(0.01)
+
+        cached = bridge.get_latest_print_state()
+        for i in range(4):
+            assert cached["ams"]["ams"][0]["tray"][i]["tray_type"] == "PLA", f"slot {i} must survive the shutdown push"
+
+        await bridge.stop()
+
+    @pytest.mark.asyncio
+    async def test_tray_exist_bits_skips_ams_ht_units(self):
+        """AMS-HT units (id >= 128) use a separate addressing scheme and
+        must not be touched by the bitmask cleanup — bit math at
+        global_bit = ams_id * 4 + tray_id would overrun normal AMS bits.
+        Pin the skip so future AMS-HT support doesn't accidentally wipe
+        loaded HT slots.
+        """
+        server = _make_server()
+        bridge = _make_bridge(server)
+        await bridge.start()
+
+        bridge._on_printer_raw(
+            f"device/{H2D_SERIAL}/report",
+            json.dumps(
+                {
+                    "print": {
+                        "command": "push_status",
+                        "ams": {
+                            "ams": [
+                                {
+                                    "id": "128",
+                                    "tray": [
+                                        {"id": "0", "tray_type": "PLA", "tray_color": "FF0000FF"},
+                                    ],
+                                }
+                            ],
+                            "tray_exist_bits": "0",
+                            "power_on_flag": True,
+                        },
+                    }
+                }
+            ).encode(),
+        )
+        await asyncio.sleep(0.01)
+
+        cached = bridge.get_latest_print_state()
+        ht_slot = cached["ams"]["ams"][0]["tray"][0]
+        # tray_exist_bits="0" alone would normally wipe — but AMS-HT is
+        # skipped, so the HT slot keeps its loaded data.
+        assert ht_slot["tray_type"] == "PLA"
 
         await bridge.stop()
 

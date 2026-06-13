@@ -61,9 +61,19 @@ logger = logging.getLogger(__name__)
 _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     # can_read_status — read-only access to status, history, and configuration
     Permission.PRINTERS_READ: "can_read_status",
+    # Legacy flat permissions retained for back-compat with custom API keys —
+    # the role bootstraps no longer use these, but custom keys may still
+    # carry can_read_status scope mapping. New endpoints gate on the
+    # ARCHIVES_READ_OWN / _ALL split (maziggy/bambuddy-security #2).
     Permission.ARCHIVES_READ: "can_read_status",
+    Permission.ARCHIVES_READ_OWN: "can_read_status",
+    Permission.ARCHIVES_READ_ALL: "can_read_status",
     Permission.QUEUE_READ: "can_read_status",
+    Permission.QUEUE_READ_OWN: "can_read_status",
+    Permission.QUEUE_READ_ALL: "can_read_status",
     Permission.LIBRARY_READ: "can_read_status",
+    Permission.LIBRARY_READ_OWN: "can_read_status",
+    Permission.LIBRARY_READ_ALL: "can_read_status",
     Permission.PROJECTS_READ: "can_read_status",
     Permission.FILAMENTS_READ: "can_read_status",
     Permission.INVENTORY_READ: "can_read_status",

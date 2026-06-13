@@ -34,11 +34,20 @@ async def get_print_log(
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Get the print log."""
+    user, can_read_all = auth_result
     query = select(PrintLogEntry)
     count_query = select(func.count(PrintLogEntry.id))
+    if user is not None and not can_read_all:
+        query = query.where(PrintLogEntry.created_by_id == user.id)
+        count_query = count_query.where(PrintLogEntry.created_by_id == user.id)
 
     if printer_id is not None:
         query = query.where(PrintLogEntry.printer_id == printer_id)

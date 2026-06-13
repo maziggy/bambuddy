@@ -812,7 +812,9 @@ export default {
       deleteArchives: '아카이브 삭제',
       deleteArchivesConfirm: '{{count}}개 아카이브를 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.',
       deleteCount: '{{count}}개 삭제',
-      deletePurgeStats: '빠른 통계에서도 이 인쇄 항목 제거 (필라멘트, 시간, 비용, 에너지)'
+      deletePurgeStats: '빠른 통계에서도 이 인쇄 항목 제거 (필라멘트, 시간, 비용, 에너지)',
+      deleteQueueItemsWarning: '이 아카이브와 연결된 {{count}}개의 대기열 항목도 함께 제거됩니다.',
+      deleteBlockedByPrinting: '삭제할 수 없습니다 — {{count}}개의 대기열 항목이 현재 인쇄 중입니다. 인쇄를 먼저 중지한 다음 다시 시도하십시오.'
     },
     page: {
       title: '아카이브',

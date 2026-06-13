@@ -864,6 +864,8 @@ export default {
       deleteConfirm: 'Are you sure you want to delete "{{name}}"? This action cannot be undone.',
       deleteButton: 'Delete',
       deletePurgeStats: 'Also remove this print from Quick Stats (filament, time, cost, energy)',
+      deleteQueueItemsWarning: '{{count}} queue item(s) linked to this archive will also be removed.',
+      deleteBlockedByPrinting: 'Cannot delete — {{count}} queue item(s) are currently printing. Stop the print first, then retry.',
       removeSource3mf: 'Remove Source 3MF',
       removeSource3mfConfirm: 'Are you sure you want to remove the source 3MF file from "{{name}}"? This will delete the original slicer project file.',
       removeButton: 'Remove',

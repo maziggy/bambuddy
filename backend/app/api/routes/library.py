@@ -76,6 +76,32 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/library", tags=["library"])
 
 
+def _ensure_library_file_visible(
+    library_file: LibraryFile | None,
+    user: User | None,
+    can_read_all: bool,
+) -> LibraryFile:
+    """Per-file visibility gate for ownership-scoped LIBRARY reads (#1726-adjacent).
+
+    Mirrors archives.py::_ensure_archive_visible — single enforcement point so a
+    less-guarded sibling route can't accidentally leak a row. Same shape:
+
+      - Missing / soft-deleted → 404 (not 403, to avoid id-enumeration leaks).
+      - ``can_read_all`` true (LIBRARY_READ_ALL or auth disabled) → file returned.
+      - ``can_read_all`` false and ``created_by_id != user.id`` → 404.
+      - Ownerless files (``created_by_id is None``) require ALL — fail-closed.
+    """
+    if library_file is None or getattr(library_file, "deleted_at", None) is not None:
+        raise HTTPException(404, "File not found")
+    if can_read_all:
+        return library_file
+    if user is None:
+        raise HTTPException(404, "File not found")
+    if library_file.created_by_id is None or library_file.created_by_id != user.id:
+        raise HTTPException(404, "File not found")
+    return library_file
+
+
 def get_library_dir() -> Path:
     """Get the library storage directory."""
     base_dir = Path(app_settings.archive_dir)
@@ -695,7 +721,12 @@ async def _backfill_external_stl_thumbnails(folder_ids: list[int]) -> None:
 async def list_folders(
     response: Response,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    _: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get all folders as a tree structure."""
     # Prevent browser caching of folder list
@@ -754,7 +785,12 @@ async def list_folders(
 async def get_folders_by_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    _: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get all folders linked to a specific project."""
     result = await db.execute(
@@ -802,7 +838,12 @@ async def get_folders_by_project(
 async def get_folders_by_archive(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    _: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get all folders linked to a specific archive."""
     result = await db.execute(
@@ -910,7 +951,12 @@ async def create_folder(
 async def get_folder(
     folder_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    _: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get a folder by ID."""
     result = await db.execute(
@@ -1632,7 +1678,12 @@ async def list_files(
     internal_only: bool = False,
     external_only: bool = False,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """List files, optionally filtered by folder or project.
 
@@ -1654,7 +1705,10 @@ async def list_files(
             detail="internal_only and external_only are mutually exclusive",
         )
 
+    user, can_read_all = auth_result
     query = LibraryFile.active().options(selectinload(LibraryFile.created_by))
+    if user is not None and not can_read_all:
+        query = query.where(LibraryFile.created_by_id == user.id)
 
     if folder_id is not None:
         query = query.where(LibraryFile.folder_id == folder_id)
@@ -2394,7 +2448,12 @@ async def add_files_to_queue(
 async def get_library_file_plates(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get available plates from a multi-plate 3MF library file.
 
@@ -2405,9 +2464,10 @@ async def get_library_file_plates(
 
     import defusedxml.ElementTree as ET
 
+    user, can_read_all = auth_result
     # Get the library file
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    lib_file = result.scalar_one_or_none()
+    lib_file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     if not lib_file:
         raise HTTPException(status_code=404, detail="File not found")
@@ -2745,7 +2805,12 @@ async def get_library_file_filament_requirements(
     plate_id: int | None = None,
     request_id: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get filament requirements from a library file.
 
@@ -2758,12 +2823,10 @@ async def get_library_file_filament_requirements(
     """
     import defusedxml.ElementTree as ET
 
+    user, can_read_all = auth_result
     # Get the library file
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    lib_file = result.scalar_one_or_none()
-
-    if not lib_file:
-        raise HTTPException(status_code=404, detail="File not found")
+    lib_file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     # Get the full file path
     file_path = Path(app_settings.base_dir) / lib_file.file_path
@@ -3997,16 +4060,19 @@ async def print_library_file(
 async def get_file(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get a file by ID with full details."""
+    user, can_read_all = auth_result
     result = await db.execute(
         LibraryFile.active().options(selectinload(LibraryFile.created_by)).where(LibraryFile.id == file_id)
     )
-    file = result.scalar_one_or_none()
-
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+    file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     # Get folder name
     folder_name = None
@@ -4149,8 +4215,11 @@ async def update_file(
     await db.commit()
     await db.refresh(file)
 
-    # Return full response (reuse get_file logic)
-    return await get_file(file_id, db)
+    # Return full response. Bypass get_file's ownership gate — caller already
+    # passed update_file's ownership gate above, so we re-fetch + serialise
+    # directly instead of calling the route function (which would try to
+    # evaluate its own Depends() at call time and trip a TypeError).
+    return await get_file(file_id, db, auth_result=(None, True))
 
 
 @router.delete("/files/{file_id}")
@@ -4210,14 +4279,17 @@ async def delete_file(
 async def download_file(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Download a file."""
+    user, can_read_all = auth_result
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    file = result.scalar_one_or_none()
-
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+    file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     abs_path = to_absolute_path(file.file_path)
     if not abs_path or not abs_path.exists():
@@ -4234,7 +4306,12 @@ async def download_file(
 async def create_library_slicer_token(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Create a short-lived download token for opening files in slicer applications.
 
@@ -4243,10 +4320,9 @@ async def create_library_slicer_token(
     """
     from backend.app.core.auth import create_slicer_download_token
 
+    user, can_read_all = auth_result
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    file = result.scalar_one_or_none()
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+    _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     token = await create_slicer_download_token("library", file_id)
     return {"token": token}
@@ -4321,14 +4397,17 @@ async def get_thumbnail(
 async def get_gcode(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get gcode for a file (for preview)."""
+    user, can_read_all = auth_result
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    file = result.scalar_one_or_none()
-
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+    file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     abs_path = to_absolute_path(file.file_path)
     if not abs_path or not abs_path.exists():
@@ -4544,32 +4623,42 @@ async def bulk_delete(
 @router.get("/stats")
 async def get_library_stats(
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get library statistics."""
+    user, can_read_all = auth_result
     # Stats exclude trashed files — users see counts/sizes for what's actually in the library.
-    active_only = LibraryFile.deleted_at.is_(None)
+    # Without LIBRARY_READ_ALL the stats reflect only the caller's own files —
+    # match what the file list endpoint shows so the numbers stay consistent.
+    file_filters = [LibraryFile.deleted_at.is_(None)]
+    if user is not None and not can_read_all:
+        file_filters.append(LibraryFile.created_by_id == user.id)
 
     # Total files
-    total_files_result = await db.execute(select(func.count(LibraryFile.id)).where(active_only))
+    total_files_result = await db.execute(select(func.count(LibraryFile.id)).where(*file_filters))
     total_files = total_files_result.scalar() or 0
 
-    # Total folders
+    # Total folders (folders are shared org structure, not per-user — count all)
     total_folders_result = await db.execute(select(func.count(LibraryFolder.id)))
     total_folders = total_folders_result.scalar() or 0
 
     # Total size
-    total_size_result = await db.execute(select(func.sum(LibraryFile.file_size)).where(active_only))
+    total_size_result = await db.execute(select(func.sum(LibraryFile.file_size)).where(*file_filters))
     total_size = total_size_result.scalar() or 0
 
     # Files by type
     type_result = await db.execute(
-        select(LibraryFile.file_type, func.count(LibraryFile.id)).where(active_only).group_by(LibraryFile.file_type)
+        select(LibraryFile.file_type, func.count(LibraryFile.id)).where(*file_filters).group_by(LibraryFile.file_type)
     )
     files_by_type = dict(type_result.all())
 
     # Total prints
-    total_prints_result = await db.execute(select(func.sum(LibraryFile.print_count)).where(active_only))
+    total_prints_result = await db.execute(select(func.sum(LibraryFile.print_count)).where(*file_filters))
     total_prints = total_prints_result.scalar() or 0
 
     # Disk space info

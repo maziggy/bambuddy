@@ -306,9 +306,15 @@ async def list_queue(
         None, description="Filter by target model (also includes model-based items when combined with printer_id)"
     ),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_READ_ALL,
+            Permission.QUEUE_READ_OWN,
+        )
+    ),
 ):
     """List all queue items, optionally filtered by printer or status."""
+    user, can_read_all = auth_result
     query = (
         select(PrintQueueItem)
         .options(
@@ -320,6 +326,8 @@ async def list_queue(
         )
         .order_by(PrintQueueItem.printer_id.nulls_first(), PrintQueueItem.position)
     )
+    if user is not None and not can_read_all:
+        query = query.where(PrintQueueItem.created_by_id == user.id)
 
     if printer_id is not None:
         if printer_id == -1:
@@ -404,6 +412,18 @@ async def add_to_queue(
         archive = result.scalar_one_or_none()
         if not archive:
             raise HTTPException(400, "Archive not found")
+        # IDOR fix (maziggy/bambuddy-security #2): without this check, a
+        # caller with QUEUE_CREATE could queue any user's archive even
+        # without ARCHIVES_READ on it — Landon's PoC enumerated this on
+        # admin's archives as operator1. Gate on ARCHIVES_READ_ALL OR
+        # ownership of the archive. 404 (not 403) so we don't leak
+        # "this id exists but you can't queue it" for enumeration.
+        if (
+            current_user is not None
+            and not current_user.has_permission(Permission.ARCHIVES_READ_ALL.value)
+            and archive.created_by_id != current_user.id
+        ):
+            raise HTTPException(404, "Archive not found")
 
     # Validate library file exists (if provided) and get it for filament extraction
     library_file = None
@@ -412,6 +432,13 @@ async def add_to_queue(
         library_file = result.scalar_one_or_none()
         if not library_file:
             raise HTTPException(400, "Library file not found")
+        # Same shape: gate cross-user library-file queueing on LIBRARY_READ_ALL.
+        if (
+            current_user is not None
+            and not current_user.has_permission(Permission.LIBRARY_READ_ALL.value)
+            and library_file.created_by_id != current_user.id
+        ):
+            raise HTTPException(404, "Library file not found")
         # Bambu SD card is FAT32/exFAT — illegal filename chars would 553 at
         # FTP upload time (#1540). Reject at queue time so the user gets the
         # actionable error before waiting in queue.
@@ -685,12 +712,20 @@ async def bulk_update_queue_items(
 async def list_batches(
     status: str | None = Query(None, description="Filter by status (active, completed, cancelled)"),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_READ_ALL,
+            Permission.QUEUE_READ_OWN,
+        )
+    ),
 ):
     """List all print batches with progress stats."""
+    current_user, can_read_all = auth_result
     query = select(PrintBatch).order_by(PrintBatch.created_at.desc())
     if status:
         query = query.where(PrintBatch.status == status)
+    if current_user is not None and not can_read_all:
+        query = query.where(PrintBatch.created_by_id == current_user.id)
     result = await db.execute(query)
     batches = result.scalars().all()
 
@@ -704,12 +739,24 @@ async def list_batches(
 async def get_batch(
     batch_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_READ_ALL,
+            Permission.QUEUE_READ_OWN,
+        )
+    ),
 ):
     """Get a print batch with progress stats."""
+    current_user, can_read_all = auth_result
     result = await db.execute(select(PrintBatch).where(PrintBatch.id == batch_id))
     batch = result.scalar_one_or_none()
     if not batch:
+        raise HTTPException(404, "Batch not found")
+    if (
+        current_user is not None
+        and not can_read_all
+        and (batch.created_by_id is None or batch.created_by_id != current_user.id)
+    ):
         raise HTTPException(404, "Batch not found")
     return await _build_batch_response(db, batch)
 
@@ -782,9 +829,15 @@ async def _build_batch_response(db: AsyncSession, batch: PrintBatch) -> PrintBat
 async def get_queue_item(
     item_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_READ_ALL,
+            Permission.QUEUE_READ_OWN,
+        )
+    ),
 ):
     """Get a specific queue item."""
+    current_user, can_read_all = auth_result
     result = await db.execute(
         select(PrintQueueItem)
         .options(
@@ -798,6 +851,12 @@ async def get_queue_item(
     )
     item = result.scalar_one_or_none()
     if not item:
+        raise HTTPException(404, "Queue item not found")
+    if (
+        current_user is not None
+        and not can_read_all
+        and (item.created_by_id is None or item.created_by_id != current_user.id)
+    ):
         raise HTTPException(404, "Queue item not found")
     return _enrich_response(item)
 

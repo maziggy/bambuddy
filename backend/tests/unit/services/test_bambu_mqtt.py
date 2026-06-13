@@ -1197,6 +1197,140 @@ class TestAMSTrayStateClearning:
         assert tray0["remain"] == 75
 
 
+class TestApplyTrayExistBitsHelper:
+    """Direct contract pinning for the shared ``apply_tray_exist_bits`` helper.
+
+    The same logic is exercised end-to-end via ``_handle_ams_data`` in the
+    internal-state suite and via ``_on_printer_raw`` in the bridge suite,
+    but those go through the merge / cache layers — the helper itself
+    deserves direct coverage so future refactors don't silently change
+    the contract both callers depend on (#1726).
+    """
+
+    def test_returns_zero_on_missing_bits(self):
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [{"id": 0, "tray": [{"id": 0, "tray_type": "PLA"}]}]
+        assert apply_tray_exist_bits(units, None) == 0
+        assert apply_tray_exist_bits(units, "") == 0
+        # Untouched.
+        assert units[0]["tray"][0]["tray_type"] == "PLA"
+
+    def test_returns_zero_on_unparseable_bits(self):
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [{"id": 0, "tray": [{"id": 0, "tray_type": "PLA"}]}]
+        assert apply_tray_exist_bits(units, "garbage") == 0
+        assert units[0]["tray"][0]["tray_type"] == "PLA"
+
+    def test_shutdown_guard_zero_bits_with_power_off_skips(self):
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [{"id": 0, "tray": [{"id": 0, "tray_type": "PLA", "tray_color": "FF0000FF"}]}]
+        cleared = apply_tray_exist_bits(units, "0", power_on_flag=False)
+        assert cleared == 0
+        # Slot preserved — wiping here would propagate phantom empties on
+        # every printer-off push.
+        assert units[0]["tray"][0]["tray_type"] == "PLA"
+
+    def test_zero_bits_with_power_on_still_clears(self):
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [{"id": 0, "tray": [{"id": 0, "tray_type": "PLA", "tray_color": "FF0000FF"}]}]
+        cleared = apply_tray_exist_bits(units, "0", power_on_flag=True)
+        # Slot is genuinely empty per the printer's report.
+        assert cleared == 1
+        assert units[0]["tray"][0]["state"] == 9
+        assert units[0]["tray"][0]["tray_type"] == ""
+
+    def test_nonzero_bits_with_power_off_still_clears_removed_slot(self):
+        """#1365: X1C reports power_on_flag=False between prints while the
+        AMS keeps reporting its actual slot inventory. The guard must skip
+        ONLY the all-zero + power-off combination, not nonzero + power-off.
+        """
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [
+            {
+                "id": 0,
+                "tray": [
+                    {"id": 0, "tray_type": "PLA", "tray_color": "FF0000FF"},
+                    {"id": 1, "tray_type": "PETG", "tray_color": "00FF00FF"},
+                ],
+            }
+        ]
+        # 0x1 = slot 0 loaded, slot 1 empty. Power off (steady-state idle).
+        cleared = apply_tray_exist_bits(units, "1", power_on_flag=False)
+        assert cleared == 1
+        assert units[0]["tray"][0]["tray_type"] == "PLA"
+        assert units[0]["tray"][1]["tray_type"] == ""
+
+    def test_promotes_state_to_int_nine(self):
+        """Downstream `tray_state in {9, 10}` uses `==` — int 9, not "9"."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [{"id": 0, "tray": [{"id": 0, "state": "11"}]}]
+        apply_tray_exist_bits(units, "0", power_on_flag=True)
+        assert units[0]["tray"][0]["state"] == 9
+        assert isinstance(units[0]["tray"][0]["state"], int)
+
+    def test_ams_ht_unit_skipped(self):
+        """AMS-HT (id >= 128) uses a different addressing scheme."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [{"id": 128, "tray": [{"id": 0, "tray_type": "PLA"}]}]
+        cleared = apply_tray_exist_bits(units, "0", power_on_flag=True)
+        assert cleared == 0
+        assert units[0]["tray"][0]["tray_type"] == "PLA"
+
+    def test_string_ids_handled(self):
+        """Bridge cache stores ids as strings (JSON wire format)."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [
+            {
+                "id": "0",
+                "tray": [
+                    {"id": "0", "tray_type": "PLA"},
+                    {"id": "1", "tray_type": "PETG"},
+                ],
+            }
+        ]
+        # 0x1 = bit 0 set (slot 0), bit 1 clear (slot 1 empty).
+        cleared = apply_tray_exist_bits(units, "1", power_on_flag=True)
+        assert cleared == 1
+        assert units[0]["tray"][0]["tray_type"] == "PLA"
+        assert units[0]["tray"][1]["tray_type"] == ""
+
+    def test_multi_ams_global_bit_math(self):
+        """global_bit = ams_id * 4 + tray_id. Verify AMS 1 slots use
+        bits 4-7 of the mask, not bits 0-3."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [
+            {"id": 0, "tray": [{"id": i, "tray_type": "PLA"} for i in range(4)]},
+            {"id": 1, "tray": [{"id": i, "tray_type": "PETG"} for i in range(4)]},
+        ]
+        # 0x0f: all slots of AMS 0 loaded, all slots of AMS 1 empty.
+        cleared = apply_tray_exist_bits(units, "f", power_on_flag=True)
+        assert cleared == 4
+        for i in range(4):
+            assert units[0]["tray"][i]["tray_type"] == "PLA"
+            assert units[1]["tray"][i]["tray_type"] == ""
+
+    def test_state_promoted_even_when_no_stale_data(self):
+        """Slot without `tray_type` still gets state=9 — the bitmask is
+        authoritative, the field wipe just avoids extra log lines.
+        """
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [{"id": 0, "tray": [{"id": 0, "state": "11"}]}]
+        cleared = apply_tray_exist_bits(units, "0", power_on_flag=True)
+        # No tray_type to clear → cleared counter stays 0 but state is set.
+        assert cleared == 0
+        assert units[0]["tray"][0]["state"] == 9
+
+
 class TestNozzleRackData:
     """Tests for nozzle rack data parsing from H2 series device.nozzle.info."""
 

@@ -864,6 +864,8 @@ export default {
       deleteConfirm: '確定要刪除"{{name}}"嗎？此操作無法復原。',
       deleteButton: '刪除',
       deletePurgeStats: '同時從快速統計中刪除此列印（耗材、時間、成本、能耗）',
+      deleteQueueItemsWarning: '與此封存連結的 {{count}} 個佇列項目也將被移除。',
+      deleteBlockedByPrinting: '無法刪除 — {{count}} 個佇列項目正在列印。請先停止列印再重試。',
       removeSource3mf: '移除源 3MF',
       removeSource3mfConfirm: '確定要從"{{name}}"中移除源 3MF 檔案嗎？這將刪除原始切片專案檔案。',
       removeButton: '移除',

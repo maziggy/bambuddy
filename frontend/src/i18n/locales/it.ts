@@ -864,6 +864,8 @@ export default {
       deleteConfirm: 'Sei sicuro di eliminare "{{name}}"? Questa azione non può essere annullata.',
       deleteButton: 'Elimina',
       deletePurgeStats: 'Rimuovi anche questa stampa dalle Quick Stats (filamento, tempo, costo, energia)',
+      deleteQueueItemsWarning: '{{count}} elemento/i in coda collegato/i a questo archivio verrà/verranno rimosso/i.',
+      deleteBlockedByPrinting: 'Impossibile eliminare — {{count}} elemento/i in coda sono attualmente in stampa. Interrompi la stampa, poi riprova.',
       removeSource3mf: 'Rimuovi Sorgente 3MF',
       removeSource3mfConfirm: 'Sei sicuro di rimuovere il file sorgente 3MF da "{{name}}"? Questo eliminerà il progetto slicer originale.',
       removeButton: 'Rimuovi',

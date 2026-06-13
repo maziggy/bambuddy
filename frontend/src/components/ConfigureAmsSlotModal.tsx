@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { X, Loader2, Settings2, ChevronDown, CheckCircle2, RotateCcw } from 'lucide-react';
 import { api } from '../api/client';
 import type { KProfile } from '../api/client';
-import { matchesPrinterModelSuffix } from '../utils/slicerPrinterMatch';
+import { matchesPrinterModelSuffix, presetCompatibility, buildCompatibilityIndex } from '../utils/slicerPrinterMatch';
 import { toFilamentId, isGenericFilamentId } from './spool-form/utils';
 import { Button } from './Button';
 
@@ -230,13 +230,80 @@ function colorNameToHex(name: string): string | null {
   return COLOR_NAME_MAP[normalized] || null;
 }
 
-// Extract printer model from preset name suffix "@BBL X1C 0.4 nozzle" → "X1C"
-function extractPresetModel(name: string): string | null {
+// Escape regex metacharacters and turn whitespace into ``\s+`` so a literal
+// model token compiles to a flexible-whitespace word-boundary regex.
+function _tokenToRegex(token: string): RegExp {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  return new RegExp(`\\b${escaped}\\b`, 'i');
+}
+
+// Extract printer model from a preset name → normalized short code
+// (e.g. "X1C", "H2D"). Two strategies in order:
+//
+// (1) ``@`` suffix — the BambuStudio naming convention. Two shapes:
+//   - "@BBL X1C 0.4 nozzle"               → "X1C"  (short-code form,
+//      Bambu Cloud system presets)
+//   - "@Bambu Lab X1 Carbon 0.4 nozzle"   → "X1C"  (long-form, used by
+//      user-renamed Bambu Cloud presets and most Orca Cloud profiles —
+//      reverse-looked-up via the backend printer-model registry)
+//
+// (2) Body scan — many user-authored / Orca Cloud presets put the printer
+// model at the START of the name with no @ suffix at all (the literal
+// shape that surfaced #1623: "X1C eSUN PETG-Basic Filament"). Scan the
+// name for any known model token (every long-name fragment + every short
+// code from the registry) and return the first match. Long-first sort
+// keeps "A1 Mini" / "X1 Carbon" / "H2D Pro" from being eaten by their
+// shorter sibling ("A1" / "X1" / "H2D"). Word-boundary regex prevents
+// false-positives on partial substrings (e.g. "PA1" doesn't match "A1",
+// "X1Box" doesn't match "X1").
+//
+// Returns null when neither strategy resolves; the caller keeps such
+// presets visible (can't filter what we can't classify).
+//
+// ``printerModelsLongToShort`` is the backend's PRINTER_MODEL_MAP shape:
+// keys are "Bambu Lab <long>", values are short codes.
+function extractPresetModel(
+  name: string,
+  printerModelsLongToShort: Record<string, string>,
+): string | null {
   const atIdx = name.indexOf('@');
-  if (atIdx < 0) return null;
-  const suffix = name.slice(atIdx + 1).trim();
-  const bblMatch = suffix.match(/^BBL\s+(.+?)(?:\s+[\d.]+\s*nozzle)?$/i);
-  if (bblMatch) return bblMatch[1].trim();
+  if (atIdx >= 0) {
+    const suffix = name.slice(atIdx + 1).trim();
+    const bblMatch = suffix.match(/^BBL\s+(.+?)(?:\s+[\d.]+\s*nozzle)?$/i);
+    if (bblMatch) return bblMatch[1].trim();
+    const longMatch = suffix.match(/^Bambu Lab\s+(.+?)(?:\s+[\d.]+\s*nozzle)?$/i);
+    if (longMatch) {
+      const longFragment = longMatch[1].trim();
+      const fullKey = `Bambu Lab ${longFragment}`;
+      if (printerModelsLongToShort[fullKey]) return printerModelsLongToShort[fullKey];
+      const lower = fullKey.toLowerCase();
+      for (const [k, v] of Object.entries(printerModelsLongToShort)) {
+        if (k.toLowerCase() === lower) return v;
+      }
+      return longFragment;
+    }
+  }
+
+  // Body scan — accumulate {token, short} pairs and try long-first.
+  const tokens: Array<{ token: string; short: string }> = [];
+  const seen = new Set<string>();
+  for (const [longName, short] of Object.entries(printerModelsLongToShort)) {
+    const fragment = longName.replace(/^Bambu Lab\s+/, '');
+    const key = fragment.toLowerCase();
+    if (!seen.has(key)) {
+      tokens.push({ token: fragment, short });
+      seen.add(key);
+    }
+    const shortKey = short.toLowerCase();
+    if (!seen.has(shortKey)) {
+      tokens.push({ token: short, short });
+      seen.add(shortKey);
+    }
+  }
+  tokens.sort((a, b) => b.token.length - a.token.length);
+  for (const { token, short } of tokens) {
+    if (_tokenToRegex(token).test(name)) return short;
+  }
   return null;
 }
 
@@ -308,6 +375,39 @@ export function ConfigureAmsSlotModal({
     enabled: isOpen,
     staleTime: Infinity,
   });
+
+  // Backend Bambu printer-model registry — drives the @BBL short-code matcher
+  // and (here) the reverse short-code → long-name lookup that lets us check
+  // imported local presets' `compatible_printers` list against the slot's
+  // printer (#1623). Long staleTime: the registry only changes across backend
+  // releases.
+  const { data: printerModelsData } = useQuery({
+    queryKey: ['slicerPrinterModels'],
+    queryFn: api.getSlicerPrinterModels,
+    enabled: isOpen,
+    staleTime: Infinity,
+  });
+
+  const compatIndex = useMemo(
+    () => buildCompatibilityIndex(printerModelsData ?? {}),
+    [printerModelsData],
+  );
+
+  // The full printer-preset name for this slot's printer — e.g. the short
+  // code "X1C" resolves to "Bambu Lab X1 Carbon 0.4 nozzle" via the backend
+  // registry plus the slot's nozzle. Used to filter imported local presets
+  // whose `compatible_printers` list is keyed by the full slicer preset name.
+  // Null when the registry hasn't loaded or no model is known — caller skips
+  // the filter in that case (fail-open, same shape as the cloud-preset filter).
+  const fullPrinterName = useMemo<string | null>(() => {
+    if (!printerModel || !printerModelsData) return null;
+    for (const [longName, shortCode] of Object.entries(printerModelsData)) {
+      if (shortCode === printerModel) {
+        return `${longName.startsWith('Bambu Lab ') ? longName : `Bambu Lab ${longName}`} ${nozzleDiameter} nozzle`;
+      }
+    }
+    return null;
+  }, [printerModel, printerModelsData, nozzleDiameter]);
 
   // Configure slot mutation
   const configureMutation = useMutation({
@@ -584,7 +684,7 @@ export function ConfigureAmsSlotModal({
         coveredIds.add(orcaId);
         if (query && !op.name.toLowerCase().includes(query)) continue;
         if (printerModel) {
-          const presetModel = extractPresetModel(op.name);
+          const presetModel = extractPresetModel(op.name, printerModelsData ?? {});
           if (presetModel && !matchesPrinterModelSuffix(presetModel, printerModel)) continue;
         }
         // All Orca Cloud profiles are user-authored, so isUser is always true.
@@ -607,18 +707,45 @@ export function ConfigureAmsSlotModal({
         // alias-aware match so Bambu's "A1 Mini" → "A1M" cloud rename (#1649)
         // doesn't hide A1 Mini cloud profiles.
         if (!isCurrentPreset && printerModel) {
-          const presetModel = extractPresetModel(cp.name);
+          const presetModel = extractPresetModel(cp.name, printerModelsData ?? {});
           if (presetModel && !matchesPrinterModelSuffix(presetModel, printerModel)) continue;
         }
         items.push({ id: cp.setting_id, name: cp.name, source: 'cloud', isUser: isUserPreset(cp.setting_id) });
       }
     }
 
-    // 2. Local presets (always shown — user-imported profiles work on any printer)
+    // 2. Local presets — filter by the slicer's own ``compatible_printers``
+    // list when present (#1623). LocalPreset.compatible_printers is a JSON-
+    // encoded string array; presetCompatibility returns 'mismatch' when the
+    // list is set and our derived full printer name isn't in it, 'unknown'
+    // when neither the list nor an @BBL token is parseable — we hide on
+    // 'mismatch' only so user-imported presets without compatible_printers
+    // still surface (back-compat with the prior "always show" behaviour for
+    // hand-edited / lossily-imported presets).
     if (localPresets?.filament) {
+      const savedLocalId = slotInfo.savedPresetId;
       for (const lp of localPresets.filament) {
         const localId = `local_${lp.id}`;
         if (query && !lp.name.toLowerCase().includes(query)) continue;
+        const isCurrentPreset = savedLocalId === localId;
+        if (!isCurrentPreset && fullPrinterName) {
+          let compatList: string[] | null = null;
+          if (lp.compatible_printers) {
+            try {
+              const parsed = JSON.parse(lp.compatible_printers);
+              if (Array.isArray(parsed)) compatList = parsed.filter((s): s is string => typeof s === 'string');
+            } catch {
+              compatList = null;
+            }
+          }
+          const verdict = presetCompatibility(
+            { name: lp.name, compatible_printers: compatList },
+            'filament',
+            fullPrinterName,
+            compatIndex,
+          );
+          if (verdict === 'mismatch') continue;
+        }
         items.push({ id: localId, name: lp.name, source: 'local', isUser: false });
       }
     }
@@ -649,7 +776,7 @@ export function ConfigureAmsSlotModal({
       if (!a.isUser && b.isUser) return 1;
       return a.name.localeCompare(b.name);
     });
-  }, [orcaCloudList?.filament, cloudSettings?.filament, localPresets?.filament, builtinFilaments, searchQuery, printerModel, slotInfo.savedPresetId, slotInfo.trayInfoIdx]);
+  }, [orcaCloudList?.filament, cloudSettings?.filament, localPresets?.filament, builtinFilaments, searchQuery, printerModel, slotInfo.savedPresetId, slotInfo.trayInfoIdx, fullPrinterName, compatIndex, printerModelsData]);
 
   // Get full preset name for K profile filtering (brand + material, without printer suffix)
   const selectedPresetInfo = useMemo(() => {

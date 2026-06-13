@@ -41,6 +41,7 @@ import logging
 import socket
 from typing import TYPE_CHECKING
 
+from backend.app.services.bambu_mqtt import apply_tray_exist_bits
 from backend.app.services.virtual_printer._debug import append_event, dump_wire
 
 if TYPE_CHECKING:
@@ -651,6 +652,22 @@ class MQTTBridge:
                         merged = dict(prev_value)
                         merged.update(new_value)
                         new_state[key] = merged
+            # Apply empty-slot cleanup on the merged AMS so the slicer-facing
+            # cache mirrors what Bambuddy's AMS card shows internally. Without
+            # this the cached units carry stale per-tray filament fields for
+            # slots whose `tray_exist_bits` bit is 0, and BambuStudio's Sync
+            # paints those empty slots as phantom loaded filaments (#1726).
+            # Runs whether or not a prev cache existed — fresh pushalls also
+            # carry tray_exist_bits and benefit from the cleanup.
+            merged_ams_dict = new_state.get("ams")
+            if isinstance(merged_ams_dict, dict):
+                units = merged_ams_dict.get("ams")
+                apply_tray_exist_bits(
+                    units if isinstance(units, list) else [],
+                    merged_ams_dict.get("tray_exist_bits"),
+                    power_on_flag=merged_ams_dict.get("power_on_flag", True),
+                    log_label=self.vp_name,
+                )
             self._latest_print_state = new_state
             dump_wire(self.vp_name, "in", new_state)
             return

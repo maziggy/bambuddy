@@ -5,9 +5,9 @@ job_id and a status_url pointing here. The frontend polls this until
 status flips to `completed` or `failed`.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import require_ownership_permission
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
 from backend.app.services.slice_dispatch import slice_dispatch
@@ -19,9 +19,17 @@ router = APIRouter(prefix="/slice-jobs", tags=["slice-jobs"])
 async def get_slice_job(
     job_id: int,
     # Job IDs are sequential integers and the body leaks source filenames
-    # plus the resulting library_file_id / archive_id. Gate on LIBRARY_READ
-    # — same baseline a user needs to see slice sources or results.
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.LIBRARY_READ),
+    # plus the resulting library_file_id / archive_id. Gate on the library
+    # read permission family (own/all). NOTE: SliceJob is in-memory with no
+    # owner field, so we cannot per-row scope; callers with either OWN or
+    # ALL can poll any job_id. Adding owner_id to SliceJob is the proper
+    # follow-up (out of scope for the IDOR fix train).
+    _: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     job = slice_dispatch.get(job_id)
     if job is None:

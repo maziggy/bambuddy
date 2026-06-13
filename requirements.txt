@@ -65,6 +65,14 @@ fast-simplification>=0.1.0
 # System monitoring
 psutil>=6.0.0
 
+# IANA tz database for Windows. The stdlib ``zoneinfo`` module reads the
+# system tz database on Linux/macOS, but Windows has none — and the
+# embedded Python in our Windows installer doesn't carry one either, so
+# even ``ZoneInfo("UTC")`` raises ``ZoneInfoNotFoundError`` and any
+# endpoint that resolves a tz (e.g. /api/local-backup/status) 500s.
+# ``tzdata`` is the official PyPI package that fills the gap.
+tzdata>=2024.1; sys_platform == "win32"
+
 # Authentication
 PyJWT>=2.13.0
 passlib[bcrypt]>=1.7.4

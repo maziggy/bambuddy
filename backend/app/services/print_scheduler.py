@@ -2187,21 +2187,13 @@ class PrintScheduler:
         pre_subtask_id = getattr(pre_status, "subtask_id", None) if pre_status else None
         pre_gcode_file = getattr(pre_status, "gcode_file", None) if pre_status else None
 
-        # #1397: force timelapse on when capture_finish_photo is enabled so
-        # the finish-photo extractor has something to pull from. Same override
-        # semantics as background_dispatch.py — both queue paths must apply
-        # the same rule or queued prints slip through without a finish photo.
-        # When archive_print failed (library_file path, line 1968 except), we
-        # have no archive to mark — fall back to the literal user choice; the
-        # downstream finish-photo path can't run without an archive anyway.
-        if archive is not None:
-            from backend.app.services.background_dispatch import resolve_effective_timelapse
-
-            effective_timelapse = await resolve_effective_timelapse(
-                db, archive, user_wanted_timelapse=bool(item.timelapse)
-            )
-        else:
-            effective_timelapse = bool(item.timelapse)
+        # #1721: respect the user's explicit timelapse choice. The #1397
+        # force-on at dispatch was removed because it caused per-layer nozzle
+        # parking on slicer profiles with Timelapse Type = Smooth. Finish-photo
+        # capture is now driven by the stg_cur=22 transition in bambu_mqtt.py
+        # ("Filament unloading", toolhead parked, bed not yet dropped) with a
+        # FINISH-state fallback — no need to force a video.
+        effective_timelapse = bool(item.timelapse)
 
         # Start the print with AMS mapping, plate_id and print options
         started = printer_manager.start_print(

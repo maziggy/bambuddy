@@ -1619,6 +1619,7 @@ class TestVirtualPrinterManager:
             "auto_dispatch": True,
             "tailscale_disabled": True,  # Opt-in default (#1070 UX fix)
             "queue_force_color_match": False,  # default — must be explicit so MagicMock truthiness doesn't trip the change detector
+            "gcode_injection": False,  # same reason as above
             "position": 0,
         }
         defaults.update(overrides)
@@ -1818,6 +1819,43 @@ class TestVirtualPrinterManager:
             await manager.sync_from_db()
 
         mock_remove.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sync_from_db_restarts_on_gcode_injection_toggle(self, manager, tmp_path):
+        """Toggling gcode_injection in the DB must restart the running instance.
+
+        Without this, the in-memory ``self.gcode_injection`` keeps its old value
+        and ``_add_to_print_queue`` stamps the stale flag on every new queue
+        item — so disabling injection in the UI silently has no effect until
+        the process restarts.
+        """
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=1,
+            name="TestVP",
+            mode="archive",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            gcode_injection=True,
+            base_dir=tmp_path,
+        )
+        inst.stop_server = AsyncMock()
+        manager._instances[1] = inst
+
+        db_vp = self._make_db_vp(gcode_injection=False)
+        self._setup_sync_mocks(manager, [db_vp], tmp_path)
+
+        with patch.object(manager, "remove_instance", new_callable=AsyncMock) as mock_remove:
+            with patch("backend.app.services.virtual_printer.manager.VirtualPrinterInstance") as MockInst:
+                mock_new = MagicMock()
+                mock_new.start_server = AsyncMock()
+                MockInst.return_value = mock_new
+
+                await manager.sync_from_db()
+
+            mock_remove.assert_called_once_with(1)
 
 
 class TestFTPSession:

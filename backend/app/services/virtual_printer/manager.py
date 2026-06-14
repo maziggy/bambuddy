@@ -1187,6 +1187,7 @@ class VirtualPrinterManager:
                 # instance silently keeps the old value until process
                 # restart (#1552 follow-up family).
                 or instance.queue_force_color_match != vp.queue_force_color_match
+                or instance.gcode_injection != vp.gcode_injection
                 or proxy_target_changed
             )
 

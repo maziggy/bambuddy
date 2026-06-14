@@ -188,6 +188,7 @@ async def init_db():
         oidc_provider,
         orca_base_cache,
         pending_upload,
+        pending_slot_assignment,
         print_batch,
         print_log,
         print_queue,

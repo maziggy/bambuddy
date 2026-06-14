@@ -687,6 +687,56 @@ class MQTTRelayService:
             },
         )
 
+    async def on_slot_assignment_completed(
+        self,
+        assignment_id: int,
+        tray_uuid: str | None,
+        tag_uid: str | None,
+        spool_id: int,
+        printer_id: int,
+        ams_id: int,
+        tray_id: int,
+        time_to_placement: float,
+    ):
+        """Publish event when a pending slot assignment is completed."""
+        if not self.enabled or not self.connected:
+            return
+
+        self._publish(
+            f"{self.topic_prefix}/inventory/slot_assignment/completed",
+            {
+                "assignment_id": assignment_id,
+                "tray_uuid": tray_uuid,
+                "tag_uid": tag_uid,
+                "spool_id": spool_id,
+                "printer_id": printer_id,
+                "ams_id": ams_id,
+                "tray_id": tray_id,
+                "time_to_placement": time_to_placement,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+
+    async def on_slot_assignment_timed_out(
+        self,
+        assignment_id: int,
+        tray_uuid: str | None,
+        tag_uid: str | None,
+    ):
+        """Publish event when a pending slot assignment times out."""
+        if not self.enabled or not self.connected:
+            return
+
+        self._publish(
+            f"{self.topic_prefix}/inventory/slot_assignment/timed_out",
+            {
+                "assignment_id": assignment_id,
+                "tray_uuid": tray_uuid,
+                "tag_uid": tag_uid,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+
 
 # Global instance
 mqtt_relay = MQTTRelayService()

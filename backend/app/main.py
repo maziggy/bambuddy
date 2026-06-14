@@ -1496,6 +1496,28 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                 )
                             continue
 
+                        # Check pending assign-on-next-slot requests before auto-assign
+                        try:
+                            from backend.app.services.pending_slot_assignment import (
+                                try_complete_pending_assignments,
+                            )
+
+                            if await try_complete_pending_assignments(db, printer_id, ams_id, tray_id):
+                                logger.info(
+                                    "Pending slot assignment completed for printer %d AMS%d-T%d",
+                                    printer_id,
+                                    ams_id,
+                                    tray_id,
+                                )
+                                continue
+                        except Exception:
+                            logger.exception(
+                                "Pending slot assignment check failed for printer %d AMS%d-T%d",
+                                printer_id,
+                                ams_id,
+                                tray_id,
+                            )
+
                         if is_bambu_tag(tag_uid, tray_uuid, tray_info_idx):
                             # BL spool with RFID tag: auto-match → inventory match → auto-create
                             spool = await get_spool_by_tag(db, tag_uid, tray_uuid)
@@ -5506,6 +5528,11 @@ async def lifespan(app: FastAPI):
 
     # Rehydrate persisted awaiting-plate-clear gate (#961) so prompts survive restarts
     await printer_manager.load_awaiting_plate_clear_from_db()
+
+    # Restore pending slot assignment timeout tasks that survived a restart
+    from backend.app.services.pending_slot_assignment import restore_pending_timeouts
+
+    await restore_pending_timeouts()
 
     # Layer change callback for external camera timelapse
     async def on_layer_change(printer_id: int, layer_num: int):

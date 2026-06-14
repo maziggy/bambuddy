@@ -36,6 +36,8 @@ from backend.app.schemas.spool import (
     SpoolUpdate,
     normalize_effect_type,
     normalize_extra_colors,
+    PendingSlotAssignmentResponse,
+    PendingSlotAssignmentCreateRequest,
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
 from backend.app.services.slicer_filament_resolver import resolve_slicer_filament
@@ -1494,6 +1496,71 @@ async def unassign_spool(
     )
 
     return {"status": "deleted"}
+
+
+# ── Pending Slot Assignments (assign-on-next-slot) ────────────────────────────
+
+@router.post("/spools/assign-on-next-slot", response_model=PendingSlotAssignmentResponse)
+async def assign_on_next_slot(
+    body: PendingSlotAssignmentCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Create a pending spool-to-slot assignment request."""
+    from backend.app.services.pending_slot_assignment import create_pending_assignment
+
+    logger.info("Received assign-on-next-slot request: spool_id=%d tray_uuid=%s tag_uid=%s source=%s", body.spool_id, body.tray_uuid, body.tag_uid, body.source)
+    assignment = await create_pending_assignment(
+        db,
+        tray_uuid=body.tray_uuid,
+        tag_uid=body.tag_uid,
+        spool_id=body.spool_id,
+        printer_id=body.printer_id,
+        source=body.source,
+        timeout_seconds=body.timeout,
+    )
+    return PendingSlotAssignmentResponse.from_model(assignment)
+
+
+@router.get(
+    "/spools/assignments/{assignment_id}",
+    response_model=PendingSlotAssignmentResponse,
+    summary="Check pending assignment status",
+)
+async def get_pending_assignment_status(
+    assignment_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """Get the status of a pending slot assignment."""
+    from backend.app.services.pending_slot_assignment import get_pending_assignment
+
+    assignment = await get_pending_assignment(db, assignment_id)
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    return PendingSlotAssignmentResponse.from_model(assignment)
+
+
+@router.delete(
+    "/spools/assignments/{assignment_id}",
+    response_model=PendingSlotAssignmentResponse,
+    summary="Cancel a pending assignment",
+)
+async def cancel_pending_assignment_endpoint(
+    assignment_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Cancel a pending slot assignment. Only pending assignments can be cancelled."""
+    from backend.app.services.pending_slot_assignment import cancel_pending_assignment
+
+    assignment = await cancel_pending_assignment(db, assignment_id)
+    if not assignment:
+        raise HTTPException(
+            status_code=404,
+            detail="Assignment not found or not in pending status",
+        )
+    return PendingSlotAssignmentResponse.from_model(assignment)
 
 
 # ── Tag Linking ───────────────────────────────────────────────────────────────

@@ -22,6 +22,7 @@ from backend.app.schemas.printer import (
     AMSUnit,
     DiagnosticRequest,
     FilaSwitchResponse,
+    HmsActionBody,
     HMSErrorResponse,
     NozzleInfoResponse,
     NozzleRackSlot,
@@ -406,7 +407,9 @@ async def get_printer_status(
 
     # Convert HMS errors to response format
     hms_errors = [
-        HMSErrorResponse(code=e.code, attr=e.attr, module=e.module, severity=e.severity)
+        HMSErrorResponse(
+            code=e.code, attr=e.attr, module=e.module, severity=e.severity, actions=e.actions, job_id=e.job_id
+        )
         for e in (state.hms_errors or [])
     ]
 
@@ -3445,3 +3448,27 @@ async def get_runtime_debug(
         else None,
         "is_active": printer.is_active,
     }
+
+
+@router.post("/{printer_id}/hms/execute-action")
+async def execute_hms_action(
+    printer_id: int,
+    body: HmsActionBody,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Execute an HMS action on the printer."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.execute_hms_action(body.print_error, body.action, body.job_id)
+    if not success:
+        raise HTTPException(400, "Failed to execute HMS action")
+
+    return {"success": True, "message": "HMS action executed"}

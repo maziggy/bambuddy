@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
 
+from backend.app.services.hms_actions import HMSAction, get_actions_for_error_code
+
 logger = logging.getLogger(__name__)
 
 # AMS module name prefixes used in get_version responses.
@@ -152,6 +154,8 @@ class HMSError:
     module: int
     severity: int  # 1=fatal, 2=serious, 3=common, 4=info
     message: str = ""
+    actions: list[str] | None = None  # List of user-facing action keys (e.g. "CHECK_FILAMENT")
+    job_id: str | None = None  # Optional job ID for actions that require it (e.g. "CHECK_ASSISTANT")
 
 
 # HMS short codes the firmware emits during normal user-cancel sequences.
@@ -2681,6 +2685,7 @@ class BambuMQTTClient:
                     logger.debug(
                         f"[{self.serial_number}] print_error: {print_error} (0x{print_error:08x}) -> short_code={short_code}"
                     )
+                    # logger.debug(error for error in data["hms"] if data["print_error"] == )
 
                     # Same user-action filter as the hms[] branch above — print_error
                     # carries the same cancel echoes (e.g. 0500_400E) and they must
@@ -2697,12 +2702,33 @@ class BambuMQTTClient:
                             existing_short_codes.add(f"{e_module:04X}_{e_error:04X}")
 
                         if short_code not in existing_short_codes:
+                            actions = get_actions_for_error_code(self.serial_number[:3], short_code.replace("_", ""))
+                        logger.debug(
+                            "[%s, %s] HMS available actions: %s",
+                            self.serial_number[:3],
+                            short_code.replace("_", ""),
+                            actions,
+                        )
+                        if short_code not in existing_short_codes:
+                            actions = get_actions_for_error_code(self.serial_number[:3], short_code.replace("_", ""))
+
+                            # TODO: Is there a job_id field??? I can't seem to understand from the BambuStudio source code...
+                            job_id = data.get("job_id")
+
+                            logger.debug(
+                                "[%s, %s] HMS available actions: %s",
+                                self.serial_number[:3],
+                                short_code.replace("_", ""),
+                                actions,
+                            )
                             self.state.hms_errors.append(
                                 HMSError(
                                     code=f"0x{error:x}",
                                     attr=print_error,  # Store full value for display
                                     module=module >> 8,  # High byte of module (e.g., 0x05)
                                     severity=3,  # Warning level for print_error
+                                    actions=actions,
+                                    job_id=job_id,
                                 )
                             )
 
@@ -5240,4 +5266,220 @@ class BambuMQTTClient:
         pushall = {"pushing": {"command": "pushall", "sequence_id": "0"}}
         self._client.publish(self.topic_publish, json.dumps(pushall), qos=1)
         logger.info("[%s] Set liveview %s", self.serial_number, "enabled" if enable else "disabled")
+        return True
+
+    def execute_hms_action(self, print_error: str, action: str, job_id: str | None = None) -> bool:
+        """Execute a printer action from the HMS system.
+
+        Args:
+            print_error: The error code for the print job
+            action: Action to execute (see HMSAction enum for valid values)
+            job_id: Optional print job ID for context (not used in current commands)
+        """
+
+        if not self._client or not self.state.connected:
+            logger.warning("[%s] Cannot execute HMS action: not connected", self.serial_number)
+            return False
+
+        # Map HMS actions to printer commands
+        def publish(payload: dict):
+            self._client.publish(self.topic_publish, json.dumps(payload), qos=1)
+            self._client.publish(
+                self.topic_publish, json.dumps({"pushing": {"command": "pushall", "sequence_id": "0"}}), qos=1
+            )
+
+        def hms_resume():
+            publish(
+                {
+                    "print": {
+                        "command": "resume",
+                        "err": str(print_error),
+                        "param": "reserve",
+                        "job_id": job_id,
+                        "sequence_id": "0",
+                    }
+                }
+            )
+
+        def hms_stop():
+            publish(
+                {
+                    "print": {
+                        "command": "stop",
+                        "err": str(print_error),
+                        "param": "reserve",
+                        "job_id": job_id,
+                        "sequence_id": "0",
+                    }
+                }
+            )
+
+        def hms_ignore():
+            publish(
+                {
+                    "print": {
+                        "command": "ignore",
+                        "err": str(print_error),
+                        "param": "reserve",
+                        "job_id": job_id,
+                        "sequence_id": "0",
+                    }
+                }
+            )
+
+        def ams_control(param: str):
+            publish(
+                {
+                    "print": {
+                        "command": "ams_control",
+                        "param": param,
+                        "sequence_id": "0",
+                    }
+                }
+            )
+
+        def clean_print_error():
+            publish(
+                {
+                    "print": {
+                        "command": "clean_print_error",
+                        # TODO: confirm if HMS expects the error code to be included in this command
+                        # "subtask_id": subtask_id,
+                        "print_error": print_error,
+                        "sequence_id": "0",
+                    }
+                }
+            )
+
+        def uiop_close():
+            publish(
+                {
+                    "system": {
+                        "command": "uiop",
+                        "name": "print_error",
+                        "action": "close",
+                        "source": 1,
+                        "type": "dialog",
+                        "err": f"{print_error:08X}",
+                        "sequence_id": "0",
+                    }
+                }
+            )
+
+        match action:
+            case (
+                HMSAction.RESUME_PRINTING
+                | HMSAction.RESUME_PRINTING_DEFECTS
+                | HMSAction.RESUME_PRINTING_PROBELM_SOLVED
+                | HMSAction.PROBLEM_SOLVED_RESUME
+                | HMSAction.FILAMENT_LOAD_RESUME
+            ):
+                hms_resume()
+
+            case HMSAction.STOP_PRINTING:
+                hms_stop()
+
+            case HMSAction.IGNORE_RESUME | HMSAction.IGNORE_NO_REMINDER_NEXT_TIME:
+                hms_ignore()
+
+            case HMSAction.FILAMENT_EXTRUDED | HMSAction.DBL_CHECK_DONE:
+                ams_control("done")
+
+            case (
+                HMSAction.RETRY_FILAMENT_EXTRUDED
+                | HMSAction.CONTINUE
+                | HMSAction.RETRY_PROBLEM_SOLVED
+                | HMSAction.DBL_CHECK_RETRY
+            ):
+                ams_control("resume")
+
+            case HMSAction.ABORT:
+                ams_control("abort")
+
+            case HMSAction.OK_BUTTON:
+                clean_print_error()
+
+            case HMSAction.DBL_CHECK_OK:
+                clean_print_error()
+                uiop_close()
+
+            case HMSAction.DBL_CHECK_RESUME:
+                # Plain resume — not HMS-aware, no err/job_id
+                publish(
+                    {
+                        "print": {
+                            "command": "resume",
+                            "param": "",
+                            "sequence_id": "0",
+                        }
+                    }
+                )
+
+            case HMSAction.NO_REMINDER_NEXT_TIME:
+                publish(
+                    {
+                        "print": {
+                            "command": "idle_ignore",
+                            "err": str(print_error),
+                            "type": 0,
+                            "sequence_id": "0",
+                        }
+                    }
+                )
+
+            case HMSAction.REFRESH_NOZZLE:
+                publish(
+                    {
+                        "print": {
+                            "command": "refresh_nozzle",
+                            "sequence_id": "0",
+                        }
+                    }
+                )
+
+            case HMSAction.TURN_OFF_FIRE_ALARM:
+                publish(
+                    {
+                        "print": {
+                            "command": "buzzer_ctrl",
+                            "mode": 0,
+                            "sequence_id": "0",
+                        }
+                    }
+                )
+
+            case HMSAction.STOP_DRYING:
+                publish(
+                    {
+                        "print": {
+                            "command": "auto_stop_ams_dry",
+                            "sequence_id": "0",
+                        }
+                    }
+                )
+
+            case HMSAction.DISABLE_PURIFICATION:
+                publish(
+                    {
+                        "print": {
+                            "command": "close_air_filt",
+                            "sequence_id": "0",
+                        }
+                    }
+                )
+
+            case HMSAction.PROCEED | HMSAction.DONT_REMIND_NEXT_TIME:
+                hms_resume()  # TODO: might require more logic?
+
+            case (
+                HMSAction.CHECK_ASSISTANT
+                | HMSAction.JUMP_TO_LIVEVIEW
+                | HMSAction.OK_JUMP_RACK
+                | HMSAction.REMOVE_CLOSE_BTN
+            ):
+                pass  # UI-only, no MQTT command
+
+            case HMSAction.LOAD_VIRTUAL_TRAY | HMSAction.CANCLE | HMSAction.DBL_CHECK_CANCEL:
+                pass  # no-op
+
         return True

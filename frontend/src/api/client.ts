@@ -330,6 +330,14 @@ export interface HMSError {
   attr: number;  // Attribute value for constructing wiki URL
   module: number;
   severity: number;  // 1=fatal, 2=serious, 3=common, 4=info
+  actions?: string[];  // List of user-facing action keys (e.g. "CHECK_FILAMENT")
+  job_id?: string;  // Optional job ID for actions that require it (e.g. "CHECK_ASSISTANT")
+}
+
+export interface HMSActionBody {
+  print_error: string;  // HMS error code (e.g. "05000070")
+  action: string;  // "HMS action to execute (e.g. 'resume_after_error')"
+  job_id: string | null;  // Optional job ID for context (if applicable)
 }
 
 export interface AMSTray {
@@ -3581,6 +3589,11 @@ export const api = {
   // HMS Errors
   clearHMSErrors: (printerId: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/hms/clear`, { method: 'POST' }),
+  executeHMSAction: (printerId: number, data: HMSActionBody) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/hms/execute-action`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   // AMS Control
   refreshAmsSlot: (printerId: number, amsId: number, slotId: number) =>

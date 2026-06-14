@@ -1194,6 +1194,12 @@ async def get_printer_file_gcode(
                 gcode_content = zf.read(gcode_files[0])
                 return Response(content=gcode_content, media_type="text/plain")
         except zipfile.BadZipFile:
+            # Some printers store a sliced job as raw gcode under a ".gcode.3mf"
+            # name (not a real ZIP container). Detect raw gcode and serve it for
+            # the G-code Preview instead of failing the whole preview.
+            head = data[:1024].lstrip()
+            if head[:1] in (b";", b"G", b"M") or b"HEADER_BLOCK_START" in data[:2048]:
+                return Response(content=data, media_type="text/plain")
             raise HTTPException(status_code=400, detail="Invalid 3MF file")
 
     raise HTTPException(status_code=400, detail="Unsupported file type")

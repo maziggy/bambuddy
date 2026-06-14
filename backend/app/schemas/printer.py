@@ -140,6 +140,8 @@ class HMSErrorResponse(BaseModel):
     attr: int = 0  # Attribute value for constructing wiki URL
     module: int
     severity: int  # 1=fatal, 2=serious, 3=common, 4=info
+    actions: list[str] = []  # List of user-facing action keys (e.g. "CHECK_FILAMENT")
+    job_id: str | None = None  # Optional job ID for actions that require it (e.g. "CHECK_ASSISTANT")
 
 
 class AMSTray(BaseModel):
@@ -199,6 +201,12 @@ class NozzleRackSlot(BaseModel):
 class AmsLabelBody(BaseModel):
     label: str = Field(..., min_length=1, max_length=100)
     ams_serial: str = Field(default="", max_length=50)
+
+
+class HmsActionBody(BaseModel):
+    print_error: str  # HMS error code (e.g. "05000070")
+    action: str  # "HMS action to execute (e.g. 'resume_after_error')"
+    job_id: str | None = None  # Optional job ID for context (if applicable)
 
 
 class FilaSwitchResponse(BaseModel):

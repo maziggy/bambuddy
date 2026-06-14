@@ -2,7 +2,7 @@
 // Source: https://github.com/greghesp/ha-bambulab
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, AlertTriangle, AlertCircle, Info, ExternalLink, Loader2, Trash2 } from 'lucide-react';
 import type { HMSError, Permission } from '../api/client';
 import { api } from '../api/client';
@@ -874,17 +874,17 @@ const ERROR_DESCRIPTIONS: Record<string, string> = {
   '18FF_C00A': 'Please observe the nozzle of the right extruder. If the filament has been extruded, select \'Continue\'; if not, please push the filament forward slightly and then select \'Retry\'.',
 };
 
-function getSeverityInfo(severity: number): { label: string; color: string; bgColor: string; Icon: typeof AlertTriangle } {
+function getSeverityInfo(severity: number): { label: string; color: string; bgColor: string; buttonHoverColor: string; Icon: typeof AlertTriangle } {
   switch (severity) {
     case 1:
-      return { label: 'Fatal', color: 'text-red-500', bgColor: 'bg-red-500/20', Icon: AlertTriangle };
+      return { label: 'Fatal', color: 'text-red-500', bgColor: 'bg-red-500/20', buttonHoverColor: 'bg-red-500/10', Icon: AlertTriangle };
     case 2:
-      return { label: 'Serious', color: 'text-red-400', bgColor: 'bg-red-500/15', Icon: AlertTriangle };
+      return { label: 'Serious', color: 'text-red-400', bgColor: 'bg-red-500/15', buttonHoverColor: 'bg-red-500/10', Icon: AlertTriangle };
     case 3:
-      return { label: 'Warning', color: 'text-orange-400', bgColor: 'bg-orange-500/20', Icon: AlertCircle };
+      return { label: 'Warning', color: 'text-orange-400', bgColor: 'bg-orange-500/20', buttonHoverColor: 'bg-orange-500/10', Icon: AlertCircle };
     case 4:
     default:
-      return { label: 'Info', color: 'text-blue-400', bgColor: 'bg-blue-500/20', Icon: Info };
+      return { label: 'Info', color: 'text-blue-400', bgColor: 'bg-blue-500/20', buttonHoverColor: 'bg-blue-500/10', Icon: Info };
   }
 }
 
@@ -912,6 +912,7 @@ function getHMSHomeUrl(): string {
 export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPermission }: HMSErrorModalProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
 
   const clearMutation = useMutation({
     mutationFn: () => api.clearHMSErrors(printerId),
@@ -940,6 +941,29 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
+  // printerStatusMutation with optimistic update
+  const activateActionMutation = useMutation({
+    mutationFn: (data: {
+      action: string,
+      print_error: string,
+      job_id: string | null,
+    }) => api.executeHMSAction(printerId, {
+      action: data.action,
+      print_error: data.print_error,
+      job_id: data.job_id,
+    }),
+    onSuccess: () => {
+      // TODO: Update toast string
+      queryClient.invalidateQueries({ queryKey: ['printerStatus'] });
+      showToast(t('inventory.assignSuccess'), 'success');
+      onClose();
+    },
+    onError: (error: Error) => {
+      // TODO: Update toast string
+      showToast(`${t('inventory.assignFailed')}: ${error.message}`, 'error');
+    },
+  });
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-bambu-dark-secondary rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col">
@@ -967,7 +991,7 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
           ) : (
             <div className="space-y-3">
               {knownErrors.map((error, index) => {
-                const { label, color, bgColor, Icon } = getSeverityInfo(error.severity);
+                const { label, color, bgColor, buttonHoverColor, Icon } = getSeverityInfo(error.severity);
                 const codeNum = parseInt(error.code.replace('0x', ''), 16) || 0;
                 const shortCode = getShortCode(error.attr, codeNum);
                 const description = ERROR_DESCRIPTIONS[shortCode];
@@ -989,6 +1013,25 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
                           </span>
                         </div>
                         <p className="text-sm text-bambu-gray mb-2">{description}</p>
+                        {error.actions && error.actions.length > 0 && (
+                          <div className="flex flex-wrap gap-2 my-2">
+                            {error.actions.map((action) => (
+                              <button
+                                key={action}
+                                onClick={() => {
+                                  activateActionMutation.mutate({
+                                    action,
+                                    print_error: shortCode.replace("_", ""),
+                                    job_id: error.job_id ?? null,
+                                  });
+                                }}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg ${bgColor} ${color} hover:${buttonHoverColor} transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
+                              >
+                                {t(`hmsErrors.actions.${action}`, action)} {error.job_id}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                         <a
                           href={hmsHomeUrl}
                           target="_blank"

@@ -2915,6 +2915,30 @@ async def run_migrations(conn):
     # file metadata so the FileManager displays the filename, not the title (#1489).
     await _migrate_drop_library_print_name(conn)
 
+    # Backfill NULL print_archives.created_at — older rows (and rows imported
+    # via the SQLite ↔ Postgres cross-DB restore path) can land with NULL
+    # because the column was originally created without a DEFAULT clause and
+    # server_default=func.now() only fires at table creation, not column
+    # population. The list_archives response model requires a datetime, so a
+    # single NULL row 500s the whole endpoint (#1732).
+    async with conn.begin_nested():
+        if is_sqlite():
+            await conn.execute(
+                text(
+                    "UPDATE print_archives "
+                    "SET created_at = COALESCE(completed_at, started_at, datetime('now')) "
+                    "WHERE created_at IS NULL"
+                )
+            )
+        else:
+            await conn.execute(
+                text(
+                    "UPDATE print_archives "
+                    "SET created_at = COALESCE(completed_at, started_at, NOW()) "
+                    "WHERE created_at IS NULL"
+                )
+            )
+
 
 async def seed_notification_templates():
     """Seed default notification templates if they don't exist."""

@@ -26,7 +26,6 @@ vi.mock('../../api/client', () => ({
     getArchivePlates: vi.fn(),
     getLibraryFileFilamentRequirements: vi.fn(),
     getArchiveFilamentRequirements: vi.fn(),
-    listSlicerBundles: vi.fn(),
     getSettings: vi.fn().mockResolvedValue({}),
     updateSettings: vi.fn().mockResolvedValue({}),
   },
@@ -41,7 +40,6 @@ const mockApi = api as unknown as {
   getArchivePlates: ReturnType<typeof vi.fn>;
   getLibraryFileFilamentRequirements: ReturnType<typeof vi.fn>;
   getArchiveFilamentRequirements: ReturnType<typeof vi.fn>;
-  listSlicerBundles: ReturnType<typeof vi.fn>;
 };
 
 function makeUnified(overrides: Partial<UnifiedPresetsResponse> = {}): UnifiedPresetsResponse {
@@ -123,10 +121,6 @@ describe('SliceModal', () => {
       plate_id: 1,
       filaments: [],
     });
-    // Default: no bundles imported. Bundle-tier tests override this with a
-    // populated array; everything else inherits the empty default so the
-    // modal renders the original (preset-only) layout.
-    mockApi.listSlicerBundles.mockResolvedValue([]);
   });
 
   it('auto-selects the highest-priority tier per slot on first load', async () => {
@@ -392,10 +386,15 @@ describe('SliceModal', () => {
     });
   });
 
-  it('renders a "sign in" banner when cloud_status is not_authenticated', async () => {
+  it('omits the cloud banner when status is not_authenticated (#1712)', async () => {
+    // A signed-out user (Bambu or Orca) shouldn't get a permanent "sign in"
+    // nag at the top of every slice. Sign-in lives on the Profiles page; the
+    // modal stays silent unless a previously-signed-in session actually broke
+    // (expired / unreachable).
     mockApi.getSlicerPresets.mockResolvedValue(
       makeUnified({
         cloud_status: 'not_authenticated',
+        orca_cloud_status: 'not_authenticated',
         local: fullThreeTier.local,
         standard: fullThreeTier.standard,
       }),
@@ -405,9 +404,8 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent(/Sign in to Bambu Cloud/i);
-    });
+    await waitFor(() => expect(screen.getByText('Imported X1C 0.4')).toBeDefined());
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('renders an "expired" banner when cloud_status is expired', async () => {
@@ -832,9 +830,9 @@ describe('SliceModal', () => {
 
   // Cross-printer re-slicing is a normal, supported operation as of
   // 2026-05-20 (Step 0 empirical test: sidecar overrides printer / process
-  // / bed / kinematics from the picked bundle, producing valid target-
-  // printer G-code). No banner, no warning — the picker UI already shows
-  // which printer the user picked, and that's enough.
+  // / bed / kinematics from the picked profile triplet, producing valid
+  // target-printer G-code). No banner, no warning — the picker UI already
+  // shows which printer the user picked, and that's enough.
   it('does not surface any cross-printer banner and keeps Slice enabled when models differ', async () => {
     mockApi.getLibraryFilePlates.mockResolvedValue({
       file_id: 100,
@@ -1020,170 +1018,4 @@ describe('SliceModal', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Bundle tier — picking an imported .bbscfg replaces the cloud/local/standard
-  // dropdown set with bundle-scoped pickers and routes the slice through the
-  // backend's bundle dispatch shape (no PresetRefs in the body).
-  // -------------------------------------------------------------------------
-
-  describe('Bundle tier', () => {
-    const sampleBundle = {
-      id: 'abc123def456abcd',
-      printer_preset_name: '# Bambu Lab H2D 0.4 nozzle',
-      printer: ['# Bambu Lab H2D 0.4 nozzle'],
-      process: [
-        '# 0.20mm Standard @BBL H2D',
-        '# 0.16mm Standard @BBL H2D',
-      ],
-      filament: [
-        '# Bambu PLA Basic @BBL H2D',
-        '# Bambu PETG HF @BBL H2D 0.4 nozzle',
-      ],
-      version: '02.06.00.50',
-    };
-
-    it('hides the bundle picker when no bundles are imported', async () => {
-      // Default beforeEach already returns []; assert the picker isn't
-      // rendered so users without bundles see the original layout.
-      renderWithTracker({
-        source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
-        onClose: vi.fn(),
-      });
-      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
-      expect(screen.queryByText(/slicer bundle/i)).toBeNull();
-    });
-
-    it('renders the bundle picker when at least one bundle is imported', async () => {
-      mockApi.listSlicerBundles.mockResolvedValue([sampleBundle]);
-      renderWithTracker({
-        source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
-        onClose: vi.fn(),
-      });
-      await waitFor(() =>
-        expect(screen.getByText(/slicer bundle/i)).toBeDefined(),
-      );
-      // The bundle option is in the dropdown.
-      const bundleSelect = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
-      expect(
-        Array.from(bundleSelect.options).map((o) => o.textContent),
-      ).toContain('# Bambu Lab H2D 0.4 nozzle');
-    });
-
-    it('replaces preset dropdowns with bundle-scoped pickers when a bundle is selected', async () => {
-      mockApi.listSlicerBundles.mockResolvedValue([sampleBundle]);
-      renderWithTracker({
-        source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
-        onClose: vi.fn(),
-      });
-      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
-
-      const user = userEvent.setup();
-      const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-      // First select is the bundle picker (new top-of-modal dropdown).
-      await user.selectOptions(selects[0], sampleBundle.id);
-
-      // Wait for the bundle-mode UI to take over: process options should
-      // now reflect the bundle's process names.
-      await waitFor(() => {
-        expect(
-          screen.getByText('# 0.20mm Standard @BBL H2D'),
-        ).toBeDefined();
-      });
-
-      // The static printer label shows the bundle's printer. Both the
-      // <option> in the bundle picker and the read-only <div> below
-      // contain this text, so use getAllByText.
-      const printerNameMatches = screen.getAllByText('# Bambu Lab H2D 0.4 nozzle');
-      expect(printerNameMatches.length).toBeGreaterThanOrEqual(2);
-
-      // Cloud/local/standard preset names from the original tier no longer
-      // appear in the visible dropdowns (the bundle replaced them).
-      const visibleSelects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-      const allOptionTexts = visibleSelects.flatMap((sel) =>
-        Array.from(sel.options).map((o) => o.textContent ?? ''),
-      );
-      // Cloud printer name shouldn't be in any visible dropdown anymore.
-      expect(allOptionTexts).not.toContain('My Custom X1C');
-    });
-
-    it('submits bundle dispatch shape (no PresetRefs) when a bundle is selected', async () => {
-      mockApi.listSlicerBundles.mockResolvedValue([sampleBundle]);
-      mockApi.sliceLibraryFile.mockResolvedValue({
-        job_id: 99,
-        status: 'pending',
-        status_url: '/api/v1/slice-jobs/99',
-      });
-
-      renderWithTracker({
-        source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
-        onClose: vi.fn(),
-      });
-      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
-
-      const user = userEvent.setup();
-      const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-      await user.selectOptions(selects[0], sampleBundle.id);
-
-      // Wait for bundle-mode dropdowns to render.
-      await waitFor(() =>
-        expect(screen.getByText('# 0.20mm Standard @BBL H2D')).toBeDefined(),
-      );
-      await user.click(screen.getByRole('button', { name: /^Slice$/ }));
-
-      await waitFor(() => {
-        const [fileId, body] = mockApi.sliceLibraryFile.mock.calls[0];
-        expect(fileId).toBe(100);
-        expect(body.bundle).toEqual({
-          bundle_id: sampleBundle.id,
-          printer_name: '# Bambu Lab H2D 0.4 nozzle',
-          process_name: '# 0.20mm Standard @BBL H2D',
-          filament_names: ['# Bambu PLA Basic @BBL H2D'],
-        });
-        // The preset triplet must NOT be in the body — bundle dispatch
-        // skips PresetRef resolution entirely on the backend.
-        expect(body.printer_preset).toBeUndefined();
-        expect(body.process_preset).toBeUndefined();
-        expect(body.filament_presets).toBeUndefined();
-      });
-    });
-
-    it('switching back to "None" restores the preset triplet path', async () => {
-      mockApi.listSlicerBundles.mockResolvedValue([sampleBundle]);
-      mockApi.sliceLibraryFile.mockResolvedValue({
-        job_id: 100,
-        status: 'pending',
-        status_url: '/api/v1/slice-jobs/100',
-      });
-
-      renderWithTracker({
-        source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
-        onClose: vi.fn(),
-      });
-      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
-
-      const user = userEvent.setup();
-      const bundleSelect = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
-      await user.selectOptions(bundleSelect, sampleBundle.id);
-      await waitFor(() =>
-        expect(screen.getByText('# 0.20mm Standard @BBL H2D')).toBeDefined(),
-      );
-
-      // Flip back to None.
-      await user.selectOptions(bundleSelect, '');
-      await waitFor(() => {
-        const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-        // After de-selecting bundle, the printer dropdown's first option
-        // should be one of the original cloud/local/standard names.
-        const printerOptions = Array.from(selects[1].options).map((o) => o.textContent);
-        expect(printerOptions).toContain('My Custom X1C');
-      });
-
-      await user.click(screen.getByRole('button', { name: /^Slice$/ }));
-      await waitFor(() => {
-        const [, body] = mockApi.sliceLibraryFile.mock.calls[0];
-        expect(body.bundle).toBeUndefined();
-        expect(body.printer_preset).toBeDefined();
-      });
-    });
-  });
 });

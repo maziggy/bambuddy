@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Circle, RotateCcw, Palette } from 'lucide-react';
 import { getColorName } from '../../utils/colors';
 import { canonicalFilamentType } from '../../utils/amsHelpers';
+import { useFilamentLabels } from './useFilamentLabels';
 import type { FilamentReqsData } from './types';
 
 interface FilamentOverrideProps {
@@ -31,6 +32,11 @@ export function FilamentOverride({
   onForceColorMatchChange,
 }: FilamentOverrideProps) {
   const { t } = useTranslation();
+
+  // Per-slot sub-brand + material-disambiguated colour labels (#1718). The
+  // shared hook fronts the three queries that power the resolution so this
+  // component and ``FilamentMapping`` cannot drift apart on label content.
+  const labels = useFilamentLabels(filamentReqs?.filaments);
 
   // Index available filaments by canonical type for per-slot filtering.
   // Types in the same equivalence group (e.g. PA-CF / PA12-CF / PAHT-CF) share one bucket.
@@ -69,7 +75,7 @@ export function FilamentOverride({
       </div>
       <p className="text-xs text-bambu-gray mb-2">{t('printModal.filamentOverrideHint')}</p>
       <div className="bg-bambu-dark rounded-lg p-3 space-y-2">
-        {filaments.map((req) => {
+        {filaments.map((req, slotIdx) => {
           const override = overrides[req.slot_id];
           const isOverridden = !!override;
           // Only show filaments of the same type AND compatible nozzle/extruder
@@ -81,6 +87,14 @@ export function FilamentOverride({
             ? sameType.filter((f) => f.extruder_id == null || f.extruder_id === req.nozzle_id)
             : sameType;
 
+          // #1718: sub-brand resolved from the 3MF's tray_info_idx via the
+          // builtin / cloud-id maps, plus the material-disambiguated catalogue
+          // colour for the hex. Both fall back gracefully (resolvedName →
+          // req.type when the SKU is unknown; colorLabel → getColorName(hex)
+          // when the by-material lookup hasn't resolved yet, returned null,
+          // or errored) so a slow query never blanks out the row.
+          const { resolvedName, colorLabel } = labels[slotIdx] ?? { resolvedName: req.type, colorLabel: getColorName(req.color) };
+
           return (
             <div key={req.slot_id} className="space-y-1">
               <div
@@ -88,12 +102,12 @@ export function FilamentOverride({
                 style={{ gridTemplateColumns: '16px minmax(70px, 1fr) auto 2fr 20px' }}
               >
                 {/* Original color swatch */}
-                <span title={`${t('printModal.originalFilament')}: ${req.type} - ${getColorName(req.color)}`}>
+                <span title={`${t('printModal.originalFilament')}: ${resolvedName} - ${colorLabel}`}>
                   <Circle className="w-3 h-3" fill={req.color} stroke={req.color} />
                 </span>
                 {/* Original type + grams */}
                 <span className="text-white truncate">
-                  {req.type} <span className="text-bambu-gray">({req.used_grams}g)</span>
+                  {resolvedName} <span className="text-bambu-gray">({req.used_grams}g)</span>
                 </span>
                 {/* Arrow */}
                 <span className="text-bambu-gray">→</span>
@@ -109,7 +123,7 @@ export function FilamentOverride({
                   }`}
                 >
                   <option value="" className="bg-bambu-dark text-bambu-gray">
-                    {t('printModal.originalFilament')}: {req.type} ({getColorName(req.color)})
+                    {t('printModal.originalFilament')}: {resolvedName} ({colorLabel})
                   </option>
                   {compatible.map((f, idx) => (
                     <option

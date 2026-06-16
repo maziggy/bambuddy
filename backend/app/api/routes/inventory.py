@@ -38,6 +38,7 @@ from backend.app.schemas.spool import (
     normalize_extra_colors,
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
+from backend.app.services.slicer_filament_resolver import resolve_slicer_filament
 from backend.app.services.spool_csv import (
     MAX_CSV_IMPORT_BYTES,
     ImportPreview,
@@ -65,27 +66,6 @@ _CSV_UPLOAD_CHUNK_BYTES = 64 * 1024
 
 # FilamentColors.xyz API
 FILAMENT_COLORS_API = "https://filamentcolors.xyz/api"
-
-# Generic Bambu filament IDs by material — fallback when no specific
-# preset is resolvable. Keep aligned with the inline table in
-# apply_spool_to_slot_via_mqtt below; both paths must produce the same
-# value for a given material.
-_GENERIC_FILAMENT_IDS: dict[str, str] = {
-    "PLA": "GFL99",
-    "PETG": "GFG99",
-    "ABS": "GFB99",
-    "ASA": "GFB98",
-    "PC": "GFC99",
-    "PA": "GFN99",
-    "NYLON": "GFN99",
-    "TPU": "GFU99",
-    "PVA": "GFS99",
-    "HIPS": "GFS98",
-    "PLA-CF": "GFL98",
-    "PETG-CF": "GFG98",
-    "PA-CF": "GFN98",
-    "PETG HF": "GFG96",
-}
 
 
 async def apply_spool_to_slot_via_mqtt(
@@ -129,125 +109,24 @@ async def apply_spool_to_slot_via_mqtt(
     )
     tray_color = spool.rgba or "FFFFFFFF"
 
-    _generic_id_values = set(_GENERIC_FILAMENT_IDS.values())
+    _generic_id_values = _GENERIC_ID_VALUES
+    _known_materials = set(MATERIAL_TEMPS.keys()) | set(GENERIC_FILAMENT_IDS.keys())
 
-    tray_info_idx = ""
-    setting_id = ""
-    sf = spool.slicer_filament or ""
-
-    if sf:
-        base_sf = sf.split("_")[0] if "_" in sf else sf
-        # Cloud-side preset IDs in three known shapes:
-        #   GFS…   — Bambu official cloud preset
-        #   PFUS…  — cloud user-created preset
-        #   PFCN…  — cloud shared / partner preset (e.g. Polymaker's
-        #            "(Custom)" Bambu Lab H2D variant, #1648)
-        # All three need a cloud-detail lookup to extract the underlying
-        # filament_id; without it the raw cloud id ends up in tray_info_idx
-        # and the printer's calibration table can't resolve it.
-        if base_sf.startswith("GFS") or base_sf.startswith("PFUS") or base_sf.startswith("PFCN"):
-            setting_id = base_sf
-            try:
-                from backend.app.api.routes.cloud import build_authenticated_cloud
-
-                cloud = await build_authenticated_cloud(db, current_user)
-                if cloud is not None and cloud.is_authenticated:
-                    try:
-                        detail = await cloud.get_setting_detail(base_sf)
-                        if detail.get("filament_id"):
-                            tray_info_idx = detail["filament_id"]
-                            cloud_name = detail.get("name", "")
-                            if cloud_name:
-                                tray_sub_brands = cloud_name.replace(r"@.*$", "").split("@")[0].strip()
-                        elif detail.get("base_id"):
-                            bid = detail["base_id"].split("_")[0]
-                            if bid.startswith("GFS") and len(bid) >= 5:
-                                tray_info_idx = f"GF{bid[3:]}"
-                            else:
-                                tray_info_idx = bid
-                    finally:
-                        await cloud.close()
-                elif cloud is not None:
-                    await cloud.close()
-            except Exception as e:
-                logger.warning("Spool assign: cloud lookup failed for %r: %s", sf, e)
-
-            if not tray_info_idx:
-                tray_info_idx, setting_id = normalize_slicer_filament(sf)
-        elif base_sf.startswith("GF"):
-            tray_info_idx, setting_id = normalize_slicer_filament(sf)
-        else:
-            try:
-                local_id = int(sf)
-                from backend.app.models.local_preset import LocalPreset as LP
-
-                lp_result = await db.execute(select(LP).where(LP.id == local_id, LP.preset_type == "filament"))
-                lp = lp_result.scalar_one_or_none()
-                if lp:
-                    # Local preset's setting JSON carries the printer-recognized
-                    # filament_id (e.g. "P4d64437") — use that directly so the
-                    # slicer can resolve the specific preset. Falls through to
-                    # generic material id only when the JSON doesn't carry one.
-                    lp_filament_id = ""
-                    if lp.setting:
-                        try:
-                            setting_data = json.loads(lp.setting)
-                            raw_fid = setting_data.get("filament_id")
-                            if isinstance(raw_fid, str) and raw_fid:
-                                lp_filament_id = raw_fid
-                        except (json.JSONDecodeError, AttributeError):
-                            pass
-                    if lp_filament_id:
-                        tray_info_idx = lp_filament_id
-                        setting_id = filament_id_to_setting_id(lp_filament_id)
-                    else:
-                        mat = (spool.material or lp.filament_type or "").upper().strip()
-                        tray_info_idx = (
-                            _GENERIC_FILAMENT_IDS.get(mat)
-                            or _GENERIC_FILAMENT_IDS.get(mat.split("-")[0].split(" ")[0])
-                            or ""
-                        )
-                    if lp.name:
-                        tray_sub_brands = lp.name.split("@")[0].strip()
-            except (ValueError, TypeError):
-                tray_info_idx, setting_id = normalize_slicer_filament(sf)
-
-    if tray_info_idx and spool.slicer_filament_name:
-        from backend.app.api.routes.cloud import _BUILTIN_FILAMENT_NAMES
-
-        expected_name = _BUILTIN_FILAMENT_NAMES.get(tray_info_idx, "")
-        if expected_name and expected_name != spool.slicer_filament_name:
-            for fid, fname in _BUILTIN_FILAMENT_NAMES.items():
-                if fname == spool.slicer_filament_name:
-                    tray_info_idx = fid
-                    setting_id = filament_id_to_setting_id(fid)
-                    break
-
-    # Defend against tray_info_idx values the slicer cannot resolve. Three
-    # shapes leak through and must be discarded so the generic-material
-    # fallback below can rescue the slot:
-    #   1. Literal material names ("PLA", "PETG-CF") that pass through
-    #      normalize_slicer_filament unchanged when the spool's slicer_filament
-    #      is free-text rather than a real preset ID.
-    #   2. PFUS-prefix cloud setting_ids — valid as setting_id but rejected
-    #      by the slicer as tray_info_idx (the printer's calibration table
-    #      indexes by filament_id, and a PFUS isn't one). This normally gets
-    #      realigned to a P-prefix local id via printer_kp lookup, but the
-    #      replay path in main.py.on_ams_change passes current_user=None,
-    #      which skips cloud auth and leaves the raw PFUS in tray_info_idx —
-    #      overwriting the correctly-configured slot from the original assign.
-    #   3. PFCN-prefix cloud shared / partner presets (e.g. Polymaker's
-    #      "(Custom)" H2D variants, #1648) — same shape problem as PFUS.
-    # Valid tray_info_idx values: "GF" + letter + digits (Bambu official) or
-    # "P" followed by hex (user/local presets, NOT "PFUS" or "PFCN").
-    _known_materials = set(MATERIAL_TEMPS.keys()) | set(_GENERIC_FILAMENT_IDS.keys())
-    if tray_info_idx and (
-        tray_info_idx.upper() in _known_materials
-        or tray_info_idx.startswith("PFUS")
-        or tray_info_idx.startswith("PFCN")
-    ):
-        tray_info_idx = ""
-        setting_id = ""
+    # slicer_filament → (tray_info_idx, setting_id) resolution is shared with
+    # the Spoolman-mode route via this helper (#1713). The helper handles
+    # GFS/PFUS/PFCN cloud lookup, GF normalize, integer LocalPreset id,
+    # the builtin-name realignment, AND the defensive PFUS/PFCN/material-name
+    # sanitization. When it returns an empty tray_info_idx the local
+    # current-tray-state + generic-material fallback below rescues the slot.
+    tray_info_idx, setting_id, sub_brand_override = await resolve_slicer_filament(
+        db=db,
+        current_user=current_user,
+        slicer_filament=spool.slicer_filament,
+        slicer_filament_name=spool.slicer_filament_name,
+        material=spool.material,
+    )
+    if sub_brand_override:
+        tray_sub_brands = sub_brand_override
 
     if not tray_info_idx:
         if (
@@ -263,8 +142,8 @@ async def apply_spool_to_slot_via_mqtt(
         elif tray_type:
             material = tray_type.upper().strip()
             generic = (
-                _GENERIC_FILAMENT_IDS.get(material)
-                or _GENERIC_FILAMENT_IDS.get(material.split("-")[0].split(" ")[0])
+                GENERIC_FILAMENT_IDS.get(material)
+                or GENERIC_FILAMENT_IDS.get(material.split("-")[0].split(" ")[0])
                 or ""
             )
             if generic:
@@ -394,48 +273,23 @@ async def apply_spool_to_slot_via_mqtt(
         )
 
     # Persist slot preset mapping for UI display (preset_name on hover card).
-    try:
-        from backend.app.models.slot_preset import SlotPresetMapping
+    # Shared with the RFID auto-assign path — both must keep this row in sync
+    # with the currently-assigned spool, otherwise the slot card surfaces the
+    # previous spool's preset name (the PrintersPage display chain consults
+    # slot_preset_mappings.preset_name first).
+    from backend.app.services.slot_preset_writer import upsert_slot_preset_for_spool
 
-        preset_name = spool.slicer_filament_name or tray_sub_brands or tray_type
-        preset_source = "cloud"
-        if sf:
-            base_sf_mapping = sf.split("_")[0] if "_" in sf else sf
-            try:
-                int(base_sf_mapping)
-                preset_id_to_save = f"local_{base_sf_mapping}"
-                preset_source = "local"
-            except (ValueError, TypeError):
-                preset_id_to_save = filament_id_to_setting_id(tray_info_idx) if tray_info_idx else setting_id
-        else:
-            preset_id_to_save = filament_id_to_setting_id(tray_info_idx) if tray_info_idx else ""
-
-        if preset_id_to_save:
-            existing_mapping = await db.execute(
-                select(SlotPresetMapping).where(
-                    SlotPresetMapping.printer_id == printer_id,
-                    SlotPresetMapping.ams_id == ams_id,
-                    SlotPresetMapping.tray_id == tray_id,
-                )
-            )
-            mapping = existing_mapping.scalar_one_or_none()
-            if mapping:
-                mapping.preset_id = preset_id_to_save
-                mapping.preset_name = preset_name
-                mapping.preset_source = preset_source
-            else:
-                mapping = SlotPresetMapping(
-                    printer_id=printer_id,
-                    ams_id=ams_id,
-                    tray_id=tray_id,
-                    preset_id=preset_id_to_save,
-                    preset_name=preset_name,
-                    preset_source=preset_source,
-                )
-                db.add(mapping)
-            await db.commit()
-    except Exception as e:
-        logger.warning("Failed to save slot preset mapping for spool %d: %s", spool.id, e)
+    await upsert_slot_preset_for_spool(
+        db=db,
+        spool=spool,
+        printer_id=printer_id,
+        ams_id=ams_id,
+        tray_id=tray_id,
+        tray_info_idx=tray_info_idx,
+        tray_sub_brands=tray_sub_brands,
+        tray_type=tray_type,
+        setting_id=setting_id,
+    )
 
     logger.info(
         "Auto-configured AMS slot ams=%d tray=%d for spool %d on printer %d",
@@ -536,6 +390,10 @@ class ColorLookupResult(BaseModel):
     found: bool
     hex_color: str | None = None
     material: str | None = None
+
+
+class ColorByMaterialResult(BaseModel):
+    color_name: str | None = None
 
 
 # ── Spool Catalog CRUD ─────────────────────────────────────────────────────
@@ -813,6 +671,73 @@ async def lookup_color(
     if row:
         return ColorLookupResult(found=True, hex_color=row.hex_color, material=row.material)
     return ColorLookupResult(found=False)
+
+
+@router.get("/colors/by-material", response_model=ColorByMaterialResult)
+async def get_color_by_material(
+    hex: str,
+    material: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_auth_if_enabled),
+):
+    """Disambiguated hex→name lookup that respects material context.
+
+    ``/colors/map`` collapses every catalog entry sharing a hex to a single
+    name with "Bambu Lab > is_default > first" priority — that loses, e.g.,
+    "PLA Matte Charcoal" (#000000) behind "PLA Basic Black" (also #000000).
+    This endpoint preserves the material context so the queue scheduler's
+    Filament Override label can show the actually-sliced sub-brand colour
+    instead of the generic bucket. #1718.
+
+    Returns ``color_name=None`` when the hex isn't in the catalog at all.
+    When the hex IS in the catalog but no entry matches the requested
+    material (or none was supplied), falls back to the same priority order
+    as ``/colors/map`` so callers without a material hint don't regress.
+
+    Not gated on INVENTORY_READ for the same reason ``/colors/map`` isn't —
+    every queue / archive view that renders a sliced filament colour needs
+    this, including read-only roles.
+    """
+    key = hex.lstrip("#").lower()[:6]
+    if len(key) != 6:
+        return ColorByMaterialResult(color_name=None)
+
+    material_norm = (material or "").strip().lower()
+
+    # Catalog rows are stored as ``#RRGGBB`` (verified at write time and
+    # against production); lookup uses lower-cased hex equality so mixed-case
+    # writes from older imports still match.
+    result = await db.execute(
+        select(
+            ColorCatalogEntry.color_name,
+            ColorCatalogEntry.manufacturer,
+            ColorCatalogEntry.material,
+            ColorCatalogEntry.is_default,
+        ).where(func.lower(ColorCatalogEntry.hex_color) == f"#{key}")
+    )
+    candidates = [(name, mfg, mat, is_default) for name, mfg, mat, is_default in result.all() if name]
+    if not candidates:
+        return ColorByMaterialResult(color_name=None)
+
+    if material_norm:
+        for name, _mfg, mat, _is_default in candidates:
+            if mat and mat.strip().lower() == material_norm:
+                return ColorByMaterialResult(color_name=name)
+
+    # Same priority order as ``/colors/map`` so a caller passing no (or an
+    # unrecognised) material gets the existing answer, not a degraded one.
+    best_name: str | None = None
+    best_priority = -1
+    for name, mfg, _mat, is_default in candidates:
+        priority = 0
+        if mfg and mfg.strip().lower() == "bambu lab":
+            priority += 2
+        if is_default:
+            priority += 1
+        if priority > best_priority:
+            best_name = name
+            best_priority = priority
+    return ColorByMaterialResult(color_name=best_name)
 
 
 @router.get("/colors/search", response_model=list[ColorEntryResponse])

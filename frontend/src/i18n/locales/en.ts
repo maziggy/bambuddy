@@ -864,6 +864,8 @@ export default {
       deleteConfirm: 'Are you sure you want to delete "{{name}}"? This action cannot be undone.',
       deleteButton: 'Delete',
       deletePurgeStats: 'Also remove this print from Quick Stats (filament, time, cost, energy)',
+      deleteQueueItemsWarning: '{{count}} queue item(s) linked to this archive will also be removed.',
+      deleteBlockedByPrinting: 'Cannot delete — {{count}} queue item(s) are currently printing. Stop the print first, then retry.',
       removeSource3mf: 'Remove Source 3MF',
       removeSource3mfConfirm: 'Are you sure you want to remove the source 3MF file from "{{name}}"? This will delete the original slicer project file.',
       removeButton: 'Remove',
@@ -1014,7 +1016,46 @@ export default {
     batchCancelled: 'Remaining batch items cancelled',
     cancelBatchConfirmTitle: 'Cancel Batch',
     cancelBatchConfirmMessage: 'Cancel all remaining pending items in this batch?',
-    batch: 'Batch',
+    batch: {
+      defaultName: 'Batch',
+      label: '{{count}} item',
+      label_plural: '{{count}} items',
+      pendingCount: '{{count}} pending',
+      pendingCount_plural: '{{count}} pending',
+      expand: 'Expand batch',
+      collapse: 'Collapse batch',
+      groupAsBatch: 'Group as batch…',
+      groupAsBatchDescription: 'Combine the {{count}} selected items into a single collapsible batch.',
+      nameLabel: 'Batch name',
+      namePlaceholder: 'e.g. Friday gifts',
+      create: 'Create batch',
+      ungroup: 'Ungroup',
+      ungroupConfirmTitle: 'Ungroup batch?',
+      ungroupConfirmMessage: 'The items will stay in the queue but no longer be grouped together.',
+    },
+    // Tabs
+    tabs: {
+      queue: 'Queue',
+      history: 'History',
+      timeline: 'Timeline',
+    },
+    // Layout toggle on the Queue tab — distinct from the sort dropdown
+    // (those control order; these control whether items render as one flat
+    // list or grouped under per-printer section headers).
+    layout: {
+      flatList: 'List',
+      byPrinter: 'By Printer',
+      groupByPrinter: 'Group by Printer',
+    },
+    // History tab empty state
+    history: {
+      emptyTitle: 'No history yet',
+      emptyDescription: 'Completed, cancelled, and failed prints will appear here.',
+    },
+    // Drag ghost label when multi-dragging
+    dragGhost: {
+      multiCount: '{{count}} items',
+    },
     // Sections
     sections: {
       currentlyPrinting: 'Currently Printing',
@@ -1142,6 +1183,10 @@ export default {
       updateFailed: 'Failed to update items',
       bulkCancelled: 'Cancelled {{count}} item(s)',
       bulkCancelFailed: 'Failed to cancel items',
+      batchCreated: 'Batch "{{name}}" created',
+      batchCreateFailed: 'Failed to create batch',
+      batchUngrouped: 'Ungrouped {{count}} item(s)',
+      batchUngroupFailed: 'Failed to ungroup batch',
     },
     // Timeline view
     timeline: {
@@ -1149,6 +1194,7 @@ export default {
       timelineView: 'Timeline',
       unassigned: 'Unassigned',
       noData: 'No scheduled prints for this day',
+      nothingCommitted: 'No committed schedules in this window. Staged items, waiting items, and ASAP jobs on idle printers are not shown — set a scheduled time or release a staged item to see it here.',
       allDoneBy: 'All prints estimated done by {{time}}',
       staged: 'Staged',
       filterAll: 'Show All',
@@ -1165,6 +1211,13 @@ export default {
         next: 'Next day',
         today: 'Today',
       },
+      // Rolling-24h Gantt window
+      window: {
+        back12h: 'Back 12 hours',
+        forward12h: 'Forward 12 hours',
+        now: 'Now',
+      },
+      printerColumnHeader: 'Printer',
     },
     // Permissions
     permissions: {
@@ -1971,21 +2024,11 @@ export default {
     orcaslicerApiUrl: 'OrcaSlicer sidecar URL',
     bambuStudioApiUrl: 'Bambu Studio sidecar URL',
     slicerApiUrlDescription: 'URL of the slicer-API sidecar container. Leave blank to use the SLICER_API_URL / BAMBU_STUDIO_API_URL env var defaults.',
-    slicerBundles: {
-      title: 'Slicer Bundles',
-      description: 'Import a Printer Preset Bundle (.bbscfg) exported from BambuStudio (File → Export → Export Preset Bundle → "Printer preset bundle"). Once imported, slice requests can pick presets from the bundle by name without re-uploading the JSON profile triplet.',
-      uploadButton: 'Upload bundle',
-      uploading: 'Uploading…',
-      loading: 'Loading bundles…',
-      empty: 'No bundles imported yet.',
-      summary: '{{processCount}} process · {{filamentCount}} filament presets',
-      delete: 'Delete',
-      uploadSuccess: 'Imported {{name}}',
-      uploadError: 'Bundle upload failed: {{message}}',
-      deleteSuccess: 'Bundle removed',
-      deleteError: 'Bundle delete failed: {{message}}',
-      confirmDeleteTitle: 'Remove this bundle?',
-      confirmDeleteMessage: 'Slice requests that reference "{{name}}" will fail until the bundle is re-imported.',
+    slicerBundlesRemoved: {
+      title: 'Slicer Bundles (removed)',
+      description: 'Printer Preset Bundle (.bbscfg) import was removed. BambuStudio\'s bundle export only includes user-customised presets, so the import never delivered standard processes / filaments and slicing fell back to embedded settings.',
+      alternatives: 'Use Single Preset Import for individual customs, or sync via Bambu Cloud / Orca Cloud. Stock presets come from the slicer sidecar automatically.',
+      lookupOrder: 'Slice-time preset lookup order: 1) Imported (local), 2) Orca Cloud, 3) Bambu Cloud, 4) Standard (sidecar fallback).',
     },
     externalCameras: 'External Cameras',
     costTracking: 'Cost Tracking',
@@ -3578,9 +3621,6 @@ export default {
     refreshPresets: 'Refresh',
     refreshPresetsTitle: 'Refresh presets — fetch the latest cloud and bundled listings (use after deleting a preset in Bambu Studio or Bambu Handy)',
     allPresetsRequired: 'All presets must be selected',
-    bundle: 'Slicer bundle',
-    bundleNone: '— None (pick presets individually) —',
-    bundleAllRequired: 'Bundle process and every filament slot must be picked',
     enqueuing: 'Submitting slice job…',
     queued: 'Queued…',
     failed: 'Slicing failed. Check the slicer sidecar logs.',
@@ -5263,6 +5303,8 @@ export default {
     noMatchingPresets: 'No matching presets found.',
     custom: 'Custom',
     builtin: 'Built-in',
+    orcaCloud: 'Orca Cloud',
+    bambuCloud: 'Bambu Cloud',
     settingsSentToPrinter: 'Settings sent to printer',
     filamentProfile: 'Filament Profile',
     kProfileLabel: 'K Profile (Pressure Advance)',

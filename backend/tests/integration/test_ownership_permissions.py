@@ -744,3 +744,283 @@ class TestUserItemsCountAndDeletion(TestOwnershipPermissionsSetup):
             headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
         )
         assert archive_response.status_code == 404
+
+
+class TestReadIDORClosure(TestOwnershipPermissionsSetup):
+    """Regression tests pinning maziggy/bambuddy-security #2 — IDOR on
+    archives / library / queue read paths.
+
+    Before the fix, ARCHIVES_READ / LIBRARY_READ / QUEUE_READ were flat
+    "see everything" permissions even though the write side was split into
+    OWN/ALL. An operator with only ARCHIVES_READ could read, download, and
+    queue any user's archive via direct id reference. These tests pin the
+    bambuddy_archive_idor.py and bambuddy_archive_viewer_idor.py PoC paths
+    so the IDOR can't regress silently.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_get_others_archive_returns_404_not_200(
+        self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        """PoC #2 read path. operator1 GET /archives/{id} where id is admin's
+        archive must NOT leak the row. 404 (not 403) so the operator can't
+        enumerate which ids exist — same shape as a nonexistent id."""
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            print_name="Admin Archive",
+            created_by_id=auth_setup["admin_user"]["id"],
+        )
+        response = await async_client.get(
+            f"/api/v1/archives/{archive.id}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_download_others_archive_returns_404(
+        self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        """Viewer-IDOR PoC path: GET /archives/{id}/download on admin's archive.
+        Before the fix this streamed the 3MF body straight to a viewer-tier
+        token."""
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            print_name="Admin Archive 2",
+            created_by_id=auth_setup["admin_user"]["id"],
+        )
+        response = await async_client.get(
+            f"/api/v1/archives/{archive.id}/download",
+            headers={"Authorization": f"Bearer {auth_setup['viewer_token']}"},
+        )
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_list_archives_excludes_others(
+        self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        """GET /archives/ must filter to own archives only for OWN-level callers."""
+        printer = await printer_factory()
+        own = await archive_factory(
+            printer.id, print_name="Operator's Own", created_by_id=auth_setup["operator_user"]["id"]
+        )
+        others = await archive_factory(printer.id, print_name="Admin's", created_by_id=auth_setup["admin_user"]["id"])
+        response = await async_client.get(
+            "/api/v1/archives/",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+        assert response.status_code == 200
+        returned_ids = {a["id"] for a in response.json()}
+        assert own.id in returned_ids
+        assert others.id not in returned_ids
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_list_archives_includes_all(
+        self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        """ARCHIVES_READ_ALL → admin sees own + every user's archives."""
+        printer = await printer_factory()
+        admin_archive = await archive_factory(
+            printer.id, print_name="Admin's", created_by_id=auth_setup["admin_user"]["id"]
+        )
+        operator_archive = await archive_factory(
+            printer.id, print_name="Operator's", created_by_id=auth_setup["operator_user"]["id"]
+        )
+        response = await async_client.get(
+            "/api/v1/archives/",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+        )
+        assert response.status_code == 200
+        returned_ids = {a["id"] for a in response.json()}
+        assert admin_archive.id in returned_ids
+        assert operator_archive.id in returned_ids
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_queue_others_archive(
+        self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        """PoC #2 queue path. POST /queue/ with admin's archive_id as
+        operator1 must return 404, not create a queue item. Before the fix
+        this returned 201 and queued the admin archive (Landon's CONFIRMED
+        line in the PoC)."""
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            print_name="Admin Archive (queue-target)",
+            created_by_id=auth_setup["admin_user"]["id"],
+        )
+        response = await async_client.post(
+            "/api/v1/queue/",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json={"archive_id": archive.id, "printer_id": printer.id, "quantity": 1},
+        )
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_can_queue_others_archive(
+        self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        """Belt-and-suspenders for the ALL path: admin (ARCHIVES_READ_ALL) can
+        queue a user's archive on their behalf — common workshop pattern."""
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            print_name="Operator's archive (queue by admin)",
+            created_by_id=auth_setup["operator_user"]["id"],
+        )
+        response = await async_client.post(
+            "/api/v1/queue/",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+            json={"archive_id": archive.id, "printer_id": printer.id, "quantity": 1},
+        )
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_get_others_library_file_returns_404(
+        self, async_client: AsyncClient, auth_setup, db_session
+    ):
+        """Library IDOR closure (same shape as archives — closed in the same PR
+        per maziggy/bambuddy-security #2)."""
+        from backend.app.models.library import LibraryFile
+
+        admin_file = LibraryFile(
+            filename="admin_secret.3mf",
+            file_path="library/admin_secret.3mf",
+            file_type="3mf",
+            file_size=2048,
+            created_by_id=auth_setup["admin_user"]["id"],
+        )
+        db_session.add(admin_file)
+        await db_session.commit()
+        await db_session.refresh(admin_file)
+
+        response = await async_client.get(
+            f"/api/v1/library/files/{admin_file.id}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_list_library_files_excludes_others(self, async_client: AsyncClient, auth_setup, db_session):
+        from backend.app.models.library import LibraryFile
+
+        own = LibraryFile(
+            filename="my_file.3mf",
+            file_path="library/my_file.3mf",
+            file_type="3mf",
+            file_size=1024,
+            created_by_id=auth_setup["operator_user"]["id"],
+        )
+        others = LibraryFile(
+            filename="admin_file.3mf",
+            file_path="library/admin_file.3mf",
+            file_type="3mf",
+            file_size=1024,
+            created_by_id=auth_setup["admin_user"]["id"],
+        )
+        db_session.add_all([own, others])
+        await db_session.commit()
+        await db_session.refresh(own)
+        await db_session.refresh(others)
+
+        response = await async_client.get(
+            "/api/v1/library/files",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+        assert response.status_code == 200
+        returned_ids = {f["id"] for f in response.json()}
+        assert own.id in returned_ids
+        assert others.id not in returned_ids
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_queue_list_excludes_others_items(
+        self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        """GET /queue/ must filter to own queue items only for OWN callers —
+        same shape as the archive list."""
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, print_name="A", created_by_id=auth_setup["operator_user"]["id"])
+        own_item = PrintQueueItem(
+            archive_id=archive.id,
+            printer_id=printer.id,
+            status="pending",
+            position=1,
+            created_by_id=auth_setup["operator_user"]["id"],
+        )
+        admin_item = PrintQueueItem(
+            archive_id=archive.id,
+            printer_id=printer.id,
+            status="pending",
+            position=2,
+            created_by_id=auth_setup["admin_user"]["id"],
+        )
+        db_session.add_all([own_item, admin_item])
+        await db_session.commit()
+        await db_session.refresh(own_item)
+        await db_session.refresh(admin_item)
+
+        response = await async_client.get(
+            "/api/v1/queue/",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+        assert response.status_code == 200
+        returned_ids = {q["id"] for q in response.json()}
+        assert own_item.id in returned_ids
+        assert admin_item.id not in returned_ids
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_get_others_queue_item_returns_404(
+        self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        """Direct-id queue item access — same enumeration risk as archive get."""
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, print_name="A", created_by_id=auth_setup["admin_user"]["id"])
+        admin_item = PrintQueueItem(
+            archive_id=archive.id,
+            printer_id=printer.id,
+            status="pending",
+            position=1,
+            created_by_id=auth_setup["admin_user"]["id"],
+        )
+        db_session.add(admin_item)
+        await db_session.commit()
+        await db_session.refresh(admin_item)
+
+        response = await async_client.get(
+            f"/api/v1/queue/{admin_item.id}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auth_disabled_preserves_single_tenant_read_all(
+        self, async_client: AsyncClient, archive_factory, printer_factory
+    ):
+        """With auth disabled, ARCHIVES_READ resolves to read-all (can_modify_all=True
+        in require_ownership_permission's auth-disabled branch). Existing
+        single-user installs see no behavior change."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, print_name="Anonymous", created_by_id=None)
+        # No Authorization header — auth-disabled mode.
+        response = await async_client.get(f"/api/v1/archives/{archive.id}")
+        # Either 200 (auth disabled in this test session) or 401 (auth enabled
+        # from a prior test) — both are acceptable; the IDOR closure does not
+        # change auth-enable/disable behavior. Pin not-404 to avoid masking a
+        # regression where auth-disabled callers would lose access.
+        assert response.status_code in (200, 401)

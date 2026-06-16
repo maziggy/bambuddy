@@ -2003,18 +2003,176 @@ class TestAbortedStatusNormalisation:
         assert response.status_code == 404
 
     # ========================================================================
+    # Queue redesign: create-empty + group-existing + ungroup
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_empty_batch_for_client_side_grouping(
+        self, async_client: AsyncClient, printer_factory, archive_factory
+    ):
+        """Verify POST /queue/batches without item_ids creates an empty batch
+        whose id can be passed on subsequent /queue/ POSTs (the multi-plate
+        auto-batch flow). Subsequent items must end up with the same batch_id."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+
+        # 1. Pre-create batch
+        batch_resp = await async_client.post(
+            "/api/v1/queue/batches",
+            json={"name": "Plates · 2 plates", "archive_id": archive.id},
+        )
+        assert batch_resp.status_code == 200
+        batch = batch_resp.json()
+        assert batch["status"] == "active"
+        batch_id = batch["id"]
+
+        # 2. Add two items referencing that batch
+        for plate_id in (1, 2):
+            item_resp = await async_client.post(
+                "/api/v1/queue/",
+                json={
+                    "printer_id": printer.id,
+                    "archive_id": archive.id,
+                    "plate_id": plate_id,
+                    "batch_id": batch_id,
+                },
+            )
+            assert item_resp.status_code == 200
+            assert item_resp.json()["batch_id"] == batch_id
+
+        # 3. Verify batch now has 2 pending children
+        list_resp = await async_client.get("/api/v1/queue/")
+        siblings = [i for i in list_resp.json() if i["batch_id"] == batch_id]
+        assert len(siblings) == 2
+        assert {i["plate_id"] for i in siblings} == {1, 2}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_group_existing_items_as_batch(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory
+    ):
+        """Verify POST /queue/batches with item_ids assigns batch_id to
+        existing pending items (the 'Group as batch' UI action)."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+        item_a = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="pending")
+        item_b = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="pending")
+
+        resp = await async_client.post(
+            "/api/v1/queue/batches",
+            json={"name": "Manual group", "item_ids": [item_a.id, item_b.id]},
+        )
+        assert resp.status_code == 200
+        batch_id = resp.json()["id"]
+
+        list_resp = await async_client.get("/api/v1/queue/")
+        grouped = [i for i in list_resp.json() if i["batch_id"] == batch_id]
+        assert {i["id"] for i in grouped} == {item_a.id, item_b.id}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_group_skips_non_pending_items(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory
+    ):
+        """Verify grouping doesn't pull in already-completed/cancelled items."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+        pending = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="pending")
+        completed = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="completed")
+
+        resp = await async_client.post(
+            "/api/v1/queue/batches",
+            json={"name": "Mixed", "item_ids": [pending.id, completed.id]},
+        )
+        assert resp.status_code == 200
+        batch_id = resp.json()["id"]
+
+        list_resp = await async_client.get("/api/v1/queue/")
+        grouped = [i for i in list_resp.json() if i["batch_id"] == batch_id]
+        assert {i["id"] for i in grouped} == {pending.id}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_batch_requires_name(self, async_client: AsyncClient):
+        """Verify empty / whitespace-only name is rejected with 400."""
+        resp = await async_client.post("/api/v1/queue/batches", json={"name": "   "})
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ungroup_batch_clears_batch_id_and_deletes_row(
+        self, async_client: AsyncClient, printer_factory, archive_factory
+    ):
+        """Verify POST /queue/batches/{id}/ungroup clears batch_id from all
+        members and deletes the batch row when nothing remains assigned."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+
+        # Create batch with two items via the existing quantity flow
+        add_resp = await async_client.post(
+            "/api/v1/queue/",
+            json={"printer_id": printer.id, "archive_id": archive.id, "quantity": 2},
+        )
+        batch_id = add_resp.json()["batch_id"]
+
+        # Ungroup
+        ungroup_resp = await async_client.post(f"/api/v1/queue/batches/{batch_id}/ungroup")
+        assert ungroup_resp.status_code == 200
+        assert ungroup_resp.json()["ungrouped_count"] == 2
+
+        # Verify items still exist but no longer batched
+        list_resp = await async_client.get("/api/v1/queue/")
+        ex_members = [i for i in list_resp.json() if i["batch_id"] == batch_id]
+        assert ex_members == []
+
+        # Batch row was deleted
+        get_resp = await async_client.get(f"/api/v1/queue/batches/{batch_id}")
+        assert get_resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_with_unknown_batch_id_404(
+        self, async_client: AsyncClient, printer_factory, archive_factory
+    ):
+        """Verify addToQueue with a non-existent batch_id is rejected."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+        resp = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": archive.id,
+                "batch_id": 99999,
+            },
+        )
+        assert resp.status_code == 404
+
+    # ========================================================================
     # Soft-deleted archive handling (#1348 follow-up)
     # ========================================================================
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_soft_delete_archive_cancels_pending_queue_items(
+    async def test_soft_delete_archive_deletes_all_related_queue_items(
         self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
     ):
-        """Soft-deleting an archive cancels its pending queue items with a
-        clear reason. The 3MF is gone from disk so the item can never
-        dispatch — leaving it in 'pending' would 404-storm the queue page
-        and confuse the user about why nothing prints."""
+        """Soft-deleting an archive removes every related queue item, regardless
+        of status (#1734). Pre-#1734 only ``pending`` rows were flipped to
+        ``cancelled`` and stayed in the DB, surprising users who expected the
+        queue lines to disappear with the archive — especially on multi-plate
+        Send All uploads (#1733), where ONE archive backed N queue items and
+        soft-deleting the archive left N "cancelled" rows behind. The change
+        keeps the printing guard (a row with ``status='printing'`` blocks the
+        delete one layer up at the API route), so we never delete the row of
+        an actively-running print here.
+
+        Print history lives in ``PrintLogEntry`` (FK ``ON DELETE SET NULL``) —
+        the audit trail survives independently of the queue rows.
+        """
+        from sqlalchemy import select
+
+        from backend.app.models.print_queue import PrintQueueItem
         from backend.app.services.archive import ArchiveService
 
         printer = await printer_factory()
@@ -2025,12 +2183,18 @@ class TestAbortedStatusNormalisation:
         service = ArchiveService(db_session)
         assert await service.soft_delete_archive(archive.id) is True
 
-        await db_session.refresh(pending)
-        await db_session.refresh(completed)
-        assert pending.status == "cancelled"
-        assert pending.waiting_reason == "Source archive deleted"
-        # Historical rows untouched — they're audit-trail.
-        assert completed.status == "completed"
+        # Every queue row that referenced this archive is gone — both the
+        # pending and the completed rows. Print history (PrintLogEntry) is
+        # the authoritative record and is preserved by the FK SET NULL.
+        remaining = (
+            (await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id.in_([pending.id, completed.id]))))
+            .scalars()
+            .all()
+        )
+        assert remaining == [], (
+            "Soft-deleting the archive must delete every related queue row, "
+            f"got {[(r.id, r.status) for r in remaining]} still present"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.integration

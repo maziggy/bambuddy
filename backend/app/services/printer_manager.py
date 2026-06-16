@@ -173,6 +173,7 @@ class PrinterManager:
         self._on_print_start: Callable[[int, dict], None] | None = None
         self._on_print_complete: Callable[[int, dict], None] | None = None
         self._on_print_running_observed: Callable[[int, dict], None] | None = None
+        self._on_finish_photo_moment: Callable[[int, dict], None] | None = None
         self._on_status_change: Callable[[int, PrinterState], None] | None = None
         self._on_ams_change: Callable[[int, list], None] | None = None
         self._on_layer_change: Callable[[int, int], None] | None = None
@@ -322,6 +323,19 @@ class PrinterManager:
         hook to recover."""
         self._on_print_running_observed = callback
 
+    def set_finish_photo_moment_callback(self, callback: Callable[[int, dict], None]):
+        """Set callback for the #1721 finish-photo moment.
+
+        Fires on the stage-22 (\"Filament unloading\") edge at end-of-print
+        — the framing window where the toolhead is parked but the bed
+        hasn't dropped yet. Falls back to firing at the FINISH-state
+        transition for prints that skip stage 22 (cancel, external-spool-
+        only, HMS halt, firmware variants). Payload includes the
+        ``trigger`` key (``\"stage_22\"`` or ``\"finish_state\"``) and
+        ``timelapse_was_active`` so the photo path can choose between
+        live-camera capture and timelapse last-frame extraction."""
+        self._on_finish_photo_moment = callback
+
     def set_status_change_callback(self, callback: Callable[[int, PrinterState], None]):
         """Set callback for status change events."""
         self._on_status_change = callback
@@ -389,6 +403,10 @@ class PrinterManager:
             if self._on_print_running_observed:
                 self._schedule_async(self._on_print_running_observed(printer_id, data))
 
+        def on_finish_photo_moment(data: dict):
+            if self._on_finish_photo_moment:
+                self._schedule_async(self._on_finish_photo_moment(printer_id, data))
+
         def on_ams_change(ams_data: list):
             if self._on_ams_change:
                 self._schedule_async(self._on_ams_change(printer_id, ams_data))
@@ -418,6 +436,7 @@ class PrinterManager:
             on_bed_temp_update=on_bed_temp_update,
             on_drying_complete=on_drying_complete,
             on_print_running_observed=on_print_running_observed,
+            on_finish_photo_moment=on_finish_photo_moment,
         )
 
         client.connect()

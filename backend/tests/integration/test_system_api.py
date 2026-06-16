@@ -336,6 +336,39 @@ class TestSystemAPI:
         result = response.json()
         assert result["system"]["boot_time"].startswith("2023-11-14T")  # 1700000000 UTC
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_boot_time_isoformat_carries_utc_marker(self, async_client: AsyncClient):
+        """#1690 follow-up: the boot_time string must include a UTC tz marker.
+
+        Without it the frontend's parseUTCDate(...) appends 'Z' to a naive-
+        local-time string, treats it as UTC, and converts to local — applying
+        the local offset twice. The reporter (UTC+3) saw boot_time +3h ahead
+        even though uptime was correct (uptime is computed backend-side from
+        two naive-local values whose delta is right). The fix is to make both
+        ends tz-aware UTC and emit an explicit offset.
+        """
+        with patch("backend.app.api.routes.system.psutil") as mock_psutil:
+            mock_psutil.disk_usage.return_value = MagicMock(
+                total=500000000000, used=250000000000, free=250000000000, percent=50.0
+            )
+            mock_psutil.virtual_memory.return_value = MagicMock(
+                total=16000000000, available=8000000000, used=8000000000, percent=50.0
+            )
+            mock_psutil.boot_time.return_value = 1700000000.0
+            mock_psutil.Process.return_value.create_time.return_value = 1700345600.0
+            mock_psutil.cpu_count.return_value = 4
+            mock_psutil.cpu_percent.return_value = 25.0
+
+            response = await async_client.get("/api/v1/system/info")
+
+        assert response.status_code == 200
+        boot_time = response.json()["system"]["boot_time"]
+        assert boot_time.endswith("+00:00") or boot_time.endswith("Z"), (
+            f"boot_time {boot_time!r} must carry a UTC tz marker; without one the "
+            "frontend double-converts via parseUTCDate"
+        )
+
 
 class TestSystemHelperFunctions:
     """Tests for system info helper functions."""

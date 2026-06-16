@@ -4,15 +4,15 @@ import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/rea
 import { Link } from 'react-router-dom';
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
-import type { DragEndEvent } from '@dnd-kit/core';
+import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import {
-  arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
@@ -54,6 +54,10 @@ import {
   GanttChart,
   Code,
   Snail,
+  Package,
+  PackageOpen,
+  Ungroup,
+  Ban,
 } from 'lucide-react';
 import { api, ApiError } from '../api/client';
 import { type TimeFormat, formatETA, formatDuration, formatRelativeTime, parseUTCDate } from '../utils/date';
@@ -497,7 +501,7 @@ function SortableQueueItem({
               </Link>
             ) : null}
             {item.batch_name && (
-              <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] sm:text-xs bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">
+              <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] sm:text-xs bg-cyan-500/20 text-cyan-300 rounded border border-cyan-500/30">
                 {item.batch_name}
               </span>
             )}
@@ -741,6 +745,399 @@ function SortableQueueItem({
   );
 }
 
+type QueueRow =
+  | { kind: 'item'; item: PrintQueueItem }
+  | { kind: 'batch'; batchId: number; batchName: string; items: PrintQueueItem[] };
+
+interface QueueRowRenderProps {
+  row: QueueRow;
+  collapsed: boolean;
+  onToggleBatch?: () => void;
+  onUngroup?: () => void;
+  setEditItem: (item: PrintQueueItem) => void;
+  setConfirmAction: (a: { type: 'cancel' | 'remove' | 'stop'; item: PrintQueueItem }) => void;
+  startMutation: { mutate: (vars: { id: number; skipFilamentCheck?: boolean }) => void };
+  selectedItems: number[];
+  handleToggleSelect: (id: number) => void;
+  timeFormat: TimeFormat;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  hasPermission: (p: any) => boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  canModify: (resource: any, action: any, createdById?: number | null) => boolean;
+  t: (key: string, options?: Record<string, unknown>) => string;
+  aggregateForRows: (rows: QueueRow[]) => { count: number; time: number; weight: number };
+}
+
+/** Renders either a single item or a collapsible batch group containing N
+ *  sibling items. The batch parent shows aggregate stats; children render
+ *  with the existing SortableQueueItem (only draggable inside the batch). */
+function QueueRowRender({
+  row,
+  collapsed,
+  onToggleBatch,
+  onUngroup,
+  setEditItem,
+  setConfirmAction,
+  startMutation,
+  selectedItems,
+  handleToggleSelect,
+  timeFormat,
+  hasPermission,
+  canModify,
+  t,
+  aggregateForRows,
+}: QueueRowRenderProps) {
+  if (row.kind === 'item') {
+    return (
+      <SortableQueueItem
+        item={row.item}
+        onEdit={() => setEditItem(row.item)}
+        onCancel={() => setConfirmAction({ type: 'cancel', item: row.item })}
+        onRemove={() => {}}
+        onStop={() => {}}
+        onRequeue={() => {}}
+        onStart={() => startMutation.mutate({ id: row.item.id })}
+        timeFormat={timeFormat}
+        isSelected={selectedItems.includes(row.item.id)}
+        onToggleSelect={() => handleToggleSelect(row.item.id)}
+        hasPermission={hasPermission}
+        canModify={canModify}
+        t={t}
+      />
+    );
+  }
+
+  // Batch group
+  const agg = aggregateForRows([row]);
+  const allChildIds = row.items.map((i) => i.id);
+  const allSelected = allChildIds.length > 0 && allChildIds.every((id) => selectedItems.includes(id));
+  // Status rollup: worst-of-children (failed > printing > pending).
+  const childStatuses = new Set(row.items.map((i) => i.status));
+  // We never put non-pending into a batch grouping but render defensively.
+  const rollupStatus: PrintQueueItem['status'] = childStatuses.has('failed')
+    ? 'failed'
+    : childStatuses.has('printing')
+      ? 'printing'
+      : 'pending';
+  const pendingChildren = row.items.filter((i) => i.status === 'pending').length;
+
+  return (
+    <div className="bg-bambu-dark-secondary rounded-xl border border-l-[3px] border-l-cyan-400 border-bambu-dark-tertiary overflow-hidden">
+      {/* Parent header */}
+      <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            allChildIds.forEach((id) => {
+              if (allSelected && selectedItems.includes(id)) {
+                handleToggleSelect(id);
+              } else if (!allSelected && !selectedItems.includes(id)) {
+                handleToggleSelect(id);
+              }
+            });
+          }}
+          className={`hidden sm:flex items-center justify-center w-6 h-6 rounded border transition-colors shrink-0 ${
+            allSelected
+              ? 'bg-bambu-green border-bambu-green text-white'
+              : 'border-white/30 bg-black/30 hover:border-bambu-green/50'
+          }`}
+          title={allSelected ? t('queue.bulkEdit.deselectAll') : t('queue.bulkEdit.selectAll')}
+        >
+          {allSelected && <Check className="w-4 h-4" />}
+        </button>
+        <button
+          onClick={onToggleBatch}
+          className="flex items-center justify-center w-8 h-8 rounded-lg bg-bambu-dark hover:bg-bambu-dark-tertiary transition-colors shrink-0"
+          title={collapsed ? t('queue.batch.expand') : t('queue.batch.collapse')}
+        >
+          {collapsed ? (
+            <ChevronRight className="w-4 h-4 text-bambu-gray" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-bambu-gray" />
+          )}
+        </button>
+        <div className="w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0 bg-bambu-dark rounded-lg flex items-center justify-center">
+          {collapsed ? (
+            <Package className="w-5 h-5 text-cyan-300" />
+          ) : (
+            <PackageOpen className="w-5 h-5 text-cyan-300" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-sm sm:text-base text-white font-medium truncate">{row.batchName}</p>
+            <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] sm:text-xs bg-cyan-500/15 text-cyan-300 rounded border border-cyan-500/30">
+              {t('queue.batch.label', { count: agg.count })}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm text-bambu-gray">
+            {agg.time > 0 && (
+              <span className="flex items-center gap-1 sm:gap-1.5">
+                <Timer className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                {formatDuration(agg.time)}
+              </span>
+            )}
+            {agg.weight > 0 && (
+              <span className="flex items-center gap-1 sm:gap-1.5">
+                <Weight className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                {formatWeight(agg.weight)}
+              </span>
+            )}
+            {pendingChildren > 0 && rollupStatus === 'pending' && (
+              <span className="flex items-center gap-1 sm:gap-1.5 text-yellow-400">
+                <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                {t('queue.batch.pendingCount', { count: pendingChildren })}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {onUngroup && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onUngroup}
+              title={t('queue.batch.ungroup')}
+              className="text-cyan-300 hover:text-cyan-200 hover:bg-cyan-500/10 p-1.5 sm:p-2"
+            >
+              <Ungroup className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Children (only when expanded) */}
+      {!collapsed && (
+        <div className="border-t border-bambu-dark-tertiary bg-black/20 p-2 sm:p-3 space-y-2">
+          {row.items.map((child) => (
+            <SortableQueueItem
+              key={child.id}
+              item={child}
+              onEdit={() => setEditItem(child)}
+              onCancel={() => setConfirmAction({ type: 'cancel', item: child })}
+              onRemove={() => {}}
+              onStop={() => {}}
+              onRequeue={() => {}}
+              onStart={() => startMutation.mutate({ id: child.id })}
+              timeFormat={timeFormat}
+              isSelected={selectedItems.includes(child.id)}
+              onToggleSelect={() => handleToggleSelect(child.id)}
+              hasPermission={hasPermission}
+              canModify={canModify}
+              t={t}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type HistoryRow =
+  | { kind: 'item'; item: PrintQueueItem }
+  | { kind: 'batch'; batchId: number; batchName: string; items: PrintQueueItem[] };
+
+interface HistorySectionProps {
+  items: PrintQueueItem[];
+  collapsed: boolean;
+  sortBy: 'date' | 'name' | 'printer';
+  sortAsc: boolean;
+  onSortByChange: (v: 'date' | 'name' | 'printer') => void;
+  onSortAscToggle: () => void;
+  onRemove: (item: PrintQueueItem) => void;
+  onRequeue: (item: PrintQueueItem) => void;
+  timeFormat: TimeFormat;
+  batchCollapsed: Record<number, boolean>;
+  toggleBatchCollapsed: (id: number) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  hasPermission: (p: any) => boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  canModify: (resource: any, action: any, createdById?: number | null) => boolean;
+  t: (key: string, options?: Record<string, unknown>) => string;
+}
+
+function HistorySection({
+  items,
+  sortBy,
+  sortAsc,
+  onSortByChange,
+  onSortAscToggle,
+  onRemove,
+  onRequeue,
+  timeFormat,
+  batchCollapsed,
+  toggleBatchCollapsed,
+  hasPermission,
+  canModify,
+  t,
+}: HistorySectionProps) {
+  if (items.length === 0) {
+    return (
+      <Card className="p-12 text-center border-dashed">
+        <ListOrdered className="w-16 h-16 text-bambu-gray mx-auto mb-4 opacity-50" />
+        <h3 className="text-xl font-medium text-white mb-2">{t('queue.history.emptyTitle')}</h3>
+        <p className="text-bambu-gray max-w-md mx-auto">{t('queue.history.emptyDescription')}</p>
+      </Card>
+    );
+  }
+
+  // Group siblings sharing a batch_id into a single collapsible row.
+  // First-seen order is preserved for batches; items keep their sorted
+  // position from the parent's sort selector.
+  const rows: HistoryRow[] = [];
+  const seenBatches = new Set<number>();
+  for (const item of items.slice(0, 50)) {
+    if (item.batch_id != null) {
+      if (seenBatches.has(item.batch_id)) continue;
+      seenBatches.add(item.batch_id);
+      const siblings = items.filter((s) => s.batch_id === item.batch_id);
+      rows.push({
+        kind: 'batch',
+        batchId: item.batch_id,
+        batchName: item.batch_name || t('queue.batch.defaultName'),
+        items: siblings,
+      });
+    } else {
+      rows.push({ kind: 'item', item });
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
+        <h2 className="text-base sm:text-lg font-semibold text-white flex items-center gap-2">
+          {t('queue.sections.history')}
+          <span className="text-xs sm:text-sm font-normal text-bambu-gray">
+            ({t('queue.itemCount', { count: items.length })})
+          </span>
+        </h2>
+        <div className="flex items-center gap-2">
+          <select
+            className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+            value={sortBy}
+            onChange={(e) => onSortByChange(e.target.value as 'date' | 'name' | 'printer')}
+          >
+            <option value="date">{t('queue.sort.byDate')}</option>
+            <option value="name">{t('queue.sort.byName')}</option>
+            <option value="printer">{t('queue.sort.byPrinter')}</option>
+          </select>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onSortAscToggle}
+            title={sortAsc ? t('queue.sort.ascendingOldest') : t('queue.sort.descendingNewest')}
+            className="px-2"
+          >
+            {sortAsc ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+          </Button>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+        {rows.map((row) => {
+          if (row.kind === 'item') {
+            return (
+              <CompactHistoryRow
+                key={row.item.id}
+                item={row.item}
+                onRemove={() => onRemove(row.item)}
+                onRequeue={() => onRequeue(row.item)}
+                timeFormat={timeFormat}
+                hasPermission={hasPermission}
+                canModify={canModify}
+                t={t}
+              />
+            );
+          }
+          // Batch group — spans the full grid width so it visually anchors
+          // its children below it. The children themselves render in the
+          // same responsive grid pattern inside the expanded body.
+          const collapsed = batchCollapsed[row.batchId] ?? true;
+          const completed = row.items.filter((i) => i.status === 'completed').length;
+          const failed = row.items.filter((i) => i.status === 'failed').length;
+          const skipped = row.items.filter((i) => i.status === 'skipped').length;
+          const cancelled = row.items.filter((i) => i.status === 'cancelled').length;
+          const latest = row.items
+            .map((i) => i.completed_at || i.created_at)
+            .filter((v): v is string => !!v)
+            .sort()
+            .at(-1);
+          return (
+            <div
+              key={`batch-${row.batchId}`}
+              className="md:col-span-2 xl:col-span-3 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary border-l-[3px] border-l-cyan-400"
+            >
+              <button
+                onClick={() => toggleBatchCollapsed(row.batchId)}
+                className="w-full flex items-center gap-2 sm:gap-3 px-3 py-2 hover:bg-bambu-dark/30 transition-colors text-left"
+                title={collapsed ? t('queue.batch.expand') : t('queue.batch.collapse')}
+              >
+                {collapsed ? (
+                  <ChevronRight className="w-4 h-4 text-bambu-gray shrink-0" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-bambu-gray shrink-0" />
+                )}
+                {collapsed ? (
+                  <Package className="w-5 h-5 text-cyan-300 shrink-0" />
+                ) : (
+                  <PackageOpen className="w-5 h-5 text-cyan-300 shrink-0" />
+                )}
+                <span className="text-sm text-white font-medium truncate min-w-0 flex-1">
+                  {row.batchName}
+                </span>
+                <div className="flex items-center gap-2 text-xs text-bambu-gray shrink-0">
+                  {completed > 0 && (
+                    <span className="flex items-center gap-1 text-emerald-400">
+                      <CheckCircle className="w-3 h-3" />
+                      {completed}
+                    </span>
+                  )}
+                  {failed > 0 && (
+                    <span className="flex items-center gap-1 text-red-400">
+                      <XCircle className="w-3 h-3" />
+                      {failed}
+                    </span>
+                  )}
+                  {skipped > 0 && (
+                    <span className="flex items-center gap-1 text-orange-400">
+                      <SkipForward className="w-3 h-3" />
+                      {skipped}
+                    </span>
+                  )}
+                  {cancelled > 0 && (
+                    <span className="flex items-center gap-1 text-gray-400">
+                      <Ban className="w-3 h-3" />
+                      {cancelled}
+                    </span>
+                  )}
+                  <span title={latest ?? undefined}>
+                    {latest ? formatRelativeTime(latest, timeFormat, t) : null}
+                  </span>
+                </div>
+              </button>
+              {!collapsed && (
+                <div className="border-t border-bambu-dark-tertiary bg-black/20 p-2 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                  {row.items.map((child) => (
+                    <CompactHistoryRow
+                      key={child.id}
+                      item={child}
+                      onRemove={() => onRemove(child)}
+                      onRequeue={() => onRequeue(child)}
+                      timeFormat={timeFormat}
+                      hasPermission={hasPermission}
+                      canModify={canModify}
+                      t={t}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function QueuePage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -774,12 +1171,37 @@ export function QueuePage() {
     const saved = localStorage.getItem('queue.pendingSortAsc');
     return saved !== null ? saved === 'true' : true;
   });
-  const [historyCollapsed, setHistoryCollapsed] = useState(() => {
-    return localStorage.getItem('queue.historyCollapsed') !== 'false';
+  // historyCollapsed legacy state retained only for localStorage migration; the
+  // History tab renders unconditionally so this no longer drives the UI.
+  // Tabbed page structure: Active queue stays as the main view; History
+  // and Timeline split off. Persists per-user via localStorage.
+  const [activeTab, setActiveTab] = useState<'queue' | 'history' | 'timeline'>(() => {
+    const saved = localStorage.getItem('queue.activeTab');
+    if (saved === 'history' || saved === 'timeline') return saved;
+    return 'queue';
   });
-  const [viewMode, setViewMode] = useState<'list' | 'timeline'>(() => {
-    return (localStorage.getItem('queue.viewMode') as 'list' | 'timeline') || 'list';
+  // Active-tab layout toggle. "position" = today's flat list; "printer"
+  // groups items under per-printer section headers with aggregate stats.
+  const [activeLayout, setActiveLayout] = useState<'position' | 'printer'>(() => {
+    const saved = localStorage.getItem('queue.activeLayout');
+    return saved === 'printer' ? 'printer' : 'position';
   });
+  // Per-batch collapse state, keyed by batch_id. Default = collapsed
+  // (matches the SimplyPrint/Files convention — show the rollup first).
+  const [batchCollapsed, setBatchCollapsed] = useState<Record<number, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('queue.batchCollapsed');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+  // Multi-drag bookkeeping for DragOverlay.
+  const [activeDragId, setActiveDragId] = useState<number | null>(null);
+  // "Group as batch" modal.
+  const [groupBatchModal, setGroupBatchModal] = useState(false);
+  // Ungroup confirm.
+  const [ungroupBatchId, setUngroupBatchId] = useState<number | null>(null);
 
   // Persist sort settings to localStorage
   useEffect(() => {
@@ -799,12 +1221,16 @@ export function QueuePage() {
   }, [pendingSortAsc]);
 
   useEffect(() => {
-    localStorage.setItem('queue.historyCollapsed', String(historyCollapsed));
-  }, [historyCollapsed]);
+    localStorage.setItem('queue.activeTab', activeTab);
+  }, [activeTab]);
 
   useEffect(() => {
-    localStorage.setItem('queue.viewMode', viewMode);
-  }, [viewMode]);
+    localStorage.setItem('queue.activeLayout', activeLayout);
+  }, [activeLayout]);
+
+  useEffect(() => {
+    localStorage.setItem('queue.batchCollapsed', JSON.stringify(batchCollapsed));
+  }, [batchCollapsed]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -949,6 +1375,29 @@ export function QueuePage() {
       showToast(t('queue.toast.bulkCancelled', { count }));
     },
     onError: () => showToast(t('queue.toast.bulkCancelFailed'), 'error'),
+  });
+
+  const createBatchMutation = useMutation({
+    mutationFn: (data: { name: string; item_ids: number[] }) => api.createBatch(data),
+    onSuccess: (batch) => {
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      setSelectedItems([]);
+      setGroupBatchModal(false);
+      // New batches start expanded so the user sees what they just grouped.
+      setBatchCollapsed((prev) => ({ ...prev, [batch.id]: false }));
+      showToast(t('queue.toast.batchCreated', { name: batch.name }));
+    },
+    onError: () => showToast(t('queue.toast.batchCreateFailed'), 'error'),
+  });
+
+  const ungroupBatchMutation = useMutation({
+    mutationFn: (id: number) => api.ungroupBatch(id),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      setUngroupBatchId(null);
+      showToast(t('queue.toast.batchUngrouped', { count: result.ungrouped_count }));
+    },
+    onError: () => showToast(t('queue.toast.batchUngroupFailed'), 'error'),
   });
 
   const handleToggleSelect = (id: number) => {
@@ -1132,27 +1581,189 @@ export function QueuePage() {
     return pendingItems.reduce((acc, item) => acc + (item.filament_used_grams || 0), 0);
   }, [pendingItems]);
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragId(typeof event.active.id === 'number' ? event.active.id : null);
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    setActiveDragId(null);
     if (!over || active.id === over.id) return;
 
-    const oldIndex = pendingItems.findIndex(i => i.id === active.id);
-    const newIndex = pendingItems.findIndex(i => i.id === over.id);
+    // Multi-drag: when the dragged row is part of a multi-selection, move
+    // all selected items as a contiguous block, preserving their original
+    // relative order. Otherwise, single-row drag (today's behavior).
+    const draggedId = active.id as number;
+    const movingIds = selectedItems.includes(draggedId) && selectedItems.length > 1
+      ? selectedItems.slice().sort((a, b) => {
+          const ai = pendingItems.findIndex((i) => i.id === a);
+          const bi = pendingItems.findIndex((i) => i.id === b);
+          return ai - bi;
+        })
+      : [draggedId];
 
-    if (oldIndex !== -1 && newIndex !== -1) {
-      const reordered = arrayMove(pendingItems, oldIndex, newIndex);
-      const updates = reordered.map((item, index) => ({
-        id: item.id,
-        position: index + 1,
-      }));
-      reorderMutation.mutate(updates);
+    const overIndex = pendingItems.findIndex(i => i.id === over.id);
+    if (overIndex === -1) return;
+
+    // Remove the moving items, then re-insert at overIndex (adjusted).
+    const remaining = pendingItems.filter((i) => !movingIds.includes(i.id));
+    let insertAt = remaining.findIndex((i) => i.id === over.id);
+    if (insertAt === -1) insertAt = overIndex;
+    // If dragging downward across the drop target, insert AFTER it; upward
+    // = before. dnd-kit's `over` is the row under the pointer, not the gap.
+    const draggedOriginalIndex = pendingItems.findIndex((i) => i.id === draggedId);
+    if (draggedOriginalIndex < overIndex) insertAt += 1;
+    const reordered = [
+      ...remaining.slice(0, insertAt),
+      ...movingIds
+        .map((id) => pendingItems.find((i) => i.id === id))
+        .filter((x): x is PrintQueueItem => !!x),
+      ...remaining.slice(insertAt),
+    ];
+
+    const updates = reordered.map((item, index) => ({
+      id: item.id,
+      position: index + 1,
+    }));
+    reorderMutation.mutate(updates);
+  };
+
+  // Group pending items by batch_id. Items with batch_id null render as
+  // standalone rows; items sharing a batch_id render as a collapsible
+  // group keyed by that id. Items inside a group keep their original
+  // relative order from pendingItems.
+  const groupedRows = useMemo<QueueRow[]>(() => {
+    const rows: QueueRow[] = [];
+    const seenBatches = new Set<number>();
+    for (const item of pendingItems) {
+      if (item.batch_id != null) {
+        if (seenBatches.has(item.batch_id)) continue;
+        seenBatches.add(item.batch_id);
+        const siblings = pendingItems.filter((s) => s.batch_id === item.batch_id);
+        rows.push({
+          kind: 'batch',
+          batchId: item.batch_id,
+          batchName: item.batch_name || t('queue.batch.defaultName'),
+          items: siblings,
+        });
+      } else {
+        rows.push({ kind: 'item', item });
+      }
     }
+    return rows;
+  }, [pendingItems, t]);
+
+  // SortableContext ID list. Only include IDs whose DOM node actually
+  // renders — collapsed batch children are detached from the DOM, so
+  // registering them with dnd-kit confuses the collision resolver when
+  // dragging past a collapsed batch row. v1 batch parent isn't itself
+  // draggable (within-batch reorder only); collapsed batches just act as
+  // unmovable obstacles.
+  const sortableIds = useMemo<number[]>(() => {
+    const ids: number[] = [];
+    for (const row of groupedRows) {
+      if (row.kind === 'item') {
+        ids.push(row.item.id);
+      } else {
+        const collapsed = batchCollapsed[row.batchId] ?? true;
+        if (!collapsed) {
+          for (const child of row.items) ids.push(child.id);
+        }
+      }
+    }
+    return ids;
+  }, [groupedRows, batchCollapsed]);
+
+  // Items already in a batch can't be grouped; "Group as batch" only shows
+  // when 2+ ungrouped items are selected.
+  const canGroupSelected = useMemo(() => {
+    if (selectedItems.length < 2) return false;
+    return selectedItems.every((id) => {
+      const item = pendingItems.find((p) => p.id === id);
+      return item && item.batch_id == null;
+    });
+  }, [selectedItems, pendingItems]);
+
+  const toggleBatchCollapsed = (id: number) => {
+    setBatchCollapsed((prev) => ({ ...prev, [id]: !(prev[id] ?? true) }));
+  };
+
+  // Group by printer view. Items are bucketed by printer_id (null = model
+  // assignment or unassigned, keyed by target_model or "unassigned").
+  type PrinterBucket = {
+    key: string;
+    printerId: number | null;
+    targetModel: string | null;
+    label: string;
+    isUnassigned: boolean;
+    rows: QueueRow[];
+  };
+
+  const printerBuckets = useMemo<PrinterBucket[]>(() => {
+    const buckets = new Map<string, PrinterBucket>();
+    const bucketForItem = (item: PrintQueueItem): { key: string; label: string; printerId: number | null; targetModel: string | null; isUnassigned: boolean } => {
+      if (item.printer_id) {
+        return {
+          key: `printer:${item.printer_id}`,
+          label: item.printer_name || `Printer #${item.printer_id}`,
+          printerId: item.printer_id,
+          targetModel: null,
+          isUnassigned: false,
+        };
+      }
+      if (item.target_model) {
+        return {
+          key: `model:${item.target_model}`,
+          label: `${t('queue.filter.any')} ${item.target_model}`,
+          printerId: null,
+          targetModel: item.target_model,
+          isUnassigned: false,
+        };
+      }
+      return {
+        key: 'unassigned',
+        label: t('queue.filter.unassigned'),
+        printerId: null,
+        targetModel: null,
+        isUnassigned: true,
+      };
+    };
+
+    for (const row of groupedRows) {
+      const representative = row.kind === 'item' ? row.item : row.items[0];
+      if (!representative) continue;
+      const meta = bucketForItem(representative);
+      if (!buckets.has(meta.key)) {
+        buckets.set(meta.key, { ...meta, rows: [] });
+      }
+      buckets.get(meta.key)!.rows.push(row);
+    }
+    return Array.from(buckets.values()).sort((a, b) => {
+      if (a.isUnassigned && !b.isUnassigned) return 1;
+      if (!a.isUnassigned && b.isUnassigned) return -1;
+      return a.label.localeCompare(b.label);
+    });
+  }, [groupedRows, t]);
+
+  const aggregateForRows = (rows: QueueRow[]) => {
+    let count = 0;
+    let time = 0;
+    let weight = 0;
+    for (const row of rows) {
+      const items = row.kind === 'item' ? [row.item] : row.items;
+      for (const item of items) {
+        count += 1;
+        time += item.print_time_seconds || 0;
+        weight += item.filament_used_grams || 0;
+      }
+    }
+    return { count, time, weight };
   };
 
   return (
     <div className="p-4 md:p-8">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
             <ListOrdered className="w-7 h-7 text-bambu-green" />
@@ -1160,6 +1771,36 @@ export function QueuePage() {
           </h1>
           <p className="text-bambu-gray mt-1">{t('queue.subtitle')}</p>
         </div>
+      </div>
+
+      {/* Tab strip — Active queue is the main view; History and Timeline
+          live in their own tabs so the queue page stays focused. */}
+      <div className="flex gap-1 border-b border-bambu-dark-tertiary mb-6 overflow-x-auto">
+        {([
+          { id: 'queue' as const, label: t('queue.tabs.queue'), icon: Clock, count: pendingItems.length + activeItems.length },
+          { id: 'history' as const, label: t('queue.tabs.history'), icon: ListOrdered, count: historyItems.length },
+          { id: 'timeline' as const, label: t('queue.tabs.timeline'), icon: GanttChart, count: null as number | null },
+        ]).map(({ id, label, icon: Icon, count }) => (
+          <button
+            key={id}
+            onClick={() => setActiveTab(id)}
+            className={`px-4 py-2.5 text-sm flex items-center gap-2 border-b-2 -mb-px transition-colors whitespace-nowrap ${
+              activeTab === id
+                ? 'text-white border-bambu-green font-medium'
+                : 'text-bambu-gray border-transparent hover:text-white'
+            }`}
+          >
+            <Icon className="w-4 h-4" />
+            {label}
+            {count !== null && count > 0 && (
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                activeTab === id ? 'bg-bambu-green/20 text-bambu-green' : 'bg-bambu-dark-tertiary text-bambu-gray'
+              }`}>
+                {count}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* Summary Stats */}
@@ -1220,7 +1861,7 @@ export function QueuePage() {
 
         <div className="hidden sm:block flex-1" />
 
-        {historyItems.length > 0 && (
+        {activeTab === 'history' && historyItems.length > 0 && (
           <Button
             className="w-full sm:w-auto"
             variant="secondary"
@@ -1235,41 +1876,50 @@ export function QueuePage() {
         )}
       </div>
 
-      {/* View Mode Toggle + SJF */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="hidden sm:flex items-center border border-bambu-dark-tertiary rounded-lg overflow-hidden">
+      {/* Queue-tab controls: layout toggle (Position / Printer) + SJF.
+          Hidden on History/Timeline tabs since they don't apply. */}
+      {activeTab === 'queue' && (
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          <div className="inline-flex items-center bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg p-0.5">
+            <button
+              className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors flex items-center gap-1.5 ${
+                activeLayout === 'position' ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray hover:text-white'
+              }`}
+              onClick={() => setActiveLayout('position')}
+              title={t('queue.layout.flatList')}
+            >
+              <List className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{t('queue.layout.flatList')}</span>
+            </button>
+            <button
+              className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors flex items-center gap-1.5 ${
+                activeLayout === 'printer' ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray hover:text-white'
+              }`}
+              onClick={() => setActiveLayout('printer')}
+              title={t('queue.layout.groupByPrinter')}
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{t('queue.layout.byPrinter')}</span>
+            </button>
+          </div>
           <button
-            className={`p-2 transition-colors ${viewMode === 'list' ? 'bg-bambu-green text-white' : 'bg-bambu-dark text-bambu-gray hover:text-white'}`}
-            onClick={() => setViewMode('list')}
-            title={t('queue.timeline.listView')}
+            onClick={() => {
+              const newValue = !(settings?.queue_shortest_first ?? false);
+              sjfMutation.mutate(newValue);
+            }}
+            className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg border transition-colors ${
+              settings?.queue_shortest_first
+                ? 'bg-bambu-green/20 border-bambu-green text-bambu-green'
+                : 'bg-bambu-dark-secondary border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-gray'
+            }`}
+            title={t('queue.sjf.tooltip', 'Shortest Job First — scheduler prioritizes shorter prints')}
           >
-            <List className="w-4 h-4" />
-          </button>
-          <button
-            className={`p-2 transition-colors ${viewMode === 'timeline' ? 'bg-bambu-green text-white' : 'bg-bambu-dark text-bambu-gray hover:text-white'}`}
-            onClick={() => setViewMode('timeline')}
-            title={t('queue.timeline.timelineView')}
-          >
-            <GanttChart className="w-4 h-4" />
+            <Snail className="w-4 h-4" />
+            <span className="hidden sm:inline">{t('queue.sjf.label', 'SJF')}</span>
+            <span className={`w-1.5 h-1.5 rounded-full ${settings?.queue_shortest_first ? 'bg-bambu-green' : 'bg-bambu-gray'}`} />
           </button>
         </div>
-        <button
-          onClick={() => {
-            const newValue = !(settings?.queue_shortest_first ?? false);
-            sjfMutation.mutate(newValue);
-          }}
-          className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg border transition-colors ${
-            settings?.queue_shortest_first
-              ? 'bg-bambu-green/20 border-bambu-green text-bambu-green'
-              : 'bg-bambu-dark-secondary border-bambu-dark-tertiary text-bambu-gray hover:text-white hover:border-bambu-gray'
-          }`}
-          title={t('queue.sjf.tooltip', 'Shortest Job First — scheduler prioritizes shorter prints')}
-        >
-          <Snail className="w-4 h-4" />
-          <span className="hidden sm:inline">{t('queue.sjf.label', 'SJF')}</span>
-          <span className={`w-1.5 h-1.5 rounded-full ${settings?.queue_shortest_first ? 'bg-bambu-green' : 'bg-bambu-gray'}`} />
-        </button>
-      </div>
+      )}
 
       {isLoading ? (
         <div className="text-center py-12 text-bambu-gray">{t('common.loading')}</div>
@@ -1281,9 +1931,10 @@ export function QueuePage() {
             {t('queue.empty.description')}
           </p>
         </Card>
-      ) : viewMode === 'timeline' ? (
+      ) : activeTab === 'timeline' ? (
         <QueueTimelineView
           queueItems={queue || []}
+          printers={printers || []}
           printerStatuses={printerStatusMap}
           onItemClick={(item) => {
             if (['completed', 'failed', 'skipped', 'cancelled'].includes(item.status)) {
@@ -1294,6 +1945,23 @@ export function QueuePage() {
               setConfirmAction({ type: 'stop', item });
             }
           }}
+          t={t}
+        />
+      ) : activeTab === 'history' ? (
+        <HistorySection
+          items={historyItems}
+          collapsed={false}
+          sortBy={historySortBy}
+          sortAsc={historySortAsc}
+          onSortByChange={setHistorySortBy}
+          onSortAscToggle={() => setHistorySortAsc(!historySortAsc)}
+          onRemove={(item) => setConfirmAction({ type: 'remove', item })}
+          onRequeue={setRequeueItem}
+          timeFormat={timeFormat}
+          batchCollapsed={batchCollapsed}
+          toggleBatchCollapsed={toggleBatchCollapsed}
+          hasPermission={hasPermission}
+          canModify={canModify}
           t={t}
         />
       ) : (
@@ -1364,7 +2032,7 @@ export function QueuePage() {
                 </div>
               </div>
 
-              {/* Bulk action toolbar */}
+              {/* Bulk action toolbar (now with "Group as batch") */}
               <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 sm:mb-4 p-2 sm:p-3 bg-bambu-dark rounded-lg">
                 <Button
                   variant="ghost"
@@ -1385,6 +2053,18 @@ export function QueuePage() {
                       {t('queue.bulkEdit.selected', { count: selectedItems.length })}
                     </span>
                     <div className="hidden sm:block h-4 w-px bg-bambu-dark-tertiary" />
+                    {canGroupSelected && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setGroupBatchModal(true)}
+                        className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-cyan-300 hover:text-cyan-200"
+                        title={t('queue.batch.groupAsBatch')}
+                      >
+                        <Package className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        <span className="hidden sm:inline">{t('queue.batch.groupAsBatch')}</span>
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1414,91 +2094,88 @@ export function QueuePage() {
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
+                onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
               >
                 <SortableContext
-                  items={pendingItems.map(i => i.id)}
+                  items={sortableIds}
                   strategy={verticalListSortingStrategy}
                 >
-                  <div className="space-y-2 sm:space-y-3">
-                    {pendingItems.map((item, index) => (
-                      <SortableQueueItem
-                        key={item.id}
-                        item={item}
-                        position={index + 1}
-                        onEdit={() => setEditItem(item)}
-                        onCancel={() => setConfirmAction({ type: 'cancel', item })}
-                        onRemove={() => {}}
-                        onStop={() => {}}
-                        onRequeue={() => {}}
-                        onStart={() => startMutation.mutate({ id: item.id })}
-                        timeFormat={timeFormat}
-                        isSelected={selectedItems.includes(item.id)}
-                        onToggleSelect={() => handleToggleSelect(item.id)}
-                        hasPermission={hasPermission}
-                        canModify={canModify}
-                        t={t}
-                      />
-                    ))}
-                  </div>
+                  {activeLayout === 'position' ? (
+                    <div className="space-y-2 sm:space-y-3">
+                      {groupedRows.map((row) => (
+                        <QueueRowRender
+                          key={row.kind === 'item' ? `item-${row.item.id}` : `batch-${row.batchId}`}
+                          row={row}
+                          collapsed={row.kind === 'batch' ? (batchCollapsed[row.batchId] ?? true) : false}
+                          onToggleBatch={row.kind === 'batch' ? () => toggleBatchCollapsed(row.batchId) : undefined}
+                          onUngroup={row.kind === 'batch' ? () => setUngroupBatchId(row.batchId) : undefined}
+                          setEditItem={setEditItem}
+                          setConfirmAction={setConfirmAction}
+                          startMutation={startMutation}
+                          selectedItems={selectedItems}
+                          handleToggleSelect={handleToggleSelect}
+                          timeFormat={timeFormat}
+                          hasPermission={hasPermission}
+                          canModify={canModify}
+                          t={t}
+                          aggregateForRows={aggregateForRows}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {printerBuckets.map((bucket) => {
+                        const agg = aggregateForRows(bucket.rows);
+                        return (
+                          <div key={bucket.key}>
+                            <div className="flex items-center gap-3 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-t-lg">
+                              <Printer className={`w-4 h-4 ${bucket.isUnassigned ? 'text-orange-400' : bucket.targetModel ? 'text-blue-400' : 'text-bambu-green'}`} />
+                              <span className="font-semibold text-white text-sm">{bucket.label}</span>
+                              <span className="text-xs text-bambu-gray flex flex-wrap gap-x-3">
+                                <span>{t('queue.itemCount', { count: agg.count })}</span>
+                                {agg.time > 0 && <span>{formatDuration(agg.time)}</span>}
+                                {agg.weight > 0 && <span>{formatWeight(agg.weight)}</span>}
+                              </span>
+                            </div>
+                            <div className="bg-bambu-dark/40 border border-t-0 border-bambu-dark-tertiary rounded-b-lg p-2 space-y-2">
+                              {bucket.rows.map((row) => (
+                                <QueueRowRender
+                                  key={row.kind === 'item' ? `item-${row.item.id}` : `batch-${row.batchId}`}
+                                  row={row}
+                                  collapsed={row.kind === 'batch' ? (batchCollapsed[row.batchId] ?? true) : false}
+                                  onToggleBatch={row.kind === 'batch' ? () => toggleBatchCollapsed(row.batchId) : undefined}
+                                  onUngroup={row.kind === 'batch' ? () => setUngroupBatchId(row.batchId) : undefined}
+                                  setEditItem={setEditItem}
+                                  setConfirmAction={setConfirmAction}
+                                  startMutation={startMutation}
+                                  selectedItems={selectedItems}
+                                  handleToggleSelect={handleToggleSelect}
+                                  timeFormat={timeFormat}
+                                  hasPermission={hasPermission}
+                                  canModify={canModify}
+                                  t={t}
+                                  aggregateForRows={aggregateForRows}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </SortableContext>
+                <DragOverlay>
+                  {activeDragId !== null && selectedItems.includes(activeDragId) && selectedItems.length > 1 ? (
+                    <div className="flex items-center gap-3 px-3 py-2 bg-bambu-dark-secondary border-2 border-cyan-400 rounded-lg shadow-2xl">
+                      <Package className="w-4 h-4 text-cyan-300" />
+                      <span className="text-sm text-white font-medium">
+                        {t('queue.dragGhost.multiCount', { count: selectedItems.length })}
+                      </span>
+                    </div>
+                  ) : null}
+                </DragOverlay>
               </DndContext>
-            </div>
-          )}
-
-          {/* History */}
-          {historyItems.length > 0 && (
-            <div>
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
-                <button
-                  onClick={() => setHistoryCollapsed(!historyCollapsed)}
-                  className="text-base sm:text-lg font-semibold text-white flex items-center gap-2 hover:text-bambu-green transition-colors"
-                >
-                  {historyCollapsed ? <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" /> : <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5" />}
-                  {t('queue.sections.history')}
-                  <span className="text-xs sm:text-sm font-normal text-bambu-gray">
-                    ({t('queue.itemCount', { count: historyItems.length })})
-                  </span>
-                </button>
-                {!historyCollapsed && (
-                  <div className="flex items-center gap-2">
-                    <select
-                      className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                      value={historySortBy}
-                      onChange={(e) => setHistorySortBy(e.target.value as 'date' | 'name' | 'printer')}
-                    >
-                      <option value="date">{t('queue.sort.byDate')}</option>
-                      <option value="name">{t('queue.sort.byName')}</option>
-                      <option value="printer">{t('queue.sort.byPrinter')}</option>
-                    </select>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setHistorySortAsc(!historySortAsc)}
-                      title={historySortAsc ? t('queue.sort.ascendingOldest') : t('queue.sort.descendingNewest')}
-                      className="px-2"
-                    >
-                      {historySortAsc ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
-                    </Button>
-                  </div>
-                )}
-              </div>
-              {!historyCollapsed && (
-                <div className="space-y-1.5 sm:space-y-2">
-                  {historyItems.slice(0, 50).map((item) => (
-                    <CompactHistoryRow
-                      key={item.id}
-                      item={item}
-                      onRemove={() => setConfirmAction({ type: 'remove', item })}
-                      onRequeue={() => setRequeueItem(item)}
-                      timeFormat={timeFormat}
-                      hasPermission={hasPermission}
-                      canModify={canModify}
-                      t={t}
-                    />
-                  ))}
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -1620,6 +2297,90 @@ export function QueuePage() {
           t={t}
         />
       )}
+
+      {/* Group as batch modal — name prompt */}
+      {groupBatchModal && (
+        <GroupBatchModal
+          itemCount={selectedItems.length}
+          isSaving={createBatchMutation.isPending}
+          defaultName={(() => {
+            // Suggest a name derived from the first selected item's source.
+            const first = pendingItems.find((i) => selectedItems.includes(i.id));
+            const raw = first?.archive_name || first?.library_file_name || '';
+            const cleaned = raw.replace(/\.gcode\.3mf$/i, '').replace(/\.3mf$/i, '');
+            return cleaned ? `${cleaned}` : t('queue.batch.defaultName');
+          })()}
+          onSave={(name) => createBatchMutation.mutate({ name, item_ids: selectedItems })}
+          onClose={() => setGroupBatchModal(false)}
+          t={t}
+        />
+      )}
+
+      {/* Ungroup batch confirm */}
+      {ungroupBatchId !== null && (
+        <ConfirmModal
+          title={t('queue.batch.ungroupConfirmTitle')}
+          message={t('queue.batch.ungroupConfirmMessage')}
+          confirmText={t('queue.batch.ungroup')}
+          variant="warning"
+          onConfirm={() => ungroupBatchMutation.mutate(ungroupBatchId)}
+          onCancel={() => setUngroupBatchId(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+interface GroupBatchModalProps {
+  itemCount: number;
+  defaultName: string;
+  isSaving: boolean;
+  onSave: (name: string) => void;
+  onClose: () => void;
+  t: (key: string, options?: Record<string, unknown>) => string;
+}
+
+function GroupBatchModal({ itemCount, defaultName, isSaving, onSave, onClose, t }: GroupBatchModalProps) {
+  const [name, setName] = useState(defaultName);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl p-6 w-full max-w-md">
+        <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+          <Package className="w-5 h-5 text-cyan-300" />
+          {t('queue.batch.groupAsBatch')}
+        </h3>
+        <p className="text-sm text-bambu-gray mb-4">
+          {t('queue.batch.groupAsBatchDescription', { count: itemCount })}
+        </p>
+        <label className="block text-sm font-medium text-white mb-2">
+          {t('queue.batch.nameLabel')}
+        </label>
+        <input
+          type="text"
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t('queue.batch.namePlaceholder')}
+          maxLength={120}
+          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none mb-5"
+        />
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={isSaving}>
+            {t('common.cancel')}
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              const trimmed = name.trim();
+              if (trimmed) onSave(trimmed);
+            }}
+            disabled={isSaving || !name.trim()}
+          >
+            {isSaving ? t('common.saving') : t('queue.batch.create')}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

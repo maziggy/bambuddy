@@ -812,7 +812,9 @@ export default {
       deleteArchives: '아카이브 삭제',
       deleteArchivesConfirm: '{{count}}개 아카이브를 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.',
       deleteCount: '{{count}}개 삭제',
-      deletePurgeStats: '빠른 통계에서도 이 인쇄 항목 제거 (필라멘트, 시간, 비용, 에너지)'
+      deletePurgeStats: '빠른 통계에서도 이 인쇄 항목 제거 (필라멘트, 시간, 비용, 에너지)',
+      deleteQueueItemsWarning: '이 아카이브와 연결된 {{count}}개의 대기열 항목도 함께 제거됩니다.',
+      deleteBlockedByPrinting: '삭제할 수 없습니다 — {{count}}개의 대기열 항목이 현재 인쇄 중입니다. 인쇄를 먼저 중지한 다음 다시 시도하십시오.'
     },
     page: {
       title: '아카이브',
@@ -958,7 +960,40 @@ export default {
     batchCancelled: '남은 배치 항목이 취소되었습니다',
     cancelBatchConfirmTitle: '배치 취소',
     cancelBatchConfirmMessage: '이 배치의 남은 대기 항목을 모두 취소하시겠습니까?',
-    batch: '배치',
+    batch: {
+      defaultName: '배치',
+      label: '{{count}}개 항목',
+      label_plural: '{{count}}개 항목',
+      pendingCount: '{{count}}개 대기 중',
+      pendingCount_plural: '{{count}}개 대기 중',
+      expand: '배치 펼치기',
+      collapse: '배치 접기',
+      groupAsBatch: '배치로 묶기…',
+      groupAsBatchDescription: '선택한 {{count}}개 항목을 접을 수 있는 하나의 배치로 묶습니다.',
+      nameLabel: '배치 이름',
+      namePlaceholder: '예: 금요일 선물',
+      create: '배치 만들기',
+      ungroup: '그룹 해제',
+      ungroupConfirmTitle: '배치 그룹을 해제하시겠습니까?',
+      ungroupConfirmMessage: '항목은 큐에 남아 있지만 더 이상 함께 그룹화되지 않습니다.',
+    },
+    tabs: {
+      queue: '큐',
+      history: '기록',
+      timeline: '타임라인',
+    },
+    layout: {
+      flatList: '목록',
+      byPrinter: '프린터별',
+      groupByPrinter: '프린터별로 묶기',
+    },
+    history: {
+      emptyTitle: '아직 기록이 없습니다',
+      emptyDescription: '완료·취소·실패한 인쇄가 여기에 표시됩니다.',
+    },
+    dragGhost: {
+      multiCount: '{{count}}개 항목',
+    },
     sections: {
       currentlyPrinting: '현재 인쇄 중',
       queued: '대기 중',
@@ -1073,13 +1108,18 @@ export default {
       clearHistoryFailed: '기록 지우기 실패',
       updateFailed: '항목 업데이트 실패',
       bulkCancelled: '{{count}}개 항목이 취소되었습니다',
-      bulkCancelFailed: '항목 취소 실패'
+      bulkCancelFailed: '항목 취소 실패',
+      batchCreated: '"{{name}}" 배치를 만들었습니다',
+      batchCreateFailed: '배치 만들기에 실패했습니다',
+      batchUngrouped: '{{count}}개 항목의 그룹을 해제했습니다',
+      batchUngroupFailed: '배치 그룹 해제에 실패했습니다',
     },
     timeline: {
       listView: '목록',
       timelineView: '타임라인',
       unassigned: '미할당',
       noData: '이 날에 예약된 인쇄 없음',
+      nothingCommitted: '이 시간 창에 확정된 일정이 없습니다. 대기 중인 항목, 보류된 항목, 유휴 프린터의 ASAP 작업은 표시되지 않습니다 — 예약 시간을 설정하거나 대기 항목을 릴리스하면 여기에 표시됩니다.',
       allDoneBy: '모든 인쇄 예상 완료 시간: {{time}}',
       staged: '준비됨',
       filterAll: '모두 표시',
@@ -1095,7 +1135,13 @@ export default {
         previous: '이전 날',
         next: '다음 날',
         today: '오늘'
-      }
+      },
+      window: {
+        back12h: '12시간 이전',
+        forward12h: '12시간 이후',
+        now: '지금',
+      },
+      printerColumnHeader: '프린터',
     },
     permissions: {
       noStopPrint: '인쇄를 정지할 권한이 없습니다',
@@ -1838,21 +1884,11 @@ export default {
     orcaslicerApiUrl: 'OrcaSlicer 사이드카 URL',
     bambuStudioApiUrl: 'Bambu Studio 사이드카 URL',
     slicerApiUrlDescription: '슬라이서 API 사이드카 컨테이너의 URL. SLICER_API_URL / BAMBU_STUDIO_API_URL 환경 변수 기본값을 사용하려면 비워두세요.',
-    slicerBundles: {
-      title: '슬라이서 번들',
-      description: 'BambuStudio에서 내보낸 프린터 프리셋 번들(.bbscfg)을 가져오세요. 가져온 후 슬라이스 요청이 JSON 프로필 트리플렛을 다시 업로드하지 않고 번들에서 이름으로 프리셋을 선택할 수 있습니다.',
-      uploadButton: '번들 업로드',
-      uploading: '업로드 중…',
-      loading: '번들 로딩 중…',
-      empty: '아직 가져온 번들 없음.',
-      summary: '{{processCount}}개 프로세스 · {{filamentCount}}개 필라멘트 프리셋',
-      delete: '삭제',
-      uploadSuccess: '{{name}} 가져옴',
-      uploadError: '번들 업로드 실패: {{message}}',
-      deleteSuccess: '번들 제거됨',
-      deleteError: '번들 삭제 실패: {{message}}',
-      confirmDeleteTitle: '이 번들을 제거하시겠습니까?',
-      confirmDeleteMessage: '"{{name}}"을(를) 참조하는 슬라이스 요청은 번들이 재가져오기될 때까지 실패합니다.'
+    slicerBundlesRemoved: {
+      title: '슬라이서 번들 (제거됨)',
+      description: '프린터 프리셋 번들 (.bbscfg) 가져오기가 제거되었습니다. BambuStudio의 번들 내보내기에는 사용자 정의 프리셋만 포함되므로, 가져오기로는 표준 프로세스 / 필라멘트가 제공되지 않았고 슬라이싱은 임베디드 설정으로 되돌아갔습니다.',
+      alternatives: '개별 사용자 정의는 단일 프리셋 가져오기를, 또는 Bambu Cloud / Orca Cloud를 통해 동기화하세요. 표준 프리셋은 슬라이서 사이드카에서 자동으로 제공됩니다.',
+      lookupOrder: '슬라이스 시점의 프리셋 조회 순서: 1) 가져옴 (로컬), 2) Orca Cloud, 3) Bambu Cloud, 4) 표준 (사이드카 폴백).',
     },
     externalCameras: '외부 카메라',
     costTracking: '비용 추적',
@@ -3392,9 +3428,6 @@ export default {
     actionAllTitle: '모든 플레이트를 단일 다중 플레이트 출력으로 슬라이싱합니다 (단일 아카이브). 필라멘트 선택은 프로젝트가 정의하는 모든 슬롯을 포함합니다.',
     allPlatesToggle: '{{count}}개 플레이트 모두 슬라이싱',
     otherPrinters: '다른 프린터',
-    bundle: '슬라이서 번들',
-    bundleNone: '— 없음 (개별로 프리셋 선택) —',
-    bundleAllRequired: '번들 프로세스 및 모든 필라멘트 슬롯을 선택해야 합니다',
     runningWithProgressMultiPlate: '플레이트 {{plateIndex}}/{{plateCount}} • {{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
     failedTitle: '슬라이싱 실패',
     bedType: {
@@ -4939,6 +4972,8 @@ export default {
     noMatchingPresets: '일치하는 프리셋을 찾을 수 없습니다.',
     custom: '사용자 지정',
     builtin: '기본 제공',
+    orcaCloud: 'Orca Cloud',
+    bambuCloud: 'Bambu Cloud',
     settingsSentToPrinter: '설정이 프린터로 전송됨',
     filamentProfile: '필라멘트 프로필',
     kProfileLabel: 'K 프로필 (압력 전진)',

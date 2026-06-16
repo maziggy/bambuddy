@@ -27,7 +27,7 @@ class ArchiveDuplicate(BaseModel):
 
     id: int
     print_name: str | None
-    created_at: datetime
+    created_at: datetime | None
     match_type: str  # "exact" (hash match) or "similar" (name match)
 
 
@@ -94,7 +94,7 @@ class ArchiveResponse(BaseModel):
     energy_kwh: float | None = None
     energy_cost: float | None = None
 
-    created_at: datetime
+    created_at: datetime | None
 
     # User tracking (Issue #206)
     created_by_id: int | None = None
@@ -137,7 +137,7 @@ class ArchiveSlim(BaseModel):
     completed_at: datetime | None
     cost: float | None
     quantity: int = 1
-    created_at: datetime
+    created_at: datetime | None
 
     class Config:
         from_attributes = True

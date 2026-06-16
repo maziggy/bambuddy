@@ -80,6 +80,7 @@ class ExportService:
         date_from: datetime | None = None,
         date_to: datetime | None = None,
         search: str | None = None,
+        visible_to_user_id: int | None = None,
     ) -> tuple[bytes, str, str]:
         """Export archives to CSV or Excel format.
 
@@ -92,6 +93,8 @@ class ExportService:
             date_from: Filter by start date
             date_to: Filter by end date
             search: Search filter
+            visible_to_user_id: Scope rows to those owned by this user (used
+                when the caller has ARCHIVES_READ_OWN but not _ALL).
 
         Returns:
             Tuple of (file_bytes, filename, content_type)
@@ -112,6 +115,8 @@ class ExportService:
             query = query.where(PrintArchive.created_at >= date_from)
         if date_to:
             query = query.where(PrintArchive.created_at <= date_to)
+        if visible_to_user_id is not None:
+            query = query.where(PrintArchive.created_by_id == visible_to_user_id)
         if search:
             like_pattern = f"%{search}%"
             query = query.where(

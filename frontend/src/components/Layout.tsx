@@ -279,23 +279,34 @@ export function Layout() {
     const result: string[] = [];
     const seen = new Set<string>();
 
-    // Map nav item IDs to the permission required to see them
-    const navPermissions: Record<string, Permission> = {
-      archives: 'archives:read',
-      queue: 'queue:read',
+    // Map nav item IDs to the permission(s) required to see them. Resources
+    // that ship in three tiers (legacy `*:read` + granular `*:read_own` /
+    // `*:read_all`) list all three: the default Operators group is seeded
+    // with `_own` only, so gating on the legacy alone hides the entry from
+    // every non-admin user even though the underlying API accepts their
+    // request (#1755).
+    const navPermissions: Record<string, Permission | Permission[]> = {
+      archives: ['archives:read', 'archives:read_own', 'archives:read_all'],
+      queue: ['queue:read', 'queue:read_own', 'queue:read_all'],
       stats: 'stats:read',
       profiles: 'kprofiles:read',
       maintenance: 'maintenance:read',
       projects: 'projects:read',
       inventory: 'inventory:read',
-      files: 'library:read',
+      files: ['library:read', 'library:read_own', 'library:read_all'],
       makerworld: 'makerworld:view',
       settings: 'settings:read',
       notifications: 'notifications:user_email',
     };
 
     const isHidden = (id: string) => {
-      if (authEnabled && id in navPermissions && !hasPermission(navPermissions[id])) return true;
+      if (authEnabled && id in navPermissions) {
+        const required = navPermissions[id];
+        const granted = Array.isArray(required)
+          ? required.some((p) => hasPermission(p))
+          : hasPermission(required);
+        if (!granted) return true;
+      }
       // notifications nav item also requires advanced auth to be enabled and user_notifications_enabled setting
       if (id === 'notifications' && (!authEnabled || !advancedAuthStatus?.advanced_auth_enabled || (settings?.user_notifications_enabled === false))) return true;
       return false;

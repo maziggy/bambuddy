@@ -97,6 +97,23 @@ describe('PrintLogModal', () => {
     });
   });
 
+  it('translates camelCase failure_reason keys (#1687 follow-up)', async () => {
+    vi.mocked(api.getArchiveRuns).mockResolvedValue({
+      total: 1,
+      items: [
+        {
+          ...sampleRuns.items[0],
+          failure_reason: 'filamentRunout',
+        },
+      ],
+    });
+    render(<PrintLogModal archiveId={42} archiveName="Benchy" onClose={vi.fn()} />);
+    await waitFor(() => {
+      expect(screen.getByText('Filament runout')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('filamentRunout')).not.toBeInTheDocument();
+  });
+
   it('shows the empty state when there are no runs', async () => {
     vi.mocked(api.getArchiveRuns).mockResolvedValue({ total: 0, items: [] });
     render(<PrintLogModal archiveId={42} archiveName="Benchy" onClose={vi.fn()} />);

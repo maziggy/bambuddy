@@ -85,8 +85,8 @@ class _Env:
         return False
 
 
-def _printer(ip="192.168.1.50"):
-    return types.SimpleNamespace(id=1, ip_address=ip)
+def _printer(ip="192.168.1.50", model=None):
+    return types.SimpleNamespace(id=1, ip_address=ip, model=model)
 
 
 class TestSameSubnet:
@@ -295,3 +295,27 @@ class TestExternalStorageCheck:
         with _Env(state=bare):
             result = await run_connection_diagnostic("192.168.1.50", printer=_printer())
         assert _statuses(result)["external_storage"] == "skip"
+
+    async def test_skips_on_a1_no_external_storage_slot(self):
+        # Regression for #1703: A1 and A1 Mini ship without a MicroSD slot
+        # at all, so home_flag bit 11 is never set and a naive read would
+        # report `fail` for every A1-series user. The model-aware skip
+        # branch suppresses that — and the overall result must NOT escalate
+        # to "problems" purely because of this check.
+        with _Env(state=_state(store_to_sdcard=False)):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="A1"))
+        assert _statuses(result)["external_storage"] == "skip"
+        assert result.overall == "ok"
+
+    async def test_skips_on_a1_mini_no_external_storage_slot(self):
+        with _Env(state=_state(store_to_sdcard=False)):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="A1 Mini"))
+        assert _statuses(result)["external_storage"] == "skip"
+
+    async def test_still_fails_on_x1c_when_toggle_off(self):
+        # Sanity: the model-aware skip MUST NOT silently let X1C-class
+        # printers off the hook. The store_to_sdcard=False path is the
+        # one real bit of value this check provides for those models.
+        with _Env(state=_state(store_to_sdcard=False)):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="X1C"))
+        assert _statuses(result)["external_storage"] == "fail"

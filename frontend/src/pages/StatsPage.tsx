@@ -814,7 +814,9 @@ function FailureAnalysisWidget({ size = 1, dateFrom, dateTo, createdById }: {
             {topReasons.map(([reason, count]) => (
               <div key={reason} className="flex items-center justify-between text-sm">
                 <span className={`text-white truncate ${size === 4 ? 'max-w-[200px]' : 'max-w-[160px]'}`}>
-                  {reason || t('common.unknown')}
+                  {reason
+                    ? t(`editArchive.failureReasons.${reason}`, { defaultValue: reason })
+                    : t('common.unknown')}
                 </span>
                 <span className="text-bambu-gray ml-2">{count}</span>
               </div>

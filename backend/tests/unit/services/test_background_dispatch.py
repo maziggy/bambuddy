@@ -231,11 +231,11 @@ def test_dispatch_option_defaults_align_with_request_schema_defaults():
     from backend.app.schemas.library import FilePrintRequest
     from backend.app.services import background_dispatch as bd
 
-    # `timelapse` deliberately excluded — the dispatcher now resolves it via
-    # ``_resolve_effective_timelapse`` so the value passed to ``start_print``
-    # depends on the ``capture_finish_photo`` setting + ``bambuddy_forced_timelapse``
-    # column (#1397). The original literal `job.options.get("timelapse", False)`
-    # pattern no longer appears.
+    # `timelapse` deliberately excluded — the dispatcher wraps it in
+    # ``bool(...)`` (``effective_timelapse = bool(job.options.get("timelapse",
+    # False))``) so the bare-pattern needle in the loop below would miss it.
+    # The wrap exists to coerce None / non-bool option payloads to a bool
+    # boundary the printer firmware accepts (#1721 follow-up).
     fields = ("bed_levelling", "flow_cali", "vibration_cali", "layer_inspect", "use_ams")
     reprint_defaults = {f: getattr(ReprintRequest(), f) for f in fields}
     libprint_defaults = {f: getattr(FilePrintRequest(), f) for f in fields}

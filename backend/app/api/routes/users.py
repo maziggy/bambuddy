@@ -12,6 +12,7 @@ from backend.app.api.routes.settings import get_external_login_url
 from backend.app.core.auth import (
     ALGORITHM,
     SECRET_KEY,
+    RequireAdminIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
     get_current_user_optional,
     get_password_hash,
@@ -66,7 +67,13 @@ async def list_users(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_READ),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all users."""
+    """List all users.
+
+    Read-only — gated on ``USERS_READ`` only. Operator-visible UIs
+    (Stats filter-by-user, Archives Print Log username column, File
+    Manager username autocomplete) consume this endpoint via custom-
+    group ``users:read`` grants without admin role. The admin-only
+    boundary lives on the write endpoints below."""
     result = await db.execute(select(User).options(selectinload(User.groups)).order_by(User.created_at))
     users = result.scalars().all()
     return [_user_to_response(user) for user in users]
@@ -76,6 +83,7 @@ async def list_users(
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     user_data: UserCreate,
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_CREATE),
     db: AsyncSession = Depends(get_db),
 ):
@@ -185,7 +193,7 @@ async def get_user(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_READ),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get a user by ID."""
+    """Get a user by ID. Read-only — gated on ``USERS_READ`` only."""
     result = await db.execute(select(User).where(User.id == user_id).options(selectinload(User.groups)))
     user = result.scalar_one_or_none()
     if not user:
@@ -201,6 +209,7 @@ async def get_user(
 async def update_user(
     user_id: int,
     user_data: UserUpdate,
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ):
@@ -311,7 +320,8 @@ async def get_user_items_count(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_READ),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get count of items created by this user."""
+    """Get count of items created by this user. Read-only — gated on
+    ``USERS_READ`` only."""
     # Verify user exists
     result = await db.execute(select(User).where(User.id == user_id))
     if not result.scalar_one_or_none():
@@ -350,6 +360,7 @@ async def get_user_items_count(
 async def delete_user(
     user_id: int,
     delete_items: bool = Query(False, description="Delete all items created by this user"),
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_DELETE),
     db: AsyncSession = Depends(get_db),
 ):

@@ -76,6 +76,32 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/library", tags=["library"])
 
 
+def _ensure_library_file_visible(
+    library_file: LibraryFile | None,
+    user: User | None,
+    can_read_all: bool,
+) -> LibraryFile:
+    """Per-file visibility gate for ownership-scoped LIBRARY reads (#1726-adjacent).
+
+    Mirrors archives.py::_ensure_archive_visible — single enforcement point so a
+    less-guarded sibling route can't accidentally leak a row. Same shape:
+
+      - Missing / soft-deleted → 404 (not 403, to avoid id-enumeration leaks).
+      - ``can_read_all`` true (LIBRARY_READ_ALL or auth disabled) → file returned.
+      - ``can_read_all`` false and ``created_by_id != user.id`` → 404.
+      - Ownerless files (``created_by_id is None``) require ALL — fail-closed.
+    """
+    if library_file is None or getattr(library_file, "deleted_at", None) is not None:
+        raise HTTPException(404, "File not found")
+    if can_read_all:
+        return library_file
+    if user is None:
+        raise HTTPException(404, "File not found")
+    if library_file.created_by_id is None or library_file.created_by_id != user.id:
+        raise HTTPException(404, "File not found")
+    return library_file
+
+
 def get_library_dir() -> Path:
     """Get the library storage directory."""
     base_dir = Path(app_settings.archive_dir)
@@ -695,7 +721,12 @@ async def _backfill_external_stl_thumbnails(folder_ids: list[int]) -> None:
 async def list_folders(
     response: Response,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    _: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get all folders as a tree structure."""
     # Prevent browser caching of folder list
@@ -754,7 +785,12 @@ async def list_folders(
 async def get_folders_by_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    _: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get all folders linked to a specific project."""
     result = await db.execute(
@@ -802,7 +838,12 @@ async def get_folders_by_project(
 async def get_folders_by_archive(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    _: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get all folders linked to a specific archive."""
     result = await db.execute(
@@ -910,7 +951,12 @@ async def create_folder(
 async def get_folder(
     folder_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    _: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get a folder by ID."""
     result = await db.execute(
@@ -1632,7 +1678,12 @@ async def list_files(
     internal_only: bool = False,
     external_only: bool = False,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """List files, optionally filtered by folder or project.
 
@@ -1654,7 +1705,10 @@ async def list_files(
             detail="internal_only and external_only are mutually exclusive",
         )
 
+    user, can_read_all = auth_result
     query = LibraryFile.active().options(selectinload(LibraryFile.created_by))
+    if user is not None and not can_read_all:
+        query = query.where(LibraryFile.created_by_id == user.id)
 
     if folder_id is not None:
         query = query.where(LibraryFile.folder_id == folder_id)
@@ -2394,7 +2448,12 @@ async def add_files_to_queue(
 async def get_library_file_plates(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get available plates from a multi-plate 3MF library file.
 
@@ -2405,9 +2464,10 @@ async def get_library_file_plates(
 
     import defusedxml.ElementTree as ET
 
+    user, can_read_all = auth_result
     # Get the library file
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    lib_file = result.scalar_one_or_none()
+    lib_file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     if not lib_file:
         raise HTTPException(status_code=404, detail="File not found")
@@ -2701,10 +2761,6 @@ async def _try_preview_slice_filaments(
     plate_id: int,
     file_path: Path,
     request_id: str | None = None,
-    bundle_id: str | None = None,
-    printer_name: str | None = None,
-    process_name: str | None = None,
-    filament_names: list[str] | None = None,
 ) -> list[dict] | None:
     """Run a preview slice via the user's configured sidecar. Same shape as
     the matching helper in archives.py — see that module for rationale.
@@ -2712,13 +2768,6 @@ async def _try_preview_slice_filaments(
     ``request_id``: when supplied, forwarded to the sidecar so the
     SliceModal's inline spinner + toast can poll the matching progress
     endpoint and show "Generating G-code (45%)" for the preview as well.
-
-    ``bundle_id`` / ``printer_name`` / ``process_name`` / ``filament_names``:
-    when all are supplied, the preview uses ``slice_with_bundle`` against
-    the named bundle's preset triplet so the preview's gram numbers reflect
-    the same profiles the real print will use. Partial context falls back
-    to the embedded-settings path so a half-completed Bundle-tier selection
-    in the modal doesn't error out.
     """
     from backend.app.api.routes.settings import get_setting
     from backend.app.services.slice_preview import get_preview_filaments
@@ -2747,10 +2796,6 @@ async def _try_preview_slice_filaments(
         file_name=file_path.name,
         api_url=api_url,
         request_id=request_id,
-        bundle_id=bundle_id,
-        printer_name=printer_name,
-        process_name=process_name,
-        filament_names=filament_names,
     )
 
 
@@ -2759,12 +2804,13 @@ async def get_library_file_filament_requirements(
     file_id: int,
     plate_id: int | None = None,
     request_id: str | None = None,
-    bundle_id: str | None = None,
-    printer_name: str | None = None,
-    process_name: str | None = None,
-    filament_names: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get filament requirements from a library file.
 
@@ -2774,21 +2820,13 @@ async def get_library_file_filament_requirements(
     Args:
         file_id: The library file ID
         plate_id: Optional plate index to get filaments for a specific plate
-        bundle_id / printer_name / process_name / filament_names: Optional
-            bundle context. When all four are supplied, the preview slice
-            (run for unsliced project files) uses ``slice_with_bundle``
-            against the named preset triplet instead of the embedded-
-            settings fallback. ``filament_names`` is comma- or semicolon-
-            separated to mirror the slice route's multi-color form.
     """
     import defusedxml.ElementTree as ET
 
+    user, can_read_all = auth_result
     # Get the library file
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    lib_file = result.scalar_one_or_none()
-
-    if not lib_file:
-        raise HTTPException(status_code=404, detail="File not found")
+    lib_file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     # Get the full file path
     file_path = Path(app_settings.base_dir) / lib_file.file_path
@@ -2899,14 +2937,6 @@ async def get_library_file_filament_requirements(
                 project_filaments = extract_project_filaments_from_3mf(zf)
                 used_slot_ids: set[int] = set()
                 if project_filaments and plate_id is not None:
-                    # Bundle context flows through optional query params so
-                    # callers without a Bundle-tier selection (the common
-                    # case) hit the same path as before.
-                    parsed_filament_names: list[str] | None = None
-                    if filament_names:
-                        parsed_filament_names = [
-                            n.strip() for n in filament_names.replace(";", ",").split(",") if n.strip()
-                        ] or None
                     preview = await _try_preview_slice_filaments(
                         db,
                         kind="library_file",
@@ -2914,10 +2944,6 @@ async def get_library_file_filament_requirements(
                         plate_id=plate_id,
                         file_path=file_path,
                         request_id=request_id,
-                        bundle_id=bundle_id,
-                        printer_name=printer_name,
-                        process_name=process_name,
-                        filament_names=parsed_filament_names,
                     )
                     if preview is not None:
                         used_slot_ids = {f["slot_id"] for f in preview}
@@ -3171,48 +3197,38 @@ async def _run_slicer_with_fallback(
         SlicerInputError,
     )
 
-    # Bundle dispatch path: when SliceRequest.bundle is set, the schema
-    # validator short-circuited the presets-required check, so the
-    # PresetRef fields may all be None. Skip resolve_preset_ref entirely
-    # — the sidecar will materialise the per-category JSONs from the
-    # bundle's extracted directory at slice time.
-    use_bundle = request.bundle is not None
-
     user: User | None = None
     presets: dict[str, str] = {}
     filament_jsons: list[str] = []
-    if not use_bundle:
-        # Resolve each slot via the source-aware resolver. The schema
-        # validator has already normalised legacy `*_preset_id: int`
-        # fields into `PresetRef(source='local', id=str(int))`, so all
-        # three are guaranteed non-None here.
-        if current_user_id is not None:
-            user = await db.get(User, current_user_id)
+    # Resolve each slot via the source-aware resolver. The schema
+    # validator has already normalised legacy `*_preset_id: int`
+    # fields into `PresetRef(source='local', id=str(int))`, so all
+    # three are guaranteed non-None here.
+    if current_user_id is not None:
+        user = await db.get(User, current_user_id)
 
-        refs = {
-            "printer": request.printer_preset,
-            "process": request.process_preset,
-        }
-        for slot, ref in refs.items():
-            assert ref is not None, "schema validator guarantees PresetRef is set"
-            presets[slot] = await resolve_preset_ref(db, user, ref, slot)
-        # Multi-color: resolve each filament slot in plate order. The schema
-        # validator backfilled `filament_presets` from the legacy `filament_preset`
-        # field for single-color callers, so this list is always non-empty.
-        for ref in request.filament_presets:
-            assert ref is not None, "schema validator guarantees filament list is non-None"
-            filament_jsons.append(await resolve_preset_ref(db, user, ref, "filament"))
+    refs = {
+        "printer": request.printer_preset,
+        "process": request.process_preset,
+    }
+    for slot, ref in refs.items():
+        assert ref is not None, "schema validator guarantees PresetRef is set"
+        presets[slot] = await resolve_preset_ref(db, user, ref, slot)
+    # Multi-color: resolve each filament slot in plate order. The schema
+    # validator backfilled `filament_presets` from the legacy `filament_preset`
+    # field for single-color callers, so this list is always non-empty.
+    for ref in request.filament_presets:
+        assert ref is not None, "schema validator guarantees filament list is non-None"
+        filament_jsons.append(await resolve_preset_ref(db, user, ref, "filament"))
 
-        # Bed-type override (#1337): patch curr_bed_type onto the resolved
-        # process JSON so the slicer's StaticPrintConfig pass picks up the
-        # user's pick instead of whatever the process preset defaults to.
-        # Without this, slicing an STL of ABS onto a process preset whose
-        # default is "Cool Plate" fails with "Plate 1: Cool Plate does not
-        # support filament 1" — the reporter's exact scenario. Only applies
-        # to the resolved-preset path; bundle mode would need a sidecar-side
-        # mechanism to patch presets it materialises from disk.
-        if request.bed_type:
-            presets["process"] = _patch_process_bed_type(presets["process"], request.bed_type)
+    # Bed-type override (#1337): patch curr_bed_type onto the resolved
+    # process JSON so the slicer's StaticPrintConfig pass picks up the
+    # user's pick instead of whatever the process preset defaults to.
+    # Without this, slicing an STL of ABS onto a process preset whose
+    # default is "Cool Plate" fails with "Plate 1: Cool Plate does not
+    # support filament 1" — the reporter's exact scenario.
+    if request.bed_type:
+        presets["process"] = _patch_process_bed_type(presets["process"], request.bed_type)
 
     # Slicer routing — pick the sidecar URL by preferred_slicer.
     # The per-install URL setting (Settings UI → Slicer card) wins; an
@@ -3286,11 +3302,10 @@ async def _run_slicer_with_fallback(
         target_model = await _resolve_target_printer_model(db, user, request)
         if source_model and target_model and is_dual_nozzle_model(source_model) != is_dual_nozzle_model(target_model):
             logger.info(
-                "Cross-nozzle-class re-slice (%s -> %s, %s): enabling --arrange so BS reconciles "
+                "Cross-nozzle-class re-slice (%s -> %s): enabling --arrange so BS reconciles "
                 "the embedded project layout against the target printer",
                 source_model,
                 target_model,
-                "bundle" if use_bundle else "presets",
             )
             cross_class_arrange = True
     # When this slice is dispatcher-tracked, generate a request_id so
@@ -3319,17 +3334,10 @@ async def _run_slicer_with_fallback(
     # never touches the unused slot. Replace unused-slot entries with the
     # slot-1 selection before the real slice so the loaded-filament set
     # is materially homogeneous.
-    bundle_filament_names: list[str] | None = None
     if is_3mf and request.plate is not None:
         from backend.app.services.slicer_3mf_convert import substitute_unused_plate_filaments
 
-        if use_bundle:
-            assert request.bundle is not None
-            bundle_filament_names = substitute_unused_plate_filaments(
-                primary_bytes, request.plate, list(request.bundle.filament_names)
-            )
-        else:
-            filament_jsons = substitute_unused_plate_filaments(primary_bytes, request.plate, filament_jsons)
+        filament_jsons = substitute_unused_plate_filaments(primary_bytes, request.plate, filament_jsons)
 
     # Cross-class slice-all loop (#1493): when the user asks for
     # ``plate=0`` (all plates) AND the source's nozzle class differs from
@@ -3392,39 +3400,18 @@ async def _run_slicer_with_fallback(
 
                 for plate_num in range(1, plate_count + 1):
                     plate_cb = _wrap_progress_for_plate(plate_num, plate_count)
-                    if use_bundle:
-                        assert request.bundle is not None
-                        per_plate = await service.slice_with_bundle(
-                            model_bytes=primary_bytes,
-                            model_filename=model_filename,
-                            bundle_id=request.bundle.bundle_id,
-                            printer_name=request.bundle.printer_name,
-                            process_name=request.bundle.process_name,
-                            filament_names=(
-                                bundle_filament_names
-                                if bundle_filament_names is not None
-                                else request.bundle.filament_names
-                            ),
-                            plate=plate_num,
-                            export_3mf=True,
-                            arrange=True,
-                            bed_type=request.bed_type,
-                            request_id=progress_request_id,
-                            on_progress=plate_cb,
-                        )
-                    else:
-                        per_plate = await service.slice_with_profiles(
-                            model_bytes=primary_bytes,
-                            model_filename=model_filename,
-                            printer_profile_json=presets["printer"],
-                            process_profile_json=presets["process"],
-                            filament_profile_jsons=filament_jsons,
-                            plate=plate_num,
-                            export_3mf=True,
-                            arrange=True,
-                            request_id=progress_request_id,
-                            on_progress=plate_cb,
-                        )
+                    per_plate = await service.slice_with_profiles(
+                        model_bytes=primary_bytes,
+                        model_filename=model_filename,
+                        printer_profile_json=presets["printer"],
+                        process_profile_json=presets["process"],
+                        filament_profile_jsons=filament_jsons,
+                        plate=plate_num,
+                        export_3mf=True,
+                        arrange=True,
+                        request_id=progress_request_id,
+                        on_progress=plate_cb,
+                    )
                     per_plate_results.append((plate_num, per_plate))
 
                 # Merge the N single-plate 3MFs into one multi-plate 3MF.
@@ -3444,27 +3431,6 @@ async def _run_slicer_with_fallback(
                     print_time_seconds=sum(r.print_time_seconds for _, r in per_plate_results),
                     filament_used_g=sum(r.filament_used_g for _, r in per_plate_results),
                     filament_used_mm=sum(r.filament_used_mm for _, r in per_plate_results),
-                )
-            elif use_bundle:
-                # Bundle dispatch: sidecar materialises the JSON triplet
-                # from the stored .bbscfg by name. ``request.bundle`` is
-                # guaranteed non-None here by the use_bundle branch above.
-                assert request.bundle is not None
-                result = await service.slice_with_bundle(
-                    model_bytes=primary_bytes,
-                    model_filename=model_filename,
-                    bundle_id=request.bundle.bundle_id,
-                    printer_name=request.bundle.printer_name,
-                    process_name=request.bundle.process_name,
-                    filament_names=bundle_filament_names
-                    if bundle_filament_names is not None
-                    else request.bundle.filament_names,
-                    plate=request.plate,
-                    export_3mf=request.export_3mf,
-                    arrange=cross_class_arrange,
-                    bed_type=request.bed_type,
-                    request_id=progress_request_id,
-                    on_progress=progress_callback,
                 )
             else:
                 result = await service.slice_with_profiles(
@@ -3502,11 +3468,8 @@ async def _run_slicer_with_fallback(
             # bytes — the embedded-settings path also reads the same
             # project_settings.config and the same range validator runs
             # there too, so without sanitisation the fallback would die
-            # on the same sentinel error (#1201). Same fallback applies
-            # to the bundle path: if the resolved triplet crashes the CLI,
-            # embedded settings give the user *something* rather than a
-            # hard failure (the SliceModal flags the difference via
-            # used_embedded_settings).
+            # on the same sentinel error (#1201). The SliceModal flags
+            # the difference to the user via used_embedded_settings.
             result = await service.slice_without_profiles(
                 model_bytes=primary_bytes,
                 model_filename=model_filename,
@@ -3555,8 +3518,6 @@ async def _resolve_target_printer_model(db: AsyncSession, user: User | None, req
     """
     from backend.app.services.preset_resolver import resolve_preset_ref
 
-    if request.bundle is not None:
-        return _canonical_printer_model(request.bundle.printer_name)
     if request.printer_preset is None:
         return None
     try:
@@ -3578,11 +3539,10 @@ async def guard_nozzle_class_reslice(
 
     Cross-nozzle-class re-slicing is handled by ``_run_slicer_with_fallback``'s
     two-pass conversion (#1493): a 1mm cube is sliced with the target triplet
-    (via either ``slice_with_profiles`` or ``slice_with_bundle``, whichever
-    dispatch mode the caller is using) to produce a fresh target-shaped
+    via ``slice_with_profiles`` to produce a fresh target-shaped
     ``Metadata/project_settings.config``, which is then spliced into the
     source 3MF before the real slice. So this guard never needs to block
-    anymore — both preset and bundle paths are covered.
+    anymore.
 
     The function and its call sites in ``archives.py`` / the library re-slice
     route are kept so external pinned-version forks and downstream patches
@@ -3679,11 +3639,13 @@ async def slice_and_persist(
         folder_id=folder_id,
         filename=out_filename,
         file_path=to_relative_path(out_path),
-        # Sliced output is a `.gcode.3mf` zip with embedded G-code, but the
-        # user-facing meaning is "ready-to-print G-code" — using "gcode"
-        # gives it the same badge as plain .gcode files and distinguishes
-        # it from un-sliced `.3mf` source models.
-        file_type="gcode",
+        # The on-disk payload is a ZIP container — the file_type must
+        # record that so the preview endpoint opens it as a 3MF instead
+        # of returning the ZIP bytes as text/plain (#1709 / yanglei1980).
+        # Earlier code mis-typed sliced rows as "gcode" to share the
+        # plain-G-code badge; that broke the embedded viewer. UI badges
+        # and gates for "gcode.3mf" are explicit at the call sites.
+        file_type="gcode.3mf",
         file_size=len(result.content),
         file_hash=hashlib.sha256(result.content).hexdigest(),
         thumbnail_path=thumbnail_relative,
@@ -4098,16 +4060,19 @@ async def print_library_file(
 async def get_file(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get a file by ID with full details."""
+    user, can_read_all = auth_result
     result = await db.execute(
         LibraryFile.active().options(selectinload(LibraryFile.created_by)).where(LibraryFile.id == file_id)
     )
-    file = result.scalar_one_or_none()
-
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+    file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     # Get folder name
     folder_name = None
@@ -4250,8 +4215,11 @@ async def update_file(
     await db.commit()
     await db.refresh(file)
 
-    # Return full response (reuse get_file logic)
-    return await get_file(file_id, db)
+    # Return full response. Bypass get_file's ownership gate — caller already
+    # passed update_file's ownership gate above, so we re-fetch + serialise
+    # directly instead of calling the route function (which would try to
+    # evaluate its own Depends() at call time and trip a TypeError).
+    return await get_file(file_id, db, auth_result=(None, True))
 
 
 @router.delete("/files/{file_id}")
@@ -4311,14 +4279,17 @@ async def delete_file(
 async def download_file(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Download a file."""
+    user, can_read_all = auth_result
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    file = result.scalar_one_or_none()
-
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+    file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     abs_path = to_absolute_path(file.file_path)
     if not abs_path or not abs_path.exists():
@@ -4335,7 +4306,12 @@ async def download_file(
 async def create_library_slicer_token(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Create a short-lived download token for opening files in slicer applications.
 
@@ -4344,10 +4320,9 @@ async def create_library_slicer_token(
     """
     from backend.app.core.auth import create_slicer_download_token
 
+    user, can_read_all = auth_result
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    file = result.scalar_one_or_none()
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+    _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     token = await create_slicer_download_token("library", file_id)
     return {"token": token}
@@ -4422,28 +4397,30 @@ async def get_thumbnail(
 async def get_gcode(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get gcode for a file (for preview)."""
+    user, can_read_all = auth_result
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    file = result.scalar_one_or_none()
-
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+    file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     abs_path = to_absolute_path(file.file_path)
     if not abs_path or not abs_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
-    if file.file_type == "gcode":
-        return FastAPIFileResponse(str(abs_path), media_type="text/plain")
-    elif file.file_type in ("3mf", "gcode.3mf"):
-        # Extract gcode from 3mf zip container. `.gcode.3mf` sliced outputs
-        # carry the same `Metadata/plate_*.gcode` entries as a `.3mf`, so
-        # the unzip path is identical — just had to expand the gate.
+    # Legacy sliced rows from before #1709 stored a `.gcode.3mf` ZIP body
+    # under file_type="gcode" — the on-disk filename is the truth in that
+    # case, so detect by suffix before checking the type column.
+    is_gcode_3mf = file.file_type in ("3mf", "gcode.3mf") or file.filename.lower().endswith(".gcode.3mf")
+
+    if is_gcode_3mf:
         try:
             with zipfile.ZipFile(str(abs_path), "r") as zf:
-                # Find gcode file
                 gcode_files = [n for n in zf.namelist() if n.endswith(".gcode")]
                 if not gcode_files:
                     raise HTTPException(status_code=404, detail="No gcode found in 3MF file")
@@ -4453,6 +4430,8 @@ async def get_gcode(
                 return Response(content=gcode_content, media_type="text/plain")
         except zipfile.BadZipFile:
             raise HTTPException(status_code=400, detail="Invalid 3MF file")
+    elif file.file_type == "gcode":
+        return FastAPIFileResponse(str(abs_path), media_type="text/plain")
     else:
         raise HTTPException(status_code=400, detail="Unsupported file type")
 
@@ -4644,32 +4623,42 @@ async def bulk_delete(
 @router.get("/stats")
 async def get_library_stats(
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get library statistics."""
+    user, can_read_all = auth_result
     # Stats exclude trashed files — users see counts/sizes for what's actually in the library.
-    active_only = LibraryFile.deleted_at.is_(None)
+    # Without LIBRARY_READ_ALL the stats reflect only the caller's own files —
+    # match what the file list endpoint shows so the numbers stay consistent.
+    file_filters = [LibraryFile.deleted_at.is_(None)]
+    if user is not None and not can_read_all:
+        file_filters.append(LibraryFile.created_by_id == user.id)
 
     # Total files
-    total_files_result = await db.execute(select(func.count(LibraryFile.id)).where(active_only))
+    total_files_result = await db.execute(select(func.count(LibraryFile.id)).where(*file_filters))
     total_files = total_files_result.scalar() or 0
 
-    # Total folders
+    # Total folders (folders are shared org structure, not per-user — count all)
     total_folders_result = await db.execute(select(func.count(LibraryFolder.id)))
     total_folders = total_folders_result.scalar() or 0
 
     # Total size
-    total_size_result = await db.execute(select(func.sum(LibraryFile.file_size)).where(active_only))
+    total_size_result = await db.execute(select(func.sum(LibraryFile.file_size)).where(*file_filters))
     total_size = total_size_result.scalar() or 0
 
     # Files by type
     type_result = await db.execute(
-        select(LibraryFile.file_type, func.count(LibraryFile.id)).where(active_only).group_by(LibraryFile.file_type)
+        select(LibraryFile.file_type, func.count(LibraryFile.id)).where(*file_filters).group_by(LibraryFile.file_type)
     )
     files_by_type = dict(type_result.all())
 
     # Total prints
-    total_prints_result = await db.execute(select(func.sum(LibraryFile.print_count)).where(active_only))
+    total_prints_result = await db.execute(select(func.sum(LibraryFile.print_count)).where(*file_filters))
     total_prints = total_prints_result.scalar() or 0
 
     # Disk space info

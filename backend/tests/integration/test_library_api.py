@@ -1276,6 +1276,40 @@ class TestPrintFileUploadValidation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_library_get_gcode_recovers_legacy_gcode_type_for_3mf(self, async_client: AsyncClient, db_session):
+        """#1709 regression guard. Before the fix, ``slice_and_persist``
+        wrote a `.gcode.3mf` ZIP container to disk but stored the row with
+        ``file_type='gcode'`` — the preview endpoint then streamed the
+        ZIP body as ``text/plain`` and the embedded G-code viewer saw
+        ``PK\\x03\\x04...`` instead of the toolpath. New sliced rows now
+        store ``file_type='gcode.3mf'``; rows already written under the
+        bug self-heal because the endpoint also detects the ZIP via the
+        ``.gcode.3mf`` filename suffix when the column is still legacy."""
+        from backend.app.models.library import LibraryFile
+
+        with tempfile.NamedTemporaryFile(suffix=".gcode.3mf", delete=False) as tmp:
+            tmp.write(self._valid_3mf_bytes(name="Metadata/plate_1.gcode"))
+            tmp_path = tmp.name
+
+        lib_file = LibraryFile(
+            filename="legacy-sliced.gcode.3mf",
+            file_path=tmp_path,
+            file_type="gcode",
+            file_size=Path(tmp_path).stat().st_size,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        response = await async_client.get(f"/api/v1/library/files/{lib_file.id}/gcode")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        assert b"G28" in response.content
+        # The whole point of #1709: must NOT be ZIP bytes shoved at the viewer.
+        assert not response.content.startswith(b"PK")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_library_still_accepts_non_print_extensions(self, async_client: AsyncClient, db_session):
         """STL / image / other non-print uploads bypass the validator
         entirely — Bambuddy is also a library, not just a print dispatcher."""

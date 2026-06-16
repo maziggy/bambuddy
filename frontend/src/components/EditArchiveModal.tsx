@@ -51,7 +51,19 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
   const [projectId, setProjectId] = useState<number | null>(archive.project_id ?? null);
   const [notes, setNotes] = useState(archive.notes || '');
   const [tags, setTags] = useState(archive.tags || '');
-  const [failureReason, setFailureReason] = useState(archive.failure_reason || '');
+  // Failure reason is stored as a camelCase key (`filamentRunout`), but earlier
+  // versions of this modal saved the translated label as the value. Reverse-
+  // lookup any legacy translated text against the current locale so the
+  // dropdown pre-selects the right option, then any save converts it forward.
+  const [failureReason, setFailureReason] = useState(() => {
+    const raw = archive.failure_reason || '';
+    if (!raw) return '';
+    if ((FAILURE_REASON_KEYS as readonly string[]).includes(raw)) return raw;
+    const match = FAILURE_REASON_KEYS.find(
+      (k) => t(`editArchive.failureReasons.${k}`) === raw,
+    );
+    return match || '';
+  });
   const [status, setStatus] = useState(archive.status);
   const [quantity, setQuantity] = useState(archive.quantity ?? 1);
   const [photos, setPhotos] = useState<string[]>(archive.photos || []);
@@ -417,15 +429,16 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
           {/* Failure Reason - only show for failed/aborted prints */}
           {(status === 'failed' || status === 'aborted') && (
             <div>
-              <label className="block text-sm text-bambu-gray mb-1">{t('editArchive.failureReason')}</label>
+              <label htmlFor="failure-reason-select" className="block text-sm text-bambu-gray mb-1">{t('editArchive.failureReason')}</label>
               <select
+                id="failure-reason-select"
                 value={failureReason}
                 onChange={(e) => setFailureReason(e.target.value)}
                 className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
               >
                 <option value="">{t('editArchive.selectReason')}</option>
                 {FAILURE_REASON_KEYS.map((reasonKey) => (
-                  <option key={reasonKey} value={t(`editArchive.failureReasons.${reasonKey}`)}>
+                  <option key={reasonKey} value={reasonKey}>
                     {t(`editArchive.failureReasons.${reasonKey}`)}
                   </option>
                 ))}

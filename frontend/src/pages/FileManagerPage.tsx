@@ -2164,7 +2164,7 @@ export function FileManagerPage() {
                     <div>
                       <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
                         file.file_type === '3mf' ? 'bg-bambu-green/20 text-bambu-green'
-                        : file.file_type === 'gcode' ? 'bg-blue-500/20 text-blue-400'
+                        : (file.file_type === 'gcode' || file.file_type === 'gcode.3mf') ? 'bg-blue-500/20 text-blue-400'
                         : file.file_type === 'stl' ? 'bg-purple-500/20 text-purple-400'
                         : 'bg-bambu-gray/20 text-bambu-gray'
                       }`}>
@@ -2223,7 +2223,7 @@ export function FileManagerPage() {
                           <Cog className="w-4 h-4" />
                         </button>
                       )}
-                      {(file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl') && (
+                      {(file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'gcode.3mf' || file.file_type === 'stl') && (
                         <button
                           onClick={() => {
                             if (!hasPermission('library:read')) return;

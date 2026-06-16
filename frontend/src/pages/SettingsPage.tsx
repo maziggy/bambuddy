@@ -87,6 +87,7 @@ registerSettingsSearch({ labelKey: 'settings.tabs.spoolbuddy', tab: 'spoolbuddy'
 registerSettingsSearch({ labelKey: 'settings.currentUser', tab: 'users', subTab: 'users', keywords: 'current user profile password change', anchor: 'card-currentuser' });
 registerSettingsSearch({ labelKey: 'settings.users', tab: 'users', subTab: 'users', keywords: 'users accounts list', anchor: 'card-users' });
 registerSettingsSearch({ labelKey: 'settings.groups', tab: 'users', subTab: 'users', keywords: 'groups roles permissions administrators operators viewers', anchor: 'card-groups' });
+registerSettingsSearch({ labelKey: 'settings.sessionPolicy.title', labelFallback: 'Session Policy', tab: 'users', subTab: 'users', keywords: 'session timeout expiry logout remember me jwt token lifetime', anchor: 'card-session-policy' });
 registerSettingsSearch({ labelKey: 'settings.email.smtpSettings', labelFallback: 'SMTP Configuration', tab: 'users', subTab: 'email', keywords: 'smtp email send server port password auth starttls ssl', anchor: 'card-smtp' });
 registerSettingsSearch({ labelKey: 'settings.ldap.title', labelFallback: 'LDAP Authentication', tab: 'users', subTab: 'ldap', keywords: 'ldap active directory ad authentication bind dn search base group mapping', anchor: 'card-ldap' });
 registerSettingsSearch({ labelKey: 'settings.tabs.backup', tab: 'backup', keywords: 'backup github restore download cloud sync profiles archives', anchor: 'card-backup' });
@@ -1012,7 +1013,8 @@ export function SettingsPage() {
       (settings.default_nozzle_offset_cali ?? true) !== (localSettings.default_nozzle_offset_cali ?? true) ||
       (settings.stagger_group_size ?? 2) !== (localSettings.stagger_group_size ?? 2) ||
       (settings.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
-      (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false);
+      (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
+      (settings.session_max_hours ?? 24) !== (localSettings.session_max_hours ?? 24);
 
     if (!hasChanges) {
       return;
@@ -1099,6 +1101,7 @@ export function SettingsPage() {
         stagger_group_size: localSettings.stagger_group_size,
         stagger_interval_minutes: localSettings.stagger_interval_minutes,
         require_plate_clear: localSettings.require_plate_clear,
+        session_max_hours: localSettings.session_max_hours,
       };
       updateMutation.mutate(settingsToSave);
     }, 500);
@@ -5117,8 +5120,73 @@ export function SettingsPage() {
 
           {authEnabled && (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              {/* Left Column: Current User + User List */}
+              {/* Left Column: Session Policy + Current User + User List */}
               <div className="space-y-3">
+                {/* Session Policy (#1706) — admin-set ceiling for user session lifetime */}
+                <Card id="card-session-policy">
+                  <CardHeader>
+                    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                      <Lock className="w-5 h-5 text-bambu-green" />
+                      {t('settings.sessionPolicy.title')}
+                    </h3>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-bambu-gray mb-4">
+                      {t('settings.sessionPolicy.description')}
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                      {[
+                        { hours: 24, labelKey: 'settings.sessionPolicy.preset24h' },
+                        { hours: 168, labelKey: 'settings.sessionPolicy.preset7d' },
+                        { hours: 720, labelKey: 'settings.sessionPolicy.preset30d' },
+                      ].map((preset) => {
+                        const current = localSettings?.session_max_hours ?? 24;
+                        const isActive = current === preset.hours;
+                        return (
+                          <button
+                            key={preset.hours}
+                            type="button"
+                            onClick={() => updateSetting('session_max_hours', preset.hours)}
+                            disabled={authEnabled && !hasPermission('settings:update')}
+                            className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                              isActive
+                                ? 'bg-bambu-green text-white'
+                                : 'bg-bambu-dark-tertiary text-bambu-gray hover:text-white hover:bg-bambu-dark'
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          >
+                            {t(preset.labelKey)}
+                          </button>
+                        );
+                      })}
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min={1}
+                          max={720}
+                          value={localSettings?.session_max_hours ?? 24}
+                          onChange={(e) => {
+                            const raw = parseInt(e.target.value, 10);
+                            if (Number.isNaN(raw)) return;
+                            updateSetting('session_max_hours', Math.max(1, Math.min(720, raw)));
+                          }}
+                          disabled={authEnabled && !hasPermission('settings:update')}
+                          aria-label={t('settings.sessionPolicy.customHoursLabel')}
+                          className="w-20 px-2 py-2 bg-bambu-dark-tertiary text-white text-sm rounded-lg border border-bambu-dark-tertiary focus:border-bambu-green focus:outline-none disabled:opacity-50"
+                        />
+                        <span className="text-sm text-bambu-gray">{t('settings.sessionPolicy.hoursSuffix')}</span>
+                      </div>
+                    </div>
+                    {(localSettings?.session_max_hours ?? 24) > 24 && (
+                      <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+                        <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+                        <p className="text-xs text-yellow-200">
+                          {t('settings.sessionPolicy.warning')}
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
                 {/* Current User Card */}
                 {user && (
                   <Card>

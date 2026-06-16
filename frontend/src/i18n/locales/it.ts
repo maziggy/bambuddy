@@ -2323,6 +2323,17 @@ export default {
       linkedAccountsDesc: 'Questi provider di identità esterni sono collegati al tuo account.',
       oidcUnlinked: 'Account scollegato.',
     },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: 'Criterio di sessione',
+      description: 'Durata massima della sessione per i nuovi accessi utente. I token già emessi mantengono la scadenza originale.',
+      preset24h: '24 ore',
+      preset7d: '7 giorni',
+      preset30d: '30 giorni',
+      customHoursLabel: 'Durata personalizzata della sessione in ore',
+      hoursSuffix: 'ore',
+      warning: 'Le sessioni più lunghe riducono la protezione di disconnessione automatica. Consigliato solo per installazioni mono-utente attendibili.',
+    },
 
     // OIDC provider settings
     oidc: {

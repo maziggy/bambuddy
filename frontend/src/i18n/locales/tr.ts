@@ -2384,6 +2384,17 @@ export default {
       linkedAccountsDesc: 'Bu harici kimlik sağlayıcıları hesabınıza bağlıdır.',
       oidcUnlinked: 'Hesap bağlantısı kaldırıldı.',
     },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: 'Oturum Politikası',
+      description: 'Yeni kullanıcı girişleri için maksimum oturum süresi. Daha önce verilmiş belirteçler özgün son kullanma tarihlerini korur.',
+      preset24h: '24 saat',
+      preset7d: '7 gün',
+      preset30d: '30 gün',
+      customHoursLabel: 'Özel oturum süresi (saat)',
+      hoursSuffix: 'saat',
+      warning: 'Daha uzun oturumlar otomatik oturum kapatma korumasını azaltır. Yalnızca güvenilir tek kullanıcılı dağıtımlar için önerilir.',
+    },
 
     // OIDC sağlayıcı ayarları
     oidc: {

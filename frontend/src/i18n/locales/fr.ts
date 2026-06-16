@@ -2324,6 +2324,17 @@ export default {
       linkedAccountsDesc: 'Ces fournisseurs d\'identité externes sont liés à votre compte.',
       oidcUnlinked: 'Compte dissocié.',
     },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: 'Politique de session',
+      description: 'Durée maximale des sessions pour les nouvelles connexions utilisateur. Les jetons déjà émis conservent leur expiration d\'origine.',
+      preset24h: '24 heures',
+      preset7d: '7 jours',
+      preset30d: '30 jours',
+      customHoursLabel: 'Durée de session personnalisée en heures',
+      hoursSuffix: 'heures',
+      warning: 'Les sessions plus longues réduisent la protection de déconnexion automatique. Recommandé uniquement pour les déploiements mono-utilisateur de confiance.',
+    },
 
     // OIDC provider settings
     oidc: {

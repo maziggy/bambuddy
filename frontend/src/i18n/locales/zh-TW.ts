@@ -2368,6 +2368,17 @@ export default {
       linkedAccountsDesc: '以下外部身份提供者已與您的帳戶連結。',
       oidcUnlinked: '帳戶已解除連結。',
     },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: '工作階段政策',
+      description: '新使用者登入的最長工作階段有效期。已發行的權杖會保留其原有的到期時間。',
+      preset24h: '24 小時',
+      preset7d: '7 天',
+      preset30d: '30 天',
+      customHoursLabel: '自訂工作階段有效期（小時）',
+      hoursSuffix: '小時',
+      warning: '較長的工作階段會削弱自動登出保護。僅建議在受信任的單一使用者部署中使用。',
+    },
 
     // OIDC provider settings
     oidc: {

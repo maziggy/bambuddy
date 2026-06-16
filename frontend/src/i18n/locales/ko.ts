@@ -2238,6 +2238,17 @@ export default {
       linkedAccountsDesc: '이 외부 ID 제공자가 계정에 연결되어 있습니다.',
       oidcUnlinked: '계정 연결이 해제되었습니다.'
     },
+    // 세션 정책 (#1706)
+    sessionPolicy: {
+      title: '세션 정책',
+      description: '신규 사용자 로그인의 최대 세션 수명입니다. 이미 발급된 토큰은 원래 만료 시간을 유지합니다.',
+      preset24h: '24시간',
+      preset7d: '7일',
+      preset30d: '30일',
+      customHoursLabel: '사용자 지정 세션 수명(시간)',
+      hoursSuffix: '시간',
+      warning: '세션이 길어질수록 자동 로그아웃 보호가 약해집니다. 신뢰할 수 있는 단일 사용자 배포에서만 권장됩니다.'
+    },
     oidc: {
       title: 'SSO / OIDC 제공자',
       desc: '외부 ID 제공자를 통해 싱글 사인온을 허용하도록 OpenID Connect 제공자를 설정하세요.',

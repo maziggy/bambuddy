@@ -2368,6 +2368,17 @@ export default {
       linkedAccountsDesc: '以下外部身份提供商已与您的账户关联。',
       oidcUnlinked: '账户已解除关联。',
     },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: '会话策略',
+      description: '新用户登录的最长会话有效期。已颁发的令牌保留其原有的过期时间。',
+      preset24h: '24 小时',
+      preset7d: '7 天',
+      preset30d: '30 天',
+      customHoursLabel: '自定义会话有效期（小时）',
+      hoursSuffix: '小时',
+      warning: '更长的会话会减弱自动注销保护。仅建议在受信任的单用户部署中使用。',
+    },
 
     // OIDC provider settings
     oidc: {

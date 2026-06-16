@@ -2381,6 +2381,17 @@ export default {
       linkedAccountsDesc: 'Diese externen Identitätsanbieter sind mit deinem Konto verknüpft.',
       oidcUnlinked: 'Konto getrennt.',
     },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: 'Sitzungsrichtlinie',
+      description: 'Maximale Sitzungsdauer für neue Benutzeranmeldungen. Bereits ausgegebene Token behalten ihren ursprünglichen Ablauf.',
+      preset24h: '24 Stunden',
+      preset7d: '7 Tage',
+      preset30d: '30 Tage',
+      customHoursLabel: 'Individuelle Sitzungsdauer in Stunden',
+      hoursSuffix: 'Stunden',
+      warning: 'Längere Sitzungen reduzieren den automatischen Abmeldeschutz. Nur für vertrauenswürdige Einzelnutzer-Installationen empfohlen.',
+    },
 
     // OIDC provider settings
     oidc: {

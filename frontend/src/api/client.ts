@@ -1155,6 +1155,8 @@ export interface AppSettings {
   bed_cooled_threshold: number;
   // Inventory low stock threshold
   low_stock_threshold: number;
+  // Session policy (#1706) — admin-set ceiling, hours, [1, 720]
+  session_max_hours: number;
   // User email notifications toggle
   user_notifications_enabled: boolean;
   // Default print options

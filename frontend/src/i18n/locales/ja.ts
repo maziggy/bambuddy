@@ -2380,6 +2380,17 @@ export default {
       linkedAccountsDesc: 'これらの外部IDプロバイダーがあなたのアカウントにリンクされています。',
       oidcUnlinked: 'アカウントのリンクを解除しました。',
     },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: 'セッションポリシー',
+      description: '新しいユーザーログインの最大セッション有効期間。すでに発行されたトークンは元の有効期限を保持します。',
+      preset24h: '24時間',
+      preset7d: '7日',
+      preset30d: '30日',
+      customHoursLabel: 'カスタムセッション有効期間（時間）',
+      hoursSuffix: '時間',
+      warning: '長いセッションは自動ログアウト保護を弱めます。信頼できる単一ユーザー環境でのみ推奨されます。',
+    },
 
     // OIDC provider settings
     oidc: {

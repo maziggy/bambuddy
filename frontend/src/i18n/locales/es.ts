@@ -2384,6 +2384,17 @@ export default {
       linkedAccountsDesc: 'Estos proveedores de identidad externos están vinculados a su cuenta.',
       oidcUnlinked: 'Cuenta desvinculada.',
     },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: 'Política de sesión',
+      description: 'Duración máxima de sesión para nuevos inicios de sesión. Los tokens ya emitidos conservan su caducidad original.',
+      preset24h: '24 horas',
+      preset7d: '7 días',
+      preset30d: '30 días',
+      customHoursLabel: 'Duración de sesión personalizada en horas',
+      hoursSuffix: 'horas',
+      warning: 'Las sesiones más largas reducen la protección de cierre automático. Recomendado solo para implementaciones de usuario único en entornos de confianza.',
+    },
 
     // OIDC provider settings
     oidc: {

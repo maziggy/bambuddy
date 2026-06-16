@@ -2392,6 +2392,18 @@ export default {
       oidcUnlinked: 'Account unlinked.',
     },
 
+    // Session Policy (#1706) — admin-configurable session lifetime ceiling.
+    sessionPolicy: {
+      title: 'Session Policy',
+      description: 'Maximum session lifetime for new user logins. Already-issued tokens keep their original expiry.',
+      preset24h: '24 hours',
+      preset7d: '7 days',
+      preset30d: '30 days',
+      customHoursLabel: 'Custom session lifetime in hours',
+      hoursSuffix: 'hours',
+      warning: 'Longer sessions reduce automatic logout protection. Recommended only for trusted single-user deployments.',
+    },
+
     // OIDC provider settings
     oidc: {
       title: 'SSO / OIDC Providers',

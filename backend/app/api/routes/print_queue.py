@@ -25,7 +25,9 @@ from backend.app.models.printer import Printer
 from backend.app.models.project import Project
 from backend.app.models.user import User
 from backend.app.schemas.print_queue import (
+    PrintBatchCreate,
     PrintBatchResponse,
+    PrintBatchUngroupResponse,
     PrintQueueBulkUpdate,
     PrintQueueBulkUpdateResponse,
     PrintQueueItemCreate,
@@ -306,9 +308,15 @@ async def list_queue(
         None, description="Filter by target model (also includes model-based items when combined with printer_id)"
     ),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_READ_ALL,
+            Permission.QUEUE_READ_OWN,
+        )
+    ),
 ):
     """List all queue items, optionally filtered by printer or status."""
+    user, can_read_all = auth_result
     query = (
         select(PrintQueueItem)
         .options(
@@ -320,6 +328,8 @@ async def list_queue(
         )
         .order_by(PrintQueueItem.printer_id.nulls_first(), PrintQueueItem.position)
     )
+    if user is not None and not can_read_all:
+        query = query.where(PrintQueueItem.created_by_id == user.id)
 
     if printer_id is not None:
         if printer_id == -1:
@@ -404,6 +414,18 @@ async def add_to_queue(
         archive = result.scalar_one_or_none()
         if not archive:
             raise HTTPException(400, "Archive not found")
+        # IDOR fix (maziggy/bambuddy-security #2): without this check, a
+        # caller with QUEUE_CREATE could queue any user's archive even
+        # without ARCHIVES_READ on it — Landon's PoC enumerated this on
+        # admin's archives as operator1. Gate on ARCHIVES_READ_ALL OR
+        # ownership of the archive. 404 (not 403) so we don't leak
+        # "this id exists but you can't queue it" for enumeration.
+        if (
+            current_user is not None
+            and not current_user.has_permission(Permission.ARCHIVES_READ_ALL.value)
+            and archive.created_by_id != current_user.id
+        ):
+            raise HTTPException(404, "Archive not found")
 
     # Validate library file exists (if provided) and get it for filament extraction
     library_file = None
@@ -412,6 +434,13 @@ async def add_to_queue(
         library_file = result.scalar_one_or_none()
         if not library_file:
             raise HTTPException(400, "Library file not found")
+        # Same shape: gate cross-user library-file queueing on LIBRARY_READ_ALL.
+        if (
+            current_user is not None
+            and not current_user.has_permission(Permission.LIBRARY_READ_ALL.value)
+            and library_file.created_by_id != current_user.id
+        ):
+            raise HTTPException(404, "Library file not found")
         # Bambu SD card is FAT32/exFAT — illegal filename chars would 553 at
         # FTP upload time (#1540). Reject at queue time so the user gets the
         # actionable error before waiting in queue.
@@ -455,10 +484,30 @@ async def add_to_queue(
     # Validate quantity
     quantity = max(1, data.quantity)
 
-    # Create batch if quantity > 1
+    # Validate batch_id if provided. Client passes batch_id when adding items
+    # into a pre-created batch (multi-plate auto-batch or "Group as batch" flow).
+    # 404 keeps the existing-id leak surface low.
     batch = None
     batch_id = None
-    if quantity > 1:
+    if data.batch_id is not None:
+        result = await db.execute(select(PrintBatch).where(PrintBatch.id == data.batch_id))
+        existing_batch = result.scalar_one_or_none()
+        if not existing_batch:
+            raise HTTPException(404, "Batch not found")
+        if existing_batch.status != "active":
+            raise HTTPException(400, "Cannot add items to a non-active batch")
+        if (
+            current_user is not None
+            and existing_batch.created_by_id is not None
+            and existing_batch.created_by_id != current_user.id
+            and not current_user.has_permission(Permission.QUEUE_UPDATE_ALL.value)
+        ):
+            raise HTTPException(404, "Batch not found")
+        batch = existing_batch
+        batch_id = existing_batch.id
+
+    # Create batch if quantity > 1 and no batch_id provided
+    if batch_id is None and quantity > 1:
         # Derive batch name from source file
         batch_name_base = "Batch"
         if archive:
@@ -681,16 +730,124 @@ async def bulk_update_queue_items(
 # --- Batch endpoints ---
 
 
+@router.post("/batches", response_model=PrintBatchResponse)
+async def create_batch(
+    data: PrintBatchCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
+):
+    """Create a batch.
+
+    Two modes:
+    * ``item_ids`` provided: assign the listed pending queue items to a new
+      batch ("Group as batch" UI action).
+    * ``item_ids`` omitted/empty: create an empty batch so the client can
+      pass the returned ``id`` on subsequent ``POST /queue/`` calls. Used by
+      the multi-plate auto-batch flow in PrintModal.
+    """
+    if not data.name or not data.name.strip():
+        raise HTTPException(400, "Batch name is required")
+
+    batch = PrintBatch(
+        name=data.name.strip()[:255],
+        archive_id=data.archive_id,
+        library_file_id=data.library_file_id,
+        quantity=len(data.item_ids) if data.item_ids else 1,
+        status="active",
+        created_by_id=current_user.id if current_user else None,
+    )
+    db.add(batch)
+    await db.flush()  # Need batch.id before assigning to items
+
+    assigned = 0
+    if data.item_ids:
+        result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.id.in_(data.item_ids)))
+        items = result.scalars().all()
+        for item in items:
+            if item.status != "pending":
+                continue
+            if item.batch_id is not None:
+                continue
+            if (
+                current_user is not None
+                and item.created_by_id != current_user.id
+                and not current_user.has_permission(Permission.QUEUE_UPDATE_ALL.value)
+            ):
+                continue
+            item.batch_id = batch.id
+            assigned += 1
+        batch.quantity = max(assigned, 1)
+
+    await db.commit()
+    await db.refresh(batch)
+
+    logger.info("Created batch %s '%s' with %s assigned items", batch.id, batch.name, assigned)
+    return await _build_batch_response(db, batch)
+
+
+@router.post("/batches/{batch_id}/ungroup", response_model=PrintBatchUngroupResponse)
+async def ungroup_batch(
+    batch_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_OWN),
+):
+    """Disband a batch: clear batch_id from all members and delete the batch row.
+
+    Items stay in the queue. Only ungroups items the caller owns (unless they
+    hold QUEUE_UPDATE_ALL). A batch with all members ungrouped is deleted.
+    """
+    result = await db.execute(select(PrintBatch).where(PrintBatch.id == batch_id))
+    batch = result.scalar_one_or_none()
+    if not batch:
+        raise HTTPException(404, "Batch not found")
+
+    can_modify_all = current_user is None or current_user.has_permission(Permission.QUEUE_UPDATE_ALL.value)
+    if not can_modify_all and batch.created_by_id != (current_user.id if current_user else None):
+        raise HTTPException(404, "Batch not found")
+
+    result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.batch_id == batch_id))
+    items = result.scalars().all()
+    ungrouped = 0
+    remaining = 0
+    for item in items:
+        if not can_modify_all and item.created_by_id != (current_user.id if current_user else None):
+            remaining += 1
+            continue
+        item.batch_id = None
+        ungrouped += 1
+
+    # Delete the batch row only when all members were ungrouped — otherwise it
+    # still owns the items the caller couldn't touch.
+    if remaining == 0:
+        await db.delete(batch)
+
+    await db.commit()
+
+    logger.info("Ungrouped batch %s (%s items)", batch_id, ungrouped)
+    return PrintBatchUngroupResponse(
+        ungrouped_count=ungrouped,
+        message=f"Ungrouped {ungrouped} item(s)",
+    )
+
+
 @router.get("/batches", response_model=list[PrintBatchResponse])
 async def list_batches(
     status: str | None = Query(None, description="Filter by status (active, completed, cancelled)"),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_READ_ALL,
+            Permission.QUEUE_READ_OWN,
+        )
+    ),
 ):
     """List all print batches with progress stats."""
+    current_user, can_read_all = auth_result
     query = select(PrintBatch).order_by(PrintBatch.created_at.desc())
     if status:
         query = query.where(PrintBatch.status == status)
+    if current_user is not None and not can_read_all:
+        query = query.where(PrintBatch.created_by_id == current_user.id)
     result = await db.execute(query)
     batches = result.scalars().all()
 
@@ -704,12 +861,24 @@ async def list_batches(
 async def get_batch(
     batch_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_READ_ALL,
+            Permission.QUEUE_READ_OWN,
+        )
+    ),
 ):
     """Get a print batch with progress stats."""
+    current_user, can_read_all = auth_result
     result = await db.execute(select(PrintBatch).where(PrintBatch.id == batch_id))
     batch = result.scalar_one_or_none()
     if not batch:
+        raise HTTPException(404, "Batch not found")
+    if (
+        current_user is not None
+        and not can_read_all
+        and (batch.created_by_id is None or batch.created_by_id != current_user.id)
+    ):
         raise HTTPException(404, "Batch not found")
     return await _build_batch_response(db, batch)
 
@@ -782,9 +951,15 @@ async def _build_batch_response(db: AsyncSession, batch: PrintBatch) -> PrintBat
 async def get_queue_item(
     item_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_READ_ALL,
+            Permission.QUEUE_READ_OWN,
+        )
+    ),
 ):
     """Get a specific queue item."""
+    current_user, can_read_all = auth_result
     result = await db.execute(
         select(PrintQueueItem)
         .options(
@@ -798,6 +973,12 @@ async def get_queue_item(
     )
     item = result.scalar_one_or_none()
     if not item:
+        raise HTTPException(404, "Queue item not found")
+    if (
+        current_user is not None
+        and not can_read_all
+        and (item.created_by_id is None or item.created_by_id != current_user.id)
+    ):
         raise HTTPException(404, "Queue item not found")
     return _enrich_response(item)
 

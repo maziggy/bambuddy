@@ -64,9 +64,19 @@ logger = logging.getLogger(__name__)
 _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str | tuple[str, ...]] = {
     # can_read_status — read-only access to status, history, and configuration
     Permission.PRINTERS_READ: "can_read_status",
+    # Legacy flat permissions retained for back-compat with custom API keys —
+    # the role bootstraps no longer use these, but custom keys may still
+    # carry can_read_status scope mapping. New endpoints gate on the
+    # ARCHIVES_READ_OWN / _ALL split (maziggy/bambuddy-security #2).
     Permission.ARCHIVES_READ: "can_read_status",
+    Permission.ARCHIVES_READ_OWN: "can_read_status",
+    Permission.ARCHIVES_READ_ALL: "can_read_status",
     Permission.QUEUE_READ: "can_read_status",
+    Permission.QUEUE_READ_OWN: "can_read_status",
+    Permission.QUEUE_READ_ALL: "can_read_status",
     Permission.LIBRARY_READ: "can_read_status",
+    Permission.LIBRARY_READ_OWN: "can_read_status",
+    Permission.LIBRARY_READ_ALL: "can_read_status",
     Permission.PROJECTS_READ: "can_read_status",
     Permission.FILAMENTS_READ: "can_read_status",
     Permission.INVENTORY_READ: ("can_read_status", "can_manage_inventory"),
@@ -1028,13 +1038,17 @@ def require_admin_if_auth_enabled():
     key" — the inner ``admin_checker`` then treated ``None`` as auth-
     disabled and admitted the caller. If any route had ever adopted this
     dep, any API key with no scope flags set would have satisfied an
-    admin requirement.
+    admin requirement. The dep distinguishes the two cases by consulting
+    ``is_auth_enabled`` directly and rejecting API-keyed requests with
+    403. "Admin" requires a user-identity role, which API keys do not
+    carry.
 
-    Today no route uses this dep, but rather than leave the footgun
-    armed, the dep is rewritten to distinguish the two cases by
-    consulting ``is_auth_enabled`` directly and rejecting API-keyed
-    requests with 403. "Admin" requires a user-identity role, which API
-    keys do not carry.
+    Admin semantics: uses ``User.is_admin`` (``role == "admin"`` OR
+    Administrators-group membership) so a default-install operator who
+    was made admin by being added to Administrators rather than by
+    flipping the legacy role column passes. Earlier this check looked
+    only at ``role`` and would have locked group-only admins out of the
+    user-management routes once those routes started requiring it.
     """
 
     async def admin_checker(
@@ -1100,7 +1114,7 @@ def require_admin_if_auth_enabled():
                     detail="Could not validate credentials",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
-            if user.role != "admin":
+            if not user.is_admin:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Requires admin role",

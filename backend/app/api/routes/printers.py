@@ -1535,8 +1535,12 @@ async def delete_printer_file(
     if not printer:
         raise HTTPException(404, "Printer not found")
 
-    success = await delete_file_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
-    if not success:
+    from backend.app.services.bambu_ftp import DeleteResult
+
+    result = await delete_file_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
+    if result == DeleteResult.NOT_FOUND:
+        raise HTTPException(404, f"File not found on printer: {path}")
+    if result == DeleteResult.FAILED:
         raise HTTPException(500, f"Failed to delete file: {path}")
 
     return {"status": "deleted", "path": path}

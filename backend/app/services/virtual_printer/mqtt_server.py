@@ -15,6 +15,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from backend.app.services.virtual_printer._debug import append_event, dump_wire
+
 if TYPE_CHECKING:
     from backend.app.services.virtual_printer.mqtt_bridge import MQTTBridge
 
@@ -45,6 +47,7 @@ MODEL_PRODUCT_NAMES = {
     "BL-P002": "X1",
     "C13": "X1E",
     "N6": "X2D",
+    "N9": "A2L",
     "C11": "P1P",
     "C12": "P1S",
     "N7": "P2S",
@@ -429,7 +432,11 @@ class SimpleMQTTServer:
                             disconnected.append(client_id)
                             continue
                         serial = self._client_serials.get(client_id, self.serial)
-                        await self._send_status_report(writer, serial=serial)
+                        # log_event=False: the 1Hz cached push is already
+                        # captured by ``dump_wire`` snapshot mode (see
+                        # _debug.py); appending it to the cmd.jsonl would
+                        # flood the file ~60 lines/min per VP.
+                        await self._send_status_report(writer, serial=serial, log_event=False)
                         push_counts[client_id] = push_counts.get(client_id, 0) + 1
                     except OSError as e:
                         logger.debug("Failed to push status to %s: %s", client_id, e)
@@ -843,7 +850,9 @@ class SimpleMQTTServer:
         except (IndexError, ValueError, OSError) as e:
             logger.debug("MQTT SUBSCRIBE error: %s", e)
 
-    async def _send_status_report(self, writer: asyncio.StreamWriter, serial: str | None = None) -> None:
+    async def _send_status_report(
+        self, writer: asyncio.StreamWriter, serial: str | None = None, log_event: bool = True
+    ) -> None:
         """Send a status report to the slicer after connection.
 
         When a bridge is active and has cached the real printer's latest
@@ -911,7 +920,8 @@ class SimpleMQTTServer:
                 print_block["total_layer_num"] = 0
                 print_block["print_error"] = 0
                 status = {"print": print_block}
-                await self._publish_to_report(writer, status, serial or self.serial)
+                dump_wire(self.vp_name, "out", status)
+                await self._publish_to_report(writer, status, serial or self.serial, log_event=log_event)
                 return
 
             # No bridge / no cache yet — fall back to the synthetic stub.
@@ -988,7 +998,7 @@ class SimpleMQTTServer:
                 }
             }
 
-            await self._publish_to_report(writer, status, serial or self.serial)
+            await self._publish_to_report(writer, status, serial or self.serial, log_event=log_event)
 
         except OSError as e:
             logger.error("Failed to send status report: %s", e)
@@ -1084,13 +1094,24 @@ class SimpleMQTTServer:
         self._current_file = filename
         self._prepare_percent = prepare_percent
 
-    async def _publish_to_report(self, writer: asyncio.StreamWriter, payload: dict, serial: str = "") -> None:
+    async def _publish_to_report(
+        self, writer: asyncio.StreamWriter, payload: dict, serial: str = "", log_event: bool = True
+    ) -> None:
         """Publish a message on the device report topic.
 
         Real Bambu printers wire-format push_status JSON with 4-space indentation
         (32254 bytes for an idle H2D push vs 14268 bytes compact). BambuStudio's
         Send pre-flight rejects compact JSON — without matching the on-wire
         format the slicer never proceeds to FTP upload.
+
+        ``log_event=True`` records the publish in ``vp_wire/<vp>_cmd.jsonl``
+        under the ``bridge_to_slicer`` direction so #1622-style triages can
+        diff the bridge's own outbound replies (info.get_version answer,
+        project_file ack, on-demand pushall response) against the real
+        printer's ``printer_to_slicer`` forwards. The 1Hz periodic push
+        sets ``log_event=False`` because dump_wire's overwrite-snapshot
+        already covers cache shape and a per-second JSONL line would dwarf
+        the actual command events.
         """
         topic = f"device/{serial or self.serial}/report"
         message = json.dumps(payload, indent=4)
@@ -1111,6 +1132,16 @@ class SimpleMQTTServer:
         packet += bytes([len(topic_bytes) >> 8, len(topic_bytes) & 0xFF])
         packet += topic_bytes
         packet += message_bytes
+
+        if log_event:
+            # Env-flagged command trace (#1622): captures bridge-synthesised
+            # replies (info.get_version, project_file ack, on-demand pushall
+            # response) AFTER the payload is finalised but before it hits
+            # the wire — so the cmd.jsonl reflects exactly what the slicer
+            # parses. Pair with the slicer_to_bridge events from
+            # _handle_publish and the printer_to_slicer fan-outs from
+            # mqtt_bridge.
+            append_event(self.vp_name, "bridge_to_slicer", topic, payload)
 
         writer.write(packet)
         # Timeout the drain to prevent blocking the event loop if the
@@ -1207,6 +1238,11 @@ class SimpleMQTTServer:
                     message[:200],
                 )
                 return
+
+            # Env-flagged command trace (#1622): every slicer-originated publish
+            # gets a line in vp_wire/<vp>_cmd.jsonl alongside the printer-side
+            # responses captured in mqtt_bridge. Off by default.
+            append_event(self.vp_name, "slicer_to_bridge", topic, data)
 
             # The synthetic flow below is the original (pre-bridge) behaviour and is
             # what the proven-working FTP "Send" depends on. Do NOT replace any

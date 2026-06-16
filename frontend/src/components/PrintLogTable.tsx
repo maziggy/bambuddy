@@ -78,7 +78,7 @@ export function PrintLogTable({ archiveId }: PrintLogTableProps) {
                   {t(`archives.runLog.status.${run.status}`, { defaultValue: run.status })}
                   {run.failure_reason && (
                     <span className="block text-[10px] text-bambu-gray font-normal">
-                      {run.failure_reason}
+                      {t(`editArchive.failureReasons.${run.failure_reason}`, { defaultValue: run.failure_reason })}
                     </span>
                   )}
                 </td>

@@ -493,17 +493,6 @@ class BackgroundDispatchService:
         if self._is_cancel_requested(job.id):
             raise DispatchJobCancelled(f"Dispatch job {job.id} cancelled")
 
-    async def _resolve_effective_timelapse(self, db, archive, job: PrintDispatchJob) -> bool:
-        """Dispatch-flow wrapper around the shared resolver (#1397).
-
-        Returns the effective value to pass to ``start_print(timelapse=...)``.
-        """
-        return await resolve_effective_timelapse(
-            db,
-            archive,
-            user_wanted_timelapse=bool(job.options.get("timelapse", False)),
-        )
-
     def _build_state_payload_unlocked(self, recent_event: dict[str, Any] | None = None) -> dict[str, Any]:
         processing = len(self._active_jobs)
         dispatched = len(self._queued_jobs)
@@ -685,7 +674,7 @@ class BackgroundDispatchService:
 
                 self._raise_if_cancel_requested(job)
 
-                effective_timelapse = await self._resolve_effective_timelapse(db, archive, job)
+                effective_timelapse = bool(job.options.get("timelapse", False))
 
                 await self._set_active_message(job, f"Starting print on {printer_name}...")
                 started = printer_manager.start_print(
@@ -892,7 +881,7 @@ class BackgroundDispatchService:
 
                 self._raise_if_cancel_requested(job)
 
-                effective_timelapse = await self._resolve_effective_timelapse(db, archive, job)
+                effective_timelapse = bool(job.options.get("timelapse", False))
 
                 await self._set_active_message(job, f"Starting print on {printer_name}...")
                 started = printer_manager.start_print(
@@ -1106,43 +1095,6 @@ class BackgroundDispatchService:
     def _is_sliced_file(filename: str) -> bool:
         lower = filename.lower()
         return lower.endswith(".gcode") or lower.endswith(".gcode.3mf")
-
-
-async def resolve_effective_timelapse(db, archive, user_wanted_timelapse: bool) -> bool:
-    """Resolve whether this print should record a timelapse (#1397).
-
-    Shared by both the on-demand dispatch path (``background_dispatch.py``,
-    used by Print Now / Reprint flows) and the queued-dispatch path
-    (``print_scheduler.py``, used by the print queue). Both must apply the
-    same override semantics or the queue path's prints would slip through
-    without a finish photo.
-
-    Bambuddy forces timelapse recording on when:
-      - the global ``capture_finish_photo`` setting is enabled, AND
-      - the user did NOT opt in to a timelapse for this specific print
-
-    The forced bit is recorded on the archive so the post-extraction
-    cleanup path can delete the timelapse afterward (the user didn't
-    ask for a video to keep, only the framed finish photo, #1397).
-    """
-    from backend.app.api.routes.settings import get_setting
-
-    if user_wanted_timelapse:
-        return True
-
-    # User didn't ask — check the master capture-finish-photo toggle.
-    capture_setting = await get_setting(db, "capture_finish_photo")
-    capture_enabled = capture_setting is None or capture_setting.lower() == "true"
-    if not capture_enabled:
-        return False
-
-    archive.bambuddy_forced_timelapse = True
-    await db.commit()
-    logging.getLogger(__name__).info(
-        "[FORCED-TIMELAPSE] Forcing timelapse on for archive %s (capture_finish_photo enabled, user did not opt in)",
-        archive.id,
-    )
-    return True
 
 
 background_dispatch = BackgroundDispatchService()

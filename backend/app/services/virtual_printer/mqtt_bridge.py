@@ -41,6 +41,9 @@ import logging
 import socket
 from typing import TYPE_CHECKING
 
+from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+from backend.app.services.virtual_printer._debug import append_event, dump_wire
+
 if TYPE_CHECKING:
     from backend.app.services.bambu_mqtt import BambuMQTTClient
     from backend.app.services.printer_manager import PrinterManager
@@ -50,38 +53,18 @@ logger = logging.getLogger(__name__)
 
 REFRESH_INTERVAL_SECONDS = 30.0
 
-# Top-level push_status fields that Bambu firmware sends in FULL pushall
-# responses (on `pushall` request / printer reconnect) but typically OMITS
-# from 1 Hz incremental push_status updates. Without preserving these
-# fields across incremental updates, the bridge cache would lose AMS info
-# (and friends) between pushalls — slicers reading the cache would see a
-# stripped-down state and the fix would only re-appear on a manual printer
-# power-cycle (#1371). Mirrors the same set Bambuddy itself preserves in
-# bambu_mqtt.py:2686-2711 for its own internal raw_data, with a few more
-# entries that the slicer cares about (net, ipcam, lights_report).
-_SLICER_VISIBLE_STICKY_KEYS: tuple[str, ...] = (
-    "ams",
-    "vt_tray",
-    "ams_extruder_map",
-    "mapping",
-    "net",
-    "ipcam",
-    "lights_report",
-    # Pre-flight / Prepare-tab fields that BambuStudio reads off cached
-    # push_status. Bambu firmware emits them in full pushall but typically
-    # OMITS them from 1 Hz incremental updates, so without sticky-preservation
-    # the cache drops them after the very next tick and the slicer's
-    # "block Send while busy / unknown firmware" branch kicks in. Same shape
-    # as #1228 (storage indicators) and #1558 (live-progress fields) —
-    # cached-branch field-shape parity, not a new mechanism.
-    "upgrade_state",  # Send pre-flight reads dis_state / force_upgrade
-    "xcam",  # Prepare-tab reads spaghetti / first-layer / halt sensitivity
-    "hw_switch_state",  # Hardware switch state (Prepare tab)
-    "nozzle_diameter",
-    "nozzle_type",
-    "online",  # Module online map (ahb / rfid / version)
-    "ams_status",  # AMS overall status; can be ams_status-only incremental
-)
+# Bambuddy's internal printer state in bambu_mqtt.py (around line 2686+) is
+# updated per-field — each `if "X" in data: self.state.X = ...` block leaves
+# every other field untouched, so the state accumulates everything the
+# printer has ever sent. The bridge cache below mirrors that pattern: when
+# the incoming push_status omits a field, the previous value is preserved
+# verbatim; only fields actually present in the new push overwrite. This
+# stops capability/lifecycle fields (cali_version, print_type, mc_print_stage,
+# device, ...) draining out of the cache between pushalls, which surfaced
+# as #1622 (BambuStudio's Device-tab UIs greying out on P1S after the
+# cache drained to a thin incremental snapshot). The `ams` field still
+# gets unit-/tray-level deep merge via `_merge_ams_dict` because firmware
+# sends partial `ams` blobs under the same key (#1387).
 
 
 def _ip_to_uint32_le(ip_str: str) -> int:
@@ -389,18 +372,38 @@ class MQTTBridge:
         # but that fires before the bridge attaches as a raw-message consumer,
         # so without this nudge the cache stays empty until the next periodic
         # query (which can be minutes away).
-        request_fn = getattr(current, "_request_version", None)
-        if callable(request_fn):
-            try:
-                request_fn()
-            except Exception:
-                logger.exception("[%s] MQTT bridge: _request_version failed", self.vp_name)
-        request_status_fn = getattr(current, "request_status_update", None)
-        if callable(request_status_fn):
-            try:
-                request_status_fn()
-            except Exception:
-                logger.exception("[%s] MQTT bridge: request_status_update failed", self.vp_name)
+        #
+        # The bind frequently races the real printer's MQTT TLS handshake — a
+        # slicer-side reconnect re-resolves the client before the underlying
+        # session has reconnected, especially on A1 firmware where the bridge
+        # cycles more aggressively (#1721). When that happens, the nudge is a
+        # no-op — the next periodic pushall populates the cache anyway — but
+        # `request_status_update` logs WARNING on the not-connected return path
+        # and pollutes every support bundle with a benign line.
+        #
+        # Gate both nudges on the client being actually connected. The fall-
+        # through path is unchanged: when the client comes up, the next
+        # `_resolve_client` tick re-enters this branch on identity change OR
+        # the periodic pushall in `bambu_mqtt.py` fills the cache.
+        client_connected = bool(getattr(getattr(current, "state", None), "connected", False))
+        if not client_connected:
+            logger.debug(
+                "[%s] MQTT bridge: post-bind nudge skipped (printer client not connected yet)",
+                self.vp_name,
+            )
+        else:
+            request_fn = getattr(current, "_request_version", None)
+            if callable(request_fn):
+                try:
+                    request_fn()
+                except Exception:
+                    logger.exception("[%s] MQTT bridge: _request_version failed", self.vp_name)
+            request_status_fn = getattr(current, "request_status_update", None)
+            if callable(request_status_fn):
+                try:
+                    request_status_fn()
+                except Exception:
+                    logger.exception("[%s] MQTT bridge: request_status_update failed", self.vp_name)
 
     def _unbind_client(self) -> None:
         if self._target_client is None:
@@ -600,40 +603,73 @@ class MQTTBridge:
             new_state = copy.deepcopy(print_data)
             # Bambu firmware sends two kinds of push_status: full pushall
             # responses (on `pushall` requests / printer reconnect) which
-            # include AMS, vt_tray, net, etc. — and ~1 Hz incremental
-            # updates with just the fields that changed (typically temps,
-            # fan, wifi). Without preserving sticky fields from the previous
-            # cache, the first incremental push after a pushall would wipe
-            # AMS info from the bridge cache, and slicers reading the cache
-            # between pushalls would see a stripped-down printer state with
-            # no AMS visible until the next pushall — typically only when
-            # the user power-cycles the printer (#1371). Mirror the same
-            # preservation pattern Bambuddy uses for its own internal state
-            # in bambu_mqtt.py (see _SLICER_VISIBLE_STICKY_KEYS below).
+            # include the full top-level field set (AMS, vt_tray, net,
+            # cali_version, print_type, mc_print_stage, device, ...) — and
+            # ~1 Hz incrementals with just the fields that changed (temps,
+            # fan, wifi, status). Carry over every prev field the incoming
+            # push doesn't overwrite, mirroring the per-field accumulate
+            # pattern in bambu_mqtt.py's internal state handler — without
+            # this the cache thins out to whatever the latest incremental
+            # carried (~17 keys on P1S in #1622), and the slicer's Device-
+            # tab capability gates (manage-calibration, AMS-assign dropdown,
+            # …) flip off because their gating fields drained from the
+            # cache. The deep-copy is defensive: without it the carried-
+            # over nested dicts/lists are shared with the previous cache,
+            # so any in-place mutation later would corrupt both.
             prev = self._latest_print_state
             if prev is not None:
-                for sticky_key in _SLICER_VISIBLE_STICKY_KEYS:
-                    if sticky_key not in new_state:
-                        if sticky_key in prev:
-                            # Defensive deep copy — without this the carried-over
-                            # nested dicts/lists are shared between new_state and
-                            # the previous cache, so any in-place mutation later
-                            # (current or future code paths) would corrupt both.
-                            new_state[sticky_key] = copy.deepcopy(prev[sticky_key])
+                for prev_key, prev_value in prev.items():
+                    if prev_key not in new_state:
+                        new_state[prev_key] = copy.deepcopy(prev_value)
+                # Firmware sends partial `ams` blobs (status-only / unit-
+                # targeted / tray-targeted) under the same key on
+                # incremental updates, which would overwrite the cached
+                # full blob and break the slicer's AMS render (#1387 /
+                # #1371). Deep-merge mirrors what bambu_mqtt.py does
+                # internally in `_handle_ams_data`.
+                if isinstance(new_state.get("ams"), dict) and isinstance(prev.get("ams"), dict):
+                    new_state["ams"] = _merge_ams_dict(prev["ams"], new_state["ams"])
+                # Same per-field accumulate rule applied one level deeper for
+                # other top-level dict-shaped fields. Firmware sends partial
+                # `vt_tray` (external spool) updates right after a slicer
+                # `ams_filament_setting` pick — typically just `{tray_info_idx,
+                # tray_color}`, dropping the ~18 other fields (`tray_type`,
+                # `state`, `remain`, `k`, `n`, `cali_idx`, `nozzle_temp_min/max`,
+                # `tray_uuid`, `xcam_info`, ...) the slicer needs to render the
+                # slot. Without overlay the next 1 Hz cached-as-base push
+                # delivered the stripped dict and the slicer rendered the
+                # external slot as "invalid" until a reload triggered a fresh
+                # pushall (#1622 round 5, reported by @shaddowlink). AMS slots
+                # didn't suffer because `_merge_ams_dict` deep-merges per tray.
+                # Same shape covers `device`, `online`, `upgrade_state`, `ipcam`,
+                # `upload`, `net`, ... against future firmware partials too.
+                # `ams` is excluded — already deep-merged above.
+                for key, new_value in list(new_state.items()):
+                    if key == "ams":
                         continue
-                    # Key IS in new_state — but firmware sends partial blobs
-                    # (status-only / tray-targeted) under the same key on
-                    # incremental updates, which would overwrite the cached
-                    # full blob and break the slicer's AMS render (#1387).
-                    # For `ams` specifically the deep-merge mirrors what
-                    # Bambuddy already does internally in `_handle_ams_data`.
-                    if (
-                        sticky_key == "ams"
-                        and isinstance(new_state.get("ams"), dict)
-                        and isinstance(prev.get("ams"), dict)
-                    ):
-                        new_state["ams"] = _merge_ams_dict(prev["ams"], new_state["ams"])
+                    prev_value = prev.get(key)
+                    if isinstance(prev_value, dict) and isinstance(new_value, dict):
+                        merged = dict(prev_value)
+                        merged.update(new_value)
+                        new_state[key] = merged
+            # Apply empty-slot cleanup on the merged AMS so the slicer-facing
+            # cache mirrors what Bambuddy's AMS card shows internally. Without
+            # this the cached units carry stale per-tray filament fields for
+            # slots whose `tray_exist_bits` bit is 0, and BambuStudio's Sync
+            # paints those empty slots as phantom loaded filaments (#1726).
+            # Runs whether or not a prev cache existed — fresh pushalls also
+            # carry tray_exist_bits and benefit from the cleanup.
+            merged_ams_dict = new_state.get("ams")
+            if isinstance(merged_ams_dict, dict):
+                units = merged_ams_dict.get("ams")
+                apply_tray_exist_bits(
+                    units if isinstance(units, list) else [],
+                    merged_ams_dict.get("tray_exist_bits"),
+                    power_on_flag=merged_ams_dict.get("power_on_flag", True),
+                    log_label=self.vp_name,
+                )
             self._latest_print_state = new_state
+            dump_wire(self.vp_name, "in", new_state)
             return
 
         # info.get_version responses → cache the module list so the synthetic
@@ -667,6 +703,13 @@ class MQTTBridge:
         if target_bytes in payload:
             payload = payload.replace(target_bytes, self.vp_serial.encode("ascii"))
         vp_topic = f"device/{self.vp_serial}/{suffix}"
+        # Env-flagged command trace (#1622): every printer-originated response
+        # that gets fanned to the slicer (extrusion_cali_get / ams write acks /
+        # xcam / system / etc.) gets a line in vp_wire/<vp>_cmd.jsonl. Pair
+        # with the slicer-side publishes captured in mqtt_server. Off by
+        # default. Capture AFTER serial rewrite so the dump matches what the
+        # slicer actually sees on the wire.
+        append_event(self.vp_name, "printer_to_slicer", vp_topic, payload)
         try:
             asyncio.run_coroutine_threadsafe(
                 self._mqtt_server.push_raw_to_clients(vp_topic, payload),

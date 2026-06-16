@@ -578,4 +578,21 @@ async def auto_assign_spool(
     except Exception as e:
         logger.warning("K-profile apply failed for spool %d (RFID match): %s", spool.id, e)
 
+    # Reconcile slot_preset_mappings so the AMS slot card stops surfacing the
+    # previous spool's preset name. Shared with the manual-assign path
+    # (inventory.apply_spool_to_slot_via_mqtt). Outside the try above so a
+    # transient MQTT failure doesn't leave the display row stale.
+    from backend.app.services.slot_preset_writer import upsert_slot_preset_for_spool
+
+    await upsert_slot_preset_for_spool(
+        db=db,
+        spool=spool,
+        printer_id=printer_id,
+        ams_id=ams_id,
+        tray_id=tray_id,
+        tray_info_idx=tray_info_idx,
+        tray_sub_brands=tray.get("tray_sub_brands", "") if tray else "",
+        tray_type=tray.get("tray_type", "") if tray else "",
+    )
+
     return assignment

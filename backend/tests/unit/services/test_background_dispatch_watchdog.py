@@ -606,14 +606,6 @@ class TestReprintArchiveDispatchWiring:
                 new_callable=AsyncMock,
             ),
             patch("backend.app.main.register_expected_print"),
-            # #1397: _resolve_effective_timelapse touches DB + setting layer
-            # that this watchdog-focused test isn't equipped to mock. Stub
-            # the whole helper so the dispatch flow proceeds unaffected.
-            patch.object(
-                BackgroundDispatchService,
-                "_resolve_effective_timelapse",
-                new=AsyncMock(return_value=False),
-            ),
             pytest.raises(RuntimeError, match="did not acknowledge print command"),
         ):
             await service._run_reprint_archive(job)
@@ -682,14 +674,6 @@ class TestReprintArchiveDispatchWiring:
                 new_callable=AsyncMock,
             ),
             patch("backend.app.main.register_expected_print"),
-            # #1397: _resolve_effective_timelapse touches DB + setting layer
-            # that this watchdog-focused test isn't equipped to mock. Stub
-            # the whole helper so the dispatch flow proceeds unaffected.
-            patch.object(
-                BackgroundDispatchService,
-                "_resolve_effective_timelapse",
-                new=AsyncMock(return_value=False),
-            ),
         ):
             await service._run_reprint_archive(job)  # must not raise
 

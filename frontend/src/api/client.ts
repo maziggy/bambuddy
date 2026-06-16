@@ -1390,13 +1390,6 @@ export interface PresetRef {
   source: PresetSource;
   id: string;
 }
-export interface SliceBundleSpec {
-  bundle_id: string;
-  printer_name: string;
-  process_name: string;
-  // Per-slot filament names in plate order. Index 0 = slot 1, etc.
-  filament_names: string[];
-}
 export interface SliceRequest {
   printer_preset_id?: number;
   process_preset_id?: number;
@@ -1409,11 +1402,6 @@ export interface SliceRequest {
   // backend validator promotes a singular into a one-element list when this
   // is omitted, so legacy single-color clients keep working unchanged.
   filament_presets?: PresetRef[];
-  // Bundle dispatch: when set, the backend skips PresetRef resolution and
-  // picks the JSON triplet from a sidecar-stored .bbscfg by name. Mutually
-  // exclusive with the preset fields above (validator accepts both, but
-  // dispatch ignores the preset side when bundle is set).
-  bundle?: SliceBundleSpec;
   plate?: number;
   export_3mf?: boolean;
   // Build-plate override (#1337). When omitted, the slicer uses the process
@@ -1422,20 +1410,6 @@ export interface SliceRequest {
   // "Textured PEI Plate", "Smooth PEI Plate", "Cool Plate (SuperTack)",
   // "Supertack Plate".
   bed_type?: string | null;
-}
-
-// GET /api/v1/slicer/bundles — Printer Preset Bundles imported from
-// BambuStudio's "File → Export → Export Preset Bundle" dialog. Each bundle
-// is a .bbscfg zip the user uploads once per printer, after which the
-// SliceModal can pick its inner presets by name (no re-upload per slice).
-// Backend: backend/app/api/routes/slicer_presets.py — bundle endpoints.
-export interface SlicerBundle {
-  id: string;
-  printer_preset_name: string;
-  printer: string[];
-  process: string[];
-  filament: string[];
-  version: string | null;
 }
 
 // GET /api/v1/slicer/presets — unified listing across cloud / local / standard.
@@ -1455,7 +1429,7 @@ export interface UnifiedPreset {
   // compatible with. Populated for the local tier (the slicer's own
   // `compatible_printers`); null for cloud / standard. The SliceModal filters
   // the process / filament dropdowns by the selected printer using this when
-  // present, and otherwise by the user's uploaded Slicer Bundles (#1325).
+  // present (#1325).
   compatible_printers?: string[] | null;
 }
 export interface UnifiedPresetsBySlot {
@@ -1464,8 +1438,9 @@ export interface UnifiedPresetsBySlot {
   filament: UnifiedPreset[];
 }
 export interface UnifiedPresetsResponse {
-  // Priority order: orca_cloud > cloud > local > standard. Dedup is applied
-  // backend-side so each name appears in only one tier.
+  // Priority order: local > orca_cloud > cloud > standard. No cross-tier
+  // dedup — every tier surfaces its full list so the user can pick from
+  // any source. The order drives auto-pick + visual group rendering only.
   orca_cloud: UnifiedPresetsBySlot;
   cloud: UnifiedPresetsBySlot;
   local: UnifiedPresetsBySlot;
@@ -1930,6 +1905,8 @@ export interface PrintQueueItem {
   printer_name?: string | null;
   print_time_seconds?: number | null;  // Estimated print time from archive or library file
   filament_used_grams?: number | null;  // Estimated print weight from archive or library file
+  filament_type?: string | null;  // e.g. "PLA", "PETG"
+  filament_color?: string | null;  // Hex RGBA from the slicer
   bed_type?: string | null;  // Build plate type for this print (per-plate accurate, #1281)
   // User tracking (Issue #206)
   created_by_id?: number | null;
@@ -1988,8 +1965,20 @@ export interface PrintQueueItemCreate {
   gcode_injection?: boolean;
   // Batch: create multiple copies (creates a batch if > 1)
   quantity?: number;
+  // Existing batch to add this item into (multi-plate auto-batch flow).
+  batch_id?: number | null;
   // Project to associate the resulting archive with
   project_id?: number;
+}
+
+export interface PrintBatchCreate {
+  name: string;
+  archive_id?: number | null;
+  library_file_id?: number | null;
+  /** When set, the listed pending items are assigned to the new batch
+   *  (manual "Group as batch"). When omitted/empty, an empty batch is
+   *  returned so the client can pass batch_id on subsequent addToQueue calls. */
+  item_ids?: number[];
 }
 
 export interface PrintQueueItemUpdate {
@@ -2923,13 +2912,13 @@ export interface ExternalLinkUpdate {
 // Permission type - all available permissions
 export type Permission =
   | 'printers:read' | 'printers:create' | 'printers:update' | 'printers:delete' | 'printers:control' | 'printers:files' | 'printers:ams_rfid' | 'printers:clear_plate'
-  | 'archives:read' | 'archives:create'
+  | 'archives:read' | 'archives:read_own' | 'archives:read_all' | 'archives:create'
   | 'archives:update_own' | 'archives:update_all' | 'archives:delete_own' | 'archives:delete_all'
   | 'archives:reprint_own' | 'archives:reprint_all' | 'archives:purge'
-  | 'queue:read' | 'queue:create'
+  | 'queue:read' | 'queue:read_own' | 'queue:read_all' | 'queue:create'
   | 'queue:update_own' | 'queue:update_all' | 'queue:delete_own' | 'queue:delete_all'
   | 'queue:reorder'
-  | 'library:read' | 'library:upload'
+  | 'library:read' | 'library:read_own' | 'library:read_all' | 'library:upload'
   | 'library:update_own' | 'library:update_all' | 'library:delete_own' | 'library:delete_all'
   | 'library:purge'
   | 'projects:read' | 'projects:create' | 'projects:update' | 'projects:delete'
@@ -3754,6 +3743,15 @@ export const api = {
   },
   getArchive: (id: number) => request<Archive>(`/archives/${id}`),
   getArchiveRuns: (id: number) => request<PrintLogResponse>(`/archives/${id}/runs`),
+  /**
+   * Pre-flight for the delete-confirm modal (#1734). Returns the number of
+   * related queue items that will be removed along with the archive AND how
+   * many are currently printing (server 409s on delete if > 0).
+   */
+  getArchiveDeleteImpact: (id: number) =>
+    request<{ related_queue_items: number; currently_printing: number }>(
+      `/archives/${id}/delete-impact`
+    ),
   searchArchives: (query: string, options?: {
     printerId?: number;
     projectId?: number;
@@ -4253,27 +4251,10 @@ export const api = {
     archiveId: number,
     plateId?: number,
     requestId?: string,
-    // Optional bundle context: when supplied, the backend's preview slice
-    // (run for unsliced project files) uses slice_with_bundle so gram
-    // numbers reflect the same triplet the real print will use. All four
-    // fields must be set for the bundle path to engage; partial context
-    // falls back to the embedded-settings preview without erroring.
-    bundle?: {
-      bundle_id: string;
-      printer_name: string;
-      process_name: string;
-      filament_names: string[];
-    },
   ) => {
     const qs = new URLSearchParams();
     if (plateId !== undefined) qs.set('plate_id', String(plateId));
     if (requestId) qs.set('request_id', requestId);
-    if (bundle) {
-      qs.set('bundle_id', bundle.bundle_id);
-      qs.set('printer_name', bundle.printer_name);
-      qs.set('process_name', bundle.process_name);
-      qs.set('filament_names', bundle.filament_names.join(';'));
-    }
     return request<{
       archive_id: number;
       filename: string;
@@ -4528,6 +4509,20 @@ export const api = {
   getFilamentIdMap: () =>
     request<Record<string, string>>('/cloud/filament-id-map'),
 
+  /** Material-disambiguated hex→name lookup. Same hex can map to different
+   *  catalog names depending on material (e.g. #000000 is "Charcoal" in PLA
+   *  Matte but "Black" in PLA Basic). The flat ``/inventory/colors/map``
+   *  collapses these to the first hit; this endpoint preserves the material
+   *  context. Returns ``{color_name: null}`` when the hex isn't in the
+   *  catalog at all. #1718. */
+  getColorByMaterial: (hex: string, material?: string) => {
+    const params = new URLSearchParams({ hex });
+    if (material) params.set('material', material);
+    return request<{ color_name: string | null }>(
+      `/inventory/colors/by-material?${params.toString()}`,
+    );
+  },
+
   // MakerWorld URL-paste import flow.
   getMakerworldStatus: () =>
     request<MakerworldStatus>('/makerworld/status'),
@@ -4693,6 +4688,16 @@ export const api = {
   getBatch: (id: number) => request<PrintBatch>(`/queue/batches/${id}`),
   cancelBatch: (id: number) =>
     request<{ message: string }>(`/queue/batches/${id}`, { method: 'DELETE' }),
+  createBatch: (data: PrintBatchCreate) =>
+    request<PrintBatch>('/queue/batches', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  ungroupBatch: (id: number) =>
+    request<{ ungrouped_count: number; message: string }>(
+      `/queue/batches/${id}/ungroup`,
+      { method: 'POST' },
+    ),
 
   // K-Profiles
   getKProfiles: (printerId: number, nozzleDiameter = '0.4') =>
@@ -5871,24 +5876,10 @@ export const api = {
     fileId: number,
     plateId?: number,
     requestId?: string,
-    // Optional bundle context — see getArchiveFilamentRequirements above
-    // for the contract. Same shape so callers can share a builder helper.
-    bundle?: {
-      bundle_id: string;
-      printer_name: string;
-      process_name: string;
-      filament_names: string[];
-    },
   ) => {
     const qs = new URLSearchParams();
     if (plateId !== undefined) qs.set('plate_id', String(plateId));
     if (requestId) qs.set('request_id', requestId);
-    if (bundle) {
-      qs.set('bundle_id', bundle.bundle_id);
-      qs.set('printer_name', bundle.printer_name);
-      qs.set('process_name', bundle.process_name);
-      qs.set('filament_names', bundle.filament_names.join(';'));
-    }
     return request<{
       file_id: number;
       filename: string;
@@ -6024,35 +6015,6 @@ export const api = {
   // `@BBL <code>` suffix against the selected printer-preset name (#1325).
   getSlicerPrinterModels: () =>
     request<Record<string, string>>('/slicer/printer-models'),
-
-  // Slicer Bundles (.bbscfg) — Printer Preset Bundles imported from BambuStudio.
-  // Settings → Slicer Bundles uploads/lists/deletes; the SliceModal picks
-  // presets by name from a chosen bundle (separate follow-up).
-  listSlicerBundles: () =>
-    request<SlicerBundle[]>('/slicer/bundles'),
-  importSlicerBundle: (file: File) => {
-    // The /slicer/bundles upload accepts multipart with field name "file"
-    // (matches the FastAPI route's UploadFile parameter). Bypass `request`
-    // because it always JSON-stringifies the body — multipart needs the
-    // browser to set the boundary in the Content-Type header.
-    const fd = new FormData();
-    fd.append('file', file);
-    return fetch(`${API_BASE}/slicer/bundles`, {
-      method: 'POST',
-      headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
-      body: fd,
-    }).then(async (res) => {
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || `HTTP ${res.status}`);
-      }
-      return res.json() as Promise<SlicerBundle>;
-    });
-  },
-  deleteSlicerBundle: (bundleId: string) =>
-    request<void>(`/slicer/bundles/${encodeURIComponent(bundleId)}`, {
-      method: 'DELETE',
-    }),
 
   // Local Presets (OrcaSlicer imports)
   getLocalPresets: () =>

@@ -18,6 +18,7 @@ from backend.app.models.printer import Printer
 from backend.app.schemas.printer import DiagnosticCheck, PrinterDiagnosticResult
 from backend.app.services.discovery import is_running_in_docker
 from backend.app.services.printer_manager import printer_manager
+from backend.app.utils.printer_models import has_external_storage
 
 logger = logging.getLogger(__name__)
 
@@ -176,8 +177,14 @@ async def run_connection_diagnostic(
     # banner. An FTP upload-and-verify probe was tried and rejected — the
     # /cache directory is always writable from Bambuddy regardless of
     # either toggle, so the probe always passes and detects nothing.
+    #
+    # Skip entirely on models with no external-storage slot at all (A1
+    # and A1 Mini). They never set home_flag bit 11, so a naive read of
+    # `store_to_sdcard` would fall through to a false `fail` for every
+    # A1-series user (#1703).
     state = printer_manager.get_status(printer.id) if printer else None
-    if state is None or not state.connected:
+    model_has_slot = has_external_storage(getattr(printer, "model", None)) if printer else True
+    if not model_has_slot or state is None or not state.connected:
         checks.append(DiagnosticCheck(id="external_storage", status="skip"))
     elif getattr(state, "store_to_sdcard", None) is True:
         checks.append(DiagnosticCheck(id="external_storage", status="pass"))

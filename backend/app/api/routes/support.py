@@ -669,7 +669,7 @@ async def _collect_support_info() -> dict:
     in_docker = is_running_in_docker()
 
     info = {
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "app": {
             "version": APP_VERSION,
             "debug_mode": settings.debug,
@@ -1140,6 +1140,63 @@ def _get_log_content(max_bytes: int = 10 * 1024 * 1024, sensitive_strings: dict[
     return content.encode("utf-8")
 
 
+# Top-level push_status keys that carry user-private data (filenames, BambuCloud
+# IDs). Dropped from the bundled per-printer snapshot. Keep print.cfg /
+# print.option / ams / vt_tray / vir_slot / mapping — those are the fields that
+# make the snapshot worth shipping (per-model AMS Backup detection, tray-shape
+# research, VP regression baselines).
+_RAW_DATA_DROP_KEYS = frozenset(
+    {
+        "subtask_name",
+        "gcode_file",
+        "gcode_file_prepare_percent",
+        "subtask_id",
+        "task_id",
+        "project_id",
+        "gcode_state",  # not sensitive, but mirrors current_print which we strip
+        "design_id",
+        "profile_id",
+        "model_id",
+    }
+)
+
+
+def _redact_raw_push_status(raw: dict) -> dict:
+    """Strip user-private keys from a cached push_status snapshot.
+
+    Drops the keys in :data:`_RAW_DATA_DROP_KEYS` anywhere in the tree, then
+    rewrites every entry under ``net.info[*].ip`` to ``"0.0.0.0"``. Mirrors the
+    LAN-topology leak fixed in the virtual-printer bridge (#1429) — the same
+    field exposes the printer's local IP plus the gateway/peers it sees. Returns
+    a NEW dict; the live ``state.raw_data`` is never mutated.
+    """
+
+    if not isinstance(raw, dict):
+        return {}
+
+    def _walk(value):
+        if isinstance(value, dict):
+            return {k: _walk(v) for k, v in value.items() if k not in _RAW_DATA_DROP_KEYS}
+        if isinstance(value, list):
+            return [_walk(v) for v in value]
+        return value
+
+    out = _walk(raw)
+
+    # Scrub net.info[*].ip after the structural walk — only meaningful at the
+    # top level; nested "net" blocks don't appear in Bambu push_status payloads.
+    net = out.get("net")
+    if isinstance(net, dict):
+        info_list = net.get("info")
+        if isinstance(info_list, list):
+            net["info"] = [
+                ({**entry, "ip": "0.0.0.0"} if isinstance(entry, dict) and "ip" in entry else entry)  # nosec B104 - redaction sentinel, not a bind address
+                for entry in info_list
+            ]
+
+    return out
+
+
 async def _get_recent_sanitized_logs(max_lines: int = 200) -> str:
     """Get recent log lines, sanitized for inclusion in bug reports."""
     # Collect sensitive strings from DB for redaction
@@ -1190,6 +1247,35 @@ async def generate_support_bundle(
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         # Add support info JSON
         zf.writestr("support-info.json", json.dumps(support_info, indent=2, default=str))
+
+        # Per-printer cached push_status dump. Bambu firmware ships per-model
+        # config in a different shape for every family (the bit-26 / print.cfg
+        # gap that blocked AMS Backup awareness in 85fbd7fc), and shape-of-
+        # vt_tray / mapping / vir_slot has bitten the VP bridge repeatedly.
+        # Including the redacted snapshot turns every future support bundle
+        # into a ground-truth sample for that exact model+firmware. Index
+        # matches the 1-based ordering in support-info.json["printers"] so a
+        # maintainer can cross-reference without re-deriving identifiers.
+        statuses = printer_manager.get_all_statuses()
+        async with async_session() as db:
+            db_printers = (await db.execute(select(Printer))).scalars().all()
+        for i, printer in enumerate(db_printers):
+            state = statuses.get(printer.id)
+            if state is None or not state.raw_data:
+                continue
+            redacted = _redact_raw_push_status(state.raw_data)
+            snapshot = {
+                "model": printer.model or "Unknown",
+                "firmware_version": state.firmware_version,
+                "captured_at": datetime.now(timezone.utc).isoformat(),
+                "raw_data": redacted,
+            }
+            # Belt-and-suspenders: pass the JSON text through the string-based
+            # sanitizer so any user-named string (printer name, serial baked
+            # into a tray uuid) the structural pass missed still gets caught.
+            snapshot_json = json.dumps(snapshot, indent=2, default=str)
+            snapshot_json = sanitize_log_content(snapshot_json, sensitive_strings)
+            zf.writestr(f"push-status/printer-{i + 1}.json", snapshot_json)
 
         # Add log file
         log_content = _get_log_content(sensitive_strings=sensitive_strings)

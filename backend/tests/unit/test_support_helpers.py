@@ -1116,3 +1116,123 @@ class TestCollectGitHubBackupInfo:
         assert info["providers_used"] == {"github": 2, "gitea": 1}
         assert info["schedule_enabled_count"] == 2
         assert info["last_failure_count"] == 2
+
+
+class TestRedactRawPushStatus:
+    """Tests for _redact_raw_push_status() — the bundle dump scrubber."""
+
+    def test_drops_user_filename_and_cloud_ids(self):
+        from backend.app.api.routes.support import _redact_raw_push_status
+
+        raw = {
+            "subtask_name": "private_model.gcode",
+            "gcode_file": "Metadata/private.gcode",
+            "subtask_id": "1234567890",
+            "task_id": "9999",
+            "project_id": "proj-abc",
+            "design_id": "design-1",
+            "profile_id": "p-1",
+            "model_id": "m-1",
+            "gcode_state": "RUNNING",
+            "layer_num": 42,  # control: non-sensitive sibling must survive
+        }
+
+        out = _redact_raw_push_status(raw)
+
+        assert "subtask_name" not in out
+        assert "gcode_file" not in out
+        assert "subtask_id" not in out
+        assert "task_id" not in out
+        assert "project_id" not in out
+        assert "design_id" not in out
+        assert "profile_id" not in out
+        assert "model_id" not in out
+        assert "gcode_state" not in out
+        assert out["layer_num"] == 42
+
+    def test_redacts_net_info_ip_addresses(self):
+        from backend.app.api.routes.support import _redact_raw_push_status
+
+        raw = {
+            "net": {
+                "conf": 1,
+                "info": [
+                    {"ip": "192.168.1.42", "mask": "255.255.255.0"},
+                    {"ip": "10.0.0.1", "mask": "255.0.0.0"},
+                ],
+            },
+        }
+
+        out = _redact_raw_push_status(raw)
+
+        # LAN topology must be scrubbed (mirrors the #1429 VP fix).
+        assert out["net"]["info"][0]["ip"] == "0.0.0.0"
+        assert out["net"]["info"][1]["ip"] == "0.0.0.0"
+        # Non-IP siblings inside the entry survive so the shape stays
+        # diagnosable (interface count, mask presence, etc.).
+        assert out["net"]["info"][0]["mask"] == "255.255.255.0"
+        assert out["net"]["conf"] == 1
+
+    def test_preserves_print_cfg_and_ams_payloads(self):
+        """The point of bundling raw_data is keeping these — print.cfg is what
+        unblocks per-model AMS Backup detection (deferred in 85fbd7fc).
+        """
+        from backend.app.api.routes.support import _redact_raw_push_status
+
+        raw = {
+            "print": {
+                "cfg": 0x4000000,  # bit-26 — the H2D AMS Backup bit
+                "option": 12345,
+            },
+            "ams": {
+                "ams": [
+                    {
+                        "id": "0",
+                        "humidity": "3",
+                        "tray": [
+                            {"id": "0", "tray_type": "PLA", "tray_color": "FF0000FF"},
+                        ],
+                    }
+                ]
+            },
+            "vt_tray": {"tray_info_idx": "GFA00", "tray_type": "PLA", "tray_color": "00FF00FF"},
+            "vir_slot": [{"id": "0", "tray_type": "PLA"}],
+            "mapping": [0, 1, 2, 3],
+            "ams_extruder_map": {"0": 1},
+        }
+
+        out = _redact_raw_push_status(raw)
+
+        assert out["print"]["cfg"] == 0x4000000
+        assert out["print"]["option"] == 12345
+        assert out["ams"]["ams"][0]["tray"][0]["tray_type"] == "PLA"
+        assert out["vt_tray"]["tray_info_idx"] == "GFA00"
+        assert out["vir_slot"][0]["tray_type"] == "PLA"
+        assert out["mapping"] == [0, 1, 2, 3]
+        assert out["ams_extruder_map"] == {"0": 1}
+
+    def test_does_not_mutate_input(self):
+        """Live state.raw_data must not be touched — the dispatcher reads it on
+        every tick, mutation would race the next push.
+        """
+        from backend.app.api.routes.support import _redact_raw_push_status
+
+        raw = {
+            "subtask_name": "secret.gcode",
+            "net": {"info": [{"ip": "192.168.1.5"}]},
+            "print": {"cfg": 1},
+        }
+        original_subtask = raw["subtask_name"]
+        original_ip = raw["net"]["info"][0]["ip"]
+
+        _redact_raw_push_status(raw)
+
+        assert raw["subtask_name"] == original_subtask
+        assert raw["net"]["info"][0]["ip"] == original_ip
+
+    def test_handles_non_dict_gracefully(self):
+        from backend.app.api.routes.support import _redact_raw_push_status
+
+        assert _redact_raw_push_status(None) == {}  # type: ignore[arg-type]
+        assert _redact_raw_push_status([]) == {}  # type: ignore[arg-type]
+        assert _redact_raw_push_status("") == {}  # type: ignore[arg-type]

@@ -5,22 +5,28 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 // Import translations directly for bundling
 import en from './locales/en';
 import de from './locales/de';
+import es from './locales/es';
 import fr from './locales/fr';
 import ja from './locales/ja';
 import it from './locales/it';
+import ko from './locales/ko';
 import ptBR from './locales/pt-BR';
 import zhCN from './locales/zh-CN';
 import zhTW from './locales/zh-TW';
+import tr from './locales/tr';
 
 const resources = {
   en: { translation: en },
   de: { translation: de },
+  es: { translation: es },
   fr: { translation: fr },
   ja: { translation: ja },
   it: { translation: it },
+  ko: { translation: ko },
   'pt-BR': { translation: ptBR },
   'zh-CN': { translation: zhCN },
   'zh-TW': { translation: zhTW },
+  tr: { translation: tr },
 };
 
 i18n
@@ -29,7 +35,7 @@ i18n
   .init({
     resources,
     fallbackLng: 'en',
-    supportedLngs: ['en', 'de', 'fr', 'ja', 'it', 'pt-BR', 'zh-CN', 'zh-TW'],
+    supportedLngs: ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'pt-BR', 'tr', 'zh-CN', 'zh-TW'],
 
     detection: {
       // Order of detection methods
@@ -55,10 +61,13 @@ export default i18n;
 export const availableLanguages = [
   { code: 'en', name: 'English', nativeName: 'English' },
   { code: 'de', name: 'German', nativeName: 'Deutsch' },
+  { code: 'es', name: 'Spanish', nativeName: 'Español' },
   { code: 'fr', name: 'French', nativeName: 'Français' },
   { code: 'ja', name: 'Japanese', nativeName: '日本語' },
   { code: 'it', name: 'Italian', nativeName: 'Italiano' },
+  { code: 'ko', name: 'Korean', nativeName: '한국어' },
   { code: 'pt-BR', name: 'Portuguese (Brazil)', nativeName: 'Português (Brasil)' },
   { code: 'zh-CN', name: 'Chinese (Simplified)', nativeName: '简体中文' },
   { code: 'zh-TW', name: 'Chinese (Traditional)', nativeName: '繁體中文' },
+  { code: 'tr', name: 'Turkish', nativeName: 'Türkçe' },
 ];

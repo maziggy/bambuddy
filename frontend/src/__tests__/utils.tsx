@@ -36,11 +36,16 @@ function AllProviders({ children }: AllProvidersProps) {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <ThemeProvider>
-          <AuthProvider>
+        {/* ThemeProvider is now mounted inside AuthProvider in App.tsx so
+            its initial ``api.getSettings()`` sync can gate on auth state.
+            Tests follow the same nesting; otherwise ThemeProvider's
+            ``useAuth()`` throws "AuthContext must be used inside
+            AuthProvider". */}
+        <AuthProvider>
+          <ThemeProvider>
             <ToastProvider>{children}</ToastProvider>
-          </AuthProvider>
-        </ThemeProvider>
+          </ThemeProvider>
+        </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>
   );

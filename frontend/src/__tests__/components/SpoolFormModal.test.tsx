@@ -38,6 +38,10 @@ vi.mock('../../api/client', () => ({
       failed_count: 0,
     }),
     getSpoolmanInventoryFilaments: vi.fn().mockResolvedValue([]),
+    getAssignments: vi.fn().mockResolvedValue([]),
+    getSpoolmanSlotAssignments: vi.fn().mockResolvedValue([]),
+    unassignSpool: vi.fn().mockResolvedValue({}),
+    unassignSpoolmanSlot: vi.fn().mockResolvedValue({}),
   },
   ApiError: class ApiError extends Error {
     status: number;
@@ -829,6 +833,106 @@ describe('SpoolFormModal — SpoolmanFilamentPicker integration (T2)', () => {
   });
 });
 
+describe('SpoolFormModal — Unassign button (#1336)', () => {
+  const spoolmanSpool: InventorySpool = {
+    id: 42,
+    material: 'PLA',
+    subtype: 'Basic',
+    brand: 'BrandX',
+    color_name: 'Black',
+    rgba: '000000FF',
+    extra_colors: null,
+    effect_type: null,
+    label_weight: 1000,
+    core_weight: 250,
+    core_weight_catalog_id: null,
+    weight_used: 200,
+    slicer_filament: '',
+    slicer_filament_name: '',
+    nozzle_temp_min: null,
+    nozzle_temp_max: null,
+    note: null,
+    added_full: null,
+    last_used: null,
+    encode_time: null,
+    tag_uid: null,
+    tray_uuid: null,
+    data_origin: 'spoolman',
+    tag_type: 'spoolman',
+    archived_at: null,
+    created_at: '2025-01-01T00:00:00Z',
+    updated_at: '2025-01-01T00:00:00Z',
+    cost_per_kg: null,
+    last_scale_weight: null,
+    last_weighed_at: null,
+    category: null,
+    low_stock_threshold_pct: null,
+    k_profiles: [],
+  } as InventorySpool;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('enables Unassign in Spoolman mode when a spoolman_slot_assignment exists for the spool', async () => {
+    vi.mocked(api.getSpoolmanSlotAssignments).mockResolvedValueOnce([
+      {
+        printer_id: 1,
+        printer_name: 'Test Printer',
+        ams_id: 0,
+        tray_id: 2,
+        spoolman_spool_id: 42,
+        ams_label: 'AMS 1',
+      },
+    ]);
+
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolmanSpool}
+        mode="edit"
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    const unassignBtn = await screen.findByRole('button', { name: /unassign/i });
+    await waitFor(() => {
+      expect(unassignBtn).not.toBeDisabled();
+    });
+
+    fireEvent.click(unassignBtn);
+
+    await waitFor(() => {
+      expect(api.unassignSpoolmanSlot).toHaveBeenCalledWith(42);
+    });
+    expect(api.unassignSpool).not.toHaveBeenCalled();
+  });
+
+  it('keeps Unassign disabled in Spoolman mode when no slot assignment exists', async () => {
+    vi.mocked(api.getSpoolmanSlotAssignments).mockResolvedValueOnce([]);
+
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={spoolmanSpool}
+        mode="edit"
+        currencySymbol="$"
+        spoolmanMode={true}
+      />
+    );
+
+    const unassignBtn = await screen.findByRole('button', { name: /unassign/i });
+    // Wait one tick for the (empty) query result to settle so the disabled state is final.
+    await waitFor(() => {
+      expect(api.getSpoolmanSlotAssignments).toHaveBeenCalled();
+    });
+    expect(unassignBtn).toBeDisabled();
+  });
+});
+
 describe('SpoolFormModal storageLocationTouched', () => {
   /**
    * Regression tests for the round-trip bug: saving the edit modal without
@@ -1012,5 +1116,69 @@ describe('SpoolFormModal copy mode', () => {
 
     const [payload] = vi.mocked(api.createSpool).mock.calls[0];
     expect((payload as Record<string, unknown>).weight_used).toBe(0);
+  });
+});
+
+// The "#<id>" affordance in the modal header (#1385) is only meaningful when
+// editing an existing spool — there's no ID yet on create, and the copy path
+// is producing a new spool too. Guard all three cases so a future refactor
+// can't quietly start leaking the source spool's ID into the Copy modal.
+describe('SpoolFormModal header spool ID (#1385)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('shows #<id> next to the title when editing an existing spool', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={existingSpool}
+        mode="edit"
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+    // existingSpool.id is 1; render as "#1" in the modal header.
+    expect(screen.getByText('#1')).toBeInTheDocument();
+  });
+
+  it('does not show an ID when creating a new spool', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument();
+    });
+    // No spool exists yet → header carries no "#..." token.
+    expect(screen.queryByText(/^#\d+$/)).not.toBeInTheDocument();
+  });
+
+  it('does not leak the source spool ID when copying', async () => {
+    // Copying produces a fresh spool — surfacing the source ID in the
+    // "Copy Spool" header would mislead the user into thinking the new
+    // spool inherits it.
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={existingSpool}
+        mode="copy"
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Copy Spool' })).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/^#\d+$/)).not.toBeInTheDocument();
   });
 });

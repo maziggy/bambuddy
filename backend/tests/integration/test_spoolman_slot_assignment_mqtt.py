@@ -6,6 +6,7 @@ Covers:
   - MQTT failure does NOT roll back the slot assignment
 """
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -65,6 +66,9 @@ def mock_spoolman_client():
     client.base_url = "http://localhost:7912"
     client.health_check = AsyncMock(return_value=True)
     client.get_spool = AsyncMock(return_value=SAMPLE_SPOOL)
+    # #1457: assign route enumerates spools to clear stale fallback-tag links.
+    client.get_spools = AsyncMock(return_value=[])
+    client.merge_spool_extra = AsyncMock(return_value={"id": 0, "extra": {}})
 
     with patch(
         "backend.app.api.routes.spoolman_inventory._get_client",
@@ -203,10 +207,10 @@ class TestAssignSlotMqtt:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_extrusion_cali_sel_not_called_on_nozzle_mismatch(
+    async def test_extrusion_cali_sel_resets_default_on_nozzle_mismatch(
         self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client, db_session
     ):
-        """extrusion_cali_sel is NOT called when nozzle diameter does not match K-profile."""
+        """When nozzle diameter doesn't match K-profile (no usable kp), slot resets to Default K."""
         from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 
         kp = SpoolmanKProfile(
@@ -257,14 +261,15 @@ class TestAssignSlotMqtt:
             )
 
         assert response.status_code == 200
-        mqtt_mock.extrusion_cali_sel.assert_not_called()
+        mqtt_mock.extrusion_cali_sel.assert_called_once()
+        assert mqtt_mock.extrusion_cali_sel.call_args[1]["cali_idx"] == -1
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_extrusion_cali_sel_not_called_when_cali_idx_none(
+    async def test_extrusion_cali_sel_resets_default_when_cali_idx_none(
         self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client, db_session
     ):
-        """extrusion_cali_sel is NOT called when K-profile has cali_idx=None."""
+        """When stored K-profile has cali_idx=None (unusable), slot resets to Default K."""
         from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 
         kp = SpoolmanKProfile(
@@ -315,7 +320,8 @@ class TestAssignSlotMqtt:
             )
 
         assert response.status_code == 200
-        mqtt_mock.extrusion_cali_sel.assert_not_called()
+        mqtt_mock.extrusion_cali_sel.assert_called_once()
+        assert mqtt_mock.extrusion_cali_sel.call_args[1]["cali_idx"] == -1
 
 
 # ---------------------------------------------------------------------------
@@ -474,10 +480,10 @@ class TestAssignSpoolmanSlotLiveCaliIdx:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_no_kprofile_uses_live_cali_idx(
+    async def test_no_kprofile_resets_to_default_k(
         self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
     ):
-        """When no K-profile exists, live tray cali_idx is sent via extrusion_cali_sel."""
+        """When no K-profile exists, slot resets to cali_idx=-1 (Default K) regardless of live value."""
         printer_state = self._make_printer_state(ams_id=0, tray_id=1, cali_idx=42)
 
         mqtt_mock = MagicMock()
@@ -514,16 +520,16 @@ class TestAssignSpoolmanSlotLiveCaliIdx:
         assert resp.status_code == 200
         mqtt_mock.extrusion_cali_sel.assert_called_once()
         call_kwargs = mqtt_mock.extrusion_cali_sel.call_args[1]
-        assert call_kwargs["cali_idx"] == 42
+        assert call_kwargs["cali_idx"] == -1
         assert call_kwargs["ams_id"] == 0
         assert call_kwargs["tray_id"] == 1
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_no_kprofile_no_live_cali_idx_nothing_sent(
+    async def test_no_kprofile_no_live_cali_idx_sends_default(
         self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
     ):
-        """When no K-profile and tray has no cali_idx, extrusion_cali_sel is not called."""
+        """When no K-profile and tray has no cali_idx, extrusion_cali_sel is sent with cali_idx=-1 (Default)."""
         printer_state = self._make_printer_state(ams_id=0, tray_id=2, cali_idx=None)
 
         mqtt_mock = MagicMock()
@@ -558,7 +564,8 @@ class TestAssignSpoolmanSlotLiveCaliIdx:
             )
 
         assert resp.status_code == 200
-        mqtt_mock.extrusion_cali_sel.assert_not_called()
+        mqtt_mock.extrusion_cali_sel.assert_called_once()
+        assert mqtt_mock.extrusion_cali_sel.call_args[1]["cali_idx"] == -1
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -622,10 +629,10 @@ class TestAssignSpoolmanSlotLiveCaliIdx:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_live_cali_idx_not_used_if_negative(
+    async def test_live_cali_idx_negative_falls_back_to_default(
         self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
     ):
-        """A negative live cali_idx is invalid and must not be sent."""
+        """A negative live cali_idx falls through and is sent as Default (cali_idx=-1)."""
         printer_state = self._make_printer_state(ams_id=0, tray_id=0, cali_idx=-1)
 
         mqtt_mock = MagicMock()
@@ -660,7 +667,8 @@ class TestAssignSpoolmanSlotLiveCaliIdx:
             )
 
         assert resp.status_code == 200
-        mqtt_mock.extrusion_cali_sel.assert_not_called()
+        mqtt_mock.extrusion_cali_sel.assert_called_once()
+        assert mqtt_mock.extrusion_cali_sel.call_args[1]["cali_idx"] == -1
 
 
 # ---------------------------------------------------------------------------
@@ -861,3 +869,171 @@ class TestAssignSpoolmanSlotKProfileRealignment:
         # extruder mismatch was hard-skipped pre-fix; now used as fallback
         cs_kwargs = mqtt_mock.extrusion_cali_sel.call_args[1]
         assert cs_kwargs["cali_idx"] == 42
+
+
+# ---- #1713: slicer_filament resolved into tray_info_idx + setting_id --------
+#
+# Before this fix the Spoolman-mode assign route ignored the spool's stored
+# slicer_filament (the user's configured Bambu Studio / Orca filament profile)
+# and only filled tray_info_idx from the generic-material fallback. The user
+# saw ams_filament_setting publish with tray_info_idx=GFL99 / setting_id=""
+# even though they had assigned a real profile to the spool, and had to
+# manually re-configure each slot through the printer card. The internal-mode
+# route did the resolution correctly via _apply_spool_to_slot_inner; the
+# Spoolman route was never ported.
+#
+# These tests pin the parity: an assign of a Spoolman spool whose
+# bambu_slicer_filament extra-field points at a real preset must publish that
+# preset's tray_info_idx + setting_id, not the generic-material bucket.
+
+
+class TestSlicerFilamentResolutionParity:
+    """#1713: Spoolman-mode assign honours the spool's configured slicer
+    filament profile, matching internal-mode behaviour."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_gf_prefix_slicer_filament_resolves_to_tray_info_idx(
+        self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
+    ):
+        """GF-prefix Bambu official preset (e.g. ``GFA01``) routes straight
+        through ``normalize_slicer_filament`` — the simplest path and the
+        most common shape for users who picked their preset in the slicer."""
+        mock_spoolman_client.get_spool = AsyncMock(
+            return_value={**SAMPLE_SPOOL, "extra": {"bambu_slicer_filament": '"GFA01"'}}
+        )
+
+        mqtt_mock = MagicMock()
+        mqtt_mock.ams_set_filament_setting = MagicMock()
+        mqtt_mock.extrusion_cali_sel = MagicMock()
+        mqtt_mock.printer_state = None
+
+        with patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock:
+            pm_mock.get_client = MagicMock(return_value=mqtt_mock)
+            pm_mock.get_status = MagicMock(return_value=None)
+
+            response = await async_client.post(
+                "/api/v1/spoolman/inventory/slot-assignments",
+                json={
+                    "spoolman_spool_id": 10,
+                    "printer_id": test_printer.id,
+                    "ams_id": 0,
+                    "tray_id": 0,
+                },
+            )
+
+        assert response.status_code == 200
+        call_kwargs = mqtt_mock.ams_set_filament_setting.call_args[1]
+        assert call_kwargs["tray_info_idx"] == "GFA01", (
+            "Pre-fix: dropped slicer_filament and published GFL99 generic-PLA bucket. "
+            "Post-fix: must publish the actual preset id."
+        )
+        assert call_kwargs["setting_id"].startswith("GFSA01"), (
+            "setting_id must be derived from the resolved filament_id, not left empty as the pre-fix path did."
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_local_preset_int_id_resolves_to_filament_id_from_json(
+        self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client, db_session
+    ):
+        """#1713 regression: shaddowlink's exact case. Spool's slicer_filament
+        is the integer id of a LocalPreset whose setting JSON carries the
+        printer-side ``filament_id`` (e.g. ``P20bd830``). The publish must
+        carry that filament_id + its derived setting_id — not the generic
+        material bucket.
+
+        From his support bundle:
+          11:33:01 — assign_spoolman_slot published tray_info_idx=GFL99 (BUG)
+          11:33:13 — user manually fired /printers/.../configure with
+                     tray_info_idx=P20bd830, setting_id=PFUS3822acb73c88cc
+        """
+        from backend.app.models.local_preset import LocalPreset
+
+        lp = LocalPreset(
+            name="AMOLEN PLA Silk @0.4 nozzle",
+            preset_type="filament",
+            filament_type="PLA",
+            setting=json.dumps({"filament_id": "P20bd830"}),
+        )
+        db_session.add(lp)
+        await db_session.commit()
+        await db_session.refresh(lp)
+
+        # Spoolman spool whose bambu_slicer_filament points at this LocalPreset
+        # by integer id (the shape the inventory UI persists when the user
+        # picks a local preset in the filament dropdown).
+        mock_spoolman_client.get_spool = AsyncMock(
+            return_value={
+                **SAMPLE_SPOOL,
+                "extra": {"bambu_slicer_filament": json.dumps(str(lp.id))},
+            }
+        )
+
+        mqtt_mock = MagicMock()
+        mqtt_mock.ams_set_filament_setting = MagicMock()
+        mqtt_mock.extrusion_cali_sel = MagicMock()
+        mqtt_mock.printer_state = None
+
+        with patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock:
+            pm_mock.get_client = MagicMock(return_value=mqtt_mock)
+            pm_mock.get_status = MagicMock(return_value=None)
+
+            response = await async_client.post(
+                "/api/v1/spoolman/inventory/slot-assignments",
+                json={
+                    "spoolman_spool_id": 10,
+                    "printer_id": test_printer.id,
+                    "ams_id": 255,
+                    "tray_id": 0,
+                },
+            )
+
+        assert response.status_code == 200
+        call_kwargs = mqtt_mock.ams_set_filament_setting.call_args[1]
+        # Pre-fix the publish here was tray_info_idx="GFL99", setting_id="".
+        assert call_kwargs["tray_info_idx"] == "P20bd830"
+        assert call_kwargs["setting_id"], "setting_id must not be empty post-fix"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_empty_slicer_filament_still_falls_back_to_generic_material(
+        self, async_client: AsyncClient, slot_settings, test_printer, mock_spoolman_client
+    ):
+        """Spools without a configured slicer_filament must still get the
+        generic-material fallback so the slot is at least minimally
+        configured. Guards against the resolver path swallowing the empty
+        case and leaving tray_info_idx empty."""
+        # extra dict has no bambu_slicer_filament key
+        mock_spoolman_client.get_spool = AsyncMock(return_value={**SAMPLE_SPOOL, "extra": {}})
+
+        mqtt_mock = MagicMock()
+        mqtt_mock.ams_set_filament_setting = MagicMock()
+        mqtt_mock.extrusion_cali_sel = MagicMock()
+        mqtt_mock.printer_state = None
+
+        with patch("backend.app.api.routes.spoolman_inventory.printer_manager") as pm_mock:
+            pm_mock.get_client = MagicMock(return_value=mqtt_mock)
+            pm_mock.get_status = MagicMock(return_value=None)
+
+            response = await async_client.post(
+                "/api/v1/spoolman/inventory/slot-assignments",
+                json={
+                    "spoolman_spool_id": 10,
+                    "printer_id": test_printer.id,
+                    "ams_id": 0,
+                    "tray_id": 0,
+                },
+            )
+
+        assert response.status_code == 200
+        call_kwargs = mqtt_mock.ams_set_filament_setting.call_args[1]
+        # PLA → GFL99 (the generic-PLA bucket from GENERIC_FILAMENT_IDS).
+        assert call_kwargs["tray_info_idx"] == "GFL99"
+        # The generic-fallback path must STILL produce a non-empty setting_id
+        # (matches the internal-mode tail). Pre-fix this was "".
+        assert call_kwargs["setting_id"], (
+            "Even on the generic-material fallback, setting_id must be "
+            "filament_id_to_setting_id-derived so the slot detail modal "
+            "doesn't render with empty fields."
+        )

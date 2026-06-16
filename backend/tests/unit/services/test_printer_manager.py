@@ -377,6 +377,7 @@ class TestPrinterManager:
             vibration_cali=True,
             layer_inspect=False,
             use_ams=True,
+            nozzle_offset_cali=False,
         )
         assert result is True
 
@@ -584,11 +585,125 @@ class TestPrinterManager:
             mock_instance.state.connected = False
             MockClient.return_value = mock_instance
 
-            result = await manager.test_connection("192.168.1.100", "00M09A123456789", "12345678")
+            # Shorten the probe budget so the test doesn't burn the full
+            # 8-second production timeout while polling a failing connection.
+            with (
+                patch.object(manager, "PROBE_TIMEOUT_SECONDS", 0.4),
+                patch.object(manager, "PROBE_POLL_INTERVAL_SECONDS", 0.1),
+            ):
+                result = await manager.test_connection("192.168.1.100", "00M09A123456789", "12345678")
 
             assert result["success"] is False
             assert result["state"] is None
             mock_instance.disconnect.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_test_connection_polls_and_returns_early_on_connect(self, manager):
+        """#1445: a slow printer that finishes its handshake mid-probe must
+        not be reported as a failure. Previously a fixed 2s sleep meant P1S
+        TLS / CONNACK that took 3-5s got falsely rejected; now we poll and
+        early-return as soon as connected flips True.
+        """
+        import asyncio
+        import time
+
+        with patch("backend.app.services.printer_manager.BambuMQTTClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.state = MagicMock()
+            mock_instance.state.connected = False  # not connected at probe start
+            mock_instance.state.state = "IDLE"
+            mock_instance.state.raw_data = {"device_model": "P1S"}
+            MockClient.return_value = mock_instance
+
+            async def flip_connected_after(delay: float):
+                await asyncio.sleep(delay)
+                mock_instance.state.connected = True
+
+            # Simulates the P1S broker finishing its slow handshake ~0.5s in,
+            # well past the old 2s-or-fail boundary's natural variance.
+            with (
+                patch.object(manager, "PROBE_TIMEOUT_SECONDS", 3.0),
+                patch.object(manager, "PROBE_POLL_INTERVAL_SECONDS", 0.05),
+            ):
+                start = time.monotonic()
+                flip_task = asyncio.create_task(flip_connected_after(0.5))
+                try:
+                    result = await manager.test_connection("192.168.1.100", "00M09A123456789", "12345678")
+                finally:
+                    await flip_task
+                elapsed = time.monotonic() - start
+
+            assert result["success"] is True
+            assert result["state"] == "IDLE"
+            # Early-return guarantee: must come back well before the configured
+            # timeout once connected flips. ~0.5s + one poll interval is plenty.
+            assert elapsed < 1.5, f"probe should have early-returned shortly after 0.5s, took {elapsed:.2f}s"
+
+    @pytest.mark.asyncio
+    async def test_test_connection_disconnect_runs_off_loop(self, manager):
+        """#1445: the root cause of the "Docker container hangs" symptom was
+        `client.disconnect()` running on the asyncio thread — paho's
+        `loop_stop()` does a thread-join that blocks until its network
+        thread exits, which on a slow P1S TLS handshake could take many
+        seconds. This test pins the off-loop teardown so a regression that
+        reintroduces sync disconnect breaks CI immediately.
+        """
+        import asyncio
+        import threading
+        import time
+
+        with patch("backend.app.services.printer_manager.BambuMQTTClient") as MockClient:
+            asyncio_thread_id = threading.get_ident()
+            disconnect_thread_ids: list[int] = []
+            disconnect_blocked_for: list[float] = []
+
+            def slow_blocking_disconnect():
+                # Mirrors paho.Client.loop_stop()'s thread-join semantics —
+                # if this runs on the asyncio thread the event loop stalls.
+                disconnect_thread_ids.append(threading.get_ident())
+                start = time.monotonic()
+                time.sleep(0.4)
+                disconnect_blocked_for.append(time.monotonic() - start)
+
+            mock_instance = MagicMock()
+            mock_instance.state = MagicMock()
+            mock_instance.state.connected = True
+            mock_instance.state.state = "IDLE"
+            mock_instance.state.raw_data = {"device_model": "P1S"}
+            mock_instance.disconnect = slow_blocking_disconnect
+            MockClient.return_value = mock_instance
+
+            # Another coroutine must keep making progress while disconnect()
+            # runs — proves the event loop was not blocked.
+            event_loop_alive_ticks = 0
+
+            async def heartbeat():
+                nonlocal event_loop_alive_ticks
+                while True:
+                    await asyncio.sleep(0.05)
+                    event_loop_alive_ticks += 1
+
+            heartbeat_task = asyncio.create_task(heartbeat())
+            try:
+                await manager.test_connection("192.168.1.100", "00M09A123456789", "12345678")
+            finally:
+                heartbeat_task.cancel()
+                try:
+                    await heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+
+            # disconnect ran on a different thread than asyncio's
+            assert disconnect_thread_ids, "disconnect was never called"
+            assert disconnect_thread_ids[0] != asyncio_thread_id, (
+                "disconnect ran on the asyncio thread — this blocks the event loop (#1445)"
+            )
+            # Heartbeat made progress while the 0.4s disconnect was blocking
+            # the worker thread (proves the loop wasn't stalled).
+            assert event_loop_alive_ticks >= 3, (
+                f"event loop appears to have stalled during disconnect "
+                f"(only {event_loop_alive_ticks} heartbeats; expected >=3)"
+            )
 
     # ========================================================================
     # Tests for current print user tracking (Issue #206)
@@ -740,6 +855,60 @@ class TestPrinterStateToDict:
 
         assert result["ams"][0]["tray"][0]["tag_uid"] is None
         assert result["ams"][0]["tray"][0]["tray_uuid"] is None
+
+    def test_bare_tray_emulates_state_9(self, mock_state):
+        """P1S / A1 Mini physically-empty-slot signal (#1322 follow-up by @RosdasHH):
+        the firmware sends only `{"id": N}` for a truly empty slot. Treat that as
+        the firmware's "no spool" state (state=9) so the inventory assign-spool
+        path can short-circuit the doomed MQTT publish.
+        """
+        mock_state.raw_data = {
+            "ams": [
+                {
+                    "id": 0,
+                    "tray": [
+                        {"id": 0, "state": 11, "tray_type": "PLA"},  # loaded slot
+                        {"id": 1},  # P1S empty-slot signal — only id
+                    ],
+                }
+            ]
+        }
+
+        result = printer_state_to_dict(mock_state)
+        trays = result["ams"][0]["tray"]
+
+        assert trays[0]["state"] == 11, "loaded slot keeps its firmware state"
+        assert trays[1]["state"] == 9, "bare {id} tray must be promoted to state=9"
+
+    def test_populated_payload_with_empty_state_3_is_not_promoted(self, mock_state):
+        """A1 Mini BMCU / P1S Standard AMS post-Reset-Slot case (#1322 root):
+        firmware sends state=3 + tray_type="" but with the FULL field set
+        populated. Must NOT be confused with the bare-tray empty signal —
+        else inventory.py would short-circuit MQTT and we'd reintroduce the
+        deadlock the #1322 fix removed.
+        """
+        mock_state.raw_data = {
+            "ams": [
+                {
+                    "id": 0,
+                    "tray": [
+                        {
+                            "id": 0,
+                            "state": 3,
+                            "tray_type": "",  # cleared
+                            "tray_color": "",
+                            "tag_uid": "0000000000000000",
+                            "remain": 0,
+                        }
+                    ],
+                }
+            ]
+        }
+
+        result = printer_state_to_dict(mock_state)
+        # state stays at 3 — the bare-tray promotion requires the dict to have
+        # ONLY the id key, not just empty/falsy values for the other fields.
+        assert result["ams"][0]["tray"][0]["state"] == 3
 
     def test_zero_tag_uid_becomes_none(self, mock_state):
         """Verify zero tag_uid is converted to None."""
@@ -1143,6 +1312,48 @@ class TestSupportsChamberTemp:
         assert supports_chamber_temp("N1") is False
 
 
+class TestIsBedSlinger:
+    """Tests for is_bed_slinger helper function (#1334)."""
+
+    def test_a1_series_is_bed_slinger(self):
+        """A1 / A1 Mini are open-frame bed-slingers — Z axis is the toolhead."""
+        from backend.app.services.printer_manager import is_bed_slinger
+
+        assert is_bed_slinger("A1") is True
+        assert is_bed_slinger("A1 Mini") is True
+        assert is_bed_slinger("A1MINI") is True
+        assert is_bed_slinger("A1-MINI") is True
+
+    def test_a1_internal_codes_recognised(self):
+        """Internal MQTT/SSDP codes for A1 family must also classify as bed-slinger."""
+        from backend.app.services.printer_manager import is_bed_slinger
+
+        # A1 Mini
+        assert is_bed_slinger("N1") is True
+        # A1
+        assert is_bed_slinger("N2S") is True
+
+    def test_bed_on_z_models_not_bed_slingers(self):
+        """X1 / P1 / H2 / H2C / H2D / H2S / P2S all have the bed on Z."""
+        from backend.app.services.printer_manager import is_bed_slinger
+
+        for model in ("X1", "X1C", "X1E", "P1P", "P1S", "P2S", "H2C", "H2D", "H2DPRO", "H2S"):
+            assert is_bed_slinger(model) is False, f"{model} should NOT be classified as bed-slinger"
+
+    def test_none_model_returns_false(self):
+        from backend.app.services.printer_manager import is_bed_slinger
+
+        assert is_bed_slinger(None) is False
+        assert is_bed_slinger("") is False
+
+    def test_case_insensitive(self):
+        from backend.app.services.printer_manager import is_bed_slinger
+
+        assert is_bed_slinger("a1") is True
+        assert is_bed_slinger("a1 mini") is True
+        assert is_bed_slinger("x1c") is False
+
+
 class TestSupportsDrying:
     """Tests for supports_drying helper function."""
 
@@ -1152,6 +1363,9 @@ class TestSupportsDrying:
         assert supports_drying("P1S", "01.08.00.00") is True
         assert supports_drying("H2D", "01.02.30.00") is True
         assert supports_drying("H2S", "01.02.00.00") is True
+        assert supports_drying("H2C", "01.02.00.00") is True
+        assert supports_drying("O1C", "01.02.00.00") is True
+        assert supports_drying("O1C2", "01.02.00.00") is True
         assert supports_drying("P2S", "01.02.00.00") is True
         assert supports_drying("N7", "01.02.00.00") is True
 
@@ -1160,6 +1374,9 @@ class TestSupportsDrying:
         assert supports_drying("X1C", "01.08.00.00") is False
         assert supports_drying("P1S", "01.07.00.00") is False
         assert supports_drying("H2S", "01.01.00.00") is False
+        assert supports_drying("H2C", "01.01.99.99") is False
+        assert supports_drying("O1C", "01.01.99.99") is False
+        assert supports_drying("O1C2", "01.01.99.99") is False
         assert supports_drying("P2S", "01.01.99.99") is False
         assert supports_drying("N7", "01.01.99.99") is False
 
@@ -1170,7 +1387,7 @@ class TestSupportsDrying:
 
     def test_unsupported_models(self):
         """Verify models without AMS drying support return False regardless of firmware."""
-        for model in ["A1", "A1MINI", "A1-MINI", "H2C", "N1", "N2S"]:
+        for model in ["A1", "A1MINI", "A1-MINI", "N1", "N2S"]:
             assert supports_drying(model, "99.99.99.99") is False, f"Expected False for {model}"
 
     def test_unknown_models_allowed(self):

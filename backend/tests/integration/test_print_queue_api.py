@@ -149,6 +149,40 @@ class TestPrintQueueAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_add_to_queue_with_skip_filament_check(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """PrintModal "Print Anyway" persists skip_filament_check on creation (#1698-followup)."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+
+        data = {
+            "printer_id": printer.id,
+            "archive_id": archive.id,
+            "skip_filament_check": True,
+        }
+        response = await async_client.post("/api/v1/queue/", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["skip_filament_check"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_skip_filament_check_defaults_false(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Default add-to-queue has skip_filament_check=False — no silent bypass."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+
+        data = {"printer_id": printer.id, "archive_id": archive.id}
+        response = await async_client.post("/api/v1/queue/", json=data)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["skip_filament_check"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_add_to_queue_with_project_id(
         self, async_client: AsyncClient, printer_factory, archive_factory, db_session
     ):
@@ -495,6 +529,140 @@ class TestQueueStartEndpoint:
 
         response = await async_client.post(f"/api/v1/queue/{item.id}/start")
         assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_start_returns_409_on_filament_deficit(
+        self,
+        async_client: AsyncClient,
+        queue_item_factory,
+        db_session,
+        monkeypatch,
+    ):
+        """Filament deficit must surface as 409 + structured payload (#1496)."""
+        from backend.app.services import filament_deficit as fd_module
+
+        item = await queue_item_factory(manual_start=True)
+
+        async def _fake_deficit(_db, _item):
+            return [
+                fd_module.FilamentDeficit(
+                    slot_id=1,
+                    ams_id=0,
+                    tray_id=0,
+                    filament_type="PLA",
+                    required_grams=270.0,
+                    remaining_grams=200.0,
+                ),
+            ]
+
+        monkeypatch.setattr(
+            "backend.app.api.routes.print_queue.compute_deficit_for_queue_item",
+            _fake_deficit,
+        )
+
+        response = await async_client.post(f"/api/v1/queue/{item.id}/start")
+        assert response.status_code == 409
+        body = response.json()
+        assert body["detail"]["code"] == "insufficient_filament"
+        assert len(body["detail"]["deficit"]) == 1
+        assert body["detail"]["deficit"][0]["slot_id"] == 1
+        assert body["detail"]["deficit"][0]["required_grams"] == 270.0
+        assert body["detail"]["deficit"][0]["remaining_grams"] == 200.0
+
+        # Item still pending, manual_start unchanged.
+        await db_session.refresh(item)
+        assert item.status == "pending"
+        assert item.manual_start is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_start_with_skip_flag_bypasses_deficit_check(
+        self,
+        async_client: AsyncClient,
+        queue_item_factory,
+        db_session,
+        monkeypatch,
+    ):
+        """With skip_filament_check=true the route dispatches even when short (#1496)."""
+        from backend.app.services import filament_deficit as fd_module
+
+        item = await queue_item_factory(manual_start=True, filament_short=True)
+        called_with = {}
+
+        async def _fake_deficit(_db, _item):
+            called_with["called"] = True
+            return [
+                fd_module.FilamentDeficit(
+                    slot_id=1,
+                    ams_id=0,
+                    tray_id=0,
+                    filament_type="PLA",
+                    required_grams=270.0,
+                    remaining_grams=200.0,
+                ),
+            ]
+
+        monkeypatch.setattr(
+            "backend.app.api.routes.print_queue.compute_deficit_for_queue_item",
+            _fake_deficit,
+        )
+
+        response = await async_client.post(f"/api/v1/queue/{item.id}/start?skip_filament_check=true")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["manual_start"] is False
+        assert body["filament_short"] is False
+        # Helper not called on the bypass path — we trust the operator's
+        # decision to print anyway.
+        assert called_with == {}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_start_with_skip_flag_persists_acknowledgement(
+        self,
+        async_client: AsyncClient,
+        queue_item_factory,
+        db_session,
+    ):
+        """skip_filament_check=true sets the persistent flag on the queue item
+        so the scheduler doesn't re-flag it on the next tick (#1698-followup).
+
+        Without persistence the route's flag-clearing only survives until the
+        next scheduler tick re-runs the deficit check on identical spool
+        state and re-promotes the item — the user has to click Play+Confirm
+        every single tick.
+        """
+        item = await queue_item_factory(manual_start=True, filament_short=True)
+        assert item.skip_filament_check is False
+
+        response = await async_client.post(f"/api/v1/queue/{item.id}/start?skip_filament_check=true")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["skip_filament_check"] is True
+
+        await db_session.refresh(item)
+        assert item.skip_filament_check is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_start_without_skip_flag_does_not_set_acknowledgement(
+        self,
+        async_client: AsyncClient,
+        queue_item_factory,
+        db_session,
+    ):
+        """A successful Play click with no deficit must NOT silently set the
+        acknowledgement flag — only an explicit Print Anyway should.
+        """
+        item = await queue_item_factory(manual_start=False, filament_short=False)
+        assert item.skip_filament_check is False
+
+        response = await async_client.post(f"/api/v1/queue/{item.id}/start")
+        assert response.status_code == 200
+
+        await db_session.refresh(item)
+        assert item.skip_filament_check is False
 
 
 class TestQueueCancelEndpoint:
@@ -1833,3 +2001,249 @@ class TestAbortedStatusNormalisation:
         """Verify 404 for non-existent batch."""
         response = await async_client.get("/api/v1/queue/batches/9999")
         assert response.status_code == 404
+
+    # ========================================================================
+    # Queue redesign: create-empty + group-existing + ungroup
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_empty_batch_for_client_side_grouping(
+        self, async_client: AsyncClient, printer_factory, archive_factory
+    ):
+        """Verify POST /queue/batches without item_ids creates an empty batch
+        whose id can be passed on subsequent /queue/ POSTs (the multi-plate
+        auto-batch flow). Subsequent items must end up with the same batch_id."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+
+        # 1. Pre-create batch
+        batch_resp = await async_client.post(
+            "/api/v1/queue/batches",
+            json={"name": "Plates · 2 plates", "archive_id": archive.id},
+        )
+        assert batch_resp.status_code == 200
+        batch = batch_resp.json()
+        assert batch["status"] == "active"
+        batch_id = batch["id"]
+
+        # 2. Add two items referencing that batch
+        for plate_id in (1, 2):
+            item_resp = await async_client.post(
+                "/api/v1/queue/",
+                json={
+                    "printer_id": printer.id,
+                    "archive_id": archive.id,
+                    "plate_id": plate_id,
+                    "batch_id": batch_id,
+                },
+            )
+            assert item_resp.status_code == 200
+            assert item_resp.json()["batch_id"] == batch_id
+
+        # 3. Verify batch now has 2 pending children
+        list_resp = await async_client.get("/api/v1/queue/")
+        siblings = [i for i in list_resp.json() if i["batch_id"] == batch_id]
+        assert len(siblings) == 2
+        assert {i["plate_id"] for i in siblings} == {1, 2}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_group_existing_items_as_batch(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory
+    ):
+        """Verify POST /queue/batches with item_ids assigns batch_id to
+        existing pending items (the 'Group as batch' UI action)."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+        item_a = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="pending")
+        item_b = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="pending")
+
+        resp = await async_client.post(
+            "/api/v1/queue/batches",
+            json={"name": "Manual group", "item_ids": [item_a.id, item_b.id]},
+        )
+        assert resp.status_code == 200
+        batch_id = resp.json()["id"]
+
+        list_resp = await async_client.get("/api/v1/queue/")
+        grouped = [i for i in list_resp.json() if i["batch_id"] == batch_id]
+        assert {i["id"] for i in grouped} == {item_a.id, item_b.id}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_group_skips_non_pending_items(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory
+    ):
+        """Verify grouping doesn't pull in already-completed/cancelled items."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+        pending = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="pending")
+        completed = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="completed")
+
+        resp = await async_client.post(
+            "/api/v1/queue/batches",
+            json={"name": "Mixed", "item_ids": [pending.id, completed.id]},
+        )
+        assert resp.status_code == 200
+        batch_id = resp.json()["id"]
+
+        list_resp = await async_client.get("/api/v1/queue/")
+        grouped = [i for i in list_resp.json() if i["batch_id"] == batch_id]
+        assert {i["id"] for i in grouped} == {pending.id}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_batch_requires_name(self, async_client: AsyncClient):
+        """Verify empty / whitespace-only name is rejected with 400."""
+        resp = await async_client.post("/api/v1/queue/batches", json={"name": "   "})
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_ungroup_batch_clears_batch_id_and_deletes_row(
+        self, async_client: AsyncClient, printer_factory, archive_factory
+    ):
+        """Verify POST /queue/batches/{id}/ungroup clears batch_id from all
+        members and deletes the batch row when nothing remains assigned."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+
+        # Create batch with two items via the existing quantity flow
+        add_resp = await async_client.post(
+            "/api/v1/queue/",
+            json={"printer_id": printer.id, "archive_id": archive.id, "quantity": 2},
+        )
+        batch_id = add_resp.json()["batch_id"]
+
+        # Ungroup
+        ungroup_resp = await async_client.post(f"/api/v1/queue/batches/{batch_id}/ungroup")
+        assert ungroup_resp.status_code == 200
+        assert ungroup_resp.json()["ungrouped_count"] == 2
+
+        # Verify items still exist but no longer batched
+        list_resp = await async_client.get("/api/v1/queue/")
+        ex_members = [i for i in list_resp.json() if i["batch_id"] == batch_id]
+        assert ex_members == []
+
+        # Batch row was deleted
+        get_resp = await async_client.get(f"/api/v1/queue/batches/{batch_id}")
+        assert get_resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_with_unknown_batch_id_404(
+        self, async_client: AsyncClient, printer_factory, archive_factory
+    ):
+        """Verify addToQueue with a non-existent batch_id is rejected."""
+        printer = await printer_factory()
+        archive = await archive_factory()
+        resp = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": archive.id,
+                "batch_id": 99999,
+            },
+        )
+        assert resp.status_code == 404
+
+    # ========================================================================
+    # Soft-deleted archive handling (#1348 follow-up)
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_soft_delete_archive_deletes_all_related_queue_items(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
+    ):
+        """Soft-deleting an archive removes every related queue item, regardless
+        of status (#1734). Pre-#1734 only ``pending`` rows were flipped to
+        ``cancelled`` and stayed in the DB, surprising users who expected the
+        queue lines to disappear with the archive — especially on multi-plate
+        Send All uploads (#1733), where ONE archive backed N queue items and
+        soft-deleting the archive left N "cancelled" rows behind. The change
+        keeps the printing guard (a row with ``status='printing'`` blocks the
+        delete one layer up at the API route), so we never delete the row of
+        an actively-running print here.
+
+        Print history lives in ``PrintLogEntry`` (FK ``ON DELETE SET NULL``) —
+        the audit trail survives independently of the queue rows.
+        """
+        from sqlalchemy import select
+
+        from backend.app.models.print_queue import PrintQueueItem
+        from backend.app.services.archive import ArchiveService
+
+        printer = await printer_factory()
+        archive = await archive_factory(thumbnail_path="archives/test/test/thumbnail.png")
+        pending = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="pending")
+        completed = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="completed")
+
+        service = ArchiveService(db_session)
+        assert await service.soft_delete_archive(archive.id) is True
+
+        # Every queue row that referenced this archive is gone — both the
+        # pending and the completed rows. Print history (PrintLogEntry) is
+        # the authoritative record and is preserved by the FK SET NULL.
+        remaining = (
+            (await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id.in_([pending.id, completed.id]))))
+            .scalars()
+            .all()
+        )
+        assert remaining == [], (
+            "Soft-deleting the archive must delete every related queue row, "
+            f"got {[(r.id, r.status) for r in remaining]} still present"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_api_hides_archive_surface_when_soft_deleted(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
+    ):
+        """Queue serializer must NOT populate archive_thumbnail / archive_name
+        when the archive is soft-deleted — otherwise the frontend renders a
+        broken <img> and 404-storms the thumbnail / plates / plate-thumbnail
+        endpoints. archive_deleted=True signals the soft-deleted state so
+        the UI can render a 'source deleted' badge."""
+        from datetime import datetime, timezone
+
+        printer = await printer_factory()
+        archive = await archive_factory(
+            print_name="Test Print",
+            thumbnail_path="archives/test/test/thumbnail.png",
+            deleted_at=datetime.now(timezone.utc),  # Pre-soft-deleted
+        )
+        item = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="cancelled")
+
+        resp = await async_client.get("/api/v1/queue/")
+        assert resp.status_code == 200
+        body = resp.json()
+        row = next((r for r in body if r["id"] == item.id), None)
+        assert row is not None
+        assert row["archive_deleted"] is True
+        assert row["archive_thumbnail"] is None, "must not expose stale thumbnail path for soft-deleted archive"
+        assert row["archive_name"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_api_still_exposes_archive_surface_when_live(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
+    ):
+        """Sanity guard: the soft-delete suppression must not affect live
+        archives. archive_name / archive_thumbnail still flow through and
+        archive_deleted stays False."""
+        printer = await printer_factory()
+        archive = await archive_factory(
+            print_name="Live Archive",
+            thumbnail_path="archives/test/live/thumbnail.png",
+        )
+        item = await queue_item_factory(printer_id=printer.id, archive_id=archive.id, status="pending")
+
+        resp = await async_client.get("/api/v1/queue/")
+        assert resp.status_code == 200
+        row = next((r for r in resp.json() if r["id"] == item.id), None)
+        assert row is not None
+        assert row["archive_deleted"] is False
+        assert row["archive_name"] == "Live Archive"
+        assert row["archive_thumbnail"] == "archives/test/live/thumbnail.png"

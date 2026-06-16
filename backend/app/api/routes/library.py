@@ -27,8 +27,9 @@ from backend.app.core.auth import (
     require_permission_if_auth_enabled,
 )
 from backend.app.core.config import settings as app_settings
-from backend.app.core.database import get_db
+from backend.app.core.database import async_session, get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile, LibraryFolder
 from backend.app.models.print_queue import PrintQueueItem
@@ -62,16 +63,43 @@ from backend.app.schemas.library import (
 )
 from backend.app.schemas.slicer import SliceRequest, SliceResponse
 from backend.app.services.archive import ThreeMFParser
-from backend.app.services.stl_thumbnail import generate_stl_thumbnail
+from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
+from backend.app.utils.filename import InvalidFilenameError, validate_print_filename
 from backend.app.utils.threemf_tools import (
+    extract_embedded_presets_from_3mf,
     extract_nozzle_mapping_from_3mf,
     extract_project_filaments_from_3mf,
-    extract_source_printer_model_from_3mf,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/library", tags=["library"])
+
+
+def _ensure_library_file_visible(
+    library_file: LibraryFile | None,
+    user: User | None,
+    can_read_all: bool,
+) -> LibraryFile:
+    """Per-file visibility gate for ownership-scoped LIBRARY reads (#1726-adjacent).
+
+    Mirrors archives.py::_ensure_archive_visible — single enforcement point so a
+    less-guarded sibling route can't accidentally leak a row. Same shape:
+
+      - Missing / soft-deleted → 404 (not 403, to avoid id-enumeration leaks).
+      - ``can_read_all`` true (LIBRARY_READ_ALL or auth disabled) → file returned.
+      - ``can_read_all`` false and ``created_by_id != user.id`` → 404.
+      - Ownerless files (``created_by_id is None``) require ALL — fail-closed.
+    """
+    if library_file is None or getattr(library_file, "deleted_at", None) is not None:
+        raise HTTPException(404, "File not found")
+    if can_read_all:
+        return library_file
+    if user is None:
+        raise HTTPException(404, "File not found")
+    if library_file.created_by_id is None or library_file.created_by_id != user.id:
+        raise HTTPException(404, "File not found")
+    return library_file
 
 
 def get_library_dir() -> Path:
@@ -87,6 +115,26 @@ def get_library_files_dir() -> Path:
     files_dir = get_library_dir() / "files"
     files_dir.mkdir(parents=True, exist_ok=True)
     return files_dir
+
+
+def classify_file_type(filename: str) -> str:
+    """Return the canonical ``LibraryFile.file_type`` for *filename*.
+
+    Compound extensions are preserved — a `.gcode.3mf` file (a sliced
+    output, still a 3MF zip on disk) is classified ``gcode.3mf`` rather
+    than ``3mf``. Pre-#1600 this was only done in the external-scan
+    path; the upload / ZIP-extract / in-process paths all stripped to
+    the trailing extension and stored ``3mf``, so the FE had to accept
+    both. Unified here so every ingest path stores the same value and
+    downstream gates (gcode download, file-type filter, thumbnail
+    extraction) only need to handle one canonical name per file family.
+    Files with no extension classify as ``unknown``.
+    """
+    lower = filename.lower()
+    if lower.endswith(".gcode.3mf"):
+        return "gcode.3mf"
+    ext = os.path.splitext(lower)[1]
+    return ext[1:] if ext else "unknown"
 
 
 def get_library_thumbnails_dir() -> Path:
@@ -138,6 +186,55 @@ def calculate_file_hash(file_path: Path) -> str:
     return sha256_hash.hexdigest()
 
 
+def validate_print_file_upload(filename: str, content: bytes) -> None:
+    """Reject obviously-unprintable uploads early so the printer doesn't see them (#1401).
+
+    Bambu printers in network mode only parse ``.gcode.3mf`` zip containers
+    — raw ``.gcode`` and corrupt/non-zip ``.3mf`` uploads cascade into a
+    confusing "Printing stopped because the printer was unable to parse the
+    3mf file" rejection 30 seconds after the user clicks Print. The
+    background dispatcher (``background_dispatch.py``) appends ``.3mf`` to
+    a raw-gcode filename when constructing the FTP destination, which is
+    how the printer ends up with a file named ``.gcode.3mf`` whose body is
+    raw gcode — exactly the shape that triggers the firmware parse
+    failure. Catching both classes here gives an actionable error at the
+    upload itself.
+
+    Compares the filename suffix rather than ``os.path.splitext`` because
+    compound extensions like ``.gcode.3mf`` show up as just ``.3mf`` after
+    ``splitext`` — same content validation needs to fire for both
+    single-``.3mf`` and ``.gcode.3mf`` uploads.
+
+    Raises ``HTTPException(400, ...)`` with a human-readable message on
+    rejection; returns ``None`` for valid (or irrelevant — e.g. STL,
+    image) uploads.
+    """
+    lower_filename = filename.lower()
+    is_3mf_upload = lower_filename.endswith(".3mf")
+    is_raw_gcode_upload = lower_filename.endswith(".gcode") and not lower_filename.endswith(".gcode.3mf")
+
+    if is_raw_gcode_upload:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Raw .gcode files can't be printed on Bambu printers in network mode — "
+                "they need a .gcode.3mf zip container (gcode plus metadata). Re-export from "
+                "your slicer and make sure the file ends in '.gcode.3mf', not just '.gcode'. "
+                "If your OS hides extensions, double-check the file with the extension visible."
+            ),
+        )
+
+    if is_3mf_upload and not content.startswith(b"PK\x03\x04"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This .3mf file isn't a valid ZIP container. 3MF files are ZIP archives — "
+                "either the file is corrupted or it's raw gcode renamed to .3mf. Re-export "
+                "from your slicer using its 'Export Plate Sliced File' action."
+            ),
+        )
+
+
 def _resolve_upload_destination(target_folder: LibraryFolder | None, filename: str) -> tuple[Path, bool]:
     """Resolve the on-disk destination for an uploaded file.
 
@@ -168,7 +265,7 @@ def _resolve_upload_destination(target_folder: LibraryFolder | None, filename: s
             )
         # Guard against path-traversal via a pathological filename — join then
         # verify the resolved destination is still inside the external dir.
-        dest = (ext_dir / filename).resolve()
+        dest = (ext_dir / filename).resolve()  # SEC-PATH-OK: resolve + relative_to containment check on next line
         try:
             dest.relative_to(ext_dir.resolve())
         except ValueError:
@@ -251,7 +348,7 @@ def _move_file_bytes(file: LibraryFile, target_folder: LibraryFolder | None) -> 
             raise _MoveSkip("target_inaccessible", f"target path not accessible: {ext_dir}")
         if not os.access(ext_dir, os.W_OK):
             raise _MoveSkip("target_unwritable", f"target path not writable: {ext_dir}")
-        dest = (ext_dir / file.filename).resolve()
+        dest = (ext_dir / file.filename).resolve()  # SEC-PATH-OK: resolve + relative_to containment check on next line
         try:
             dest.relative_to(ext_dir.resolve())
         except ValueError:
@@ -314,6 +411,40 @@ def _clean_3mf_metadata(obj):
     return obj
 
 
+def _read_3mf_entry(zip_path: Path, entry: str) -> bytes | None:
+    """Return the raw bytes of an entry inside a 3MF (ZIP), or ``None`` when
+    the file isn't a parseable zip / doesn't contain that entry / any IO
+    error. Used to lift the source archive's per-plate render onto a
+    re-sliced archive (#1493 follow-up) — the slicer CLI often doesn't
+    emit a fresh ``Metadata/plate_N.png`` and the project-wide cover-art
+    fallback in :class:`ThreeMFParser` looks unrelated to the actual slice.
+    """
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            if entry not in zf.namelist():
+                return None
+            return zf.read(entry)
+    except (zipfile.BadZipFile, OSError, KeyError):
+        return None
+
+
+def _without_print_name(metadata: dict | None) -> dict | None:
+    """Drop the embedded 3MF Title (``print_name``) from library-file metadata.
+
+    The 3MF ``<metadata name="Title">`` holds the in-app project title — the
+    generic ``"Exported 3D Model"`` for a Bambu Studio "Save As", a marketing
+    title for a MakerWorld download — never the filename the user saved as.
+    The FileManager keys its display name, search and sort off ``print_name``,
+    so storing it makes every card show the wrong name (#1489). A library
+    file's display name is its filename; only ``PrintArchive`` carries a real
+    ``print_name``. Returns the input unchanged when there's nothing to strip;
+    otherwise a new dict (never mutates the argument).
+    """
+    if not metadata or "print_name" not in metadata:
+        return metadata
+    return {k: v for k, v in metadata.items() if k != "print_name"}
+
+
 async def save_3mf_bytes_to_library(
     db: AsyncSession,
     *,
@@ -344,11 +475,21 @@ async def save_3mf_bytes_to_library(
         if existing_row is not None:
             return existing_row, True
 
-    # Persist bytes to disk under a UUID-scoped filename; keep the original
-    # extension so downstream logic (ThreeMFParser, thumbnail viewer) works.
-    ext = os.path.splitext(filename)[1].lower() or ".3mf"
-    unique_filename = f"{uuid.uuid4().hex}{ext}"
-    file_path = get_library_files_dir() / unique_filename
+    # Resolve target folder so writable-external destinations land on the
+    # mount with the real filename, instead of being silently misrouted to
+    # the internal library dir with a UUID name (#1645). Mirrors what the
+    # multipart-upload path has done since #1112. ``_resolve_upload_destination``
+    # also enforces the 403 read-only / 400 unwritable / 409 collision
+    # rejections — the makerworld route layer already pre-checks read-only,
+    # but the helper's checks remain as defence-in-depth for any future
+    # caller that skips that route gate.
+    target_folder: LibraryFolder | None = None
+    if folder_id is not None:
+        folder_q = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
+        target_folder = folder_q.scalar_one_or_none()
+
+    file_path, is_external = _resolve_upload_destination(target_folder, filename)
+    ext = file_path.suffix.lower() or ".3mf"
     with open(file_path, "wb") as fh:
         fh.write(file_bytes)
 
@@ -366,7 +507,7 @@ async def save_3mf_bytes_to_library(
             if thumb_data:
                 thumbs_dir = get_library_thumbnails_dir()
                 thumb_filename = f"{uuid.uuid4().hex}{thumb_ext}"
-                thumb_path = thumbs_dir / thumb_filename
+                thumb_path = thumbs_dir / thumb_filename  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + thumb_ext
                 with open(thumb_path, "wb") as fh:
                     fh.write(thumb_data)
                 thumbnail_path = str(thumb_path)
@@ -379,13 +520,14 @@ async def save_3mf_bytes_to_library(
 
     library_file = LibraryFile(
         folder_id=folder_id,
+        is_external=is_external,
         filename=filename,
-        file_path=to_relative_path(file_path),
-        file_type=ext[1:] if ext else "unknown",
+        file_path=_stored_file_path(file_path, is_external),
+        file_type=classify_file_type(filename),
         file_size=len(file_bytes),
         file_hash=file_hash,
         thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
-        file_metadata=metadata,
+        file_metadata=_without_print_name(metadata),
         source_type=source_type,
         source_url=source_url,
         created_by_id=owner_id,
@@ -469,7 +611,7 @@ def create_image_thumbnail(file_path: Path, thumbnails_dir: Path, max_size: int 
         from PIL import Image
 
         thumb_filename = f"{uuid.uuid4().hex}.png"
-        thumb_path = thumbnails_dir / thumb_filename
+        thumb_path = thumbnails_dir / thumb_filename  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + ".png"
 
         with Image.open(file_path) as img:
             # Convert to RGB if necessary (for PNG with transparency, etc.)
@@ -497,7 +639,9 @@ def create_image_thumbnail(file_path: Path, thumbnails_dir: Path, max_size: int 
             file_size = file_path.stat().st_size
             if file_size < 500000:  # Less than 500KB
                 thumb_filename = f"{uuid.uuid4().hex}{file_path.suffix}"
-                thumb_path = thumbnails_dir / thumb_filename
+                thumb_path = (
+                    thumbnails_dir / thumb_filename
+                )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + file_path.suffix
                 shutil.copy2(file_path, thumb_path)
                 return str(thumb_path)
         except OSError:
@@ -512,6 +656,63 @@ def create_image_thumbnail(file_path: Path, thumbnails_dir: Path, max_size: int 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".tif"}
 
 
+async def _backfill_external_stl_thumbnails(folder_ids: list[int]) -> None:
+    """Generate STL thumbnails for an external folder tree in the background.
+
+    Spawned via ``asyncio.create_task`` from ``scan_external_folder`` so the
+    HTTP request can return as soon as the filesystem walk + folder/file rows
+    are committed. Thumbnails for thousands of STL files would otherwise hold
+    the request open for many minutes (each file triggers a ``trimesh.load``
+    + matplotlib render, ~1-5s each) and the FE modal times out before the
+    final ``db.commit()`` runs — causing the original symptom in #1299 where
+    subdirectories never showed up because nothing got committed.
+
+    Opens its own session because the request session is closed by the time
+    this task starts running. Commits per-file so a worker restart mid-run
+    only loses the in-flight file. Caps STL load to a single file at a time
+    to avoid memory pressure on systems with many huge STLs.
+    """
+    if not folder_ids:
+        return
+    thumbnails_dir = get_library_thumbnails_dir()
+    async with async_session() as db:
+        result = await db.execute(
+            LibraryFile.active().where(
+                LibraryFile.folder_id.in_(folder_ids),
+                LibraryFile.file_type == "stl",
+                LibraryFile.thumbnail_path.is_(None),
+            )
+        )
+        stl_files = result.scalars().all()
+        if not stl_files:
+            return
+        logger.info(
+            "Backfilling STL thumbnails: %d file(s) across %d folder(s)",
+            len(stl_files),
+            len(folder_ids),
+        )
+        for stl_file in stl_files:
+            abs_path = to_absolute_path(stl_file.file_path)
+            if not abs_path or not abs_path.exists():
+                continue
+            # Pre-skip files too small to contain even a single triangle.
+            # Bulk-uploaded ZIPs of stub STLs would otherwise trigger one
+            # trimesh.load() call + one debug log line per stub.
+            try:
+                if abs_path.stat().st_size < MIN_USABLE_STL_BYTES:
+                    continue
+            except OSError:
+                continue
+            try:
+                thumb_path = generate_stl_thumbnail(abs_path, thumbnails_dir)
+            except Exception as exc:  # noqa: BLE001 — never let one bad STL kill the rest
+                logger.debug("STL thumbnail backfill skipped %s: %s", abs_path, exc)
+                continue
+            if thumb_path:
+                stl_file.thumbnail_path = to_relative_path(Path(thumb_path))
+                await db.commit()
+
+
 # ============ Folder Endpoints ============
 
 
@@ -520,7 +721,12 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", "
 async def list_folders(
     response: Response,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    _: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get all folders as a tree structure."""
     # Prevent browser caching of folder list
@@ -579,7 +785,12 @@ async def list_folders(
 async def get_folders_by_project(
     project_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    _: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get all folders linked to a specific project."""
     result = await db.execute(
@@ -627,7 +838,12 @@ async def get_folders_by_project(
 async def get_folders_by_archive(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    _: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get all folders linked to a specific archive."""
     result = await db.execute(
@@ -735,7 +951,12 @@ async def create_folder(
 async def get_folder(
     folder_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    _: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get a folder by ID."""
     result = await db.execute(
@@ -940,20 +1161,73 @@ async def delete_folder(
 
 # ============ External Folder Endpoints ============
 
-# Blocked system directories that cannot be mounted
-_BLOCKED_PREFIXES = (
-    "/proc",
-    "/sys",
-    "/dev",
-    "/run",
-    "/boot",
-    "/sbin",
-    "/bin",
-    "/usr/sbin",
-    "/usr/bin",
-    "/lib",
-    "/etc",
-)
+# GHSA-r2qv follow-up (audit finding I1): external-folder mount path uses an
+# allowlist of operator-opted-in roots rather than the original denylist of
+# system directories. The denylist shape was fail-open-on-growth — anything
+# not enumerated (``/data`` containing other users' archives, ``/root``,
+# arbitrary NFS/SMB mounts, the Bambuddy ``LOG_DIR``) could be mounted by any
+# user with ``LIBRARY_UPLOAD``. The allowlist defaults to empty and is
+# extended via the ``BAMBUDDY_EXTERNAL_ROOTS`` env var (colon-separated
+# absolute paths). The route is additionally gated on ``SETTINGS_UPDATE``
+# (admin scope) rather than ``LIBRARY_UPLOAD`` because mounting host paths
+# is an operator-level capability that crosses user boundaries.
+
+
+# Bambuddy-owned data directories. Hardcode-rejected even if the operator
+# tries to add them to ``BAMBUDDY_EXTERNAL_ROOTS`` — mounting these would
+# allow reading other users' archives, log files, or the static assets path.
+def _bambuddy_reserved_roots() -> tuple[Path, ...]:
+    """Resolved Bambuddy-owned directories that may NEVER be mounted as an
+    external folder regardless of the operator's allowlist.
+
+    Resolved at call time because tests patch ``settings.base_dir`` /
+    ``settings.log_dir`` to a temp dir; resolving lazily picks up the
+    patched values rather than module-import-time values.
+    """
+    from backend.app.core.config import settings as app_settings
+
+    reserved = [app_settings.base_dir, app_settings.log_dir, app_settings.static_dir, app_settings.archive_dir]
+    return tuple(Path(p).resolve() for p in reserved if p is not None)
+
+
+def _allowed_external_roots() -> tuple[Path, ...]:
+    """Parse ``BAMBUDDY_EXTERNAL_ROOTS`` into resolved allowed roots.
+
+    Empty env var (the default) means external folders are disabled.
+    Operators opt in explicitly: ``BAMBUDDY_EXTERNAL_ROOTS=/mnt/library:/srv/3d``
+    Returns a tuple of resolved ``Path`` objects; entries that don't
+    resolve to absolute paths are silently dropped (operator error, not
+    a security boundary). Resolved lazily so tests can monkeypatch.
+    """
+    raw = os.environ.get("BAMBUDDY_EXTERNAL_ROOTS", "")
+    roots: list[Path] = []
+    for entry in raw.split(":"):
+        entry = entry.strip()
+        if not entry:
+            continue
+        try:
+            resolved = Path(entry).resolve()
+        except (OSError, RuntimeError):  # noqa: BLE001 — operator config error, not a security boundary
+            continue
+        if resolved.is_absolute():
+            roots.append(resolved)
+    return tuple(roots)
+
+
+def _path_within(child: Path, parent: Path) -> bool:
+    """Return True if ``child`` is ``parent`` or any descendant.
+
+    Uses ``Path.relative_to`` semantics (raises ``ValueError`` on miss)
+    instead of string ``startswith``, which would falsely match
+    ``/data-other`` against ``/data``. ``Path.is_relative_to`` is the
+    sanctioned form on Python 3.9+; both are available here.
+    """
+    try:
+        child.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
 
 # Supported file extensions for external folder scanning
 _SCANNABLE_EXTENSIONS = {
@@ -974,15 +1248,53 @@ _SCANNABLE_EXTENSIONS = {
 
 
 def _validate_external_path(path_str: str) -> Path:
-    """Validate an external path is safe to mount."""
+    """Validate an external path is safe to mount.
+
+    Allowlist semantics:
+    1. Path must be absolute and resolve cleanly (symlink-escape rejected
+       implicitly by the resolved-startswith check below).
+    2. Path must fall under one of the roots enumerated in
+       ``BAMBUDDY_EXTERNAL_ROOTS``; empty allowlist (the default)
+       means external folders are not available on this deployment.
+    3. Path must NOT fall under any Bambuddy-owned directory (``base_dir``,
+       ``log_dir``, ``static_dir``, ``archive_dir``) — the reserved set
+       takes precedence over the allowlist, so an operator who accidentally
+       sets ``BAMBUDDY_EXTERNAL_ROOTS=/`` does not expose ``/data``.
+    4. Existence + directory-type + readability gates remain.
+    """
     path = Path(path_str).resolve()
 
     if not path.is_absolute():
         raise HTTPException(status_code=400, detail="Path must be absolute")
 
-    for prefix in _BLOCKED_PREFIXES:
-        if str(path).startswith(prefix):
-            raise HTTPException(status_code=400, detail=f"Cannot mount system directory: {prefix}")
+    allowed_roots = _allowed_external_roots()
+    if not allowed_roots:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "External folders are not enabled on this deployment. Ask the "
+                "operator to set BAMBUDDY_EXTERNAL_ROOTS=<colon-separated paths>."
+            ),
+        )
+
+    # Reserved (Bambuddy-owned) paths are rejected before the allowlist check
+    # so an over-broad allowlist (e.g. operator set "/" for testing) cannot
+    # expose Bambuddy's own data dir or log dir.
+    for reserved in _bambuddy_reserved_roots():
+        if _path_within(path, reserved):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot mount Bambuddy-managed directory: {reserved}",
+            )
+
+    if not any(_path_within(path, root) for root in allowed_roots):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Path '{path}' is not within an allowed external root. "
+                f"Allowed roots: {', '.join(str(r) for r in allowed_roots)}"
+            ),
+        )
 
     if not path.exists():
         raise HTTPException(status_code=400, detail=f"Path does not exist: {path}")
@@ -1001,7 +1313,14 @@ def _validate_external_path(path_str: str) -> Path:
 async def create_external_folder(
     data: ExternalFolderCreate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
+    # GHSA-r2qv follow-up (I1): elevated from LIBRARY_UPLOAD to SETTINGS_UPDATE.
+    # Registering a host filesystem path as a Bambuddy library folder is an
+    # operator-level capability that crosses user boundaries (one user's
+    # registered external folder is visible to every other user via
+    # /api/v1/library/folders). LIBRARY_UPLOAD was always the wrong scope —
+    # SETTINGS_UPDATE is the admin-class gate that already protects every
+    # other host-affecting setting (SMTP, LDAP, cloud, smart plugs).
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.SETTINGS_UPDATE)),
 ):
     """Create an external folder that points to a host directory."""
     resolved = _validate_external_path(data.external_path)
@@ -1161,7 +1480,9 @@ async def scan_external_folder(
                             name=part,
                             parent_id=current_parent,
                             is_external=True,
-                            external_path=str(ext_path / current_path),
+                            external_path=str(
+                                ext_path / current_path
+                            ),  # SEC-PATH-OK: current_path built from Path(rel_dir).parts of an os.walk descent under ext_path
                             external_readonly=folder.external_readonly,
                             external_show_hidden=folder.external_show_hidden,
                         )
@@ -1177,7 +1498,9 @@ async def scan_external_folder(
             if not folder.external_show_hidden and filename.startswith("."):
                 continue
 
-            filepath = Path(dirpath) / filename
+            filepath = (
+                Path(dirpath) / filename
+            )  # SEC-PATH-OK: dirpath + filename from os.walk(ext_path); filesystem-discovered, not user input
             ext = filepath.suffix.lower()
 
             # Check for compound extensions like .gcode.3mf
@@ -1206,17 +1529,16 @@ async def scan_external_folder(
             except OSError:
                 continue
 
-            file_type = ext[1:] if ext else "unknown"
-            # For compound extensions, use the meaningful part
-            if file_type in ("3mf",) and len(filepath.suffixes) >= 2:
-                inner = filepath.suffixes[-2].lower()
-                if inner == ".gcode":
-                    file_type = "gcode.3mf"
+            file_type = classify_file_type(filename)
 
-            # Extract thumbnail for 3mf files
+            # Extract thumbnail for 3mf files (including .gcode.3mf sliced
+            # outputs — those are 3MF zips on disk and carry the same
+            # thumbnail Metadata/plate_1.png the parser reads). Pre-#1600
+            # the gate was `file_type == "3mf"` alone, so .gcode.3mf files
+            # in external folders silently got no thumbnail.
             thumbnail_path = None
             file_metadata = None
-            if file_type == "3mf":
+            if file_type in ("3mf", "gcode.3mf"):
                 try:
                     parser = ThreeMFParser(str(filepath))
                     raw_metadata = parser.parse()
@@ -1227,7 +1549,9 @@ async def scan_external_folder(
                         if thumb_data:
                             thumb_dir = get_library_thumbnails_dir()
                             thumb_filename = f"{uuid.uuid4().hex}{thumbnail_ext}"
-                            thumb_full = thumb_dir / thumb_filename
+                            thumb_full = (
+                                thumb_dir / thumb_filename
+                            )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + thumbnail_ext
                             thumb_full.write_bytes(thumb_data)
                             thumbnail_path = to_relative_path(thumb_full)
 
@@ -1249,15 +1573,10 @@ async def scan_external_folder(
                 except Exception as e:
                     logger.debug("Failed to extract metadata from external 3mf %s: %s", filepath, e)
 
-            # Generate thumbnail for STL files
-            if file_type == "stl" and thumbnail_path is None:
-                try:
-                    thumb_dir = get_library_thumbnails_dir()
-                    thumb_result = generate_stl_thumbnail(str(filepath), str(thumb_dir))
-                    if thumb_result:
-                        thumbnail_path = to_relative_path(Path(thumb_result))
-                except Exception as e:
-                    logger.debug("Failed to generate STL thumbnail for external %s: %s", filepath, e)
+            # STL thumbnails are deferred to a background task spawned after
+            # the scan's db.commit() — see _backfill_external_stl_thumbnails.
+            # Doing them inline would block the HTTP request for minutes on a
+            # large NAS mount (#1299).
 
             # Extract gcode thumbnail
             if file_type == "gcode" and thumbnail_path is None:
@@ -1265,7 +1584,7 @@ async def scan_external_folder(
                 if thumb_data:
                     thumb_dir = get_library_thumbnails_dir()
                     thumb_filename = f"{uuid.uuid4().hex}.png"
-                    thumb_full = thumb_dir / thumb_filename
+                    thumb_full = thumb_dir / thumb_filename  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + ".png"
                     thumb_full.write_bytes(thumb_data)
                     thumbnail_path = to_relative_path(thumb_full)
 
@@ -1284,7 +1603,7 @@ async def scan_external_folder(
                 file_size=stat.st_size,
                 file_hash=None,  # Skip hashing external files for performance
                 thumbnail_path=thumbnail_path,
-                file_metadata=file_metadata,
+                file_metadata=_without_print_name(file_metadata),
             )
             db.add(db_file)
             added += 1
@@ -1330,6 +1649,19 @@ async def scan_external_folder(
 
     await db.commit()
 
+    # Spawn STL thumbnail backfill in the background — the scan endpoint
+    # returns immediately so the FE modal closes and subdirectories are
+    # visible right away; thumbnails fill in over the following seconds /
+    # minutes as the task processes each STL file. Survives FE refresh —
+    # the task lives in the FastAPI event loop, not the request scope.
+    # folder_cache.values() covers the root + every pre-existing subfolder
+    # + every subfolder created during this scan. all_folder_ids on its own
+    # would miss the newly-created ones (it's snapshotted before the walk).
+    spawn_background_task(
+        _backfill_external_stl_thumbnails(list(set(folder_cache.values()))),
+        name=f"stl-backfill-folder-{folder_id}",
+    )
+
     return {"status": "success", "added": added, "removed": removed}
 
 
@@ -1343,8 +1675,15 @@ async def list_files(
     folder_id: int | None = None,
     project_id: int | None = None,
     include_root: bool = True,
+    internal_only: bool = False,
+    external_only: bool = False,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """List files, optionally filtered by folder or project.
 
@@ -1353,8 +1692,23 @@ async def list_files(
         project_id: Return all files across folders linked to this project (bulk fetch, avoids N+1).
         include_root: If True and folder_id is None, returns files at root level.
                      If False and folder_id is None, returns all files.
+        internal_only: Restrict the result to files in managed storage (`is_external=False`).
+                       Used by the File Manager's "All Files" sidebar entry so a linked NAS
+                       with hundreds of files doesn't drown the user's own uploads (#1621).
+        external_only: Restrict the result to files under external folders
+                       (`is_external=True`) — the symmetric combined view for users with
+                       multiple linked external sources (#1621).
     """
+    if internal_only and external_only:
+        raise HTTPException(
+            status_code=400,
+            detail="internal_only and external_only are mutually exclusive",
+        )
+
+    user, can_read_all = auth_result
     query = LibraryFile.active().options(selectinload(LibraryFile.created_by))
+    if user is not None and not can_read_all:
+        query = query.where(LibraryFile.created_by_id == user.id)
 
     if folder_id is not None:
         query = query.where(LibraryFile.folder_id == folder_id)
@@ -1364,6 +1718,11 @@ async def list_files(
         query = query.where(LibraryFolder.project_id == project_id)
     elif include_root:
         query = query.where(LibraryFile.folder_id.is_(None))
+
+    if internal_only:
+        query = query.where(LibraryFile.is_external.is_(False))
+    elif external_only:
+        query = query.where(LibraryFile.is_external.is_(True))
 
     query = query.order_by(LibraryFile.filename)
     result = await db.execute(query)
@@ -1436,9 +1795,17 @@ async def upload_file(
             raise HTTPException(status_code=400, detail="Filename is required")
 
         filename = file.filename
+        # Reject FAT32/exFAT-incompatible filenames up front (#1540).
+        try:
+            validate_print_filename(filename)
+        except InvalidFilenameError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
         ext = os.path.splitext(filename)[1].lower()
-        # Handle files without extension
-        file_type = ext[1:] if ext else "unknown"
+        # `file_type` is compound-aware (`gcode.3mf` for sliced outputs).
+        # `ext` stays the trailing extension because the on-disk filename
+        # uses it directly and the 3MF-parse branch below still gates on
+        # `ext == ".3mf"`, which is correct for both `.3mf` and `.gcode.3mf`.
+        file_type = classify_file_type(filename)
 
         # Verify folder exists if specified
         target_folder = None
@@ -1450,11 +1817,19 @@ async def upload_file(
 
         # Writable external folders write through to the mount so the file is
         # visible outside Bambuddy (#1112); everything else lands under the
-        # internal library dir with a UUID-scoped filename.
+        # internal library dir with a UUID-scoped filename. Resolved BEFORE
+        # the content validation below so folder-permission rejections
+        # (403 read-only, 400 missing path, 409 collision) still surface
+        # before any "bad file format" 400 — preserves existing error
+        # ordering / tests.
         file_path, is_external_upload = _resolve_upload_destination(target_folder, filename)
 
-        # Save file
+        # Read upload now so the validation can sniff magic bytes; the file
+        # is written to disk only after the checks. #1401.
         content = await file.read()
+        validate_print_file_upload(filename, content)
+
+        # Save file
         with open(file_path, "wb") as f:
             f.write(content)
 
@@ -1484,7 +1859,9 @@ async def upload_file(
                 # Save thumbnail if extracted
                 if thumbnail_data:
                     thumb_filename = f"{uuid.uuid4().hex}{thumbnail_ext}"
-                    thumb_path = thumbnails_dir / thumb_filename
+                    thumb_path = (
+                        thumbnails_dir / thumb_filename
+                    )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + thumbnail_ext
                     with open(thumb_path, "wb") as f:
                         f.write(thumbnail_data)
                     thumbnail_path = str(thumb_path)
@@ -1513,7 +1890,9 @@ async def upload_file(
                 thumbnail_data = extract_gcode_thumbnail(file_path)
                 if thumbnail_data:
                     thumb_filename = f"{uuid.uuid4().hex}.png"
-                    thumb_path = thumbnails_dir / thumb_filename
+                    thumb_path = (
+                        thumbnails_dir / thumb_filename
+                    )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + ".png"
                     with open(thumb_path, "wb") as f:
                         f.write(thumbnail_data)
                     thumbnail_path = str(thumb_path)
@@ -1525,9 +1904,16 @@ async def upload_file(
             thumbnail_path = create_image_thumbnail(file_path, thumbnails_dir)
 
         elif ext == ".stl":
-            # Generate STL thumbnail if enabled
+            # Generate STL thumbnail if enabled. Same MIN_USABLE_STL_BYTES
+            # pre-skip as extract_zip_file — stubs / placeholders below this
+            # size can't contain a triangle so trimesh would return an empty
+            # mesh anyway.
             if generate_stl_thumbnails:
-                thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
+                try:
+                    if file_path.stat().st_size >= MIN_USABLE_STL_BYTES:
+                        thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
+                except OSError:
+                    pass
 
         # Create database entry (managed files store relative paths for portability;
         # external files store the absolute mount path — same shape as scan produces)
@@ -1540,7 +1926,7 @@ async def upload_file(
             file_size=len(content),
             file_hash=file_hash,
             thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
-            file_metadata=metadata if metadata else None,
+            file_metadata=_without_print_name(metadata) if metadata else None,
             created_by_id=current_user.id if current_user else None,
         )
         db.add(library_file)
@@ -1713,11 +2099,13 @@ async def extract_zip_file(
                     # Extract file
                     filename = os.path.basename(zip_path)
                     ext = os.path.splitext(filename)[1].lower()
-                    file_type = ext[1:] if ext else "unknown"
+                    file_type = classify_file_type(filename)
 
                     # Generate unique filename for storage
                     unique_filename = f"{uuid.uuid4().hex}{ext}"
-                    file_path = get_library_files_dir() / unique_filename
+                    file_path = (
+                        get_library_files_dir() / unique_filename
+                    )  # SEC-PATH-OK: unique_filename = uuid.uuid4().hex + ext
 
                     # Extract and save file
                     file_content = zf.read(zip_path)
@@ -1742,7 +2130,9 @@ async def extract_zip_file(
 
                             if thumbnail_data:
                                 thumb_filename = f"{uuid.uuid4().hex}{thumbnail_ext}"
-                                thumb_path = thumbnails_dir / thumb_filename
+                                thumb_path = (
+                                    thumbnails_dir / thumb_filename
+                                )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + thumbnail_ext
                                 with open(thumb_path, "wb") as f:
                                     f.write(thumbnail_data)
                                 thumbnail_path = str(thumb_path)
@@ -1769,7 +2159,9 @@ async def extract_zip_file(
                             thumbnail_data = extract_gcode_thumbnail(file_path)
                             if thumbnail_data:
                                 thumb_filename = f"{uuid.uuid4().hex}.png"
-                                thumb_path = thumbnails_dir / thumb_filename
+                                thumb_path = (
+                                    thumbnails_dir / thumb_filename
+                                )  # SEC-PATH-OK: thumb_filename = uuid.uuid4().hex + ".png"
                                 with open(thumb_path, "wb") as f:
                                     f.write(thumbnail_data)
                                 thumbnail_path = str(thumb_path)
@@ -1780,8 +2172,12 @@ async def extract_zip_file(
                         thumbnail_path = create_image_thumbnail(file_path, thumbnails_dir)
 
                     elif ext == ".stl":
-                        # Generate STL thumbnail if enabled
-                        if generate_stl_thumbnails:
+                        # Generate STL thumbnail if enabled. Pre-skip files
+                        # below MIN_USABLE_STL_BYTES — they can't contain
+                        # even a single triangle, and bulk-uploaded ZIPs of
+                        # stub STLs would otherwise log one debug line per
+                        # file via the empty-mesh branch in trimesh.load.
+                        if generate_stl_thumbnails and len(file_content) >= MIN_USABLE_STL_BYTES:
                             thumbnail_path = generate_stl_thumbnail(file_path, thumbnails_dir)
 
                     # Create database entry (store relative paths for portability)
@@ -1793,7 +2189,7 @@ async def extract_zip_file(
                         file_size=len(file_content),
                         file_hash=file_hash,
                         thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
-                        file_metadata=metadata if metadata else None,
+                        file_metadata=_without_print_name(metadata) if metadata else None,
                         created_by_id=current_user.id if current_user else None,
                     )
                     db.add(library_file)
@@ -2052,7 +2448,12 @@ async def add_files_to_queue(
 async def get_library_file_plates(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get available plates from a multi-plate 3MF library file.
 
@@ -2063,9 +2464,10 @@ async def get_library_file_plates(
 
     import defusedxml.ElementTree as ET
 
+    user, can_read_all = auth_result
     # Get the library file
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    lib_file = result.scalar_one_or_none()
+    lib_file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     if not lib_file:
         raise HTTPException(status_code=404, detail="File not found")
@@ -2079,10 +2481,15 @@ async def get_library_file_plates(
         return {"file_id": file_id, "filename": lib_file.filename, "plates": [], "is_multi_plate": False}
 
     plates = []
+    # Printer / process preset names the 3MF was prepared with — used by the
+    # SliceModal to default its dropdowns (#1325). Initialised here so the
+    # final return never raises NameError when the file isn't a valid zip.
+    embedded_presets: dict[str, str | None] = {"printer": None, "process": None}
 
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
             namelist = zf.namelist()
+            embedded_presets = extract_embedded_presets_from_3mf(zf)
 
             # Find all plate gcode files to determine available plates
             gcode_files = [n for n in namelist if n.startswith("Metadata/plate_") and n.endswith(".gcode")]
@@ -2304,22 +2711,13 @@ async def get_library_file_plates(
     except Exception as e:
         logger.warning("Failed to parse plates from library file %s: %s", file_id, e)
 
-    # SliceModal pre-check signal: the source 3MF's bound printer model. The
-    # CLI cannot re-slice for a different printer; surface this so the modal
-    # can warn the user before they pick a mismatched profile.
-    source_printer_model: str | None = None
-    try:
-        with zipfile.ZipFile(file_path, "r") as zf:
-            source_printer_model = extract_source_printer_model_from_3mf(zf)
-    except (zipfile.BadZipFile, OSError):
-        pass
-
     return {
         "file_id": file_id,
         "filename": lib_file.filename,
         "plates": plates,
         "is_multi_plate": len(plates) > 1,
-        "source_printer_model": source_printer_model,
+        "embedded_printer": embedded_presets["printer"],
+        "embedded_process": embedded_presets["process"],
     }
 
 
@@ -2363,10 +2761,6 @@ async def _try_preview_slice_filaments(
     plate_id: int,
     file_path: Path,
     request_id: str | None = None,
-    bundle_id: str | None = None,
-    printer_name: str | None = None,
-    process_name: str | None = None,
-    filament_names: list[str] | None = None,
 ) -> list[dict] | None:
     """Run a preview slice via the user's configured sidecar. Same shape as
     the matching helper in archives.py — see that module for rationale.
@@ -2374,13 +2768,6 @@ async def _try_preview_slice_filaments(
     ``request_id``: when supplied, forwarded to the sidecar so the
     SliceModal's inline spinner + toast can poll the matching progress
     endpoint and show "Generating G-code (45%)" for the preview as well.
-
-    ``bundle_id`` / ``printer_name`` / ``process_name`` / ``filament_names``:
-    when all are supplied, the preview uses ``slice_with_bundle`` against
-    the named bundle's preset triplet so the preview's gram numbers reflect
-    the same profiles the real print will use. Partial context falls back
-    to the embedded-settings path so a half-completed Bundle-tier selection
-    in the modal doesn't error out.
     """
     from backend.app.api.routes.settings import get_setting
     from backend.app.services.slice_preview import get_preview_filaments
@@ -2409,10 +2796,6 @@ async def _try_preview_slice_filaments(
         file_name=file_path.name,
         api_url=api_url,
         request_id=request_id,
-        bundle_id=bundle_id,
-        printer_name=printer_name,
-        process_name=process_name,
-        filament_names=filament_names,
     )
 
 
@@ -2421,12 +2804,13 @@ async def get_library_file_filament_requirements(
     file_id: int,
     plate_id: int | None = None,
     request_id: str | None = None,
-    bundle_id: str | None = None,
-    printer_name: str | None = None,
-    process_name: str | None = None,
-    filament_names: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get filament requirements from a library file.
 
@@ -2436,21 +2820,13 @@ async def get_library_file_filament_requirements(
     Args:
         file_id: The library file ID
         plate_id: Optional plate index to get filaments for a specific plate
-        bundle_id / printer_name / process_name / filament_names: Optional
-            bundle context. When all four are supplied, the preview slice
-            (run for unsliced project files) uses ``slice_with_bundle``
-            against the named preset triplet instead of the embedded-
-            settings fallback. ``filament_names`` is comma- or semicolon-
-            separated to mirror the slice route's multi-color form.
     """
     import defusedxml.ElementTree as ET
 
+    user, can_read_all = auth_result
     # Get the library file
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    lib_file = result.scalar_one_or_none()
-
-    if not lib_file:
-        raise HTTPException(status_code=404, detail="File not found")
+    lib_file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     # Get the full file path
     file_path = Path(app_settings.base_dir) / lib_file.file_path
@@ -2561,14 +2937,6 @@ async def get_library_file_filament_requirements(
                 project_filaments = extract_project_filaments_from_3mf(zf)
                 used_slot_ids: set[int] = set()
                 if project_filaments and plate_id is not None:
-                    # Bundle context flows through optional query params so
-                    # callers without a Bundle-tier selection (the common
-                    # case) hit the same path as before.
-                    parsed_filament_names: list[str] | None = None
-                    if filament_names:
-                        parsed_filament_names = [
-                            n.strip() for n in filament_names.replace(";", ",").split(",") if n.strip()
-                        ] or None
                     preview = await _try_preview_slice_filaments(
                         db,
                         kind="library_file",
@@ -2576,10 +2944,6 @@ async def get_library_file_filament_requirements(
                         plate_id=plate_id,
                         file_path=file_path,
                         request_id=request_id,
-                        bundle_id=bundle_id,
-                        printer_name=printer_name,
-                        process_name=process_name,
-                        filament_names=parsed_filament_names,
                     )
                     if preview is not None:
                         used_slot_ids = {f["slot_id"] for f in preview}
@@ -2748,6 +3112,57 @@ def _sanitize_project_settings_sentinels(zip_bytes: bytes) -> bytes:
         return zip_bytes
 
 
+def _patch_process_bed_type(process_json: str, bed_type: str) -> str:
+    """Overwrite ``curr_bed_type`` in a process-profile JSON before forwarding
+    to the slicer sidecar.
+
+    The slicer CLI reads the build-plate type from the process profile's
+    ``curr_bed_type`` field. When the user picks a non-default plate in the
+    SliceModal (#1337), we patch the resolved JSON in place rather than
+    asking them to clone the preset just to switch a plate. Returns the
+    original string unchanged when the JSON can't be parsed or isn't a
+    dict — the slicer will then run with whatever the preset originally
+    specified, which is the safe fall-back path.
+    """
+    try:
+        profile = json.loads(process_json)
+    except json.JSONDecodeError:
+        logger.warning("Bed-type override skipped: process profile is not valid JSON")
+        return process_json
+    if not isinstance(profile, dict):
+        return process_json
+    profile["curr_bed_type"] = bed_type
+    return json.dumps(profile)
+
+
+# The sidecar prefixes the slicer CLI's own error_string with this when the
+# slicer ran and rejected the job (model off the bed, incompatible filament
+# temps, range validation) — as opposed to the CLI crashing before it could
+# evaluate the job at all.
+_SLICER_REJECTION_MARKER = "Slicing failed with error from slicer:"
+
+
+def _slicer_rejection_message(error_text: str) -> str | None:
+    """Extract the slicer's own rejection reason from a sidecar error string,
+    or ``None`` when the failure is not a slicer content rejection.
+
+    A content rejection means ``--load-settings`` *was* applied — the slicer
+    got far enough to evaluate the model against the chosen printer and say
+    no. Retrying with the 3MF's embedded settings would then only "succeed"
+    by silently reverting to the source file's original printer, masking the
+    real problem; such failures must reach the user instead.
+    """
+    if _SLICER_REJECTION_MARKER not in error_text:
+        return None
+    reason = error_text.split(_SLICER_REJECTION_MARKER, 1)[1]
+    # Trim the sidecar's trailing exit-code note and any stderr/stdout dump.
+    for cut in (": Slicer process failed", "\nstderr:", "\nstdout:"):
+        idx = reason.find(cut)
+        if idx != -1:
+            reason = reason[:idx]
+    return reason.strip() or None
+
+
 async def _run_slicer_with_fallback(
     db: AsyncSession,
     *,
@@ -2782,37 +3197,38 @@ async def _run_slicer_with_fallback(
         SlicerInputError,
     )
 
-    # Bundle dispatch path: when SliceRequest.bundle is set, the schema
-    # validator short-circuited the presets-required check, so the
-    # PresetRef fields may all be None. Skip resolve_preset_ref entirely
-    # — the sidecar will materialise the per-category JSONs from the
-    # bundle's extracted directory at slice time.
-    use_bundle = request.bundle is not None
-
     user: User | None = None
     presets: dict[str, str] = {}
     filament_jsons: list[str] = []
-    if not use_bundle:
-        # Resolve each slot via the source-aware resolver. The schema
-        # validator has already normalised legacy `*_preset_id: int`
-        # fields into `PresetRef(source='local', id=str(int))`, so all
-        # three are guaranteed non-None here.
-        if current_user_id is not None:
-            user = await db.get(User, current_user_id)
+    # Resolve each slot via the source-aware resolver. The schema
+    # validator has already normalised legacy `*_preset_id: int`
+    # fields into `PresetRef(source='local', id=str(int))`, so all
+    # three are guaranteed non-None here.
+    if current_user_id is not None:
+        user = await db.get(User, current_user_id)
 
-        refs = {
-            "printer": request.printer_preset,
-            "process": request.process_preset,
-        }
-        for slot, ref in refs.items():
-            assert ref is not None, "schema validator guarantees PresetRef is set"
-            presets[slot] = await resolve_preset_ref(db, user, ref, slot)
-        # Multi-color: resolve each filament slot in plate order. The schema
-        # validator backfilled `filament_presets` from the legacy `filament_preset`
-        # field for single-color callers, so this list is always non-empty.
-        for ref in request.filament_presets:
-            assert ref is not None, "schema validator guarantees filament list is non-None"
-            filament_jsons.append(await resolve_preset_ref(db, user, ref, "filament"))
+    refs = {
+        "printer": request.printer_preset,
+        "process": request.process_preset,
+    }
+    for slot, ref in refs.items():
+        assert ref is not None, "schema validator guarantees PresetRef is set"
+        presets[slot] = await resolve_preset_ref(db, user, ref, slot)
+    # Multi-color: resolve each filament slot in plate order. The schema
+    # validator backfilled `filament_presets` from the legacy `filament_preset`
+    # field for single-color callers, so this list is always non-empty.
+    for ref in request.filament_presets:
+        assert ref is not None, "schema validator guarantees filament list is non-None"
+        filament_jsons.append(await resolve_preset_ref(db, user, ref, "filament"))
+
+    # Bed-type override (#1337): patch curr_bed_type onto the resolved
+    # process JSON so the slicer's StaticPrintConfig pass picks up the
+    # user's pick instead of whatever the process preset defaults to.
+    # Without this, slicing an STL of ABS onto a process preset whose
+    # default is "Cool Plate" fails with "Plate 1: Cool Plate does not
+    # support filament 1" — the reporter's exact scenario.
+    if request.bed_type:
+        presets["process"] = _patch_process_bed_type(presets["process"], request.bed_type)
 
     # Slicer routing — pick the sidecar URL by preferred_slicer.
     # The per-install URL setting (Settings UI → Slicer card) wins; an
@@ -2860,6 +3276,38 @@ async def _run_slicer_with_fallback(
 
     used_embedded_settings = False
     service = SlicerApiService(api_url)
+
+    # #1493: cross-nozzle-class re-slice (single <-> dual). Without
+    # intervention the slicer rejects with either "G-code in unprintable
+    # area of multi-extruder printers" (the source's X1C-coordinate layout
+    # lands in the H2D's per-nozzle dead zone) or — worse — segfaults
+    # inside ZFiller's polygon clipping when the geometry pipeline trips
+    # on the cross-class transition. Forwarding the sidecar's --arrange
+    # flag for these cases lets BambuStudio reposition objects for the
+    # target bed and reconcile the embedded project_settings.config
+    # against the new printer, the same way the GUI's "Switch Printer"
+    # operation does. --arrange WILL reposition objects, so we only
+    # enable it on a true class crossing — same-printer slices keep the
+    # user's deliberate layout. The bed-type and arrange flags are
+    # orthogonal so this decision doesn't interact with the #1337 build-
+    # plate override.
+    cross_class_arrange = False
+    if is_3mf:
+        from backend.app.services.slicer_3mf_convert import (
+            extract_source_printer_model,
+        )
+        from backend.app.utils.printer_models import is_dual_nozzle_model
+
+        source_model = extract_source_printer_model(primary_bytes)
+        target_model = await _resolve_target_printer_model(db, user, request)
+        if source_model and target_model and is_dual_nozzle_model(source_model) != is_dual_nozzle_model(target_model):
+            logger.info(
+                "Cross-nozzle-class re-slice (%s -> %s): enabling --arrange so BS reconciles "
+                "the embedded project layout against the target printer",
+                source_model,
+                target_model,
+            )
+            cross_class_arrange = True
     # When this slice is dispatcher-tracked, generate a request_id so
     # the sidecar publishes progress under it, and wire a callback that
     # forwards each frame onto SliceDispatchService.set_progress for the
@@ -2877,24 +3325,112 @@ async def _run_slicer_with_fallback(
             _dispatch.set_progress(job_id, snapshot)
 
         progress_callback = _on_progress
+    # SliceModal lets the user pick a filament profile per slot, but each
+    # plate uses only a subset of the slots. The unused-slot dropdowns get
+    # whatever default the modal serves up — and a heterogeneous default
+    # (e.g. ABS in slot 2 next to a PLA in the used slot 1) makes
+    # BambuStudio reject the slice with "the temperature difference of
+    # the filaments used is too large" (exit 194) even though the G-code
+    # never touches the unused slot. Replace unused-slot entries with the
+    # slot-1 selection before the real slice so the loaded-filament set
+    # is materially homogeneous.
+    if is_3mf and request.plate is not None:
+        from backend.app.services.slicer_3mf_convert import substitute_unused_plate_filaments
+
+        filament_jsons = substitute_unused_plate_filaments(primary_bytes, request.plate, filament_jsons)
+
+    # Cross-class slice-all loop (#1493): when the user asks for
+    # ``plate=0`` (all plates) AND the source's nozzle class differs from
+    # the target's, ``--slice 0 --arrange 1`` consolidates every plate's
+    # objects onto a single target bed (BS's ``--arrange`` is project-
+    # wide) — either packing them all together or rejecting with "Some
+    # objects are located over the boundary of the heated bed" when
+    # nothing fits. Slice each plate independently with ``--arrange 1``
+    # and merge the per-plate outputs into one multi-plate 3MF instead.
+    # Same-class slice-all goes through the regular path below — the
+    # sidecar's native ``--slice 0`` produces the right shape directly.
+    use_cross_class_slice_all = cross_class_arrange and request.plate == 0 and request.export_3mf
+
     try:
         try:
-            if use_bundle:
-                # Bundle dispatch: sidecar materialises the JSON triplet
-                # from the stored .bbscfg by name. ``request.bundle`` is
-                # guaranteed non-None here by the use_bundle branch above.
-                assert request.bundle is not None
-                result = await service.slice_with_bundle(
-                    model_bytes=primary_bytes,
-                    model_filename=model_filename,
-                    bundle_id=request.bundle.bundle_id,
-                    printer_name=request.bundle.printer_name,
-                    process_name=request.bundle.process_name,
-                    filament_names=request.bundle.filament_names,
-                    plate=request.plate,
-                    export_3mf=request.export_3mf,
-                    request_id=progress_request_id,
-                    on_progress=progress_callback,
+            if use_cross_class_slice_all:
+                from backend.app.services.slicer_3mf_convert import (
+                    count_plates_in_3mf,
+                    merge_plate_3mfs,
+                )
+
+                plate_count = count_plates_in_3mf(primary_bytes)
+                if plate_count == 0:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            "Couldn't read plate count from the source 3MF for cross-class "
+                            "slice-all. The source may be malformed or missing "
+                            "Metadata/model_settings.config."
+                        ),
+                    )
+                logger.info(
+                    "Cross-class slice-all: looping over %d plates with --arrange per plate, then merging",
+                    plate_count,
+                )
+                from backend.app.services.slicer_api import SliceResult
+
+                per_plate_results: list[tuple[int, SliceResult]] = []
+
+                # Forward the same progress request_id + callback to each
+                # per-plate sub-call so the toast keeps showing the
+                # sidecar's stage messages ("Generating G-code 45%…").
+                # The sub-calls run sequentially, so the poller for plate
+                # N is cancelled before plate N+1's poller starts — no
+                # cross-talk between plate streams. Wrap the callback to
+                # surface "(plate N/M)" alongside the slicer's stage
+                # message so the user sees progress through the whole
+                # multi-plate loop, not just one plate at a time.
+                def _wrap_progress_for_plate(plate_num: int, total: int):
+                    if progress_callback is None:
+                        return None
+
+                    def _cb(snapshot: dict) -> None:
+                        snapshot = dict(snapshot)
+                        snapshot["multi_plate_index"] = plate_num
+                        snapshot["multi_plate_count"] = total
+                        progress_callback(snapshot)
+
+                    return _cb
+
+                for plate_num in range(1, plate_count + 1):
+                    plate_cb = _wrap_progress_for_plate(plate_num, plate_count)
+                    per_plate = await service.slice_with_profiles(
+                        model_bytes=primary_bytes,
+                        model_filename=model_filename,
+                        printer_profile_json=presets["printer"],
+                        process_profile_json=presets["process"],
+                        filament_profile_jsons=filament_jsons,
+                        plate=plate_num,
+                        export_3mf=True,
+                        arrange=True,
+                        request_id=progress_request_id,
+                        on_progress=plate_cb,
+                    )
+                    per_plate_results.append((plate_num, per_plate))
+
+                # Merge the N single-plate 3MFs into one multi-plate 3MF.
+                # ``primary_bytes`` is the source 3MF: it carries the
+                # original per-plate previews the slicer's --arrange
+                # pass doesn't regenerate, so the merger can fall back
+                # to those for each plate's cover image.
+                merged_bytes = merge_plate_3mfs(
+                    [(n, r.content) for n, r in per_plate_results],
+                    source_3mf_bytes=primary_bytes,
+                )
+                # Synthetic SliceResult: totals are the sum of each
+                # plate's so the archive card shows the project's print
+                # time and filament use, not just plate 1's.
+                result = SliceResult(
+                    content=merged_bytes,
+                    print_time_seconds=sum(r.print_time_seconds for _, r in per_plate_results),
+                    filament_used_g=sum(r.filament_used_g for _, r in per_plate_results),
+                    filament_used_mm=sum(r.filament_used_mm for _, r in per_plate_results),
                 )
             else:
                 result = await service.slice_with_profiles(
@@ -2905,14 +3441,24 @@ async def _run_slicer_with_fallback(
                     filament_profile_jsons=filament_jsons,
                     plate=request.plate,
                     export_3mf=request.export_3mf,
+                    arrange=cross_class_arrange,
                     request_id=progress_request_id,
                     on_progress=progress_callback,
                 )
         except SlicerApiServerError as exc:
+            rejection = _slicer_rejection_message(str(exc))
+            if rejection:
+                # The slicer ran and rejected the job for a content reason —
+                # the chosen printer/process/filament *were* applied. Falling
+                # back to embedded settings would silently re-slice for the
+                # source 3MF's original printer and hide the real problem
+                # (e.g. re-slicing an H2D model for an X1C: the object is off
+                # the smaller bed). Surface the slicer's reason instead.
+                raise HTTPException(status_code=400, detail=rejection) from exc
             if not is_3mf:
                 raise
             logger.warning(
-                "Slicer CLI rejected --load-settings for %s (%s); retrying with embedded settings",
+                "Slicer CLI failed on the --load-settings path for %s (%s); retrying with embedded settings",
                 model_filename,
                 exc,
             )
@@ -2922,11 +3468,8 @@ async def _run_slicer_with_fallback(
             # bytes — the embedded-settings path also reads the same
             # project_settings.config and the same range validator runs
             # there too, so without sanitisation the fallback would die
-            # on the same sentinel error (#1201). Same fallback applies
-            # to the bundle path: if the resolved triplet crashes the CLI,
-            # embedded settings give the user *something* rather than a
-            # hard failure (the SliceModal flags the difference via
-            # used_embedded_settings).
+            # on the same sentinel error (#1201). The SliceModal flags
+            # the difference to the user via used_embedded_settings.
             result = await service.slice_without_profiles(
                 model_bytes=primary_bytes,
                 model_filename=model_filename,
@@ -2946,6 +3489,70 @@ async def _run_slicer_with_fallback(
         await service.close()
 
     return result, used_embedded_settings
+
+
+def _canonical_printer_model(raw: str | None) -> str | None:
+    """Normalise a printer-preset name / ``printer_model`` field to a canonical
+    model code. Strips the BambuStudio ``"# "`` user-clone prefix and the
+    ``" 0.4 nozzle"`` variant suffix that preset names carry but bare model
+    names don't — without this, ``"Bambu Lab H2D 0.4 nozzle"`` wouldn't
+    normalise to ``H2D``."""
+    import re
+
+    from backend.app.utils.printer_models import normalize_printer_model
+
+    if not raw:
+        return None
+    cleaned = str(raw).strip()
+    if cleaned.startswith("# "):
+        cleaned = cleaned[2:].strip()
+    cleaned = re.sub(r"\s+0\.\d+\s+nozzle$", "", cleaned, flags=re.IGNORECASE)
+    return normalize_printer_model(cleaned) if cleaned else None
+
+
+async def _resolve_target_printer_model(db: AsyncSession, user: User | None, request: SliceRequest) -> str | None:
+    """Best-effort: the printer model a slice request targets.
+
+    Returns ``None`` when it can't be determined (the nozzle-class guard
+    then simply doesn't fire — fail-open, never blocks a slice spuriously).
+    """
+    from backend.app.services.preset_resolver import resolve_preset_ref
+
+    if request.printer_preset is None:
+        return None
+    try:
+        printer_json = await resolve_preset_ref(db, user, request.printer_preset, "printer")
+        data = json.loads(printer_json)
+        if not isinstance(data, dict):
+            return None
+        return _canonical_printer_model(
+            data.get("printer_model") or data.get("printer_settings_id") or data.get("name")
+        )
+    except Exception:
+        return None
+
+
+async def guard_nozzle_class_reslice(
+    db: AsyncSession, user: User | None, request: SliceRequest, source_model: str | None
+) -> None:
+    """No-op guard, retained for call-site compatibility.
+
+    Cross-nozzle-class re-slicing is handled by ``_run_slicer_with_fallback``'s
+    two-pass conversion (#1493): a 1mm cube is sliced with the target triplet
+    via ``slice_with_profiles`` to produce a fresh target-shaped
+    ``Metadata/project_settings.config``, which is then spliced into the
+    source 3MF before the real slice. So this guard never needs to block
+    anymore.
+
+    The function and its call sites in ``archives.py`` / the library re-slice
+    route are kept so external pinned-version forks and downstream patches
+    don't break, but it does nothing on a successful slice path. If the
+    two-pass conversion fails inside the slicer, the existing
+    ``SlicerApiServerError`` / ``_slicer_rejection_message`` plumbing
+    surfaces the CLI's actual error to the user — which is more informative
+    than the old "isn't supported yet" 400 the guard used to raise.
+    """
+    return None
 
 
 async def slice_and_persist(
@@ -2982,7 +3589,7 @@ async def slice_and_persist(
     base_name = model_filename.rsplit(".", 1)[0]
     out_filename = f"{base_name}.gcode.3mf"
     unique_name = f"{uuid.uuid4().hex}.gcode.3mf"
-    out_path = get_library_files_dir() / unique_name
+    out_path = get_library_files_dir() / unique_name  # SEC-PATH-OK: unique_name = uuid.uuid4().hex + ".gcode.3mf"
     out_path.write_bytes(result.content)
 
     # Extract thumbnail from the produced 3MF so the library card shows a
@@ -3006,19 +3613,21 @@ async def slice_and_persist(
     except Exception as exc:
         logger.warning("Failed to parse sliced 3MF metadata for %s: %s", out_filename, exc)
 
-    # The parsed 3MF metadata carries a `print_name` lifted from the source
-    # file's embedded settings (BambuStudio always sets this; OrcaSlicer
-    # often leaves it blank). The FileManager listing prefers print_name
-    # over filename for display, which makes a sliced row indistinguishable
-    # from its source. Drop print_name so the listing falls back to the
-    # actual filename — which already ends in ".gcode.3mf" and self-describes
-    # as the sliced output.
-    metadata: dict = {k: v for k, v in parsed_metadata.items() if k != "print_name"}
+    # Drop the embedded `print_name` (see _without_print_name) so the sliced
+    # row's display falls back to its ".gcode.3mf" filename instead of the
+    # source file's project title, which would make the two indistinguishable.
+    metadata: dict = dict(_without_print_name(parsed_metadata) or {})
+    # Some slicer-sidecar builds leave the X-Filament-Used-* response headers
+    # unset, so result.filament_used_g/_mm arrive as 0 even for a real
+    # multi-hour print. Fall back to the totals ThreeMFParser read from the
+    # produced 3MF's own G-code header.
+    filament_g = result.filament_used_g or parsed_metadata.get("filament_used_grams") or 0.0
+    filament_mm = result.filament_used_mm or parsed_metadata.get("filament_used_mm") or 0.0
     metadata.update(
         {
             "print_time_seconds": result.print_time_seconds,
-            "filament_used_g": result.filament_used_g,
-            "filament_used_mm": result.filament_used_mm,
+            "filament_used_g": filament_g,
+            "filament_used_mm": filament_mm,
         }
     )
     if used_embedded_settings:
@@ -3030,11 +3639,13 @@ async def slice_and_persist(
         folder_id=folder_id,
         filename=out_filename,
         file_path=to_relative_path(out_path),
-        # Sliced output is a `.gcode.3mf` zip with embedded G-code, but the
-        # user-facing meaning is "ready-to-print G-code" — using "gcode"
-        # gives it the same badge as plain .gcode files and distinguishes
-        # it from un-sliced `.3mf` source models.
-        file_type="gcode",
+        # The on-disk payload is a ZIP container — the file_type must
+        # record that so the preview endpoint opens it as a 3MF instead
+        # of returning the ZIP bytes as text/plain (#1709 / yanglei1980).
+        # Earlier code mis-typed sliced rows as "gcode" to share the
+        # plain-G-code badge; that broke the embedded viewer. UI badges
+        # and gates for "gcode.3mf" are explicit at the call sites.
+        file_type="gcode.3mf",
         file_size=len(result.content),
         file_hash=hashlib.sha256(result.content).hexdigest(),
         thumbnail_path=thumbnail_relative,
@@ -3052,8 +3663,8 @@ async def slice_and_persist(
         library_file_id=new_file.id,
         name=new_file.filename,
         print_time_seconds=result.print_time_seconds,
-        filament_used_g=result.filament_used_g,
-        filament_used_mm=result.filament_used_mm,
+        filament_used_g=filament_g,
+        filament_used_mm=filament_mm,
         used_embedded_settings=used_embedded_settings,
     )
 
@@ -3097,38 +3708,68 @@ async def slice_and_persist_as_archive(
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     printer_folder = str(source_archive.printer_id) if source_archive.printer_id is not None else "unassigned"
     archive_subdir = f"{timestamp}_{base_name}_sliced"
-    archive_dir = app_settings.archive_dir / printer_folder / archive_subdir
+    archive_dir = (
+        app_settings.archive_dir / printer_folder / archive_subdir
+    )  # SEC-PATH-OK: printer_folder = str(int|None), archive_subdir = f"{timestamp}_{base_name}_sliced" where base_name went through _safe_filename
     archive_dir.mkdir(parents=True, exist_ok=True)
-    out_path = archive_dir / out_filename
+    out_path = (
+        archive_dir / out_filename
+    )  # SEC-PATH-OK: out_filename = f"{base_name}.gcode.3mf" where base_name went through _safe_filename
     out_path.write_bytes(result.content)
 
-    # Extract a thumbnail from the produced 3MF so the new archive card has
-    # a preview. The 3MF parser pulls Metadata/plate_*.png; failures here
-    # shouldn't fail the whole slice — the archive row is still useful
-    # without a thumbnail.
+    # Extract a thumbnail for the new archive card. Priority order:
+    #   1. Source archive's ``Metadata/plate_{N}.png`` — the GUI-rendered
+    #      preview of the same plate the user is re-slicing. Closer to
+    #      "what's actually printing" than any other available image
+    #      (with --arrange the layout may differ slightly, but objects
+    #      and colours match).
+    #   2. ``ThreeMFParser`` fallback chain on the sliced output: the
+    #      slicer's own per-plate render if it wrote one, then the
+    #      project-wide thumbnail under ``Auxiliaries/.thumbnails/``.
+    # BambuStudio CLI frequently doesn't emit a fresh per-plate render
+    # (slice writes the new gcode but leaves the preview slot empty),
+    # so without (1) the card falls all the way through to the
+    # MakerWorld-style cover art — visually unrelated to what the user
+    # picked, see #1493 follow-up. Failures don't fail the slice — the
+    # archive row is still useful without a thumbnail.
+    plate_num = request.plate or 1
     thumbnail_path: str | None = None
     parsed_metadata: dict = {}
+
+    src_3mf_path = app_settings.base_dir / source_archive.file_path
+    source_plate_bytes = _read_3mf_entry(src_3mf_path, f"Metadata/plate_{plate_num}.png")
+    if source_plate_bytes:
+        thumb_dest = archive_dir / "thumbnail.png"
+        thumb_dest.write_bytes(source_plate_bytes)
+        thumbnail_path = str(thumb_dest.relative_to(app_settings.base_dir))
+
     try:
-        parser = ThreeMFParser(str(out_path))
+        parser = ThreeMFParser(str(out_path), plate_number=plate_num)
         parsed = parser.parse()
-        thumb_data = parsed.get("_thumbnail_data")
-        thumb_ext = parsed.get("_thumbnail_ext", ".png")
-        if thumb_data:
-            thumb_dest = archive_dir / f"thumbnail{thumb_ext}"
-            thumb_dest.write_bytes(thumb_data)
-            thumbnail_path = str(thumb_dest.relative_to(app_settings.base_dir))
+        if thumbnail_path is None:
+            thumb_data = parsed.get("_thumbnail_data")
+            thumb_ext = parsed.get("_thumbnail_ext", ".png")
+            if thumb_data:
+                thumb_dest = archive_dir / f"thumbnail{thumb_ext}"
+                thumb_dest.write_bytes(thumb_data)
+                thumbnail_path = str(thumb_dest.relative_to(app_settings.base_dir))
         parsed_metadata = {k: v for k, v in parsed.items() if not k.startswith("_")}
     except Exception as exc:
         logger.warning("Failed to parse sliced 3MF metadata for %s: %s", out_filename, exc)
 
     metadata = dict(source_archive.extra_data) if source_archive.extra_data else {}
     metadata.update(parsed_metadata)
+    # Fall back to the produced 3MF's G-code-header totals when the sidecar
+    # leaves the X-Filament-Used-* headers unset (result.filament_used_g == 0
+    # even for a real multi-hour print).
+    filament_g = result.filament_used_g or parsed_metadata.get("filament_used_grams") or 0.0
+    filament_mm = result.filament_used_mm or parsed_metadata.get("filament_used_mm") or 0.0
     metadata.update(
         {
             "sliced_from_archive_id": source_archive.id,
             "print_time_seconds": result.print_time_seconds,
-            "filament_used_g": result.filament_used_g,
-            "filament_used_mm": result.filament_used_mm,
+            "filament_used_g": filament_g,
+            "filament_used_mm": filament_mm,
         }
     )
     if used_embedded_settings:
@@ -3142,8 +3783,23 @@ async def slice_and_persist_as_archive(
     new_filament_type = parsed_metadata.get("filament_type") or source_archive.filament_type
     new_filament_color = parsed_metadata.get("filament_color") or source_archive.filament_color
 
+    # When the user re-slices for a different printer model than the source,
+    # the source's printer_id (e.g. an H2D's "Workshop H2C") no longer
+    # represents where the new archive can be reprinted. The archive card
+    # and reprint modal both read printer_id first and only fall back to
+    # sliced_for_model when it's None, so leaving the inherited id makes
+    # the X1C-sliced card display the source H2D's printer name.
+    # Same pitfall as the sliced_for_model copy a few lines below.
+    new_target_model = parsed_metadata.get("sliced_for_model") or source_archive.sliced_for_model
+    is_cross_model_reslice = (
+        new_target_model is not None
+        and source_archive.sliced_for_model is not None
+        and new_target_model != source_archive.sliced_for_model
+    )
+    new_printer_id = None if is_cross_model_reslice else source_archive.printer_id
+
     new_archive = PrintArchive(
-        printer_id=source_archive.printer_id,
+        printer_id=new_printer_id,
         project_id=source_archive.project_id,
         filename=out_filename,
         file_path=str(out_path.relative_to(app_settings.base_dir)),
@@ -3154,12 +3810,25 @@ async def slice_and_persist_as_archive(
         # up alongside its sibling in the archives list.
         print_name=(source_archive.print_name or base_name) + " (re-sliced)",
         print_time_seconds=result.print_time_seconds,
-        filament_used_grams=result.filament_used_g or None,
+        filament_used_grams=filament_g or None,
         filament_type=new_filament_type,
         filament_color=new_filament_color,
         layer_height=source_archive.layer_height,
         nozzle_diameter=source_archive.nozzle_diameter,
-        sliced_for_model=source_archive.sliced_for_model,
+        # The re-sliced output is for whatever printer the user just picked,
+        # not the source archive's printer — read the model the slicer baked
+        # into the new 3MF, falling back to the source only if it's absent.
+        # (Copying source_archive.sliced_for_model kept a cross-printer
+        # re-slice, e.g. X1C→H2D, showing the old "X1C sliced" model.)
+        sliced_for_model=parsed_metadata.get("sliced_for_model") or source_archive.sliced_for_model,
+        # Build plate type that the sliced output was produced for (#1493
+        # follow-up): the frontend's ArchiveCard reads ``archive.bed_type``
+        # off the top-level column, not extra_data, so without this lift the
+        # re-sliced card had no plate badge. ThreeMFParser pulls it from the
+        # sliced 3MF's ``slice_info.config`` ``curr_bed_type``; if that's
+        # absent (older sidecar / older slice profile) the source archive's
+        # bed_type is the right default.
+        bed_type=parsed_metadata.get("bed_type") or source_archive.bed_type,
         makerworld_url=source_archive.makerworld_url,
         designer=source_archive.designer,
         # Sliced-but-not-printed: keep status default ("completed") so it
@@ -3176,8 +3845,8 @@ async def slice_and_persist_as_archive(
         archive_id=new_archive.id,
         name=new_archive.print_name or out_filename,
         print_time_seconds=result.print_time_seconds,
-        filament_used_g=result.filament_used_g,
-        filament_used_mm=result.filament_used_mm,
+        filament_used_g=filament_g,
+        filament_used_mm=filament_mm,
         used_embedded_settings=used_embedded_settings,
     )
 
@@ -3242,6 +3911,16 @@ async def slice_library_file(
             src_print_name = candidate.strip()
     src_ext = Path(lib_file.filename).suffix.lower() or ".3mf"
     model_filename = f"{src_print_name}{src_ext}" if src_print_name else lib_file.filename
+
+    # Block a cross-nozzle-class re-slice (single-nozzle <-> H2D) up front.
+    # Fires only when the source is itself a sliced file (carries
+    # sliced_for_model); a plain un-sliced model has no source nozzle class.
+    await guard_nozzle_class_reslice(
+        db,
+        cloud_token_user,
+        request,
+        (lib_file.file_metadata or {}).get("sliced_for_model"),
+    )
 
     async def _run(job_id: int):
         async with async_session() as task_db:
@@ -3310,6 +3989,15 @@ async def print_library_file(
             detail="Not a sliced file. Only .gcode or .gcode.3mf files can be printed.",
         )
 
+    # Filenames containing FAT32/exFAT-illegal characters would 553 at
+    # FTP upload time (#1540). Older rows may pre-date the rename-time
+    # validation, so reject the print attempt with an actionable message
+    # rather than silently renaming user data.
+    try:
+        validate_print_filename(lib_file.filename)
+    except InvalidFilenameError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
     # Get the full file path
     file_path = Path(app_settings.base_dir) / lib_file.file_path
 
@@ -3372,16 +4060,19 @@ async def print_library_file(
 async def get_file(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get a file by ID with full details."""
+    user, can_read_all = auth_result
     result = await db.execute(
         LibraryFile.active().options(selectinload(LibraryFile.created_by)).where(LibraryFile.id == file_id)
     )
-    file = result.scalar_one_or_none()
-
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+    file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     # Get folder name
     folder_name = None
@@ -3487,13 +4178,16 @@ async def update_file(
             raise HTTPException(status_code=403, detail="You can only update your own files")
 
     if data.filename is not None:
-        # Validate filename doesn't contain path separators
-        if "/" in data.filename or "\\" in data.filename:
-            raise HTTPException(status_code=400, detail="Filename cannot contain path separators")
+        # Bambu printer SD cards are FAT32/exFAT; reject the same set Bambu
+        # Studio refuses on save so we fail here with a clear message
+        # instead of an obscure FTP 553 at print time (#1540).
+        try:
+            validate_print_filename(data.filename)
+        except InvalidFilenameError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
         file.filename = data.filename
-        # Also update print_name in file_metadata so the display name matches
-        if file.file_metadata and "print_name" in file.file_metadata:
-            file.file_metadata = {**file.file_metadata, "print_name": data.filename}
+        # No print_name to keep in sync — library files display by filename,
+        # and _without_print_name strips the embedded 3MF Title on import (#1489).
 
     if data.folder_id is not None:
         if data.folder_id == 0:
@@ -3521,8 +4215,11 @@ async def update_file(
     await db.commit()
     await db.refresh(file)
 
-    # Return full response (reuse get_file logic)
-    return await get_file(file_id, db)
+    # Return full response. Bypass get_file's ownership gate — caller already
+    # passed update_file's ownership gate above, so we re-fetch + serialise
+    # directly instead of calling the route function (which would try to
+    # evaluate its own Depends() at call time and trip a TypeError).
+    return await get_file(file_id, db, auth_result=(None, True))
 
 
 @router.delete("/files/{file_id}")
@@ -3582,14 +4279,17 @@ async def delete_file(
 async def download_file(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Download a file."""
+    user, can_read_all = auth_result
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    file = result.scalar_one_or_none()
-
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+    file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     abs_path = to_absolute_path(file.file_path)
     if not abs_path or not abs_path.exists():
@@ -3606,7 +4306,12 @@ async def download_file(
 async def create_library_slicer_token(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Create a short-lived download token for opening files in slicer applications.
 
@@ -3615,10 +4320,9 @@ async def create_library_slicer_token(
     """
     from backend.app.core.auth import create_slicer_download_token
 
+    user, can_read_all = auth_result
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    file = result.scalar_one_or_none()
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+    _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     token = await create_slicer_download_token("library", file_id)
     return {"token": token}
@@ -3693,26 +4397,30 @@ async def get_thumbnail(
 async def get_gcode(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get gcode for a file (for preview)."""
+    user, can_read_all = auth_result
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    file = result.scalar_one_or_none()
-
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+    file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
 
     abs_path = to_absolute_path(file.file_path)
     if not abs_path or not abs_path.exists():
         raise HTTPException(status_code=404, detail="File not found on disk")
 
-    if file.file_type == "gcode":
-        return FastAPIFileResponse(str(abs_path), media_type="text/plain")
-    elif file.file_type == "3mf":
-        # Extract gcode from 3mf
+    # Legacy sliced rows from before #1709 stored a `.gcode.3mf` ZIP body
+    # under file_type="gcode" — the on-disk filename is the truth in that
+    # case, so detect by suffix before checking the type column.
+    is_gcode_3mf = file.file_type in ("3mf", "gcode.3mf") or file.filename.lower().endswith(".gcode.3mf")
+
+    if is_gcode_3mf:
         try:
             with zipfile.ZipFile(str(abs_path), "r") as zf:
-                # Find gcode file
                 gcode_files = [n for n in zf.namelist() if n.endswith(".gcode")]
                 if not gcode_files:
                     raise HTTPException(status_code=404, detail="No gcode found in 3MF file")
@@ -3722,6 +4430,8 @@ async def get_gcode(
                 return Response(content=gcode_content, media_type="text/plain")
         except zipfile.BadZipFile:
             raise HTTPException(status_code=400, detail="Invalid 3MF file")
+    elif file.file_type == "gcode":
+        return FastAPIFileResponse(str(abs_path), media_type="text/plain")
     else:
         raise HTTPException(status_code=400, detail="Unsupported file type")
 
@@ -3913,32 +4623,42 @@ async def bulk_delete(
 @router.get("/stats")
 async def get_library_stats(
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
 ):
     """Get library statistics."""
+    user, can_read_all = auth_result
     # Stats exclude trashed files — users see counts/sizes for what's actually in the library.
-    active_only = LibraryFile.deleted_at.is_(None)
+    # Without LIBRARY_READ_ALL the stats reflect only the caller's own files —
+    # match what the file list endpoint shows so the numbers stay consistent.
+    file_filters = [LibraryFile.deleted_at.is_(None)]
+    if user is not None and not can_read_all:
+        file_filters.append(LibraryFile.created_by_id == user.id)
 
     # Total files
-    total_files_result = await db.execute(select(func.count(LibraryFile.id)).where(active_only))
+    total_files_result = await db.execute(select(func.count(LibraryFile.id)).where(*file_filters))
     total_files = total_files_result.scalar() or 0
 
-    # Total folders
+    # Total folders (folders are shared org structure, not per-user — count all)
     total_folders_result = await db.execute(select(func.count(LibraryFolder.id)))
     total_folders = total_folders_result.scalar() or 0
 
     # Total size
-    total_size_result = await db.execute(select(func.sum(LibraryFile.file_size)).where(active_only))
+    total_size_result = await db.execute(select(func.sum(LibraryFile.file_size)).where(*file_filters))
     total_size = total_size_result.scalar() or 0
 
     # Files by type
     type_result = await db.execute(
-        select(LibraryFile.file_type, func.count(LibraryFile.id)).where(active_only).group_by(LibraryFile.file_type)
+        select(LibraryFile.file_type, func.count(LibraryFile.id)).where(*file_filters).group_by(LibraryFile.file_type)
     )
     files_by_type = dict(type_result.all())
 
     # Total prints
-    total_prints_result = await db.execute(select(func.sum(LibraryFile.print_count)).where(active_only))
+    total_prints_result = await db.execute(select(func.sum(LibraryFile.print_count)).where(*file_filters))
     total_prints = total_prints_result.scalar() or 0
 
     # Disk space info

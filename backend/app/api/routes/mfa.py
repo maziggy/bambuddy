@@ -30,14 +30,15 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import jwt
 import pyotp
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from jwt import PyJWKClient
 from passlib.context import CryptContext
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, undefer
 
+from backend.app.api.routes._oidc_helpers import assert_safe_public_https_url
 from backend.app.api.routes.settings import get_setting, set_setting
 from backend.app.core.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -83,8 +84,76 @@ from backend.app.schemas.auth import (
     UserResponse,
 )
 from backend.app.services.email_service import get_smtp_settings, send_email
+from backend.app.services.oidc_icon import OIDCIconError, fetch_icon
 
 logger = logging.getLogger(__name__)
+
+
+def _redact_url_for_log(url: str) -> str:
+    """Return ``scheme://host/path`` with query string and fragment stripped.
+
+    Admin-supplied icon URLs are usually CDN paths, but nothing stops an
+    admin from pasting a presigned URL whose query string carries an
+    ``X-Amz-Signature`` / OAuth token / etc. Operators need a forensic
+    trail without those secrets ending up in log files.
+    """
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except ValueError:
+        return "<unparseable>"
+    netloc = parsed.netloc or "<no-host>"
+    return f"{parsed.scheme}://{netloc}{parsed.path}"
+
+
+async def _fetch_icon_or_400(icon_url: str) -> tuple[bytes, str, str]:
+    """Validate URL + fetch icon, mapping any failure to HTTPException(400).
+
+    Centralises the SSRF guard + fetcher invocation so create/update/refresh
+    all behave identically — admin always gets a 400 with a precise reason,
+    never a 500 / opaque server error.
+
+    Both failure paths log at WARNING so operators have a forensic trail
+    later — without these log lines the admin's UI toast was the only
+    record of the failure (#1333 review).
+    """
+    try:
+        assert_safe_public_https_url(icon_url)
+    except ValueError as exc:
+        logger.warning("OIDC icon URL rejected by SSRF guard: url=%s reason=%s", _redact_url_for_log(icon_url), exc)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    try:
+        return await fetch_icon(icon_url)
+    except OIDCIconError as exc:
+        logger.warning("OIDC icon fetch failed: url=%s reason=%s", _redact_url_for_log(icon_url), exc)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+def _build_provider_response(provider: OIDCProvider) -> OIDCProviderResponse:
+    """Build OIDCProviderResponse via ``from_attributes``. The required
+    ``has_icon`` field is supplied by ``OIDCProvider.has_icon`` (a property
+    reading the non-deferred ``icon_content_type`` column)."""
+    return OIDCProviderResponse.model_validate(provider)
+
+
+def _etag_matches(if_none_match: str | None, etag_raw: str | None) -> bool:
+    """RFC 7232 §3.2 If-None-Match comparison.
+
+    Supports:
+    * ``*`` wildcard — matches any current representation when the resource
+      exists (and it does here; we wouldn't have an etag otherwise).
+    * Multiple comma-separated tokens.
+    * Weak-validator prefix ``W/`` (RFC 7232 §2.3) — accepted on GET since
+      cached representations of a static byte-blob are byte-identical.
+
+    Returns False on missing header or missing stored etag.
+    """
+    if not if_none_match or not etag_raw:
+        return False
+    quoted = f'"{etag_raw}"'
+    tokens = [t.strip() for t in if_none_match.split(",")]
+    if "*" in tokens:
+        return True
+    return any(tok.removeprefix("W/") == quoted for tok in tokens)
 
 
 def _as_utc(dt: datetime) -> datetime:
@@ -490,6 +559,57 @@ def _resolve_provider_email(provider: OIDCProvider, claims: dict, provider_sub: 
             provider.id,
             provider_sub,
         )
+    return raw_email
+
+
+def _resolve_standard_email_for_user_record(provider: OIDCProvider, claims: dict, provider_sub: str) -> str | None:
+    """Resolve the standard 'email' claim for populating a newly-created User.email.
+
+    Issue #1569: when an operator sets email_claim to a non-email identity claim
+    (e.g. preferred_username on Authentik), the primary _resolve_provider_email
+    returns None because the identity value isn't email-shaped. This helper lets
+    the auto-create-users path still capture the user's real email from the
+    standard 'email' claim that the IdP usually sends alongside.
+
+    This is NOT a substitute for _resolve_provider_email and does NOT feed
+    auto_link_existing_accounts — that gate stays on the primary resolver, so
+    the GHSA Fall-B/C security guards remain intact.
+
+    Applies the same Fall A/B shape + email_verified logic as the primary
+    resolver does for the standard 'email' claim.
+    """
+    raw_claim_value = claims.get("email")
+    if raw_claim_value is not None and not isinstance(raw_claim_value, str):
+        logger.warning(
+            "OIDC provider %d: standard 'email' claim has unexpected type %s for sub=%r, ignoring",
+            provider.id,
+            type(raw_claim_value).__name__,
+            provider_sub,
+        )
+        return None
+    raw_email = raw_claim_value.lower().strip() if raw_claim_value else None
+    if not raw_email:
+        return None
+    if not _is_valid_email_shaped(raw_email):
+        logger.warning(
+            "OIDC provider %d: standard 'email' claim failed shape check for sub=%r, ignoring",
+            provider.id,
+            provider_sub,
+        )
+        return None
+    email_verified = claims.get("email_verified")
+    if provider.require_email_verified:
+        if email_verified is True:
+            return raw_email
+        logger.info(
+            "OIDC provider %d: ignoring fallback email for sub=%r because email_verified=%r",
+            provider.id,
+            provider_sub,
+            email_verified,
+        )
+        return None
+    if email_verified is False:
+        return None
     return raw_email
 
 
@@ -1204,10 +1324,14 @@ async def admin_disable_2fa(
 async def list_oidc_providers(
     db: AsyncSession = Depends(get_db),
 ) -> list[OIDCProviderResponse]:
-    """List all enabled OIDC providers (public)."""
+    """List all enabled OIDC providers (public).
+
+    The login page renders icons via /oidc/providers/{id}/icon — `icon_data`
+    stays deferred so this list query never pulls the BLOB.
+    """
     result = await db.execute(select(OIDCProvider).where(OIDCProvider.is_enabled.is_(True)))
     providers = result.scalars().all()
-    return [OIDCProviderResponse.model_validate(p) for p in providers]
+    return [_build_provider_response(p) for p in providers]
 
 
 @router.get("/oidc/providers/all", response_model=list[OIDCProviderResponse])
@@ -1218,7 +1342,7 @@ async def list_all_oidc_providers(
     """List ALL OIDC providers including disabled ones (admin only)."""
     result2 = await db.execute(select(OIDCProvider))
     providers = result2.scalars().all()
-    return [OIDCProviderResponse.model_validate(p) for p in providers]
+    return [_build_provider_response(p) for p in providers]
 
 
 @router.post("/oidc/providers", response_model=OIDCProviderResponse, status_code=status.HTTP_201_CREATED)
@@ -1227,7 +1351,12 @@ async def create_oidc_provider(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ) -> OIDCProviderResponse:
-    """Create a new OIDC provider (admin only)."""
+    """Create a new OIDC provider (admin only).
+
+    If `icon_url` is supplied, the icon is fetched server-side and cached in
+    the BLOB columns (#1333). A fetch failure aborts the create with 400 —
+    no half-configured provider is left in the DB.
+    """
     if body.default_group_id is not None:
         grp_chk = await db.execute(select(Group).where(Group.id == body.default_group_id))
         if not grp_chk.scalar_one_or_none():
@@ -1235,6 +1364,14 @@ async def create_oidc_provider(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="default_group_id references a non-existent group",
             )
+
+    # Fetch the icon BEFORE creating the row so a failure leaves the DB clean.
+    icon_data: bytes | None = None
+    icon_content_type: str | None = None
+    icon_etag: str | None = None
+    if body.icon_url:
+        icon_data, icon_content_type, icon_etag = await _fetch_icon_or_400(body.icon_url)
+
     provider = OIDCProvider(
         name=body.name,
         issuer_url=body.issuer_url.rstrip("/"),
@@ -1247,6 +1384,9 @@ async def create_oidc_provider(
         email_claim=body.email_claim,
         require_email_verified=body.require_email_verified,
         icon_url=body.icon_url,
+        icon_data=icon_data,
+        icon_content_type=icon_content_type,
+        icon_etag=icon_etag,
         default_group_id=body.default_group_id,
     )
     # SEC-1 + SEC-6: runtime guard mirrors the OIDCProviderCreate model_validator in schemas/auth.py.
@@ -1255,7 +1395,7 @@ async def create_oidc_provider(
     db.add(provider)
     await db.commit()
     await db.refresh(provider)
-    return OIDCProviderResponse.model_validate(provider)
+    return _build_provider_response(provider)
 
 
 @router.put("/oidc/providers/{provider_id}", response_model=OIDCProviderResponse)
@@ -1265,7 +1405,17 @@ async def update_oidc_provider(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ) -> OIDCProviderResponse:
-    """Update an existing OIDC provider (admin only)."""
+    """Update an existing OIDC provider (admin only).
+
+    Icon refetch fires when:
+    1. The submitted `icon_url` differs from the stored one (URL changed), OR
+    2. The submitted `icon_url` equals the stored one AND `icon_content_type`
+       is NULL — this is the upgrade-path edge case: old providers carry
+       `icon_url` but no cached bytes until the admin first saves them.
+
+    On fetch failure the request aborts with 400 *before* commit, so the
+    existing cached bytes (if any) remain untouched.
+    """
     result2 = await db.execute(select(OIDCProvider).where(OIDCProvider.id == provider_id))
     provider = result2.scalar_one_or_none()
     if not provider:
@@ -1279,10 +1429,42 @@ async def update_oidc_provider(
                 detail="default_group_id references a non-existent group",
             )
 
-    for field, value in body.model_dump(exclude_none=True).items():
+    dumped = body.model_dump(exclude_none=True)
+
+    # Decide whether an icon refetch is needed BEFORE mutating the ORM object,
+    # so the comparison sees provider.icon_url / icon_content_type as they are
+    # in the database.
+    new_icon_url = dumped.get("icon_url")
+    needs_icon_refetch = new_icon_url is not None and (
+        new_icon_url != provider.icon_url or provider.icon_content_type is None
+    )
+
+    # Fetch FIRST. If the upstream is unreachable or SSRF-blocked, _fetch_icon_or_400
+    # raises HTTPException(400) here — provider attributes are still untouched, so
+    # the in-memory ORM object stays consistent on the way out (and the DB row is
+    # safe regardless via get_db()'s rollback).
+    fetched_icon: tuple[bytes, str, str] | None = None
+    if needs_icon_refetch:
+        fetched_icon = await _fetch_icon_or_400(new_icon_url)
+
+    # Explicit `icon_url: null` in the PUT body means "clear the icon".
+    # The exclude_none=True dump above drops None values, which would
+    # otherwise silently ignore this request. Check model_fields_set on
+    # the unfiltered body to distinguish "client cleared it" from "client
+    # didn't include this field at all".
+    if "icon_url" in body.model_fields_set and body.icon_url is None:
+        provider.icon_url = None
+        provider.icon_data = None
+        provider.icon_content_type = None
+        provider.icon_etag = None
+
+    for field, value in dumped.items():
         if field == "issuer_url" and value:
             value = value.rstrip("/")
         setattr(provider, field, value)
+
+    if fetched_icon is not None:
+        provider.icon_data, provider.icon_content_type, provider.icon_etag = fetched_icon
 
     # SEC-1 + SEC-6: Combined-State-Guard after setattr loop.
     # Checks the final in-memory state (DB values + newly set values combined) to catch
@@ -1291,7 +1473,7 @@ async def update_oidc_provider(
 
     await db.commit()
     await db.refresh(provider)
-    return OIDCProviderResponse.model_validate(provider)
+    return _build_provider_response(provider)
 
 
 @router.delete("/oidc/providers/{provider_id}")
@@ -1309,6 +1491,115 @@ async def delete_oidc_provider(
     await db.delete(provider)
     await db.commit()
     return {"message": "Provider deleted"}
+
+
+# ---------------------------------------------------------------------------
+# OIDC provider icon proxy (#1333)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/oidc/providers/{provider_id}/icon")
+async def get_oidc_provider_icon(
+    provider_id: int,
+    if_none_match: str | None = Header(default=None, alias="If-None-Match"),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Serve the cached icon for an enabled OIDC provider (public, no auth).
+
+    Unauthenticated because ``<img>`` tags cannot send Authorization headers
+    and the login page renders these icons before the user is signed in — the
+    same justification as ``/api/v1/makerworld/thumbnail``. The SSRF guard
+    runs at admin-config time (create/update/refresh), not here.
+
+    Disabled providers respond 404 to avoid leaking their existence to
+    anonymous callers (mirrors ``GET /oidc/providers`` which filters on
+    ``is_enabled``).
+    """
+    result = await db.execute(
+        select(OIDCProvider)
+        .options(undefer(OIDCProvider.icon_data))
+        .where(OIDCProvider.id == provider_id, OIDCProvider.is_enabled.is_(True))
+    )
+    provider = result.scalar_one_or_none()
+    if provider is None or provider.icon_content_type is None or provider.icon_data is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Icon not found")
+
+    etag_value = f'"{provider.icon_etag}"'
+    cache_headers = {"ETag": etag_value, "Cache-Control": "public, max-age=3600"}
+
+    if _etag_matches(if_none_match, provider.icon_etag):
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=cache_headers)
+
+    return Response(
+        content=provider.icon_data,
+        media_type=provider.icon_content_type,
+        headers=cache_headers,
+    )
+
+
+@router.delete("/oidc/providers/{provider_id}/icon", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_oidc_provider_icon(
+    provider_id: int,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Remove the icon entirely for a provider (admin only).
+
+    Clears all four icon columns — ``icon_url`` plus the three cached-bytes
+    columns. "Remove icon" means the whole record is gone, not just the
+    cache; without this the admin form would still show the URL while
+    the login page rendered a blank fallback (confusing half-state).
+    To re-add an icon the admin re-types the URL in the edit form.
+    """
+    result = await db.execute(select(OIDCProvider).where(OIDCProvider.id == provider_id))
+    provider = result.scalar_one_or_none()
+    if provider is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found")
+
+    # Setting deferred columns is safe — no read happens, just a write.
+    provider.icon_url = None
+    provider.icon_data = None
+    provider.icon_content_type = None
+    provider.icon_etag = None
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/oidc/providers/{provider_id}/icon/refresh", response_model=OIDCProviderResponse)
+async def refresh_oidc_provider_icon(
+    provider_id: int,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    db: AsyncSession = Depends(get_db),
+) -> OIDCProviderResponse:
+    """Refetch the icon from the stored `icon_url` (admin only).
+
+    Used when:
+    - The IdP changed its icon and the admin wants Bambuddy to pick up the
+      new bytes.
+    - An upgrade left the provider with an `icon_url` but no cached bytes
+      (covered automatically by `update_oidc_provider` too, but this gives
+      the UI an explicit "Refresh" button).
+
+    Failure to refetch returns 400 *before* commit, so the previously cached
+    bytes survive intact.
+    """
+    result = await db.execute(select(OIDCProvider).where(OIDCProvider.id == provider_id))
+    provider = result.scalar_one_or_none()
+    if provider is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found")
+    if not provider.icon_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provider has no icon_url to refresh",
+        )
+
+    icon_data, icon_content_type, icon_etag = await _fetch_icon_or_400(provider.icon_url)
+    provider.icon_data = icon_data
+    provider.icon_content_type = icon_content_type
+    provider.icon_etag = icon_etag
+    await db.commit()
+    await db.refresh(provider)
+    return _build_provider_response(provider)
 
 
 @router.get("/oidc/authorize/{provider_id}", response_model=OIDCAuthorizeResponse)
@@ -1665,6 +1956,18 @@ async def oidc_callback(
                             raw = provider_sub[:30]
                     candidate = re.sub(r"[^a-zA-Z0-9._-]", "", raw)[:30] or "oidcuser"
 
+                    # Issue #1569: when email_claim is configured to a non-email
+                    # identity claim (e.g. preferred_username on Authentik), the
+                    # primary resolver returns None for the email field because the
+                    # identity value isn't email-shaped. Fall back to the standard
+                    # 'email' claim for User.email so the operator can split
+                    # username-from-preferred_username and email-from-email.
+                    # The auto-link gate above stays on provider_email, so the
+                    # GHSA Fall-B/C guards remain intact.
+                    user_email_for_storage = provider_email
+                    if user_email_for_storage is None and provider.email_claim != "email":
+                        user_email_for_storage = _resolve_standard_email_for_user_record(provider, claims, provider_sub)
+
                     username = candidate
                     counter = 1
                     while True:
@@ -1692,7 +1995,7 @@ async def oidc_callback(
 
                     new_user = User(
                         username=username,
-                        email=provider_email,
+                        email=user_email_for_storage,
                         # M-1: auth_source="oidc" prevents local password-reset flow
                         # for users who should only authenticate via OIDC.
                         auth_source="oidc",
@@ -1709,7 +2012,7 @@ async def oidc_callback(
                             user_id=new_user.id,
                             provider_id=provider_id,
                             provider_user_id=provider_sub,
-                            provider_email=provider_email,
+                            provider_email=user_email_for_storage,
                         )
                     )
                     await db.commit()
@@ -1864,11 +2167,16 @@ async def list_oidc_links(
         select(UserOIDCLink).where(UserOIDCLink.user_id == current_user.id).options(selectinload(UserOIDCLink.provider))
     )
     links = result.scalars().all()
+    # Defensive null-check on link.provider: on PostgreSQL the FK cascade
+    # ensures provider exists, but SQLite ships with FK enforcement off, so
+    # a deleted provider could in theory leave the link briefly orphan until
+    # the next init_db() cleanup runs. Returning "<deleted>" instead of
+    # crashing keeps the endpoint usable in that edge case (#1285 follow-up).
     return [
         OIDCLinkResponse(
             id=link.id,
             provider_id=link.provider_id,
-            provider_name=link.provider.name,
+            provider_name=link.provider.name if link.provider else "<deleted>",
             provider_email=link.provider_email,
             created_at=link.created_at.isoformat(),
         )

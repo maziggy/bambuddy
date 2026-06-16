@@ -323,6 +323,111 @@ class TestFindOrCreateFilament:
         assert result == 7
 
     @pytest.mark.asyncio
+    async def test_color_name_does_not_trigger_filament_patch(self, client):
+        """#1357: Spoolman 0.23.1 has no `color_name` field on Filament
+        (verified against FilamentUpdateParameters schema). find_or_create_filament
+        must NOT attempt to PATCH it — the route now persists the user's
+        color_name to spool.extra.bambu_color_name instead. Any patch call
+        from this layer would be a silent no-op (Spoolman ignores unknown
+        keys) and was the original symptom of "edits never save".
+        """
+        existing = {**SAMPLE_FILAMENT}
+        with (
+            patch.object(client, "find_or_create_vendor", AsyncMock(return_value=3)),
+            patch.object(client, "get_filaments", AsyncMock(return_value=[existing])),
+            patch.object(client, "patch_filament", AsyncMock()) as mock_patch,
+        ):
+            result = await client.find_or_create_filament(
+                "PLA", "Basic", "Bambu Lab", "FF0000", 1000, color_name="Sunny Yellow"
+            )
+        assert result == 7
+        mock_patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_matches_filament_named_with_just_subtype(self, client):
+        """#1357: AMS-sync auto-create saves the filament with name set to just
+        ``tray.tray_sub_brands`` (e.g. ``"Glow"`` without the material prefix),
+        but the user-driven edit path composes ``"<material> <subtype>"``
+        (``"PLA Glow"``). Before this fix the literal `f_name == name` check
+        failed to bridge the two shapes, so every edit fell through to
+        ``create_filament`` and left a trail of duplicate filaments. Now the
+        name match strips the material prefix on both sides, so the two
+        shapes resolve to the same subtype key."""
+        existing = {
+            **SAMPLE_FILAMENT,
+            "id": 11,
+            "name": "Glow",  # AMS-sync shape: just subtype
+            "material": "PLA",
+            "color_hex": "AAF3C6",
+            "color_name": None,
+            "vendor": {"id": 3, "name": "Amazon Basics"},
+        }
+        with (
+            patch.object(client, "find_or_create_vendor", AsyncMock(return_value=3)),
+            patch.object(client, "get_filaments", AsyncMock(return_value=[existing])),
+            patch.object(client, "patch_filament", AsyncMock()) as mock_patch,
+            patch.object(client, "create_filament", AsyncMock()) as mock_create,
+        ):
+            result = await client.find_or_create_filament(
+                "PLA", "Glow", "Amazon Basics", "AAF3C6", 1000, color_name="Bright Glow"
+            )
+        assert result == 11
+        # color_name is no longer written via the filament — see #1357 — and
+        # the function must not create a duplicate filament.
+        mock_patch.assert_not_called()
+        mock_create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_still_matches_filament_named_material_plus_subtype(self, client):
+        """The composed-name shape (``"PLA Basic"`` matching a Spoolman filament
+        also named ``"PLA Basic"``) must keep working — the normalisation strips
+        the prefix on both sides, so the comparison is on the subtype part."""
+        existing = {
+            **SAMPLE_FILAMENT,
+            "id": 7,
+            "name": "PLA Basic",
+            "material": "PLA",
+            "color_hex": "FF0000",
+            "color_name": "Sunset",
+        }
+        with (
+            patch.object(client, "find_or_create_vendor", AsyncMock(return_value=3)),
+            patch.object(client, "get_filaments", AsyncMock(return_value=[existing])),
+            patch.object(client, "patch_filament", AsyncMock(return_value={"id": 7})),
+            patch.object(client, "create_filament", AsyncMock()) as mock_create,
+        ):
+            result = await client.find_or_create_filament(
+                "PLA", "Basic", "Bambu Lab", "FF0000", 1000, color_name="Sunset"
+            )
+        assert result == 7
+        mock_create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_name_match_does_not_cross_materials(self, client):
+        """Sanity check: a filament with name=subtype must NOT match a request
+        with a different material that happens to share the subtype string.
+        material_match runs first and fails, so the iteration moves on and
+        ``create_filament`` is called."""
+        existing = {
+            **SAMPLE_FILAMENT,
+            "id": 7,
+            "name": "Basic",
+            "material": "PETG",  # different material
+            "color_hex": "FF0000",
+        }
+        new_filament = {"id": 99, "name": "PLA Basic"}
+        with (
+            patch.object(client, "find_or_create_vendor", AsyncMock(return_value=3)),
+            patch.object(client, "get_filaments", AsyncMock(return_value=[existing])),
+            patch.object(client, "create_filament", AsyncMock(return_value=new_filament)) as mock_create,
+        ):
+            result = await client.find_or_create_filament(
+                "PLA", "Basic", "Bambu Lab", "FF0000", 1000, color_name="Sunset"
+            )
+        assert result == 99
+        mock_create.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_creates_filament_when_no_match(self, client):
         new_filament = {"id": 99, "name": "PETG Pro"}
         with (
@@ -332,12 +437,15 @@ class TestFindOrCreateFilament:
         ):
             result = await client.find_or_create_filament("PETG", "Pro", "Bambu Lab", "00FF00", 1000)
         assert result == 99
+        # color_name is intentionally not forwarded to create_filament (#1357):
+        # Spoolman has no such field on Filament, so passing it would be a
+        # no-op. The route persists color_name to spool.extra.bambu_color_name
+        # after this returns.
         mock_create.assert_called_once_with(
             name="PETG Pro",
             vendor_id=3,
             material="PETG",
             color_hex="00FF00",
-            color_name=None,
             weight=1000.0,
         )
 
@@ -368,7 +476,6 @@ class TestFindOrCreateFilament:
             vendor_id=None,
             material="ABS",
             color_hex="FF0000",
-            color_name=None,
             weight=750.0,
         )
 

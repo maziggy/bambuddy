@@ -116,6 +116,7 @@ async def test_engine():
         notification,
         notification_template,
         oidc_provider,
+        print_log,
         print_queue,
         printer,
         project,
@@ -504,10 +505,21 @@ def notification_provider_factory(db_session):
 
 @pytest.fixture
 def archive_factory(db_session):
-    """Factory to create test archives."""
+    """Factory to create test archives.
+
+    Also synthesizes one PrintLogEntry per archive (matching the production
+    flow where statistics are aggregated from PrintLogEntry, not PrintArchive,
+    per #1378). Pass ``with_run=False`` to skip — useful for testing the
+    "archived but never printed" state. Pass ``run_status=...`` to override
+    the run's status independently of the archive's status field.
+    """
 
     async def _create_archive(printer_id: int, **kwargs):
         from backend.app.models.archive import PrintArchive
+        from backend.app.models.print_log import PrintLogEntry
+
+        with_run = kwargs.pop("with_run", True)
+        run_status = kwargs.pop("run_status", None)
 
         defaults = {
             "printer_id": printer_id,
@@ -526,6 +538,34 @@ def archive_factory(db_session):
         db_session.add(archive)
         await db_session.commit()
         await db_session.refresh(archive)
+
+        if with_run:
+            duration = None
+            if archive.started_at and archive.completed_at:
+                duration = int((archive.completed_at - archive.started_at).total_seconds()) or None
+            run = PrintLogEntry(
+                archive_id=archive.id,
+                printer_id=archive.printer_id,
+                status=run_status or archive.status,
+                started_at=archive.started_at,
+                completed_at=archive.completed_at,
+                duration_seconds=duration,
+                filament_type=archive.filament_type,
+                filament_color=archive.filament_color,
+                filament_used_grams=archive.filament_used_grams,
+                cost=archive.cost,
+                energy_kwh=archive.energy_kwh,
+                energy_cost=archive.energy_cost,
+                failure_reason=archive.failure_reason,
+                print_name=archive.print_name,
+                created_by_id=archive.created_by_id,
+                # Sync the event's created_at with the archive's so date-range
+                # filtered tests that backdate an archive still find its event.
+                created_at=archive.created_at,
+            )
+            db_session.add(run)
+            await db_session.commit()
+
         return archive
 
     return _create_archive

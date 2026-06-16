@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import sys
+import time
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends
@@ -30,6 +31,61 @@ _update_status = {
     "message": "",
     "error": None,
 }
+
+# GitHub rate-limit backoff (#1420): when api.github.com returns 403 with
+# X-RateLimit-Remaining=0, refuse to retry until X-RateLimit-Reset (epoch
+# seconds). Falls back to a 1-hour pause if the header is absent. Prevents
+# the update checker from hammering GitHub once the unauthenticated quota
+# (60 req/hr per source IP) is exhausted.
+_GITHUB_RATE_LIMIT_FALLBACK_SECONDS = 3600
+_github_rate_limit_until: float = 0.0
+
+
+def _seconds_until_github_unblocked() -> float:
+    """Return seconds remaining until GitHub backoff lifts, or 0 if unblocked."""
+    remaining = _github_rate_limit_until - time.time()
+    return remaining if remaining > 0 else 0.0
+
+
+def _record_github_rate_limit(response: httpx.Response) -> None:
+    """Set the backoff window from a GitHub 403 response's headers."""
+    global _github_rate_limit_until
+    reset_header = response.headers.get("X-RateLimit-Reset")
+    reset_at: float | None = None
+    if reset_header:
+        try:
+            reset_at = float(reset_header)
+        except ValueError:
+            reset_at = None
+    if reset_at is None:
+        reset_at = time.time() + _GITHUB_RATE_LIMIT_FALLBACK_SECONDS
+    # Floor at a 60s minimum: protects against clock skew between the container
+    # and GitHub (parsed reset epoch in the past would otherwise leave us with
+    # no real backoff and we'd hammer GitHub again immediately).
+    reset_at = max(reset_at, time.time() + 60)
+    # Only extend the window — never shorten it via an out-of-order response.
+    if reset_at > _github_rate_limit_until:
+        _github_rate_limit_until = reset_at
+    logger.warning(
+        "GitHub rate limit hit; suppressing update checks for %.0fs (reset header=%s)",
+        _seconds_until_github_unblocked(),
+        reset_header,
+    )
+
+
+def _is_github_rate_limit_response(response: httpx.Response) -> bool:
+    """Detect a rate-limit response from GitHub (403/429 with Remaining=0)."""
+    if response.status_code not in (403, 429):
+        return False
+    remaining = response.headers.get("X-RateLimit-Remaining")
+    if remaining == "0":
+        return True
+    # Some proxies strip the header; fall back to body inspection.
+    try:
+        body = response.text or ""
+    except Exception:
+        body = ""
+    return "rate limit" in body.lower() or "API rate limit exceeded" in body
 
 
 def _is_docker_environment() -> bool:
@@ -125,12 +181,16 @@ def _parse_github_remote(url: str) -> tuple[str, str] | None:
     return (parts[0], parts[1])
 
 
-async def _origin_points_at_repo(git_path: str, git_config: list[str], base_dir, expected_repo: str) -> bool:
+async def _origin_points_at_repo(git_path: str, git_config: list[str], app_dir, expected_repo: str) -> bool:
     """Return True iff the working tree's `origin` already resolves to
     `<owner>/<repo>` matching `expected_repo` (e.g. "maziggy/bambuddy"),
     regardless of whether it's the SSH or HTTPS form. Used to skip the
     `git remote set-url origin https://...` rewrite when the developer's
-    SSH origin is already correct — see `_perform_update` for context."""
+    SSH origin is already correct — see `_perform_update` for context.
+
+    ``app_dir`` is the working tree (where ``.git`` lives), not the data
+    dir — see #1715 for the separate-mount layout that proved why this
+    must NOT be ``base_dir``."""
     try:
         process = await asyncio.create_subprocess_exec(
             git_path,
@@ -138,7 +198,7 @@ async def _origin_points_at_repo(git_path: str, git_config: list[str], base_dir,
             "remote",
             "get-url",
             "origin",
-            cwd=str(base_dir),
+            cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -287,6 +347,23 @@ async def check_for_updates(
     beta_setting = result.scalar_one_or_none()
     include_beta = beta_setting and beta_setting.value.lower() == "true"
 
+    # Short-circuit if we're still inside a GitHub rate-limit backoff window (#1420).
+    backoff_remaining = _seconds_until_github_unblocked()
+    if backoff_remaining > 0:
+        _update_status = {
+            "status": "error",
+            "progress": 0,
+            "message": "GitHub rate limit reached",
+            "error": "GitHub rate limit reached; retry later",
+        }
+        return {
+            "update_available": False,
+            "current_version": APP_VERSION,
+            "latest_version": None,
+            "error": "GitHub rate limit reached; retry later",
+            "retry_after_seconds": int(backoff_remaining),
+        }
+
     _update_status = {
         "status": "checking",
         "progress": 0,
@@ -301,6 +378,22 @@ async def check_for_updates(
                 headers={"Accept": "application/vnd.github.v3+json"},
                 timeout=10.0,
             )
+
+            if _is_github_rate_limit_response(response):
+                _record_github_rate_limit(response)
+                _update_status = {
+                    "status": "error",
+                    "progress": 0,
+                    "message": "GitHub rate limit reached",
+                    "error": "GitHub rate limit reached; retry later",
+                }
+                return {
+                    "update_available": False,
+                    "current_version": APP_VERSION,
+                    "latest_version": None,
+                    "error": "GitHub rate limit reached; retry later",
+                    "retry_after_seconds": int(_seconds_until_github_unblocked()),
+                }
 
             if response.status_code == 404:
                 # No releases yet
@@ -419,6 +512,10 @@ async def _discover_target_release(db: AsyncSession) -> str | None:
     beta_setting = result.scalar_one_or_none()
     include_beta = beta_setting and beta_setting.value.lower() == "true"
 
+    if _seconds_until_github_unblocked() > 0:
+        logger.warning("Skipping update target discovery: GitHub rate-limit backoff still active")
+        return None
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -426,6 +523,9 @@ async def _discover_target_release(db: AsyncSession) -> str | None:
                 headers={"Accept": "application/vnd.github.v3+json"},
                 timeout=10.0,
             )
+            if _is_github_rate_limit_response(response):
+                _record_github_rate_limit(response)
+                return None
             response.raise_for_status()
             releases = response.json()
     except (httpx.HTTPError, ValueError) as exc:
@@ -459,7 +559,16 @@ async def _perform_update(target_ref: str):
     global _update_status
 
     try:
-        base_dir = settings.base_dir
+        # Every git step runs against the working tree (app_dir), NOT base_dir.
+        # On a standard install with DATA_DIR=INSTALL_PATH/data, git happens
+        # to walk up from a subdirectory of the repo to find .git so cwd=base_dir
+        # used to silently work — but only by accident. On a native install with
+        # DATA_DIR mounted at an unrelated path (e.g. /srv/bambuddy/data while
+        # the install is /opt/bambuddy — see #1715), git can't walk up and every
+        # operation fails with "not a git repository". safe.directory has the
+        # same requirement: it must equal the repo root git discovers, not the
+        # data dir, or every call returns "fatal: detected dubious ownership."
+        app_dir = settings.app_dir
 
         # Find git executable (may not be in PATH when running as systemd service)
         git_path = _find_executable("git")
@@ -474,8 +583,9 @@ async def _perform_update(target_ref: str):
 
         logger.info("Using git at: %s", git_path)
 
-        # Git config to avoid safe.directory issues
-        git_config = ["-c", f"safe.directory={base_dir}"]
+        # Git config to avoid safe.directory issues — must point at the working
+        # tree (where .git lives), see app_dir comment above.
+        git_config = ["-c", f"safe.directory={app_dir}"]
 
         _update_status = {
             "status": "downloading",
@@ -497,7 +607,7 @@ async def _perform_update(target_ref: str):
         # correct repo are preserved; only missing / wrong / corrupted
         # origins get reset to HTTPS.
         https_url = f"https://github.com/{GITHUB_REPO}.git"
-        if not await _origin_points_at_repo(git_path, git_config, base_dir, GITHUB_REPO):
+        if not await _origin_points_at_repo(git_path, git_config, app_dir, GITHUB_REPO):
             process = await asyncio.create_subprocess_exec(
                 git_path,
                 *git_config,
@@ -505,7 +615,7 @@ async def _perform_update(target_ref: str):
                 "set-url",
                 "origin",
                 https_url,
-                cwd=str(base_dir),
+                cwd=str(app_dir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -523,14 +633,23 @@ async def _perform_update(target_ref: str):
         # locally resolvable for the reset below. `--tags` is required —
         # plain `git fetch origin` doesn't bring tags by default, so a
         # release tag would not be resolvable.
+        #
+        # `--force` lets a moved tag on the remote overwrite the local copy.
+        # Without it, any tag that was re-tagged upstream (e.g. v0.2.1 being
+        # re-pointed after a hotfix re-tag) makes `git fetch --tags` return
+        # a non-zero exit even though every other ref fetched cleanly —
+        # which we'd then surface as "Failed to fetch updates" to the user.
+        # The in-app updater's contract is "sync me to the remote"; force-
+        # overwriting a stale local tag matches that intent.
         process = await asyncio.create_subprocess_exec(
             git_path,
             *git_config,
             "fetch",
             "--prune",
             "--tags",
+            "--force",
             "origin",
-            cwd=str(base_dir),
+            cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -566,7 +685,7 @@ async def _perform_update(target_ref: str):
             "reset",
             "--hard",
             target_ref,
-            cwd=str(base_dir),
+            cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -591,12 +710,9 @@ async def _perform_update(target_ref: str):
         }
 
         # Install Python dependencies — must run from the source-code directory
-        # (where requirements.txt lives), not the data dir. On native installs
-        # systemd sets DATA_DIR=INSTALL_PATH/data, so `base_dir` is the data dir,
-        # not the working tree. `git reset` above worked from base_dir because
-        # git walks up looking for .git, but `pip install -r requirements.txt`
-        # needs the file in cwd literally.
-        app_dir = settings.app_dir
+        # (where requirements.txt lives). app_dir is already resolved at the top
+        # of this function; see the comment there for why every step uses it
+        # instead of base_dir.
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-m",

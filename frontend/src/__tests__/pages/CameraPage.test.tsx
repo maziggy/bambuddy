@@ -44,15 +44,15 @@ function renderCameraPage(printerId: number, search = '') {
     <QueryClientProvider client={queryClient}>
       <I18nextProvider i18n={i18n}>
         <MemoryRouter initialEntries={[`/cameras/${printerId}${search}`]}>
-          <ThemeProvider>
-            <AuthProvider>
+          <AuthProvider>
+            <ThemeProvider>
               <ToastProvider>
                 <Routes>
                   <Route path="/cameras/:printerId" element={<CameraPage />} />
                 </Routes>
               </ToastProvider>
-            </AuthProvider>
-          </ThemeProvider>
+            </ThemeProvider>
+          </AuthProvider>
         </MemoryRouter>
       </I18nextProvider>
     </QueryClientProvider>
@@ -124,6 +124,17 @@ describe('CameraPage', () => {
       await waitFor(() => {
         expect(document.body).toBeInTheDocument();
       });
+    });
+
+    it('shows the camera diagnostic (stethoscope) button in the control bar (#1395)', async () => {
+      // The diagnostic shipped wired into the embedded viewer only; window mode
+      // (this page) was missing it. The control-bar button must be present here.
+      renderCameraPage(1);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+      expect(screen.getByTitle('Diagnose')).toBeInTheDocument();
     });
   });
 

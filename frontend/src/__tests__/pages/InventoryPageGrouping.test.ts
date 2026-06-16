@@ -10,6 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { InventorySpool, SpoolAssignment } from '../../api/client';
+import { aggregateGroupSpool } from '../../utils/inventoryGrouping';
 
 // Replicate the grouping key function from InventoryPage (not exported).
 // Must stay in lockstep with InventoryPage.tsx::spoolGroupKey — extra_colors
@@ -289,5 +290,52 @@ describe('computeDisplayItems', () => {
   it('returns empty array for empty input', () => {
     const items = computeDisplayItems([], {});
     expect(items).toHaveLength(0);
+  });
+});
+
+describe('aggregateGroupSpool (#1368)', () => {
+  it('sums label_weight, weight_used and core_weight across members', () => {
+    const agg = aggregateGroupSpool([
+      makeSpool({ id: 1, label_weight: 1000, weight_used: 200, core_weight: 250 }),
+      makeSpool({ id: 2, label_weight: 1000, weight_used: 50, core_weight: 250 }),
+      makeSpool({ id: 3, label_weight: 1000, weight_used: 0, core_weight: 250 }),
+    ]);
+    expect(agg.label_weight).toBe(3000);
+    expect(agg.weight_used).toBe(250);
+    expect(agg.core_weight).toBe(750);
+  });
+
+  it('aggregate remaining equals the sum of per-member remaining', () => {
+    const members = [
+      makeSpool({ id: 1, label_weight: 1000, weight_used: 200 }), // 800
+      makeSpool({ id: 2, label_weight: 1000, weight_used: 600 }), // 400
+    ];
+    const agg = aggregateGroupSpool(members);
+    const perMember = members.reduce(
+      (sum, s) => sum + Math.max(0, s.label_weight - s.weight_used),
+      0,
+    );
+    expect(agg.label_weight - agg.weight_used).toBe(perMember);
+    expect(agg.label_weight - agg.weight_used).toBe(1200);
+  });
+
+  it('carries identity fields from the first member', () => {
+    const agg = aggregateGroupSpool([
+      makeSpool({ id: 7, material: 'PETG', brand: 'Bambu Lab', color_name: 'Blue', rgba: '0000FFFF' }),
+      makeSpool({ id: 8, material: 'PETG', brand: 'Bambu Lab', color_name: 'Blue', rgba: '0000FFFF' }),
+    ]);
+    expect(agg.id).toBe(7);
+    expect(agg.material).toBe('PETG');
+    expect(agg.brand).toBe('Bambu Lab');
+    expect(agg.color_name).toBe('Blue');
+  });
+
+  it('returns a member equivalent for a single-element group', () => {
+    const agg = aggregateGroupSpool([
+      makeSpool({ id: 1, label_weight: 750, weight_used: 100, core_weight: 200 }),
+    ]);
+    expect(agg.label_weight).toBe(750);
+    expect(agg.weight_used).toBe(100);
+    expect(agg.core_weight).toBe(200);
   });
 });

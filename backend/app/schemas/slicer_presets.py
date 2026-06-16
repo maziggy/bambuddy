@@ -31,13 +31,23 @@ class UnifiedPreset(BaseModel):
     the multi-color flow by matching against the source 3MF's per-slot type
     and color. Populated when the underlying preset JSON exposes them; left
     as ``None`` on bundled profiles where colour is a runtime spool attribute.
+
+    ``compatible_printers`` is the slicer's own list of printer-preset names a
+    process / filament preset declares itself valid for. Populated for the
+    local tier (stored at import time); left ``None`` for cloud (no per-preset
+    detail is fetched — rate limits) and standard (the sidecar's bundled
+    listing doesn't expose it). The SliceModal uses it to filter the
+    process / filament dropdowns by the selected printer (#1325); when it is
+    ``None`` the modal falls back to the user's uploaded Slicer Bundles, which
+    map each printer to the presets it ships.
     """
 
     id: str
     name: str
-    source: Literal["cloud", "local", "standard"]
+    source: Literal["orca_cloud", "cloud", "local", "standard"]
     filament_type: str | None = None
     filament_colour: str | None = None
+    compatible_printers: list[str] | None = None
 
 
 class UnifiedPresetsBySlot(BaseModel):
@@ -49,19 +59,24 @@ class UnifiedPresetsBySlot(BaseModel):
 
 
 class UnifiedPresetsResponse(BaseModel):
-    """Each tier carries only the names that didn't appear in a higher tier.
+    """Every tier carries its full preset list — no cross-tier dedup.
 
-    Cloud is the highest priority (user's personal customisations win), then
-    the local imports the user explicitly curated, then the slicer's stock
-    fallback. A name that appears in cloud is filtered out of local and
-    standard; a name that appears in local is filtered out of standard.
+    Priority order: ``local > orca_cloud > cloud > standard``. The order
+    drives auto-pick (first non-empty tier wins, name-lookup walks tiers
+    in this order, filament scoring tiebreaks by per-tier bonus) and
+    determines the visual rendering order of the SliceModal's optgroups,
+    but a name that exists in multiple tiers appears in EACH of their
+    groups so the user can pick any source.
 
-    ``cloud_status`` lets the frontend show a banner explaining why the cloud
-    tier is empty when the user expected to see it (signed out / token
-    expired / network down).
+    ``cloud_status`` / ``orca_cloud_status`` let the frontend show a banner
+    explaining why a cloud tier is empty when the user expected to see it
+    (signed out / token expired / network down). Each tier has its own
+    status because they can fail independently.
     """
 
+    orca_cloud: UnifiedPresetsBySlot = UnifiedPresetsBySlot()
     cloud: UnifiedPresetsBySlot = UnifiedPresetsBySlot()
     local: UnifiedPresetsBySlot = UnifiedPresetsBySlot()
     standard: UnifiedPresetsBySlot = UnifiedPresetsBySlot()
     cloud_status: CloudStatus = "ok"
+    orca_cloud_status: CloudStatus = "ok"

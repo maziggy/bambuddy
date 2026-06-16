@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
+from backend.app.api.routes.spoolman_inventory import _clear_stale_tag_links
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -178,8 +179,9 @@ async def sync_printer_ams(
 ):
     """Sync AMS data from a specific printer to Spoolman."""
     # Check if Spoolman is enabled and connected
+    # disable_weight_sync is deprecated (#1119); weight comes from per-print tracking.
     sm = await get_spoolman_settings(db)
-    enabled, url, disable_weight_sync = sm["enabled"], sm["url"], sm["disable_weight_sync"]
+    enabled, url = sm["enabled"], sm["url"]
     if not enabled:
         raise HTTPException(status_code=400, detail="Spoolman integration is not enabled")
 
@@ -318,7 +320,9 @@ async def sync_printer_ams(
                 sync_result = await client.sync_ams_tray(
                     tray,
                     printer.name,
-                    disable_weight_sync=disable_weight_sync,
+                    # Per-print tracking owns weight updates (#1119); manual sync
+                    # only refreshes spool metadata + slot assignments here.
+                    disable_weight_sync=True,
                     cached_spools=cached_spools,
                     inventory_remaining=inv_remaining,
                     spoolman_spool_id_hint=hint,
@@ -394,8 +398,9 @@ async def sync_all_printers(
 ):
     """Sync AMS data from all connected printers to Spoolman."""
     # Check if Spoolman is enabled
+    # disable_weight_sync is deprecated (#1119); weight comes from per-print tracking.
     sm = await get_spoolman_settings(db)
-    enabled, url, disable_weight_sync = sm["enabled"], sm["url"], sm["disable_weight_sync"]
+    enabled, url = sm["enabled"], sm["url"]
     if not enabled:
         raise HTTPException(status_code=400, detail="Spoolman integration is not enabled")
 
@@ -517,7 +522,9 @@ async def sync_all_printers(
                     sync_result = await client.sync_ams_tray(
                         tray,
                         printer.name,
-                        disable_weight_sync=disable_weight_sync,
+                        # Per-print tracking owns weight updates (#1119); manual
+                        # sync-all only refreshes spool metadata + slot assignments.
+                        disable_weight_sync=True,
                         cached_spools=cached_spools,
                         inventory_remaining=inv_remaining,
                         spoolman_spool_id_hint=hint,
@@ -648,7 +655,7 @@ async def get_unlinked_spools(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_READ),
 ):
-    """Get all Spoolman spools that don't have a tag (not linked to AMS)."""
+    """Get all Spoolman spools not currently assigned to an AMS slot."""
     sm = await get_spoolman_settings(db)
     enabled, url = sm["enabled"], sm["url"]
     if not enabled:
@@ -665,27 +672,34 @@ async def get_unlinked_spools(
         raise HTTPException(status_code=503, detail="Spoolman is not reachable")
 
     spools = await client.get_spools()
-    unlinked = []
 
+    # A spool is "assignable" iff it does not currently occupy an AMS slot.
+    # Assignability is decided by the spoolman_slot_assignments ledger — NOT by
+    # the presence of extra.tag. extra.tag is only an RFID/NFC matching key, and
+    # OpenSpoolman writes its own NFC tag value into that same field (#1122);
+    # treating any non-empty extra.tag as "linked" hid every OpenSpoolman-tagged
+    # spool from this picker even when it occupied no slot. Both link_spool and
+    # the AMS auto-sync upsert a row here for every occupied slot, so the ledger
+    # is a complete record of what is actually assigned.
+    assigned_result = await db.execute(select(SpoolmanSlotAssignment.spoolman_spool_id))
+    assigned_spool_ids = set(assigned_result.scalars().all())
+
+    unlinked = []
     for spool in spools:
-        # Check if spool has a tag in extra field
-        extra = spool.get("extra", {}) or {}
-        tag = extra.get("tag", "")
-        # Remove quotes if present (JSON encoded string) and check if empty
-        clean_tag = tag.strip('"') if tag else ""
-        if not clean_tag:
-            filament = spool.get("filament", {}) or {}
-            unlinked.append(
-                UnlinkedSpool(
-                    id=spool["id"],
-                    filament_name=filament.get("name"),
-                    filament_vendor=(filament.get("vendor") or {}).get("name"),
-                    filament_material=filament.get("material"),
-                    filament_color_hex=filament.get("color_hex"),
-                    remaining_weight=spool.get("remaining_weight"),
-                    location=spool.get("location"),
-                )
+        if spool["id"] in assigned_spool_ids:
+            continue
+        filament = spool.get("filament", {}) or {}
+        unlinked.append(
+            UnlinkedSpool(
+                id=spool["id"],
+                filament_name=filament.get("name"),
+                filament_vendor=(filament.get("vendor") or {}).get("name"),
+                filament_material=filament.get("material"),
+                filament_color_hex=filament.get("color_hex"),
+                remaining_weight=spool.get("remaining_weight"),
+                location=spool.get("location"),
             )
+        )
 
     return unlinked
 
@@ -835,6 +849,21 @@ async def link_spool(
             ) from e
 
     logger.info("Linked Spoolman spool %s to tag %s", spool_id, spool_tag)
+
+    # #1457: clear stale tag links on OTHER spools still claiming this exact tag.
+    # A given AMS-slot tag (RFID or deterministic fallback) belongs to one
+    # physical spool; without this cleanup the previous holder's extra.tag
+    # keeps it visible in the hover card / fill-level lookup.
+    await _clear_stale_tag_links(
+        client,
+        tag=spool_tag,
+        keep_spool_id=spool_id,
+        log_context=(
+            f"printer={printer_context[0]} ams={printer_context[1]} tray={printer_context[2]}"
+            if printer_context
+            else "via /spools/{id}/link"
+        ),
+    )
 
     # Auto-configure AMS slot via MQTT (best-effort; tag link and slot assignment already persisted)
     if printer_context:

@@ -1319,7 +1319,7 @@ class TestEncryptLegacyMigration:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_init_db_propagates_unexpected_migration_error(self, monkeypatch):
+    async def test_init_db_propagates_unexpected_migration_error(self, monkeypatch, tmp_path):
         """B3: an unexpected error from _migrate_encrypt_legacy_secrets must
         surface (re-raise) instead of being silently swallowed.
 
@@ -1331,7 +1331,27 @@ class TestEncryptLegacyMigration:
         rather than poking the inner read phase, because that is the contract
         boundary the rest of the codebase relies on (init_db -> migration).
         """
+        from sqlalchemy import event
+        from sqlalchemy.ext.asyncio import create_async_engine
+
         import backend.app.core.database as db_mod
+        from backend.app.core.config import settings
+
+        # init_db() uses the module-level `engine`, which was bound at import
+        # time to settings.database_url — that resolves to the real shared
+        # bambuddy.db at the project root (or, when DATABASE_URL is set, the
+        # configured Postgres). The autouse DATA_DIR fixture runs too late to
+        # influence either. Letting this test write to that real DB makes it
+        # (a) non-hermetic and (b) flake under `-n 30` with "database is
+        # locked" when two workers race on the file. Substitute an isolated
+        # per-test SQLite engine — and override settings.database_url for
+        # this test so the is_sqlite() / is_postgres() dialect guards inside
+        # run_migrations pick the SQLite path against this engine.
+        test_db_url = f"sqlite+aiosqlite:///{tmp_path / 'init_db_test.db'}"
+        test_engine = create_async_engine(test_db_url, echo=False)
+        event.listen(test_engine.sync_engine, "connect", db_mod._set_sqlite_pragmas)
+        monkeypatch.setattr(db_mod, "engine", test_engine)
+        monkeypatch.setattr(settings, "database_url", test_db_url)
 
         async def boom():
             raise RuntimeError("simulated startup-fatal failure")
@@ -1346,8 +1366,11 @@ class TestEncryptLegacyMigration:
         monkeypatch.setattr(db_mod, "seed_spool_catalog", lambda: _noop_async())
         monkeypatch.setattr(db_mod, "seed_color_catalog", lambda: _noop_async())
 
-        with pytest.raises(RuntimeError, match="simulated startup-fatal failure"):
-            await db_mod.init_db()
+        try:
+            with pytest.raises(RuntimeError, match="simulated startup-fatal failure"):
+                await db_mod.init_db()
+        finally:
+            await test_engine.dispose()
 
 
 async def _noop_async():
@@ -1571,8 +1594,19 @@ class TestEncryptionStatusEndpoint:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_status_returns_500_on_db_error(self, async_client, monkeypatch):
-        """A8: SQLAlchemyError during count queries → 500 with static message."""
+    async def test_status_returns_503_on_db_error(self, async_client, monkeypatch):
+        """A8: a DB failure during the request must NOT leak internal detail
+        and must NOT silently succeed.
+
+        Post-GHSA-6mf4-q26m-47pv: the auth middleware's ``is_auth_enabled``
+        probe runs its own DB query before the route is dispatched. Patching
+        ``AsyncSession.execute`` to raise now trips the middleware first and
+        the request fails closed with 503 — a stronger guarantee than the
+        previous route-level 500, because under the old fail-open the
+        middleware would have proceeded to dispatch the route unauthenticated.
+        Either status would be acceptable; the assertion here pins the
+        defense-in-depth posture (request denied, no leak).
+        """
         from unittest.mock import AsyncMock
 
         from sqlalchemy.exc import SQLAlchemyError
@@ -1585,8 +1619,11 @@ class TestEncryptionStatusEndpoint:
         monkeypatch.setattr("sqlalchemy.ext.asyncio.AsyncSession.execute", AsyncMock(side_effect=_raise))
 
         resp = await async_client.get(self.STATUS_URL, headers={"Authorization": f"Bearer {token}"})
-        assert resp.status_code == 500
-        assert "encryption status" in resp.json().get("detail", "").lower()
+        assert resp.status_code in (500, 503)
+        # Either layer's error message must not leak the SQLAlchemy details.
+        body = resp.json().get("detail", "").lower()
+        assert "simulated" not in body
+        assert "sqlalchemy" not in body
 
     @pytest.mark.asyncio
     @pytest.mark.integration

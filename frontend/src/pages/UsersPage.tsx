@@ -11,6 +11,7 @@ import { Button } from '../components/Button';
 import { Card, CardContent, CardHeader } from '../components/Card';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { CreateUserAdvancedAuthModal } from '../components/CreateUserAdvancedAuthModal';
+import { LdapUserPicker } from '../components/LdapUserPicker';
 
 interface FormData extends UserCreate {
   group_ids: number[];
@@ -25,6 +26,9 @@ export function UsersPage() {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [showCreateModal, setShowCreateModal] = useState(false);
+  // Basic-mode (non-advanced-auth) modal: track which tab is active so the
+  // LDAP picker can replace the local form when LDAP is enabled.
+  const [basicCreateTab, setBasicCreateTab] = useState<'local' | 'ldap'>('local');
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [deleteUserId, setDeleteUserId] = useState<number | null>(null);
@@ -43,12 +47,19 @@ export function UsersPage() {
     queryFn: () => api.getAdvancedAuthStatus(),
   });
 
+  // LDAP status — drives whether the LDAP tab is rendered in the create modal.
+  const { data: ldapStatus = { ldap_enabled: false, ldap_configured: false } } = useQuery({
+    queryKey: ['ldapStatus'],
+    queryFn: () => api.getLDAPStatus(),
+  });
+
   // Close modal on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (showCreateModal) {
           setShowCreateModal(false);
+          setBasicCreateTab('local');
           setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
         }
         if (showEditModal) {
@@ -413,6 +424,7 @@ export function UsersPage() {
           className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
           onClick={() => {
             setShowCreateModal(false);
+            setBasicCreateTab('local');
             setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
           }}
         >
@@ -431,6 +443,7 @@ export function UsersPage() {
                   size="sm"
                   onClick={() => {
                     setShowCreateModal(false);
+                    setBasicCreateTab('local');
                     setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
                   }}
                 >
@@ -439,6 +452,66 @@ export function UsersPage() {
               </div>
             </CardHeader>
             <CardContent>
+              {ldapStatus?.ldap_enabled && (
+                <div
+                  className="mb-4 flex items-center gap-1 p-1 bg-bambu-dark-secondary rounded-lg"
+                  role="tablist"
+                  aria-label={t('users.modal.tabsAriaLabel')}
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={basicCreateTab === 'local'}
+                    onClick={() => setBasicCreateTab('local')}
+                    className={`flex-1 px-3 py-2 text-sm rounded-md transition-colors ${
+                      basicCreateTab === 'local'
+                        ? 'bg-bambu-green/15 text-bambu-green'
+                        : 'text-bambu-gray hover:text-white'
+                    }`}
+                  >
+                    {t('users.modal.localTab')}
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={basicCreateTab === 'ldap'}
+                    onClick={() => setBasicCreateTab('ldap')}
+                    className={`flex-1 px-3 py-2 text-sm rounded-md transition-colors ${
+                      basicCreateTab === 'ldap'
+                        ? 'bg-bambu-green/15 text-bambu-green'
+                        : 'text-bambu-gray hover:text-white'
+                    }`}
+                  >
+                    {t('users.modal.ldapTab')}
+                  </button>
+                </div>
+              )}
+
+              {basicCreateTab === 'ldap' && ldapStatus?.ldap_enabled ? (
+                <>
+                  <LdapUserPicker
+                    onSuccess={(user) => {
+                      setShowCreateModal(false);
+                      setBasicCreateTab('local');
+                      setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+                      showToast(t('users.toast.ldapProvisioned', { username: user.username }));
+                    }}
+                  />
+                  <div className="mt-6 flex justify-end">
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setShowCreateModal(false);
+                        setBasicCreateTab('local');
+                        setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+                      }}
+                    >
+                      {t('users.modal.cancel')}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+              <>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
@@ -543,6 +616,8 @@ export function UsersPage() {
                   )}
                 </Button>
               </div>
+              </>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -561,6 +636,12 @@ export function UsersPage() {
           onCreate={handleCreate}
           isCreating={createMutation.isPending}
           isCreateButtonDisabled={isCreateButtonDisabled}
+          ldapEnabled={ldapStatus?.ldap_enabled}
+          onLdapProvisioned={(user) => {
+            setShowCreateModal(false);
+            setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+            showToast(t('users.toast.ldapProvisioned', { username: user.username }));
+          }}
         />
       )}
 

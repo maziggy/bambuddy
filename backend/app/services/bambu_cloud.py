@@ -14,6 +14,68 @@ logger = logging.getLogger(__name__)
 BAMBU_API_BASE = "https://api.bambulab.com"
 BAMBU_API_BASE_CN = "https://api.bambulab.cn"
 
+# Client identity sent to Bambu Lab's cloud services. We identify honestly as
+# Bambuddy — the URL in parens makes the source unambiguous so Bambu can
+# distinguish our traffic from impersonators. This is the opposite of what the
+# OrcaSlicer fork was called out for in the May 2026 Bambu Lab blog post
+# ("Setting the record straight on cloud access and community"): we do not
+# introduce ourselves as official Bambu Studio.
+_USER_AGENT = "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)"
+
+# Cloudflare protection on Bambu Lab's edge intermittently returns interstitials /
+# challenges instead of the JSON the API normally produces (issue #1575). The
+# parse error that results is opaque — these helpers detect the CF markers so
+# we can surface an actionable message instead of "Invalid response from Bambu Cloud".
+_CF_INTERSTITIAL_USER_MESSAGE = (
+    "Bambu Cloud is temporarily blocking automated requests from your network. "
+    "This is a Cloudflare protection on Bambu Lab's side, not a Bambuddy issue. "
+    "Please wait a few minutes and try again. If it persists, signing in to "
+    "bambulab.com once from a browser on the same network usually clears the "
+    "challenge."
+)
+
+
+def _detect_cloudflare_challenge(response) -> str | None:
+    """Return a user-actionable message when the response is a Cloudflare
+    challenge / mitigation page instead of the JSON the API normally returns.
+
+    Triggers on any of:
+      - body contains "Just a moment..." (CF interactive challenge title)
+      - body contains "challenges.cloudflare.com" (CF turnstile widget src)
+      - HTTP 403 with a "cf-mitigated" response header (CF blocked)
+      - HTTP 503 with a "cf-ray" response header (CF Under Attack mode)
+
+    Returns None when the response doesn't look like a CF challenge — callers
+    fall through to their existing error path.
+    """
+    try:
+        body = response.text or ""
+    except Exception:
+        body = ""
+    if "Just a moment..." in body or "challenges.cloudflare.com" in body:
+        return _CF_INTERSTITIAL_USER_MESSAGE
+    try:
+        status = int(getattr(response, "status_code", 0) or 0)
+    except (TypeError, ValueError):
+        status = 0
+    headers = getattr(response, "headers", {}) or {}
+    if status == 403 and "cf-mitigated" in headers:
+        return _CF_INTERSTITIAL_USER_MESSAGE
+    if status == 503 and "cf-ray" in headers:
+        return _CF_INTERSTITIAL_USER_MESSAGE
+    return None
+
+
+# The `/v1/iot-service/api/slicer/setting` endpoint requires a `version` query
+# parameter in the XX.YY.ZZ.WW format Bambu Studio releases use (without it the
+# API returns HTTP 400 "field 'version' is not set"; non-matching formats like
+# "bambuddy-1.0" return HTTP 422 "Invalid input parameters"). However, Bambu's
+# server accepts ANY value within that format — it doesn't validate against a
+# release manifest. We therefore use a neutral "1.0.0.0" placeholder that does
+# not impersonate any real Bambu Studio release. Our client identity is in the
+# User-Agent header.
+_SLICER_API_VERSION = "1.0.0.0"
+
 
 class BambuCloudError(Exception):
     """Base exception for Bambu Cloud errors."""
@@ -74,7 +136,7 @@ class BambuCloudService:
         """Get headers for authenticated requests."""
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": "Bambuddy/1.0",
+            "User-Agent": _USER_AGENT,
         }
         if self.access_token:
             headers["Authorization"] = f"Bearer {self.access_token}"
@@ -96,7 +158,16 @@ class BambuCloudService:
                 },
             )
 
-            data = response.json()
+            try:
+                data = response.json()
+            except Exception as json_err:
+                logger.error("Failed to parse login response: %s, body: %s", json_err, response.text[:500])
+                cf_message = _detect_cloudflare_challenge(response)
+                return {
+                    "success": False,
+                    "needs_verification": False,
+                    "message": cf_message or "Invalid response from Bambu Cloud",
+                }
             logger.debug(
                 f"Login response: status={response.status_code}, loginType={data.get('loginType')}, hasTfaKey={'tfaKey' in data}"
             )
@@ -152,7 +223,12 @@ class BambuCloudService:
                 },
             )
 
-            data = response.json()
+            try:
+                data = response.json()
+            except Exception as json_err:
+                logger.error("Failed to parse email-verify response: %s, body: %s", json_err, response.text[:500])
+                cf_message = _detect_cloudflare_challenge(response)
+                return {"success": False, "message": cf_message or "Invalid response from Bambu Cloud"}
             logger.debug("Email verify response: status=%s, hasToken=%s", response.status_code, "accessToken" in data)
 
             if response.status_code == 200 and "accessToken" in data:
@@ -174,24 +250,25 @@ class BambuCloudService:
             code: 6-digit TOTP code from authenticator app
         """
         try:
-            # TFA endpoint is on bambulab.com, NOT api.bambulab.com
-            # Requires browser-like headers to bypass Cloudflare
+            # TFA endpoint is on bambulab.com, NOT api.bambulab.com.
+            # We previously sent a Chrome User-Agent plus Origin/Referer headers
+            # under the assumption Cloudflare would block bot-identified
+            # requests. Verified 2026-05-12 via curl that the endpoint accepts
+            # honest "Bambuddy/X.Y.Z" identification cleanly (HTTP 400 with the
+            # expected application-level "Login failed" JSON, no Cloudflare
+            # interstitial). Browser-impersonation removed to stay clearly on
+            # the right side of Bambu Lab's "no falsified client identity" line.
             tfa_url = "https://bambulab.com/api/sign-in/tfa"
             if "bambulab.cn" in self.base_url:
                 tfa_url = "https://bambulab.cn/api/sign-in/tfa"
 
-            browser_headers = {
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "application/json, text/plain, */*",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Origin": "https://bambulab.com",
-                "Referer": "https://bambulab.com/",
-            }
-
             response = await self._client.post(
                 tfa_url,
-                headers=browser_headers,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": _USER_AGENT,
+                    "Accept": "application/json",
+                },
                 json={
                     "tfaKey": tfa_key,
                     "tfaCode": code,
@@ -211,7 +288,8 @@ class BambuCloudService:
                 data = response.json()
             except Exception as json_err:
                 logger.error("Failed to parse TOTP response: %s, body: %s", json_err, response.text[:500])
-                return {"success": False, "message": "Invalid response from Bambu Cloud"}
+                cf_message = _detect_cloudflare_challenge(response)
+                return {"success": False, "message": cf_message or "Invalid response from Bambu Cloud"}
 
             # Token might be in accessToken, token field, or cookies
             access_token = data.get("accessToken") or data.get("token")
@@ -281,12 +359,16 @@ class BambuCloudService:
         except httpx.RequestError as e:
             raise BambuCloudError(f"Request failed: {e}")
 
-    async def get_slicer_settings(self, version: str = "02.04.00.70") -> dict:
+    async def get_slicer_settings(self, version: str = _SLICER_API_VERSION) -> dict:
         """
         Get all slicer settings (filament, printer, process presets).
 
         Args:
-            version: Slicer version string
+            version: Slicer version string. Bambu's API requires the XX.YY.ZZ.WW
+                format but does not validate against a release manifest — we
+                default to the neutral _SLICER_API_VERSION placeholder so we
+                never claim to be a specific Bambu Studio build. Callers should
+                normally use the default.
         """
         if not self.is_authenticated:
             raise BambuCloudAuthError("Not authenticated")

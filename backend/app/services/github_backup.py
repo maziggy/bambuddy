@@ -76,8 +76,8 @@ class GitHubBackupService:
                 await self._check_scheduled_backups()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                logger.error("Error in GitHub backup scheduler: %s", e)
+            except Exception:
+                logger.exception("Error in GitHub backup scheduler")
                 await asyncio.sleep(60)
 
     async def _check_scheduled_backups(self):
@@ -141,6 +141,51 @@ class GitHubBackupService:
                 if not config.enabled:
                     return {"success": False, "message": "Backup is disabled", "log_id": None}
 
+                # Defense in depth: re-verify the repo is private before each
+                # push. The save endpoint already enforces this on every config
+                # change, but a user can flip a repo from private to public in
+                # GitHub's UI between configuration and the next scheduled run.
+                test_result = await self.test_connection(
+                    config.repository_url, config.access_token, provider=config.provider
+                )
+                if not test_result.get("success") or test_result.get("is_private") is not True:
+                    visibility_note = (
+                        "the target repository is no longer private"
+                        if test_result.get("is_private") is False
+                        else "could not confirm the target repository is private"
+                    )
+                    abort_message = (
+                        f"Backup aborted: {visibility_note}. Bambuddy backups carry credentials "
+                        "and are refused for any non-private target. Make the repository private "
+                        "to resume scheduled backups."
+                    )
+                    log = GitHubBackupLog(
+                        config_id=config_id,
+                        status="failed",
+                        trigger=trigger,
+                        completed_at=datetime.now(timezone.utc),
+                        error_message=abort_message,
+                    )
+                    db.add(log)
+                    config.last_backup_at = datetime.now(timezone.utc)
+                    config.last_backup_status = "failed"
+                    config.last_backup_message = abort_message
+                    if config.schedule_enabled:
+                        config.next_scheduled_run = self.calculate_next_run(config.schedule_type)
+                    await db.commit()
+                    await db.refresh(log)
+                    logger.warning(
+                        "Backup aborted for config %s: repo not private (is_private=%r, success=%r)",
+                        config_id,
+                        test_result.get("is_private"),
+                        test_result.get("success"),
+                    )
+                    return {
+                        "success": False,
+                        "message": abort_message,
+                        "log_id": log.id,
+                    }
+
                 # Create log entry
                 log = GitHubBackupLog(config_id=config_id, status="running", trigger=trigger)
                 db.add(log)
@@ -202,7 +247,7 @@ class GitHubBackupService:
                     }
 
                 except Exception as e:
-                    logger.error("Backup failed: %s", e)
+                    logger.exception("Backup failed")
                     log.status = "failed"
                     log.completed_at = datetime.now(timezone.utc)
                     log.error_message = str(e)
@@ -381,12 +426,14 @@ class GitHubBackupService:
                 }
 
             logger.info(
-                f"Collected cloud profiles: {len(filament_settings)} filament, "
-                f"{len(printer_settings)} printer, {len(process_settings)} process"
+                "Collected cloud profiles: %d filament, %d printer, %d process",
+                len(filament_settings),
+                len(printer_settings),
+                len(process_settings),
             )
 
-        except Exception as e:
-            logger.warning("Failed to collect cloud profiles: %s", e)
+        except Exception:
+            logger.warning("Failed to collect cloud profiles", exc_info=True)
         finally:
             await cloud.close()
 

@@ -43,11 +43,16 @@ MAKERWORLD_CDN_HOSTS = ("makerworld.bblmw.com", "public-cdn.bblmw.com")
 # Pr0zak/YASTL#52. The suffix check matches any regional S3 endpoint.
 _ALLOWED_DOWNLOAD_SUFFIXES = (".amazonaws.com",)
 
-# Browser-like headers. ``api.bambulab.com`` accepts minimal headers cleanly;
-# the Referer is kept so MakerWorld origin checks don't fail anywhere the
-# same client hits ``makerworld.com``.
+# Client identity sent to MakerWorld / api.bambulab.com. We identify honestly
+# as Bambuddy with a source URL so Bambu can distinguish our traffic from
+# impersonators — the opposite of what the OrcaSlicer fork was called out for
+# in the May 2026 Bambu Lab blog post on cloud access. Verified 2026-05-12 via
+# curl that MakerWorld treats this UA identically to a Firefox UA at the
+# Cloudflare edge (same response shape on /api/v1/design-service/* paths).
+# The Referer is kept because MakerWorld's CSRF / origin-check middleware uses
+# it on some endpoints — that's distinct from client impersonation.
 _CLIENT_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0",
+    "User-Agent": "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)",
     "Accept": "text/html,application/json,*/*",
     "Accept-Language": "en-US,en;q=0.9",
     "Referer": "https://makerworld.com/",

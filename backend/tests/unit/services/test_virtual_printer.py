@@ -47,7 +47,7 @@ class TestVirtualPrinterInstance:
         return VirtualPrinterInstance(
             vp_id=1,
             name="TestPrinter",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -62,7 +62,7 @@ class TestVirtualPrinterInstance:
         """Verify constructor stores parameters correctly."""
         assert instance.id == 1
         assert instance.name == "TestPrinter"
-        assert instance.mode == "immediate"
+        assert instance.mode == "archive"
         assert instance.model == "C11"
         assert instance.access_code == "12345678"
         assert instance.serial_suffix == "391800001"
@@ -79,7 +79,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=2,
             name="X1C",
-            mode="immediate",
+            mode="archive",
             model="BL-P001",
             access_code="12345678",
             serial_suffix="391800002",
@@ -172,6 +172,139 @@ class TestVirtualPrinterInstance:
             mock_archive.assert_called_once_with(file_path, "192.168.1.100")
 
     @pytest.mark.asyncio
+    async def test_on_file_received_signals_FINISH_to_slicer(self, instance):
+        """Regression #1280: when a slicer's Print flow uploads to a non-proxy VP,
+        the VP must transition gcode_state PREPARE → FINISH so the slicer's
+        in-flight-job lock releases. Going PREPARE → IDLE wedges Orca at
+        "Downloading...(0%)" and blocks the next dispatch with "busy with
+        another print job".
+
+        Send-flow slicers don't watch the post-upload state, so this is a
+        no-op behavior change for them.
+        """
+        instance.mode = "archive"
+        instance._mqtt = MagicMock()
+        instance._mqtt.set_gcode_state = MagicMock()
+        file_path = Path("/tmp/test.3mf")  # nosec B108
+
+        with patch.object(instance, "_archive_file", new_callable=AsyncMock):
+            await instance.on_file_received(file_path, "192.168.1.100")
+
+        instance._mqtt.set_gcode_state.assert_called_once_with("FINISH", filename="test.3mf", prepare_percent="100")
+
+    @pytest.mark.asyncio
+    async def test_on_file_received_non_3mf_does_not_touch_state(self, instance):
+        """Non-3MF uploads (e.g., a job's auxiliary files) must not transition
+        the visible state — the slicer is only tracking the .3mf upload."""
+        instance.mode = "archive"
+        instance._mqtt = MagicMock()
+        instance._mqtt.set_gcode_state = MagicMock()
+        file_path = Path("/tmp/test.gcode")  # nosec B108
+
+        with patch.object(instance, "_archive_file", new_callable=AsyncMock):
+            await instance.on_file_received(file_path, "192.168.1.100")
+
+        instance._mqtt.set_gcode_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_print_command_schedules_finish_release_non_proxy(self, instance):
+        """#1658: Bambu Studio 2.7.x flipped the slicer's Send flow to
+        FTP → FTP → MQTT project_file. Under that order the synthetic
+        project_file ack overwrites the FINISH set by #1280 in
+        ``on_file_received`` back to PREPARE, leaving the slicer's
+        "Downloading" modal stuck forever. Re-firing FINISH a moment after
+        the ack releases the modal.
+        """
+        instance.mode = "archive"
+        instance._mqtt = MagicMock()
+        instance._mqtt.set_gcode_state = MagicMock()
+
+        with patch.object(instance, "_delayed_finish_release", new_callable=AsyncMock) as mock_delayed:
+            await instance.on_print_command("test.3mf", {"command": "project_file"})
+
+        mock_delayed.assert_called_once()
+        # First positional arg should be the filename; second is the delay seconds.
+        args = mock_delayed.call_args.args
+        assert args[0] == "test.3mf"
+        assert isinstance(args[1], int | float)
+
+    @pytest.mark.asyncio
+    async def test_on_print_command_proxy_mode_does_not_reschedule_finish(self, instance):
+        """Proxy mode hands push_status straight from the real printer through
+        the bridge. Re-firing a synthetic FINISH would clobber a real
+        PREPARE / RUNNING transition coming back from the printer, so the
+        scheduler is exempt for proxy mode."""
+        instance.mode = "proxy"
+        instance._mqtt = MagicMock()
+
+        with patch.object(instance, "_delayed_finish_release", new_callable=AsyncMock) as mock_delayed:
+            await instance.on_print_command("test.3mf", {"command": "project_file"})
+
+        mock_delayed.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_print_command_no_mqtt_does_not_schedule(self, instance):
+        """If the MQTT server isn't running yet (transient race during boot),
+        the scheduler must skip silently — no AttributeError, no orphan task."""
+        instance.mode = "queue"
+        instance._mqtt = None
+
+        # Should not raise.
+        await instance.on_print_command("test.3mf", {"command": "project_file"})
+        assert instance._finish_release_task is None
+
+    @pytest.mark.asyncio
+    async def test_schedule_finish_release_cancels_previous_timer(self, instance):
+        """A slicer that fires project_file twice (e.g. retry after a transient
+        FTP hiccup) must only result in one FINISH transition — the earlier
+        in-flight timer is cancelled when the next one is scheduled."""
+        instance.mode = "queue"
+        instance._mqtt = MagicMock()
+
+        instance._schedule_finish_release("first.3mf", delay=10.0)
+        first_task = instance._finish_release_task
+        assert first_task is not None
+
+        instance._schedule_finish_release("second.3mf", delay=10.0)
+        second_task = instance._finish_release_task
+
+        assert second_task is not first_task
+        # Give the loop one tick so the cancelled task settles.
+        await asyncio.sleep(0)
+        assert first_task.cancelled() or first_task.done()
+        # Clean up the still-pending second task so the test doesn't leak it.
+        second_task.cancel()
+        try:
+            await second_task
+        except asyncio.CancelledError:
+            pass
+
+    @pytest.mark.asyncio
+    async def test_delayed_finish_release_sets_finish_state(self, instance):
+        """End-to-end: after the delay elapses, set_gcode_state is called with
+        FINISH and prepare_percent=100, matching the wire-format the slicer's
+        Print flow consumes to release "Downloading"."""
+        instance._mqtt = MagicMock()
+        instance._mqtt.set_gcode_state = MagicMock()
+
+        await instance._delayed_finish_release("queued.3mf", delay=0.0)
+
+        instance._mqtt.set_gcode_state.assert_called_once_with("FINISH", filename="queued.3mf", prepare_percent="100")
+
+    @pytest.mark.asyncio
+    async def test_on_print_command_no_filename_does_not_schedule(self, instance):
+        """A project_file command without a subtask_name (defensive — real
+        slicers always send one) must not schedule a no-op FINISH that would
+        carry an empty filename on the next 1 Hz push."""
+        instance.mode = "queue"
+        instance._mqtt = MagicMock()
+
+        with patch.object(instance, "_delayed_finish_release", new_callable=AsyncMock) as mock_delayed:
+            await instance.on_print_command("", {"command": "project_file"})
+
+        mock_delayed.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_archive_file_skips_non_3mf(self, instance):
         """Verify non-3MF files are skipped and cleaned up."""
         instance._session_factory = MagicMock()
@@ -181,6 +314,67 @@ class TestVirtualPrinterInstance:
             await instance._archive_file(Path("/tmp/verify_job"), "192.168.1.100")  # nosec B108
 
             assert "verify_job" not in instance._pending_files
+
+    @pytest.mark.asyncio
+    async def test_archive_file_broadcasts_archive_created(self, tmp_path):
+        """#1282: VP immediate-mode archives must broadcast archive_created so
+        the Archives page refreshes without a tab switch. Real-printer prints
+        get this via main.py's MQTT print_start handler; the VP path used to
+        skip the broadcast entirely."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        mock_db = AsyncMock()
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=30,
+            name="ImmediateBroadcast",
+            mode="archive",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800030",
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        mock_archive = MagicMock()
+        mock_archive.id = 99
+        mock_archive.printer_id = None
+        mock_archive.filename = "test.3mf"
+        mock_archive.print_name = "test"
+        mock_archive.status = "archived"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+            patch(
+                "backend.app.core.websocket.ws_manager.send_archive_created",
+                new_callable=AsyncMock,
+            ) as mock_broadcast,
+        ):
+            await inst._archive_file(file_path, "192.168.1.100")
+
+        mock_broadcast.assert_awaited_once()
+        payload = mock_broadcast.await_args.args[0]
+        assert payload["id"] == 99
+        assert payload["filename"] == "test.3mf"
+        assert payload["status"] == "archived"
 
     # ========================================================================
     # Tests for auto_dispatch
@@ -193,7 +387,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=10,
             name="DefaultDispatch",
-            mode="print_queue",
+            mode="queue",
             model="C11",
             access_code="12345678",
             serial_suffix="391800010",
@@ -224,7 +418,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=11,
             name="AutoDispatchOn",
-            mode="print_queue",
+            mode="queue",
             model="C11",
             access_code="12345678",
             serial_suffix="391800011",
@@ -260,6 +454,68 @@ class TestVirtualPrinterInstance:
         assert queue_item.manual_start is False
 
     @pytest.mark.asyncio
+    async def test_add_to_print_queue_broadcasts_archive_created(self, tmp_path):
+        """#1282: VP queue-mode uploads must broadcast archive_created so the
+        Archives page picks up the new entry live. Pre-fix the page only
+        refreshed when the user manually switched tabs."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock()
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=31,
+            name="QueueBroadcast",
+            mode="queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800031",
+            auto_dispatch=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        mock_archive = MagicMock()
+        mock_archive.id = 77
+        mock_archive.printer_id = None
+        mock_archive.filename = "test.3mf"
+        mock_archive.print_name = "test"
+        mock_archive.status = "archived"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+            patch(
+                "backend.app.core.websocket.ws_manager.send_archive_created",
+                new_callable=AsyncMock,
+            ) as mock_broadcast,
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        mock_broadcast.assert_awaited_once()
+        payload = mock_broadcast.await_args.args[0]
+        assert payload["id"] == 77
+        assert payload["print_name"] == "test"
+        assert payload["status"] == "archived"
+
+    @pytest.mark.asyncio
     async def test_add_to_print_queue_with_auto_dispatch_off(self, tmp_path):
         """Verify queue items have manual_start=True when auto_dispatch=False."""
         from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
@@ -282,7 +538,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=12,
             name="AutoDispatchOff",
-            mode="print_queue",
+            mode="queue",
             model="C11",
             access_code="12345678",
             serial_suffix="391800012",
@@ -318,6 +574,295 @@ class TestVirtualPrinterInstance:
         assert queue_item.manual_start is True
 
     @pytest.mark.asyncio
+    async def test_add_to_print_queue_uses_workflow_defaults_from_settings(self, tmp_path):
+        """#1235: VP queue-mode constructed PrintQueueItem without specifying
+        bed_levelling / flow_cali / vibration_cali / layer_inspect / timelapse,
+        so SQLAlchemy applied the column-level defaults and ignored the user's
+        workflow preferences entirely. Every print sent from the slicer to the
+        VP came through with the OPPOSITE of what the workflow page said,
+        forcing the user to edit each queue item by hand.
+        """
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items = []
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=added_items.append)
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=22,
+            name="DefaultsTest",
+            mode="queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800022",
+            auto_dispatch=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        # The reporter set every workflow default to the OPPOSITE of the model's
+        # column default. Pre-fix the column defaults won; with the fix the
+        # settings values must flow through to the queue item exactly as stored.
+        settings_map = {
+            "virtual_printer_archive_name_source": None,
+            "default_bed_levelling": "false",  # model default: True
+            "default_flow_cali": "true",  # model default: False
+            "default_vibration_cali": "false",  # model default: True
+            "default_layer_inspect": "true",  # model default: False
+            "default_timelapse": "true",  # model default: False
+        }
+
+        async def fake_get_setting(_db, key):
+            return settings_map.get(key)
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "test"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new=fake_get_setting,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        queue_item = added_items[0]
+        assert queue_item.bed_levelling is False, "default_bed_levelling=false must flow through"
+        assert queue_item.flow_cali is True, "default_flow_cali=true must flow through"
+        assert queue_item.vibration_cali is False, "default_vibration_cali=false must flow through"
+        assert queue_item.layer_inspect is True, "default_layer_inspect=true must flow through"
+        assert queue_item.timelapse is True, "default_timelapse=true must flow through"
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_falls_back_to_schema_defaults_when_unset(self, tmp_path):
+        """#1235 fallback: when no workflow setting is in the DB, the queue
+        item should use the AppSettings (Pydantic) defaults — same values
+        the user sees in the workflow page on a fresh install.
+        """
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items = []
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=added_items.append)
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=23,
+            name="FreshInstallDefaults",
+            mode="queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800023",
+            auto_dispatch=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "test"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,  # No settings → fall back to schema defaults
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        queue_item = added_items[0]
+        # These must match the AppSettings (Pydantic) defaults in schemas/settings.py
+        assert queue_item.bed_levelling is True
+        assert queue_item.flow_cali is False
+        assert queue_item.vibration_cali is True
+        assert queue_item.layer_inspect is False
+        assert queue_item.timelapse is False
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_inherits_slicer_print_options(self, tmp_path):
+        """#1403: VP-queue items used to fall back to `default_timelapse` even
+        though the slicer's MQTT `project_file` command carries the user's
+        actual choice. Capture-via-`on_print_command` flow lets the user's
+        slicer toggle reach the queue item.
+
+        Settings here have timelapse OFF; the slicer's MQTT capture has it ON.
+        After the fix the queue item must reflect the slicer's choice.
+        """
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items = []
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=added_items.append)
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=24,
+            name="SlicerInherits",
+            mode="queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800024",
+            auto_dispatch=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        # Pre-populate the capture as if MQTT `project_file` arrived already.
+        # Settings (below) deliberately have timelapse OFF — only the slicer
+        # capture should drive the resulting queue item.
+        await inst.on_print_command(
+            file_path.name,
+            {
+                "command": "project_file",
+                "timelapse": True,
+                "bed_leveling": False,  # Note: MQTT field is single-L `bed_leveling`
+                "flow_cali": True,
+                "vibration_cali": False,
+                "layer_inspect": True,
+            },
+        )
+
+        settings_map = {
+            "virtual_printer_archive_name_source": None,
+            "default_bed_levelling": "true",
+            "default_flow_cali": "false",
+            "default_vibration_cali": "true",
+            "default_layer_inspect": "false",
+            "default_timelapse": "false",
+        }
+
+        async def fake_get_setting(_db, key):
+            return settings_map.get(key)
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "test"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new=fake_get_setting,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        queue_item = added_items[0]
+        assert queue_item.timelapse is True, "Slicer's timelapse=True must override settings.default_timelapse=False"
+        assert queue_item.bed_levelling is False, "Slicer's bed_leveling=False must override default_bed_levelling=True"
+        assert queue_item.flow_cali is True
+        assert queue_item.vibration_cali is False
+        assert queue_item.layer_inspect is True
+        # Capture is consumed — no lingering state for the next print of the same name.
+        assert file_path.name not in inst._slicer_print_options
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_coerces_slicer_integer_zero_one(self, tmp_path):
+        """#1403: H-family firmwares carry calibration flags as integers
+        (0/1) rather than booleans. The capture must coerce both shapes so
+        H-family-sliced jobs through the VP queue work the same as P1/X1.
+        """
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items = []
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=added_items.append)
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=25,
+            name="SlicerIntegers",
+            mode="queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800025",
+            auto_dispatch=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        await inst.on_print_command(
+            file_path.name,
+            {"command": "project_file", "timelapse": 1, "bed_leveling": 0, "flow_cali": 1},
+        )
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "test"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        queue_item = added_items[0]
+        assert queue_item.timelapse is True, "integer 1 must coerce to True"
+        assert queue_item.bed_levelling is False, "integer 0 must coerce to False"
+        assert queue_item.flow_cali is True
+
+    @pytest.mark.asyncio
     async def test_add_to_print_queue_populates_required_filament_types(self, tmp_path):
         """#1188: VP queue-mode used to create PrintQueueItems with no
         filament fields, so the scheduler fell through to model-only matching
@@ -340,7 +885,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=21,
             name="Reqs",
-            mode="print_queue",
+            mode="queue",
             model="C12",
             access_code="12345678",
             serial_suffix="391800021",
@@ -410,7 +955,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=22,
             name="ForceColor",
-            mode="print_queue",
+            mode="queue",
             model="C12",
             access_code="12345678",
             serial_suffix="391800022",
@@ -480,7 +1025,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=23,
             name="Unparseable",
-            mode="print_queue",
+            mode="queue",
             model="C12",
             access_code="12345678",
             serial_suffix="391800023",
@@ -549,7 +1094,7 @@ class TestVirtualPrinterInstance:
         inst = VirtualPrinterInstance(
             vp_id=20,
             name="NameSource",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800020",
@@ -583,6 +1128,354 @@ class TestVirtualPrinterInstance:
         kwargs = archive_print_mock.await_args.kwargs
         assert kwargs.get("prefer_filename_for_name") is expected_prefer_filename
 
+    # ========================================================================
+    # Tests for failure-path cleanup (#audit-R2-1)
+    # ========================================================================
+    #
+    # All three file handlers (_archive_file, _queue_file, _add_to_print_queue)
+    # previously only popped _pending_files and unlinked the temp file on the
+    # success branch. Failure paths leaked the marker (blocking same-name
+    # retries via the FTP layer) and the temp file on disk. The cleanup must
+    # ALWAYS run, even when archival / queue insert raises.
+
+    @pytest.mark.asyncio
+    async def test_archive_file_failure_path_pops_pending_and_unlinks(self, tmp_path):
+        """When the archive layer raises, `_pending_files[filename]` must still
+        be popped and the temp file must be unlinked. Otherwise the FTP layer's
+        same-name retry guard would silently reject the slicer's next attempt
+        and the upload_dir would accumulate ghost files."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        mock_db = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=40,
+            name="ArchiveFailCleanup",
+            mode="archive",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800040",
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+        file_path = tmp_path / "cleanup-archive.3mf"
+        file_path.write_bytes(b"fake3mf")
+        inst._pending_files[file_path.name] = file_path
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("archive blew up"),
+            ),
+        ):
+            await inst._archive_file(file_path, "192.168.1.100")
+
+        assert file_path.name not in inst._pending_files
+        assert not file_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_queue_file_failure_path_pops_pending_and_unlinks(self, tmp_path):
+        """Same invariant for _queue_file: a DB error during PendingUpload
+        insert must not leak the in-flight marker or the temp file."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        mock_db = AsyncMock()
+        # Commit raises — emulating a DB connectivity error.
+        mock_db.add = MagicMock()
+        mock_db.commit = AsyncMock(side_effect=RuntimeError("db unreachable"))
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=41,
+            name="QueueFailCleanup",
+            mode="review",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800041",
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+        file_path = tmp_path / "cleanup-queue.3mf"
+        file_path.write_bytes(b"fake3mf")
+        inst._pending_files[file_path.name] = file_path
+
+        await inst._queue_file(file_path, "192.168.1.100")
+
+        assert file_path.name not in inst._pending_files
+        assert not file_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_failure_path_pops_pending_and_unlinks(self, tmp_path):
+        """Same invariant for _add_to_print_queue: a DB error or archive
+        failure must not leak the in-flight marker or the temp file."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock()
+        mock_db.commit = AsyncMock()
+        mock_db.execute = AsyncMock(side_effect=RuntimeError("queue insert blew up"))
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=42,
+            name="DispatchFailCleanup",
+            mode="queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800042",
+            auto_dispatch=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+        file_path = tmp_path / "cleanup-dispatch.3mf"
+        file_path.write_bytes(b"fake3mf")
+        inst._pending_files[file_path.name] = file_path
+
+        with patch(
+            "backend.app.api.routes.settings.get_setting",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert file_path.name not in inst._pending_files
+        assert not file_path.exists()
+
+    # ========================================================================
+    # Test for position=MAX+1 (audit-R2)
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_position_picks_max_plus_one(self, tmp_path):
+        """VP-queue items previously got hardcoded `position=1`, colliding
+        with existing items at position 1 and producing non-deterministic
+        execution order. Now the position is chosen by `MAX(position)+1`
+        against the target queue, matching the canonical `POST /print-queue/`
+        path."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        # Capture the inserted PrintQueueItem so we can assert on .position.
+        added_items: list = []
+
+        class _RecordingDb:
+            def __init__(self):
+                self.add = lambda item: added_items.append(item)
+                self.commit = AsyncMock()
+
+            async def execute(self, query):  # noqa: ARG002
+                """Return a stub result whose `.scalar()` reports the existing
+                MAX(position) for the target. Returning 7 means the new item
+                should land at 8."""
+                result = MagicMock()
+                result.scalar = MagicMock(return_value=7)
+                return result
+
+        mock_db = _RecordingDb()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=43,
+            name="PositionMaxPlusOne",
+            mode="queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800043",
+            target_printer_id=99,
+            auto_dispatch=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+        file_path = tmp_path / "next-position.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        mock_archive = MagicMock()
+        mock_archive.id = 555
+        mock_archive.printer_id = None
+        mock_archive.filename = "next-position.3mf"
+        mock_archive.print_name = "next-position"
+        mock_archive.status = "archived"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+            patch(
+                "backend.app.core.websocket.ws_manager.send_archive_created",
+                new_callable=AsyncMock,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        # One queue item was added.
+        assert len(added_items) == 1
+        queue_item = added_items[0]
+        # Position = max(7) + 1 = 8 — NOT the legacy hardcoded 1.
+        assert queue_item.position == 8
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_multi_plate_send_all_enqueues_one_per_plate(self, tmp_path):
+        """#1733: BambuStudio / OrcaSlicer "Send All" of a multi-plate project
+        uploads ONE 3MF containing every plate. Pre-fix only the first plate
+        index was extracted and one queue item was created; plates 2..N were
+        silently dropped. Post-fix every `<plate>` block in `slice_info.config`
+        produces its own PrintQueueItem with the correct ``plate_id``, sharing
+        the same backing archive, with consecutive positions for plate-order
+        execution.
+        """
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items: list = []
+
+        class _RecordingDb:
+            def __init__(self):
+                # Capture inserted items as they're added; assign a fake .id
+                # on flush so the manager's logger doesn't see None.
+                self._next_id = 1000
+
+                def _add(item):
+                    added_items.append(item)
+
+                self.add = _add
+                self.commit = AsyncMock()
+
+            async def execute(self, query):  # noqa: ARG002
+                """Return MAX(position) = 0 so plate items land at 1, 2, 3."""
+                result = MagicMock()
+                result.scalar = MagicMock(return_value=0)
+                return result
+
+            async def flush(self):
+                # Mimic the FK populate so queue_item.id is available after add().
+                for item in added_items:
+                    if getattr(item, "id", None) is None:
+                        item.id = self._next_id
+                        self._next_id += 1
+
+        mock_db = _RecordingDb()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=44,
+            name="MultiPlateSendAll",
+            mode="queue",
+            model="O1D",  # H2D — matches the live VP H2D-1 Proxy in #1733
+            access_code="12345678",
+            serial_suffix="391800044",
+            target_printer_id=1,
+            auto_dispatch=False,  # manual_start, mirrors the live VP
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        # Build a 3MF with three plates baked into slice_info.config —
+        # mirrors what BambuStudio / OrcaSlicer's "Send All" puts on the wire.
+        file_path = tmp_path / "Cube.gcode.3mf"
+        _write_3mf_with_filaments(
+            file_path, [{"id": 1, "type": "PLA", "color": "#000000", "used_g": "15.61"}], plate_index=1
+        )
+        # Append plate 2 and 3 blocks to slice_info.config to mimic Send All.
+        with zipfile.ZipFile(file_path, "r") as zf:
+            existing = zf.read("Metadata/slice_info.config").decode()
+        # Inject two additional <plate> blocks (indices 2 and 3) inside <config>.
+        multi_plate_config = existing.replace(
+            "</config>",
+            (
+                '<plate><metadata key="index" value="2"/>'
+                '<filament id="2" type="PETG" color="#FB0207" used_g="14.45"/>'
+                "</plate>"
+                '<plate><metadata key="index" value="3"/>'
+                '<filament id="3" type="PLA" color="#FFFFFF" used_g="12.10"/>'
+                "</plate>"
+                "</config>"
+            ),
+        )
+        # Repack the zip with the expanded slice_info.config.
+        import io as _io
+
+        buf = _io.BytesIO()
+        with zipfile.ZipFile(file_path, "r") as src, zipfile.ZipFile(buf, "w") as dst:
+            for name in src.namelist():
+                if name == "Metadata/slice_info.config":
+                    dst.writestr(name, multi_plate_config)
+                else:
+                    dst.writestr(name, src.read(name))
+            # Plate-2 and plate-3 gcode payloads so `extract_filament_requirements`
+            # has something to read for each — contents irrelevant, presence matters.
+            dst.writestr("Metadata/plate_2.gcode", "; plate 2 gcode\n")
+            dst.writestr("Metadata/plate_3.gcode", "; plate 3 gcode\n")
+        file_path.write_bytes(buf.getvalue())
+
+        mock_archive = MagicMock()
+        mock_archive.id = 999
+        mock_archive.printer_id = None
+        mock_archive.filename = "Cube.gcode.3mf"
+        mock_archive.print_name = "Cube"
+        mock_archive.status = "archived"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+            patch(
+                "backend.app.core.websocket.ws_manager.send_archive_created",
+                new_callable=AsyncMock,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        # Three queue items, one per plate, with the correct plate_id and
+        # consecutive positions starting at MAX(position)+1 = 1.
+        assert len(added_items) == 3, f"Expected 3 queue items for 3-plate Send All, got {len(added_items)}"
+        plate_ids = [q.plate_id for q in added_items]
+        assert plate_ids == [1, 2, 3], f"plate_ids should preserve slice_info order, got {plate_ids}"
+        positions = [q.position for q in added_items]
+        assert positions == [1, 2, 3], f"positions should be consecutive, got {positions}"
+        archive_ids = {q.archive_id for q in added_items}
+        assert archive_ids == {999}, f"All queue items must share the single backing archive, got {archive_ids}"
+        # auto_dispatch=False on the VP → every item is manual_start.
+        assert all(q.manual_start for q in added_items)
+
 
 class TestVirtualPrinterManager:
     """Tests for VirtualPrinterManager orchestrator."""
@@ -604,7 +1497,7 @@ class TestVirtualPrinterManager:
         status = manager.get_status()
         assert status["enabled"] is False
         assert status["running"] is False
-        assert status["mode"] == "immediate"
+        assert status["mode"] == "archive"
 
     def test_manager_is_enabled_with_instance(self, manager, tmp_path):
         """Verify is_enabled is True when instances exist."""
@@ -613,7 +1506,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="Test",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -630,7 +1523,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="Test",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -674,7 +1567,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="Bambuddy",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -688,7 +1581,7 @@ class TestVirtualPrinterManager:
         status = manager.get_status()
         assert status["enabled"] is True
         assert status["running"] is True
-        assert status["mode"] == "immediate"
+        assert status["mode"] == "archive"
         assert status["name"] == "Bambuddy"
         assert status["serial"] == "01S00A391800001"
         assert status["model"] == "C11"
@@ -703,7 +1596,7 @@ class TestVirtualPrinterManager:
             inst = VirtualPrinterInstance(
                 vp_id=i,
                 name=f"VP{i}",
-                mode="immediate",
+                mode="archive",
                 model="C11",
                 access_code="12345678",
                 serial_suffix=f"39180000{i}",
@@ -725,7 +1618,7 @@ class TestVirtualPrinterManager:
             inst = VirtualPrinterInstance(
                 vp_id=i,
                 name=f"VP{i}",
-                mode="immediate",
+                mode="archive",
                 model="C11",
                 access_code="12345678",
                 serial_suffix=f"39180000{i}",
@@ -747,7 +1640,7 @@ class TestVirtualPrinterManager:
             "id": 1,
             "name": "TestVP",
             "enabled": True,
-            "mode": "immediate",
+            "mode": "archive",
             "model": "C11",
             "access_code": "12345678",
             "serial_suffix": "391800001",
@@ -756,6 +1649,7 @@ class TestVirtualPrinterManager:
             "target_printer_id": None,
             "auto_dispatch": True,
             "tailscale_disabled": True,  # Opt-in default (#1070 UX fix)
+            "queue_force_color_match": False,  # default — must be explicit so MagicMock truthiness doesn't trip the change detector
             "position": 0,
         }
         defaults.update(overrides)
@@ -785,7 +1679,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="TestVP",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -794,8 +1688,8 @@ class TestVirtualPrinterManager:
         inst.stop_server = AsyncMock()
         manager._instances[1] = inst
 
-        # DB says mode changed to "archive"
-        db_vp = self._make_db_vp(mode="archive")
+        # DB says mode changed to "review"
+        db_vp = self._make_db_vp(mode="review")
         self._setup_sync_mocks(manager, [db_vp], tmp_path)
 
         with patch.object(manager, "remove_instance", new_callable=AsyncMock) as mock_remove:
@@ -817,7 +1711,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="TestVP",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -847,7 +1741,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="TestVP",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -872,7 +1766,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="TestVP",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -903,7 +1797,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="TestVP",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -938,7 +1832,7 @@ class TestVirtualPrinterManager:
         inst = VirtualPrinterInstance(
             vp_id=1,
             name="TestVP",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800001",
@@ -1650,7 +2544,7 @@ class TestVirtualPrinterManagerDirectories:
         VirtualPrinterInstance(
             vp_id=42,
             name="Test",
-            mode="immediate",
+            mode="archive",
             model="C11",
             access_code="12345678",
             serial_suffix="391800042",
@@ -1740,7 +2634,7 @@ class TestVirtualPrinterInstanceIPOverride:
         return VirtualPrinterInstance(
             vp_id=20,
             name="IPTest",
-            mode="immediate",
+            mode="archive",
             model="BL-P001",
             access_code="12345678",
             serial_suffix="391800020",
@@ -1777,7 +2671,7 @@ class TestVirtualPrinterInstanceIPOverride:
         inst = VirtualPrinterInstance(
             vp_id=21,
             name="NoRemote",
-            mode="immediate",
+            mode="archive",
             model="BL-P001",
             access_code="12345678",
             serial_suffix="391800021",
@@ -1803,7 +2697,7 @@ class TestVirtualPrinterInstanceIPOverride:
         inst = VirtualPrinterInstance(
             vp_id=22,
             name="NoIPs",
-            mode="immediate",
+            mode="archive",
             model="BL-P001",
             access_code="12345678",
             serial_suffix="391800022",
@@ -1936,7 +2830,7 @@ class TestBindServer:
         inst = VirtualPrinterInstance(
             vp_id=99,
             name="Bambuddy",
-            mode="immediate",
+            mode="archive",
             model="BL-P001",
             access_code="12345678",
             serial_suffix="391800099",
@@ -1944,11 +2838,34 @@ class TestBindServer:
             base_dir=tmp_path,
         )
 
+        # Each mocked child service exposes a real asyncio.Event for the
+        # readiness barrier added in start_server (set on instantiation so
+        # the barrier returns immediately in tests).
+        ready_event = asyncio.Event()
+        ready_event.set()
+
+        def with_ready(*_args, **_kwargs):
+            child = MagicMock()
+            child.ready = ready_event
+            return child
+
         with (
-            patch("backend.app.services.virtual_printer.manager.VirtualPrinterSSDPServer"),
-            patch("backend.app.services.virtual_printer.manager.VirtualPrinterFTPServer"),
-            patch("backend.app.services.virtual_printer.manager.SimpleMQTTServer"),
-            patch("backend.app.services.virtual_printer.manager.BindServer") as mock_bind_cls,
+            patch(
+                "backend.app.services.virtual_printer.manager.VirtualPrinterSSDPServer",
+                side_effect=with_ready,
+            ),
+            patch(
+                "backend.app.services.virtual_printer.manager.VirtualPrinterFTPServer",
+                side_effect=with_ready,
+            ),
+            patch(
+                "backend.app.services.virtual_printer.manager.SimpleMQTTServer",
+                side_effect=with_ready,
+            ),
+            patch(
+                "backend.app.services.virtual_printer.manager.BindServer",
+                side_effect=with_ready,
+            ) as mock_bind_cls,
             patch.object(inst._cert_service, "delete_printer_certificate"),
             patch.object(
                 inst._cert_service,

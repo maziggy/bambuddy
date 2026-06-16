@@ -6,6 +6,7 @@ import {
   Clock,
   CheckCircle,
   XCircle,
+  Ban,
   DollarSign,
   Target,
   Zap,
@@ -20,6 +21,7 @@ import {
   Calendar,
   ChevronDown,
   Users,
+  BarChart3,
 } from 'lucide-react';
 import {
   BarChart,
@@ -190,15 +192,20 @@ function SuccessRateWidget({
     total_prints: number;
     successful_prints: number;
     failed_prints: number;
+    cancelled_prints?: number;
     prints_by_printer: Record<string, number>;
   } | undefined;
   printerMap: Map<string, string>;
   size?: 1 | 2 | 4;
 }) {
   const { t } = useTranslation();
-  const completedAndFailed = (stats?.successful_prints || 0) + (stats?.failed_prints || 0);
-  const successRate = completedAndFailed
-    ? Math.round((stats!.successful_prints / completedAndFailed) * 100)
+  // Denominator is completed + failed only — a user/system-cancelled print is
+  // neither a quality success nor a quality failure, so including it would
+  // silently lower the rate whenever the user stopped a job. The cancelled
+  // count is still shown in the breakdown below so it doesn't vanish (#1390).
+  const outcomePrints = (stats?.successful_prints || 0) + (stats?.failed_prints || 0);
+  const successRate = outcomePrints
+    ? Math.round(((stats?.successful_prints || 0) / outcomePrints) * 100)
     : 0;
 
   // Scale gauge size based on widget size
@@ -244,6 +251,11 @@ function SuccessRateWidget({
             <XCircle className="w-4 h-4 text-status-error flex-shrink-0" />
             <span className="text-sm text-bambu-gray">{t('stats.failed')}</span>
             <span className="text-sm text-white font-medium">{stats?.failed_prints || 0}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Ban className="w-4 h-4 text-status-warning flex-shrink-0" />
+            <span className="text-sm text-bambu-gray">{t('stats.cancelled')}</span>
+            <span className="text-sm text-white font-medium">{stats?.cancelled_prints || 0}</span>
           </div>
         </div>
         {/* Show per-printer breakdown when expanded */}
@@ -802,7 +814,9 @@ function FailureAnalysisWidget({ size = 1, dateFrom, dateTo, createdById }: {
             {topReasons.map(([reason, count]) => (
               <div key={reason} className="flex items-center justify-between text-sm">
                 <span className={`text-white truncate ${size === 4 ? 'max-w-[200px]' : 'max-w-[160px]'}`}>
-                  {reason || t('common.unknown')}
+                  {reason
+                    ? t(`editArchive.failureReasons.${reason}`, { defaultValue: reason })
+                    : t('common.unknown')}
                 </span>
                 <span className="text-bambu-gray ml-2">{count}</span>
               </div>
@@ -844,7 +858,13 @@ function RecordsWidget({ archives, currency }: { archives: ArchiveSlim[]; curren
       return { archive: best, value: bestVal };
     };
 
-    const longest = findMax(a => a.actual_time_seconds);
+    // Only completed prints qualify as the "longest" record. Pre-#1390 this
+    // happened implicitly because the slim endpoint returned null
+    // actual_time_seconds for non-completed rows; that gate moved up to the
+    // backend so failed/cancelled prints now carry their elapsed duration
+    // (Quick Stats Print Time needs that), but a partially-completed 20-hour
+    // run shouldn't outrank a successful 18-hour print here.
+    const longest = findMax(a => (a.status === 'completed' ? a.actual_time_seconds : null));
     if (longest.archive) {
       result.push({
         icon: Clock, iconColor: 'text-blue-400', label: t('stats.longestPrint'),
@@ -1148,10 +1168,13 @@ export function StatsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-white">{t('stats.title')}</h1>
+            <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+              <BarChart3 className="w-7 h-7 text-bambu-green" />
+              {t('stats.title')}
+            </h1>
             {isRefetching && <Loader2 className="w-5 h-5 text-bambu-green animate-spin" />}
           </div>
-          <p className="text-bambu-gray">{t('stats.subtitle')}</p>
+          <p className="text-bambu-gray mt-1">{t('stats.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Hidden widgets button - toggles panel in Dashboard */}

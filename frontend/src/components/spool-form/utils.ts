@@ -131,11 +131,17 @@ function buildLocalFilamentOptions(localPresets: LocalPreset[]): FilamentOption[
   if (filamentPresets.length === 0) return [];
 
   const options: FilamentOption[] = filamentPresets.map(preset => {
-    const code = preset.filament_type || String(preset.id);
-    // allCodes carries every shape an existing saved spool might have stored
-    // for this preset (filament_type and the row id), so findPresetOption
-    // resolves both old and new picks.
-    const allCodes = Array.from(new Set([code, String(preset.id)]));
+    // Use the unique preset.id (stringified) as the code so each local preset
+    // has its own identity. Earlier this was preset.filament_type (e.g. "PLA")
+    // which collapsed every PLA local preset onto the same code — picking any
+    // of them saved slicer_filament="PLA", a material name the backend cannot
+    // resolve back to a specific preset row. The backend handler at
+    // inventory.py expects numeric IDs for local-preset slicer_filament values.
+    // allCodes still carries the legacy filament_type so findPresetOption
+    // resolves existing saved spools that have the old material-name code.
+    const code = String(preset.id);
+    const legacyCode = preset.filament_type || code;
+    const allCodes = Array.from(new Set([code, legacyCode]));
     return {
       code,
       name: preset.name,
@@ -285,12 +291,51 @@ export function saveRecentColor(color: ColorPreset, currentRecent: ColorPreset[]
   return updated;
 }
 
+// Normalise a Bambu filament identifier to its bare filament_id form (#1688).
+// Spools store ``slicer_filament`` as a setting_id like "GFSG98_09" (the "_NN"
+// suffix is the variant, the "S" infix marks it as a setting_id); printer
+// K-profiles store ``filament_id`` as "GFG98" (bare). Both shapes need
+// normalising before comparison.
+//
+// This is the inverse of the filament_id→setting_id mapping at
+// ``buildFilamentOptions`` ("GFS" + filament_id.slice(2)), so a round-trip
+// stays consistent. Non-Bambu IDs (numeric local-preset IDs, Orca UUIDs)
+// are returned unchanged uppercase — they won't match any K-profile's
+// filament_id and the caller falls through to name-based matching.
+export function toFilamentId(id: string | null | undefined): string {
+  if (!id) return '';
+  // Drop "_NN" variant suffix.
+  let s = id.split('_')[0];
+  // Strip the "S" infix in "GFS..." so "GFSG98" → "GFG98".
+  if (/^GFS/i.test(s)) s = s.slice(0, 2) + s.slice(3);
+  return s.toUpperCase();
+}
+
+// "GFx99" identifiers (GFL99, GFG99, GFB99, ...) are Bambu's *generic* filament
+// IDs — shared across many different physical filaments. Matching K-profiles
+// by an exact generic ID would over-match, so the id-match path skips them and
+// the caller falls through to name-based matching.
+export function isGenericFilamentId(id: string | null | undefined): boolean {
+  return !!id && /^GF[A-Z]99$/i.test(id);
+}
+
 // Check if a calibration matches based on brand, material, and variant
 export function isMatchingCalibration(
   cal: { name?: string; filament_id?: string },
-  formData: { material: string; brand: string; subtype: string },
+  formData: { material: string; brand: string; subtype: string; slicer_filament?: string },
 ): boolean {
   if (!formData.material) return false;
+
+  // Preferred path: exact filament_id match after normalising both sides
+  // (#1688). When the spool has a non-generic preset assigned and it agrees
+  // with the K-profile's filament_id, this is unambiguous — no name parsing
+  // needed. A spool storing "GFSG98_09" matches a K-profile with filament_id
+  // "GFG98" without going anywhere near parsePresetName.
+  const spoolFid = toFilamentId(formData.slicer_filament);
+  const calFid = toFilamentId(cal.filament_id);
+  if (spoolFid && calFid && spoolFid === calFid && !isGenericFilamentId(calFid)) {
+    return true;
+  }
 
   const profileName = cal.name || '';
 

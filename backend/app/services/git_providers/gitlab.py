@@ -83,12 +83,19 @@ class GitLabBackend(GitProviderBackend):
             group_level = (perms.get("group_access") or {}).get("access_level", 0)
             effective = max(project_level, group_level)
 
+            # GitLab uses visibility="private" / "internal" / "public". Both
+            # "internal" (signed-in users) and "public" are non-private for
+            # the purposes of this safety check.
+            visibility = (data.get("visibility") or "").lower()
+            is_private = visibility == "private"
+
             if effective < 30:  # Developer = 30, Maintainer = 40, Owner = 50
                 return {
                     "success": False,
                     "message": "Token requires Developer access or higher to push",
                     "repo_name": data.get("name_with_namespace"),
                     "permissions": perms,
+                    "is_private": is_private,
                 }
 
             return {
@@ -96,6 +103,7 @@ class GitLabBackend(GitProviderBackend):
                 "message": "Connection successful",
                 "repo_name": data.get("name_with_namespace"),
                 "permissions": perms,
+                "is_private": is_private,
             }
         except Exception as e:
             logger.error("GitLab connection test failed: %s", e)
@@ -104,6 +112,7 @@ class GitLabBackend(GitProviderBackend):
                 "message": f"Connection failed: {type(e).__name__}",
                 "repo_name": None,
                 "permissions": None,
+                "is_private": None,
             }
 
     async def push_files(

@@ -34,10 +34,10 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -56,10 +56,10 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -73,23 +73,38 @@ jobs:
         run: |
           # CVE-2026-4539: low-severity ReDoS in Pygments AdlLexer (indirect dep via mkdocs-material/pytest/rich).
           # No fix available yet. Remove --ignore-vuln once Pygments releases a patched version.
-          pip-audit --desc on --ignore-vuln CVE-2026-4539
+          #
+          # CVE-2025-45768 (PYSEC-2025-183 / GHSA-65pc-fj4g-8rjx): disputed by PyJWT maintainers.
+          # Advisory says "key length is chosen by the application that uses the library" — no
+          # PyJWT fix exists or will exist. Bambuddy is safe: backend/app/core/auth.py:184 uses
+          # secrets.token_urlsafe(64) (~86 chars of entropy) for auto-generated secrets and
+          # rejects file-loaded secrets shorter than 32 chars at :177. Keep ignored permanently.
+          pip-audit --desc on \
+            --ignore-vuln CVE-2026-4539 \
+            --ignore-vuln CVE-2025-45768
 
   backend-tests:
-    name: Backend Tests
+    name: Backend Tests (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
     needs: backend-lint
+    strategy:
+      # Don't cancel sibling shards if one fails — we want every shard's
+      # failure list, not just the first one, so a single PR push shows
+      # all broken tests in one go.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Cache pip
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
@@ -102,11 +117,22 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      - name: Run tests
+      - name: Run tests (shard ${{ matrix.shard }}/4)
         timeout-minutes: 10
         run: |
           cd backend
-          python -m pytest tests/ -v --tb=short --timeout=60 --timeout-method=thread -n auto
+          # -v dropped: 5300+ "PASSED foo::bar" lines per worker eat 30-60s
+          # of stdout I/O time on 2-vCPU runners. --tb=short is enough.
+          # --splits 4 --group N uses pytest-split to slice the collected
+          # test set roughly evenly across the 4 matrix shards; first run
+          # is name-hash-based, subsequent runs improve via .test_durations
+          # if you ever commit one (we don't — even the naive hash split
+          # gets us ≈25% per shard given the test mix here).
+          python -m pytest tests/ \
+            --tb=short \
+            --timeout=60 --timeout-method=thread \
+            -n auto \
+            --splits 4 --group ${{ matrix.shard }}
 
   # ============================================================================
   # Frontend Checks
@@ -117,10 +143,10 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -140,10 +166,10 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -185,10 +211,10 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -208,10 +234,10 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
     needs: [frontend-lint, frontend-typecheck]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -232,10 +258,10 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
     needs: [frontend-tests]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -253,6 +279,56 @@ jobs:
   # Docker Tests (matches test_docker.sh)
   # ============================================================================
 
+  # Run the FULL backend test suite inside the test image, sharded 4-way
+  # so wall-clock matches the host-side backend-tests job. Catches the
+  # rare-but-real cases where a test passes on the GHA host but fails in
+  # the python:3.13-slim test image (system-binary version differences,
+  # locale/timezone, container vs host user, cwd assumptions). Without
+  # sharding this was a 5-10 min single-runner job; with sharding it's
+  # ~120-150s per shard running in parallel, gated by max(shard).
+  docker-backend-tests:
+    name: Docker Backend Tests (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.user.login != github.repository_owner
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Build the backend-test image with GHA BuildKit cache backend so
+      # the pip-install layer is shared across the 4 matrix shards AND
+      # across CI runs. First run on a given requirements.txt is cold
+      # (~60-90s); subsequent runs are ~5-10s.
+      - name: Build backend test image (cached)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.test
+          target: backend-test
+          load: true
+          tags: bambuddy-backend-test:latest
+          cache-from: type=gha,scope=backend-test
+          cache-to: type=gha,scope=backend-test,mode=max
+
+      - name: Run backend tests in Docker (shard ${{ matrix.shard }}/4)
+        run: |
+          docker run --rm \
+            -e TESTING=1 \
+            -e PYTHONUNBUFFERED=1 \
+            bambuddy-backend-test:latest \
+            pytest backend/tests/ \
+              --tb=short \
+              --timeout=60 --timeout-method=thread \
+              -p no:cacheprovider \
+              -n auto \
+              --splits 4 --group ${{ matrix.shard }}
+
   docker-test:
     name: Docker Build
     runs-on: ubuntu-latest
@@ -260,7 +336,7 @@ jobs:
     timeout-minutes: 20
     needs: [backend-tests, frontend-build]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Test 1: Docker Build
       - name: Build production image
@@ -271,20 +347,6 @@ jobs:
 
       - name: Verify static files exist
         run: docker run --rm bambuddy:test test -d /app/static
-
-      # Test 2: Backend Unit Tests in Docker
-      - name: Build backend test image
-        run: docker compose -f docker-compose.test.yml build backend-test
-
-      - name: Run backend tests in Docker
-        run: docker compose -f docker-compose.test.yml run --rm backend-test
-
-      # Test 3: Frontend Unit Tests in Docker
-      - name: Build frontend test image
-        run: docker compose -f docker-compose.test.yml build frontend-test
-
-      - name: Run frontend tests in Docker
-        run: docker compose -f docker-compose.test.yml run --rm frontend-test
 
       # Test 4: Integration Tests
       - name: Build integration container

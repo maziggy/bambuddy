@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Bell, Globe, type LucideIcon } from 'lucide-react';
+import { Printer, Archive, ListOrdered, BarChart3, Cloud, Settings, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Bell, Globe, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
+import { InstallAppButton } from './InstallAppButton';
 import { SwitchbarPopover } from './SwitchbarPopover';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { api, supportApi, pendingUploadsApi, type Permission } from '../api/client';
@@ -29,7 +30,7 @@ export const defaultNavItems: NavItem[] = [
   { id: 'printers', to: '/', icon: Printer, labelKey: 'nav.printers' },
   { id: 'inventory', to: '/inventory', icon: Disc3, labelKey: 'nav.inventory' },
   { id: 'archives', to: '/archives', icon: Archive, labelKey: 'nav.archives' },
-  { id: 'queue', to: '/queue', icon: Calendar, labelKey: 'nav.queue' },
+  { id: 'queue', to: '/queue', icon: ListOrdered, labelKey: 'nav.queue' },
   { id: 'projects', to: '/projects', icon: FolderKanban, labelKey: 'nav.projects' },
   { id: 'files', to: '/files', icon: FolderOpen, labelKey: 'nav.files' },
   { id: 'makerworld', to: '/makerworld', icon: Globe, labelKey: 'nav.makerworld' },
@@ -77,9 +78,14 @@ export function setDefaultView(path: string) {
 export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { mode, toggleMode } = useTheme();
+  const { mode, resolvedMode, toggleMode } = useTheme();
   const { t } = useTranslation();
   const isSidebarCompact = useIsSidebarCompact();
+
+  // Theme toggle: mode → icon and tooltip
+  const ThemeIcon = { dark: Sun, light: Monitor, system: Moon }[mode];
+  const themeSwitchTitle = t({ dark: 'nav.switchToLight', light: 'nav.switchToSystem', system: 'nav.switchToDark' }[mode]);
+
   // Re-render Layout (and the page rendered inside <Outlet />) whenever the
   // backend color catalog is (re)populated, so pages that mounted before the
   // catalog fetched — and cached HSL-fallback color names during their first
@@ -273,23 +279,34 @@ export function Layout() {
     const result: string[] = [];
     const seen = new Set<string>();
 
-    // Map nav item IDs to the permission required to see them
-    const navPermissions: Record<string, Permission> = {
-      archives: 'archives:read',
-      queue: 'queue:read',
+    // Map nav item IDs to the permission(s) required to see them. Resources
+    // that ship in three tiers (legacy `*:read` + granular `*:read_own` /
+    // `*:read_all`) list all three: the default Operators group is seeded
+    // with `_own` only, so gating on the legacy alone hides the entry from
+    // every non-admin user even though the underlying API accepts their
+    // request (#1755).
+    const navPermissions: Record<string, Permission | Permission[]> = {
+      archives: ['archives:read', 'archives:read_own', 'archives:read_all'],
+      queue: ['queue:read', 'queue:read_own', 'queue:read_all'],
       stats: 'stats:read',
       profiles: 'kprofiles:read',
       maintenance: 'maintenance:read',
       projects: 'projects:read',
       inventory: 'inventory:read',
-      files: 'library:read',
+      files: ['library:read', 'library:read_own', 'library:read_all'],
       makerworld: 'makerworld:view',
       settings: 'settings:read',
       notifications: 'notifications:user_email',
     };
 
     const isHidden = (id: string) => {
-      if (authEnabled && id in navPermissions && !hasPermission(navPermissions[id])) return true;
+      if (authEnabled && id in navPermissions) {
+        const required = navPermissions[id];
+        const granted = Array.isArray(required)
+          ? required.some((p) => hasPermission(p))
+          : hasPermission(required);
+        if (!granted) return true;
+      }
       // notifications nav item also requires advanced auth to be enabled and user_notifications_enabled setting
       if (id === 'notifications' && (!authEnabled || !advancedAuthStatus?.advanced_auth_enabled || (settings?.user_notifications_enabled === false))) return true;
       return false;
@@ -498,7 +515,7 @@ export function Layout() {
             <Menu className="w-6 h-6 text-white" />
           </button>
           <img
-            src={mode === 'dark' ? '/img/bambuddy_logo_dark_transparent.png' : '/img/bambuddy_logo_light.png'}
+            src={resolvedMode === 'dark' ? '/img/bambuddy_logo_dark_transparent.png' : '/img/bambuddy_logo_light.png'}
             alt="Bambuddy"
             className="h-8 ml-3"
           />
@@ -524,7 +541,7 @@ export function Layout() {
         {/* Logo */}
         <div className={`border-b border-bambu-dark-tertiary flex items-center justify-center ${isSidebarCompact || sidebarExpanded ? 'p-4' : 'p-2'}`}>
           <img
-            src={mode === 'dark' ? '/img/bambuddy_logo_dark_transparent.png' : '/img/bambuddy_logo_light.png'}
+            src={resolvedMode === 'dark' ? '/img/bambuddy_logo_dark_transparent.png' : '/img/bambuddy_logo_light.png'}
             alt="Bambuddy"
             className={isSidebarCompact || sidebarExpanded ? 'h-16 w-auto' : 'h-8 w-8 object-cover object-left'}
           />
@@ -732,6 +749,7 @@ export function Layout() {
                     <Info className="w-5 h-5" />
                   </span>
                 )}
+                <InstallAppButton />
                 <a
                   href="https://github.com/maziggy/bambuddy"
                   target="_blank"
@@ -751,9 +769,9 @@ export function Layout() {
                 <button
                   onClick={toggleMode}
                   className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
-                  title={mode === 'dark' ? t('nav.switchToLight') : t('nav.switchToDark')}
+                  title={themeSwitchTitle}
                 >
-                  {mode === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                  <ThemeIcon className="w-5 h-5" />
                 </button>
                 {authEnabled && user && (
                   <>
@@ -836,6 +854,7 @@ export function Layout() {
                   <Info className="w-5 h-5" />
                 </span>
               )}
+              <InstallAppButton />
               <a
                 href="https://github.com/maziggy/bambuddy"
                 target="_blank"
@@ -855,9 +874,9 @@ export function Layout() {
               <button
                 onClick={toggleMode}
                 className="p-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray-light hover:text-white"
-                title={mode === 'dark' ? t('nav.switchToLight') : t('nav.switchToDark')}
+                title={themeSwitchTitle}
               >
-                {mode === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                <ThemeIcon className="w-5 h-5" />
               </button>
               {authEnabled && user && (
                 <>

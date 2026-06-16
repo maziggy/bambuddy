@@ -11,6 +11,7 @@ import os
 import shutil
 import ssl
 import struct
+import subprocess
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +24,9 @@ JPEG_END = b"\xff\xd9"
 
 # Cache the ffmpeg path after first lookup
 _ffmpeg_path: str | None = None
+
+# Cached result of rtsp_socket_timeout_flag(); see that function for context.
+_rtsp_socket_timeout_flag: str | None = None
 
 # Track PIDs of ffmpeg processes spawned for one-shot frame capture (snapshot).
 # The cleanup task in routes/camera.py checks this set to avoid killing active captures.
@@ -64,6 +68,69 @@ def get_ffmpeg_path() -> str | None:
         logger.warning("ffmpeg not found in PATH or common locations")
 
     return ffmpeg_path
+
+
+def rtsp_socket_timeout_flag() -> str:
+    """Return the ffmpeg argv flag (without the leading dash) that sets the
+    RTSP demuxer's client-side TCP socket I/O timeout, in microseconds.
+
+    ffmpeg has shipped three different option arrangements for this over
+    time, and Bambuddy supports the full range:
+
+    - **Modern ffmpeg (5.x / 6.x / 7.x)** — Debian 13, Ubuntu 24.04, current
+      Homebrew, etc. ``-timeout`` is the socket I/O timeout (microseconds);
+      ``-stimeout`` was REMOVED.
+    - **Transitional ffmpeg (~late-4.x, some 5.x builds)** — Ubuntu 22.04's
+      shipped version is one of these. ``-timeout`` was deprecated and
+      *repurposed* to mean the RTSP listen-mode incoming-connection
+      timeout — and any non-zero value implies ``-listen``, which makes
+      ffmpeg bind the localhost proxy port and fail with EADDRINUSE
+      (#1504). ``-stimeout`` was the replacement socket I/O timeout in
+      that window.
+    - **Old ffmpeg (early 4.x and earlier)** — ``-timeout`` is socket I/O
+      timeout (the original meaning, before the deprecation churn).
+
+    We probe ``-h demuxer=rtsp`` once and cache: if ``-stimeout`` is
+    advertised, prefer it (covers the transitional window and stays
+    correct on the older builds that still accept it as an alias); else
+    fall back to ``-timeout`` (correct on modern and pre-deprecation
+    ffmpeg). The result is cached for the process lifetime — ffmpeg
+    isn't going to swap mid-run.
+
+    Returns the option name without the leading dash, e.g. ``"timeout"``
+    or ``"stimeout"``. Callers must prepend ``-`` themselves so a string
+    formatting bug can't pass an empty flag.
+    """
+    global _rtsp_socket_timeout_flag
+
+    if _rtsp_socket_timeout_flag is not None:
+        return _rtsp_socket_timeout_flag
+
+    ffmpeg = get_ffmpeg_path()
+    chosen = "timeout"  # safe default for modern ffmpeg
+    if ffmpeg:
+        try:
+            result = subprocess.run(
+                [ffmpeg, "-hide_banner", "-h", "demuxer=rtsp"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            help_text = (result.stdout or "") + (result.stderr or "")
+            # Help lines list each option as `-<name> ` (trailing space) — match
+            # that exact form so we don't accidentally hit a substring elsewhere.
+            if "-stimeout " in help_text:
+                chosen = "stimeout"
+        except (OSError, subprocess.SubprocessError) as exc:
+            # If probing fails, keep the modern-ffmpeg default. Worst case
+            # is the EADDRINUSE regression returns for transitional-ffmpeg
+            # users — same as before this function existed.
+            logger.warning("Could not probe ffmpeg RTSP timeout flag, defaulting to -timeout: %s", exc)
+
+    _rtsp_socket_timeout_flag = chosen
+    logger.info("RTSP socket I/O timeout flag: -%s", chosen)
+    return chosen
 
 
 def supports_rtsp(model: str | None) -> bool:
@@ -558,6 +625,84 @@ async def capture_camera_frame_bytes(
         await proxy_server.wait_closed()
 
 
+async def extract_video_last_frame(video_path: Path, output_path: Path) -> bool:
+    """Extract the last frame of `video_path` as JPEG at `output_path`.
+
+    Used to source finish photos from a Bambu timelapse. The Bambu firmware
+    stops timelapse recording AFTER the toolhead parks but BEFORE the bed-drop
+    end-gcode runs, so the last frame frames the finished print correctly.
+    A live camera grab at `gcode_state=FINISH` captures the bed already
+    lowered (#1397).
+
+    Implementation: ``-update 1`` writes each decoded frame to the same
+    output file (overwriting), so the file left on disk after ffmpeg
+    finishes is the LAST frame. This works regardless of how short the
+    video is — a small print's timelapse can be sub-second / sub-30 frames
+    (one frame per layer-change capture), and the earlier ``-sseof -1.0``
+    approach failed there because the seek went before the start of the
+    file and ffmpeg silently returned frame 0 (empty bed at print start).
+    Decoding every frame is fine: Bambu timelapses are short by
+    construction (<1 minute even on hours-long prints).
+
+    Returns False on missing ffmpeg, missing video, subprocess failure or
+    timeout. Never raises.
+    """
+    ffmpeg = get_ffmpeg_path()
+    if not ffmpeg:
+        logger.warning("Cannot extract video last frame: ffmpeg not available")
+        return False
+
+    if not video_path.exists() or video_path.stat().st_size == 0:
+        logger.warning("Cannot extract last frame: %s missing or empty", video_path)
+        return False
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(video_path),
+        "-q:v",
+        "2",
+        "-update",
+        "1",
+        str(output_path),
+    ]
+
+    process = None
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(process.communicate(), timeout=15.0)
+        if process.returncode != 0:
+            logger.warning(
+                "ffmpeg failed extracting last frame from %s: %s",
+                video_path,
+                stderr.decode(errors="replace")[:500],
+            )
+            return False
+        if not output_path.exists() or output_path.stat().st_size == 0:
+            logger.warning("ffmpeg produced no output for %s", video_path)
+            return False
+        return True
+    except asyncio.TimeoutError:
+        logger.warning("ffmpeg timed out extracting last frame from %s", video_path)
+        if process is not None:
+            try:
+                process.kill()
+                await process.wait()
+            except ProcessLookupError:
+                pass  # Already exited
+        return False
+    except OSError as e:
+        logger.warning("ffmpeg subprocess error for %s: %s", video_path, e)
+        return False
+
+
 async def capture_finish_photo(
     printer_id: int,
     ip_address: str,
@@ -584,7 +729,9 @@ async def capture_finish_photo(
     # Generate filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
-    output_path = photos_dir / filename
+    output_path = (
+        photos_dir / filename
+    )  # SEC-PATH-OK: filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg" generated above
 
     success = await capture_camera_frame(
         ip_address=ip_address,

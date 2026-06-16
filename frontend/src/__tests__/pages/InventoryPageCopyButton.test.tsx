@@ -90,7 +90,7 @@ const MOCK_SETTINGS = {
   default_printer_id: null,
   virtual_printer_enabled: false,
   virtual_printer_access_code: '',
-  virtual_printer_mode: 'immediate',
+  virtual_printer_mode: 'archive',
   dark_style: 'classic',
   dark_background: 'neutral',
   dark_accent: 'green',

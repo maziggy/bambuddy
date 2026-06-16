@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, Trash2, Globe, Check, X, RefreshCw, ExternalLink } from 'lucide-react';
+import { Plus, Edit2, Trash2, Globe, Check, X, RefreshCw, ExternalLink, ImageOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { Group, OIDCProvider, OIDCProviderCreate } from '../api/client';
@@ -110,7 +110,12 @@ function ProviderForm({
         </div>
         <div>
           <label className={labelCls}>{t('settings.oidc.form.iconUrl')}</label>
-          <input className={inputCls} value={form.icon_url ?? ''} onChange={(e) => set('icon_url', e.target.value || undefined)} placeholder="https://..." />
+          <input
+            className={inputCls}
+            value={form.icon_url ?? ''}
+            onChange={(e) => set('icon_url', e.target.value === '' ? null : e.target.value)}
+            placeholder="https://..."
+          />
         </div>
       </div>
 
@@ -192,6 +197,35 @@ function ProviderForm({
   );
 }
 
+/**
+ * Per-provider icon avatar in the admin Settings list (#1333 review).
+ *
+ * Extracted so each card has its own `iconFailed` state. Previously
+ * `onError` just set `display: none` and the admin saw an unexplained gap
+ * where the icon should be — now we swap in the Globe fallback exactly
+ * like the `has_icon === false` branch, so the visual state is
+ * self-explanatory regardless of why the icon didn't load.
+ */
+function ProviderIconAvatar({ provider }: { provider: OIDCProvider }) {
+  const [iconFailed, setIconFailed] = useState(false);
+  const showIcon = provider.has_icon && !iconFailed;
+  if (showIcon) {
+    return (
+      <img
+        src={api.oidcProviderIconUrl(provider.id)}
+        alt={provider.name}
+        className="w-8 h-8 rounded object-contain"
+        onError={() => setIconFailed(true)}
+      />
+    );
+  }
+  return (
+    <div className="w-8 h-8 rounded-full bg-bambu-dark-tertiary flex items-center justify-center">
+      <Globe className="w-4 h-4 text-bambu-gray" />
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 export function OIDCProviderSettings() {
   const { t } = useTranslation();
@@ -239,6 +273,28 @@ export function OIDCProviderSettings() {
       queryClient.invalidateQueries({ queryKey: ['oidc-providers-all'] });
       setDeleteTarget(null);
       showToast(t('settings.oidc.deleted'), 'success');
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
+
+  // Icon-proxy mutations (#1333). Refresh re-fetches from the stored
+  // icon_url; remove clears the cached bytes but keeps icon_url.
+  const refreshIconMutation = useMutation({
+    mutationFn: (id: number) => api.refreshOIDCProviderIcon(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['oidc-providers-all'] });
+      queryClient.invalidateQueries({ queryKey: ['oidc-providers'] });
+      showToast(t('settings.oidc.iconRefreshed'), 'success');
+    },
+    onError: (e: Error) => showToast(e.message || t('settings.oidc.iconFetchFailed'), 'error'),
+  });
+
+  const removeIconMutation = useMutation({
+    mutationFn: (id: number) => api.deleteOIDCProviderIcon(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['oidc-providers-all'] });
+      queryClient.invalidateQueries({ queryKey: ['oidc-providers'] });
+      showToast(t('settings.oidc.iconRemoved'), 'success');
     },
     onError: (e: Error) => showToast(e.message, 'error'),
   });
@@ -309,13 +365,7 @@ export function OIDCProviderSettings() {
         <Card key={provider.id}>
           <CardHeader>
             <div className="flex items-center gap-3">
-              {provider.icon_url ? (
-                <img src={provider.icon_url} alt={provider.name} className="w-8 h-8 rounded object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-bambu-dark-tertiary flex items-center justify-center">
-                  <Globe className="w-4 h-4 text-bambu-gray" />
-                </div>
-              )}
+              <ProviderIconAvatar provider={provider} />
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <h4 className="text-white font-medium">{provider.name}</h4>
@@ -335,6 +385,30 @@ export function OIDCProviderSettings() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                {provider.icon_url && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => refreshIconMutation.mutate(provider.id)}
+                    disabled={refreshIconMutation.isPending}
+                    title={t('settings.oidc.refreshIcon')}
+                    data-testid={`refresh-icon-${provider.id}`}
+                  >
+                    <RefreshCw className={`w-4 h-4 ${refreshIconMutation.isPending ? 'animate-spin' : ''}`} />
+                  </Button>
+                )}
+                {provider.has_icon && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => removeIconMutation.mutate(provider.id)}
+                    disabled={removeIconMutation.isPending}
+                    title={t('settings.oidc.removeIcon')}
+                    data-testid={`remove-icon-${provider.id}`}
+                  >
+                    <ImageOff className="w-4 h-4" />
+                  </Button>
+                )}
                 <Toggle
                   checked={provider.is_enabled}
                   onChange={() => toggleEnabled(provider)}

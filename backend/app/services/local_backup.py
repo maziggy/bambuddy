@@ -6,8 +6,10 @@ on a configurable schedule with retention management.
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+import os
+from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
 
@@ -16,6 +18,34 @@ from backend.app.core.database import async_session
 from backend.app.models.settings import Settings
 
 logger = logging.getLogger(__name__)
+
+
+def _local_zone() -> tzinfo:
+    """Resolve the local timezone for scheduled-backup HH:MM interpretation.
+
+    Uses the container's ``TZ`` env var (the same value the support package
+    surfaces); falls back to UTC when unset or unrecognised so a missing TZ
+    keeps the legacy behaviour rather than crashing. See #1602 follow-up.
+
+    On Windows the embedded Python in our installer doesn't carry an IANA
+    tz database, so ``ZoneInfo(...)`` — including ``ZoneInfo("UTC")`` —
+    raises ``ZoneInfoNotFoundError`` unless the ``tzdata`` PyPI package is
+    installed. requirements.txt now pins ``tzdata`` on win32, but to keep
+    this resilient on installs that haven't refreshed deps we fall through
+    to the stdlib ``datetime.timezone.utc`` as a last resort; it satisfies
+    every ``astimezone`` / ``str()`` call site without needing the IANA DB.
+    """
+    tz_name = os.environ.get("TZ", "").strip()
+    if tz_name:
+        try:
+            return ZoneInfo(tz_name)
+        except ZoneInfoNotFoundError:
+            logger.warning("Unrecognised TZ env value %r, scheduling in UTC", tz_name)
+    try:
+        return ZoneInfo("UTC")
+    except ZoneInfoNotFoundError:
+        return timezone.utc
+
 
 SCHEDULE_INTERVALS = {
     "hourly": 3600,
@@ -122,14 +152,16 @@ class LocalBackupService:
     def _calculate_next_run(self, schedule_type: str, time_str: str = "03:00") -> datetime:
         """Calculate the next scheduled run time.
 
-        For hourly: next full hour.
-        For daily/weekly: next occurrence of the configured time (HH:MM).
+        For hourly: next full hour (timezone-agnostic).
+        For daily/weekly: next occurrence of the configured HH:MM, interpreted
+        in the container's local timezone (TZ env var, UTC fallback). Returns
+        a UTC-aware datetime for storage / comparison against ``now``.
         """
-        now = datetime.now(timezone.utc)
+        now_utc = datetime.now(timezone.utc)
 
         if schedule_type == "hourly":
             # Next full hour
-            next_run = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+            next_run = now_utc.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
             return next_run
 
         # Parse HH:MM time
@@ -140,15 +172,21 @@ class LocalBackupService:
         except (ValueError, IndexError):
             hour, minute = 3, 0
 
-        # Next occurrence of this time today or tomorrow
-        next_run = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if next_run <= now:
-            next_run += timedelta(days=1)
+        local_tz = _local_zone()
+        now_local = now_utc.astimezone(local_tz)
+        # Next occurrence of HH:MM local time, today or tomorrow.
+        # ``fold=0`` resolves the ambiguous wall-clock window at DST fall-back
+        # to the earlier instance (consistent with cron's behaviour). On the
+        # spring-forward gap the synthesized local time will normalise to the
+        # next valid instant when converted to UTC.
+        next_local = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0, fold=0)
+        if next_local <= now_local:
+            next_local += timedelta(days=1)
 
         if schedule_type == "weekly":
-            next_run += timedelta(weeks=1)
+            next_local += timedelta(weeks=1)
 
-        return next_run
+        return next_local.astimezone(timezone.utc)
 
     def _resolve_backup_dir(self, path_setting: str) -> Path:
         """Resolve the backup output directory from settings."""
@@ -223,7 +261,9 @@ class LocalBackupService:
         if not filename.startswith("bambuddy-backup-") or not filename.endswith(".zip"):
             return None
         backup_dir = self._resolve_backup_dir(path_setting)
-        target = backup_dir / filename
+        target = (
+            backup_dir / filename
+        )  # SEC-PATH-OK: filename rejected above on /, \\, .., plus startswith "bambuddy-backup-" + endswith ".zip" gate
         if not target.exists():
             return None
         return target
@@ -253,7 +293,9 @@ class LocalBackupService:
             return {"success": False, "message": "Invalid filename"}
 
         backup_dir = self._resolve_backup_dir(path_setting)
-        target = backup_dir / filename
+        target = (
+            backup_dir / filename
+        )  # SEC-PATH-OK: filename rejected above on /, \\, .., plus startswith "bambuddy-backup-" + endswith ".zip" gate below
 
         if not target.exists():
             return {"success": False, "message": "Backup not found"}

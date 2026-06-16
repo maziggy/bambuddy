@@ -20,6 +20,12 @@ class PrintArchive(Base):
     content_hash: Mapped[str | None] = mapped_column(String(64))  # SHA256 hash for duplicate detection
     thumbnail_path: Mapped[str | None] = mapped_column(String(500))
     timelapse_path: Mapped[str | None] = mapped_column(String(500))
+    # True when Bambuddy forced timelapse recording on for this print so the
+    # finish-photo extractor (#1397) could pull the post-park-pre-drop frame.
+    # The cleanup path uses this to know the timelapse should be deleted
+    # both locally and on the printer's SD after extraction — the user
+    # didn't opt in to a timelapse recording.
+    bambuddy_forced_timelapse: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     source_3mf_path: Mapped[str | None] = mapped_column(String(500))  # Original project 3MF from slicer
     f3d_path: Mapped[str | None] = mapped_column(String(500))  # Fusion 360 design file
 
@@ -78,6 +84,13 @@ class PrintArchive(Base):
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # Soft-delete sentinel (#1343). When non-null, the UI hides this archive
+    # from listings (its files have already been removed from disk) but the
+    # stats endpoint keeps counting it — deleting nine of ten Benchies no
+    # longer wipes their filament / time / cost contribution from Quick Stats.
+    # The opt-in "Also remove from statistics" checkbox in the delete dialog
+    # bypasses the soft-delete path and hard-deletes the row.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None, index=True)
 
     # User tracking (who uploaded/created this archive)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

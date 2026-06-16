@@ -386,6 +386,134 @@ class TestUpload:
         assert result is False
         client.disconnect()
 
+    def test_upload_426_with_intact_file_proceeds(self, ftp_client_factory, ftp_server, tmp_path):
+        """Some P2S firmware revisions return 426 on voidresp() even when the
+        file landed fully (TLS data-channel close races the 226). #1417
+        follow-up — verify via SIZE: when server size matches, proceed with
+        a warning instead of failing the dispatch.
+
+        Pre-#1417 the catch raised unconditionally and the reporter saw 11
+        retries fail in a row even though every upload was actually
+        succeeding on the printer side (v0.2.4.1 worked because the prior
+        proceed-with-warning branch tolerated the noise).
+        """
+        import ftplib  # nosec B402 — tests need the real ftplib to construct mock 426 responses
+
+        local = tmp_path / "test.bin"
+        local.write_bytes(b"data" * 256)  # 1024 bytes
+        client = ftp_client_factory()
+        client.connect()
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        def fake_size(_path):
+            # Real P2S firmware: voidresp returns 426 but the file IS on
+            # the SD card at its full size. Mock can't reproduce both
+            # halves naturally because pyftpdlib only flushes on a clean
+            # voidresp, so we inject SIZE explicitly to model the
+            # printer-side state the user observes.
+            return 1024
+
+        client._ftp.voidresp = raise_426
+        client._ftp.size = fake_size
+
+        result = client.upload_file(local, "/cache/test.bin")
+        assert result is True, "intact file (SIZE match) tolerates 426 noise"
+        client.disconnect()
+
+    def test_upload_426_with_truncated_file_returns_false(self, ftp_client_factory, ftp_server, tmp_path):
+        """The original #1401 fix is preserved: when SIZE confirms the file
+        isn't on the server at full size (or SIZE itself fails), the upload
+        must fail so the dispatcher doesn't send a print command for a
+        partial 3MF."""
+        import ftplib  # nosec B402 — tests need the real ftplib to construct mock 426 responses
+
+        local = tmp_path / "test.bin"
+        local.write_bytes(b"data" * 256)
+        client = ftp_client_factory()
+        client.connect()
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        # Make SIZE report a smaller value — file is genuinely truncated.
+        def fake_size(_path):
+            return 100
+
+        client._ftp.voidresp = raise_426
+        client._ftp.size = fake_size
+
+        result = client.upload_file(local, "/cache/test.bin")
+        assert result is False, "truncated file (SIZE mismatch) must fail"
+        client.disconnect()
+
+    def test_upload_426_with_size_check_failing_returns_false(self, ftp_client_factory, ftp_server, tmp_path):
+        """If SIZE itself fails (e.g. server too broken to answer), assume
+        the worst and fail — better a retry than a print on a partial file.
+        """
+        import ftplib  # nosec B402 — tests need the real ftplib to construct mock 426 responses
+
+        local = tmp_path / "test.bin"
+        local.write_bytes(b"data" * 256)
+        client = ftp_client_factory()
+        client.connect()
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        def raise_size(_path):
+            raise ftplib.error_perm("550 File not found.")
+
+        client._ftp.voidresp = raise_426
+        client._ftp.size = raise_size
+
+        result = client.upload_file(local, "/cache/test.bin")
+        assert result is False
+        client.disconnect()
+
+    def test_upload_bytes_426_with_intact_file_proceeds(self, ftp_client_factory, ftp_server):
+        """upload_bytes() mirrors the same SIZE-verify logic as upload_file."""
+        import ftplib  # nosec B402 — tests need the real ftplib to construct mock 426 responses
+
+        client = ftp_client_factory()
+        client.connect()
+        data = b"x" * 1024
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        def fake_size(_path):
+            return 1024  # printer-side file matches expected size
+
+        client._ftp.voidresp = raise_426
+        client._ftp.size = fake_size
+
+        result = client.upload_bytes(data, "/cache/bytes.bin")
+        assert result is True
+        client.disconnect()
+
+    def test_upload_bytes_426_with_truncated_file_returns_false(self, ftp_client_factory, ftp_server):
+        """The truncated branch for upload_bytes()."""
+        import ftplib  # nosec B402 — tests need the real ftplib to construct mock 426 responses
+
+        client = ftp_client_factory()
+        client.connect()
+        data = b"x" * 1024
+
+        def raise_426():
+            raise ftplib.error_temp("426 Failure reading network stream.")
+
+        def fake_size(_path):
+            return 100
+
+        client._ftp.voidresp = raise_426
+        client._ftp.size = fake_size
+
+        result = client.upload_bytes(data, "/cache/bytes.bin")
+        assert result is False
+        client.disconnect()
+
     def test_upload_bytes_success(self, ftp_client_factory, ftp_server):
         """upload_bytes() writes data to server."""
         data = b"Bytes upload content"
@@ -447,26 +575,32 @@ class TestDelete:
 
     def test_delete_success(self, ftp_client_factory, ftp_server):
         """Successful file deletion."""
+        from backend.app.services.bambu_ftp import DeleteResult
+
         ftp_server.add_file("cache/to_delete.bin", b"delete me")
         client = ftp_client_factory()
         client.connect()
         result = client.delete_file("/cache/to_delete.bin")
-        assert result is True
+        assert result == DeleteResult.DELETED
         assert not ftp_server.file_exists("cache/to_delete.bin")
         client.disconnect()
 
     def test_delete_not_found(self, ftp_client_factory):
-        """Deleting a nonexistent file returns False."""
+        """Deleting a nonexistent file returns NOT_FOUND (550, #1721)."""
+        from backend.app.services.bambu_ftp import DeleteResult
+
         client = ftp_client_factory()
         client.connect()
         result = client.delete_file("/cache/no_such_file.bin")
-        assert result is False
+        assert result == DeleteResult.NOT_FOUND
         client.disconnect()
 
     def test_delete_not_connected(self):
-        """Delete when not connected returns False."""
+        """Delete when not connected returns FAILED."""
+        from backend.app.services.bambu_ftp import DeleteResult
+
         client = BambuFTPClient("127.0.0.1", "12345678")
-        assert client.delete_file("/cache/test.bin") is False
+        assert client.delete_file("/cache/test.bin") == DeleteResult.FAILED
 
 
 # ---------------------------------------------------------------------------
@@ -925,6 +1059,8 @@ class TestAsyncWrappers:
     @pytest.mark.asyncio
     async def test_delete_file_async_success(self, patch_ftp_port):
         """delete_file_async deletes a file."""
+        from backend.app.services.bambu_ftp import DeleteResult
+
         server = patch_ftp_port
         server.add_file("cache/to_async_del.bin", b"delete me")
         result = await delete_file_async(
@@ -933,8 +1069,21 @@ class TestAsyncWrappers:
             "/cache/to_async_del.bin",
             printer_model="X1C",
         )
-        assert result is True
+        assert result == DeleteResult.DELETED
         assert not server.file_exists("cache/to_async_del.bin")
+
+    @pytest.mark.asyncio
+    async def test_delete_file_async_not_found(self, patch_ftp_port):
+        """delete_file_async distinguishes 550 from real failure (#1721)."""
+        from backend.app.services.bambu_ftp import DeleteResult
+
+        result = await delete_file_async(
+            "127.0.0.1",
+            "12345678",
+            "/cache/never_existed.bin",
+            printer_model="X1C",
+        )
+        assert result == DeleteResult.NOT_FOUND
 
 
 # ---------------------------------------------------------------------------

@@ -7,10 +7,14 @@ import shutil
 import socket
 import struct
 import subprocess
+import sys
 
 logger = logging.getLogger(__name__)
 
-# Interfaces to exclude from selection
+# Interfaces to exclude from selection (Linux only — Windows adapter names
+# don't follow these prefixes and there's no equivalent uniform Windows
+# exclude list worth hard-coding; the psutil path filters on address class
+# (loopback, link-local) and interface up-state instead).
 EXCLUDED_INTERFACE_PREFIXES = ("lo", "docker", "br-", "veth", "virbr")
 
 # Resolve full path to `ip` command (may not be in PATH for service users)
@@ -22,12 +26,86 @@ def _is_excluded(name: str) -> bool:
     return any(name.startswith(prefix) for prefix in EXCLUDED_INTERFACE_PREFIXES)
 
 
+def _get_network_interfaces_psutil() -> list[dict]:
+    """Windows path: enumerate interfaces via psutil.
+
+    fcntl + ioctl is Linux-only, and the ``ip`` command isn't available
+    on Windows either, so both Linux code paths return empty here. psutil
+    is already a Bambuddy dep (``psutil>=6.0.0``) and gives us cross-
+    platform name + IPv4 + netmask in one call.
+
+    Filters: IPv4 only (matches the Linux path), skip loopback and
+    link-local (169.254.0.0/16), skip interfaces psutil reports as down.
+    No name-based exclusion — users on Windows may legitimately want to
+    bind a VP to a Hyper-V / WSL / Tailscale virtual adapter.
+    """
+    try:
+        import psutil
+    except ImportError:
+        logger.warning("psutil not available, interface detection unavailable on this platform")
+        return []
+
+    interfaces = []
+    try:
+        addrs_by_iface = psutil.net_if_addrs()
+        stats_by_iface = psutil.net_if_stats()
+    except Exception as e:
+        logger.error("psutil failed to enumerate interfaces: %s", e)
+        return []
+
+    for name, addrs in addrs_by_iface.items():
+        stats = stats_by_iface.get(name)
+        if stats is not None and not stats.isup:
+            continue
+
+        for addr in addrs:
+            if addr.family != socket.AF_INET:
+                continue
+            ip = addr.address
+            netmask = addr.netmask
+            if not ip or not netmask:
+                continue
+
+            try:
+                ip_obj = ipaddress.IPv4Address(ip)
+            except ValueError:
+                continue
+            if ip_obj.is_loopback or ip_obj.is_link_local:
+                continue
+
+            try:
+                network = ipaddress.IPv4Network(f"{ip}/{netmask}", strict=False)
+            except ValueError:
+                continue
+
+            interfaces.append(
+                {
+                    "name": name,
+                    "ip": ip,
+                    "netmask": netmask,
+                    "subnet": str(network),
+                }
+            )
+            # First IPv4 per interface is enough; matches Linux ioctl which
+            # returns only the primary IP (aliases land via get_all_interface_ips
+            # on Linux, which has no Windows analogue worth replicating).
+            break
+
+    return interfaces
+
+
 def get_network_interfaces() -> list[dict]:
     """Get all network interfaces with their IPs and subnets.
 
     Returns:
         List of dicts with name, ip, netmask, subnet, broadcast
     """
+    # Windows has no fcntl and no `ip` binary; the Linux ioctl path below
+    # raises ImportError on import fcntl. Route to the psutil-based path
+    # instead. The Linux path stays as-is for behavioural parity.
+    if sys.platform == "win32":
+        return _get_network_interfaces_psutil()
+
     interfaces = []
 
     try:

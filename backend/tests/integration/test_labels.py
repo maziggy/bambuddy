@@ -66,7 +66,13 @@ class TestLocalInventoryLabels:
     @pytest.mark.integration
     async def test_all_four_templates_succeed(self, async_client: AsyncClient, spool_factory):
         s = await spool_factory()
-        for template in ("ams_30x15", "box_62x29", "avery_5160", "avery_l7160"):
+        for template in (
+            "ams_holder_74x33",
+            "ams_holder_75x55",
+            "box_62x29",
+            "avery_5160",
+            "avery_l7160",
+        ):
             resp = await async_client.post(
                 "/api/v1/inventory/labels",
                 json={"spool_ids": [s.id], "template": template},
@@ -100,7 +106,7 @@ class TestLocalInventoryLabels:
         s = await spool_factory()
         resp = await async_client.post(
             "/api/v1/inventory/labels",
-            json={"spool_ids": [s.id, 99999], "template": "ams_30x15"},
+            json={"spool_ids": [s.id, 99999], "template": "ams_holder_74x33"},
         )
         assert resp.status_code == 404
         assert "99999" in resp.text

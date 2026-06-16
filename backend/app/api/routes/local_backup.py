@@ -20,6 +20,8 @@ async def get_status(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_BACKUP),
 ):
     """Get local backup scheduler status and configuration."""
+    from backend.app.services.local_backup import _local_zone
+
     settings = await local_backup_service._load_settings()
     status = local_backup_service.get_status()
     return {
@@ -30,6 +32,10 @@ async def get_status(
         "retention": settings["retention"],
         "path": settings["path"],
         "default_path": str(local_backup_service._resolve_backup_dir("")),
+        # IANA zone name the HH:MM picker is interpreted in (TZ env, UTC fallback).
+        # Frontend renders this next to the time field so users see the same
+        # zone the backend will use. #1602 follow-up.
+        "timezone": str(_local_zone()),
     }
 
 

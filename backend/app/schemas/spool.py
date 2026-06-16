@@ -100,6 +100,11 @@ class SpoolBase(BaseModel):
     core_weight: int = 250
     core_weight_catalog_id: int | None = None
     weight_used: float = 0
+    # Anchor for the resettable "Total Consumed" display. The Inventory
+    # page shows `weight_used - weight_used_baseline`; the per-spool /
+    # bulk "Reset usage to 0" action sets baseline = weight_used so the
+    # counter zeroes without touching remaining (#1390).
+    weight_used_baseline: float = 0
     slicer_filament: str | None = None
     slicer_filament_name: str | None = None
     nozzle_temp_min: int | None = None
@@ -117,6 +122,10 @@ class SpoolBase(BaseModel):
     # User-defined category + per-spool low-stock threshold override (#729).
     category: str | None = Field(default=None, max_length=50)
     low_stock_threshold_pct: int | None = Field(default=None, ge=1, le=99)
+    # Free-text storage location, distinct from `location` (AMS slot
+    # assignment). Column has lived on the ORM since the inventory rework
+    # but was missing from this schema, so writes were silently dropped (#1291).
+    storage_location: str | None = Field(default=None, max_length=255)
 
 
 class SpoolCreate(SpoolBase):
@@ -166,6 +175,7 @@ class SpoolUpdate(BaseModel):
     # User-defined category + per-spool low-stock threshold override (#729).
     category: str | None = Field(default=None, max_length=50)
     low_stock_threshold_pct: int | None = Field(default=None, ge=1, le=99)
+    storage_location: str | None = Field(default=None, max_length=255)
 
 
 class SpoolKProfileBase(BaseModel):

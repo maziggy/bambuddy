@@ -5,6 +5,7 @@ import type { ColorSectionProps, CatalogDisplayColor } from './types';
 import { QUICK_COLORS, ALL_COLORS } from './constants';
 import { FilamentSwatch } from '../FilamentSwatch';
 import { buildFilamentBackground, FILAMENT_EFFECT_OPTIONS } from '../filamentSwatchHelpers';
+import { getSwatchStyle } from '../../utils/colors';
 
 /** Parse user paste from 3dfilamentprofiles.com etc.: split on commas/whitespace,
  *  drop the leading `#`, accept 6/8-char hex, lowercase. Returns null when no
@@ -37,17 +38,69 @@ export function ColorSection({
   const [showAllColors, setShowAllColors] = useState(false);
   const [colorSearch, setColorSearch] = useState('');
 
-  // Current hex without # prefix
-  const currentHex = formData.rgba.replace('#', '').substring(0, 6);
+  // Current rgba in canonical 8-char uppercase form (RRGGBBAA). Used both for
+  // preset selection matching and to derive the 6-char hex shown in the
+  // native picker / draft input. #1545: alpha is tracked end-to-end so the
+  // `Clear` preset (00000000) stays distinct from black (000000FF).
+  const currentRgba = (formData.rgba.replace('#', '') + 'FF').substring(0, 8).toUpperCase();
+  const currentHex = currentRgba.substring(0, 6);
+  const currentAlpha = currentRgba.substring(6, 8);
+  const isTransparent = currentAlpha === '00';
 
+  // Draft state for the manual hex input. Decoupled from `formData.rgba` so
+  // mid-typing values (1–7 chars) don't trigger the immediate auto-pad
+  // that used to drop every keystroke past the first (#1407). The draft is
+  // committed to `formData.rgba` once it reaches 6 or 8 chars, or on blur
+  // (where shorter drafts are padded with `0` so the backend never sees a
+  // malformed rgba — preserves the #1055 invariant). The useEffect re-syncs
+  // the draft whenever an external action (color picker, swatch click,
+  // edit-mode load) changes the rgba.
+  const [hexDraft, setHexDraft] = useState(isTransparent ? currentRgba : currentHex);
+  useEffect(() => {
+    setHexDraft(isTransparent ? currentRgba : currentHex);
+  }, [currentHex, currentRgba, isTransparent]);
+
+  // Match presets on the full rgba so 'Clear' (00000000) doesn't collide with
+  // 'Black' (000000FF). A 6-char preset hex is treated as alpha=FF.
   const isSelected = (hex: string) => {
-    return currentHex.toUpperCase() === hex.toUpperCase();
+    const presetRgba = (hex.replace('#', '') + 'FF').substring(0, 8).toUpperCase();
+    return currentRgba === presetRgba;
   };
 
-  const selectColor = (hex: string, name: string) => {
-    // Store as RRGGBBAA (with FF alpha)
-    updateField('rgba', hex.toUpperCase() + 'FF');
+  // Visual style for a swatch button — delegates to the shared helper so the
+  // `Clear` preset (alpha=00) renders as a checkerboard everywhere the same
+  // way instead of vanishing under a transparent backgroundColor (#1545).
+  const swatchStyle = (hex: string) => getSwatchStyle(hex);
+
+  const selectColor = (
+    hex: string,
+    name: string,
+    // #1340: catalog entries carry an optional gradient + effect. Pass them in
+    // (even as empty strings) to overwrite the spool's existing values — the
+    // catalog entry is a complete preset, the user explicitly chose its look.
+    // Pass `undefined` (the default, used by recent/fallback swatches) to
+    // leave any existing gradient/effect untouched — those buttons are plain
+    // hex pickers, not full presets.
+    extraColors?: string | null,
+    effectType?: string | null,
+  ) => {
+    // Store as RRGGBBAA. 6-char presets get alpha=FF appended; 8-char presets
+    // (e.g. the `Clear` swatch, 00000000) are preserved as-is so the
+    // transparency reaches the backend (#1545).
+    const cleaned = hex.replace('#', '').toUpperCase();
+    const rgba = cleaned.length === 8 ? cleaned : cleaned + 'FF';
+    updateField('rgba', rgba);
     updateField('color_name', name);
+    if (extraColors !== undefined) {
+      const next = extraColors ?? '';
+      setExtraColorsDraft(next);
+      setExtraColorsErrors([]);
+      lastCommittedExtraColorsRef.current = next;
+      updateField('extra_colors', next);
+    }
+    if (effectType !== undefined) {
+      updateField('effect_type', effectType ?? '');
+    }
     onColorUsed({ name, hex });
   };
 
@@ -82,6 +135,8 @@ export function ColorSection({
           hex: c.hex_color.replace('#', '').substring(0, 6),
           manufacturer: c.manufacturer,
           material: typeof c.material === 'string' ? c.material : undefined,
+          extra_colors: c.extra_colors ?? null,
+          effect_type: c.effect_type ?? null,
         }));
       }
     }
@@ -101,6 +156,8 @@ export function ColorSection({
           hex: c.hex_color.replace('#', '').substring(0, 6),
           manufacturer: c.manufacturer,
           material: typeof c.material === 'string' ? c.material : undefined,
+          extra_colors: c.extra_colors ?? null,
+          effect_type: c.effect_type ?? null,
         }));
       }
       // Try without trailing "+" (e.g. "PLA Silk+" -> "PLA Silk")
@@ -133,6 +190,8 @@ export function ColorSection({
           hex: c.hex_color.replace('#', '').substring(0, 6),
           manufacturer: c.manufacturer,
           material: typeof c.material === 'string' ? c.material : undefined,
+          extra_colors: c.extra_colors ?? null,
+          effect_type: c.effect_type ?? null,
         }));
       }
     }
@@ -239,7 +298,7 @@ export function ColorSection({
                     ? 'border-bambu-green ring-1 ring-bambu-green/30 scale-110'
                     : 'border-bambu-dark-tertiary'
                 }`}
-                style={{ backgroundColor: `#${color.hex}` }}
+                style={swatchStyle(color.hex)}
                 title={color.name}
               />
             ))}
@@ -271,13 +330,13 @@ export function ColorSection({
               <button
                 key={`${color.hex}-${color.name}-${color.manufacturer ?? ''}`}
                 type="button"
-                onClick={() => selectColor(color.hex, color.name)}
+                onClick={() => selectColor(color.hex, color.name, color.extra_colors, color.effect_type)}
                 className={`w-6 h-6 rounded border-2 transition-all hover:scale-110 hover:z-20 relative group ${
                   isSelected(color.hex)
                     ? 'border-bambu-green ring-1 ring-bambu-green/30 scale-110'
                     : 'border-bambu-dark-tertiary'
                 }`}
-                style={{ backgroundColor: `#${color.hex}` }}
+                style={swatchStyle(color.hex)}
                 title={
                   color.manufacturer && color.material
                     ? `${color.name} (${color.manufacturer} — ${color.material})`
@@ -330,7 +389,7 @@ export function ColorSection({
                     ? 'border-bambu-green ring-1 ring-bambu-green/30 scale-110'
                     : 'border-bambu-dark-tertiary'
                 }`}
-                style={{ backgroundColor: `#${color.hex}` }}
+                style={swatchStyle(color.hex)}
                 title={color.name}
               >
                 <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-lg text-white">
@@ -366,20 +425,43 @@ export function ColorSection({
                 type="text"
                 className="w-full pl-7 pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm font-mono uppercase focus:outline-none focus:border-bambu-green"
                 placeholder="RRGGBB"
-                value={currentHex.toUpperCase()}
+                value={hexDraft.toUpperCase()}
                 onChange={(e) => {
-                  const val = e.target.value.replace('#', '').replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
-                  if (val.length > 8) return;
-                  // Normalize to a valid 8-char RRGGBBAA on every keystroke so
-                  // the backend never receives a malformed rgba (#1055). 8-char
-                  // paste passes through; 7-char drops the stray typo; anything
-                  // shorter is right-padded with '0' to a full RGB triplet and
-                  // given FF alpha. Prior logic emitted 3/5/7-char strings mid-
-                  // typing that PATCH would accept (SpoolUpdate was unchecked)
-                  // and later 500 the list endpoint on response serialization.
-                  const rgba =
-                    val.length === 8 ? val : val.length === 7 ? val.substring(0, 6) + 'FF' : val.padEnd(6, '0') + 'FF';
-                  updateField('rgba', rgba);
+                  // Sanitize: drop `#`, non-hex chars, uppercase. Accept up to
+                  // 8 chars so power users can type an alpha byte (e.g.
+                  // `00000000` for transparent / `00FF00FF` for opaque) —
+                  // #1545. The Clear preset button covers the common case; the
+                  // input handles arbitrary alphas. Draft holds 0–8 chars; we
+                  // commit when the value is a complete 6-char (alpha defaults
+                  // to FF) or 8-char hex, preserving the #1055/#1407
+                  // invariants.
+                  const sanitized = e.target.value
+                    .replace('#', '')
+                    .replace(/[^0-9A-Fa-f]/g, '')
+                    .toUpperCase();
+                  const next = sanitized.length > 8 ? sanitized.substring(0, 8) : sanitized;
+                  setHexDraft(next);
+                  if (next.length === 6) {
+                    updateField('rgba', next + 'FF');
+                  } else if (next.length === 8) {
+                    updateField('rgba', next);
+                  }
+                }}
+                onBlur={() => {
+                  // User left the field with a partial value — pad RGB to 6
+                  // chars (alpha defaults to FF) and commit so the form state
+                  // always carries a valid rgba when submitted. 7-char drafts
+                  // (RGB + 1 alpha digit) pad the alpha nibble to 0 to reach
+                  // a complete 8-char hex.
+                  if (hexDraft.length === 7) {
+                    const padded = hexDraft + '0';
+                    setHexDraft(padded);
+                    updateField('rgba', padded);
+                  } else if (hexDraft.length > 0 && hexDraft.length < 6) {
+                    const padded = hexDraft.padEnd(6, '0');
+                    setHexDraft(padded);
+                    updateField('rgba', padded + 'FF');
+                  }
                 }}
               />
             </div>

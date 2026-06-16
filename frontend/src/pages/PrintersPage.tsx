@@ -1,6 +1,15 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { compareFwVersions } from '../utils/firmwareVersion';
 import { formatPrintName } from '../utils/printName';
+import { computePopoverPosition } from '../utils/popoverPosition';
+
+// AMS drying popover dimensions — w-[240px] on the popover, estimated height
+// covers header + filament select + temp slider + duration + rotate-tray
+// toggle + buttons. Over-estimating is fine (flip-above kicks in slightly
+// earlier); under-estimating leaves the popover clipped off the bottom (the
+// original bug at #1447).
+const DRYING_POPOVER_WIDTH = 240;
+const DRYING_POPOVER_ESTIMATED_HEIGHT = 320;
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
@@ -60,12 +69,13 @@ import {
   LogOut,
   MoreHorizontal,
   SlidersHorizontal,
+  Stethoscope,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
-import { api, discoveryApi, firmwareApi, withStreamToken } from '../api/client';
+import { api, discoveryApi, firmwareApi, withStreamToken, ApiError } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
-import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug } from '../api/client';
+import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -91,6 +101,7 @@ import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoo
 import { getPrinterImage, getWifiStrength, filterCompatibleQueueItems } from '../utils/printer';
 import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
 import { Collapsible } from '../components/Collapsible';
+import { ConnectionDiagnosticModal, DiagnosticChecklist } from '../components/ConnectionDiagnostic';
 import { getColorName, parseFilamentColor, isLightColor } from '../utils/colors';
 
 export interface SpoolmanSlotAssignmentRow {
@@ -786,6 +797,25 @@ function getAmsLabel(amsId: number | string, trayCount: number): string {
   return isHt ? `HT-${letter}` : `AMS-${letter}`;
 }
 
+/** Classify an empty AMS slot for UI rendering (#1322 follow-up).
+ *
+ *  "physical" — firmware positively confirmed no spool (state 9 or 10). The
+ *  bambu_mqtt handler now promotes tray_exist_bits=0 slots to state=9, so
+ *  every empty-by-bitmask slot lands here regardless of firmware payload
+ *  shape.
+ *
+ *  "reset" — tray_type is missing/empty but firmware hasn't confirmed
+ *  emptiness (state is null, 3, or any non-9/10 value). Typically a slot
+ *  the user cleared with "Reset Slot" where a physical spool may still be
+ *  loaded but unassigned.
+ *
+ *  Returns null when the slot is loaded (tray_type is present).
+ */
+function getEmptySlotKind(tray: { tray_type?: string | null; state?: number | null } | null | undefined): 'physical' | 'reset' | null {
+  if (tray?.tray_type) return null;
+  return (tray?.state === 9 || tray?.state === 10) ? 'physical' : 'reset';
+}
+
 
 function CoverImage({ url, printName }: { url: string | null; printName?: string }) {
   const { t } = useTranslation();
@@ -1164,6 +1194,8 @@ function mapModelCode(ssdpModel: string | null): string {
     'BL-P003': 'X1E',
     // X2 Series
     'N6': 'X2D',
+    // A2 Series
+    'N9': 'A2L',
     // P Series
     'C11': 'P1S',
     'C12': 'P1P',
@@ -1181,6 +1213,7 @@ function mapModelCode(ssdpModel: string | null): string {
     'P2S': 'P2S',
     'A1': 'A1',
     'A1 Mini': 'A1 Mini',
+    'A2L': 'A2L',
     'H2D': 'H2D',
     'H2D Pro': 'H2D Pro',
     'H2C': 'H2C',
@@ -1483,6 +1516,7 @@ function PrinterCard({
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
   const [showUploadForPrint, setShowUploadForPrint] = useState(false);
   const [showPrinterInfo, setShowPrinterInfo] = useState(false);
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
   const closePrinterInfo = useCallback(() => setShowPrinterInfo(false), []);
   const [printAfterUpload, setPrintAfterUpload] = useState<{ id: number; filename: string } | null>(null);
   // AMS drying popover state: which AMS unit has the popover open
@@ -2563,6 +2597,16 @@ function PrinterCard({
                     {t('printers.mqttDebug')}
                   </button>
                   <button
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
+                    onClick={() => {
+                      setShowDiagnostic(true);
+                      setShowMenu(false);
+                    }}
+                  >
+                    <Stethoscope className="w-4 h-4" />
+                    {t('diagnostic.runButton')}
+                  </button>
+                  <button
                     className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
                       hasPermission('printers:delete')
                         ? 'text-red-400 hover:bg-bambu-dark-tertiary'
@@ -2601,6 +2645,17 @@ function PrinterCard({
                 )}
                 {status?.connected ? t('printers.connection.connected') : t('printers.connection.offline')}
               </span>
+              {/* Run connection diagnostic — offered when the printer is offline */}
+              {!status?.connected && (
+                <button
+                  onClick={() => setShowDiagnostic(true)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer bg-bambu-dark-tertiary text-bambu-gray hover:text-white transition-colors"
+                  title={t('diagnostic.runButton')}
+                >
+                  <Stethoscope className="w-3 h-3" />
+                  {t('diagnostic.runButton')}
+                </button>
+              )}
               {/* Network connection indicator */}
               {status?.connected && status?.wired_network && (
                 <span
@@ -3467,7 +3522,7 @@ function PrinterCard({
                                           setDryingPopoverModuleType(ams.module_type);
                                           setDryingPopoverAmsId(ams.id);
                                           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                          setDryingPopoverPos({ top: rect.bottom + 4, left: Math.max(8, rect.right - 240) });
+                                          setDryingPopoverPos(computePopoverPosition({ triggerRect: rect, popoverWidth: DRYING_POPOVER_WIDTH, estimatedHeight: DRYING_POPOVER_ESTIMATED_HEIGHT }));
                                         }
                                       }}
                                       className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-colors ${
@@ -3515,6 +3570,7 @@ function PrinterCard({
                                 const tray = ams.tray[slotIdx] || ams.tray.find(t => t.id === slotIdx);
                                 const hasFillLevel = tray?.tray_type && tray.remain >= 0;
                                 const isEmpty = !tray?.tray_type;
+                                const emptyKind = getEmptySlotKind(tray);
                                 // Check if this is the currently loaded tray
                                 // Global tray ID = ams.id * 4 + slot index (for standard AMS)
                                 const globalTrayId = ams.id * 4 + slotIdx;
@@ -3592,10 +3648,11 @@ function PrinterCard({
                                       trayColor={tray?.tray_color}
                                       trayType={tray?.tray_type}
                                       isEmpty={isEmpty}
+                                      emptyKind={emptyKind}
                                       slotNumber={slotIdx + 1}
                                     />
                                     <div className="text-[9px] text-white font-bold truncate">
-                                      {tray?.tray_type || '—'}
+                                      {tray?.tray_type || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
                                     </div>
                                     {/* Fill bar */}
                                     <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
@@ -3703,8 +3760,11 @@ function PrinterCard({
                                         data={filamentData}
                                         spoolman={{
                                           enabled: spoolmanEnabled,
-                                          linkedSpoolId: (trayTag ? linkedSpools?.[trayTag]?.id : undefined)
-                                            ?? slotAssignmentForFill?.spoolman_spool_id,
+                                          // #1457: slot assignment is the user's most explicit action — it must
+                                          // outrank the tag-link, which can be stale when a non-RFID slot's
+                                          // fallback tag is still attached to a previous spool in Spoolman.
+                                          linkedSpoolId: slotAssignmentForFill?.spoolman_spool_id
+                                            ?? (trayTag ? linkedSpools?.[trayTag]?.id : undefined),
                                           spoolmanUrl,
                                           syncMode: spoolmanSyncMode,
                                           // Suppress Link button when slot is already occupied by ANY assignment
@@ -3799,6 +3859,7 @@ function PrinterCard({
                                       </FilamentHoverCard>
                                     ) : (
                                       <EmptySlotHoverCard
+                                        kind={emptyKind ?? undefined}
                                         configureSlot={{
                                           enabled: hasPermission('printers:control'),
                                           onConfigure: () => setConfigureSlotModal({
@@ -3847,6 +3908,7 @@ function PrinterCard({
                         const tray = ams.tray[0];
                         const hasFillLevel = tray?.tray_type && tray.remain >= 0;
                         const isEmpty = !tray?.tray_type;
+                        const emptyKind = getEmptySlotKind(tray);
                         // Check if this is the currently loaded tray
                         const globalTrayId = getGlobalTrayId(ams.id, tray?.id ?? 0, false);
                         const isActive = effectiveTrayNow === globalTrayId;
@@ -3914,10 +3976,11 @@ function PrinterCard({
                               trayColor={tray?.tray_color}
                               trayType={tray?.tray_type}
                               isEmpty={isEmpty}
+                              emptyKind={emptyKind}
                               slotNumber={1}
                             />
                             <div className="text-[9px] text-white font-bold truncate">
-                              {tray?.tray_type || '—'}
+                              {tray?.tray_type || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
                             </div>
                             {/* Fill bar */}
                             <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
@@ -3975,7 +4038,7 @@ function PrinterCard({
                                         setDryingPopoverModuleType(ams.module_type);
                                         setDryingPopoverAmsId(ams.id);
                                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                        setDryingPopoverPos({ top: rect.bottom + 4, left: Math.max(8, rect.right - 240) });
+                                        setDryingPopoverPos(computePopoverPosition({ triggerRect: rect, popoverWidth: DRYING_POPOVER_WIDTH, estimatedHeight: DRYING_POPOVER_ESTIMATED_HEIGHT }));
                                       }
                                     }}
                                     className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-colors ${
@@ -4101,8 +4164,9 @@ function PrinterCard({
                                     data={filamentData}
                                     spoolman={{
                                       enabled: spoolmanEnabled,
-                                      linkedSpoolId: (htTrayTag ? linkedSpools?.[htTrayTag]?.id : undefined)
-                                        ?? htSlotAssignmentForFill?.spoolman_spool_id,
+                                      // #1457: slot assignment outranks tag-link (see top-level slot block).
+                                      linkedSpoolId: htSlotAssignmentForFill?.spoolman_spool_id
+                                        ?? (htTrayTag ? linkedSpools?.[htTrayTag]?.id : undefined),
                                       spoolmanUrl,
                                       syncMode: spoolmanSyncMode,
                                       // Suppress Link button when slot is occupied by ANY assignment (Phase 13 P13-6d)
@@ -4194,6 +4258,7 @@ function PrinterCard({
                                   </FilamentHoverCard>
                                 ) : (
                                   <EmptySlotHoverCard
+                                    kind={emptyKind ?? undefined}
                                     configureSlot={{
                                       enabled: hasPermission('printers:control'),
                                       onConfigure: () => setConfigureSlotModal({
@@ -4322,6 +4387,7 @@ function PrinterCard({
                               };
 
                               const isEmpty = !extTray.tray_type;
+                              const emptyKind = getEmptySlotKind(extTray);
                               const extSlotContent = (
                                 <div className={`bg-bambu-dark-tertiary rounded p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isExtActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}>
                                   {/* Filament color circle with 1-based slot number centered inside */}
@@ -4329,10 +4395,11 @@ function PrinterCard({
                                     trayColor={extTray.tray_color}
                                     trayType={extTray.tray_type}
                                     isEmpty={isEmpty}
+                                    emptyKind={emptyKind}
                                     slotNumber={slotTrayId + 1}
                                   />
                                   <div className={`text-[9px] font-bold truncate ${isEmpty ? 'text-white/40' : 'text-white'}`}>
-                                    {extTray.tray_type || '—'}
+                                    {extTray.tray_type || t('ams.slotEmpty')}
                                   </div>
                                   <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                                     {extEffectiveFill !== null && extEffectiveFill >= 0 && !isEmpty && (
@@ -4413,8 +4480,9 @@ function PrinterCard({
                                       data={extFilamentData}
                                       spoolman={{
                                         enabled: spoolmanEnabled,
-                                        linkedSpoolId: (extTrayTag ? linkedSpools?.[extTrayTag]?.id : undefined)
-                                          ?? extSlotAssignmentForFill?.spoolman_spool_id,
+                                        // #1457: slot assignment outranks tag-link (see top-level slot block).
+                                        linkedSpoolId: extSlotAssignmentForFill?.spoolman_spool_id
+                                          ?? (extTrayTag ? linkedSpools?.[extTrayTag]?.id : undefined),
                                         spoolmanUrl,
                                         syncMode: spoolmanSyncMode,
                                         // Suppress Link button when slot is occupied by ANY assignment (Phase 13 P13-6d)
@@ -4506,6 +4574,7 @@ function PrinterCard({
                                     </FilamentHoverCard>
                                   ) : (
                                     <EmptySlotHoverCard
+                                      kind={emptyKind ?? undefined}
                                       configureSlot={{
                                         enabled: hasPermission('printers:control'),
                                         onConfigure: () => setConfigureSlotModal({
@@ -4566,7 +4635,7 @@ function PrinterCard({
                   >
                     {plugStatus.state || '?'}
                     {plugStatus.state === 'ON' && plugStatus.energy?.power != null && (
-                      <span className="text-yellow-400 ml-1.5">· {plugStatus.energy.power}W</span>
+                      <span className="text-yellow-400 ml-1.5">· {Math.round(plugStatus.energy.power)}W</span>
                     )}
                   </span>
                 )}
@@ -4822,6 +4891,14 @@ function PrinterCard({
           printerId={printer.id}
           printerName={printer.name}
           onClose={() => setShowMQTTDebug(false)}
+        />
+      )}
+
+      {showDiagnostic && (
+        <ConnectionDiagnosticModal
+          printerId={printer.id}
+          printerName={printer.name}
+          onClose={() => setShowDiagnostic(false)}
         />
       )}
 
@@ -5356,17 +5433,29 @@ function PrinterCard({
             <div className="fixed inset-0 z-[100]" onClick={() => setDryingPopoverAmsId(null)} />
             {/* Popover */}
             <div
-              className="fixed z-[101] w-[240px] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl overflow-hidden"
-              style={{ top: dryingPopoverPos.top, left: dryingPopoverPos.left }}
+              className="fixed z-[101] flex flex-col w-[240px] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl overflow-hidden"
+              style={{
+                top: dryingPopoverPos.top,
+                left: dryingPopoverPos.left,
+                // Cap to the space between the popover's top and the bottom
+                // viewport margin (8px, matching computePopoverPosition's
+                // margin). When the popover is taller than that space — short
+                // viewport, landscape phone, zoomed-in — the body scrolls and
+                // the footer stays pinned, so the Start button is always
+                // reachable (#1458 / #1447 follow-up). dvh (not vh) so iOS
+                // Safari's bottom toolbar overlay doesn't clip the footer
+                // (#1669, iPhone 17 Safari).
+                maxHeight: `calc(100dvh - ${dryingPopoverPos.top}px - 8px)`,
+              }}
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="flex items-center gap-2 px-3 py-2.5 border-b border-bambu-dark-tertiary">
+              <div className="shrink-0 flex items-center gap-2 px-3 py-2.5 border-b border-bambu-dark-tertiary">
                 <Flame className="w-3.5 h-3.5 text-amber-400" />
                 <span className="text-xs text-white font-medium">{t('printers.drying.start')}</span>
               </div>
               {/* Body */}
-              <div className="px-3 py-2.5 space-y-2.5">
+              <div className="px-3 py-2.5 space-y-2.5 overflow-y-auto min-h-0">
                 {/* Filament type select */}
                 <div>
                   <label className="text-[10px] text-bambu-gray mb-1 block">{t('printers.filaments')}</label>
@@ -5459,7 +5548,7 @@ function PrinterCard({
                 </label>
               </div>
               {/* Footer */}
-              <div className="px-3 pb-3">
+              <div className="shrink-0 px-3 pt-2.5 pb-3">
                 <button
                   onClick={() => {
                     if (dryingPopoverAmsId !== null) {
@@ -5480,7 +5569,7 @@ function PrinterCard({
   );
 }
 
-function AddPrinterModal({
+export function AddPrinterModal({
   onClose,
   onAdd,
   existingSerials,
@@ -5508,9 +5597,25 @@ function AddPrinterModal({
   const [isDocker, setIsDocker] = useState(false);
   const [detectedSubnets, setDetectedSubnets] = useState<string[]>([]);
   const [subnet, setSubnet] = useState('');
+  // Custom subnet — `__custom__` sentinel in the dropdown reveals a CIDR
+  // text input so users can scan a subnet Bambuddy isn't directly on
+  // (printer behind a router on a different L3 segment — SSDP multicast
+  // won't cross that boundary, only an active unicast scan will). #1564
+  const [customSubnet, setCustomSubnet] = useState('');
+  const [useCustomSubnet, setUseCustomSubnet] = useState(false);
   const [scanProgress, setScanProgress] = useState({ scanned: 0, total: 0 });
+  const [showDiagnostic, setShowDiagnostic] = useState(false);
 
-  // Fetch discovery info on mount
+  // Setup-time pre-flight: run the connection diagnostic on save and warn
+  // (not block) when checks fail, so the user doesn't add a printer that
+  // immediately shows offline. checkingSave = probe in flight; saveWarning =
+  // failed result awaiting an explicit "save anyway".
+  const [checkingSave, setCheckingSave] = useState(false);
+  const [saveWarning, setSaveWarning] = useState<PrinterDiagnosticResult | null>(null);
+
+  // Fetch discovery info on mount + restore the last custom CIDR the user
+  // typed (kept in localStorage so they don't retype `10.1.1.0/24` every
+  // time they open this modal).
   useEffect(() => {
     discoveryApi.getInfo().then(info => {
       setIsDocker(info.is_docker);
@@ -5521,10 +5626,37 @@ function AddPrinterModal({
     }).catch(() => {
       // Ignore errors, assume not Docker
     });
+    try {
+      const saved = localStorage.getItem('bambuddy.discovery.customSubnet');
+      if (saved) setCustomSubnet(saved);
+    } catch {
+      // localStorage unavailable (private mode, quota); recall is opportunistic
+    }
   }, []);
 
   // Filter out already-added printers
   const newPrinters = discovered.filter(p => !existingSerials.includes(p.serial));
+
+  const handleAddSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCheckingSave(true);
+    try {
+      const result = await api.diagnoseConnection({
+        ip_address: form.ip_address.trim(),
+        serial_number: form.serial_number.trim() || undefined,
+        access_code: form.access_code || undefined,
+      });
+      if (result.checks.some((c) => c.status === 'fail')) {
+        setSaveWarning(result);
+        return;
+      }
+    } catch {
+      // Diagnostic infrastructure failed — never block the save on it.
+    } finally {
+      setCheckingSave(false);
+    }
+    onAdd(form);
+  };
 
   const startDiscovery = async () => {
     setDiscoveryError('');
@@ -5533,10 +5665,23 @@ function AddPrinterModal({
     setHasScanned(false);
     setScanProgress({ scanned: 0, total: 0 });
 
+    // Native installs fall back to subnet scanning when the user picks
+    // "Custom" — SSDP can't reach a printer on a different L3 segment
+    // (#1564). Docker mode always uses subnet scan (multicast unavailable).
+    const scanCidr = useCustomSubnet ? customSubnet.trim() : subnet;
+    const wantsSubnetScan = isDocker || useCustomSubnet;
+
+    if (wantsSubnetScan && useCustomSubnet) {
+      try {
+        localStorage.setItem('bambuddy.discovery.customSubnet', scanCidr);
+      } catch {
+        // localStorage write best-effort; user just retypes next time
+      }
+    }
+
     try {
-      if (isDocker) {
-        // Use subnet scanning for Docker
-        await discoveryApi.startSubnetScan(subnet);
+      if (wantsSubnetScan) {
+        await discoveryApi.startSubnetScan(scanCidr);
 
         // Poll for scan status and results
         const pollInterval = setInterval(async () => {
@@ -5631,6 +5776,7 @@ function AddPrinterModal({
   }, [onClose]);
 
   return (
+    <>
     <div
       className="fixed inset-0 bg-black/50 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto"
       onClick={onClose}
@@ -5641,37 +5787,61 @@ function AddPrinterModal({
 
           {/* Discovery Section */}
           <div className="mb-4 pb-4 border-b border-bambu-dark-tertiary">
-            {isDocker && (
-              <div className="mb-3">
-                <label className="block text-sm text-bambu-gray mb-1">
-                  {t('printers.discovery.subnetToScan')}
-                </label>
-                {detectedSubnets.length > 0 ? (
-                  <select
-                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none text-sm"
-                    value={subnet}
-                    onChange={(e) => setSubnet(e.target.value)}
-                    disabled={discovering}
-                  >
-                    {detectedSubnets.map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none text-sm"
-                    value={subnet}
-                    onChange={(e) => setSubnet(e.target.value)}
-                    placeholder="192.168.1.0/24"
-                    disabled={discovering}
-                  />
-                )}
-                <p className="mt-1 text-xs text-bambu-gray">
-                  {t('printers.discovery.dockerNote')}
-                </p>
-              </div>
-            )}
+            {/* Subnet picker — always visible. The dropdown lists detected
+                interface subnets and a "Custom..." sentinel that reveals
+                a CIDR text input for printers on a different L3 segment
+                (router, VLAN, etc.). #1564 */}
+            <div className="mb-3">
+              <label className="block text-sm text-bambu-gray mb-1">
+                {t('printers.discovery.subnetToScan')}
+              </label>
+              {detectedSubnets.length > 0 ? (
+                <select
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none text-sm"
+                  value={useCustomSubnet ? '__custom__' : subnet}
+                  onChange={(e) => {
+                    if (e.target.value === '__custom__') {
+                      setUseCustomSubnet(true);
+                    } else {
+                      setUseCustomSubnet(false);
+                      setSubnet(e.target.value);
+                    }
+                  }}
+                  disabled={discovering}
+                >
+                  {detectedSubnets.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                  <option value="__custom__">{t('printers.discovery.customSubnetOption')}</option>
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none text-sm"
+                  value={subnet}
+                  onChange={(e) => setSubnet(e.target.value)}
+                  placeholder="192.168.1.0/24"
+                  disabled={discovering}
+                />
+              )}
+              {useCustomSubnet && (
+                <input
+                  type="text"
+                  aria-label={t('printers.discovery.customSubnetLabel')}
+                  className="mt-2 w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none text-sm"
+                  value={customSubnet}
+                  onChange={(e) => setCustomSubnet(e.target.value)}
+                  placeholder="10.1.1.0/24"
+                  disabled={discovering}
+                />
+              )}
+              <p className="mt-1 text-xs text-bambu-gray">
+                {isDocker
+                  ? t('printers.discovery.dockerNote')
+                  : t('printers.discovery.customSubnetNote')}
+              </p>
+            </div>
+
 
             <Button
               type="button"
@@ -5683,14 +5853,14 @@ function AddPrinterModal({
               {discovering ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  {isDocker && scanProgress.total > 0
+                  {(isDocker || useCustomSubnet) && scanProgress.total > 0
                     ? t('printers.discovery.scanProgress', { scanned: scanProgress.scanned, total: scanProgress.total })
                     : t('printers.discovery.scanning')}
                 </>
               ) : (
                 <>
                   <Search className="w-4 h-4" />
-                  {isDocker ? t('printers.discovery.scanSubnet') : t('printers.discovery.discoverNetwork')}
+                  {(isDocker || useCustomSubnet) ? t('printers.discovery.scanSubnet') : t('printers.discovery.discoverNetwork')}
                 </>
               )}
             </Button>
@@ -5726,13 +5896,13 @@ function AddPrinterModal({
 
             {discovering && (
               <p className="mt-2 text-sm text-bambu-gray text-center">
-                {isDocker ? t('printers.discovery.scanningSubnet') : t('printers.discovery.scanningNetwork')}
+                {(isDocker || useCustomSubnet) ? t('printers.discovery.scanningSubnet') : t('printers.discovery.scanningNetwork')}
               </p>
             )}
 
             {hasScanned && !discovering && discovered.length === 0 && (
               <p className="mt-2 text-sm text-bambu-gray text-center">
-                {isDocker ? t('printers.discovery.noPrintersFoundSubnet') : t('printers.discovery.noPrintersFoundNetwork')}
+                {(isDocker || useCustomSubnet) ? t('printers.discovery.noPrintersFoundSubnet') : t('printers.discovery.noPrintersFoundNetwork')}
               </p>
             )}
 
@@ -5742,13 +5912,7 @@ function AddPrinterModal({
               </p>
             )}
           </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              onAdd(form);
-            }}
-            className="space-y-4"
-          >
+          <form onSubmit={handleAddSubmit} className="space-y-4">
             <div>
               <label className="block text-sm text-bambu-gray mb-1">{t('printers.name')}</label>
               <input
@@ -5802,28 +5966,31 @@ function AddPrinterModal({
                 onChange={(e) => setForm({ ...form, model: e.target.value })}
               >
                 <option value="">{t('printers.modal.selectModel')}</option>
+                <optgroup label="A1 Series">
+                  <option value="A1">A1</option>
+                  <option value="A1 Mini">A1 Mini</option>
+                </optgroup>
+                <optgroup label="A2 Series">
+                  <option value="A2L">A2L</option>
+                </optgroup>
                 <optgroup label="H2 Series">
                   <option value="H2C">H2C</option>
                   <option value="H2D">H2D</option>
                   <option value="H2D Pro">H2D Pro</option>
                   <option value="H2S">H2S</option>
                 </optgroup>
-                <optgroup label="X2 Series">
-                  <option value="X2D">X2D</option>
+                <optgroup label="P Series">
+                  <option value="P1P">P1P</option>
+                  <option value="P1S">P1S</option>
+                  <option value="P2S">P2S</option>
                 </optgroup>
                 <optgroup label="X1 Series">
-                  <option value="X1E">X1E</option>
-                  <option value="X1C">X1 Carbon</option>
                   <option value="X1">X1</option>
+                  <option value="X1C">X1 Carbon</option>
+                  <option value="X1E">X1E</option>
                 </optgroup>
-                <optgroup label="P Series">
-                  <option value="P2S">P2S</option>
-                  <option value="P1S">P1S</option>
-                  <option value="P1P">P1P</option>
-                </optgroup>
-                <optgroup label="A1 Series">
-                  <option value="A1">A1</option>
-                  <option value="A1 Mini">A1 Mini</option>
+                <optgroup label="X2 Series">
+                  <option value="X2D">X2D</option>
                 </optgroup>
               </select>
             </div>
@@ -5850,18 +6017,62 @@ function AddPrinterModal({
                 {t('printers.modal.autoArchiveLabel')}
               </label>
             </div>
-            <div className="flex gap-3 pt-4">
-              <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
-                {t('common.cancel')}
-              </Button>
-              <Button type="submit" className="flex-1">
-                {t('printers.addPrinter')}
-              </Button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowDiagnostic(true)}
+              disabled={!form.ip_address.trim()}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-bambu-gray hover:text-white disabled:opacity-40 disabled:cursor-not-allowed border border-bambu-dark-tertiary rounded-lg transition-colors"
+            >
+              <Stethoscope className="w-4 h-4" />
+              {t('diagnostic.runButton')}
+            </button>
+            {saveWarning ? (
+              <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-400" />
+                  <p className="text-sm text-amber-300">{t('printers.addPreflight.warning')}</p>
+                </div>
+                <DiagnosticChecklist result={saveWarning} />
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setSaveWarning(null)}
+                    className="flex-1"
+                  >
+                    {t('printers.addPreflight.back')}
+                  </Button>
+                  <Button type="button" onClick={() => onAdd(form)} className="flex-1">
+                    {t('printers.addPreflight.saveAnyway')}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-3 pt-2">
+                <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
+                  {t('common.cancel')}
+                </Button>
+                <Button type="submit" disabled={checkingSave} className="flex-1">
+                  {checkingSave ? t('printers.addPreflight.checking') : t('printers.addPrinter')}
+                </Button>
+              </div>
+            )}
           </form>
         </CardContent>
       </Card>
     </div>
+    {showDiagnostic && (
+      <ConnectionDiagnosticModal
+        connection={{
+          ip_address: form.ip_address.trim(),
+          serial_number: form.serial_number.trim() || undefined,
+          access_code: form.access_code || undefined,
+        }}
+        printerName={form.name || null}
+        onClose={() => setShowDiagnostic(false)}
+      />
+    )}
+    </>
   );
 }
 
@@ -6164,6 +6375,11 @@ function EditPrinterModal({
     auto_archive: printer.auto_archive,
   });
 
+  // Setup-time pre-flight — same warn-on-save as the Add-Printer dialog, so an
+  // edit that breaks connectivity (e.g. a mistyped IP) is caught before save.
+  const [checkingSave, setCheckingSave] = useState(false);
+  const [saveWarning, setSaveWarning] = useState<PrinterDiagnosticResult | null>(null);
+
   const updateMutation = useMutation({
     mutationFn: (data: Partial<PrinterCreate>) => api.updatePrinter(printer.id, data),
     onSuccess: () => {
@@ -6183,8 +6399,7 @@ function EditPrinterModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const doSave = () => {
     const data: Partial<PrinterCreate> = {
       name: form.name,
       ip_address: form.ip_address,
@@ -6197,6 +6412,27 @@ function EditPrinterModal({
       data.access_code = form.access_code;
     }
     updateMutation.mutate(data);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCheckingSave(true);
+    try {
+      const result = await api.diagnoseConnection({
+        ip_address: form.ip_address.trim(),
+        serial_number: printer.serial_number,
+        access_code: form.access_code || undefined,
+      });
+      if (result.checks.some((c) => c.status === 'fail')) {
+        setSaveWarning(result);
+        return;
+      }
+    } catch {
+      // Diagnostic infrastructure failed — never block the save on it.
+    } finally {
+      setCheckingSave(false);
+    }
+    doSave();
   };
 
   return (
@@ -6259,28 +6495,31 @@ function EditPrinterModal({
                 onChange={(e) => setForm({ ...form, model: e.target.value })}
               >
                 <option value="">{t('printers.modal.selectModel')}</option>
+                <optgroup label="A1 Series">
+                  <option value="A1">A1</option>
+                  <option value="A1 Mini">A1 Mini</option>
+                </optgroup>
+                <optgroup label="A2 Series">
+                  <option value="A2L">A2L</option>
+                </optgroup>
                 <optgroup label="H2 Series">
                   <option value="H2C">H2C</option>
                   <option value="H2D">H2D</option>
                   <option value="H2D Pro">H2D Pro</option>
                   <option value="H2S">H2S</option>
                 </optgroup>
-                <optgroup label="X2 Series">
-                  <option value="X2D">X2D</option>
+                <optgroup label="P Series">
+                  <option value="P1P">P1P</option>
+                  <option value="P1S">P1S</option>
+                  <option value="P2S">P2S</option>
                 </optgroup>
                 <optgroup label="X1 Series">
-                  <option value="X1E">X1E</option>
-                  <option value="X1C">X1 Carbon</option>
                   <option value="X1">X1</option>
+                  <option value="X1C">X1 Carbon</option>
+                  <option value="X1E">X1E</option>
                 </optgroup>
-                <optgroup label="P Series">
-                  <option value="P2S">P2S</option>
-                  <option value="P1S">P1S</option>
-                  <option value="P1P">P1P</option>
-                </optgroup>
-                <optgroup label="A1 Series">
-                  <option value="A1">A1</option>
-                  <option value="A1 Mini">A1 Mini</option>
+                <optgroup label="X2 Series">
+                  <option value="X2D">X2D</option>
                 </optgroup>
               </select>
             </div>
@@ -6307,14 +6546,50 @@ function EditPrinterModal({
                 {t('printers.modal.autoArchiveLabel')}
               </label>
             </div>
-            <div className="flex gap-3 pt-4">
-              <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
-                {t('common.cancel')}
-              </Button>
-              <Button type="submit" className="flex-1" disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? t('common.saving') : t('printers.modal.saveChanges')}
-              </Button>
-            </div>
+            {saveWarning ? (
+              <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-400" />
+                  <p className="text-sm text-amber-300">{t('printers.addPreflight.warning')}</p>
+                </div>
+                <DiagnosticChecklist result={saveWarning} />
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setSaveWarning(null)}
+                    className="flex-1"
+                  >
+                    {t('printers.addPreflight.back')}
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={doSave}
+                    className="flex-1"
+                    disabled={updateMutation.isPending}
+                  >
+                    {t('printers.addPreflight.saveAnyway')}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-3 pt-4">
+                <Button type="button" variant="secondary" onClick={onClose} className="flex-1">
+                  {t('common.cancel')}
+                </Button>
+                <Button
+                  type="submit"
+                  className="flex-1"
+                  disabled={updateMutation.isPending || checkingSave}
+                >
+                  {checkingSave
+                    ? t('printers.addPreflight.checking')
+                    : updateMutation.isPending
+                      ? t('common.saving')
+                      : t('printers.modal.saveChanges')}
+                </Button>
+              </div>
+            )}
           </form>
         </CardContent>
       </Card>
@@ -6455,10 +6730,12 @@ export function PrintersPage() {
     queryFn: api.getPrinters,
   });
 
-  // Fetch app settings for AMS thresholds
+  // Fetch the UI-rendering subset of settings. Uses /ui-preferences (not /settings)
+  // so users with printers:read but no settings:read still get the values needed
+  // to render the clear-plate button, drying presets, AMS thresholds, etc. (#1293).
   const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.getSettings,
+    queryKey: ['ui-preferences'],
+    queryFn: api.getUiPreferences,
   });
 
   // Compute drying presets: user-configured (from settings) merged over built-in defaults
@@ -6605,7 +6882,15 @@ export function PrintersPage() {
       queryClient.invalidateQueries({ queryKey: ['maintenanceOverview'] });
       setShowAddModal(false);
     },
-    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToAdd'), 'error'),
+    onError: (error: Error) => {
+      // Localized message when the backend returns a stable error code;
+      // the raw message is an English fallback for non-UI clients.
+      if (error instanceof ApiError && error.code === 'printer_connection_failed') {
+        showToast(t('printers.toast.connectionFailedNotAdded'), 'error');
+        return;
+      }
+      showToast(error.message || t('printers.toast.failedToAdd'), 'error');
+    },
   });
 
   const powerOnMutation = useMutation({

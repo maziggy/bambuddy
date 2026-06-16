@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.permissions import Permission
+from backend.app.core.tasks import spawn_background_task
 from backend.app.models.user import User
 from backend.app.services.discovery import (
     discovery_service,
@@ -154,9 +155,10 @@ async def start_subnet_scan(
         request: Subnet to scan in CIDR notation (e.g., "192.168.1.0/24")
     """
     # Start scan in background
-    import asyncio
-
-    asyncio.create_task(subnet_scanner.scan_subnet(request.subnet, request.timeout))
+    spawn_background_task(
+        subnet_scanner.scan_subnet(request.subnet, request.timeout),
+        name=f"subnet-scan-{request.subnet}",
+    )
 
     # Return immediate status
     scanned, total = subnet_scanner.progress

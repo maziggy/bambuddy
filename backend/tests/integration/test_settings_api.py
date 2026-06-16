@@ -802,6 +802,65 @@ class TestSettingsAPI:
         assert result["ha_token"] == "my-long-lived-token"
 
 
+class TestOpenInSlicerOverride:
+    """Per #1329, the desktop 'Open in Slicer' target can diverge from the API
+    sidecar slicer. The new `open_in_slicer` setting is None by default (frontend
+    inherits from `preferred_slicer`); setting it to 'orcaslicer' or 'bambu_studio'
+    overrides only the desktop URI handoff, not the in-app SliceModal."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_open_in_slicer_default_is_null(self, async_client: AsyncClient):
+        response = await async_client.get("/api/v1/settings/")
+        assert response.status_code == 200
+        # Default null so existing installs behave identically — the frontend
+        # then falls back to preferred_slicer.
+        assert response.json()["open_in_slicer"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_open_in_slicer_override_persists(self, async_client: AsyncClient):
+        # Set preferred_slicer=bambu_studio (API sidecar) but
+        # open_in_slicer=orcaslicer (desktop). Exactly the reporter's case:
+        # slice via Bambu Studio sidecar, open files locally in OrcaSlicer.
+        response = await async_client.put(
+            "/api/v1/settings/",
+            json={"preferred_slicer": "bambu_studio", "open_in_slicer": "orcaslicer"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["preferred_slicer"] == "bambu_studio"
+        assert body["open_in_slicer"] == "orcaslicer"
+
+        # Persisted across a fresh GET.
+        get_resp = await async_client.get("/api/v1/settings/")
+        assert get_resp.json()["preferred_slicer"] == "bambu_studio"
+        assert get_resp.json()["open_in_slicer"] == "orcaslicer"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_open_in_slicer_can_be_cleared_to_null(self, async_client: AsyncClient):
+        # Reset path: user picks an override, then later goes back to "Same as
+        # API slicer". The literal string "None" the PUT path writes for a
+        # None value must be normalized back to a real null on GET — otherwise
+        # the frontend can't distinguish "explicit override absent" from
+        # "explicit override set to a bogus value".
+        await async_client.put(
+            "/api/v1/settings/",
+            json={"open_in_slicer": "orcaslicer"},
+        )
+        response = await async_client.put(
+            "/api/v1/settings/",
+            json={"open_in_slicer": None},
+        )
+        assert response.status_code == 200
+        assert response.json()["open_in_slicer"] is None
+
+        # And a fresh GET also sees it as null, not the literal string "None".
+        get_resp = await async_client.get("/api/v1/settings/")
+        assert get_resp.json()["open_in_slicer"] is None
+
+
 class TestSimplifiedBackupRestore:
     """Integration tests for the simplified backup/restore endpoints (ZIP-based).
 

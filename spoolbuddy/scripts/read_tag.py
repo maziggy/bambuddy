@@ -120,7 +120,14 @@ class PN5180:
         self._spi.open(SPI_BUS, SPI_DEVICE)
         self._spi.max_speed_hz = SPI_SPEED_HZ
         self._spi.mode = 0b00
-        self._spi.no_cs = True
+        # #1424: Pi 5's RP1 spi-rp1 driver rejects SPI_NO_CS, which used to
+        # work on Pi 4. Harmless either way on this hardware — NSS is wired
+        # to GPIO23 (manual CS in _cs_low/_cs_high), so the kernel's CE0
+        # toggling has no electrical effect on the reader.
+        try:
+            self._spi.no_cs = True
+        except OSError:
+            pass
 
     def close(self):
         self._spi.close()

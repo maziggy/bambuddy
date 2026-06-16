@@ -310,6 +310,21 @@ describe('FilamentHoverCard', () => {
       });
       expect(screen.queryAllByTitle('Open in Inventory')).toHaveLength(1);
     });
+
+    it('shows the spool ID in the assigned-spool block', async () => {
+      renderWithHover(
+        <FilamentHoverCard
+          data={baseFilamentData}
+          inventory={{ assignedSpool: inventorySpool }}
+        >
+          <div>trigger</div>
+        </FilamentHoverCard>
+      );
+      vi.advanceTimersByTime(100);
+      await waitFor(() => {
+        expect(screen.getByText('#42')).toBeInTheDocument();
+      });
+    });
   });
 });
 

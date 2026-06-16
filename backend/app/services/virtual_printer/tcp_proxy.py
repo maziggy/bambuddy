@@ -194,6 +194,13 @@ class TLSProxy:
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         # Don't require client certificates
         ctx.verify_mode = ssl.CERT_NONE
+        # Match real Bambu printer cipher behaviour on the slicer-facing side
+        # as well (the #620 fix only patched the printer-facing client context
+        # below). On hardened distros where OpenSSL `DEFAULT` strips the
+        # plain-RSA AES-GCM suites, the slicer's ClientHello has no overlap
+        # with our server's offered suites and the handshake fails before any
+        # data flows (#1610 audit).
+        ctx.set_ciphers("DEFAULT:AES256-GCM-SHA384:AES128-GCM-SHA256")
         return ctx
 
     def _create_client_ssl_context(self) -> ssl.SSLContext:
@@ -814,7 +821,17 @@ class FTPTLSProxy(TLSProxy):
 
     async def stop(self) -> None:
         """Stop proxy and clean up data connection servers."""
-        # Close all data servers first
+        # Cancel any pending auto_close timeouts so they don't outlive the
+        # proxy holding a dead server reference. Without this, up to 101
+        # tasks lingered for ~60 s after stop(), each gripping a server
+        # ref + an active_connections slot; under rapid mode-switch the
+        # ports stayed bound long enough to fail the next start().
+        for task in list(self._auto_close_tasks):
+            task.cancel()
+        if self._auto_close_tasks:
+            await asyncio.gather(*self._auto_close_tasks, return_exceptions=True)
+        self._auto_close_tasks.clear()
+        # Close all data servers
         for server in list(self._data_servers):
             try:
                 server.close()
@@ -827,6 +844,7 @@ class FTPTLSProxy(TLSProxy):
     async def start(self) -> None:
         """Start the FTP TLS proxy."""
         self._data_servers: list[asyncio.Server] = []
+        self._auto_close_tasks: list[asyncio.Task] = []
         await super().start()
 
     async def _handle_client(
@@ -1408,7 +1426,11 @@ class FTPTLSProxy(TLSProxy):
                 if server in self._data_servers:
                     self._data_servers.remove(server)
 
-        asyncio.create_task(auto_close(), name=f"ftp_data_timeout_{port}")
+        # Track the auto_close task so stop() can cancel it; otherwise the
+        # 60 s timeout would hold a server reference past proxy teardown.
+        ac_task = asyncio.create_task(auto_close(), name=f"ftp_data_timeout_{port}")
+        self._auto_close_tasks.append(ac_task)
+        ac_task.add_done_callback(lambda t, tasks=self._auto_close_tasks: tasks.remove(t) if t in tasks else None)
 
         logger.debug("FTP data proxy: port %s → %s:%s", port, printer_ip, printer_port)
 
@@ -1469,6 +1491,17 @@ class SlicerProxyManager:
         self._bind_server = None
         self._probe_servers: list[asyncio.Server] = []
         self._tasks: list[asyncio.Task] = []
+        # Pre-bind the lifetime-coupled collections so ``stop()`` works if
+        # called before ``start()`` finishes (rapid mode-switch races).
+        # Previously ``_ftp_data_proxies`` was first assigned inside ``start()``
+        # at line ~1520, so an early stop hit AttributeError and left
+        # sockets stranded.
+        self._ftp_data_proxies: list[TCPProxy] = []
+        # Actual FTP listen port — class constant by default; ``start()``
+        # overwrites with the redirect target when iptables-redirect is
+        # active. ``get_status()`` reads this so diagnostics probe the
+        # port that actually has a listener, not the static LOCAL_FTP_PORT.
+        self._actual_ftp_port: int = self.LOCAL_FTP_PORT
 
     # FTP passive data port range — Bambu printers typically use ports in
     # this range for EPSV/PASV data connections. We pre-listen on all of
@@ -1499,8 +1532,25 @@ class SlicerProxyManager:
                 redirect_target,
             )
             ftp_listen_port = redirect_target
+        # Cache the actual listen port for get_status() / diagnostic so the
+        # port_ftps check probes the port that actually has a socket.
+        self._actual_ftp_port = ftp_listen_port
 
-        # FTP control — raw TCP pass-through (end-to-end TLS with printer)
+        # FTP control — raw TCP pass-through (end-to-end TLS with printer).
+        # A TLS 1.3 → 1.2 ClientHello-rewrite was attempted to work around
+        # BambuStudio's libcurl bug on the X1C FTPS data channel (PSK
+        # session-resumption + CURLE_PARTIAL_FILE). Reverted because the
+        # rewrite broke the control-channel TLS handshake itself: replacing
+        # 0x0304 with a duplicate 0x0303 in supported_versions while leaving
+        # the TLS-1.3-only extensions (key_share, psk_key_exchange_modes,
+        # signature_algorithms_cert) in place produced a malformed ClientHello
+        # that the printer or slicer rejected, and the connection closed
+        # before any data channel was opened. A proper fix needs full TLS
+        # bumping (terminate + re-establish) with packet-capture work
+        # that's out of scope for now. X1C proxy-mode FTP uploads remain
+        # broken — users with X1C should use the non-proxy modes (immediate
+        # / review / print_queue) which work end-to-end via the VP's own
+        # FTP server on TLS 1.2.
         self._ftp_proxy = TCPProxy(
             name="FTP",
             listen_port=ftp_listen_port,
@@ -1745,8 +1795,16 @@ class SlicerProxyManager:
             await dp.stop()
         self._ftp_data_proxies = []
 
+        # Probe servers need wait_closed — without it the OS releases the
+        # bind socket asynchronously and a rapid stop+start cycle (e.g.
+        # config-change-driven mode switch) can race "address already in
+        # use" on the probe ports.
         for srv in self._probe_servers:
-            srv.close()
+            try:
+                srv.close()
+                await srv.wait_closed()
+            except OSError:
+                pass  # Best-effort — port may already be released
         self._probe_servers = []
 
         # Cancel tasks
@@ -1798,7 +1856,14 @@ class SlicerProxyManager:
         return {
             "running": self.is_running,
             "target_host": self.target_host,
-            "ftp_port": self.LOCAL_FTP_PORT,
+            # ``_actual_ftp_port`` reflects the iptables-redirected listen
+            # port when the docker-host deployment uses
+            # ``iptables -t nat -A PREROUTING ... REDIRECT --to-port`` to
+            # let non-root containers serve on the printer's 990. Returning
+            # the class constant here made the diagnostic probe a port
+            # nothing was listening on and report a false fail on every
+            # working redirect deployment.
+            "ftp_port": self._actual_ftp_port,
             "mqtt_port": self.LOCAL_MQTT_PORT,
             "bind_ports": self.PRINTER_BIND_PORTS,
             "ftp_connections": (len(self._ftp_proxy._active_connections) if self._ftp_proxy else 0),

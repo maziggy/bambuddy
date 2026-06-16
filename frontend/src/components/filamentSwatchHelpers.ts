@@ -106,7 +106,7 @@ export const EFFECT_OVERLAYS: Partial<
   Record<FilamentEffect, (effectSeed?: number, effectSize?: SwatchType) => EffectLayer>
 > = {
   // Sparkle: bright flecks — positions seeded from spool color+extracolors+subtype+effectType.
-  // to give identical spools the same sparkle pattern while different spools get different patterns. 
+  // to give identical spools the same sparkle pattern while different spools get different patterns.
   sparkle: (spoolSeed = 0, effectSize = 'table') => {
     const rand = random_mulberry32(spoolSeed);
     const preset = SWATCH_TYPE_PRESETS[effectSize] ?? SWATCH_TYPE_PRESETS.table;

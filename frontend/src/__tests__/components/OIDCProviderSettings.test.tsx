@@ -24,6 +24,7 @@ const mockProviders = [
     email_claim: 'email',
     require_email_verified: true,
     icon_url: null,
+    has_icon: false,
     default_group_id: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
@@ -223,6 +224,103 @@ describe('OIDCProviderSettings', () => {
         const optionTexts = options.map((o) => o.textContent);
         expect(optionTexts).toContain('Operators');
         expect(optionTexts).toContain('Administrators');
+      });
+    });
+  });
+
+  // #1333: icon proxy — preview uses the backend proxy URL (never icon_url
+  // directly) and the admin gets explicit Refresh / Remove buttons.
+  describe('Icon proxy (#1333)', () => {
+    it('renders icon preview via the backend proxy URL when has_icon is true', async () => {
+      server.use(
+        http.get('/api/v1/auth/oidc/providers/all', () =>
+          HttpResponse.json([
+            {
+              ...mockProviders[0],
+              id: 42,
+              icon_url: 'https://idp.example.com/icon.png',
+              has_icon: true,
+            },
+          ])
+        )
+      );
+      render(<OIDCProviderSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByText('TestIdP')).toBeInTheDocument();
+      });
+
+      const img = screen.getByAltText('TestIdP') as HTMLImageElement;
+      expect(img.getAttribute('src')).toBe('/api/v1/auth/oidc/providers/42/icon');
+    });
+
+    it('exposes Refresh and Remove buttons when has_icon is true', async () => {
+      server.use(
+        http.get('/api/v1/auth/oidc/providers/all', () =>
+          HttpResponse.json([
+            { ...mockProviders[0], id: 99, icon_url: 'https://idp.example.com/i.png', has_icon: true },
+          ])
+        )
+      );
+      render(<OIDCProviderSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('refresh-icon-99')).toBeInTheDocument();
+      });
+      expect(screen.getByTestId('remove-icon-99')).toBeInTheDocument();
+    });
+
+    it('hides Remove button when has_icon is false', async () => {
+      server.use(
+        http.get('/api/v1/auth/oidc/providers/all', () =>
+          HttpResponse.json([
+            // icon_url set but no cached bytes → Refresh visible, Remove hidden.
+            { ...mockProviders[0], id: 100, icon_url: 'https://idp.example.com/i.png', has_icon: false },
+          ])
+        )
+      );
+      render(<OIDCProviderSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('refresh-icon-100')).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId('remove-icon-100')).not.toBeInTheDocument();
+    });
+
+    it('hides both buttons when icon_url is not set', async () => {
+      server.use(
+        http.get('/api/v1/auth/oidc/providers/all', () =>
+          HttpResponse.json([{ ...mockProviders[0], id: 101, icon_url: null, has_icon: false }])
+        )
+      );
+      render(<OIDCProviderSettings />);
+
+      await waitFor(() => {
+        expect(screen.getByText('TestIdP')).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId('refresh-icon-101')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('remove-icon-101')).not.toBeInTheDocument();
+    });
+
+    it('swaps in Globe fallback when icon image fails to load', async () => {
+      // I3 (#1333 review): admin preview must show a meaningful fallback
+      // instead of an unexplained gap (display: none) when the proxy
+      // endpoint returns 404 (e.g. race with DELETE /icon).
+      server.use(
+        http.get('/api/v1/auth/oidc/providers/all', () =>
+          HttpResponse.json([
+            { ...mockProviders[0], id: 102, icon_url: 'https://idp.example.com/i.png', has_icon: true },
+          ])
+        )
+      );
+      render(<OIDCProviderSettings />);
+
+      const img = (await screen.findByAltText('TestIdP')) as HTMLImageElement;
+      fireEvent.error(img);
+      // After error: <img> removed, Globe-fallback rendered. Confirm by
+      // asserting the alt text is gone and the Globe SVG is present.
+      await waitFor(() => {
+        expect(screen.queryByAltText('TestIdP')).not.toBeInTheDocument();
       });
     });
   });

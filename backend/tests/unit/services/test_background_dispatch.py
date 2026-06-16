@@ -212,6 +212,50 @@ def test_is_sliced_file_recognizes_supported_extensions():
     assert BackgroundDispatchService._is_sliced_file("part.3mf") is False
 
 
+def test_dispatch_option_defaults_align_with_request_schema_defaults():
+    """The `job.options.get("<field>", <default>)` calls in the dispatch
+    loop must use the same default as the Pydantic request schema. If a
+    field is missing from options (e.g. an internal caller bypassing the
+    schema), the resulting print command must match what a fresh
+    `ReprintRequest()` / `FilePrintRequest()` would produce — anything
+    else means certain fields silently flip depending on which entry
+    point queued the job.
+
+    Earlier `vibration_cali` had a False default in the dispatch loop
+    against a True schema default, latent only because every existing
+    caller always sent the field.
+    """
+    import inspect
+
+    from backend.app.schemas.archive import ReprintRequest
+    from backend.app.schemas.library import FilePrintRequest
+    from backend.app.services import background_dispatch as bd
+
+    # `timelapse` deliberately excluded — the dispatcher wraps it in
+    # ``bool(...)`` (``effective_timelapse = bool(job.options.get("timelapse",
+    # False))``) so the bare-pattern needle in the loop below would miss it.
+    # The wrap exists to coerce None / non-bool option payloads to a bool
+    # boundary the printer firmware accepts (#1721 follow-up).
+    fields = ("bed_levelling", "flow_cali", "vibration_cali", "layer_inspect", "use_ams")
+    reprint_defaults = {f: getattr(ReprintRequest(), f) for f in fields}
+    libprint_defaults = {f: getattr(FilePrintRequest(), f) for f in fields}
+    assert reprint_defaults == libprint_defaults, (
+        "ReprintRequest and FilePrintRequest must share the same defaults for these fields"
+    )
+
+    src = inspect.getsource(bd)
+    for field, expected_default in reprint_defaults.items():
+        literal = "True" if expected_default else "False"
+        needle = f'{field}=job.options.get("{field}", {literal})'
+        count = src.count(needle)
+        assert count == 2, (
+            f"Expected exactly 2 occurrences of `{needle}` in background_dispatch (one per "
+            f"`_process_job` branch). Found {count}. A drift between the request schema's "
+            f"default for `{field}` and the dispatch loop's `.get()` default means callers "
+            f"that bypass the schema will get inconsistent behaviour."
+        )
+
+
 @pytest.mark.asyncio
 async def test_cancel_job_not_found_returns_false():
     """Cancelling a nonexistent job returns not_found."""

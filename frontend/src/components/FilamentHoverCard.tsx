@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, type ReactNode } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Droplets, Copy, Check, Settings2, Package, Unlink } from 'lucide-react';
@@ -56,6 +57,12 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
   const navigate = useNavigate();
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<'top' | 'bottom'>('top');
+  // Screen-space coordinates for the portaled card (#1336 follow-up). Using
+  // a portal + position:fixed lets the popover escape sibling printer cards
+  // that create their own stacking contexts on the dashboard — without this,
+  // a card later in DOM order draws over the hover popover regardless of
+  // z-index because z-index doesn't cross stacking-context boundaries.
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const [copied, setCopied] = useState(false);
   const [showUnlinkConfirm, setShowUnlinkConfirm] = useState(false);
   const triggerRef = useRef<HTMLDivElement>(null);
@@ -97,23 +104,43 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
     document.body.removeChild(textarea);
   };
 
-  // Calculate position when showing
-  useEffect(() => {
-    if (isVisible && triggerRef.current && cardRef.current) {
+  // Compute placement (top/bottom) + screen coordinates for the portaled
+  // card. Runs on visibility change, scroll, and resize so the popover
+  // tracks the trigger when the viewport moves. useLayoutEffect rather
+  // than useEffect so the first paint already has the correct coords —
+  // avoids a one-frame flicker at (0, 0).
+  useLayoutEffect(() => {
+    if (!isVisible) {
+      setCoords(null);
+      return;
+    }
+    const compute = () => {
+      if (!triggerRef.current || !cardRef.current) return;
       const triggerRect = triggerRef.current.getBoundingClientRect();
       const cardHeight = cardRef.current.offsetHeight;
-      // Account for fixed header (56px) - space above should exclude header area
+      const cardWidth = cardRef.current.offsetWidth;
       const headerHeight = 56;
       const spaceAbove = triggerRect.top - headerHeight;
       const spaceBelow = window.innerHeight - triggerRect.bottom;
-
-      // Prefer top, but flip to bottom if not enough space (accounting for header)
-      if (spaceAbove < cardHeight + 12 && spaceBelow > spaceAbove) {
-        setPosition('bottom');
-      } else {
-        setPosition('top');
-      }
-    }
+      const placement: 'top' | 'bottom' =
+        spaceAbove < cardHeight + 12 && spaceBelow > spaceAbove ? 'bottom' : 'top';
+      const centerX = triggerRect.left + triggerRect.width / 2;
+      const left = Math.max(8, Math.min(centerX - cardWidth / 2, window.innerWidth - cardWidth - 8));
+      const top = placement === 'top' ? triggerRect.top - cardHeight - 8 : triggerRect.bottom + 8;
+      setPosition(placement);
+      setCoords({ top, left });
+    };
+    // First compute is synchronous from the layout effect; a follow-up rAF
+    // re-measures after the card actually has its rendered dimensions.
+    compute();
+    const rafId = requestAnimationFrame(compute);
+    window.addEventListener('scroll', compute, true);
+    window.addEventListener('resize', compute);
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('scroll', compute, true);
+      window.removeEventListener('resize', compute);
+    };
   }, [isVisible]);
 
   const handleMouseEnter = () => {
@@ -155,19 +182,24 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
     >
       {children}
 
-      {/* Hover Card */}
-      {isVisible && (
+      {/* Portaled hover card — rendered into document.body so it escapes
+          any ancestor stacking context. Sibling printer cards on the
+          dashboard create their own stacking contexts; without the portal
+          the popover gets covered by the next card even at z-[60]
+          (#1336 follow-up). */}
+      {isVisible && createPortal(
         <div
           ref={cardRef}
-          className={`
-            absolute left-1/2 -translate-x-1/2 z-[60]
-            ${position === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'}
-            animate-in fade-in-0 zoom-in-95 duration-150
-          `}
+          className="fixed z-[60] animate-in fade-in-0 zoom-in-95 duration-150"
           style={{
-            // Ensure card doesn't go off-screen horizontally
+            top: coords?.top ?? -9999,
+            left: coords?.left ?? -9999,
             maxWidth: 'calc(100vw - 24px)',
+            // Hide until coords are computed to avoid a (-9999,-9999) flash.
+            visibility: coords ? 'visible' : 'hidden',
           }}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
         >
           {/* Card container */}
           <div className="
@@ -334,11 +366,14 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                           {t('inventory.assigned')}
                         </span>
                       </div>
-                      <p className="text-xs text-white truncate">
-                        {inventory.assignedSpool.brand ? `${inventory.assignedSpool.brand} ` : ''}
-                        {inventory.assignedSpool.material}
-                        {inventory.assignedSpool.color_name ? ` - ${inventory.assignedSpool.color_name}` : ''}
-                      </p>
+                      <div className="flex items-baseline gap-1.5 min-w-0 mb-1">
+                        <p className="text-xs text-white truncate">
+                          {inventory.assignedSpool.brand ? `${inventory.assignedSpool.brand} ` : ''}
+                          {inventory.assignedSpool.material}
+                          {inventory.assignedSpool.color_name ? ` - ${inventory.assignedSpool.color_name}` : ''}
+                        </p>
+                        <span className="text-[10px] font-mono text-bambu-gray shrink-0">#{inventory.assignedSpool.id}</span>
+                      </div>
                       {(!spoolman?.linkedSpoolId || inventory.assignedSpool!.id !== spoolman.linkedSpoolId) && (
                         <button
                           onClick={(e) => {
@@ -413,7 +448,8 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                 : 'bottom-full border-b-[6px] border-b-bambu-dark-tertiary'}
             `}
           />
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* Unlink Confirmation Dialog */}
@@ -463,11 +499,21 @@ interface EmptySlotHoverCardProps {
   className?: string;
   configureSlot?: ConfigureSlotConfig;
   onAssignSpool?: () => void;
+  // #1322 follow-up: distinguish firmware-confirmed empty (state 9/10) from
+  // a user reset where the firmware still has a spool registered. "reset"
+  // surfaces the user-cleared label; undefined / "physical" keeps the
+  // historical "Empty slot" wording.
+  kind?: 'physical' | 'reset';
 }
 
-export function EmptySlotHoverCard({ children, className = '', configureSlot, onAssignSpool }: EmptySlotHoverCardProps) {
+export function EmptySlotHoverCard({ children, className = '', configureSlot, onAssignSpool, kind }: EmptySlotHoverCardProps) {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
+  // Screen-space coords for the portaled card — same pattern as
+  // FilamentHoverCard, see comment there (#1336 follow-up).
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = () => {
@@ -486,25 +532,59 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot, on
     };
   }, []);
 
+  useLayoutEffect(() => {
+    if (!isVisible) {
+      setCoords(null);
+      return;
+    }
+    const compute = () => {
+      if (!triggerRef.current || !cardRef.current) return;
+      const triggerRect = triggerRef.current.getBoundingClientRect();
+      const cardHeight = cardRef.current.offsetHeight;
+      const cardWidth = cardRef.current.offsetWidth;
+      const centerX = triggerRect.left + triggerRect.width / 2;
+      const left = Math.max(8, Math.min(centerX - cardWidth / 2, window.innerWidth - cardWidth - 8));
+      const top = triggerRect.top - cardHeight - 8;
+      setCoords({ top, left });
+    };
+    compute();
+    const rafId = requestAnimationFrame(compute);
+    window.addEventListener('scroll', compute, true);
+    window.addEventListener('resize', compute);
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('scroll', compute, true);
+      window.removeEventListener('resize', compute);
+    };
+  }, [isVisible]);
+
   return (
     <div
+      ref={triggerRef}
       className={`relative ${className}`}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
       {children}
 
-      {isVisible && (
-        <div className="
-          absolute left-1/2 -translate-x-1/2 bottom-full mb-2 z-50
-          animate-in fade-in-0 zoom-in-95 duration-150
-        ">
+      {isVisible && createPortal(
+        <div
+          ref={cardRef}
+          className="fixed z-[60] animate-in fade-in-0 zoom-in-95 duration-150"
+          style={{
+            top: coords?.top ?? -9999,
+            left: coords?.left ?? -9999,
+            visibility: coords ? 'visible' : 'hidden',
+          }}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
           <div className="
             bg-bambu-dark-secondary border border-bambu-dark-tertiary
             rounded-md shadow-lg overflow-hidden
           ">
             <div className="px-3 py-1.5 text-xs text-bambu-gray whitespace-nowrap">
-              {t('ams.emptySlot')}
+              {kind === 'reset' ? t('ams.emptySlotReset') : t('ams.emptySlot')}
             </div>
             {/* Configure slot button */}
             {(configureSlot?.enabled || onAssignSpool) && (
@@ -540,7 +620,8 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot, on
             border-r-[5px] border-r-transparent
             border-t-[5px] border-t-bambu-dark-tertiary
           " />
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

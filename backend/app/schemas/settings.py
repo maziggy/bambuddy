@@ -9,7 +9,13 @@ class AppSettings(BaseModel):
     auto_archive: bool = Field(default=True, description="Automatically archive prints when completed")
     save_thumbnails: bool = Field(default=True, description="Extract and save preview images from 3MF files")
     capture_finish_photo: bool = Field(
-        default=True, description="Capture photo from printer camera when print completes"
+        default=True,
+        description=(
+            "Capture photo from printer camera when print completes. Bambuddy records a "
+            "brief timelapse during the print so the photo can be sourced from the moment "
+            "before the bed drops; the timelapse file is kept if you enabled timelapse for "
+            "this print, otherwise it is deleted automatically after the photo is captured."
+        ),
     )
     default_filament_cost: float = Field(default=25.0, description="Default filament cost per kg")
     currency: str = Field(default="USD", description="Currency for cost tracking")
@@ -113,8 +119,8 @@ class AppSettings(BaseModel):
     virtual_printer_enabled: bool = Field(default=False, description="Enable virtual printer for slicer uploads")
     virtual_printer_access_code: str = Field(default="", description="Access code for virtual printer authentication")
     virtual_printer_mode: str = Field(
-        default="immediate",
-        description="Mode: 'immediate' (archive now), 'review' (pending review), or 'print_queue' (add to print queue)",
+        default="archive",
+        description="Mode: 'archive' (archive now), 'review' (pending review), 'queue' (add to print queue), or 'proxy' (relay to real printer)",
     )
     virtual_printer_archive_name_source: str = Field(
         default="metadata",
@@ -181,10 +187,21 @@ class AppSettings(BaseModel):
         description="Camera view mode: 'window' opens in new browser window, 'embedded' shows overlay on main screen",
     )
 
-    # Preferred slicer application
+    # Preferred slicer application (server-side / API sidecar slicer)
     preferred_slicer: str = Field(
         default="bambu_studio",
-        description="Preferred slicer: 'bambu_studio' or 'orcaslicer'",
+        description="Slicer used for the server-side API / sidecar: 'bambu_studio' or 'orcaslicer'",
+    )
+    # "Open in Slicer" desktop URI handler — independent of the API slicer so
+    # a user can slice via the Bambu Studio sidecar but open files locally in
+    # OrcaSlicer, or vice versa (#1329). None falls back to ``preferred_slicer``
+    # so existing installs behave identically until someone changes it.
+    open_in_slicer: str | None = Field(
+        default=None,
+        description=(
+            "Desktop slicer for the 'Open in Slicer' button: 'bambu_studio' or "
+            "'orcaslicer'. None inherits from preferred_slicer."
+        ),
     )
 
     # Slicer dispatch mode: when True, "Slice" actions open the in-app
@@ -239,6 +256,10 @@ class AppSettings(BaseModel):
         default=False, description="Default first layer inspection option for new prints"
     )
     default_timelapse: bool = Field(default=False, description="Default timelapse option for new prints")
+    default_nozzle_offset_cali: bool = Field(
+        default=True,
+        description="Default nozzle offset calibration option for new prints (dual-nozzle printers only)",
+    )
 
     # Staggered batch start for multi-printer jobs
     stagger_group_size: int = Field(
@@ -386,6 +407,7 @@ class AppSettingsUpdate(BaseModel):
     library_disk_warning_gb: float | None = None
     camera_view_mode: str | None = None
     preferred_slicer: str | None = None
+    open_in_slicer: str | None = None
     use_slicer_api: bool | None = None
     orcaslicer_api_url: str | None = None
     bambu_studio_api_url: str | None = None
@@ -398,6 +420,7 @@ class AppSettingsUpdate(BaseModel):
     default_vibration_cali: bool | None = None
     default_layer_inspect: bool | None = None
     default_timelapse: bool | None = None
+    default_nozzle_offset_cali: bool | None = None
     stagger_group_size: int | None = Field(default=None, ge=1, le=50)
     stagger_interval_minutes: int | None = Field(default=None, ge=1, le=60)
     require_plate_clear: bool | None = None

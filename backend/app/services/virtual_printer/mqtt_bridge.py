@@ -35,9 +35,14 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import ipaddress
 import json
 import logging
+import socket
 from typing import TYPE_CHECKING
+
+from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+from backend.app.services.virtual_printer._debug import append_event, dump_wire
 
 if TYPE_CHECKING:
     from backend.app.services.bambu_mqtt import BambuMQTTClient
@@ -48,6 +53,19 @@ logger = logging.getLogger(__name__)
 
 REFRESH_INTERVAL_SECONDS = 30.0
 
+# Bambuddy's internal printer state in bambu_mqtt.py (around line 2686+) is
+# updated per-field — each `if "X" in data: self.state.X = ...` block leaves
+# every other field untouched, so the state accumulates everything the
+# printer has ever sent. The bridge cache below mirrors that pattern: when
+# the incoming push_status omits a field, the previous value is preserved
+# verbatim; only fields actually present in the new push overwrite. This
+# stops capability/lifecycle fields (cali_version, print_type, mc_print_stage,
+# device, ...) draining out of the cache between pushalls, which surfaced
+# as #1622 (BambuStudio's Device-tab UIs greying out on P1S after the
+# cache drained to a thin incremental snapshot). The `ams` field still
+# gets unit-/tray-level deep merge via `_merge_ams_dict` because firmware
+# sends partial `ams` blobs under the same key (#1387).
+
 
 def _ip_to_uint32_le(ip_str: str) -> int:
     """Encode dotted-quad IPv4 as little-endian uint32 (Bambu MQTT's `net.info[].ip` shape)."""
@@ -55,6 +73,169 @@ def _ip_to_uint32_le(ip_str: str) -> int:
     if len(parts) != 4 or any(p < 0 or p > 255 for p in parts):
         raise ValueError(f"invalid IPv4: {ip_str!r}")
     return parts[0] | (parts[1] << 8) | (parts[2] << 16) | (parts[3] << 24)
+
+
+def _resolve_target_to_ipv4(target: str) -> str | None:
+    """Return a dotted-quad IPv4 for `target`, resolving hostnames if needed.
+
+    The printer client may be configured by IPv4 *or* by hostname/FQDN
+    (e.g. `p1s.fritz.box`) — the latter is common on home LANs with a
+    DNS-providing router. The downstream `net.info[].ip` field is a
+    32-bit little-endian integer though, so a hostname can't round-trip
+    through it; we have to pick *one* concrete IPv4 to write in.
+
+    Returns None if `target` is empty, not parseable as IPv4, and DNS
+    resolution fails — caller logs that as the not-armed reason and
+    re-tries on the next refresh tick (DHCP/DNS churn picks itself up).
+    """
+    if not target:
+        return None
+    try:
+        return str(ipaddress.IPv4Address(target))
+    except (ValueError, ipaddress.AddressValueError):
+        pass
+    try:
+        # AF_INET filters to IPv4 only; the rewrite field is uint32 LE,
+        # there's no IPv6 representation that fits.
+        infos = socket.getaddrinfo(target, None, family=socket.AF_INET)
+    except OSError:
+        return None
+    for info in infos:
+        sockaddr = info[4]
+        if sockaddr and isinstance(sockaddr[0], str):
+            return sockaddr[0]
+    return None
+
+
+def _resolve_host_interface_for_target(target_ip: str) -> str | None:
+    """Pick a host-side IPv4 for `net.info[].ip` when the VP has no dedicated bind IP.
+
+    Used when `mqtt_server.bind_address` is empty or 0.0.0.0 — the listener
+    accepts on every interface but we still need ONE concrete IPv4 to write
+    into the rewritten `net.info[].ip` field so the slicer's FTP target
+    resolves to Bambuddy rather than the real printer. Returns the IPv4 of
+    the host interface that shares a subnet with the printer (best fit
+    because the slicer is typically on the same LAN as the printer), or
+    None if no interface matches — in which case the bridge leaves
+    encoding unarmed and the previous (still-leaky) behaviour stands.
+    """
+    try:
+        from backend.app.services.network_utils import find_interface_for_ip
+    except Exception:  # pragma: no cover - import shielding
+        return None
+    try:
+        iface = find_interface_for_ip(target_ip)
+    except Exception:
+        logger.exception("MQTT bridge: find_interface_for_ip(%s) crashed", target_ip)
+        return None
+    if not iface:
+        return None
+    ip = iface.get("ip")
+    return ip if isinstance(ip, str) and ip else None
+
+
+def _merge_ams_dict(prev_ams: dict, new_ams: dict) -> dict:
+    """Merge a new ``ams`` blob from an incremental push onto the previous one.
+
+    Bambu firmware sends three shapes for the ``ams`` field on push_status:
+
+    1. Full pushall (after a printer reconnect or explicit pushall request):
+       ``{ams: [{id, tray: [{id, tray_type, ...}, ...]}, ...], ams_status, ams_exist_bits, ...}``
+       — every unit + every tray populated.
+
+    2. Status-only incremental: ``{ams_status: 1}`` or ``{humidity: 30}`` —
+       no ``ams`` array at all. Bambuddy logs these as "AMS partial update
+       (no tray data)" (#784 vintage).
+
+    3. Tray-targeted incremental during a print: ``{ams: [{id: 0, tray:
+       [{id: 0, state: 11}]}]}`` — only the units / trays whose state
+       changed.
+
+    Replacing the cached ``ams`` wholesale on shapes (2) and (3) is what
+    made the slicer "lose" AMS between pushalls and trip the symptom in
+    #1387: the slicer would see a stripped ``ams_status``-only blob and
+    fall back to its "no AMS" default render. This merge mirrors the
+    deep-merge logic in ``bambu_mqtt.py::_handle_ams_data`` at the bridge
+    layer so the slicer-facing cache always carries the latest known
+    coherent state.
+
+    Strategy:
+      - Shallow-merge top-level scalars: keys in ``new`` win; keys only
+        in ``prev`` are preserved.
+      - For the ``ams`` array (list of units): match by ``id``. Units
+        only in ``prev`` survive. Units in ``new`` overlay onto their
+        ``prev`` counterpart; same recursion applies to each unit's
+        ``tray`` array by tray ``id``.
+    """
+    merged = dict(prev_ams)
+    for k, v in new_ams.items():
+        if k != "ams":
+            merged[k] = v
+
+    prev_units = prev_ams.get("ams") if isinstance(prev_ams.get("ams"), list) else []
+    new_units = new_ams.get("ams") if isinstance(new_ams.get("ams"), list) else None
+    if new_units is None:
+        # Shape (2): no ``ams`` array in the incremental — keep prev's units.
+        if prev_units:
+            merged["ams"] = prev_units
+        return merged
+
+    prev_by_id = {u.get("id"): u for u in prev_units if isinstance(u, dict) and u.get("id") is not None}
+    merged_units: list = []
+    seen_ids: set = set()
+    for new_unit in new_units:
+        if not isinstance(new_unit, dict):
+            merged_units.append(new_unit)
+            continue
+        uid = new_unit.get("id")
+        prev_unit = prev_by_id.get(uid) if uid is not None else None
+        if prev_unit is None:
+            merged_units.append(new_unit)
+            if uid is not None:
+                seen_ids.add(uid)
+            continue
+        # Shallow-merge unit fields; preserve prev's trays not present in new.
+        merged_unit = dict(prev_unit)
+        for k, v in new_unit.items():
+            if k != "tray":
+                merged_unit[k] = v
+        new_trays = new_unit.get("tray") if isinstance(new_unit.get("tray"), list) else None
+        if new_trays is None:
+            # Unit-level partial — keep prev's tray list intact.
+            pass
+        else:
+            prev_trays = prev_unit.get("tray") if isinstance(prev_unit.get("tray"), list) else []
+            prev_trays_by_id = {t.get("id"): t for t in prev_trays if isinstance(t, dict) and t.get("id") is not None}
+            merged_trays: list = []
+            seen_tray_ids: set = set()
+            for new_tray in new_trays:
+                if not isinstance(new_tray, dict):
+                    merged_trays.append(new_tray)
+                    continue
+                tid = new_tray.get("id")
+                prev_tray = prev_trays_by_id.get(tid) if tid is not None else None
+                if prev_tray is None:
+                    merged_trays.append(new_tray)
+                else:
+                    merged_tray = dict(prev_tray)
+                    merged_tray.update(new_tray)
+                    merged_trays.append(merged_tray)
+                if tid is not None:
+                    seen_tray_ids.add(tid)
+            # Preserve prev trays not mentioned in the incremental.
+            for tid, prev_tray in prev_trays_by_id.items():
+                if tid not in seen_tray_ids:
+                    merged_trays.append(prev_tray)
+            merged_unit["tray"] = merged_trays
+        merged_units.append(merged_unit)
+        if uid is not None:
+            seen_ids.add(uid)
+    # Preserve prev units not mentioned in the incremental.
+    for uid, prev_unit in prev_by_id.items():
+        if uid not in seen_ids:
+            merged_units.append(prev_unit)
+    merged["ams"] = merged_units
+    return merged
 
 
 class MQTTBridge:
@@ -80,6 +261,14 @@ class MQTTBridge:
         self._target_serial: str | None = None
         self._target_ip_uint32_le: int | None = None
         self._vp_ip_uint32_le: int | None = None
+        # Last reason `_refresh_ip_encoding` early-returned without arming.
+        # Used to throttle the "NOT armed" diagnostic log to one line per
+        # state change — refresh runs every 30s, so without throttling an
+        # idle-but-unarmed bridge would emit one line per tick forever. Set
+        # to None once arming succeeds so the next failure re-logs. #1429
+        # follow-up: makes silent early-returns visible without grepping the
+        # source.
+        self._not_armed_reason: str | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._refresh_task: asyncio.Task | None = None
         self._stopping = False
@@ -118,6 +307,11 @@ class MQTTBridge:
         BambuMQTTClient is destroyed and recreated on PrinterManager.connect_printer
         (e.g. printer config update). Without periodic refresh the bridge would lose
         fan-out after such a churn until the VP itself restarts.
+
+        On crash exit, the handler must be unbound — otherwise the registered
+        ``_on_printer_raw`` keeps firing on every real-printer message even
+        though the bridge is functionally dead (memory leak + behaviour leak
+        across VP restart).
         """
         try:
             while not self._stopping:
@@ -127,6 +321,9 @@ class MQTTBridge:
             raise
         except Exception:
             logger.exception("[%s] MQTT bridge refresh loop crashed", self.vp_name)
+            # Crash exit — unbind so the orphaned handler stops firing.
+            # ``stop()`` won't be invoked because the task completes done-not-cancelled.
+            self._unbind_client()
 
     def _resolve_client(self) -> None:
         """Look up the current client for target_printer_id and rebind if it changed."""
@@ -137,6 +334,15 @@ class MQTTBridge:
             return
 
         if current is self._target_client:
+            # Same client object — but `ip_address` can fill in *after* the
+            # initial bind (e.g. DB row had a stale/empty value until the
+            # client's first SSDP-driven IP refresh). The original code only
+            # encoded `_target_ip_uint32_le` on client-identity change, so
+            # that late-arriving IP was never picked up, the `net.info[*].ip`
+            # rewrite stayed disabled, and the cache filled with the real
+            # printer IP — #1429. Refresh the encoding every tick so it
+            # self-heals once `ip_address` becomes valid.
+            self._refresh_ip_encoding()
             return
 
         # Client identity changed — unregister from the old, register on the new.
@@ -152,20 +358,7 @@ class MQTTBridge:
 
         self._target_client = current
         self._target_serial = getattr(current, "serial_number", None)
-
-        # Cache printer IP and VP bind IP encoded as little-endian uint32, so we
-        # can rewrite `net.info[*].ip` in cached push_status. BambuStudio reads
-        # that field for the FTP destination IP — without rewriting, the slicer
-        # bypasses the VP and FTPs straight to the real printer.
-        target_ip = getattr(current, "ip_address", None)
-        vp_ip = getattr(self._mqtt_server, "bind_address", None)
-        if target_ip and vp_ip and vp_ip not in ("0.0.0.0", "", None):  # nosec B104
-            try:
-                self._target_ip_uint32_le = _ip_to_uint32_le(target_ip)
-                self._vp_ip_uint32_le = _ip_to_uint32_le(vp_ip)
-            except ValueError:
-                self._target_ip_uint32_le = None
-                self._vp_ip_uint32_le = None
+        self._refresh_ip_encoding()
 
         logger.info(
             "[%s] MQTT bridge bound to printer %s (serial=%s)",
@@ -179,18 +372,38 @@ class MQTTBridge:
         # but that fires before the bridge attaches as a raw-message consumer,
         # so without this nudge the cache stays empty until the next periodic
         # query (which can be minutes away).
-        request_fn = getattr(current, "_request_version", None)
-        if callable(request_fn):
-            try:
-                request_fn()
-            except Exception:
-                logger.exception("[%s] MQTT bridge: _request_version failed", self.vp_name)
-        request_status_fn = getattr(current, "request_status_update", None)
-        if callable(request_status_fn):
-            try:
-                request_status_fn()
-            except Exception:
-                logger.exception("[%s] MQTT bridge: request_status_update failed", self.vp_name)
+        #
+        # The bind frequently races the real printer's MQTT TLS handshake — a
+        # slicer-side reconnect re-resolves the client before the underlying
+        # session has reconnected, especially on A1 firmware where the bridge
+        # cycles more aggressively (#1721). When that happens, the nudge is a
+        # no-op — the next periodic pushall populates the cache anyway — but
+        # `request_status_update` logs WARNING on the not-connected return path
+        # and pollutes every support bundle with a benign line.
+        #
+        # Gate both nudges on the client being actually connected. The fall-
+        # through path is unchanged: when the client comes up, the next
+        # `_resolve_client` tick re-enters this branch on identity change OR
+        # the periodic pushall in `bambu_mqtt.py` fills the cache.
+        client_connected = bool(getattr(getattr(current, "state", None), "connected", False))
+        if not client_connected:
+            logger.debug(
+                "[%s] MQTT bridge: post-bind nudge skipped (printer client not connected yet)",
+                self.vp_name,
+            )
+        else:
+            request_fn = getattr(current, "_request_version", None)
+            if callable(request_fn):
+                try:
+                    request_fn()
+                except Exception:
+                    logger.exception("[%s] MQTT bridge: _request_version failed", self.vp_name)
+            request_status_fn = getattr(current, "request_status_update", None)
+            if callable(request_status_fn):
+                try:
+                    request_status_fn()
+                except Exception:
+                    logger.exception("[%s] MQTT bridge: request_status_update failed", self.vp_name)
 
     def _unbind_client(self) -> None:
         if self._target_client is None:
@@ -202,6 +415,139 @@ class MQTTBridge:
         logger.info("[%s] MQTT bridge unbound from printer %s", self.vp_name, self.target_printer_id)
         self._target_client = None
         self._target_serial = None
+
+    def _refresh_ip_encoding(self) -> None:
+        """(Re-)encode `_target_ip_uint32_le` / `_vp_ip_uint32_le` from current values.
+
+        Called on every refresh tick, not just on client-identity change, so
+        a late-arriving printer IP (or a bind-address change) is picked up
+        without restarting the VP. When the encoding becomes valid for the
+        first time *after* the cache already received a push with the real
+        printer IP, also sweep the existing cache so the slicer's next pull
+        sees the rewritten value (#1429). Without this sweep the sticky-key
+        preservation keeps the poisoned `net.info[].ip` alive forever.
+
+        VP bind IP resolution: when `mqtt_server.bind_address` is empty or
+        `0.0.0.0` (the default for VPs that were never assigned a dedicated
+        bind IP), fall back to auto-resolving the host interface in the same
+        subnet as the printer's IP. Without this fallback, the rewrite never
+        arms on a default-config flat-LAN install and `net.info[].ip` leaks
+        the real printer IP — slicer follows it on Send (#1429 residual).
+        """
+
+        def _log_not_armed(reason: str) -> None:
+            # Throttle: only log when the reason changes, otherwise an idle
+            # unarmed bridge would emit one INFO line every refresh tick
+            # (~30s) forever. Cleared on arm so a regression re-logs.
+            if reason != self._not_armed_reason:
+                logger.info("[%s] MQTT bridge IP encoding NOT armed: %s", self.vp_name, reason)
+                self._not_armed_reason = reason
+
+        client = self._target_client
+        if client is None:
+            _log_not_armed("target_client is None (bridge not bound to a printer)")
+            return
+
+        configured_target = getattr(client, "ip_address", None)
+        if not configured_target:
+            _log_not_armed("printer client has no ip_address yet")
+            return
+
+        # Printers configured by hostname/FQDN (e.g. `p1s.fritz.box`) need to
+        # be resolved to an IPv4 before encoding: net.info[*].ip is uint32 LE
+        # and can't carry a hostname (#1429 follow-up).
+        target_ip = _resolve_target_to_ipv4(configured_target)
+        if not target_ip:
+            _log_not_armed(
+                f"could not resolve printer host {configured_target!r} to IPv4 (invalid address and DNS lookup failed)"
+            )
+            return
+
+        vp_ip = getattr(self._mqtt_server, "bind_address", None)
+        vp_ip_source = "bind_address"
+        if not vp_ip or vp_ip in ("0.0.0.0", ""):  # nosec B104
+            resolved = _resolve_host_interface_for_target(target_ip)
+            if not resolved:
+                _log_not_armed(
+                    f"no host interface shares a subnet with printer IP {target_ip} "
+                    "(and VP bind_address is 0.0.0.0/empty)"
+                )
+                return
+            vp_ip = resolved
+            vp_ip_source = "auto-resolved"
+
+        try:
+            new_target_le = _ip_to_uint32_le(target_ip)
+            new_vp_le = _ip_to_uint32_le(vp_ip)
+        except ValueError as e:
+            _log_not_armed(f"invalid IPv4 (target={target_ip!r}, vp={vp_ip!r}): {e}")
+            return
+
+        if new_target_le == self._target_ip_uint32_le and new_vp_le == self._vp_ip_uint32_le:
+            return  # No change — nothing to do.
+
+        # Encoding either became valid for the first time or shifted (DHCP
+        # renewal, bind_ip reconfigured, etc.). Update + sweep the cache.
+        was_armed = self._target_ip_uint32_le is not None and self._vp_ip_uint32_le is not None
+        self._target_ip_uint32_le = new_target_le
+        self._vp_ip_uint32_le = new_vp_le
+        # Clear the dedup so a future failure re-emits the diagnostic line.
+        self._not_armed_reason = None
+        target_display = target_ip if target_ip == configured_target else f"{configured_target}→{target_ip}"
+        logger.info(
+            "[%s] MQTT bridge IP encoding %s: target=%s vp=%s (%s)",
+            self.vp_name,
+            "updated" if was_armed else "armed",
+            target_display,
+            vp_ip,
+            vp_ip_source,
+        )
+
+        cached = self._latest_print_state
+        if isinstance(cached, dict):
+            n = self._rewrite_net_info_ips(cached)
+            if n:
+                logger.info(
+                    "[%s] MQTT bridge swept %d net.info[].ip entries in cached push",
+                    self.vp_name,
+                    n,
+                )
+
+    def _rewrite_net_info_ips(self, print_state: dict) -> int:
+        """Rewrite every non-zero `net.info[].ip` in `print_state` to the VP bind IP.
+
+        Returns the number of entries rewritten. Mutates `print_state` in place.
+
+        Strategy: rewrite ALL entries with a non-zero `ip`, not only those
+        matching `_target_ip_uint32_le`. Real printers (X1C, H2D Pro) can
+        report multiple active interfaces (WiFi + Ethernet) with different
+        IPs — only one matches the IP Bambuddy tracks, but the slicer may
+        read any of them. Leaving non-matching entries pointing at real
+        printer interfaces leaks an FTP fallback path that bypasses the VP
+        (the #1429 / #1302 symptom). Entries with `ip == 0` are placeholders
+        for unpopulated interfaces — leave them alone so the slicer's
+        "active interface" detection still recognises them as absent.
+        """
+        if self._vp_ip_uint32_le is None:
+            return 0
+        net = print_state.get("net")
+        if not isinstance(net, dict):
+            return 0
+        info = net.get("info")
+        if not isinstance(info, list):
+            return 0
+        rewritten = 0
+        for entry in info:
+            if not isinstance(entry, dict):
+                continue
+            ip_value = entry.get("ip")
+            if not isinstance(ip_value, int) or ip_value == 0:
+                continue
+            if ip_value == self._vp_ip_uint32_le:
+                continue
+            entry["ip"] = self._vp_ip_uint32_le
+            rewritten += 1
+        return rewritten
 
     def _on_printer_raw(self, topic: str, payload: bytes) -> None:
         """Paho-thread callback — cache the latest push_status for synthetic replay.
@@ -251,17 +597,79 @@ class MQTTBridge:
             # (i.e. configure the VP with the same access code as its target).
             # Rewrite real printer IP → VP bind IP in `net.info[*].ip` so the
             # slicer's FTP destination resolves to the VP, not the real printer.
-            if self._target_ip_uint32_le is not None and self._vp_ip_uint32_le is not None:
-                net = print_data.get("net")
-                if isinstance(net, dict):
-                    info = net.get("info")
-                    if isinstance(info, list):
-                        for entry in info:
-                            if isinstance(entry, dict) and entry.get("ip") == self._target_ip_uint32_le:
-                                entry["ip"] = self._vp_ip_uint32_le
+            self._rewrite_net_info_ips(print_data)
             # Defensive deep copy on store so the cache is fully decoupled from
             # the freshly-parsed tree and from any reader's reference.
-            self._latest_print_state = copy.deepcopy(print_data)
+            new_state = copy.deepcopy(print_data)
+            # Bambu firmware sends two kinds of push_status: full pushall
+            # responses (on `pushall` requests / printer reconnect) which
+            # include the full top-level field set (AMS, vt_tray, net,
+            # cali_version, print_type, mc_print_stage, device, ...) — and
+            # ~1 Hz incrementals with just the fields that changed (temps,
+            # fan, wifi, status). Carry over every prev field the incoming
+            # push doesn't overwrite, mirroring the per-field accumulate
+            # pattern in bambu_mqtt.py's internal state handler — without
+            # this the cache thins out to whatever the latest incremental
+            # carried (~17 keys on P1S in #1622), and the slicer's Device-
+            # tab capability gates (manage-calibration, AMS-assign dropdown,
+            # …) flip off because their gating fields drained from the
+            # cache. The deep-copy is defensive: without it the carried-
+            # over nested dicts/lists are shared with the previous cache,
+            # so any in-place mutation later would corrupt both.
+            prev = self._latest_print_state
+            if prev is not None:
+                for prev_key, prev_value in prev.items():
+                    if prev_key not in new_state:
+                        new_state[prev_key] = copy.deepcopy(prev_value)
+                # Firmware sends partial `ams` blobs (status-only / unit-
+                # targeted / tray-targeted) under the same key on
+                # incremental updates, which would overwrite the cached
+                # full blob and break the slicer's AMS render (#1387 /
+                # #1371). Deep-merge mirrors what bambu_mqtt.py does
+                # internally in `_handle_ams_data`.
+                if isinstance(new_state.get("ams"), dict) and isinstance(prev.get("ams"), dict):
+                    new_state["ams"] = _merge_ams_dict(prev["ams"], new_state["ams"])
+                # Same per-field accumulate rule applied one level deeper for
+                # other top-level dict-shaped fields. Firmware sends partial
+                # `vt_tray` (external spool) updates right after a slicer
+                # `ams_filament_setting` pick — typically just `{tray_info_idx,
+                # tray_color}`, dropping the ~18 other fields (`tray_type`,
+                # `state`, `remain`, `k`, `n`, `cali_idx`, `nozzle_temp_min/max`,
+                # `tray_uuid`, `xcam_info`, ...) the slicer needs to render the
+                # slot. Without overlay the next 1 Hz cached-as-base push
+                # delivered the stripped dict and the slicer rendered the
+                # external slot as "invalid" until a reload triggered a fresh
+                # pushall (#1622 round 5, reported by @shaddowlink). AMS slots
+                # didn't suffer because `_merge_ams_dict` deep-merges per tray.
+                # Same shape covers `device`, `online`, `upgrade_state`, `ipcam`,
+                # `upload`, `net`, ... against future firmware partials too.
+                # `ams` is excluded — already deep-merged above.
+                for key, new_value in list(new_state.items()):
+                    if key == "ams":
+                        continue
+                    prev_value = prev.get(key)
+                    if isinstance(prev_value, dict) and isinstance(new_value, dict):
+                        merged = dict(prev_value)
+                        merged.update(new_value)
+                        new_state[key] = merged
+            # Apply empty-slot cleanup on the merged AMS so the slicer-facing
+            # cache mirrors what Bambuddy's AMS card shows internally. Without
+            # this the cached units carry stale per-tray filament fields for
+            # slots whose `tray_exist_bits` bit is 0, and BambuStudio's Sync
+            # paints those empty slots as phantom loaded filaments (#1726).
+            # Runs whether or not a prev cache existed — fresh pushalls also
+            # carry tray_exist_bits and benefit from the cleanup.
+            merged_ams_dict = new_state.get("ams")
+            if isinstance(merged_ams_dict, dict):
+                units = merged_ams_dict.get("ams")
+                apply_tray_exist_bits(
+                    units if isinstance(units, list) else [],
+                    merged_ams_dict.get("tray_exist_bits"),
+                    power_on_flag=merged_ams_dict.get("power_on_flag", True),
+                    log_label=self.vp_name,
+                )
+            self._latest_print_state = new_state
+            dump_wire(self.vp_name, "in", new_state)
             return
 
         # info.get_version responses → cache the module list so the synthetic
@@ -295,6 +703,13 @@ class MQTTBridge:
         if target_bytes in payload:
             payload = payload.replace(target_bytes, self.vp_serial.encode("ascii"))
         vp_topic = f"device/{self.vp_serial}/{suffix}"
+        # Env-flagged command trace (#1622): every printer-originated response
+        # that gets fanned to the slicer (extrusion_cali_get / ams write acks /
+        # xcam / system / etc.) gets a line in vp_wire/<vp>_cmd.jsonl. Pair
+        # with the slicer-side publishes captured in mqtt_server. Off by
+        # default. Capture AFTER serial rewrite so the dump matches what the
+        # slicer actually sees on the wire.
+        append_event(self.vp_name, "printer_to_slicer", vp_topic, payload)
         try:
             asyncio.run_coroutine_threadsafe(
                 self._mqtt_server.push_raw_to_clients(vp_topic, payload),

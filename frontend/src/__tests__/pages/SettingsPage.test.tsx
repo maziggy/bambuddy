@@ -718,6 +718,117 @@ describe('SettingsPage', () => {
     });
   });
 
+  describe('API Keys tab — #1356 energy-cost write scope', () => {
+    /**
+     * The narrowly-scoped settings-write toggle. We pin two contracts here:
+     *
+     *   1. The "Energy" badge renders for keys that have can_update_energy_cost=true.
+     *      Without a visible signal, an operator can't tell which key in their
+     *      list is the one their HA automation depends on.
+     *   2. The create form sends can_update_energy_cost=true to the backend
+     *      when the toggle is checked. The whole point of #1356 is that the
+     *      flag must actually be persisted — a UI that drops it silently
+     *      would put us right back where the bug started.
+     */
+    it('renders the Energy badge for keys with can_update_energy_cost=true', async () => {
+      const keys = [
+        {
+          id: 1,
+          name: 'tariff-pusher',
+          key_prefix: 'bk_tariff01',
+          user_id: 7,
+          can_queue: false,
+          can_control_printer: false,
+          can_read_status: true,
+          can_access_cloud: false,
+          can_update_energy_cost: true,
+          printer_ids: null,
+          enabled: true,
+          last_used: null,
+          created_at: '2026-05-15T00:00:00Z',
+          expires_at: null,
+        },
+      ];
+
+      server.use(http.get('/api/v1/api-keys/', () => HttpResponse.json(keys)));
+
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('API Keys').length).toBeGreaterThan(0);
+      });
+      const tabButton = screen.getAllByText('API Keys').find((el) => el.tagName === 'BUTTON');
+      await user.click(tabButton!);
+
+      await waitFor(() => {
+        expect(screen.getByText('tariff-pusher')).toBeInTheDocument();
+      });
+
+      const row = screen.getByText('tariff-pusher').closest('.flex.items-center.justify-between');
+      expect(row).not.toBeNull();
+      expect(row!.textContent).toContain('Energy');
+    });
+
+    it('passes can_update_energy_cost through to the create call when the toggle is checked', async () => {
+      let posted: { name?: string; can_update_energy_cost?: boolean } | null = null;
+
+      server.use(
+        http.get('/api/v1/api-keys/', () => HttpResponse.json([])),
+        http.post('/api/v1/api-keys/', async ({ request }) => {
+          posted = (await request.json()) as { name?: string; can_update_energy_cost?: boolean };
+          return HttpResponse.json({
+            id: 99,
+            key: 'bk_returnedkey',
+            name: posted.name,
+            key_prefix: 'bk_returne',
+            user_id: 1,
+            can_queue: true,
+            can_control_printer: false,
+            can_read_status: true,
+            can_access_cloud: false,
+            can_update_energy_cost: posted.can_update_energy_cost ?? false,
+            printer_ids: null,
+            enabled: true,
+            last_used: null,
+            created_at: '2026-05-15T00:00:00Z',
+            expires_at: null,
+          });
+        })
+      );
+
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('API Keys').length).toBeGreaterThan(0);
+      });
+      const tabButton = screen.getAllByText('API Keys').find((el) => el.tagName === 'BUTTON');
+      await user.click(tabButton!);
+
+      const openButton = await screen.findByRole('button', { name: /Create Your First Key/i });
+      await user.click(openButton);
+
+      const energyLabelText = await screen.findByText(/Update electricity price/i);
+      const energyLabel = energyLabelText.closest('label');
+      expect(energyLabel).not.toBeNull();
+      const energyCheckbox = energyLabel!.querySelector('input[type="checkbox"]') as HTMLInputElement;
+      expect(energyCheckbox).not.toBeNull();
+      await user.click(energyCheckbox);
+
+      const submitButtons = screen.getAllByRole('button', { name: /^Create Key$/i });
+      const formSubmit = submitButtons.find(
+        (b) => b.closest('div')?.contains(energyCheckbox) || energyLabel?.parentElement?.parentElement?.contains(b),
+      );
+      await user.click(formSubmit ?? submitButtons[submitButtons.length - 1]);
+
+      await waitFor(() => {
+        expect(posted).not.toBeNull();
+        expect(posted!.can_update_energy_cost).toBe(true);
+      });
+    });
+  });
+
   describe('external camera snapshot URL override (#1177)', () => {
     /**
      * The snapshot URL input only appears for stream camera types where the
@@ -776,36 +887,105 @@ describe('SettingsPage', () => {
       expect(screen.queryByPlaceholderText(/api\/frame\.jpeg\?src=printer/)).not.toBeInTheDocument();
     });
 
-    it('PATCHes the printer with external_camera_snapshot_url when the user types into the input', async () => {
-      let receivedBody: Record<string, unknown> | null = null;
-      server.use(
-        http.get('/api/v1/printers/', () => HttpResponse.json([mjpegPrinter])),
-        http.patch('/api/v1/printers/7', async ({ request }) => {
-          receivedBody = (await request.json()) as Record<string, unknown>;
-          return HttpResponse.json({ ...mjpegPrinter, ...receivedBody });
-        }),
-      );
+    it(
+      'PATCHes the printer with external_camera_snapshot_url when the user types into the input',
+      async () => {
+        let receivedBody: Record<string, unknown> | null = null;
+        server.use(
+          http.get('/api/v1/printers/', () => HttpResponse.json([mjpegPrinter])),
+          http.patch('/api/v1/printers/7', async ({ request }) => {
+            receivedBody = (await request.json()) as Record<string, unknown>;
+            return HttpResponse.json({ ...mjpegPrinter, ...receivedBody });
+          }),
+        );
 
+        render(<SettingsPage />);
+
+        const input = await waitFor(() =>
+          screen.getByPlaceholderText(/api\/frame\.jpeg\?src=printer/),
+        );
+
+        const user = userEvent.setup();
+        await user.type(input, 'http://192.168.1.61:1984/api/frame.jpeg?src=printer');
+
+        // Save is debounced by 800ms; assert the PATCH eventually fires with
+        // the typed snapshot URL.
+        await waitFor(
+          () => {
+            expect(receivedBody).not.toBeNull();
+            expect(receivedBody!.external_camera_snapshot_url).toBe(
+              'http://192.168.1.61:1984/api/frame.jpeg?src=printer',
+            );
+          },
+          { timeout: 5000 },
+        );
+      },
+      // Per-test timeout raised to 15s — `user.type()` of a 49-char URL plus
+      // the 800ms save debounce fits in 5s locally (~2.3s typical) but blows
+      // past it on slow GitHub Actions runners (5000ms timeout was the failure
+      // mode on PR #1263).
+      15_000,
+    );
+  });
+
+  describe('theme mode buttons', () => {
+    it('renders Dark, Light, and System buttons', async () => {
       render(<SettingsPage />);
 
-      const input = await waitFor(() =>
-        screen.getByPlaceholderText(/api\/frame\.jpeg\?src=printer/),
-      );
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Dark' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Light' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'System' })).toBeInTheDocument();
+      });
+    });
 
+    it('highlights the active mode button with green border', async () => {
+      render(<SettingsPage />);
       const user = userEvent.setup();
-      await user.type(input, 'http://192.168.1.61:1984/api/frame.jpeg?src=printer');
 
-      // Save is debounced by 800ms; assert the PATCH eventually fires with
-      // the typed snapshot URL.
-      await waitFor(
-        () => {
-          expect(receivedBody).not.toBeNull();
-          expect(receivedBody!.external_camera_snapshot_url).toBe(
-            'http://192.168.1.61:1984/api/frame.jpeg?src=printer',
-          );
-        },
-        { timeout: 3000 },
-      );
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'System' })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: 'System' }));
+
+      await waitFor(() => {
+        const systemBtn = screen.getByRole('button', { name: 'System' });
+        expect(systemBtn.className).toContain('border-bambu-green');
+      });
+    });
+
+    it('clicking a theme button switches mode', async () => {
+      localStorage.setItem('theme-mode', 'dark');
+      render(<SettingsPage />);
+      const user = userEvent.setup();
+
+      await waitFor(() => {
+        const darkBtn = screen.getByRole('button', { name: 'Dark' });
+        expect(darkBtn.className).toContain('border-bambu-green');
+      });
+
+      const lightBtn = screen.getByRole('button', { name: 'Light' });
+      await user.click(lightBtn);
+
+      await waitFor(() => {
+        expect(lightBtn.className).toContain('border-bambu-green');
+      });
+    });
+
+    it('shows a toast when theme button is clicked', async () => {
+      render(<SettingsPage />);
+      const user = userEvent.setup();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'System' })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: 'System' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Settings saved')).toBeInTheDocument();
+      });
     });
   });
 });

@@ -670,6 +670,58 @@ class TestNotificationProviderTypes:
             assert "image" not in payload
 
 
+class TestDiscordProvider:
+    """Discord webhook URL host validation (#1363)."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @pytest.mark.asyncio
+    async def test_discord_accepts_discord_com_url(self, service):
+        config = {"webhook_url": "https://discord.com/api/webhooks/123/abc"}
+        mock_response = MagicMock()
+        mock_response.status_code = 204
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            success, _ = await service._send_discord(config, "Title", "Body")
+
+        assert success is True
+        mock_client.post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_discord_accepts_legacy_discordapp_com_url(self, service):
+        """Discord's 'Copy Webhook URL' button emits discordapp.com URLs (#1363)."""
+        config = {"webhook_url": "https://discordapp.com/api/webhooks/123/abc"}
+        mock_response = MagicMock()
+        mock_response.status_code = 204
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            success, _ = await service._send_discord(config, "Title", "Body")
+
+        assert success is True
+        mock_client.post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_discord_rejects_non_discord_host(self, service):
+        config = {"webhook_url": "https://evil.example.com/api/webhooks/123/abc"}
+        success, message = await service._send_discord(config, "Title", "Body")
+        assert success is False
+        assert "Invalid Discord webhook URL" in message
+
+    @pytest.mark.asyncio
+    async def test_discord_rejects_empty_url(self, service):
+        success, message = await service._send_discord({"webhook_url": ""}, "Title", "Body")
+        assert success is False
+        assert "required" in message.lower()
+
+
 class TestNtfyPriority:
     """Per-event ntfy Priority header (#990)."""
 
@@ -2005,3 +2057,149 @@ class TestFirstLayerCompleteNotifications:
             mock_send.assert_called_once()
             call_kwargs = mock_send.call_args
             assert call_kwargs.kwargs.get("image_data") == fake_image
+
+
+class TestNtfyOutbound:
+    """Regression for #1534 — UA hygiene and Cloudflare-challenge detection."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @pytest.mark.asyncio
+    async def test_notification_client_sets_honest_user_agent(self, service):
+        """Default httpx UA leaks `python-httpx/<version>` — every other
+        outbound client in the codebase identifies as Bambuddy. The
+        notification client must too."""
+        client = await service._get_client()
+        try:
+            assert client.headers.get("user-agent") == "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)"
+        finally:
+            await service.close()
+
+    @pytest.mark.asyncio
+    async def test_ntfy_cloudflare_challenge_returns_actionable_error(self, service):
+        """When ntfy is fronted by Cloudflare and CF returns its JS
+        challenge, the user must see a message that points at the actual
+        fix (CF security skip), not the raw HTML."""
+        import httpx
+
+        challenge_html = (
+            '<!DOCTYPE html><html lang="en-US"><head><title>Just a moment...</title>'
+            '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'
+        )
+        mock_response = httpx.Response(
+            403,
+            content=challenge_html.encode(),
+            headers={"server": "cloudflare", "content-type": "text/html; charset=UTF-8"},
+        )
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch.object(service, "_get_client", AsyncMock(return_value=mock_client)):
+            ok, detail = await service._send_ntfy(
+                {"server": "https://ntfy.example", "topic": "alerts", "auth_token": "tk_xxx"},
+                title="t",
+                message="m",
+            )
+
+        assert ok is False
+        assert "Cloudflare" in detail
+        assert "security-skip" in detail or "Bot Fight Mode" in detail
+        # The raw HTML must not be the dominant content shown to the user.
+        assert "<!DOCTYPE" not in detail
+
+    @pytest.mark.asyncio
+    async def test_ntfy_normal_403_still_surfaces_body(self, service):
+        """A non-Cloudflare 403 (e.g. ntfy auth fail) must keep showing
+        the original body so the user can debug the real error — we
+        only intercept the Cloudflare-challenge shape."""
+        import httpx
+
+        mock_response = httpx.Response(
+            403,
+            content=b"forbidden: invalid auth token",
+            headers={"content-type": "text/plain"},
+        )
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch.object(service, "_get_client", AsyncMock(return_value=mock_client)):
+            ok, detail = await service._send_ntfy(
+                {"server": "https://ntfy.sh", "topic": "alerts", "auth_token": "bad"},
+                title="t",
+                message="m",
+            )
+
+        assert ok is False
+        assert "Cloudflare" not in detail
+        assert "invalid auth token" in detail
+        assert detail.startswith("HTTP 403:")
+
+    @pytest.mark.asyncio
+    async def test_ntfy_origin_error_through_cloudflare_is_not_misclassified(self, service):
+        """Cloudflare adds Server: cloudflare to EVERY proxied response,
+        including legitimate origin errors. A real 401 "wrong token"
+        from an ntfy server that happens to sit behind Cloudflare must
+        still surface the origin's actual error body — we must not flip
+        every CF-fronted 4xx into a "your Cloudflare is blocking" message.
+        """
+        import httpx
+
+        mock_response = httpx.Response(
+            401,
+            content=b'{"code":40101,"http":401,"error":"unauthorized"}',
+            headers={
+                "server": "cloudflare",
+                "cf-ray": "abc123-FRA",
+                "content-type": "application/json",
+                # No cf-mitigated — CF just proxied the origin response.
+            },
+        )
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch.object(service, "_get_client", AsyncMock(return_value=mock_client)):
+            ok, detail = await service._send_ntfy(
+                {"server": "https://ntfy.example", "topic": "alerts", "auth_token": "wrong"},
+                title="t",
+                message="m",
+            )
+
+        assert ok is False
+        assert "Cloudflare" not in detail
+        assert "unauthorized" in detail
+        assert detail.startswith("HTTP 401:")
+
+    @pytest.mark.asyncio
+    async def test_ntfy_cloudflare_cf_mitigated_header_alone_triggers(self, service):
+        """The cf-mitigated header on its own is enough — that's the
+        canonical CF "I actively blocked this" signal, even if the
+        response body shape changes between CF challenge generations."""
+        import httpx
+
+        mock_response = httpx.Response(
+            403,
+            content=b"<html>some future CF block page</html>",
+            headers={
+                "server": "cloudflare",
+                "cf-mitigated": "challenge",
+                "content-type": "text/html",
+            },
+        )
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch.object(service, "_get_client", AsyncMock(return_value=mock_client)):
+            ok, detail = await service._send_ntfy(
+                {"server": "https://ntfy.example", "topic": "alerts"},
+                title="t",
+                message="m",
+            )
+
+        assert ok is False
+        assert "Cloudflare" in detail

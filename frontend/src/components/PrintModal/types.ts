@@ -48,6 +48,7 @@ export interface PrintOptions {
   vibration_cali: boolean;
   layer_inspect: boolean;
   timelapse: boolean;
+  nozzle_offset_cali: boolean;
 }
 
 /**
@@ -59,6 +60,7 @@ export const DEFAULT_PRINT_OPTIONS: PrintOptions = {
   vibration_cali: true,
   layer_inspect: false,
   timelapse: false,
+  nozzle_offset_cali: true,
 };
 
 /**
@@ -109,6 +111,7 @@ export interface PlateInfo {
   }>;
   print_time_seconds: number | null;
   filament_used_grams: number | null;
+  bed_type?: string | null;  // Build plate type for this plate, e.g. "Textured PEI Plate" (#1281)
 }
 
 /**
@@ -180,6 +183,10 @@ export interface FilamentReqsData {
     used_grams: number;
     used_meters: number;
     nozzle_id?: number;
+    /** Bambu SKU code from the 3MF (e.g. `GFA01` = Bambu PLA Matte, `P4d64437`
+     *  = user custom). Used to resolve the "original" filament label in
+     *  FilamentOverride against the builtin + cloud user-preset maps. #1718. */
+    tray_info_idx?: string;
   }>;
 }
 
@@ -194,6 +201,12 @@ export interface FilamentMappingProps {
   onManualMappingChange: (mappings: Record<number, number>) => void;
   currencySymbol: string;
   defaultCostPerKg: number;
+  /** Per-slot force-color-match flags. The scheduler honors this flag in both
+   *  model-mode and printer-mode dispatch, but the checkbox was previously only
+   *  surfaced in FilamentOverride (model mode). #1717. */
+  forceColorMatch?: Record<number, boolean>;
+  /** Called when a slot's force-color-match checkbox is toggled. */
+  onForceColorMatchChange?: (slotId: number, value: boolean) => void;
 }
 
 /**
@@ -203,6 +216,9 @@ export interface PrintOptionsProps {
   options: PrintOptions;
   onChange: (options: PrintOptions) => void;
   defaultExpanded?: boolean;
+  /** Show the dual-nozzle-only options (nozzle offset calibration). Default false.
+   *  Pass true when at least one selected printer is dual-nozzle. */
+  showDualNozzleOptions?: boolean;
 }
 
 /**

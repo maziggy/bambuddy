@@ -18,7 +18,7 @@ async def file_factory(db_session):
         counter = _counter[0]
         defaults = {
             "filename": f"trash_test_{counter}.3mf",
-            "file_path": f"/tmp/trash_test_{counter}.3mf",
+            "file_path": f"/test/library/trash_test_{counter}.3mf",
             "file_size": 1024 * counter,
             "file_type": "3mf",
         }
@@ -286,14 +286,14 @@ async def test_sweeper_hard_deletes_past_retention(db_session):
 
     fresh = LibraryFile(
         filename="fresh.3mf",
-        file_path="/tmp/fresh.3mf",
+        file_path="/test/library/fresh.3mf",
         file_size=1024,
         file_type="3mf",
         deleted_at=datetime.now(timezone.utc) - timedelta(days=5),
     )
     stale = LibraryFile(
         filename="stale.3mf",
-        file_path="/tmp/stale.3mf",
+        file_path="/test/library/stale.3mf",
         file_size=2048,
         file_type="3mf",
         deleted_at=datetime.now(timezone.utc) - timedelta(days=40),

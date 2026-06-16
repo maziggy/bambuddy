@@ -9,11 +9,23 @@ vi.mock('../../api/client', () => ({
     getSpools: vi.fn(),
     getAssignments: vi.fn(),
     assignSpool: vi.fn(),
+    assignSpoolmanSlot: vi.fn(),
     getSpoolmanInventorySpools: vi.fn(),
+    getSpoolmanSlotAssignments: vi.fn().mockResolvedValue([]),
     getSettings: vi.fn().mockResolvedValue({}),
     getAuthStatus: vi.fn().mockResolvedValue({ auth_enabled: false }),
+    refreshPrinterStatus: vi.fn().mockResolvedValue({ status: 'ok' }),
   },
 }));
+
+const mockShowToast = vi.fn();
+vi.mock('../../contexts/ToastContext', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../contexts/ToastContext')>();
+  return {
+    ...actual,
+    useToast: () => ({ showToast: mockShowToast }),
+  };
+});
 
 const defaultProps = {
   isOpen: true,
@@ -287,6 +299,123 @@ describe('AssignSpoolModal', () => {
     await waitFor(() => {
       expect(screen.getByText(/Devil Design/)).toBeInTheDocument();
     });
+  });
+
+  it('nudges the printer to republish after successful assignment (#1414)', async () => {
+    // The backend's assign-spool path issues an MQTT command, but firmware
+    // (esp. A1 mini external slots and any non-RFID assignment) doesn't
+    // always echo the new tray state back on its own — the printer card
+    // then sits on stale data until the user hits Force-refresh. Modal
+    // calls refreshPrinterStatus to issue a pushall so the printer
+    // republishes state, mirroring the Force-refresh button.
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+
+    // Tray material matches the spool to skip the mismatch confirm dialog.
+    (api.getSpools as ReturnType<typeof vi.fn>).mockResolvedValue([manualSpool]);
+    (api.assignSpool as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 1, spool_id: 1, printer_id: 7, ams_id: 0, tray_id: 0,
+    });
+
+    render(
+      <AssignSpoolModal
+        {...defaultProps}
+        printerId={7}
+        trayInfo={{ type: 'PLA', material: 'PLA', profile: 'PLA', color: 'FF0000', location: 'AMS 1 - Slot 1' }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Polymaker/)).toBeInTheDocument();
+    });
+    await user.click(screen.getByText(/Polymaker/));
+    await user.click(screen.getByRole('button', { name: /assign spool/i }));
+
+    await waitFor(() => {
+      expect(api.refreshPrinterStatus).toHaveBeenCalledWith(7);
+    });
+  });
+
+  // #1680: backend returns `pending_config=true` when the AMS slot was empty
+  // at assign time (firmware drops the MQTT push silently; on_ams_change
+  // re-fires the config when filament is detected). The toast MUST reflect
+  // that the slot hasn't been configured yet — saying "AMS slot configured"
+  // reads as a lie and is what the reporter hit.
+  it('shows the pending-insert toast when backend returns pending_config=true (#1680)', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+
+    (api.getSpools as ReturnType<typeof vi.fn>).mockResolvedValue([manualSpool]);
+    (api.assignSpool as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 1, spool_id: 1, printer_id: 7, ams_id: 0, tray_id: 0,
+      pending_config: true,
+    });
+
+    render(
+      <AssignSpoolModal
+        {...defaultProps}
+        printerId={7}
+        trayInfo={{ type: 'PLA', material: 'PLA', profile: 'PLA', color: 'FF0000', location: 'AMS 1 - Slot 1' }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Polymaker/)).toBeInTheDocument();
+    });
+    await user.click(screen.getByText(/Polymaker/));
+    await user.click(screen.getByRole('button', { name: /assign spool/i }));
+
+    await waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.stringContaining('Slot will configure when you insert the spool'),
+        'success',
+      );
+    });
+    // And the "AMS slot configured" toast must NOT also have fired.
+    expect(mockShowToast).not.toHaveBeenCalledWith(
+      expect.stringContaining('AMS slot configured'),
+      expect.anything(),
+    );
+  });
+
+  // Counterpart guard: when the backend did configure the slot
+  // (pending_config=false or absent), the existing success toast still
+  // fires. Without this regression test, the #1680 fix could silently
+  // overshoot and label every assign as pending.
+  it('shows the configured toast when backend returns pending_config=false (#1680)', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+
+    (api.getSpools as ReturnType<typeof vi.fn>).mockResolvedValue([manualSpool]);
+    (api.assignSpool as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 1, spool_id: 1, printer_id: 7, ams_id: 0, tray_id: 0,
+      pending_config: false,
+    });
+
+    render(
+      <AssignSpoolModal
+        {...defaultProps}
+        printerId={7}
+        trayInfo={{ type: 'PLA', material: 'PLA', profile: 'PLA', color: 'FF0000', location: 'AMS 1 - Slot 1' }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Polymaker/)).toBeInTheDocument();
+    });
+    await user.click(screen.getByText(/Polymaker/));
+    await user.click(screen.getByRole('button', { name: /assign spool/i }));
+
+    await waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.stringContaining('AMS slot configured'),
+        'success',
+      );
+    });
+    expect(mockShowToast).not.toHaveBeenCalledWith(
+      expect.stringContaining('Slot will configure when you insert'),
+      expect.anything(),
+    );
   });
 });
 

@@ -5,6 +5,7 @@ import { Check, AlertTriangle, RefreshCw, Unlink } from 'lucide-react';
 import type { InventorySpool } from '../../api/client';
 import { spoolbuddyApi, api } from '../../api/client';
 import { SpoolIcon } from './SpoolIcon';
+import { spoolColorString } from '../../utils/colors';
 
 const DEFAULT_CORE_WEIGHT_KEY = 'spoolbuddy-default-core-weight';
 
@@ -61,7 +62,7 @@ export function InventorySpoolInfoCard({
   // Use fetched k_profiles if available, otherwise use the ones from the spool object
   const kProfiles = (spool.k_profiles && spool.k_profiles.length > 0) ? spool.k_profiles : fetchedKProfiles;
 
-  const colorHex = spool.rgba ? `#${spool.rgba.slice(0, 6)}` : '#808080';
+  const colorHex = spoolColorString(spool.rgba);
 
   const coreWeight = (spool.core_weight && spool.core_weight > 0)
     ? spool.core_weight
@@ -149,9 +150,12 @@ export function InventorySpoolInfoCard({
         </div>
 
         <div className="flex-1 min-w-0 pt-1">
-          <h3 className="text-lg font-semibold text-zinc-100">
-            {spool.color_name || 'Unknown color'}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-zinc-100">
+              {spool.color_name || 'Unknown color'}
+            </h3>
+            <span className="text-xs font-mono text-zinc-500 shrink-0">#{spool.id}</span>
+          </div>
           <p className="text-sm text-zinc-400">
             {spool.brand} &bull; {spool.material}
             {spool.subtype && ` ${spool.subtype}`}

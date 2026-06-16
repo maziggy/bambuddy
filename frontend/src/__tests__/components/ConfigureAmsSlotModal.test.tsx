@@ -323,6 +323,37 @@ describe('ConfigureAmsSlotModal', () => {
     expect(screen.queryByText(/Bambu PLA Basic @BBL X1C/)).not.toBeInTheDocument();
   });
 
+  it('treats Bambu cloud rename @BBL A1M as a match for A1 Mini (#1649)', async () => {
+    // Bambu cloud shifted A1 Mini filament profiles from
+    // "Bambu PLA Basic @BBL A1 Mini ..." to the terse "@BBL A1M" mid-2026.
+    // Without an alias-aware compare, the model filter strips every cloud
+    // profile from the picker when the user selects an A1 Mini printer.
+    (api.getCloudSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      filament: [
+        { setting_id: 'GFA00_A1M', name: 'Bambu PLA Basic @BBL A1M', filament_id: 'GFA00' },
+        { setting_id: 'GFA00_A1', name: 'Bambu PLA Basic @BBL A1', filament_id: 'GFA00' },
+      ],
+    });
+    render(<ConfigureAmsSlotModal {...defaultProps} printerModel="A1 Mini" />);
+    await waitFor(() => {
+      expect(screen.getByText('Bambu PLA Basic @BBL A1M')).toBeInTheDocument();
+    });
+    // The A1 (non-mini) preset must still be filtered out — the alias
+    // table must not collapse two physically distinct printers.
+    expect(screen.queryByText('Bambu PLA Basic @BBL A1')).not.toBeInTheDocument();
+  });
+
+  it('still filters cross-model cloud profiles when the printer is A1 Mini', async () => {
+    // Sanity check that the alias addition didn't accidentally widen the
+    // matcher: an X1C cloud preset stays hidden when the picker is for an
+    // A1 Mini printer.
+    render(<ConfigureAmsSlotModal {...defaultProps} printerModel="A1 Mini" />);
+    await waitFor(() => {
+      expect(screen.getByText(/Configure AMS/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Bambu PLA Basic @BBL X1C')).not.toBeInTheDocument();
+  });
+
   it('shows current preset even when it does not match model filter', async () => {
     // Render with printerModel="H2D" but savedPresetId pointing to the X1C preset
     const slotInfo = {
@@ -392,5 +423,151 @@ describe('ConfigureAmsSlotModal', () => {
     expect(screen.getByRole('button', { name: /Configure Slot/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Reset Slot/i })).toBeInTheDocument();
+  });
+
+  it('surfaces a K-profile whose name does not match the preset when filament_id agrees (#1688)', async () => {
+    // Spool was edited with slicer_filament = "GFSL05_09" (the setting_id form
+    // for Bambu PLA Basic). The printer has a *custom* K-profile saved on the
+    // same filament_id, but the user named it something that doesn't include
+    // "PLA". Pre-fix, the name-only filter dropped it; the id-match path now
+    // surfaces it because both sides normalise to "GFL05".
+    (api.getKProfiles as ReturnType<typeof vi.fn>).mockResolvedValue({
+      profiles: [
+        {
+          slot_id: 3,
+          extruder_id: 0,
+          nozzle_id: 'HH00-0.4',
+          nozzle_diameter: '0.4',
+          filament_id: 'GFL05',
+          name: 'my-custom-tune',
+          k_value: '0.025',
+          n_coef: '0',
+          ams_id: 0,
+          tray_id: 0,
+          setting_id: '',
+        },
+      ],
+    });
+    const slotInfo = {
+      ...defaultProps.slotInfo,
+      savedPresetId: 'GFSL05_09', // setting_id form for Bambu PLA Basic
+    };
+    render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={slotInfo} />);
+
+    await waitFor(() => {
+      // Renders as an <option> on the K-profile select even though
+      // "my-custom-tune" doesn't contain "PLA" anywhere.
+      expect(screen.getByRole('option', { name: /my-custom-tune/ })).toBeInTheDocument();
+    });
+  });
+
+  it("always includes the slot's currently-active K-profile when name and id don't match (#1689)", async () => {
+    // Reporter scenario: spool assigned under "Generic PLA" but the slot has
+    // a custom K-profile (filament_id "GFG98" = PETG-something) actively
+    // selected via cali_idx. Pre-fix the modal showed "default 0.020"; the
+    // safety net now surfaces the active profile so Configure Slot reflects
+    // what the printer is actually using.
+    (api.getKProfiles as ReturnType<typeof vi.fn>).mockResolvedValue({
+      profiles: [
+        {
+          slot_id: 7, // matches caliIdx below
+          extruder_id: 0,
+          nozzle_id: 'HH00-0.4',
+          nozzle_diameter: '0.4',
+          filament_id: 'GFG98', // unrelated to "Generic PLA"
+          name: 'unrelated-petg-tune',
+          k_value: '0.030',
+          n_coef: '0',
+          ams_id: 0,
+          tray_id: 0,
+          setting_id: '',
+        },
+      ],
+    });
+    const slotInfo = {
+      ...defaultProps.slotInfo,
+      savedPresetId: 'GFSL05_09', // Generic PLA preset
+      caliIdx: 7,
+      extruderId: 0,
+    };
+    render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={slotInfo} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /unrelated-petg-tune/ })).toBeInTheDocument();
+    });
+  });
+
+  it("surfaces the slot's active K-profile when no preset is resolvable (#1689 follow-up)", async () => {
+    // Repro from Spionkiller01: slot is physically loaded but unconfigured —
+    // tray_type='', tray_info_idx='', no slot_preset_mappings row — so
+    // selectedPresetInfo resolves to null. Before the patch the main matcher's
+    // early return on !selectedPresetInfo skipped past the cali_idx safety net
+    // entirely; on reopen the dropdown went back to default 0.020 even though
+    // the printer still holds the active profile at cali_idx=6.
+    (api.getKProfiles as ReturnType<typeof vi.fn>).mockResolvedValue({
+      profiles: [
+        {
+          slot_id: 6,
+          extruder_id: 0,
+          nozzle_id: 'HH00-0.4',
+          nozzle_diameter: '0.4',
+          filament_id: 'GFG98',
+          name: 'active-on-unconfigured-slot',
+          k_value: '0.030',
+          n_coef: '0',
+          ams_id: 0,
+          tray_id: 0,
+          setting_id: '',
+        },
+      ],
+    });
+    const slotInfo = {
+      ...defaultProps.slotInfo,
+      trayType: '',
+      traySubBrands: '',
+      caliIdx: 6,
+      extruderId: 0,
+      // savedPresetId intentionally omitted — no preset bound yet
+    };
+    render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={slotInfo} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /active-on-unconfigured-slot/ })).toBeInTheDocument();
+    });
+  });
+
+  it('does not include the active K-profile when caliIdx is 0 or null (#1689 guard)', async () => {
+    // cali_idx == 0 / null means no profile is active (printer default 0.020).
+    // The safety net only triggers for activeIdx > 0 — otherwise unrelated
+    // profiles whose slot_id happens to equal 0 would leak in.
+    (api.getKProfiles as ReturnType<typeof vi.fn>).mockResolvedValue({
+      profiles: [
+        {
+          slot_id: 0,
+          extruder_id: 0,
+          nozzle_id: 'HH00-0.4',
+          nozzle_diameter: '0.4',
+          filament_id: 'GFG98',
+          name: 'should-not-appear',
+          k_value: '0.030',
+          n_coef: '0',
+          ams_id: 0,
+          tray_id: 0,
+          setting_id: '',
+        },
+      ],
+    });
+    const slotInfo = {
+      ...defaultProps.slotInfo,
+      savedPresetId: 'GFSL05_09',
+      caliIdx: 0,
+      extruderId: 0,
+    };
+    render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={slotInfo} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Configure AMS/)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('option', { name: /should-not-appear/ })).not.toBeInTheDocument();
   });
 });

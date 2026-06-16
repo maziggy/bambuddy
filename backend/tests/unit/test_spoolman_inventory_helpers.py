@@ -102,8 +102,35 @@ class TestMapSpoolmanSpool:
         assert result["material"] == "PLA"
         assert result["rgba"] == "FF0000FF"
         assert result["label_weight"] == 1000
+        # No remaining_weight set → fallback path: weight_used = used_weight, baseline = 0.
         assert result["weight_used"] == pytest.approx(250.0)
+        assert result["weight_used_baseline"] == pytest.approx(0.0)
         assert result["data_origin"] == "spoolman"
+
+    def test_remaining_weight_drives_synthetic_used_for_parity(self):
+        """When remaining_weight is set, weight_used = label - remaining and
+        the baseline absorbs the used_weight delta. This mirrors the internal
+        Spool model's split between consumed counter and physical depletion
+        so the frontend computes the same display in both modes (#1390).
+        """
+        spool = {**MINIMAL_SPOOL, "used_weight": 250.0, "remaining_weight": 544.0}
+        result = _map_spoolman_spool(spool)
+        # Remaining = label - weight_used must equal real remaining_weight.
+        assert result["label_weight"] - result["weight_used"] == pytest.approx(544.0)
+        # Consumed = weight_used - baseline must equal real used_weight.
+        assert result["weight_used"] - result["weight_used_baseline"] == pytest.approx(250.0)
+
+    def test_remaining_weight_after_reset(self):
+        """Spoolman reset: used_weight=0, remaining_weight unchanged. The
+        mapper produces baseline = weight_used so the displayed consumed
+        counter reads 0 while remaining stays at the real value.
+        """
+        spool = {**MINIMAL_SPOOL, "used_weight": 0.0, "remaining_weight": 544.0}
+        result = _map_spoolman_spool(spool)
+        assert result["weight_used"] == pytest.approx(456.0)
+        assert result["weight_used_baseline"] == pytest.approx(456.0)
+        assert result["weight_used"] - result["weight_used_baseline"] == pytest.approx(0.0)
+        assert result["label_weight"] - result["weight_used"] == pytest.approx(544.0)
 
     def test_missing_id_raises(self):
         spool = {k: v for k, v in MINIMAL_SPOOL.items() if k != "id"}
@@ -179,6 +206,23 @@ class TestMapSpoolmanSpool:
         }
         result = _map_spoolman_spool(spool)
         assert result["color_name"] == "Sunrise Orange"
+        # Real stored value — not synthesised from subtype.
+        assert result["color_name_is_synthesized"] is False
+
+    def test_color_name_flags_synthesized_when_falling_back_to_subtype(self):
+        """#1319: when the read falls back to subtype, the response must flag it
+        so the edit form doesn't round-trip the synth value back to Spoolman."""
+        spool = {
+            **MINIMAL_SPOOL,
+            "filament": {
+                **MINIMAL_SPOOL["filament"],
+                "name": "PLA Basic Red",
+                # No color_name field.
+            },
+        }
+        result = _map_spoolman_spool(spool)
+        assert result["color_name"] == "Basic Red"
+        assert result["color_name_is_synthesized"] is True
 
     def test_color_name_falls_back_to_subtype_when_field_missing(self):
         """Spoolman doesn't standardise color_name; the LinkSpoolModal would
@@ -201,6 +245,59 @@ class TestMapSpoolmanSpool:
         # color_name falls back to subtype.
         assert result["color_name"] == "Basic Red"
 
+    def test_color_name_read_from_spool_extra_first(self):
+        """#1357: the canonical store for color_name is
+        spool.extra.bambu_color_name (JSON-encoded). Read priority is
+        extra > filament.color_name > subtype-synth. The user's
+        Bambuddy-saved value MUST win even when Spoolman's own
+        filament.color_name happens to be populated from some other source.
+        """
+        spool = {
+            **MINIMAL_SPOOL,
+            "extra": {"bambu_color_name": '"Galaxy Black"'},
+            "filament": {
+                **MINIMAL_SPOOL["filament"],
+                "name": "PLA Glow",
+                "color_name": "Glow",  # would be picked up if extra weren't preferred
+            },
+        }
+        result = _map_spoolman_spool(spool)
+        assert result["color_name"] == "Galaxy Black"
+        assert result["color_name_is_synthesized"] is False
+
+    def test_color_name_empty_extra_falls_through_to_filament(self):
+        """An explicit empty string in spool.extra.bambu_color_name (the
+        "user cleared the field" shape) must NOT mask Spoolman's own
+        filament.color_name if one exists — it falls through to the next
+        layer instead of suppressing it."""
+        spool = {
+            **MINIMAL_SPOOL,
+            "extra": {"bambu_color_name": '""'},
+            "filament": {
+                **MINIMAL_SPOOL["filament"],
+                "color_name": "Sunset",
+            },
+        }
+        result = _map_spoolman_spool(spool)
+        assert result["color_name"] == "Sunset"
+        assert result["color_name_is_synthesized"] is False
+
+    def test_color_name_empty_extra_falls_through_to_synth(self):
+        """When extra is cleared and filament has no color_name either,
+        fall all the way through to the subtype synth — same UX as a fresh
+        Spoolman install."""
+        spool = {
+            **MINIMAL_SPOOL,
+            "extra": {"bambu_color_name": '""'},
+            "filament": {
+                **MINIMAL_SPOOL["filament"],
+                "name": "PLA Basic Red",
+            },
+        }
+        result = _map_spoolman_spool(spool)
+        assert result["color_name"] == "Basic Red"
+        assert result["color_name_is_synthesized"] is True
+
     def test_color_name_none_when_both_fields_empty(self):
         """If neither color_name nor a usable subtype exists, return None — UI
         falls back to its own 'Unknown color' string rather than showing a
@@ -216,6 +313,8 @@ class TestMapSpoolmanSpool:
         result = _map_spoolman_spool(spool)
         assert result["subtype"] is None
         assert result["color_name"] is None
+        # No synth happened — nothing to fall back to.
+        assert result["color_name_is_synthesized"] is False
 
     def test_color_hex_with_hash_prefix_stripped(self):
         spool = {**MINIMAL_SPOOL, "filament": {**MINIMAL_SPOOL["filament"], "color_hex": "#00FF00"}}

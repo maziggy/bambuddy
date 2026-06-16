@@ -81,6 +81,62 @@ class TestBedJogAPI:
             assert lines[-1] == "M211 S1"
             assert "G1 Z-5.00" in sent_gcode
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("model", ["X1C", "P1S", "H2D", "H2S", "H2C", "P2S"])
+    async def test_bed_jog_bed_on_z_models_pass_distance_through(
+        self, async_client: AsyncClient, printer_factory, model
+    ):
+        """On bed-on-Z printers the UI's signed distance maps directly to the
+        G-code Z value — UI "Up" (negative) → bed up (G1 Z-) → less gap."""
+        printer = await printer_factory(name=f"Test-{model}", model=model)
+        mock_client = MagicMock()
+        mock_client.send_gcode.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/bed-jog?distance=-10")
+            assert response.status_code == 200
+            sent_gcode = mock_client.send_gcode.call_args[0][0]
+            # Negative distance from the UI → negative Z in the G-code: bed moves up.
+            assert "G1 Z-10.00" in sent_gcode, f"{model}: expected G1 Z-10.00 in gcode, got {sent_gcode!r}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "model",
+        ["A1", "A1 Mini", "A1MINI", "A1-MINI", "N1", "N2S"],  # display names + internal codes
+    )
+    async def test_bed_jog_a1_models_invert_z_sign(self, async_client: AsyncClient, printer_factory, model):
+        """#1334 regression: on bed-slinger A1 / A1 Mini the Z axis is the
+        TOOLHEAD, not the bed. The frontend sends negative distance for "Up"
+        (decrease gap) expecting bed-on-Z semantics, but ``G1 Z-`` on A1
+        drives the nozzle DOWN into the bed. The backend must invert the
+        sign on these models so "Up" still decreases the gap by raising the
+        toolhead (G1 Z+) rather than crashing it."""
+        printer = await printer_factory(name=f"Test-{model}", model=model)
+        mock_client = MagicMock()
+        mock_client.send_gcode.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            # UI sends -10 for "Up" → backend must emit G1 Z+10 on A1.
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/bed-jog?distance=-10")
+            assert response.status_code == 200
+            sent_gcode = mock_client.send_gcode.call_args[0][0]
+            assert "G1 Z10.00" in sent_gcode, f"{model}: expected G1 Z10.00 in gcode, got {sent_gcode!r}"
+            assert "G1 Z-10" not in sent_gcode, f"{model}: must NOT emit negative Z for a UI 'Up' click"
+
+    @pytest.mark.asyncio
+    async def test_bed_jog_a1_down_arrow_drops_toolhead(self, async_client: AsyncClient, printer_factory):
+        """Symmetric to the regression test: UI "Down" (positive distance,
+        increase gap) on A1 must lower the toolhead via G1 Z-."""
+        printer = await printer_factory(name="A1-Mini-Test", model="A1 Mini")
+        mock_client = MagicMock()
+        mock_client.send_gcode.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/bed-jog?distance=10")
+            assert response.status_code == 200
+            sent_gcode = mock_client.send_gcode.call_args[0][0]
+            assert "G1 Z-10.00" in sent_gcode
+
 
 class TestHomeAxesAPI:
     @pytest.mark.asyncio

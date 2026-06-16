@@ -38,7 +38,7 @@ async def _seed_pending(
 ) -> int:
     pending = PendingUpload(
         filename=filename,
-        file_path=f"/tmp/{filename}",
+        file_path=f"/test/pending/{filename}",
         file_size=42,
         source_ip="192.168.1.50",
         status="pending",

@@ -41,17 +41,24 @@ export function rewriteMediaSrcWithToken(root: ParentNode, token: string): numbe
  * Components that need token-protected URLs can import withStreamToken directly.
  */
 export function useStreamTokenSync() {
-  const { authEnabled, user } = useAuth();
+  const { authEnabled, user, loading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   const refreshingRef = useRef(false);
 
   // Key the token by user id so a login/logout invalidates the cache
   // automatically — otherwise a failed anonymous fetch on the login page
   // would be cached and never retried after sign-in.
+  //
+  // Race-aware gate (same shape as ColorCatalogProvider): wait for
+  // ``checkAuthStatus`` to finish before deciding whether to fetch.
+  // The previous form ``authEnabled ? !!user : true`` evaluated to
+  // ``true`` on first render because ``authEnabled`` defaults to false,
+  // firing a 401 POST on the login page before AuthContext had a chance
+  // to settle on ``authEnabled=true, user=null``.
   const { data } = useQuery({
     queryKey: ['camera-stream-token', user?.id ?? null],
     queryFn: () => api.getCameraStreamToken(),
-    enabled: authEnabled ? !!user : true,
+    enabled: !authLoading && (!authEnabled || user !== null),
     staleTime: 50 * 60 * 1000, // refresh at 50 min (tokens expire at 60)
     refetchInterval: 50 * 60 * 1000,
   });

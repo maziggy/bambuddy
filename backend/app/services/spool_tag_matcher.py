@@ -103,7 +103,15 @@ async def create_spool_from_tray(db: AsyncSession, tray_data: dict) -> Spool:
     rgba = tray_color if tray_color else None
     color_name = None
 
-    if rgba and len(rgba) >= 6:
+    # Transparent filament (#1545): the AMS reports alpha=00 for clear spools.
+    # Skip the catalog lookup — the catalog only stores RGB so 000000 would
+    # resolve to "Black" (or whatever else lives at that RGB), which is exactly
+    # the bug the cream rewrite in parse_ams_tray used to paper over. Store
+    # "Clear" directly and let the frontend's resolveSpoolColorName +
+    # hexToColorName render the swatch as a checkerboard.
+    if rgba and len(rgba) == 8 and rgba[6:8].lower() == "00":
+        color_name = "Clear"
+    elif rgba and len(rgba) >= 6:
         hex_prefix = f"#{rgba[:6].upper()}"
         cat_query = (
             select(ColorCatalogEntry)
@@ -588,5 +596,22 @@ async def auto_assign_spool(
             )
     except Exception as e:
         logger.warning("K-profile apply failed for spool %d (RFID match): %s", spool.id, e)
+
+    # Reconcile slot_preset_mappings so the AMS slot card stops surfacing the
+    # previous spool's preset name. Shared with the manual-assign path
+    # (inventory.apply_spool_to_slot_via_mqtt). Outside the try above so a
+    # transient MQTT failure doesn't leave the display row stale.
+    from backend.app.services.slot_preset_writer import upsert_slot_preset_for_spool
+
+    await upsert_slot_preset_for_spool(
+        db=db,
+        spool=spool,
+        printer_id=printer_id,
+        ams_id=ams_id,
+        tray_id=tray_id,
+        tray_info_idx=tray_info_idx,
+        tray_sub_brands=tray.get("tray_sub_brands", "") if tray else "",
+        tray_type=tray.get("tray_type", "") if tray else "",
+    )
 
     return assignment

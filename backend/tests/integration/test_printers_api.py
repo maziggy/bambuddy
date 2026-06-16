@@ -11,6 +11,23 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 
+@pytest.fixture(autouse=True)
+def _mock_printer_test_connection():
+    """Default mock: connection test returns success.
+
+    POST /printers/ now refuses to persist a printer when the MQTT
+    connection probe fails (would otherwise leave an empty card in the
+    dashboard for a mistyped access code). Existing tests assume the
+    save succeeds, so we mock the probe green by default; the failure
+    branch is exercised by a dedicated test below.
+    """
+    with patch(
+        "backend.app.services.printer_manager.printer_manager.test_connection",
+        new=AsyncMock(return_value={"success": True, "state": "IDLE", "model": "X1C"}),
+    ) as m:
+        yield m
+
+
 class TestPrintersAPI:
     """Integration tests for /api/v1/printers/ endpoints."""
 
@@ -134,6 +151,44 @@ class TestPrintersAPI:
 
         # Should fail due to duplicate serial
         assert response.status_code in [400, 409, 422, 500]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_printer_rejects_when_mqtt_probe_fails(self, async_client: AsyncClient, db_session):
+        """Wrong access code / unreachable IP must NOT persist the printer.
+
+        Regression: users were reporting empty / never-connecting printer
+        cards that traced back to a mistyped access code. The create route
+        now runs an MQTT probe up front and returns 400 if it fails — the
+        row is never written.
+        """
+        data = {
+            "name": "Bad Code Printer",
+            "serial_number": "00M09A999999999",
+            "ip_address": "192.168.1.250",
+            "access_code": "WRONG-CODE",
+            "is_active": True,
+            "model": "X1C",
+        }
+
+        with patch(
+            "backend.app.services.printer_manager.printer_manager.test_connection",
+            new=AsyncMock(return_value={"success": False, "state": None, "model": None}),
+        ):
+            response = await async_client.post("/api/v1/printers/", json=data)
+
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        # Backend returns a stable code for the frontend i18n layer to map;
+        # the message field is an English fallback for non-UI clients.
+        assert detail["code"] == "printer_connection_failed"
+        assert "connect" in detail["message"].lower()
+
+        # And critically: the printer row was never persisted.
+        from backend.app.models.printer import Printer
+
+        result = await db_session.execute(select(Printer).where(Printer.serial_number == "00M09A999999999"))
+        assert result.scalar_one_or_none() is None, "Failed-probe printer must not be persisted"
 
     # ========================================================================
     # Get single endpoint
@@ -437,6 +492,51 @@ class TestPrintersAPI:
 
         assert response.status_code == 200
         assert response.content == b"PLATE_3_PNG"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_cover_negative_cache_skips_repeat_ftp_fanout(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        """#1420: when every FTP path returns 550 for the current subtask, the
+        next request for the same subtask must short-circuit to 404 instead of
+        replaying the 8-path FTP fan-out (which starves the printer's single
+        FTP socket and flooded the user's logs)."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from backend.app.api.routes.printers import _cover_404_cache, _cover_cache
+        from backend.app.services.bambu_mqtt import PrinterState
+
+        printer = await printer_factory()
+
+        _cover_cache.pop(printer.id, None)
+        _cover_404_cache.pop(printer.id, None)
+
+        state = PrinterState()
+        state.connected = True
+        state.state = "RUNNING"
+        state.subtask_name = "OrphanPrint"
+        state.gcode_file = "OrphanPrint.3mf"
+
+        ftp_mock = AsyncMock(return_value=False)
+
+        with (
+            patch("backend.app.api.routes.printers.printer_manager") as mock_pm,
+            patch("backend.app.api.routes.printers.download_file_try_paths_async", ftp_mock),
+        ):
+            mock_pm.get_status = MagicMock(return_value=state)
+            mock_pm.is_awaiting_plate_clear = MagicMock(return_value=False)
+
+            r1 = await async_client.get(f"/api/v1/printers/{printer.id}/cover")
+            r2 = await async_client.get(f"/api/v1/printers/{printer.id}/cover")
+
+        assert r1.status_code == 404
+        assert r2.status_code == 404
+        # First call retries internally; second call must short-circuit before FTP.
+        first_call_count = ftp_mock.await_count
+        assert first_call_count >= 1
+        # Second request didn't add to the count: the negative cache held.
+        assert ftp_mock.await_count == first_call_count
 
     @pytest.mark.asyncio
     @pytest.mark.integration

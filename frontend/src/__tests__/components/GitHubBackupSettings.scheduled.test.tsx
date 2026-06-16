@@ -21,6 +21,7 @@ const mockLocalBackupStatus = {
   last_status: null,
   last_message: null,
   next_run: '2026-04-13T03:00:00+00:00',
+  timezone: 'Europe/Berlin',
 };
 
 const mockLocalBackups = [

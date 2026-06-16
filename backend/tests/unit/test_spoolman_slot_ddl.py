@@ -75,3 +75,27 @@ class TestSpoolmanSlotDdl:
         table = SpoolmanSlotAssignment.__table__
         check_names = {c.name for c in table.constraints if isinstance(c, CheckConstraint)}
         assert "ck_tray_id_range" in check_names, f"ck_tray_id_range not in ORM check constraints: {check_names}"
+
+    def test_ams_id_check_admits_ams_ht_range(self):
+        """#1274: ck_ams_id_range must accept AMS-HT (ams_id 128-191).
+
+        H2C / H2D AMS-HT units report ams_id starting at 128 (one ams_id per
+        unit, single tray). The pre-fix constraint only allowed 0-7 and 255,
+        so every AMS-HT slot link failed with CHECK violation. Both the ORM
+        formula and the SQLite/Postgres DDL strings must include the new range.
+        """
+        from sqlalchemy import CheckConstraint
+
+        from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
+
+        table = SpoolmanSlotAssignment.__table__
+        ams_check = next(c for c in table.constraints if isinstance(c, CheckConstraint) and c.name == "ck_ams_id_range")
+        formula = str(ams_check.sqltext)
+        assert "128" in formula and "191" in formula, (
+            f"ck_ams_id_range formula does not cover AMS-HT range: {formula!r}"
+        )
+
+        # Same check at the raw-DDL level so a stale DDL definition can't
+        # silently ship with the loosened ORM formula.
+        ddl = _extract_spoolman_slot_ddl(is_sqlite=True)
+        assert "128" in ddl and "191" in ddl, "AMS-HT range missing from CREATE TABLE DDL"

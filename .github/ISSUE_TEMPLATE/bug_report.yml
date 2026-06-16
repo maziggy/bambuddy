@@ -6,17 +6,47 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to report a bug! Please fill out the form below.
+        Thanks for taking the time to report a bug!
+
+        **Before you submit, please:**
+        1. Search [existing issues](https://github.com/maziggy/bambuddy/issues?q=is%3Aissue) — your problem may already be reported or resolved.
+        2. Skim the [Troubleshooting wiki](https://wiki.bambuddy.cool/reference/troubleshooting/) — roughly 1 in 5 closed bug reports turn out to be setup or configuration issues already documented there.
+        3. If your printer won't connect / won't print / camera won't load, run the in-app **Connection Diagnostic** (printer card or System → Diagnostics) FIRST. Most connection bugs are diagnosed in 30 seconds by the diagnostic and need no GitHub issue.
+        4. Generate a **Support Package** from System → Download Support Package — without it, most bugs cannot be investigated.
 
   - type: dropdown
-    id: component
+    id: product
     attributes:
-      label: Component
-      description: Which part of the project is affected?
+      label: Product
+      description: Which product is affected?
       options:
         - Bambuddy
         - SpoolBuddy
-        - Both
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the product is affected? Pick the closest match — picking "Other" makes triage slower.
+      options:
+        - Printer connection / setup
+        - Print start / dispatch
+        - Filament / AMS / Spoolman
+        - Slicer integration (Bambu Studio / OrcaSlicer)
+        - Virtual Printer (VP)
+        - Camera / live view / timelapse
+        - Archives / library / files
+        - Statistics
+        - Print Queue / scheduling
+        - Notifications
+        - Authentication / users / permissions
+        - Updates / firmware check
+        - UI / display / theme / i18n
+        - API / integrations (Home Assistant, MQTT export, Obico, ...)
+        - SpoolBuddy kiosk / display
+        - Other / not sure
     validations:
       required: true
 
@@ -50,6 +80,22 @@ body:
     validations:
       required: true
 
+  - type: textarea
+    id: troubleshooting_tried
+    attributes:
+      label: Troubleshooting steps already taken
+      description: |
+        What did you try BEFORE opening this issue? Which wiki pages did you check? Which in-app diagnostics did you run?
+
+        This is required because roughly 1 in 5 issues opened turn out to be already-documented setup problems. A meaningful answer here saves a round-trip and helps everyone.
+      placeholder: |
+        - Ran the in-app Connection Diagnostic — result: ...
+        - Checked wiki page: <paste URL or page name>
+        - Tried restarting / re-adding the printer
+        - Searched closed issues for: "<keywords>"
+    validations:
+      required: true
+
   - type: dropdown
     id: printer
     attributes:
@@ -79,7 +125,7 @@ body:
     attributes:
       label: Bambuddy Version
       description: Which version of Bambuddy are you running? (Check Settings page)
-      placeholder: e.g., 0.1.5
+      placeholder: e.g., 0.2.5
     validations:
       required: true
 
@@ -128,22 +174,25 @@ body:
     attributes:
       value: |
         ---
-        ### 📦 Support Package
+        ### 📦 Support Package — REQUIRED
 
-        For faster debugging, please create and attach a **Support Package** from **Settings → System Info → Download Support Package**.
-        This includes logs, system info, and configuration (with sensitive data redacted).
+        Create and attach a **Support Package** from **System → Download Support Package**.
+        It bundles logs, system info, and configuration (sensitive data redacted) — without it, most bugs cannot be reproduced or investigated.
 
-        For detailed instructions on enabling debug logging, see: [Debug Logging Guide](https://wiki.bambuddy.cool/features/system-info/?h=debug#enable-debug-logging)
+        Detailed instructions: [Debug Logging Guide](https://wiki.bambuddy.cool/features/system-info/?h=debug#enable-debug-logging)
 
   - type: textarea
     id: logs
     attributes:
-      label: Relevant Logs / Support Package
+      label: Support Package (.zip) and / or relevant logs
       description: |
-        Attach a support package (.zip) or paste relevant logs here. Enable DEBUG mode for verbose logging.
-        💡 Tip: You can drag and drop files directly into this text box.
+        Drag and drop your support package .zip here, or paste relevant logs. Enable DEBUG mode for verbose logging.
+
+        Reports without a Support Package or logs almost always go back-and-forth for a week before any progress is made. If you genuinely cannot generate one (e.g. Bambuddy itself won't start), write WHY here.
       placeholder: |
-        Drag and drop your support package .zip file here, or paste logs...
+        Drag and drop your support package .zip file here, or paste logs / explain why you cannot attach one...
+    validations:
+      required: true
 
   - type: textarea
     id: screenshots
@@ -162,13 +211,17 @@ body:
   - type: checkboxes
     id: checklist
     attributes:
-      label: Checklist
+      label: Final checks
       options:
-        - label: I have searched existing issues to ensure this bug hasn't already been reported
+        - label: I searched existing (open AND closed) issues and this bug hasn't already been reported or resolved
           required: true
-        - label: I am using the latest version of Bambuddy
+        - label: I checked the [Troubleshooting wiki](https://wiki.bambuddy.cool/reference/troubleshooting/) and the relevant feature page for my issue
+          required: true
+        - label: I am using the latest version of Bambuddy (or the latest daily build)
           required: true
         - label: My printer is set to LAN Only mode
           required: true
         - label: My printer has Developer Mode enabled
+          required: true
+        - label: For any connection / printing / camera issue, I ran the in-app Connection Diagnostic and included the result above
           required: true

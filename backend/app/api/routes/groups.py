@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.core.auth import RequirePermissionIfAuthEnabled
+from backend.app.core.auth import RequireAdminIfAuthEnabled, RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import (
     ALL_PERMISSIONS,
@@ -87,6 +87,7 @@ async def list_groups(
 @router.post("/", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)
 async def create_group(
     group_data: GroupCreate,
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_CREATE),
     db: AsyncSession = Depends(get_db),
 ):
@@ -135,7 +136,8 @@ async def get_group(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_READ),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get a group by ID with user list."""
+    """Get a group by ID with user list. Read-only — gated on
+    ``GROUPS_READ`` only."""
     result = await db.execute(select(Group).where(Group.id == group_id).options(selectinload(Group.users)))
     group = result.scalar_one_or_none()
     if not group:
@@ -161,6 +163,7 @@ async def get_group(
 async def update_group(
     group_id: int,
     group_data: GroupUpdate,
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ):
@@ -193,6 +196,16 @@ async def update_group(
         group.description = group_data.description
 
     if group_data.permissions is not None:
+        # System groups (Administrators in particular) have fixed permission
+        # sets that the app depends on — stripping them is a denial-of-
+        # service vector that even admin callers shouldn't trigger by
+        # accident through the generic edit form. Mirrors the rename block
+        # immediately above.
+        if group.is_system:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot modify permissions of system groups",
+            )
         # Validate permissions
         invalid_perms = [p for p in group_data.permissions if p not in ALL_PERMISSIONS]
         if invalid_perms:
@@ -220,6 +233,7 @@ async def update_group(
 @router.delete("/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_group(
     group_id: int,
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_DELETE),
     db: AsyncSession = Depends(get_db),
 ):
@@ -246,6 +260,7 @@ async def delete_group(
 async def add_user_to_group(
     group_id: int,
     user_id: int,
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ):
@@ -283,6 +298,7 @@ async def add_user_to_group(
 async def remove_user_from_group(
     group_id: int,
     user_id: int,
+    _admin: User | None = RequireAdminIfAuthEnabled(),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_UPDATE),
     db: AsyncSession = Depends(get_db),
 ):

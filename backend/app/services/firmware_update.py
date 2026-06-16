@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.compat import StrEnum
+from backend.app.core.tasks import spawn_background_task
 from backend.app.core.websocket import ws_manager
 from backend.app.models.printer import Printer
 from backend.app.services.bambu_ftp import (
@@ -172,8 +173,20 @@ class FirmwareUpdateService:
             # We'll get actual size during download
             result["firmware_size"] = 100 * 1024 * 1024  # 100MB estimate
         elif target_version:
-            # Requested specific version has no download URL
-            result["errors"].append(f"Firmware file for {target_version} is not available from Bambu Lab")
+            # Requested specific version has no download URL. Distinguish
+            # "Bambu doesn't list this file" from "we couldn't reach Bambu's
+            # download page" (Cloudflare 403 reported in #1350) so users in
+            # affected regions get an actionable error instead of believing
+            # the firmware doesn't exist.
+            if firmware_service.download_page_unreachable:
+                result["errors"].append(
+                    f"Could not reach Bambu Lab's firmware download page to fetch the file URL for "
+                    f"{target_version}. Version is listed on the Bambu wiki but the download endpoint "
+                    f"is unreachable from this network. Try again later, or download the firmware "
+                    f"manually from bambulab.com and copy it to the printer's SD card."
+                )
+            else:
+                result["errors"].append(f"Firmware file for {target_version} is not available from Bambu Lab")
 
         # If a target version is requested, allow proceeding even if it equals or
         # is older than the current version (explicit downgrade/reinstall).
@@ -246,14 +259,15 @@ class FirmwareUpdateService:
         await self._broadcast_progress(printer_id, state)
 
         # Run the upload in background
-        asyncio.create_task(
+        spawn_background_task(
             self._do_upload(
                 printer_id=printer_id,
                 ip_address=printer.ip_address,
                 access_code=printer.access_code,
                 model=model,
                 target_version=target_version,
-            )
+            ),
+            name=f"firmware-upload-{printer_id}",
         )
 
         return True

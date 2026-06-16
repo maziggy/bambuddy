@@ -17,11 +17,19 @@ import { ToastProvider } from '../../contexts/ToastContext';
 import { SpoolBuddyWriteTagPage } from '../../pages/spoolbuddy/SpoolBuddyWriteTagPage';
 import { api as mockedApi, spoolbuddyApi as mockedSpoolbuddyApi } from '../../api/client';
 
-// Mock the API modules
+// Mock the API modules. spoolman-* mocks default to "spoolman disabled" so
+// existing tests run in internal-inventory mode — the new spoolman parity
+// test below overrides getSpoolmanSettings before rendering.
 vi.mock('../../api/client', () => ({
   api: {
     getSpools: vi.fn().mockResolvedValue([]),
     createSpool: vi.fn().mockResolvedValue({ id: 1, material: 'PLA' }),
+    getSpoolmanSettings: vi.fn().mockResolvedValue({
+      spoolman_enabled: 'false',
+      spoolman_url: '',
+    }),
+    getSpoolmanInventorySpools: vi.fn().mockResolvedValue([]),
+    createSpoolmanInventorySpool: vi.fn().mockResolvedValue({ id: 1, material: 'PLA' }),
   },
   spoolbuddyApi: {
     getDevices: vi.fn().mockResolvedValue([]),
@@ -86,6 +94,16 @@ function renderPage() {
 describe('SpoolBuddyWriteTagPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Re-pin the default Spoolman-mode settings since previous tests may
+    // have overridden the resolved value (clearAllMocks doesn't reset
+    // implementations set via mockResolvedValue). Default = Spoolman OFF.
+    vi.mocked(mockedApi.getSpoolmanSettings).mockResolvedValue({
+      spoolman_enabled: 'false',
+      spoolman_url: '',
+      spoolman_sync_mode: '',
+      spoolman_disable_weight_sync: '',
+      spoolman_report_partial_usage: '',
+    });
   });
 
   it('renders three workflow tabs', () => {
@@ -182,5 +200,84 @@ describe('SpoolBuddyWriteTagPage', () => {
     });
 
     mockOutletContext.sbState.deviceOnline = false; // reset
+  });
+
+  it('reads from internal inventory when Spoolman mode is OFF (#1439 parity baseline)', async () => {
+    vi.mocked(mockedApi.getSpoolmanSettings).mockResolvedValue({
+      spoolman_enabled: 'false',
+      spoolman_url: '',
+      spoolman_sync_mode: '',
+      spoolman_disable_weight_sync: '',
+      spoolman_report_partial_usage: '',
+    });
+    renderPage();
+
+    // Internal API is hit at least once; the Spoolman list endpoint must NOT
+    // be called when the user hasn't enabled Spoolman.
+    await waitFor(() => {
+      expect(vi.mocked(mockedApi.getSpools)).toHaveBeenCalled();
+    });
+    expect(vi.mocked(mockedApi.getSpoolmanInventorySpools)).not.toHaveBeenCalled();
+  });
+
+  it('reads from Spoolman when Spoolman mode is ON (#1439 — the actual bug)', async () => {
+    // The bug report: write-tag page hard-coded api.getSpools(false) regardless
+    // of inventory backend, so Spoolman-mode users saw internal spools they
+    // never created and the write path would have bound the tag to the wrong
+    // backend. After the fix, the page must hit the spoolman variant.
+    vi.mocked(mockedApi.getSpoolmanSettings).mockResolvedValue({
+      spoolman_enabled: 'true',
+      spoolman_url: 'http://spoolman.test',
+      spoolman_sync_mode: '',
+      spoolman_disable_weight_sync: '',
+      spoolman_report_partial_usage: '',
+    });
+    renderPage();
+
+    await waitFor(() => {
+      expect(vi.mocked(mockedApi.getSpoolmanInventorySpools)).toHaveBeenCalled();
+    });
+    // Critical: the internal endpoint must NOT be called in Spoolman mode.
+    // A future refactor that re-hardcodes api.getSpools breaks here.
+    expect(vi.mocked(mockedApi.getSpools)).not.toHaveBeenCalled();
+  });
+
+  it('shows the spool ID next to each spool so multiple identical rolls can be disambiguated (#1439)', async () => {
+    const spools = [
+      {
+        id: 42,
+        material: 'PLA',
+        label_weight: 1000,
+        weight_used: 0,
+        tag_uid: null,
+        tray_uuid: null,
+        archived_at: null,
+        rgba: 'FF0000FF',
+      },
+      {
+        id: 43,
+        material: 'PLA',
+        label_weight: 1000,
+        weight_used: 0,
+        tag_uid: null,
+        tray_uuid: null,
+        archived_at: null,
+        rgba: 'FF0000FF',
+      },
+    ];
+    vi.mocked(mockedApi.getSpools).mockResolvedValue(spools as never);
+    mockOutletContext.sbState.deviceOnline = true;
+    renderPage();
+
+    // Both rolls are identical PLA Red but the IDs must let the user tell
+    // them apart at the picker. Without #1439 the two rows were visually
+    // indistinguishable and an NFC write could bind the tag to the wrong
+    // physical spool.
+    await waitFor(() => {
+      expect(screen.getByText('#42')).toBeDefined();
+      expect(screen.getByText('#43')).toBeDefined();
+    });
+
+    mockOutletContext.sbState.deviceOnline = false;
   });
 });

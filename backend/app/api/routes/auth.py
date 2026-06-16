@@ -25,6 +25,7 @@ from backend.app.core.auth import (
     authenticate_user,
     authenticate_user_by_email,
     create_access_token,
+    create_websocket_token,
     get_current_active_user,
     get_password_hash,
     get_user_by_email,
@@ -46,6 +47,8 @@ from backend.app.schemas.auth import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     GroupBrief,
+    LDAPProvisionRequest,
+    LDAPSearchResultResponse,
     LoginRequest,
     LoginResponse,
     ResetPasswordRequest,
@@ -271,7 +274,7 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
                     db.add(admin_user)
                     logger.info("Admin user added to session: %s", request.admin_username)
                     admin_created = True
-                except Exception as e:
+                except Exception as e:  # SEC-AUTH-EXC: rollback + raise 500 (fail-closed); no user is created on error
                     await db.rollback()
                     logger.error("Failed to create admin user: %s", e, exc_info=True)
                     raise HTTPException(
@@ -292,7 +295,7 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
         return SetupResponse(auth_enabled=request.auth_enabled, admin_created=admin_created)
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: rollback + raise 500 (fail-closed); setup state stays unchanged
         logger.error("Setup error: %s", e, exc_info=True)
         await db.rollback()
         raise HTTPException(
@@ -337,7 +340,7 @@ async def disable_auth(
         await db.commit()
         logger.info("Authentication disabled by admin user: %s", user.username)
         return {"message": "Authentication disabled successfully", "auth_enabled": False}
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: rollback + raise 500 (fail-closed); auth_enabled stays at its prior value
         await db.rollback()
         logger.error("Failed to disable authentication: %s", e, exc_info=True)
         raise HTTPException(
@@ -406,7 +409,7 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
                     if user and ldap_user:
                         # Update email and group mappings on each login
                         await _sync_ldap_user(db, user, ldap_user, ldap_config)
-        except Exception as e:
+        except Exception as e:  # SEC-AUTH-EXC: LDAP failure sets ldap_user=None, downstream local-auth path runs with its own credential check (no implicit grant)
             import logging
 
             logging.getLogger(__name__).warning("LDAP authentication error, falling back to local: %s", e)
@@ -501,6 +504,29 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
         token_type="bearer",
         user=_user_to_response(user),
     )
+
+
+@router.post("/ws-token")
+async def mint_websocket_token(
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.WEBSOCKET_CONNECT),
+):
+    """Mint a short-lived token for ``/api/v1/ws`` connections (GHSA-r2qv follow-up).
+
+    The WebSocket endpoint cannot read ``Authorization`` headers from
+    browsers (the WebSocket handshake does not let JS attach custom
+    headers), so we use the same opaque-token-in-query-param pattern
+    as ``/camera/stream`` — the token is minted here behind the standard
+    permission gate, then appended as ``?token=<value>`` on the
+    ``ws://...`` URL. The WebSocket endpoint validates it *before*
+    calling ``websocket.accept()``.
+
+    Returns ``{"token": <opaque string>}``. The token is valid for 60
+    minutes; the SPA refreshes it on reconnect if expired. API keys can
+    mint tokens too — their scope flags decide whether ``WEBSOCKET_CONNECT``
+    passes via the standard allowlist (``can_read_status`` covers it).
+    """
+    username = current_user.username if current_user is not None else None
+    return {"token": await create_websocket_token(username)}
 
 
 @router.get("/me", response_model=UserResponse)
@@ -617,7 +643,7 @@ async def logout(
                 expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
                 try:
                     await revoke_jti(jti, expires_at, username)
-                except Exception as exc:
+                except Exception as exc:  # SEC-AUTH-EXC: JTI-revoke failure on logout is logged only; logout removes access, never grants it (token stays valid until natural expiry — degraded but never escalation)
                     _logger.error("Failed to revoke JTI on logout for user %s: %s", username, exc)
         except PyJWTError:
             client_ip = _get_client_ip(raw_request)
@@ -662,7 +688,7 @@ async def test_smtp_connection(
 
         logger.info(f"Test email sent successfully to {test_request.test_recipient}")
         return TestSMTPResponse(success=True, message="Test email sent successfully")
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: SMTP test diagnostic returns success=False; no auth-relevant outcome (route is admin-gated by SETTINGS_UPDATE upstream)
         logger.error("Failed to send test email: %s", e)
         return TestSMTPResponse(success=False, message="Failed to send test email")
 
@@ -696,7 +722,7 @@ async def save_smtp_config(
         await db.commit()
         logger.info(f"SMTP settings updated by admin user: {current_user.username if current_user else 'anonymous'}")
         return {"message": "SMTP settings saved successfully"}
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: rollback + raise 500 (fail-closed); SMTP settings unchanged on error
         await db.rollback()
         logger.error("Failed to save SMTP settings: %s", e)
         raise HTTPException(
@@ -741,7 +767,7 @@ async def enable_advanced_auth(
         await db.commit()
         logger.info(f"Advanced authentication enabled by admin user: {user.username}")
         return {"message": "Advanced authentication enabled successfully", "advanced_auth_enabled": True}
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: rollback + raise 500 (fail-closed); advanced-auth setting unchanged on error
         await db.rollback()
         logger.error("Failed to enable advanced authentication: %s", e)
         raise HTTPException(
@@ -775,7 +801,7 @@ async def disable_advanced_auth(
         await db.commit()
         logger.info(f"Advanced authentication disabled by admin user: {user.username}")
         return {"message": "Advanced authentication disabled successfully", "advanced_auth_enabled": False}
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: rollback + raise 500 (fail-closed); advanced-auth setting unchanged on error
         await db.rollback()
         logger.error("Failed to disable advanced authentication: %s", e)
         raise HTTPException(
@@ -824,7 +850,7 @@ async def _send_reset_email_or_delete_token(
     try:
         send_email(smtp_settings, to_email, subject, text_body, html_body)
         _logger.info("Password reset email sent (%s) to %s", log_label, to_email)
-    except Exception as exc:
+    except Exception as exc:  # SEC-AUTH-EXC: email-send failure → defensive token cleanup so a stuck token doesn't block re-request; no access granted, just frees future workflow
         _logger.error(
             "Password reset email failed (%s) to %s — deleting token to unblock re-request: %s",
             log_label,
@@ -840,7 +866,7 @@ async def _send_reset_email_or_delete_token(
                     )
                 )
                 await db.commit()
-        except Exception as db_exc:
+        except Exception as db_exc:  # SEC-AUTH-EXC: nested cleanup failure logged only; no access decision made in this branch (already handling a prior failure)
             _logger.error("Failed to delete reset token after send failure: %s", db_exc)
 
 
@@ -965,7 +991,7 @@ async def forgot_password(
                 "forgot_password",
             )
             _logger.info("Password reset email queued for %s", user.email)
-        except Exception as e:
+        except Exception as e:  # SEC-AUTH-EXC: forgot-password response is intentionally generic regardless of outcome (user-enumeration defence); email failure does not grant access
             _logger.error("Failed to send password reset email: %s", e)
             # Don't reveal error to caller for security
 
@@ -1112,7 +1138,7 @@ async def reset_user_password(
 
         _logger.info("Admin password reset link queued for user '%s' by admin '%s'", user.username, admin_user.username)
         return ResetPasswordResponse(message=f"Password reset link sent to {user.email}")
-    except Exception as e:
+    except Exception as e:  # SEC-AUTH-EXC: rollback + raise 500 (fail-closed); reset token state unchanged on error
         await db.rollback()
         _logger.error("Failed to send admin password reset for user '%s': %s", user.username, e)
         raise HTTPException(
@@ -1185,7 +1211,15 @@ async def _provision_ldap_user(db: AsyncSession, ldap_user, ldap_config) -> User
 
 
 async def _sync_ldap_user(db: AsyncSession, user: User, ldap_user, ldap_config) -> None:
-    """Sync LDAP user attributes (email, groups) on each login."""
+    """Sync LDAP user attributes (email, groups) on each login.
+
+    Group sync only touches BamBuddy groups that LDAP is configured to manage —
+    that is, the values of `group_mapping` plus `default_group`. Any group
+    outside that set is assumed to be a manual admin assignment and is
+    preserved across logins (#1292). Manual assignments to a BamBuddy group
+    that IS LDAP-managed are still overridden by LDAP truth, because revoking
+    access in LDAP must propagate to BamBuddy on next login.
+    """
     import logging
 
     from backend.app.services.ldap_service import resolve_group_mapping
@@ -1199,9 +1233,13 @@ async def _sync_ldap_user(db: AsyncSession, user: User, ldap_user, ldap_config) 
         user.email = ldap_user.email
         changed = True
 
-    # Sync group mappings — always update to match LDAP state (including revocation).
-    # Fall back to the configured default group when the user has no mapped groups,
-    # so authenticated LDAP users are never left permission-less.
+    # Compute the set of BamBuddy groups LDAP is allowed to manage. Anything
+    # outside this set is left alone so manual admin assignments survive logins.
+    ldap_managed_names: set[str] = set(ldap_config.group_mapping.values())
+    if ldap_config.default_group:
+        ldap_managed_names.add(ldap_config.default_group)
+
+    # Resolve what LDAP says the user should currently be in.
     mapped_group_names = resolve_group_mapping(ldap_user.groups, ldap_config.group_mapping)
     if not mapped_group_names and ldap_config.default_group:
         mapped_group_names = [ldap_config.default_group]
@@ -1210,11 +1248,18 @@ async def _sync_ldap_user(db: AsyncSession, user: User, ldap_user, ldap_config) 
             user.username,
             ldap_config.default_group,
         )
+
     if mapped_group_names:
         groups_result = await db.execute(select(Group).where(Group.name.in_(mapped_group_names)))
-        new_groups = list(groups_result.scalars().all())
+        new_ldap_groups = list(groups_result.scalars().all())
     else:
-        new_groups = []
+        new_ldap_groups = []
+
+    # Preserve manual assignments to non-LDAP-managed groups; replace only
+    # the LDAP-managed slice with the resolved set.
+    preserved_manual_groups = [g for g in user.groups if g.name not in ldap_managed_names]
+    new_groups = preserved_manual_groups + new_ldap_groups
+
     current_group_ids = {g.id for g in user.groups}
     new_group_ids = {g.id for g in new_groups}
     if current_group_ids != new_group_ids:
@@ -1280,6 +1325,167 @@ async def get_ldap_status(db: AsyncSession = Depends(get_db)):
         "ldap_enabled": settings.get("ldap_enabled", "false").lower() == "true",
         "ldap_configured": bool(settings.get("ldap_server_url")),
     }
+
+
+# =============================================================================
+# Manual LDAP user provisioning (#1298)
+# =============================================================================
+# Admins can search the directory and provision users directly from the UI
+# without enabling auto-provision on login. The two endpoints below pair with
+# the new "LDAP" tab in the user-create modal.
+
+
+@router.get("/ldap/search", response_model=list[LDAPSearchResultResponse])
+async def search_ldap_directory(
+    q: str,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_CREATE),
+    db: AsyncSession = Depends(get_db),
+):
+    """Search the LDAP directory for users matching `q`.
+
+    Returns up to 25 candidates. The query is matched (case-insensitively, with
+    wildcards on both sides) against sAMAccountName, uid, mail, displayName,
+    and cn — covering both AD and OpenLDAP layouts. Each result is annotated
+    with `already_provisioned` so the UI can grey out usernames that already
+    exist as BamBuddy users.
+
+    Requires USERS_CREATE permission. Minimum query length is 2 characters.
+    """
+    from sqlalchemy import func as sa_func
+
+    from backend.app.services.ldap_service import parse_ldap_config, search_ldap_users
+
+    query = q.strip()
+    if len(query) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Query must be at least 2 characters",
+        )
+
+    ldap_settings = await _get_ldap_settings(db)
+    if not ldap_settings:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="LDAP is not enabled",
+        )
+
+    config = parse_ldap_config(ldap_settings)
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="LDAP server URL is not configured",
+        )
+
+    try:
+        results = search_ldap_users(config, query, limit=25)
+    except Exception as e:  # SEC-AUTH-EXC: raise 503 (fail-closed); route gated upstream by USERS_CREATE permission so detail leak is admin-only
+        _logger.exception("LDAP directory search failed")
+        # Admin-only endpoint — surface the underlying reason so the operator
+        # can fix it (auth_middleware already restricted access to USERS_CREATE).
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"LDAP search failed: {type(e).__name__}: {e}",
+        )
+
+    if not results:
+        return []
+
+    # Annotate `already_provisioned` so the SPA can dim/disable rows that map
+    # to an existing local row. Case-insensitive lookup mirrors create_user.
+    usernames_lower = [r.username.lower() for r in results]
+    existing_query = await db.execute(select(User.username).where(sa_func.lower(User.username).in_(usernames_lower)))
+    existing_lower = {str(name).lower() for name in existing_query.scalars().all()}
+
+    return [
+        LDAPSearchResultResponse(
+            username=r.username,
+            email=r.email,
+            display_name=r.display_name,
+            dn=r.dn,
+            already_provisioned=r.username.lower() in existing_lower,
+        )
+        for r in results
+    ]
+
+
+@router.post("/ldap/provision", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def provision_ldap_user(
+    payload: LDAPProvisionRequest,
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.USERS_CREATE),
+    db: AsyncSession = Depends(get_db),
+):
+    """Provision a BamBuddy user from an existing LDAP directory entry.
+
+    Re-resolves the username via the service-account bind (rather than trusting
+    the request body) so group mappings and email come from a fresh LDAP read.
+    Applies the same group-mapping / default-group logic as the auto-provision
+    login path (`_provision_ldap_user`), so behavior stays identical regardless
+    of whether the user was created here or on first login.
+
+    Requires USERS_CREATE.
+    """
+    from sqlalchemy import func as sa_func
+
+    from backend.app.services.ldap_service import lookup_ldap_user, parse_ldap_config
+
+    username = payload.username.strip()
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username is required",
+        )
+
+    ldap_settings = await _get_ldap_settings(db)
+    if not ldap_settings:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="LDAP is not enabled",
+        )
+
+    config = parse_ldap_config(ldap_settings)
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="LDAP server URL is not configured",
+        )
+
+    # Look up via service bind. Service-bind failures bubble up as 503; missing
+    # entries surface as 404 to distinguish "directory unreachable" from
+    # "username doesn't exist in the directory" in the UI.
+    try:
+        ldap_user = lookup_ldap_user(config, username)
+    except Exception as e:  # SEC-AUTH-EXC: raise 503 (fail-closed); LDAP provision never succeeds on lookup failure
+        _logger.exception("LDAP lookup failed during provision")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"LDAP lookup failed: {type(e).__name__}: {e}",
+        )
+
+    if ldap_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User '{username}' not found in LDAP directory",
+        )
+
+    # Reject duplicates — the canonical username from LDAP is what gets stored,
+    # so the conflict check uses that rather than the request payload.
+    existing = await db.execute(select(User).where(sa_func.lower(User.username) == sa_func.lower(ldap_user.username)))
+    existing_user = existing.scalar_one_or_none()
+    if existing_user is not None:
+        if existing_user.auth_source == "ldap":
+            detail = f"LDAP user '{ldap_user.username}' is already provisioned"
+        else:
+            detail = f"A local user with the username '{ldap_user.username}' already exists"
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+    new_user = await _provision_ldap_user(db, ldap_user, config)
+
+    # Reload with groups eagerly loaded so _user_to_response can serialize them
+    # without lazy-load warnings (matches create_user / list_users pattern).
+    result = await db.execute(select(User).where(User.id == new_user.id).options(selectinload(User.groups)))
+    new_user = result.scalar_one()
+    _logger.info("Manually provisioned LDAP user %s (id=%d)", new_user.username, new_user.id)
+    return _user_to_response(new_user)
 
 
 # =============================================================================

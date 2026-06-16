@@ -66,7 +66,25 @@ def extract_filament_requirements(file_path: Path, plate_id: int | None = None) 
                         _collect_filaments(plate_elem, filaments)
                         break
             else:
-                _collect_filaments(root, filaments)
+                # Modern BambuStudio format wraps filaments inside <plate> elements.
+                # When no plate filter is requested, collect from every plate and
+                # deduplicate by slot_id (first occurrence wins after sort).
+                plate_elems = root.findall("./plate")
+                if plate_elems:
+                    for plate_elem in plate_elems:
+                        _collect_filaments(plate_elem, filaments)
+                    # Deduplicate: same slot_id can appear on multiple plates.
+                    # Keep the entry with the highest used_grams; ties go to the
+                    # first plate (stable after sort + dict insertion order).
+                    seen: dict[int, dict] = {}
+                    for f in filaments:
+                        sid = f["slot_id"]
+                        if sid not in seen or f["used_grams"] > seen[sid]["used_grams"]:
+                            seen[sid] = f
+                    filaments = list(seen.values())
+                else:
+                    # Older / non-plate-wrapped format: filaments are direct children of root.
+                    _collect_filaments(root, filaments)
 
             filaments.sort(key=lambda x: x["slot_id"])
 

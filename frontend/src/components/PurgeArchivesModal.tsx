@@ -21,6 +21,9 @@ export function PurgeArchivesModal({ onClose, initialDays }: PurgeArchivesModalP
   const { showToast } = useToast();
 
   const [days, setDays] = useState(initialDays ?? DEFAULT_DAYS);
+  // #1390: matches the single-archive delete dialog's "Also remove from
+  // statistics" checkbox. Default off — soft-delete, Quick Stats preserved.
+  const [purgeStats, setPurgeStats] = useState(false);
 
   const [debouncedDays, setDebouncedDays] = useState(days);
   useEffect(() => {
@@ -29,13 +32,13 @@ export function PurgeArchivesModal({ onClose, initialDays }: PurgeArchivesModalP
   }, [days]);
 
   const previewQuery = useQuery({
-    queryKey: ['archive-purge-preview', debouncedDays],
-    queryFn: () => api.previewArchivePurge(debouncedDays),
+    queryKey: ['archive-purge-preview', debouncedDays, purgeStats],
+    queryFn: () => api.previewArchivePurge(debouncedDays, purgeStats),
     enabled: debouncedDays >= 1,
   });
 
   const purgeMutation = useMutation({
-    mutationFn: () => api.executeArchivePurge(days),
+    mutationFn: () => api.executeArchivePurge(days, purgeStats),
     onSuccess: (res) => {
       showToast(t('archivePurge.toast.success', { count: res.deleted }), 'success');
       queryClient.invalidateQueries({ queryKey: ['archives'] });
@@ -140,6 +143,20 @@ export function PurgeArchivesModal({ onClose, initialDays }: PurgeArchivesModalP
               </div>
             )}
           </div>
+
+          <label className="flex gap-2 items-start rounded border border-gray-200 dark:border-gray-700 px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50">
+            <input
+              type="checkbox"
+              checked={purgeStats}
+              onChange={(e) => setPurgeStats(e.target.checked)}
+              disabled={purgeMutation.isPending}
+              className="mt-0.5 shrink-0"
+            />
+            <span className="text-xs text-gray-700 dark:text-gray-300">
+              <span className="font-medium block mb-0.5">{t('archivePurge.purgeStatsLabel')}</span>
+              <span className="text-gray-500 dark:text-gray-400">{t('archivePurge.purgeStatsHint')}</span>
+            </span>
+          </label>
 
           <div className="flex gap-2 items-start text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded px-3 py-2">
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />

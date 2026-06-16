@@ -12,6 +12,7 @@ from backend.app.core.auth import RequireCameraStreamTokenIfAuthEnabled, Require
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.tasks import spawn_background_task
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.printer import Printer
 from backend.app.models.slot_preset import SlotPresetMapping
@@ -19,11 +20,13 @@ from backend.app.schemas.printer import (
     AmsLabelBody,
     AMSTray,
     AMSUnit,
+    DiagnosticRequest,
     FilaSwitchResponse,
     HMSErrorResponse,
     NozzleInfoResponse,
     NozzleRackSlot,
     PrinterCreate,
+    PrinterDiagnosticResult,
     PrinterResponse,
     PrinterStatus,
     PrinterUpdate,
@@ -38,6 +41,7 @@ from backend.app.services.bambu_ftp import (
     get_storage_info_async,
     list_files_async,
 )
+from backend.app.services.printer_diagnostic import run_connection_diagnostic
 from backend.app.services.printer_manager import (
     get_derived_status_name,
     printer_manager,
@@ -67,11 +71,38 @@ async def create_printer(
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CREATE),
     db: AsyncSession = Depends(get_db),
 ):
-    """Add a new printer."""
+    """Add a new printer.
+
+    Verifies the MQTT connection succeeds before persisting. A wrong access
+    code or unreachable IP would otherwise create a printer row that shows
+    as an empty / never-connecting card on the dashboard — those reports
+    were turning into support tickets that all traced back to a mistyped
+    access code.
+    """
     # Check if serial number already exists
     result = await db.execute(select(Printer).where(Printer.serial_number == printer_data.serial_number))
     if result.scalar_one_or_none():
         raise HTTPException(400, "Printer with this serial number already exists")
+
+    test_result = await printer_manager.test_connection(
+        ip_address=printer_data.ip_address,
+        serial_number=printer_data.serial_number,
+        access_code=printer_data.access_code,
+    )
+    if not test_result.get("success"):
+        # The frontend renders the user-facing message via i18n on `code`;
+        # `message` is an English fallback for non-UI clients (curl / scripts).
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "printer_connection_failed",
+                "message": (
+                    "Could not connect to the printer. Verify IP address, serial number, "
+                    "and access code, and confirm LAN-only mode is enabled. "
+                    "The printer was not added."
+                ),
+            },
+        )
 
     printer = Printer(**printer_data.model_dump())
     db.add(printer)
@@ -152,14 +183,19 @@ async def get_available_filaments(
                 tray_type = tray.get("tray_type")
                 if not tray_type:
                     continue
-                tray_color = tray.get("tray_color", "")
-                # Normalize color: remove alpha, add hash
-                hex_color = tray_color.replace("#", "")[:6] if tray_color else "808080"
-                color = f"#{hex_color}"
+                tray_color = tray.get("tray_color", "") or "808080"
+                # Preserve the full RRGGBBAA so transparent filament (alpha=00)
+                # reaches the frontend instead of collapsing to #000000 → black
+                # (#1545). Opaque colours still round-trip as #RRGGBB. The
+                # dedup key uses the 6-char RGB so two slots that share an RGB
+                # but differ only in alpha still merge.
+                stripped = tray_color.replace("#", "")
+                rgb = stripped[:6].lower() or "808080"
+                color = f"#{stripped}"
                 tray_info_idx = tray.get("tray_info_idx", "")
                 tray_sub_brands = tray.get("tray_sub_brands", "") or ""
 
-                key = (tray_type.upper(), hex_color.lower(), tray_sub_brands.upper(), extruder_id)
+                key = (tray_type.upper(), rgb, tray_sub_brands.upper(), extruder_id)
                 if key not in seen:
                     seen.add(key)
                     filaments.append(
@@ -177,15 +213,17 @@ async def get_available_filaments(
             vt_type = vt.get("tray_type")
             if not vt_type:
                 continue
-            vt_color = vt.get("tray_color", "")
-            hex_color = vt_color.replace("#", "")[:6] if vt_color else "808080"
-            color = f"#{hex_color}"
+            vt_color = vt.get("tray_color", "") or "808080"
+            # Same alpha-preserving handling as the AMS branch — see #1545.
+            stripped = vt_color.replace("#", "")
+            rgb = stripped[:6].lower() or "808080"
+            color = f"#{stripped}"
             tray_info_idx = vt.get("tray_info_idx", "")
             tray_sub_brands = vt.get("tray_sub_brands", "") or ""
             vt_id = int(vt.get("id", 254))
             extruder_id = (255 - vt_id) if ams_extruder_map else None
 
-            key = (vt_type.upper(), hex_color.lower(), tray_sub_brands.upper(), extruder_id)
+            key = (vt_type.upper(), rgb, tray_sub_brands.upper(), extruder_id)
             if key not in seen:
                 seen.add(key)
                 filaments.append(
@@ -743,15 +781,66 @@ async def test_printer_connection(
     return result
 
 
+@router.post("/diagnostic", response_model=PrinterDiagnosticResult)
+async def diagnose_connection(
+    req: DiagnosticRequest,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CREATE),
+):
+    """Run connection diagnostics for the Add-Printer flow (printer not yet saved).
+
+    When serial_number + access_code are supplied the MQTT credential check
+    also runs; otherwise only the network-level checks are performed.
+    """
+    return await run_connection_diagnostic(
+        req.ip_address,
+        serial_number=req.serial_number or None,
+        access_code=req.access_code or None,
+    )
+
+
+@router.get("/{printer_id}/diagnostic", response_model=PrinterDiagnosticResult)
+async def diagnose_printer(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run connection diagnostics for an existing saved printer.
+
+    On-demand run from the UI: wait up to PUBLISH_WAIT_DEFAULT seconds for the
+    printer to publish a status report so a fresh reconnect (counter reset to
+    0) isn't reported as `printer_publishing: fail` prematurely. The support
+    package code path calls run_connection_diagnostic without the wait so
+    bundling stays fast.
+    """
+    from backend.app.services.printer_diagnostic import PUBLISH_WAIT_DEFAULT
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+    return await run_connection_diagnostic(
+        printer.ip_address,
+        printer=printer,
+        wait_for_publish_seconds=PUBLISH_WAIT_DEFAULT,
+    )
+
+
 # Cache for cover images (printer_id -> {(subtask_name, view_key) -> image_bytes}).
 # Cleared on every print start by main.py::on_print_start, so re-dispatches with
 # different plates always fetch a fresh thumbnail without needing plate in the key.
 _cover_cache: dict[int, dict[tuple[str, str], bytes]] = {}
 
+# Negative cache (#1420): when a cover lookup exhausts every FTP path with 550
+# (file sliced on SD card, not on printer storage), remember the failure so the
+# next request short-circuits to 404 instead of re-hammering FTP 8 paths deep.
+# Cleared on print start alongside _cover_cache.
+_cover_404_cache: dict[int, set[tuple[str, str]]] = {}
+
 
 def clear_cover_cache(printer_id: int) -> None:
     """Clear cached cover images for a printer. Call on print start to avoid stale thumbnails."""
     _cover_cache.pop(printer_id, None)
+    _cover_404_cache.pop(printer_id, None)
 
 
 @router.get("/{printer_id}/cover")
@@ -801,10 +890,15 @@ async def get_printer_cover(
     # runs on every print start, so a re-dispatch with a different plate gets
     # a fresh image regardless. Pre-#1166 the key included plate_num, but with
     # late plate resolution the cache check would always miss.
-    if printer_id in _cover_cache:
-        cache_key = (subtask_name, view_key)
-        if cache_key in _cover_cache[printer_id]:
-            return Response(content=_cover_cache[printer_id][cache_key], media_type="image/png")
+    cache_key = (subtask_name, view_key)
+    if printer_id in _cover_cache and cache_key in _cover_cache[printer_id]:
+        return Response(content=_cover_cache[printer_id][cache_key], media_type="image/png")
+
+    # Negative-cache short-circuit (#1420): if a prior lookup for this same
+    # subtask + view already failed, don't replay 8 FTP retries on every page
+    # refresh. _cover_404_cache is cleared on print start.
+    if printer_id in _cover_404_cache and cache_key in _cover_404_cache[printer_id]:
+        raise HTTPException(404, f"No cover available for '{subtask_name}' (cached)")
 
     # Build possible 3MF filenames from subtask_name
     # Bambu printers may store files as "name.gcode.3mf" (sliced via Bambu Studio)
@@ -890,6 +984,9 @@ async def get_printer_cover(
             raise HTTPException(503, f"FTP download temporarily unavailable: {last_error}")
 
         if not downloaded:
+            # Remember this failure so subsequent requests for the same print
+            # skip the 8-path FTP fan-out (#1420).
+            _cover_404_cache.setdefault(printer_id, set()).add(cache_key)
             raise HTTPException(
                 404,
                 f"Could not download 3MF file for '{subtask_name}' from printer {printer.ip_address}. Tried: {possible_filenames}",
@@ -979,6 +1076,7 @@ async def get_printer_cover(
                     _cover_cache[printer_id][(subtask_name, view_key)] = image_data
                     return Response(content=image_data, media_type="image/png")
 
+            _cover_404_cache.setdefault(printer_id, set()).add(cache_key)
             raise HTTPException(404, "No thumbnail found in 3MF file")
         finally:
             zf.close()
@@ -1437,8 +1535,12 @@ async def delete_printer_file(
     if not printer:
         raise HTTPException(404, "Printer not found")
 
-    success = await delete_file_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
-    if not success:
+    from backend.app.services.bambu_ftp import DeleteResult
+
+    result = await delete_file_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
+    if result == DeleteResult.NOT_FOUND:
+        raise HTTPException(404, f"File not found on printer: {path}")
+    if result == DeleteResult.FAILED:
         raise HTTPException(500, f"Failed to delete file: {path}")
 
     return {"status": "deleted", "path": path}
@@ -2711,18 +2813,33 @@ async def set_chamber_light(
 async def bed_jog(
     printer_id: int,
     distance: float = Query(
-        ..., description="Relative Z distance in mm (positive = bed down / nozzle further away, negative = bed up)"
+        ...,
+        description=(
+            "Signed nozzle-bed gap adjustment in mm. Negative = decrease gap "
+            '("up" arrow in the UI: bed up on bed-on-Z models, toolhead down '
+            "on A1 bed-slingers). Positive = increase gap. The backend "
+            "translates this into the right G-code Z sign per printer model."
+        ),
     ),
     force: bool = Query(False, description="If true, bypass soft endstops via M211 (for use when Z is not homed)"),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     db: AsyncSession = Depends(get_db),
 ):
-    """Move the build plate along the Z axis by a relative distance.
+    """Adjust the nozzle-bed gap by a relative distance.
 
     Emits a short G-code sequence via MQTT. When ``force`` is true the soft
     endstops are disabled for the duration of the move, matching the
     "ignore and move anyway" option Bambu Studio offers when the printer
     is not homed.
+
+    Direction handling: on bed-on-Z printers (X1 / P1 / H2 family) the bed
+    is the Z-axis, and Bambu's home convention puts Z=0 at the top with
+    Z+ moving the bed down — so a frontend "Up" (decrease gap) maps
+    naturally to ``G1 Z-``. On bed-slingers (A1 / A1 Mini) the Z-axis is
+    the *toolhead*, and ``G1 Z-`` instead drives the nozzle DOWN into the
+    bed (#1334 reported exactly that crash). For those models we invert
+    the sign before emitting the G-code, so the UI semantics stay the
+    same regardless of which part physically moves.
     """
     if distance == 0 or abs(distance) > 200:
         raise HTTPException(400, "Distance must be non-zero and ≤ 200 mm")
@@ -2736,10 +2853,14 @@ async def bed_jog(
     if not client:
         raise HTTPException(400, "Printer not connected")
 
+    from backend.app.services.printer_manager import is_bed_slinger
+
+    gcode_distance = -distance if is_bed_slinger(printer.model) else distance
+
     lines = []
     if force:
         lines.append("M211 S0")
-    lines += ["G91", f"G1 Z{distance:.2f} F600", "G90"]
+    lines += ["G91", f"G1 Z{gcode_distance:.2f} F600", "G90"]
     if force:
         lines.append("M211 S1")
 
@@ -3004,7 +3125,10 @@ async def refresh_ams_slot(
         raise HTTPException(400, message)
 
     # Apply PA profile after delay (RFID re-read takes a few seconds)
-    asyncio.create_task(_apply_pa_after_refresh(printer_id, ams_id, slot_id))
+    spawn_background_task(
+        _apply_pa_after_refresh(printer_id, ams_id, slot_id),
+        name=f"apply-pa-after-refresh-{printer_id}-{ams_id}-{slot_id}",
+    )
 
     return {"success": True, "message": message}
 

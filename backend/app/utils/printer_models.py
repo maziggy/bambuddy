@@ -15,11 +15,15 @@ PRINTER_MODEL_MAP = {
     "Bambu Lab A1": "A1",
     "Bambu Lab A1 Mini": "A1 Mini",
     "Bambu Lab A1 mini": "A1 Mini",
+    # Bambu cloud rolled out a terse model-code rename mid-2026 (#1649);
+    # 3MFs prepared with newer cloud presets may carry this short form.
+    "Bambu Lab A1M": "A1 Mini",
     "Bambu Lab H2D": "H2D",
     "Bambu Lab H2D Pro": "H2D Pro",
     "Bambu Lab H2C": "H2C",
     "Bambu Lab H2S": "H2S",
     "Bambu Lab X2D": "X2D",
+    "Bambu Lab A2L": "A2L",
 }
 
 # Map from printer_model_id (internal codes in slice_info.config) to short names
@@ -36,11 +40,13 @@ PRINTER_MODEL_ID_MAP = {
     "P2S": "P2S",
     # X2 series
     "N6": "X2D",
+    # A2 series (A2L is single-FDM + integrated cutter/plotter — single nozzle)
+    "N9": "A2L",
     # A1 series
     "A11": "A1",
     "A12": "A1 Mini",
-    "N1": "A1",
-    "N2S": "A1 Mini",
+    "N1": "A1 Mini",
+    "N2S": "A1",
     "A04": "A1 Mini",
     # H2 series (Office/H series)
     "O1D": "H2D",
@@ -88,13 +94,15 @@ LINEAR_RAIL_MODELS = frozenset(
         # Display names (uppercase, no spaces)
         "A1",
         "A1MINI",
+        "A2L",
         "H2D",
         "H2DPRO",
         "H2C",
         "H2S",
         # Internal codes
-        "N1",  # A1
-        "N2S",  # A1 Mini
+        "N1",  # A1 Mini
+        "N2S",  # A1
+        "N9",  # A2L
         "A04",  # A1 Mini (alternate)
         "A11",  # A1
         "A12",  # A1 Mini
@@ -104,6 +112,27 @@ LINEAR_RAIL_MODELS = frozenset(
         "O1C",  # H2C
         "O1C2",  # H2C (dual nozzle variant)
         "O1S",  # H2S
+    ]
+)
+
+
+# Models without any external storage (MicroSD / SD card slot).
+# The A1 and A1 Mini ship with internal storage only — there is no
+# firmware-side "Store sent files on external storage" toggle and no
+# slicer-side equivalent surfaces one. The connection diagnostic's
+# external_storage check (printer_diagnostic.py) must skip on these
+# models instead of reporting fail from a 0-valued home_flag bit.
+NO_EXTERNAL_STORAGE_MODELS = frozenset(
+    [
+        # Display names (uppercase, no spaces)
+        "A1",
+        "A1MINI",
+        # Internal codes
+        "N1",  # A1 Mini
+        "N2S",  # A1
+        "A04",  # A1 Mini (alternate)
+        "A11",  # A1
+        "A12",  # A1 Mini
     ]
 )
 
@@ -137,12 +166,60 @@ ETHERNET_MODELS = frozenset(
 )
 
 
+# Dual-nozzle (dual-extruder) printers. Single source of truth for nozzle
+# class — consumed by ``BambuMQTTClient.start_print``, the K-profile routes,
+# and the re-slice nozzle-class guard (previously an inline model tuple
+# duplicated across all three). Re-slicing a model laid out for a single-nozzle
+# printer onto one of these — or vice versa — is not yet supported: the source
+# 3MF's embedded single-nozzle filament/extruder layout is not a valid
+# dual-nozzle project and BambuStudio's multi-extruder validator rejects it.
+DUAL_NOZZLE_MODELS = frozenset(
+    [
+        # Display names (uppercase, no spaces)
+        "H2D",
+        "H2DPRO",
+        "H2C",
+        "X2D",
+        # Internal codes
+        "O1D",  # H2D
+        "O1E",  # H2D Pro
+        "O2D",  # H2D Pro (alternate)
+        "O1C",  # H2C
+        "O1C2",  # H2C (dual nozzle variant)
+        "N6",  # X2D
+    ]
+)
+
+
 def has_ethernet(model: str | None) -> bool:
     """Return True if the printer model has an ethernet port."""
     if not model:
         return False
     normalized = model.strip().upper().replace(" ", "").replace("-", "")
     return normalized in ETHERNET_MODELS
+
+
+def has_external_storage(model: str | None) -> bool:
+    """Return True if the printer model can have a MicroSD / external storage slot.
+
+    Defaults to True when the model is unknown — the diagnostic only flips
+    its check on for the explicit no-storage list. New models added to the
+    Bambu lineup without a slot must be added to ``NO_EXTERNAL_STORAGE_MODELS``
+    or the diagnostic will continue to evaluate ``store_to_sdcard`` against
+    a hardware feature the printer doesn't have.
+    """
+    if not model:
+        return True
+    normalized = model.strip().upper().replace(" ", "").replace("-", "")
+    return normalized not in NO_EXTERNAL_STORAGE_MODELS
+
+
+def is_dual_nozzle_model(model: str | None) -> bool:
+    """Return True if the printer model has two nozzles (H2D family / X2D)."""
+    if not model:
+        return False
+    normalized = model.strip().upper().replace(" ", "").replace("-", "")
+    return normalized in DUAL_NOZZLE_MODELS
 
 
 def get_rod_type(model: str | None) -> str | None:

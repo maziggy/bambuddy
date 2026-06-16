@@ -27,7 +27,7 @@ class ArchiveDuplicate(BaseModel):
 
     id: int
     print_name: str | None
-    created_at: datetime
+    created_at: datetime | None
     match_type: str  # "exact" (hash match) or "similar" (name match)
 
 
@@ -94,11 +94,20 @@ class ArchiveResponse(BaseModel):
     energy_kwh: float | None = None
     energy_cost: float | None = None
 
-    created_at: datetime
+    created_at: datetime | None
 
     # User tracking (Issue #206)
     created_by_id: int | None = None
     created_by_username: str | None = None
+
+    # Per-archive run aggregates (#1378). Computed from PrintLogEntry — one
+    # row per actual print event — so reprints contribute to these counters
+    # without overwriting the source archive's first-run data.
+    run_count: int = 0
+    last_run_at: datetime | None = None
+    total_filament_actual_grams: float | None = None
+    successful_run_count: int = 0
+    failed_run_count: int = 0
 
     @model_validator(mode="after")
     def compute_object_count(self) -> "ArchiveResponse":
@@ -128,7 +137,7 @@ class ArchiveSlim(BaseModel):
     completed_at: datetime | None
     cost: float | None
     quantity: int = 1
-    created_at: datetime
+    created_at: datetime | None
 
     class Config:
         from_attributes = True
@@ -138,6 +147,10 @@ class ArchiveStats(BaseModel):
     total_prints: int
     successful_prints: int
     failed_prints: int
+    # User/system-stopped prints (PrintLogEntry.status in stopped/cancelled/
+    # skipped). Defaulted so older clients that don't send this field still
+    # validate against historical fixtures.
+    cancelled_prints: int = 0
     total_print_time_hours: float
     total_filament_grams: float
     total_cost: float
@@ -227,3 +240,4 @@ class ReprintRequest(BaseModel):
     layer_inspect: bool = False
     timelapse: bool = False
     use_ams: bool = True  # Not exposed in UI, but needed for API
+    nozzle_offset_cali: bool = True  # Dual-nozzle printers only — MQTT-gated (#1682)

@@ -29,6 +29,7 @@ from backend.app.services.camera import (
     get_ffmpeg_path,
     is_chamber_image_model,
     read_next_chamber_frame,
+    rtsp_socket_timeout_flag,
     test_camera_connection,
 )
 from backend.app.services.camera_fanout import (
@@ -37,6 +38,7 @@ from backend.app.services.camera_fanout import (
     iter_subscriber,
     shutdown_broadcaster,
 )
+from backend.app.services.camera_profiles import get_camera_profile
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["camera"])
@@ -76,6 +78,46 @@ def get_buffered_frame(printer_id: int) -> bytes | None:
 
     Returns the JPEG frame data if available, or None if no active stream.
     """
+    return _last_frames.get(printer_id)
+
+
+def is_stream_active(printer_id: int) -> bool:
+    """Return True iff a fan-out camera stream is currently registered for this printer.
+
+    Snapshot callers (Obico polling, manual /camera/snapshot) MUST NOT open a
+    second concurrent RTSP/chamber-image socket while a viewer is attached:
+    most Bambu firmwares allow only one camera connection, so the competing
+    socket either kicks the live viewer off or gets refused itself, and the
+    resulting reconnect storm tears down the fan-out broadcaster (see #1348).
+
+    Callers should consult this BEFORE trying to open a fresh socket and skip
+    the capture cycle when it returns True — even if try_get_active_buffered_frame
+    returns None (the stream may be running but the first frame hasn't landed
+    in the buffer yet, or the upstream is mid-reconnect).
+    """
+    return any(k.startswith(f"{printer_id}-") for k in _active_streams) or any(
+        k.startswith(f"{printer_id}-") for k in _active_chamber_streams
+    )
+
+
+def try_get_active_buffered_frame(printer_id: int) -> bytes | None:
+    """Return a buffered frame iff a stream is currently running for this printer.
+
+    Snapshot callers (Obico polling, manual /camera/snapshot) tap the fan-out
+    broadcaster's running upstream instead of opening a second concurrent
+    RTSP/chamber-image socket. Critical for printers that allow only one
+    camera connection (e.g. X2D firmware 01.01.00.00; see #1271).
+
+    Returns None when no broadcaster is active for this printer, so callers
+    fall through to their existing fresh-socket path unchanged.
+
+    NB: returning None does NOT mean "safe to open a fresh socket" — it also
+    fires when the stream is registered but no frame has been buffered yet
+    (startup race, mid-reconnect). Callers that must avoid competing sockets
+    should consult is_stream_active() first; see #1348.
+    """
+    if not is_stream_active(printer_id):
+        return None
     return _last_frames.get(printer_id)
 
 
@@ -235,27 +277,35 @@ def _summarize_ffmpeg_stderr(text: str | None) -> str:
 
 
 async def _read_ffmpeg_stderr(process: asyncio.subprocess.Process) -> str | None:
-    """Read ffmpeg stderr for diagnostics (best-effort, non-blocking).
+    """Read whatever ffmpeg has written to stderr so far (best-effort).
 
-    Returns the stderr content with ffmpeg's boilerplate banner stripped,
-    so log output stays focused on the actual error.
+    ffmpeg's stderr must be drained *incrementally*. A stalled-but-still-alive
+    ffmpeg — the typical P2S RTSP failure, where it connects but never produces
+    a frame — never closes stderr, so a plain ``stderr.read()`` (read-to-EOF)
+    blocks until the wait_for timeout and returns nothing, discarding the
+    banner + stream-analysis lines ffmpeg already printed. Reading in bounded
+    chunks returns the buffered output promptly whether or not ffmpeg has
+    exited. Returns the content with ffmpeg's boilerplate banner stripped.
     """
     if not process or not process.stderr:
         return None
+    chunks: list[bytes] = []
+    total = 0
+    cap = 65536
     try:
-        data = await asyncio.wait_for(process.stderr.read(), timeout=2.0)
-        if not data:
-            return None
-        return _summarize_ffmpeg_stderr(data.decode(errors="replace")) or None
-    except (TimeoutError, Exception):
+        while total < cap:
+            chunk = await asyncio.wait_for(process.stderr.read(8192), timeout=2.0)
+            if not chunk:
+                break  # EOF — ffmpeg has exited
+            chunks.append(chunk)
+            total += len(chunk)
+    except Exception:
+        # Timed out waiting for more data — ffmpeg is alive but quiet now.
+        # Fall through and return whatever it already printed.
+        pass
+    if not chunks:
         return None
-
-
-# Max consecutive RTSP reconnections before giving up.
-# Some printer firmwares (notably P2S) drop RTSP sessions after a few seconds,
-# so we transparently respawn ffmpeg to keep the MJPEG stream alive.
-_RTSP_MAX_RECONNECTS = 30
-_RTSP_RECONNECT_DELAY = 0.2  # seconds between respawns
+    return _summarize_ffmpeg_stderr(b"".join(chunks).decode(errors="replace")) or None
 
 
 async def generate_rtsp_mjpeg_stream(
@@ -271,12 +321,17 @@ async def generate_rtsp_mjpeg_stream(
 
     This is for X1/H2/P2 models that support RTSP streaming.
     Auto-reconnects when the printer drops the RTSP session (common on P2S).
+    Per-model knobs (probesize, analyzeduration, reconnect cadence) come from
+    :func:`camera_profiles.get_camera_profile` so quirky firmwares can be
+    handled by adding a profile entry rather than tuning a global constant.
     """
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
         logger.error("ffmpeg not found - camera streaming requires ffmpeg")
         yield (b"--frame\r\nContent-Type: text/plain\r\n\r\nError: ffmpeg not installed\r\n")
         return
+
+    profile = get_camera_profile(model)
 
     port = get_camera_port(model)
 
@@ -294,20 +349,24 @@ async def generate_rtsp_mjpeg_stream(
         "tcp",
         "-rtsp_flags",
         "prefer_tcp",
-        "-timeout",
-        "30000000",  # 30 seconds in microseconds
+        # Socket I/O timeout name varies by ffmpeg version (#1504); see
+        # rtsp_socket_timeout_flag(). The 30s value is microseconds for
+        # both names.
+        f"-{rtsp_socket_timeout_flag()}",
+        "30000000",
         "-buffer_size",
         "1024000",  # 1MB buffer
         "-max_delay",
         "500000",  # 0.5 seconds max delay
         "-probesize",
-        "32",  # Minimal probing for faster startup
+        str(profile.probesize),
         "-analyzeduration",
-        "0",  # Skip format analysis for faster startup
+        str(profile.analyzeduration),
         "-fflags",
         "nobuffer",  # Reduce internal buffering
         "-flags",
         "low_delay",  # Minimize decode latency
+        *profile.extra_ffmpeg_input_args,
         "-i",
         camera_url,
         "-f",
@@ -325,9 +384,19 @@ async def generate_rtsp_mjpeg_stream(
         _disconnect_events[stream_id] = disconnect_event
 
     logger.info(
-        "Starting RTSP camera stream for %s (stream_id=%s, model=%s, fps=%s)", ip_address, stream_id, model, fps
+        "Starting RTSP camera stream for %s (stream_id=%s, model=%s, fps=%s, probesize=%s, analyzeduration=%s)",
+        ip_address,
+        stream_id,
+        model,
+        fps,
+        profile.probesize,
+        profile.analyzeduration,
     )
-    logger.debug("ffmpeg command: %s ... (url hidden)", ffmpeg)
+    # Log the full argv so a support bundle shows the actual ffmpeg flags
+    # (probesize, analyzeduration, transport, ...). Only camera_url carries a
+    # secret (the access code), so redact just that one element.
+    _redacted_cmd = ["rtsp://<redacted>/streaming/live/1" if a == camera_url else a for a in cmd]
+    logger.debug("ffmpeg command: %s", " ".join(_redacted_cmd))
 
     # On Windows, spawn ffmpeg in its own process group so that
     # terminate() doesn't broadcast CTRL_C_EVENT to uvicorn (#605).
@@ -342,7 +411,7 @@ async def generate_rtsp_mjpeg_stream(
     got_any_frames = False
 
     try:
-        while reconnect_count <= _RTSP_MAX_RECONNECTS:
+        while reconnect_count <= profile.rtsp_reconnect_max:
             # Check for client disconnect before (re)connecting
             if disconnect_event and disconnect_event.is_set():
                 break
@@ -351,11 +420,11 @@ async def generate_rtsp_mjpeg_stream(
                 logger.info(
                     "RTSP reconnecting (%d/%d) for %s (stream_id=%s)",
                     reconnect_count,
-                    _RTSP_MAX_RECONNECTS,
+                    profile.rtsp_reconnect_max,
                     ip_address,
                     stream_id,
                 )
-                await asyncio.sleep(_RTSP_RECONNECT_DELAY)
+                await asyncio.sleep(profile.rtsp_reconnect_delay)
                 if disconnect_event and disconnect_event.is_set():
                     break
 
@@ -483,10 +552,10 @@ async def generate_rtsp_mjpeg_stream(
             # Normal exit (shouldn't reach here, but be safe)
             break
 
-        if reconnect_count > _RTSP_MAX_RECONNECTS:
+        if reconnect_count > profile.rtsp_reconnect_max:
             logger.error(
                 "RTSP max reconnects (%d) reached for %s (stream_id=%s)",
-                _RTSP_MAX_RECONNECTS,
+                profile.rtsp_reconnect_max,
                 ip_address,
                 stream_id,
             )
@@ -812,6 +881,21 @@ async def camera_snapshot(
             },
         )
 
+    # Reuse the fan-out broadcaster's buffered frame when a viewer is already
+    # watching — avoids opening a second concurrent RTSP socket on printers
+    # that allow only one camera connection (e.g. X2D firmware 01.01.00.00;
+    # see #1271). Buffered frame is <1s old while a viewer is connected.
+    buffered = try_get_active_buffered_frame(printer_id)
+    if buffered:
+        return Response(
+            content=buffered,
+            media_type="image/jpeg",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Content-Disposition": f'inline; filename="snapshot_{printer_id}.jpg"',
+            },
+        )
+
     # Create temporary file for the snapshot (0600 so only the app user can read it)
     fd, tmp_name = tempfile.mkstemp(suffix=".jpg")
     os.close(fd)
@@ -870,6 +954,41 @@ async def test_camera(
     )
 
     return result
+
+
+@router.post("/{printer_id}/camera/diagnose")
+async def diagnose_camera_route(
+    printer_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
+):
+    """Run staged diagnostics for a printer's camera path.
+
+    Returns a structured result the frontend renders inline so users can
+    self-diagnose "connection lost" before opening a ticket. See
+    ``camera_diagnose`` for stage details and the live-stream shortcut.
+    """
+    import time
+
+    from backend.app.services.camera_diagnose import diagnose_camera
+
+    printer = await get_printer_or_404(printer_id, db)
+
+    # Look up live-stream evidence so the diagnostic can short-circuit
+    # instead of fighting a viewer for the printer's single camera slot.
+    has_live = is_stream_active(printer_id)
+    last_ts = _last_frame_times.get(printer_id) if has_live else None
+    live_age = (time.time() - last_ts) if (has_live and last_ts) else None
+
+    result = await diagnose_camera(
+        ip_address=printer.ip_address,
+        access_code=printer.access_code,
+        model=printer.model,
+        printer_id=printer_id,
+        has_live_stream=has_live,
+        live_frame_age_seconds=live_age,
+    )
+    return result.to_dict()
 
 
 @router.get("/{printer_id}/camera/status")
@@ -967,7 +1086,7 @@ async def test_external_camera(
 async def check_plate_empty(
     printer_id: int,
     plate_type: str | None = None,
-    use_external: bool = False,
+    use_external: bool | None = None,
     include_debug_image: bool = False,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
@@ -982,7 +1101,11 @@ async def check_plate_empty(
     Args:
         printer_id: Printer ID
         plate_type: Type of build plate (e.g., "High Temp Plate") for calibration lookup
-        use_external: If True, prefer external camera over built-in
+        use_external: If True, prefer external camera over built-in. When omitted
+            (None), defaults to the printer's external_camera_enabled setting —
+            mirroring the runtime auto-check at print start (main.py). Without
+            this default the UI's manual check would always use the built-in
+            camera, mismatching the reference saved during calibration (#1359).
         include_debug_image: If True, return URL to annotated debug image
 
     Returns:
@@ -1002,6 +1125,11 @@ async def check_plate_empty(
 
     # Check printer exists first (before OpenCV check)
     printer = await get_printer_or_404(printer_id, db)
+
+    if use_external is None:
+        use_external = bool(
+            printer.external_camera_enabled and printer.external_camera_url and printer.external_camera_type
+        )
 
     if not is_plate_detection_available():
         raise HTTPException(
@@ -1077,7 +1205,7 @@ async def check_plate_empty(
 async def calibrate_plate_detection(
     printer_id: int,
     label: str | None = None,
-    use_external: bool = False,
+    use_external: bool | None = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
@@ -1094,7 +1222,10 @@ async def calibrate_plate_detection(
     Args:
         printer_id: Printer ID
         label: Optional label for this reference (e.g., "High Temp Plate", "Wham Bam")
-        use_external: If True, prefer external camera over built-in
+        use_external: If True, prefer external camera over built-in. When omitted
+            (None), defaults to the printer's external_camera_enabled setting so
+            calibration captures from the same source the runtime auto-check
+            uses at print start (#1359).
 
     Returns:
         Dict with:
@@ -1110,6 +1241,11 @@ async def calibrate_plate_detection(
 
     # Check printer exists first (before OpenCV check)
     printer = await get_printer_or_404(printer_id, db)
+
+    if use_external is None:
+        use_external = bool(
+            printer.external_camera_enabled and printer.external_camera_url and printer.external_camera_type
+        )
 
     if not is_plate_detection_available():
         raise HTTPException(

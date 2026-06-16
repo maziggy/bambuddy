@@ -1,9 +1,13 @@
 """Tests for the unified slicer-presets endpoint helpers.
 
-The endpoint stitches together three preset sources (cloud / local /
-standard) with name-based dedup. These tests pin the dedup logic, the
-cloud-status mapping, and the per-user / sidecar caches at the
-helper level — full HTTP integration is covered by the routes test.
+The endpoint stitches together four preset sources (local / orca_cloud /
+cloud / standard). It does NOT dedup across tiers — every tier surfaces
+its full list so the user can pick any source. Bambu Cloud filament
+metadata is enriched from same-named entries in the other tiers so it
+can still score in the SliceModal's auto-pick. These tests pin the
+enrich behaviour, the cloud-status mapping, and the per-user / sidecar
+caches at the helper level — full HTTP integration is covered by the
+routes test.
 """
 
 from __future__ import annotations
@@ -28,50 +32,31 @@ def _slot(items: list[tuple[str, str, str]]) -> dict[str, list[UnifiedPreset]]:
     }
 
 
-class TestDedupeByName:
-    """Cloud > local > standard, by ``name``, order preserved within tier."""
+class TestEnrichCloudMetadata:
+    """No cross-tier dedup — every tier's full list comes back; Bambu Cloud
+    filament metadata is enriched from same-named entries in other tiers."""
 
-    def test_cloud_wins_over_local_and_standard(self):
+    def test_same_name_in_all_tiers_appears_in_every_tier(self):
+        """Critical regression guard for #1712: a user who has imported a
+        local profile AND signed in to Orca AND has Bambu Cloud with the
+        same name should see it under EACH source, not just the highest-
+        priority tier. The order is used for auto-pick + group rendering;
+        it is NOT used to hide profiles."""
+        orca = _slot([("oid1", "Bambu PLA Basic", "orca_cloud")])
         cloud = _slot([("cid1", "Bambu PLA Basic", "cloud")])
         local = _slot([("lid1", "Bambu PLA Basic", "local")])
         standard = _slot([("Bambu PLA Basic", "Bambu PLA Basic", "standard")])
 
-        c, l_, s = sp._dedupe_by_name(cloud, local, standard)
+        oc, c, l_, s = sp._enrich_cloud_metadata(orca, cloud, local, standard)
 
+        assert [p.source for p in l_["printer"]] == ["local"]
+        assert [p.source for p in oc["printer"]] == ["orca_cloud"]
         assert [p.source for p in c["printer"]] == ["cloud"]
-        assert l_["printer"] == []
-        assert s["printer"] == []
-
-    def test_local_filtered_only_when_present_in_cloud(self):
-        cloud = _slot([("cid1", "Custom PLA", "cloud")])
-        local = _slot(
-            [
-                ("lid1", "Custom PLA", "local"),  # filtered (in cloud)
-                ("lid2", "My Workhorse PLA", "local"),  # kept
-            ]
-        )
-        standard = _slot([])
-
-        _c, l_, _s = sp._dedupe_by_name(cloud, local, standard)
-        assert [p.name for p in l_["printer"]] == ["My Workhorse PLA"]
-
-    def test_standard_filtered_against_both_higher_tiers(self):
-        cloud = _slot([("c1", "A", "cloud")])
-        local = _slot([("l1", "B", "local")])
-        standard = _slot(
-            [
-                ("A", "A", "standard"),  # filtered (in cloud)
-                ("B", "B", "standard"),  # filtered (in local)
-                ("C", "C", "standard"),  # kept
-            ]
-        )
-
-        _c, _l, s = sp._dedupe_by_name(cloud, local, standard)
-        assert [p.name for p in s["printer"]] == ["C"]
+        assert [p.source for p in s["printer"]] == ["standard"]
 
     def test_preserves_order_within_tier(self):
-        """A tier's input order must be preserved in its output — nothing in
-        the dedupe pass should sort, reverse, or otherwise reorder entries."""
+        """A tier's input order must be preserved — nothing in the enrich
+        pass should sort, reverse, or otherwise reorder entries."""
         cloud = _slot(
             [
                 ("c1", "Z-First", "cloud"),
@@ -79,25 +64,95 @@ class TestDedupeByName:
                 ("c3", "M-Third", "cloud"),
             ]
         )
-        c, _l, _s = sp._dedupe_by_name(cloud, _slot([]), _slot([]))
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(_slot([]), cloud, _slot([]), _slot([]))
         assert [p.name for p in c["printer"]] == ["Z-First", "A-Second", "M-Third"]
 
-    def test_dedupe_is_per_slot(self):
-        """A name colliding across DIFFERENT slots must NOT cross-filter —
-        a "Custom" filament shouldn't hide a "Custom" printer."""
+    def test_bambu_cloud_filament_metadata_backfilled_from_local(self):
+        """Bambu Cloud's list response omits filament_type/colour for
+        rate-limit reasons. A same-named local entry's metadata fills in
+        so the cloud entry can still score in pickFilamentForSlot."""
+        local = {
+            "printer": [],
+            "process": [],
+            "filament": [
+                UnifiedPreset(
+                    id="lp1",
+                    name="Bambu PLA Basic",
+                    source="local",
+                    filament_type="PLA",
+                    filament_colour="#FF0000",
+                )
+            ],
+        }
         cloud = {
             "printer": [],
             "process": [],
-            "filament": [UnifiedPreset(id="cf1", name="Custom", source="cloud")],
+            "filament": [UnifiedPreset(id="cp1", name="Bambu PLA Basic", source="cloud")],
         }
-        local = {
-            "printer": [UnifiedPreset(id="lp1", name="Custom", source="local")],
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(_slot([]), cloud, local, _slot([]))
+        # Cloud entry now carries the local entry's metadata.
+        assert c["filament"][0].filament_type == "PLA"
+        assert c["filament"][0].filament_colour == "#FF0000"
+        # Local entry is untouched.
+        assert local["filament"][0].filament_type == "PLA"
+
+    def test_bambu_cloud_metadata_falls_back_through_orca_and_standard(self):
+        """When local doesn't carry the name, orca_cloud / standard fill in."""
+        orca = {
+            "printer": [],
             "process": [],
-            "filament": [],
+            "filament": [
+                UnifiedPreset(
+                    id="o1",
+                    name="Bambu PLA Basic",
+                    source="orca_cloud",
+                    filament_type="PLA",
+                    filament_colour="#00FF00",
+                )
+            ],
         }
-        _c, l_, _s = sp._dedupe_by_name(cloud, local, _slot([]))
-        # The filament-tier collision must NOT remove the printer-tier "Custom".
-        assert [p.name for p in l_["printer"]] == ["Custom"]
+        cloud = {
+            "printer": [],
+            "process": [],
+            "filament": [UnifiedPreset(id="cp1", name="Bambu PLA Basic", source="cloud")],
+        }
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(orca, cloud, _slot([]), _slot([]))
+        assert c["filament"][0].filament_type == "PLA"
+        assert c["filament"][0].filament_colour == "#00FF00"
+
+    def test_bambu_cloud_keeps_its_own_metadata_when_present(self):
+        """If Bambu Cloud already has filament_type / filament_colour the
+        enrich pass must not overwrite them with a different same-named
+        entry's values."""
+        local = {
+            "printer": [],
+            "process": [],
+            "filament": [
+                UnifiedPreset(
+                    id="lp1",
+                    name="Bambu PLA Basic",
+                    source="local",
+                    filament_type="PETG",
+                    filament_colour="#000000",
+                )
+            ],
+        }
+        cloud = {
+            "printer": [],
+            "process": [],
+            "filament": [
+                UnifiedPreset(
+                    id="cp1",
+                    name="Bambu PLA Basic",
+                    source="cloud",
+                    filament_type="PLA",
+                    filament_colour="#FFFFFF",
+                )
+            ],
+        }
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(_slot([]), cloud, local, _slot([]))
+        assert c["filament"][0].filament_type == "PLA"
+        assert c["filament"][0].filament_colour == "#FFFFFF"
 
 
 def _user_with_cloud_auth(user_id: int = 1) -> MagicMock:
@@ -109,6 +164,133 @@ def _user_with_cloud_auth(user_id: int = 1) -> MagicMock:
     user = MagicMock(id=user_id)
     user.has_permission = MagicMock(return_value=True)
     return user
+
+
+class TestFetchOrcaCloudPresets:
+    """``_fetch_orca_cloud_presets`` mirrors the Bambu Cloud fetcher's status
+    vocabulary (``ok`` / ``not_authenticated`` / ``expired`` / ``unreachable``)
+    and the same permission-shortcut + caching behaviour. Tests pin the
+    contract so a future bug in either fetcher doesn't silently desync them."""
+
+    def _orca_creds(self, token: str | None = "tok") -> MagicMock:
+        creds = MagicMock()
+        creds.token = token
+        return creds
+
+    @pytest.mark.asyncio
+    async def test_no_token_returns_not_authenticated(self):
+        sp._orca_cloud_cache.clear()
+        with patch.object(sp, "_load_orca_credentials", AsyncMock(return_value=self._orca_creds(None))):
+            user = MagicMock(id=1)
+            user.has_permission = MagicMock(return_value=True)
+            slots, status = await sp._fetch_orca_cloud_presets(MagicMock(), user)
+        assert status == "not_authenticated"
+        assert slots == {"printer": [], "process": [], "filament": []}
+
+    @pytest.mark.asyncio
+    async def test_user_without_orca_cloud_auth_returns_not_authenticated(self):
+        """Defence-in-depth — a user lacking ORCA_CLOUD_AUTH must not see Orca
+        presets even if their User row carries a stale token. Credentials
+        lookup must short-circuit ahead of the token read."""
+        sp._orca_cloud_cache.clear()
+        user = MagicMock(id=1)
+        user.has_permission = MagicMock(return_value=False)
+        with patch.object(sp, "_load_orca_credentials", AsyncMock(return_value=self._orca_creds("tok"))) as load:
+            slots, status = await sp._fetch_orca_cloud_presets(MagicMock(), user)
+        assert status == "not_authenticated"
+        assert slots["printer"] == []
+        load.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_auth_error_returns_expired(self):
+        sp._orca_cloud_cache.clear()
+        svc_mock = MagicMock()
+        svc_mock.list_profiles = AsyncMock(side_effect=sp.OrcaCloudAuthError("expired"))
+        svc_mock.close = AsyncMock()
+        user = MagicMock(id=1)
+        user.has_permission = MagicMock(return_value=True)
+        with (
+            patch.object(sp, "_load_orca_credentials", AsyncMock(return_value=self._orca_creds("tok"))),
+            patch.object(sp, "_build_orca_service", AsyncMock(return_value=svc_mock)),
+        ):
+            _slots, status = await sp._fetch_orca_cloud_presets(MagicMock(), user)
+        assert status == "expired"
+        svc_mock.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_orca_error_returns_unreachable(self):
+        sp._orca_cloud_cache.clear()
+        svc_mock = MagicMock()
+        svc_mock.list_profiles = AsyncMock(side_effect=sp.OrcaCloudError("net down"))
+        svc_mock.close = AsyncMock()
+        user = MagicMock(id=1)
+        user.has_permission = MagicMock(return_value=True)
+        with (
+            patch.object(sp, "_load_orca_credentials", AsyncMock(return_value=self._orca_creds("tok"))),
+            patch.object(sp, "_build_orca_service", AsyncMock(return_value=svc_mock)),
+        ):
+            _slots, status = await sp._fetch_orca_cloud_presets(MagicMock(), user)
+        assert status == "unreachable"
+
+    @pytest.mark.asyncio
+    async def test_happy_path_shapes_grouped_by_type(self):
+        """Orca content.type values map onto Bambu Cloud's preset type vocab
+        (``printer`` / ``print`` → ``process`` / ``filament``). Verify the
+        full mapping by feeding one of each shape."""
+        sp._orca_cloud_cache.clear()
+        svc_mock = MagicMock()
+        svc_mock.list_profiles = AsyncMock(
+            return_value=[
+                {"id": "m1", "name": "Orca X1C", "content": {"type": "printer"}},
+                {"id": "p1", "name": "Orca 0.20mm", "content": {"type": "print"}},
+                {
+                    "id": "f1",
+                    "name": "Orca PLA",
+                    "content": {
+                        "type": "filament",
+                        "filament_type": ["PLA"],
+                        "default_filament_colour": ["#000000"],
+                    },
+                },
+            ]
+        )
+        svc_mock.close = AsyncMock()
+        user = MagicMock(id=1)
+        user.has_permission = MagicMock(return_value=True)
+        with (
+            patch.object(sp, "_load_orca_credentials", AsyncMock(return_value=self._orca_creds("tok"))),
+            patch.object(sp, "_build_orca_service", AsyncMock(return_value=svc_mock)),
+        ):
+            slots, status = await sp._fetch_orca_cloud_presets(MagicMock(), user)
+        assert status == "ok"
+        assert [p.name for p in slots["printer"]] == ["Orca X1C"]
+        assert [p.name for p in slots["process"]] == ["Orca 0.20mm"]
+        filament = slots["filament"]
+        assert [p.name for p in filament] == ["Orca PLA"]
+        # Inline metadata extracted from the content blob (Orca's sync_pull
+        # returns full content, so unlike Bambu Cloud we don't need a second
+        # per-preset fetch to enrich filament_type / filament_colour).
+        assert filament[0].filament_type == "PLA"
+        assert filament[0].filament_colour == "#000000"
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_skips_orca_call(self):
+        """A second call within TTL must reuse the cached slots and NOT
+        hit the Orca service again — same TTL as Bambu Cloud (5 min)."""
+        sp._orca_cloud_cache.clear()
+        svc_mock = MagicMock()
+        svc_mock.list_profiles = AsyncMock(return_value=[])
+        svc_mock.close = AsyncMock()
+        user = MagicMock(id=1)
+        user.has_permission = MagicMock(return_value=True)
+        with (
+            patch.object(sp, "_load_orca_credentials", AsyncMock(return_value=self._orca_creds("tok"))),
+            patch.object(sp, "_build_orca_service", AsyncMock(return_value=svc_mock)) as build,
+        ):
+            await sp._fetch_orca_cloud_presets(MagicMock(), user)
+            await sp._fetch_orca_cloud_presets(MagicMock(), user)
+        # Build is the cache miss signal — second call reused the cache.
+        build.assert_awaited_once()
 
 
 class TestFetchCloudPresets:
@@ -286,6 +468,60 @@ class TestFetchCloudPresets:
         assert first["printer"][0].name == "OldAccountX1C"
         assert second["printer"][0].name == "NewAccountX1C"
 
+    @pytest.mark.asyncio
+    async def test_refresh_bypasses_cloud_cache(self):
+        """``refresh=True`` must skip an otherwise-warm cache entry and hit
+        Bambu Cloud again — wiring for the SliceModal's Refresh button so a
+        user who deletes a cloud preset in Bambu Studio / Handy doesn't have
+        to wait for the 5-minute TTL to expire (#1581)."""
+        sp._cloud_cache.clear()
+        cloud_mock = MagicMock()
+        cloud_mock.set_token = MagicMock()
+        cloud_mock.get_slicer_settings = AsyncMock(
+            return_value={
+                "printer": {"private": [{"setting_id": "id1", "name": "X1C"}], "public": []},
+                "print": {"private": [], "public": []},
+                "filament": {"private": [], "public": []},
+            }
+        )
+        cloud_mock.close = AsyncMock()
+        user = _user_with_cloud_auth(user_id=99)
+        with (
+            patch.object(sp, "get_stored_token", AsyncMock(return_value=("tok", None, None))),
+            patch.object(sp, "BambuCloudService", return_value=cloud_mock),
+        ):
+            await sp._fetch_cloud_presets(MagicMock(), user)
+            # Without refresh, the second call hits cache (covered by
+            # test_cache_hit_skips_cloud_call). With refresh=True it MUST
+            # re-fetch.
+            await sp._fetch_cloud_presets(MagicMock(), user, refresh=True)
+        assert cloud_mock.get_slicer_settings.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_refresh_writes_back_to_cache(self):
+        """A refresh call must still update the cache so a subsequent normal
+        call doesn't re-hit the cloud immediately afterwards."""
+        sp._cloud_cache.clear()
+        cloud_mock = MagicMock()
+        cloud_mock.set_token = MagicMock()
+        cloud_mock.get_slicer_settings = AsyncMock(
+            return_value={
+                "printer": {"private": [{"setting_id": "id1", "name": "X1C"}], "public": []},
+                "print": {"private": [], "public": []},
+                "filament": {"private": [], "public": []},
+            }
+        )
+        cloud_mock.close = AsyncMock()
+        user = _user_with_cloud_auth(user_id=101)
+        with (
+            patch.object(sp, "get_stored_token", AsyncMock(return_value=("tok", None, None))),
+            patch.object(sp, "BambuCloudService", return_value=cloud_mock),
+        ):
+            await sp._fetch_cloud_presets(MagicMock(), user, refresh=True)
+            await sp._fetch_cloud_presets(MagicMock(), user)
+        # Two calls — first refresh, second a normal cache hit.
+        assert cloud_mock.get_slicer_settings.await_count == 1
+
 
 class TestFetchBundledPresets:
     """Standard tier reaches out to the slicer-api sidecar; tolerate the
@@ -355,6 +591,41 @@ class TestFetchBundledPresets:
         with patch.object(sp, "SlicerApiService", side_effect=AssertionError("cache miss!")):
             slots = await sp._fetch_bundled_presets(MagicMock())
         assert slots["printer"][0].name == "Cached"
+
+    @pytest.mark.asyncio
+    async def test_refresh_bypasses_bundled_cache(self):
+        """``refresh=True`` must re-hit the sidecar even when the in-process
+        cache is warm — paired with the cloud-cache refresh, this is what
+        powers the SliceModal's Refresh button (#1581)."""
+        sp._bundled_cache = (
+            time.monotonic(),
+            {
+                "printer": [UnifiedPreset(id="Stale", name="Stale", source="standard")],
+                "process": [],
+                "filament": [],
+            },
+        )
+        svc_mock = MagicMock()
+        svc_mock.list_bundled_profiles = AsyncMock(
+            return_value={
+                "printer": [{"name": "Fresh", "base_id": None}],
+                "process": [],
+                "filament": [],
+            }
+        )
+        svc_mock.__aenter__ = AsyncMock(return_value=svc_mock)
+        svc_mock.__aexit__ = AsyncMock(return_value=False)
+        with (
+            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
+            patch.object(sp, "SlicerApiService", return_value=svc_mock),
+        ):
+            slots = await sp._fetch_bundled_presets(MagicMock(), refresh=True)
+        svc_mock.list_bundled_profiles.assert_awaited_once()
+        assert [p.name for p in slots["printer"]] == ["Fresh"]
+        # The fresh result must also be written back to the cache so a
+        # subsequent normal (non-refresh) call doesn't re-hit the sidecar.
+        assert sp._bundled_cache is not None
+        assert [p.name for p in sp._bundled_cache[1]["printer"]] == ["Fresh"]
 
 
 class TestResolveSlicerApiUrl:
@@ -433,206 +704,56 @@ class TestResolveSlicerApiUrl:
         assert url is None
 
 
-class TestBundleRoutes:
-    """Route-level coverage for the bundle proxy endpoints. Each route
-    resolves the sidecar URL via _resolve_slicer_api_url, then proxies the
-    operation through SlicerApiService. We mock both pieces so we can pin
-    the HTTP-status mapping (sidecar input error → 400, BundleNotFoundError
-    → 404, unreachable → 503) without spinning up a sidecar.
-    """
+class TestParseCompatiblePrinters:
+    """``compatible_printers`` exposed for local process / filament presets so
+    the SliceModal can filter the dropdowns by the selected printer (#1325)."""
 
-    SAMPLE_SUMMARY = sp.BundleSummary(
-        id="abc123def456abcd",
-        printer_preset_name="# Bambu Lab H2D 0.4 nozzle",
-        printer=["# Bambu Lab H2D 0.4 nozzle"],
-        process=["# 0.20mm Standard @BBL H2D"],
-        filament=["# Bambu PLA Basic @BBL H2D"],
-        version="02.06.00.50",
-    )
+    def test_parses_json_array(self):
+        raw = '["Bambu Lab X1 Carbon 0.4 nozzle", "Bambu Lab X1 0.4 nozzle"]'
+        assert sp._parse_compatible_printers(raw) == [
+            "Bambu Lab X1 Carbon 0.4 nozzle",
+            "Bambu Lab X1 0.4 nozzle",
+        ]
 
-    def _patched_service(self, **methods) -> MagicMock:
-        """Build a SlicerApiService mock that supports `async with` and
-        exposes the bundle methods via AsyncMock per the override dict."""
-        svc = MagicMock()
-        svc.__aenter__ = AsyncMock(return_value=svc)
-        svc.__aexit__ = AsyncMock(return_value=False)
-        for name, mock in methods.items():
-            setattr(svc, name, mock)
-        return svc
+    def test_none_and_empty_return_none(self):
+        assert sp._parse_compatible_printers(None) is None
+        assert sp._parse_compatible_printers("") is None
+        assert sp._parse_compatible_printers("[]") is None
 
-    @pytest.mark.asyncio
-    async def test_import_bundle_happy_path(self):
-        from io import BytesIO
+    def test_malformed_json_returns_none(self):
+        assert sp._parse_compatible_printers("not json") is None
+        # A JSON value that isn't an array is treated as absent, not an error.
+        assert sp._parse_compatible_printers('"a string"') is None
 
-        from fastapi import UploadFile
+    def test_drops_non_string_and_blank_entries(self):
+        assert sp._parse_compatible_printers('["X1C", 5, "", "  ", "A1"]') == [
+            "X1C",
+            "A1",
+        ]
 
-        svc = self._patched_service(
-            import_bundle=AsyncMock(return_value=self.SAMPLE_SUMMARY),
-        )
-        with (
-            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
-            patch.object(sp, "SlicerApiService", return_value=svc),
-        ):
-            file = UploadFile(filename="H2D.bbscfg", file=BytesIO(b"PK\x03\x04"))
-            result = await sp.import_slicer_bundle(file=file, db=MagicMock(), _=None)
-        assert result["id"] == "abc123def456abcd"
-        assert result["printer"] == ["# Bambu Lab H2D 0.4 nozzle"]
-        svc.import_bundle.assert_awaited_once()
-        kwargs = svc.import_bundle.await_args.kwargs
-        assert kwargs["filename"] == "H2D.bbscfg"
 
-    @pytest.mark.asyncio
-    async def test_import_bundle_no_sidecar_returns_503(self):
-        from io import BytesIO
+class TestListPrinterModels:
+    """``GET /slicer/printer-models`` exposes ``PRINTER_MODEL_MAP`` so the
+    frontend doesn't duplicate the Bambu model registry (#1325 follow-up)."""
 
-        from fastapi import HTTPException, UploadFile
+    def test_returns_canonical_printer_model_map(self):
+        from backend.app.utils.printer_models import PRINTER_MODEL_MAP
 
-        with (
-            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value=None)),
-            pytest.raises(HTTPException) as exc,
-        ):
-            await sp.import_slicer_bundle(
-                file=UploadFile(filename="x.bbscfg", file=BytesIO(b"x")),
-                db=MagicMock(),
-                _=None,
-            )
-        assert exc.value.status_code == 503
+        result = sp.list_printer_models()
+        # Same shape - mapping from "Bambu Lab <model>" to short code.
+        assert result == PRINTER_MODEL_MAP
+        # Spot-check a few entries: the SliceModal name-fallback (#1325)
+        # specifically depends on these resolving.
+        assert result["Bambu Lab X1 Carbon"] == "X1C"
+        assert result["Bambu Lab P2S"] == "P2S"
+        assert result["Bambu Lab A1 mini"] == "A1 Mini"
+        assert result["Bambu Lab H2D Pro"] == "H2D Pro"
 
-    @pytest.mark.asyncio
-    async def test_import_bundle_empty_file_returns_400(self):
-        from io import BytesIO
+    def test_returns_a_copy_not_the_module_dict(self):
+        # A response handler must never hand out the live module-level dict —
+        # accidental mutation by middleware / serialisers would silently
+        # corrupt the registry for every subsequent request.
+        from backend.app.utils.printer_models import PRINTER_MODEL_MAP
 
-        from fastapi import HTTPException, UploadFile
-
-        with (
-            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
-            pytest.raises(HTTPException) as exc,
-        ):
-            await sp.import_slicer_bundle(
-                file=UploadFile(filename="x.bbscfg", file=BytesIO(b"")),
-                db=MagicMock(),
-                _=None,
-            )
-        assert exc.value.status_code == 400
-
-    @pytest.mark.asyncio
-    async def test_import_bundle_sidecar_400_passes_through(self):
-        from io import BytesIO
-
-        from fastapi import HTTPException, UploadFile
-
-        svc = self._patched_service(
-            import_bundle=AsyncMock(side_effect=sp.SlicerInputError("bad zip")),
-        )
-        with (
-            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
-            patch.object(sp, "SlicerApiService", return_value=svc),
-            pytest.raises(HTTPException) as exc,
-        ):
-            await sp.import_slicer_bundle(
-                file=UploadFile(filename="x.bbscfg", file=BytesIO(b"x")),
-                db=MagicMock(),
-                _=None,
-            )
-        assert exc.value.status_code == 400
-
-    @pytest.mark.asyncio
-    async def test_import_bundle_sidecar_unreachable_returns_503(self):
-        from io import BytesIO
-
-        from fastapi import HTTPException, UploadFile
-
-        svc = self._patched_service(
-            import_bundle=AsyncMock(side_effect=sp.SlicerApiUnavailableError("offline")),
-        )
-        with (
-            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
-            patch.object(sp, "SlicerApiService", return_value=svc),
-            pytest.raises(HTTPException) as exc,
-        ):
-            await sp.import_slicer_bundle(
-                file=UploadFile(filename="x.bbscfg", file=BytesIO(b"x")),
-                db=MagicMock(),
-                _=None,
-            )
-        assert exc.value.status_code == 503
-
-    @pytest.mark.asyncio
-    async def test_list_bundles_happy_path(self):
-        svc = self._patched_service(
-            list_bundles=AsyncMock(return_value=[self.SAMPLE_SUMMARY]),
-        )
-        with (
-            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
-            patch.object(sp, "SlicerApiService", return_value=svc),
-        ):
-            result = await sp.list_slicer_bundles(db=MagicMock(), _=None)
-        assert len(result) == 1
-        assert result[0]["id"] == "abc123def456abcd"
-
-    @pytest.mark.asyncio
-    async def test_list_bundles_no_sidecar_returns_empty(self):
-        # Differs from import: list returns [] instead of 503 so the
-        # SliceModal still renders cleanly when no sidecar is configured
-        # (matches bundled-tier behaviour above).
-        with patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value=None)):
-            result = await sp.list_slicer_bundles(db=MagicMock(), _=None)
-        assert result == []
-
-    @pytest.mark.asyncio
-    async def test_list_bundles_sidecar_unreachable_returns_503(self):
-        from fastapi import HTTPException
-
-        svc = self._patched_service(
-            list_bundles=AsyncMock(side_effect=sp.SlicerApiUnavailableError("offline")),
-        )
-        with (
-            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
-            patch.object(sp, "SlicerApiService", return_value=svc),
-            pytest.raises(HTTPException) as exc,
-        ):
-            await sp.list_slicer_bundles(db=MagicMock(), _=None)
-        assert exc.value.status_code == 503
-
-    @pytest.mark.asyncio
-    async def test_get_bundle_404(self):
-        from fastapi import HTTPException
-
-        svc = self._patched_service(
-            get_bundle=AsyncMock(side_effect=sp.BundleNotFoundError("not found")),
-        )
-        with (
-            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
-            patch.object(sp, "SlicerApiService", return_value=svc),
-            pytest.raises(HTTPException) as exc,
-        ):
-            await sp.get_slicer_bundle("missing", db=MagicMock(), _=None)
-        assert exc.value.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_delete_bundle_204(self):
-        # delete returns None on success; FastAPI sends 204 because the route
-        # declares status_code=204.
-        svc = self._patched_service(delete_bundle=AsyncMock(return_value=None))
-        with (
-            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
-            patch.object(sp, "SlicerApiService", return_value=svc),
-        ):
-            result = await sp.delete_slicer_bundle("abc", db=MagicMock(), _=None)
-        assert result is None
-        svc.delete_bundle.assert_awaited_once_with("abc")
-
-    @pytest.mark.asyncio
-    async def test_delete_bundle_404(self):
-        from fastapi import HTTPException
-
-        svc = self._patched_service(
-            delete_bundle=AsyncMock(side_effect=sp.BundleNotFoundError("not found")),
-        )
-        with (
-            patch.object(sp, "_resolve_slicer_api_url", AsyncMock(return_value="http://ok")),
-            patch.object(sp, "SlicerApiService", return_value=svc),
-            pytest.raises(HTTPException) as exc,
-        ):
-            await sp.delete_slicer_bundle("missing", db=MagicMock(), _=None)
-        assert exc.value.status_code == 404
+        result = sp.list_printer_models()
+        assert result is not PRINTER_MODEL_MAP

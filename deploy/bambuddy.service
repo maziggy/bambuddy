@@ -54,7 +54,10 @@ SyslogIdentifier=bambuddy
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+# ProtectHome=true hides /home/* and breaks ExecStart when INSTALL_PATH is
+# under /home (issue #1685). Default is the safer read-only; flip to true if
+# your INSTALL_PATH is outside /home (e.g. /opt/bambuddy).
+ProtectHome=read-only
 ReadWritePaths=DATA_DIR LOG_DIR INSTALL_PATH
 
 [Install]

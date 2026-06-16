@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 import { api } from '../api/client';
 import type { InventorySpool, SpoolUsageRecord, FilamentSkuSettings, ShoppingListItem } from '../api/client';
+import { getSwatchStyle } from '../utils/colors';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -130,7 +131,10 @@ function computeHistoryRate(records: SpoolUsageRecord[]): { rate: number; stdDev
 }
 
 function computeDeltaRate(spools: InventorySpool[]): number | null {
-  const totalUsed = spools.reduce((s, sp) => s + sp.weight_used, 0);
+  // Use weight_used - baseline so "Reset usage to 0" on the Inventory page
+  // makes forecast restart from zero rather than carrying stale lifetime
+  // consumption across the reset (#1390).
+  const totalUsed = spools.reduce((s, sp) => s + Math.max(0, sp.weight_used - (sp.weight_used_baseline ?? 0)), 0);
   if (totalUsed === 0) return null;
   const now = Date.now();
   const oldestMs = spools.reduce((min, sp) => {
@@ -228,7 +232,8 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
 
       const totalRemainingG = group.spools.reduce((s, sp) => s + Math.max(0, sp.label_weight - sp.weight_used), 0);
       const totalLabelG = group.spools.reduce((s, sp) => s + sp.label_weight, 0);
-      const totalUsedG = group.spools.reduce((s, sp) => s + sp.weight_used, 0);
+      // Consumed since baseline (post-reset); see InventoryPage stats calc (#1390).
+      const totalUsedG = group.spools.reduce((s, sp) => s + Math.max(0, sp.weight_used - (sp.weight_used_baseline ?? 0)), 0);
 
       const groupHistory: SpoolUsageRecord[] = [];
       for (const s of group.spools) groupHistory.push(...(usageBySpoolId.get(s.id) ?? []));
@@ -786,7 +791,9 @@ function ForecastRow({
   const snoozed = f.settings?.alerts_snoozed ?? false;
 
   const label = [f.group.brand, f.group.material, f.group.subtype].filter(Boolean).join(' ');
-  const colorStyle = f.group.spools[0]?.rgba ? `#${f.group.spools[0].rgba.substring(0, 6)}` : '#4B5563';
+  // Use getSwatchStyle so a Clear (alpha=00) lead spool renders as a
+  // checkerboard rather than collapsing to solid black (#1545).
+  const colorStyle = f.group.spools[0]?.rgba ? getSwatchStyle(f.group.spools[0].rgba) : { backgroundColor: '#4B5563' };
   const remainPct = f.totalLabelG > 0 ? Math.round((f.totalRemainingG / f.totalLabelG) * 100) : 0;
 
   const daysColor = snoozed ? 'text-bambu-gray'
@@ -823,7 +830,7 @@ function ForecastRow({
         <td className="px-4 py-3">
           <span
             className="block w-3 h-3 rounded-full border border-black/20"
-            style={{ backgroundColor: colorStyle }}
+            style={colorStyle}
           />
         </td>
 
@@ -1012,7 +1019,7 @@ function ForecastRow({
                                 </div>
                               </td>
                               <td className="px-4 py-2">
-                                <span className="text-sm text-bambu-gray">{Math.round(s.weight_used)}g</span>
+                                <span className="text-sm text-bambu-gray">{Math.round(Math.max(0, s.weight_used - (s.weight_used_baseline ?? 0)))}g</span>
                               </td>
                               <td className="px-4 py-2">
                                 <span className="text-sm text-bambu-gray">{s.label_weight}g</span>

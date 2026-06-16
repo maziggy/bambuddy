@@ -245,6 +245,52 @@ class TestLibraryFilesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_list_files_internal_only(self, async_client: AsyncClient, folder_factory, file_factory, db_session):
+        """#1621: `internal_only=true` restricts the listing to files in managed
+        storage (`is_external=False`) so a linked NAS with hundreds of files
+        doesn't drown the user's own uploads in the "All Files" sidebar view."""
+        internal_folder = await folder_factory(name="My uploads")
+        external_folder = await folder_factory(name="NAS", is_external=True, external_path="/mnt/nas")
+
+        internal_file = await file_factory(folder_id=internal_folder.id, filename="mine.3mf", is_external=False)
+        await file_factory(folder_id=external_folder.id, filename="nas.3mf", is_external=True)
+        root_file = await file_factory(filename="root.3mf", is_external=False)  # Root-uploaded is always internal.
+
+        response = await async_client.get("/api/v1/library/files?include_root=false&internal_only=true")
+        assert response.status_code == 200
+        ids = {f["id"] for f in response.json()}
+        assert ids == {internal_file.id, root_file.id}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_files_external_only(self, async_client: AsyncClient, folder_factory, file_factory, db_session):
+        """#1621 symmetric: `external_only=true` returns the combined view
+        across every linked external folder so users with several mounts can
+        see all external content in one place without clicking each folder."""
+        internal_folder = await folder_factory(name="My uploads")
+        nas_a = await folder_factory(name="NAS A", is_external=True, external_path="/mnt/a")
+        nas_b = await folder_factory(name="NAS B", is_external=True, external_path="/mnt/b")
+
+        await file_factory(folder_id=internal_folder.id, filename="mine.3mf", is_external=False)
+        ext_a = await file_factory(folder_id=nas_a.id, filename="a.3mf", is_external=True)
+        ext_b = await file_factory(folder_id=nas_b.id, filename="b.3mf", is_external=True)
+
+        response = await async_client.get("/api/v1/library/files?include_root=false&external_only=true")
+        assert response.status_code == 200
+        ids = {f["id"] for f in response.json()}
+        assert ids == {ext_a.id, ext_b.id}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_files_internal_and_external_mutually_exclusive(self, async_client: AsyncClient, db_session):
+        """Both flags together is a caller bug — fail loud (400) rather than
+        silently picking one, so a frontend regression is caught immediately."""
+        response = await async_client.get("/api/v1/library/files?internal_only=true&external_only=true")
+        assert response.status_code == 400
+        assert "mutually exclusive" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_get_file(self, async_client: AsyncClient, file_factory, db_session):
         """Verify single file can be retrieved."""
         lib_file = await file_factory(filename="test.3mf")
@@ -285,22 +331,24 @@ class TestLibraryFilesAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_rename_file_invalid_path_separator(self, async_client: AsyncClient, file_factory, db_session):
-        """Verify file rename fails with path separators."""
+        """Verify file rename fails with a forward slash (FAT32-illegal, #1540)."""
         lib_file = await file_factory(filename="test.3mf")
         data = {"filename": "path/to/file.3mf"}
         response = await async_client.put(f"/api/v1/library/files/{lib_file.id}", json=data)
         assert response.status_code == 400
-        assert "path separator" in response.json()["detail"].lower()
+        assert "invalid character" in response.json()["detail"].lower()
+        assert "/" in response.json()["detail"]
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_rename_file_invalid_backslash(self, async_client: AsyncClient, file_factory, db_session):
-        """Verify file rename fails with backslash."""
+        """Verify file rename fails with a backslash (FAT32-illegal, #1540)."""
         lib_file = await file_factory(filename="test.3mf")
         data = {"filename": "path\\to\\file.3mf"}
         response = await async_client.put(f"/api/v1/library/files/{lib_file.id}", json=data)
         assert response.status_code == 400
-        assert "path separator" in response.json()["detail"].lower()
+        assert "invalid character" in response.json()["detail"].lower()
+        assert "\\" in response.json()["detail"]
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1112,3 +1160,196 @@ class TestLibraryPermissions:
         )
         # Viewers don't have delete_own or delete_all permissions
         assert response.status_code == 403
+
+
+class TestPrintFileUploadValidation:
+    """#1401: pre-flight rejection of unprintable uploads at the library +
+    archive routes. Smoke tests the shared ``validate_print_file_upload``
+    helper through both surfaces a user can reach with a drag-drop."""
+
+    def _valid_3mf_bytes(self, name: str = "Metadata/plate_1.gcode") -> bytes:
+        """Build a minimal-but-real zip with the gcode-3mf magic in it so
+        the validator's ``startswith(b"PK\\x03\\x04")`` check passes."""
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(name, "; G-code\nG28\n")
+        return buf.getvalue()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_library_rejects_raw_gcode_upload(self, async_client: AsyncClient, db_session):
+        """``Foo.gcode`` direct uploads are blocked at the library route —
+        the dispatcher would otherwise append ``.3mf`` and ship raw gcode
+        to the printer as a fake 3MF."""
+        files = {"file": ("plate_1.gcode", b"; raw gcode\nG28\n", "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+        assert response.status_code == 400
+        # Error message must name the actual remedy, not just say "invalid".
+        assert "gcode.3mf" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_library_rejects_non_zip_3mf_upload(self, async_client: AsyncClient, db_session):
+        """A ``.3mf`` upload whose body isn't a zip is rejected — covers
+        raw gcode renamed to .3mf, corrupted downloads, etc."""
+        files = {"file": ("model.3mf", b"; raw gcode\nG28\n", "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+        assert response.status_code == 400
+        assert "ZIP container" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_library_rejects_non_zip_gcode_3mf_upload(self, async_client: AsyncClient, db_session):
+        """The compound-extension ``.gcode.3mf`` case is gated by the same
+        zip-magic check — splitext returns just ``.3mf``, but the suffix
+        match covers both."""
+        files = {"file": ("plate_1.gcode.3mf", b"; raw gcode\nG28\n", "application/octet-stream")}
+        response = await async_client.post("/api/v1/library/files", files=files)
+        assert response.status_code == 400
+        assert "ZIP container" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_library_accepts_valid_gcode_3mf_upload(self, async_client: AsyncClient, db_session):
+        """A real ``.gcode.3mf`` zip uploads successfully — the existing
+        happy path is not regressed by the new validation."""
+        files = {
+            "file": (
+                "plate_1.gcode.3mf",
+                self._valid_3mf_bytes(),
+                "application/zip",
+            )
+        }
+        response = await async_client.post("/api/v1/library/files", files=files)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["filename"] == "plate_1.gcode.3mf"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_library_upload_classifies_gcode_3mf_as_compound(self, async_client: AsyncClient, db_session):
+        """#1600 follow-up: upload path used to strip to the trailing
+        extension and store ``file_type='3mf'`` for sliced outputs, while
+        the external-folder scan stored ``file_type='gcode.3mf'``. Now
+        every ingest path goes through ``classify_file_type`` and
+        produces the canonical compound name."""
+        files = {
+            "file": (
+                "sliced.gcode.3mf",
+                self._valid_3mf_bytes(),
+                "application/zip",
+            )
+        }
+        response = await async_client.post("/api/v1/library/files", files=files)
+        assert response.status_code == 200
+        assert response.json()["file_type"] == "gcode.3mf"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_library_get_gcode_endpoint_accepts_compound_file_type(self, async_client: AsyncClient, db_session):
+        """#1600 follow-up: pre-fix, ``GET /files/{id}/gcode`` only handled
+        ``file_type`` of ``gcode`` or ``3mf`` and 400'd on a row whose
+        ``file_type`` was ``gcode.3mf`` — exactly the rows the external-
+        folder scan was creating. The gate now treats both as 3MF and
+        unzips the embedded gcode the same way."""
+        from backend.app.models.library import LibraryFile
+
+        # Persist a real `.gcode.3mf` zip under file_type='gcode.3mf' so
+        # the endpoint hits the new branch.
+        with tempfile.NamedTemporaryFile(suffix=".gcode.3mf", delete=False) as tmp:
+            tmp.write(self._valid_3mf_bytes(name="Metadata/plate_1.gcode"))
+            tmp_path = tmp.name
+
+        lib_file = LibraryFile(
+            filename="sliced.gcode.3mf",
+            file_path=tmp_path,
+            file_type="gcode.3mf",
+            file_size=Path(tmp_path).stat().st_size,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        response = await async_client.get(f"/api/v1/library/files/{lib_file.id}/gcode")
+        assert response.status_code == 200
+        assert b"G28" in response.content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_library_get_gcode_recovers_legacy_gcode_type_for_3mf(self, async_client: AsyncClient, db_session):
+        """#1709 regression guard. Before the fix, ``slice_and_persist``
+        wrote a `.gcode.3mf` ZIP container to disk but stored the row with
+        ``file_type='gcode'`` — the preview endpoint then streamed the
+        ZIP body as ``text/plain`` and the embedded G-code viewer saw
+        ``PK\\x03\\x04...`` instead of the toolpath. New sliced rows now
+        store ``file_type='gcode.3mf'``; rows already written under the
+        bug self-heal because the endpoint also detects the ZIP via the
+        ``.gcode.3mf`` filename suffix when the column is still legacy."""
+        from backend.app.models.library import LibraryFile
+
+        with tempfile.NamedTemporaryFile(suffix=".gcode.3mf", delete=False) as tmp:
+            tmp.write(self._valid_3mf_bytes(name="Metadata/plate_1.gcode"))
+            tmp_path = tmp.name
+
+        lib_file = LibraryFile(
+            filename="legacy-sliced.gcode.3mf",
+            file_path=tmp_path,
+            file_type="gcode",
+            file_size=Path(tmp_path).stat().st_size,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        response = await async_client.get(f"/api/v1/library/files/{lib_file.id}/gcode")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        assert b"G28" in response.content
+        # The whole point of #1709: must NOT be ZIP bytes shoved at the viewer.
+        assert not response.content.startswith(b"PK")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_library_still_accepts_non_print_extensions(self, async_client: AsyncClient, db_session):
+        """STL / image / other non-print uploads bypass the validator
+        entirely — Bambuddy is also a library, not just a print dispatcher."""
+        files = {"file": ("model.stl", b"solid test\nendsolid test", "application/octet-stream")}
+        response = await async_client.post(
+            "/api/v1/library/files", files=files, params={"generate_stl_thumbnails": "false"}
+        )
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_upload_rejects_non_zip(self, async_client: AsyncClient, db_session):
+        """``POST /archives/upload`` shares the same validator — covers the
+        manual archive-upload entry point too."""
+        files = {"file": ("model.3mf", b"; raw gcode\nG28\n", "application/octet-stream")}
+        response = await async_client.post("/api/v1/archives/upload", files=files)
+        assert response.status_code == 400
+        assert "ZIP container" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_bulk_upload_collects_per_file_errors(self, async_client: AsyncClient, db_session):
+        """The bulk-archive route reports validation failures per file and
+        continues processing the remaining items — one bad upload in a
+        10-file drag-drop must not abort the whole batch."""
+        good = self._valid_3mf_bytes()
+        bad = b"; raw gcode\nG28\n"
+        # httpx multipart with a list-of-tuples preserves order + same field name.
+        files = [
+            ("files", ("good.3mf", good, "application/zip")),
+            ("files", ("bad.3mf", bad, "application/octet-stream")),
+        ]
+        response = await async_client.post("/api/v1/archives/upload-bulk", files=files)
+        assert response.status_code == 200
+        body = response.json()
+        # The bulk route's archive_print may still reject the "good" file
+        # downstream (no printer match, etc.) — we don't care about that
+        # here; what matters is the bad file lands in `errors` with the
+        # validator's message and the route didn't 500.
+        assert body["failed"] >= 1
+        bad_errors = [e for e in body["errors"] if e["filename"] == "bad.3mf"]
+        assert bad_errors, body
+        assert "ZIP container" in bad_errors[0]["error"]

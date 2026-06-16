@@ -1128,7 +1128,11 @@ export function MaintenancePage() {
   // directly in onAddType callback
 
   const updateTypeMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<{ name: string; default_interval_hours: number; interval_type: 'hours' | 'days'; icon: string }> }) =>
+    // `wiki_url` is part of `MaintenanceTypeCreate` and reaches the API
+    // correctly at runtime (the api helper takes `Partial<MaintenanceTypeCreate>`),
+    // but the inline shape on this mutation used to omit it — making the
+    // type lie about what the payload carries (#1596 nit).
+    mutationFn: ({ id, data }: { id: number; data: Partial<{ name: string; default_interval_hours: number; interval_type: 'hours' | 'days'; icon: string; wiki_url: string | null }> }) =>
       api.updateMaintenanceType(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['maintenanceTypes'] });
@@ -1227,8 +1231,11 @@ export function MaintenancePage() {
     <div className="p-4 md:p-8">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">{t('maintenance.title')}</h1>
-        <p className="text-bambu-gray text-sm mt-1">
+        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+          <Wrench className="w-7 h-7 text-bambu-green" />
+          {t('maintenance.title')}
+        </h1>
+        <p className="text-bambu-gray mt-1">
           {activeTab === 'status' ? (
             <>
               {totalDue > 0 && <span className="text-red-400">{t('maintenance.dueCount', { count: totalDue })}</span>}

@@ -80,7 +80,16 @@ export function SpoolFormModal({
   const [builtinFilaments, setBuiltinFilaments] = useState<BuiltinFilament[]>([]);
 
   // Color catalog
-  const [colorCatalog, setColorCatalog] = useState<{ manufacturer: string; color_name: string; hex_color: string; material: string | null }[]>([]);
+  const [colorCatalog, setColorCatalog] = useState<{
+    manufacturer: string;
+    color_name: string;
+    hex_color: string;
+    material: string | null;
+    // #1340: gradient + effect carried from the catalog entry through to the
+    // color picker so they're applied alongside hex + name on selection.
+    extra_colors?: string | null;
+    effect_type?: string | null;
+  }[]>([]);
 
   // Color state
   const [recentColors, setRecentColors] = useState<ColorPreset[]>([]);
@@ -113,23 +122,51 @@ export function SpoolFormModal({
     setRecentColors(loadRecentColors());
   }, []);
 
-  // Fetch cloud presets and catalog when modal opens
+  // Fetch cloud presets and catalog when modal opens. Fetches Bambu Cloud
+  // and Orca Cloud in parallel; merges Orca filaments into ``cloudPresets``
+  // since ``OrcaProfileMeta`` is structurally identical to ``SlicerSetting``
+  // (same fields, same semantics). ``cloudAuthenticated`` flips on if either
+  // cloud is connected — the UI only uses it to gate "no cloud" hints.
   useEffect(() => {
+    // ``cancelled`` gates every state setter so a fetch that resolves AFTER
+    // the modal closes / unmounts can't fire setState on a torn-down
+    // component. Without this guard the parallel Promise.allSettled chain
+    // can still hit ``setLoadingCloudPresets(false)`` in its ``finally``
+    // after vitest has dismantled the JSDOM window — surfaced as an
+    // "Unhandled Rejection: window is not defined" in CI runs.
+    let cancelled = false;
     if (isOpen) {
       const fetchData = async () => {
         setLoadingCloudPresets(true);
         try {
-          const status = await api.getCloudStatus();
-          setCloudAuthenticated(status.is_authenticated);
-          if (status.is_authenticated) {
-            const presets = await api.getFilamentPresets();
-            setCloudPresets(presets);
-          }
+          const [bambuResult, orcaResult] = await Promise.allSettled([
+            (async () => {
+              const status = await api.getCloudStatus();
+              if (!status.is_authenticated) return { connected: false, presets: [] as SlicerSetting[] };
+              const presets = await api.getFilamentPresets();
+              return { connected: true, presets };
+            })(),
+            (async () => {
+              const status = await api.orcaCloudStatus();
+              if (!status.connected) return { connected: false, presets: [] as SlicerSetting[] };
+              const list = await api.orcaCloudListProfiles();
+              // OrcaProfileMeta is structurally identical to SlicerSetting.
+              return { connected: true, presets: list.filament as unknown as SlicerSetting[] };
+            })(),
+          ]);
+          if (cancelled) return;
+          const bambuConnected = bambuResult.status === 'fulfilled' && bambuResult.value.connected;
+          const orcaConnected = orcaResult.status === 'fulfilled' && orcaResult.value.connected;
+          const bambuPresets = bambuResult.status === 'fulfilled' ? bambuResult.value.presets : [];
+          const orcaPresets = orcaResult.status === 'fulfilled' ? orcaResult.value.presets : [];
+          setCloudAuthenticated(bambuConnected || orcaConnected);
+          setCloudPresets([...bambuPresets, ...orcaPresets]);
         } catch (e) {
+          if (cancelled) return;
           console.error('Failed to fetch cloud presets:', e);
           setCloudAuthenticated(false);
         } finally {
-          setLoadingCloudPresets(false);
+          if (!cancelled) setLoadingCloudPresets(false);
         }
       };
       fetchData();
@@ -186,6 +223,9 @@ export function SpoolFormModal({
     // "test environment was torn down" errors in vitest. spoolmanMode only
     // gates a single fetch (getSpoolCatalog) which is cheap enough to skip
     // when the modal opens in Spoolman mode.
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, printersWithCalibrations.length]);
 
@@ -303,7 +343,11 @@ export function SpoolFormModal({
           material: spool.material || '',
           subtype: spool.subtype || '',
           brand: spool.brand || '',
-          color_name: spool.color_name || '',
+          // #1319: leave color_name blank when the backend reports it was
+          // synthesised from subtype — otherwise the form would round-trip
+          // the synth value to Spoolman on save as if the user had set it,
+          // which is what produced the "color reverts to subtype" symptom.
+          color_name: spool.color_name_is_synthesized ? '' : (spool.color_name || ''),
           rgba: validRgba,
           extra_colors: spool.extra_colors || '',
           effect_type: spool.effect_type || '',
@@ -519,13 +563,27 @@ export function SpoolFormModal({
     },
   });
 
-  // Fetch assignment for this spool (to show Unassign button)
+  // Fetch assignment for this spool (to show Unassign button). In Spoolman mode
+  // the slot assignment lives in the spoolman_slot_assignments table keyed by
+  // spoolman_spool_id, not in the legacy spool_assignments table — #1336 was the
+  // resulting "Unassign button is always disabled" report.
   const { data: assignments } = useQuery({
     queryKey: ['spool-assignments'],
     queryFn: () => api.getAssignments(),
-    enabled: isOpen && isEditing,
+    enabled: isOpen && isEditing && !spoolmanMode,
   });
-  const spoolAssignment = spool ? assignments?.find(a => a.spool_id === spool.id) : undefined;
+  const { data: spoolmanSlotAssignments } = useQuery({
+    queryKey: ['spoolman-slot-assignments-all'],
+    queryFn: () => api.getSpoolmanSlotAssignments(),
+    enabled: isOpen && isEditing && spoolmanMode,
+  });
+  const spoolAssignment = (() => {
+    if (!spool) return undefined;
+    if (spoolmanMode) {
+      return spoolmanSlotAssignments?.find(a => a.spoolman_spool_id === spool.id);
+    }
+    return assignments?.find(a => a.spool_id === spool.id);
+  })();
 
   // Read inventory + settings caches (already populated by InventoryPage) to
   // drive the category autocomplete and low-stock-threshold placeholder. #729
@@ -550,12 +608,22 @@ export function SpoolFormModal({
   const globalLowStockThreshold = settingsForForm?.low_stock_threshold ?? 20;
 
   const unassignMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!spoolAssignment) throw new Error('No assignment');
-      return api.unassignSpool(spoolAssignment.printer_id, spoolAssignment.ams_id, spoolAssignment.tray_id);
+      if (spoolmanMode) {
+        if (!spool) throw new Error('No spool');
+        await api.unassignSpoolmanSlot(spool.id);
+        return;
+      }
+      await api.unassignSpool(spoolAssignment.printer_id, spoolAssignment.ams_id, spoolAssignment.tray_id);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
+      if (spoolmanMode) {
+        await queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments-all'] });
+        await queryClient.invalidateQueries({ queryKey: ['spoolman-slot-assignments'] });
+      } else {
+        await queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
+      }
       showToast(t('inventory.unassignSuccess', 'Spool unassigned'), 'success');
       onClose();
     },
@@ -708,8 +776,11 @@ export function SpoolFormModal({
       <div className="relative w-full max-w-xl mx-4 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary flex-shrink-0">
-          <h2 className="text-lg font-semibold text-white">
+          <h2 className="text-lg font-semibold text-white flex items-baseline gap-2">
             {isEditing ? t('inventory.editSpool') : isCopying ? t('inventory.copySpool') : t('inventory.addSpool')}
+            {isEditing && spool && (
+              <span className="text-sm font-mono text-bambu-gray">#{spool.id}</span>
+            )}
           </h2>
           <button
             onClick={onClose}

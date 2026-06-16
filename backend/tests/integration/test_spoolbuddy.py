@@ -1610,6 +1610,39 @@ class TestUpdateSpoolWeightSpoolman:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_stale_local_row_does_not_shadow_spoolman(
+        self, async_client: AsyncClient, db_session, spool_factory, spoolman_settings
+    ):
+        """Regression for #1530: when Spoolman mode is on, a stale local Spool
+        sharing the same numeric id must NOT absorb the update — Spoolman is
+        the authoritative target."""
+        local_spool = await spool_factory(label_weight=1000, core_weight=250, weight_used=0)
+        # Spoolman spool with the SAME numeric id as the local stale row.
+        sm_spool = _spoolman_spool_fixture(local_spool.id, spool_weight=250.0, filament_weight=1000.0)
+        mock_client = _mock_spoolman_client()
+        mock_client.get_spool = AsyncMock(return_value=sm_spool)
+        mock_client.update_spool = AsyncMock(return_value=sm_spool)
+
+        with (
+            patch("backend.app.services.spoolman.get_spoolman_client", AsyncMock(return_value=mock_client)),
+            patch("backend.app.services.spoolman.init_spoolman_client", AsyncMock(return_value=mock_client)),
+        ):
+            resp = await async_client.post(
+                f"{API}/scale/update-spool-weight",
+                json={"spool_id": local_spool.id, "weight_grams": 750},
+            )
+
+        assert resp.status_code == 200
+        # Spoolman got the update.
+        mock_client.update_spool.assert_called_once_with(spool_id=local_spool.id, remaining_weight=pytest.approx(500.0))
+        # Local row is untouched — the bug was that the local update silently
+        # absorbed the request while Spoolman stayed stale.
+        await db_session.refresh(local_spool)
+        assert local_spool.weight_used == 0
+        assert local_spool.last_scale_weight is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_spool_level_spool_weight_takes_priority(self, async_client: AsyncClient, spoolman_settings):
         """spool.spool_weight overrides filament.spool_weight for tare calculation."""
         sm_spool = _spoolman_spool_fixture(42, spool_weight=196.0, filament_weight=1000.0, spool_level_spool_weight=300)

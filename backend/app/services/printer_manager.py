@@ -98,12 +98,33 @@ def has_stg_cur_idle_bug(model: str | None) -> bool:
     return model_upper in STG_CUR_IDLE_BUG_MODELS
 
 
+def is_bed_slinger(model: str | None) -> bool:
+    """Whether the printer's Z axis controls the *toolhead*, not the bed.
+
+    Bambu's A1 family (A1, A1 Mini; internal codes N1 / N2S) are open-frame
+    bed-slingers: the bed moves on Y, the toolhead moves on X+Z. On every
+    other current model (X1, P1, H2, H2C, H2D, H2S, P2S, ...) the bed moves
+    on Z and the toolhead is fixed in Z.
+
+    G-code direction is opposite on these two families. `G1 Z-10` reduces
+    the nozzle-bed gap on both, but on bed-on-Z machines it does so by
+    moving the BED up, while on bed-slingers it does so by moving the
+    TOOLHEAD down — which is what crashed the nozzle in #1334.
+    """
+    if not model:
+        return False
+    return model.strip().upper() in A1_MODELS
+
+
 # Minimum firmware versions for AMS drying support (confirmed via capture testing)
 # Keys are exact model names (upper-cased). Do NOT use substring matching — it would
 # incorrectly gate X1E (matched by "X1") and H2D Pro (matched by "H2D").
 _DRYING_MIN_FIRMWARE: dict[str, str] = {
     "H2D": "01.02.30.00",
     "H2S": "01.02.00.00",
+    "H2C": "01.02.00.00",
+    "O1C": "01.02.00.00",  # H2C SSDP model code
+    "O1C2": "01.02.00.00",  # H2C dual-nozzle SSDP model code
     "X1": "01.09.00.00",
     "X1C": "01.09.00.00",
     "P1P": "01.08.00.00",
@@ -112,7 +133,7 @@ _DRYING_MIN_FIRMWARE: dict[str, str] = {
     "N7": "01.02.00.00",  # P2S internal model code
 }
 # Models that definitely don't support AMS drying (no AMS 2 Pro / AMS-HT compatibility)
-_DRYING_UNSUPPORTED_MODELS = frozenset({"A1", "A1MINI", "A1-MINI", "A1 MINI", "H2C", "O1C", "O1C2", "O1S", "N1", "N2S"})
+_DRYING_UNSUPPORTED_MODELS = frozenset({"A1", "A1MINI", "A1-MINI", "A1 MINI", "O1S", "N1", "N2S"})
 
 
 def supports_drying(model: str | None, firmware: str | None) -> bool:
@@ -151,10 +172,13 @@ class PrinterManager:
         self._printer_info: dict[int, PrinterInfo] = {}  # Cache printer name/serial for callbacks
         self._on_print_start: Callable[[int, dict], None] | None = None
         self._on_print_complete: Callable[[int, dict], None] | None = None
+        self._on_print_running_observed: Callable[[int, dict], None] | None = None
+        self._on_finish_photo_moment: Callable[[int, dict], None] | None = None
         self._on_status_change: Callable[[int, PrinterState], None] | None = None
         self._on_ams_change: Callable[[int, list], None] | None = None
         self._on_layer_change: Callable[[int, int], None] | None = None
         self._on_bed_temp_update: Callable[[int, float], None] | None = None
+        self._on_drying_complete: Callable[[int, int], None] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         # Track who started the current print (Issue #206)
         self._current_print_user: dict[int, dict] = {}  # {printer_id: {"user_id": int, "username": str}}
@@ -251,14 +275,16 @@ class PrinterManager:
             )
 
     async def _persist_awaiting_plate_clear(self, printer_id: int, awaiting: bool):
-        from backend.app.core.database import async_session
+        from backend.app.core.database import run_with_retry
+
+        async def _do(db):
+            printer = await db.get(Printer, printer_id)
+            if printer is not None:
+                printer.awaiting_plate_clear = awaiting
+                await db.commit()
 
         try:
-            async with async_session() as db:
-                printer = await db.get(Printer, printer_id)
-                if printer is not None:
-                    printer.awaiting_plate_clear = awaiting
-                    await db.commit()
+            await run_with_retry(_do, label=f"persist awaiting_plate_clear printer={printer_id}")
         except Exception as e:
             logger.warning("Failed to persist awaiting_plate_clear for printer %d: %s", printer_id, e)
 
@@ -288,6 +314,28 @@ class PrinterManager:
         """Set callback for print completion events."""
         self._on_print_complete = callback
 
+    def set_print_running_observed_callback(self, callback: Callable[[int, dict], None]):
+        """Set callback for restart-recovery RUNNING-state observations (#1485
+        follow-up). Fires the first time we see ``state == RUNNING`` for a
+        printer that started its print before Bambuddy came up — the #1304
+        guard suppresses ``on_print_start`` for these, so anything that
+        normally hangs off it (e.g. timelapse baseline capture) needs this
+        hook to recover."""
+        self._on_print_running_observed = callback
+
+    def set_finish_photo_moment_callback(self, callback: Callable[[int, dict], None]):
+        """Set callback for the #1721 finish-photo moment.
+
+        Fires on the stage-22 (\"Filament unloading\") edge at end-of-print
+        — the framing window where the toolhead is parked but the bed
+        hasn't dropped yet. Falls back to firing at the FINISH-state
+        transition for prints that skip stage 22 (cancel, external-spool-
+        only, HMS halt, firmware variants). Payload includes the
+        ``trigger`` key (``\"stage_22\"`` or ``\"finish_state\"``) and
+        ``timelapse_was_active`` so the photo path can choose between
+        live-camera capture and timelapse last-frame extraction."""
+        self._on_finish_photo_moment = callback
+
     def set_status_change_callback(self, callback: Callable[[int, PrinterState], None]):
         """Set callback for status change events."""
         self._on_status_change = callback
@@ -303,6 +351,14 @@ class PrinterManager:
     def set_bed_temp_update_callback(self, callback: Callable[[int, float], None]):
         """Set callback for bed temperature updates. Receives (printer_id, bed_temp)."""
         self._on_bed_temp_update = callback
+
+    def set_drying_complete_callback(self, callback: Callable[[int, int], None]):
+        """Set callback for AMS drying completion events (#1349).
+
+        Receives ``(printer_id, ams_id)``. Fires once per falling edge of
+        ``dry_time`` (>0 → 0) for each AMS unit.
+        """
+        self._on_drying_complete = callback
 
     def _schedule_async(self, coro):
         """Schedule an async coroutine from a sync context.
@@ -343,6 +399,14 @@ class PrinterManager:
             if self._on_print_complete:
                 self._schedule_async(self._on_print_complete(printer_id, data))
 
+        def on_print_running_observed(data: dict):
+            if self._on_print_running_observed:
+                self._schedule_async(self._on_print_running_observed(printer_id, data))
+
+        def on_finish_photo_moment(data: dict):
+            if self._on_finish_photo_moment:
+                self._schedule_async(self._on_finish_photo_moment(printer_id, data))
+
         def on_ams_change(ams_data: list):
             if self._on_ams_change:
                 self._schedule_async(self._on_ams_change(printer_id, ams_data))
@@ -355,6 +419,10 @@ class PrinterManager:
             if self._on_bed_temp_update:
                 self._schedule_async(self._on_bed_temp_update(printer_id, bed_temp))
 
+        def on_drying_complete(ams_id: int):
+            if self._on_drying_complete:
+                self._schedule_async(self._on_drying_complete(printer_id, ams_id))
+
         client = BambuMQTTClient(
             ip_address=printer.ip_address,
             serial_number=printer.serial_number,
@@ -366,6 +434,9 @@ class PrinterManager:
             on_ams_change=on_ams_change,
             on_layer_change=on_layer_change,
             on_bed_temp_update=on_bed_temp_update,
+            on_drying_complete=on_drying_complete,
+            on_print_running_observed=on_print_running_observed,
+            on_finish_photo_moment=on_finish_photo_moment,
         )
 
         client.connect()
@@ -456,6 +527,7 @@ class PrinterManager:
         layer_inspect: bool = False,
         timelapse: bool = False,
         use_ams: bool = True,
+        nozzle_offset_cali: bool = False,
     ) -> bool:
         """Start a print on a connected printer."""
         caller = traceback.extract_stack(limit=3)[0]
@@ -478,6 +550,7 @@ class PrinterManager:
                 vibration_cali=vibration_cali,
                 layer_inspect=layer_inspect,
                 use_ams=use_ams,
+                nozzle_offset_cali=nozzle_offset_cali,
             )
         return False
 
@@ -582,13 +655,31 @@ class PrinterManager:
             return self._clients[printer_id].request_status_update()
         return False
 
+    # Probe budget for test_connection (#1445). Was a fixed 2s sleep, which was
+    # too short for P1S firmware whose broker / TLS handshake routinely takes
+    # 3–5s to surface a CONNACK on a cold MQTT session. We now poll up to
+    # PROBE_TIMEOUT_SECONDS and early-return the moment we see connected=True,
+    # so happy-path connections still finish in ~1–2s and slow brokers get the
+    # headroom they need instead of getting falsely rejected.
+    PROBE_TIMEOUT_SECONDS = 8.0
+    PROBE_POLL_INTERVAL_SECONDS = 0.2
+
     async def test_connection(
         self,
         ip_address: str,
         serial_number: str,
         access_code: str,
     ) -> dict:
-        """Test connection to a printer without persisting."""
+        """Test connection to a printer without persisting.
+
+        Polls for up to PROBE_TIMEOUT_SECONDS and tears the probe client down
+        off-loop. The teardown matters: `client.disconnect()` ends in paho's
+        `loop_stop()` which `join()`s the network thread — if the thread is
+        still mid-TLS-handshake to a slow printer, that join blocks the
+        asyncio event loop and every other HTTP request queues behind it. The
+        original synchronous teardown produced the #1445 "Docker container
+        hangs" symptom on P1S when called from POST /printers/.
+        """
         client = BambuMQTTClient(
             ip_address=ip_address,
             serial_number=serial_number,
@@ -597,7 +688,9 @@ class PrinterManager:
 
         try:
             client.connect()
-            await asyncio.sleep(2)
+            deadline = asyncio.get_running_loop().time() + self.PROBE_TIMEOUT_SECONDS
+            while not client.state.connected and asyncio.get_running_loop().time() < deadline:
+                await asyncio.sleep(self.PROBE_POLL_INTERVAL_SECONDS)
 
             result = {
                 "success": client.state.connected,
@@ -605,7 +698,9 @@ class PrinterManager:
                 "model": client.state.raw_data.get("device_model"),
             }
         finally:
-            client.disconnect()
+            # Off-loop teardown — see docstring. paho's loop_stop() joins the
+            # network thread which may still be in a slow TLS handshake.
+            await asyncio.to_thread(client.disconnect)
 
         return result
 
@@ -750,6 +845,19 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
                 if k_value is None and cali_idx is not None and cali_idx in kprofile_map:
                     k_value = kprofile_map[cali_idx]
 
+                # P1S / A1 Mini physically-empty-slot signal (#1322 follow-up by
+                # @RosdasHH): for a truly empty slot the firmware sends only
+                # {"id": N} — no state, no tray_type, no anything else. Treat
+                # that as the firmware's "no spool" indicator (state=9) so the
+                # assign-spool path in inventory.py can short-circuit a MQTT
+                # publish the firmware would silently drop anyway. The
+                # post-"Reset Slot" A1 Mini BMCU case sends a populated payload
+                # (state=3, tray_type="") — different shape, doesn't match this
+                # guard, still attempts the MQTT push per the #1322 fix.
+                state_val = tray.get("state")
+                if state_val is None and len(tray) == 1 and "id" in tray:
+                    state_val = 9
+
                 trays.append(
                     {
                         "id": int(tray.get("id", 0)),
@@ -767,7 +875,7 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
                         "nozzle_temp_max": tray.get("nozzle_temp_max"),
                         "drying_temp": tray.get("drying_temp"),
                         "drying_time": tray.get("drying_time"),
-                        "state": tray.get("state"),
+                        "state": state_val,
                     }
                 )
             # Prefer humidity_raw (actual percentage) over humidity (index 1-5)

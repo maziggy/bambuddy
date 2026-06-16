@@ -210,4 +210,47 @@ describe('EditArchiveModal', () => {
       expect(nameInput).toHaveValue('New Name');
     });
   });
+
+  describe('failure_reason vocabulary (#1687 follow-up)', () => {
+    // The Stats page's Failure Analysis widget groups by the raw column value.
+    // Before this fix this modal saved the translated label, so a language
+    // switch fragmented historical buckets and any round-trip through the
+    // new PATCH /print-log endpoint (which validates against camelCase keys)
+    // would reject the value. The dropdown now saves the key.
+
+    const failedArchive = { ...mockArchive, status: 'failed', failure_reason: 'filamentRunout' };
+    const legacyArchive = { ...mockArchive, status: 'failed', failure_reason: 'Filament runout' };
+
+    it('preselects the option when the stored value is already a camelCase key', () => {
+      render(<EditArchiveModal archive={failedArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+      const select = screen.getByLabelText(/failure reason/i) as HTMLSelectElement;
+      expect(select.value).toBe('filamentRunout');
+    });
+
+    it('reverse-looks-up a legacy translated value back to its key', () => {
+      render(<EditArchiveModal archive={legacyArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+      const select = screen.getByLabelText(/failure reason/i) as HTMLSelectElement;
+      expect(select.value).toBe('filamentRunout');
+    });
+
+    it('sends the camelCase key on save, not the translated label', async () => {
+      const user = userEvent.setup();
+      let patched: { failure_reason?: string } | undefined;
+      server.use(
+        http.patch('/api/v1/archives/:id', async ({ request }) => {
+          patched = (await request.json()) as { failure_reason?: string };
+          return HttpResponse.json({ ...failedArchive, ...patched });
+        }),
+      );
+
+      render(<EditArchiveModal archive={failedArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+      const select = screen.getByLabelText(/failure reason/i);
+      await user.selectOptions(select, 'cloggedNozzle');
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => {
+        expect(patched?.failure_reason).toBe('cloggedNozzle');
+      });
+    });
+  });
 });

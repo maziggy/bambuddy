@@ -29,11 +29,20 @@
                     value: 0,
                 }, typeof optsOrCmd === 'object' ? optsOrCmd : {});
 
-                // Build the DOM
+                // Build the DOM. opts.id is HTML-attribute-escaped before
+                // interpolation so a future caller passing a tainted id can't
+                // break out of the attribute (CodeQL: js/html-constructed-from-input).
+                function escapeAttr(s) {
+                    return String(s).replace(/&/g, '&amp;')
+                                    .replace(/"/g, '&quot;')
+                                    .replace(/'/g, '&#39;')
+                                    .replace(/</g, '&lt;')
+                                    .replace(/>/g, '&gt;');
+                }
                 var isVertical = opts.orientation === 'vertical';
                 var trackHtml =
                     '<div class="slider' + (isVertical ? ' slider-vertical' : '') + '"' +
-                    (opts.id ? ' id="' + opts.id + '"' : '') + '>' +
+                    (opts.id ? ' id="' + escapeAttr(opts.id) + '"' : '') + '>' +
                     '<div class="slider-track"><div class="slider-selection"></div></div>' +
                     '<div class="slider-handle round">0</div>' +
                     '</div>';

@@ -125,6 +125,47 @@ describe('Layout', () => {
         expect(buttons.length).toBeGreaterThan(0);
       });
     });
+
+    it('cycles through dark → light → system → dark', async () => {
+      localStorage.setItem('theme-mode', 'dark');
+      render(<Layout />);
+
+      await waitFor(() => {
+        // In dark mode, title should say "Switch to light mode"
+        const btn = document.querySelector('button[title="Switch to light mode"]');
+        expect(btn).toBeInTheDocument();
+      });
+
+      // Click to go from dark → light
+      const lightBtn = document.querySelector('button[title="Switch to light mode"]')!;
+      lightBtn.click();
+
+      await waitFor(() => {
+        // In light mode, title should say "Switch to system mode"
+        const btn = document.querySelector('button[title="Switch to system mode"]');
+        expect(btn).toBeInTheDocument();
+      });
+
+      // Click to go from light → system
+      const systemBtn = document.querySelector('button[title="Switch to system mode"]')!;
+      systemBtn.click();
+
+      await waitFor(() => {
+        // In system mode, title should say "Switch to dark mode"
+        const btn = document.querySelector('button[title="Switch to dark mode"]');
+        expect(btn).toBeInTheDocument();
+      });
+
+      // Click to go from system → dark
+      const darkBtn = document.querySelector('button[title="Switch to dark mode"]')!;
+      darkBtn.click();
+
+      await waitFor(() => {
+        // Back to dark mode
+        const btn = document.querySelector('button[title="Switch to light mode"]');
+        expect(btn).toBeInTheDocument();
+      });
+    });
   });
 
   describe('plate detection alert modal', () => {
@@ -377,6 +418,93 @@ describe('Layout', () => {
       await waitFor(() => {
         expect(findMakerWorldNavLink()).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('Sidebar gate accepts granular read tiers (#1755)', () => {
+    // Default Operators group is seeded with `*:read_own` only — never the
+    // legacy `*:read`. Previously the sidebar gate checked the legacy alone,
+    // so Archives / Queue / Files were hidden from every non-admin even
+    // though the underlying API endpoints accepted their requests. These
+    // tests pin that the gate accepts ANY of the three tiers (legacy /
+    // _own / _all) for the three resources that ship granular variants.
+    const enableAuthWithUser = (permissions: string[]) => {
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false }),
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 1,
+            username: 'tester',
+            role: 'user',
+            is_active: true,
+            is_admin: false,
+            groups: [{ id: 2, name: 'Operators' }],
+            permissions,
+            created_at: '2026-01-01T00:00:00Z',
+          }),
+        ),
+      );
+      window.localStorage.setItem('auth_token', 'test-token');
+    };
+
+    const sidebarLink = (href: string) =>
+      document.querySelector(`aside a[href="${href}"]`);
+
+    it('shows Files in the sidebar when the user only has library:read_own', async () => {
+      enableAuthWithUser(['library:read_own']);
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(document.querySelector('aside')).toBeInTheDocument();
+        expect(sidebarLink('/files')).toBeInTheDocument();
+      });
+    });
+
+    it('shows Files in the sidebar when the user only has library:read_all', async () => {
+      enableAuthWithUser(['library:read_all']);
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(sidebarLink('/files')).toBeInTheDocument();
+      });
+    });
+
+    it('shows Archives in the sidebar when the user only has archives:read_own', async () => {
+      enableAuthWithUser(['archives:read_own']);
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(sidebarLink('/archives')).toBeInTheDocument();
+      });
+    });
+
+    it('shows Queue in the sidebar when the user only has queue:read_own', async () => {
+      enableAuthWithUser(['queue:read_own']);
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(sidebarLink('/queue')).toBeInTheDocument();
+      });
+    });
+
+    it('still hides Files when the user has none of the three read tiers', async () => {
+      enableAuthWithUser(['printers:read']);
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        expect(document.querySelector('aside')).toBeInTheDocument();
+      });
+
+      expect(sidebarLink('/files')).toBeNull();
+      expect(sidebarLink('/archives')).toBeNull();
+      expect(sidebarLink('/queue')).toBeNull();
     });
   });
 });

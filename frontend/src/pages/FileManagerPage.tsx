@@ -220,6 +220,18 @@ function ExternalFolderModal({ onClose, onSave, isLoading, t }: ExternalFolderMo
   );
 }
 
+// FAT32/exFAT-illegal chars rejected by Bambu Studio (#1540). Mirrors the
+// backend validator in backend/app/utils/filename.py — keep in sync.
+const INVALID_FILENAME_CHARS = '<>:"/\\|?*';
+
+function findInvalidFilenameChar(name: string): string | null {
+  for (const ch of name) {
+    if (INVALID_FILENAME_CHARS.includes(ch)) return ch;
+    if (ch.charCodeAt(0) < 0x20) return ch;
+  }
+  return null;
+}
+
 // Rename Modal
 interface RenameModalProps {
   type: 'file' | 'folder';
@@ -237,8 +249,14 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: Renam
   const baseName = type === 'file' && fileExtension ? currentName.slice(0, -fileExtension.length) : currentName;
   const [name, setName] = useState(baseName);
 
+  const invalidChar = type === 'file' ? findInvalidFilenameChar(name) : null;
+  const filenameError = invalidChar
+    ? t('fileManager.invalidFilenameChar', { char: invalidChar })
+    : null;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (filenameError) return;
     const fullName = type === 'file' ? name.trim() + fileExtension : name.trim();
     if (name.trim() && fullName !== currentName) {
       onSave(fullName);
@@ -256,7 +274,7 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: Renam
             <label className="block text-sm font-medium text-white mb-1">
               {t('common.name')}
             </label>
-            <div className="flex items-center bg-bambu-dark border border-bambu-dark-tertiary rounded focus-within:border-bambu-green">
+            <div className={`flex items-center bg-bambu-dark border rounded focus-within:border-bambu-green ${filenameError ? 'border-red-500' : 'border-bambu-dark-tertiary'}`}>
               <input
                 type="text"
                 value={name}
@@ -269,12 +287,15 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: Renam
                 <span className="pr-3 text-bambu-gray text-sm select-none whitespace-nowrap">{fileExtension}</span>
               )}
             </div>
+            {filenameError && (
+              <p className="mt-1 text-xs text-red-400">{filenameError}</p>
+            )}
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={onClose}>
               {t('common.cancel')}
             </Button>
-            <Button type="submit" disabled={!name.trim() || name.trim() === baseName || isLoading}>
+            <Button type="submit" disabled={!name.trim() || name.trim() === baseName || !!filenameError || isLoading}>
               {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('common.rename')}
             </Button>
           </div>
@@ -742,7 +763,9 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
         {/* File type badge */}
         <div className={`absolute top-2 right-2 text-xs px-1.5 py-0.5 rounded font-medium ${
           file.file_type === '3mf' ? 'bg-bambu-green/90 text-white'
-          : file.file_type === 'gcode' ? 'bg-blue-500/90 text-white'
+          // Sliced output — share the gcode blue so users see at a glance
+          // that the file is already sliced and ready to print (#1543).
+          : file.file_type === 'gcode' || file.file_type === 'gcode.3mf' ? 'bg-blue-500/90 text-white'
           : file.file_type === 'stl' ? 'bg-purple-500/90 text-white'
           : 'bg-bambu-gray/90 text-white'
         }`}>
@@ -834,7 +857,7 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
                   {t('slice.action')}
                 </button>
               )}
-              {onPreview3d && (file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl') && (
+              {onPreview3d && (file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl' || file.file_type === 'gcode.3mf') && (
                 <button
                   className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
                     hasPermission('library:read') ? 'text-white hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
@@ -926,6 +949,11 @@ export function FileManagerPage() {
 
   // State
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(initialFolderId);
+  // Which top-level pseudo-view the sidebar shows when no specific folder is
+  // selected: "internal" = files in Bambuddy's managed storage, "external" =
+  // combined view across every linked external folder (#1621). Per-folder
+  // selection bypasses this (selectedFolderId !== null disables the filter).
+  const [topLevelView, setTopLevelView] = useState<'internal' | 'external'>('internal');
   const [selectedFiles, setSelectedFiles] = useState<number[]>([]);
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [showExternalFolderModal, setShowExternalFolderModal] = useState(false);
@@ -1048,8 +1076,19 @@ export function FileManagerPage() {
   });
 
   const { data: files, isLoading: filesLoading } = useQuery({
-    queryKey: ['library-files', selectedFolderId],
-    queryFn: () => api.getLibraryFiles(selectedFolderId, selectedFolderId === null),
+    queryKey: ['library-files', selectedFolderId, topLevelView],
+    // When a specific folder is selected we list its contents directly; when
+    // no folder is selected the topLevelView pseudo-node decides whether the
+    // server scopes the result to internal-managed-storage files or to the
+    // union of every external folder (#1621). include_root stays false so the
+    // listing still descends into subfolders (regression guard from #1499).
+    queryFn: () =>
+      api.getLibraryFiles(
+        selectedFolderId,
+        false,
+        undefined,
+        selectedFolderId === null ? topLevelView : undefined,
+      ),
   });
 
   const { data: stats } = useQuery({
@@ -1410,12 +1449,10 @@ export function FileManagerPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <div className="p-2.5 bg-bambu-green/10 rounded-xl">
-              <FolderOpen className="w-6 h-6 text-bambu-green" />
-            </div>
+            <FolderOpen className="w-7 h-7 text-bambu-green" />
             {t('fileManager.title')}
           </h1>
-          <p className="text-sm text-bambu-gray mt-2 ml-14">
+          <p className="text-bambu-gray mt-1">
             {t('fileManager.subtitle')}
           </p>
         </div>
@@ -1553,11 +1590,22 @@ export function FileManagerPage() {
         {/* Mobile folder selector */}
         <div className="lg:hidden">
           <select
-            value={selectedFolderId ?? ''}
-            onChange={(e) => setSelectedFolderId(e.target.value ? parseInt(e.target.value, 10) : null)}
+            value={selectedFolderId !== null ? String(selectedFolderId) : `__top:${topLevelView}`}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v.startsWith('__top:')) {
+                setSelectedFolderId(null);
+                setTopLevelView(v.slice('__top:'.length) as 'internal' | 'external');
+              } else {
+                setSelectedFolderId(parseInt(v, 10));
+              }
+            }}
             className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-bambu-green"
           >
-            <option value="">📁 {t('fileManager.allFiles')}</option>
+            <option value="__top:internal">📁 {t('fileManager.allFiles')}</option>
+            {folders?.some((f) => f.is_external) && (
+              <option value="__top:external">🔗 {t('fileManager.allExternal')}</option>
+            )}
             {folders && (() => {
               // Flatten folder tree for mobile selector
               const flattenFolders = (items: LibraryFolderTree[], depth = 0): { id: number; name: string; fileCount: number; depth: number }[] => {
@@ -1643,18 +1691,43 @@ export function FileManagerPage() {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-2">
-            {/* All Files (root) */}
+            {/* All Files = the user's own uploaded / managed-storage files
+                only. External folders are surfaced separately below to keep
+                a linked NAS from drowning the user's own uploads (#1621). */}
             <div
               className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${
-                selectedFolderId === null
+                selectedFolderId === null && topLevelView === 'internal'
                   ? 'bg-bambu-green/20 text-bambu-green'
                   : 'hover:bg-bambu-dark text-white'
               }`}
-              onClick={() => setSelectedFolderId(null)}
+              onClick={() => {
+                setSelectedFolderId(null);
+                setTopLevelView('internal');
+              }}
             >
               <FileBox className="w-4 h-4" />
               <span className="text-sm">{t('fileManager.allFiles')}</span>
             </div>
+
+            {/* External (combined) — only shown when at least one external
+                folder is linked. Single folder users don't need a combined
+                view; clicking the individual folder is just as fast. */}
+            {folders?.some((f) => f.is_external) && (
+              <div
+                className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${
+                  selectedFolderId === null && topLevelView === 'external'
+                    ? 'bg-bambu-green/20 text-bambu-green'
+                    : 'hover:bg-bambu-dark text-white'
+                }`}
+                onClick={() => {
+                  setSelectedFolderId(null);
+                  setTopLevelView('external');
+                }}
+              >
+                <FolderSymlink className="w-4 h-4 text-purple-400" />
+                <span className="text-sm">{t('fileManager.allExternal')}</span>
+              </div>
+            )}
 
             {/* Folder tree — re-key on the collapse toggle so flipping it
                 remounts every FolderTreeItem, which re-reads defaultExpanded
@@ -1928,12 +2001,18 @@ export function FileManagerPage() {
                 <FileBox className="w-12 h-12 text-bambu-gray/50" />
               </div>
               <h3 className="text-lg font-medium text-white mb-2">
-                {selectedFolderId !== null ? t('fileManager.folderIsEmpty') : t('fileManager.noFilesYet')}
+                {selectedFolderId !== null
+                  ? t('fileManager.folderIsEmpty')
+                  : topLevelView === 'external'
+                    ? t('fileManager.externalIsEmpty')
+                    : t('fileManager.noFilesYet')}
               </h3>
               <p className="text-bambu-gray text-center max-w-md mb-6">
                 {selectedFolderId !== null
                   ? t('fileManager.folderEmptyDescription')
-                  : t('fileManager.noFilesDescription')}
+                  : topLevelView === 'external'
+                    ? t('fileManager.externalEmptyDescription')
+                    : t('fileManager.noFilesDescription')}
               </p>
               <Button
                 onClick={() => setShowUploadModal(true)}
@@ -2000,9 +2079,16 @@ export function FileManagerPage() {
             </div>
           ) : (
             <div className="flex-1 lg:overflow-y-auto">
-              <div className="bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary overflow-hidden">
-                {/* List header - hidden on mobile, show simplified on small screens */}
-                <div className={`hidden sm:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_80px]' : 'grid-cols-[auto_1fr_100px_100px_100px_80px]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
+              {/* The wrapper has overflow-x-auto so a narrow viewport scrolls
+                  horizontally instead of clipping the actions column off the
+                  right edge. The previous `overflow-hidden` was there for the
+                  rounded corners but also swallowed any content the actions
+                  column couldn't fit (#1325 follow-up reported in chat). */}
+              <div className="bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary overflow-x-auto">
+                {/* List header - hidden on mobile, show simplified on small screens.
+                    The trailing column is `min-content` so it sizes to the widest
+                    action-icon strip across all rows (sliced 3MF = 7 icons ~220px). */}
+                <div className={`hidden sm:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_min-content]' : 'grid-cols-[auto_1fr_100px_100px_100px_min-content]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
                   <div className="w-6" />
                   <div>{t('common.name')}</div>
                   {authEnabled && <div>{t('fileManager.uploadedBy', { defaultValue: 'Uploaded By' })}</div>}
@@ -2015,7 +2101,7 @@ export function FileManagerPage() {
                 {filteredAndSortedFiles.map((file) => (
                   <div
                     key={file.id}
-                    className={`grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_80px]' : 'grid-cols-[auto_1fr_100px_100px_100px_80px]'} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
+                    className={`grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_min-content]' : 'grid-cols-[auto_1fr_100px_100px_100px_min-content]'} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
                       selectedFiles.includes(file.id) ? 'bg-bambu-green/10' : ''
                     }`}
                     onClick={() => handleFileSelect(file.id)}
@@ -2078,7 +2164,7 @@ export function FileManagerPage() {
                     <div>
                       <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
                         file.file_type === '3mf' ? 'bg-bambu-green/20 text-bambu-green'
-                        : file.file_type === 'gcode' ? 'bg-blue-500/20 text-blue-400'
+                        : (file.file_type === 'gcode' || file.file_type === 'gcode.3mf') ? 'bg-blue-500/20 text-blue-400'
                         : file.file_type === 'stl' ? 'bg-purple-500/20 text-purple-400'
                         : 'bg-bambu-gray/20 text-bambu-gray'
                       }`}>
@@ -2137,7 +2223,7 @@ export function FileManagerPage() {
                           <Cog className="w-4 h-4" />
                         </button>
                       )}
-                      {(file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl') && (
+                      {(file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'gcode.3mf' || file.file_type === 'stl') && (
                         <button
                           onClick={() => {
                             if (!hasPermission('library:read')) return;
@@ -2354,6 +2440,17 @@ export function FileManagerPage() {
           title={viewerFile.print_name || viewerFile.filename}
           fileType={viewerFile.file_type}
           onClose={() => setViewerFile(null)}
+          onSliceWithBambuddy={
+            // Only offer in-app slicing on files the SliceModal can actually
+            // handle (matches the file-row Cog visibility check at :2127).
+            isSliceableFilename(viewerFile.filename) && hasPermission('library:upload')
+              ? () => {
+                  const f = viewerFile;
+                  setViewerFile(null);
+                  setSliceFile(f);
+                }
+              : undefined
+          }
         />
       )}
 

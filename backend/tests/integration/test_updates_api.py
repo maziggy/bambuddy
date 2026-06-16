@@ -181,6 +181,68 @@ class TestUpdatesAPI:
         assert body["is_docker"] is True
         assert body["update_method"] == "docker"
 
+    @pytest.mark.asyncio
+    async def test_check_backs_off_after_github_rate_limit(self, async_client: AsyncClient):
+        """#1420: once GitHub returns 403 with X-RateLimit-Remaining=0, the
+        next call must short-circuit on the backoff window instead of hitting
+        api.github.com again. Otherwise the user's logs flood with rate-limit
+        errors and Bambuddy keeps adding to whatever throttle GitHub applies."""
+        import time
+
+        import httpx as _httpx
+
+        import backend.app.api.routes.updates as updates_module
+
+        # Reset module-level backoff state between tests.
+        updates_module._github_rate_limit_until = 0.0
+
+        # Future reset time, ~10 minutes ahead — the backoff window we expect.
+        future_reset = time.time() + 600
+
+        class _RateLimitedResp:
+            status_code = 403
+            headers = {
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": str(int(future_reset)),
+            }
+            text = "API rate limit exceeded"
+
+            def raise_for_status(self):
+                raise _httpx.HTTPStatusError("403", request=None, response=self)
+
+            def json(self):
+                return {"message": "API rate limit exceeded"}
+
+        call_counter = {"n": 0}
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+            async def get(self, *_, **__):
+                call_counter["n"] += 1
+                return _RateLimitedResp()
+
+        try:
+            with patch.object(_httpx, "AsyncClient", _FakeClient):
+                first = await async_client.get("/api/v1/updates/check")
+                second = await async_client.get("/api/v1/updates/check")
+        finally:
+            updates_module._github_rate_limit_until = 0.0
+
+        # First request reached httpx; second short-circuited on the backoff.
+        assert call_counter["n"] == 1
+
+        first_body = first.json()
+        second_body = second.json()
+        assert "rate limit" in (first_body.get("error") or "").lower()
+        assert "rate limit" in (second_body.get("error") or "").lower()
+        # Backoff window roughly matches the X-RateLimit-Reset header.
+        assert second_body.get("retry_after_seconds", 0) > 0
+
     def test_parse_version(self):
         from backend.app.api.routes.updates import parse_version
 
@@ -381,6 +443,16 @@ class TestUpdatesAPI:
             "for tag-based updates) are resolvable for the subsequent reset. "
             f"Captured fetch call: {fetch_calls[0]['args']}"
         )
+        # Fetch must include --force so a re-pointed tag on the remote
+        # (common after re-tagging a release post-release-notes edit) doesn't
+        # surface as "Failed to fetch updates" to the user just because their
+        # local copy of the moved tag would be clobbered. The relevant target
+        # ref is fetched fine; we only want git's tag-clobber to be silent.
+        assert "--force" in fetch_calls[0]["args"], (
+            "Fetch must use --force so re-pointed tags on the remote don't "
+            "fail the whole fetch (the rest of the refs update cleanly). "
+            f"Captured fetch call: {fetch_calls[0]['args']}"
+        )
 
     @pytest.mark.asyncio
     async def test_apply_update_passes_discovered_release_to_perform_update(self, async_client: AsyncClient):
@@ -497,3 +569,71 @@ class TestUpdatesAPI:
         # at the captured cwd. If this fails the cwd is wrong even if it isn't
         # base_dir — useful diagnostic if someone refactors path handling.
         assert (Path(pip_cwd) / "requirements.txt").exists()
+
+    @pytest.mark.asyncio
+    async def test_perform_update_runs_git_in_app_dir_when_data_dir_on_separate_mount(self, tmp_path):
+        """Regression for #1715: when DATA_DIR is on a path separate from the
+        install (e.g. WorkingDirectory=/opt/bambuddy + DATA_DIR=/srv/bambuddy/data),
+        ``base_dir`` and the repo working tree are on different mounts. Pre-fix,
+        every git subprocess (`remote get-url`, `remote set-url`, `fetch`,
+        `reset --hard`) used ``cwd=base_dir`` — and git could no longer walk up
+        to find ``.git`` because the data dir is not a subdir of the repo.
+        Every update failed with "not a git repository". The fix routes every
+        git step (and the embedded ``safe.directory`` config) through
+        ``app_dir`` instead. This test pins the cwd of all four git steps so a
+        future refactor that re-introduces ``base_dir`` for any of them surfaces
+        loudly here instead of silently re-breaking native installs."""
+        from backend.app.api.routes import updates as updates_module
+
+        # Separate-mount layout: app_dir and data_dir are SIBLINGS, not parent/
+        # child. base_dir is not under app_dir, so git cannot walk up.
+        app_dir = tmp_path / "opt" / "bambuddy"
+        data_dir = tmp_path / "srv" / "bambuddy" / "data"
+        app_dir.mkdir(parents=True)
+        data_dir.mkdir(parents=True)
+        (app_dir / "requirements.txt").write_text("fastapi\n")
+
+        calls: list[dict] = []
+
+        async def fake_create_subprocess_exec(*args, **kwargs):
+            calls.append({"args": args, "cwd": kwargs.get("cwd")})
+            proc = MagicMock()
+            if "get-url" in args and "origin" in args:
+                proc.communicate = AsyncMock(return_value=(b"git@github.com:maziggy/bambuddy.git\n", b""))
+            else:
+                proc.communicate = AsyncMock(return_value=(b"", b""))
+            proc.returncode = 0
+            return proc
+
+        with (
+            patch.object(updates_module.settings, "base_dir", data_dir),
+            patch.object(updates_module.settings, "app_dir", app_dir),
+            patch.object(updates_module, "_find_executable", return_value="/usr/bin/git"),
+            patch.object(
+                updates_module.asyncio,
+                "create_subprocess_exec",
+                side_effect=fake_create_subprocess_exec,
+            ),
+        ):
+            await updates_module._perform_update("v0.2.4b1")
+
+        # Every git subprocess must run in app_dir (the working tree). A
+        # regression to base_dir would silently break #1715-class installs.
+        git_calls = [c for c in calls if c["args"] and c["args"][0] == "/usr/bin/git"]
+        assert git_calls, "no git subprocess was invoked; setup is wrong"
+        wrong_cwd = [c for c in git_calls if c["cwd"] != str(app_dir)]
+        assert not wrong_cwd, (
+            "git subprocess ran with cwd != app_dir; #1715 would resurface. "
+            f"Offending calls: {[(c['args'][1:5], c['cwd']) for c in wrong_cwd]}"
+        )
+
+        # ``safe.directory`` must equal app_dir (the repo root git discovers),
+        # not the data dir — otherwise git refuses with "dubious ownership"
+        # even when the cwd is technically correct.
+        safe_dir_configs = [
+            arg for c in git_calls for arg in c["args"] if isinstance(arg, str) and arg.startswith("safe.directory=")
+        ]
+        assert safe_dir_configs, "safe.directory config was never set on git calls"
+        assert all(s == f"safe.directory={app_dir}" for s in safe_dir_configs), (
+            f"safe.directory must point at app_dir ({app_dir}); got {safe_dir_configs}"
+        )

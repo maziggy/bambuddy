@@ -29,6 +29,7 @@ class TestSystemAPI:
                 total=16000000000, available=8000000000, used=8000000000, percent=50.0
             )
             mock_psutil.boot_time.return_value = 1700000000.0
+            mock_psutil.Process.return_value.create_time.return_value = 1700000000.0
             mock_psutil.cpu_count.return_value = 4
             mock_psutil.cpu_percent.return_value = 25.0
 
@@ -58,6 +59,7 @@ class TestSystemAPI:
                 total=16000000000, available=8000000000, used=8000000000, percent=50.0
             )
             mock_psutil.boot_time.return_value = 1700000000.0
+            mock_psutil.Process.return_value.create_time.return_value = 1700000000.0
             mock_psutil.cpu_count.return_value = 4
             mock_psutil.cpu_percent.return_value = 25.0
 
@@ -82,6 +84,7 @@ class TestSystemAPI:
                 total=16000000000, available=8000000000, used=8000000000, percent=50.0
             )
             mock_psutil.boot_time.return_value = 1700000000.0
+            mock_psutil.Process.return_value.create_time.return_value = 1700000000.0
             mock_psutil.cpu_count.return_value = 4
             mock_psutil.cpu_percent.return_value = 25.0
 
@@ -114,6 +117,7 @@ class TestSystemAPI:
                 total=16000000000, available=8000000000, used=8000000000, percent=50.0
             )
             mock_psutil.boot_time.return_value = 1700000000.0
+            mock_psutil.Process.return_value.create_time.return_value = 1700000000.0
             mock_psutil.cpu_count.return_value = 4
             mock_psutil.cpu_percent.return_value = 25.0
 
@@ -144,6 +148,7 @@ class TestSystemAPI:
                 total=16000000000, available=8000000000, used=8000000000, percent=50.0
             )
             mock_psutil.boot_time.return_value = 1700000000.0
+            mock_psutil.Process.return_value.create_time.return_value = 1700000000.0
             mock_psutil.cpu_count.return_value = 4
             mock_psutil.cpu_percent.return_value = 25.0
 
@@ -170,6 +175,7 @@ class TestSystemAPI:
                 total=16000000000, available=8000000000, used=8000000000, percent=50.0
             )
             mock_psutil.boot_time.return_value = 1700000000.0
+            mock_psutil.Process.return_value.create_time.return_value = 1700000000.0
             mock_psutil.cpu_count.return_value = 4
             mock_psutil.cpu_percent.return_value = 25.0
 
@@ -200,6 +206,7 @@ class TestSystemAPI:
                 total=16000000000, available=8000000000, used=8000000000, percent=50.0
             )
             mock_psutil.boot_time.return_value = 1700000000.0
+            mock_psutil.Process.return_value.create_time.return_value = 1700000000.0
             mock_psutil.cpu_count.return_value = 4
             mock_psutil.cpu_percent.return_value = 25.0
 
@@ -219,10 +226,32 @@ class TestSystemAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_system_info_with_archives(self, async_client: AsyncClient, printer_factory, archive_factory):
-        """Verify database stats include archive counts."""
+        """Verify database stats include archive counts.
+
+        Post-#1593 `total_print_time_seconds` is summed from
+        `PrintLogEntry.duration_seconds` (the *actual* per-run duration),
+        not `PrintArchive.print_time_seconds` (the slicer estimate). The
+        archive_factory derives the run's duration from
+        ``completed_at - started_at`` on the archive, so the test sets
+        those so each run carries a duration the system route can sum.
+        """
+        from datetime import datetime, timezone
+
         printer = await printer_factory()
-        await archive_factory(printer.id, status="completed", print_time_seconds=3600)
-        await archive_factory(printer.id, status="failed", print_time_seconds=1800)
+        await archive_factory(
+            printer.id,
+            status="completed",
+            print_time_seconds=3600,
+            started_at=datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc),
+            completed_at=datetime(2026, 5, 1, 11, 0, tzinfo=timezone.utc),
+        )
+        await archive_factory(
+            printer.id,
+            status="failed",
+            print_time_seconds=1800,
+            started_at=datetime(2026, 5, 2, 10, 0, tzinfo=timezone.utc),
+            completed_at=datetime(2026, 5, 2, 10, 30, tzinfo=timezone.utc),
+        )
 
         with (
             patch("backend.app.api.routes.system.psutil") as mock_psutil,
@@ -235,6 +264,7 @@ class TestSystemAPI:
                 total=16000000000, available=8000000000, used=8000000000, percent=50.0
             )
             mock_psutil.boot_time.return_value = 1700000000.0
+            mock_psutil.Process.return_value.create_time.return_value = 1700000000.0
             mock_psutil.cpu_count.return_value = 4
             mock_psutil.cpu_percent.return_value = 25.0
             mock_pm._clients = {}
@@ -248,6 +278,96 @@ class TestSystemAPI:
         assert db_info["archives_completed"] >= 1
         assert db_info["archives_failed"] >= 1
         assert db_info["total_print_time_seconds"] >= 5400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_boot_time_uses_pid1_create_time(self, async_client: AsyncClient):
+        """#1690: container installs (Docker/LXC) share the host kernel, so
+        psutil.boot_time() returns the host's boot time instead of the
+        container's. Reading PID 1's create_time gives the container start
+        time on containers and matches host boot on bare metal."""
+        with patch("backend.app.api.routes.system.psutil") as mock_psutil:
+            mock_psutil.disk_usage.return_value = MagicMock(
+                total=500000000000, used=250000000000, free=250000000000, percent=50.0
+            )
+            mock_psutil.virtual_memory.return_value = MagicMock(
+                total=16000000000, available=8000000000, used=8000000000, percent=50.0
+            )
+            # Host boot is FOUR DAYS earlier than the container's PID 1 start.
+            # The route must report the PID 1 value, not the host value.
+            mock_psutil.boot_time.return_value = 1700000000.0
+            mock_psutil.Process.return_value.create_time.return_value = 1700345600.0
+            mock_psutil.cpu_count.return_value = 4
+            mock_psutil.cpu_percent.return_value = 25.0
+
+            response = await async_client.get("/api/v1/system/info")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["system"]["boot_time"].startswith("2023-11-18T")  # 1700345600 UTC
+        # PID 1 was queried with pid=1 (not the worker pid).
+        mock_psutil.Process.assert_called_with(1)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_boot_time_falls_back_to_psutil_boot_time_on_pid1_failure(self, async_client: AsyncClient):
+        """If PID 1 is unreadable (rare — locked-down container, /proc not
+        mounted), fall back to psutil.boot_time() so the endpoint still
+        returns 200 with the best available answer."""
+        import psutil as real_psutil
+
+        with patch("backend.app.api.routes.system.psutil") as mock_psutil:
+            mock_psutil.disk_usage.return_value = MagicMock(
+                total=500000000000, used=250000000000, free=250000000000, percent=50.0
+            )
+            mock_psutil.virtual_memory.return_value = MagicMock(
+                total=16000000000, available=8000000000, used=8000000000, percent=50.0
+            )
+            mock_psutil.boot_time.return_value = 1700000000.0
+            # Use the real exception classes so the route's except clause matches.
+            mock_psutil.Error = real_psutil.Error
+            mock_psutil.Process.side_effect = real_psutil.NoSuchProcess(1)
+            mock_psutil.cpu_count.return_value = 4
+            mock_psutil.cpu_percent.return_value = 25.0
+
+            response = await async_client.get("/api/v1/system/info")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["system"]["boot_time"].startswith("2023-11-14T")  # 1700000000 UTC
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_boot_time_isoformat_carries_utc_marker(self, async_client: AsyncClient):
+        """#1690 follow-up: the boot_time string must include a UTC tz marker.
+
+        Without it the frontend's parseUTCDate(...) appends 'Z' to a naive-
+        local-time string, treats it as UTC, and converts to local — applying
+        the local offset twice. The reporter (UTC+3) saw boot_time +3h ahead
+        even though uptime was correct (uptime is computed backend-side from
+        two naive-local values whose delta is right). The fix is to make both
+        ends tz-aware UTC and emit an explicit offset.
+        """
+        with patch("backend.app.api.routes.system.psutil") as mock_psutil:
+            mock_psutil.disk_usage.return_value = MagicMock(
+                total=500000000000, used=250000000000, free=250000000000, percent=50.0
+            )
+            mock_psutil.virtual_memory.return_value = MagicMock(
+                total=16000000000, available=8000000000, used=8000000000, percent=50.0
+            )
+            mock_psutil.boot_time.return_value = 1700000000.0
+            mock_psutil.Process.return_value.create_time.return_value = 1700345600.0
+            mock_psutil.cpu_count.return_value = 4
+            mock_psutil.cpu_percent.return_value = 25.0
+
+            response = await async_client.get("/api/v1/system/info")
+
+        assert response.status_code == 200
+        boot_time = response.json()["system"]["boot_time"]
+        assert boot_time.endswith("+00:00") or boot_time.endswith("Z"), (
+            f"boot_time {boot_time!r} must carry a UTC tz marker; without one the "
+            "frontend double-converts via parseUTCDate"
+        )
 
 
 class TestSystemHelperFunctions:
@@ -308,3 +428,48 @@ class TestSystemHelperFunctions:
 
         result = format_uptime(30)  # 30 seconds
         assert result == "< 1m"
+
+
+class TestSystemHealthAPI:
+    """Integration tests for GET /api/v1/system/health (log-health scan)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_health_clean_log(self, async_client: AsyncClient, tmp_path, monkeypatch):
+        """A log with no known issues returns an empty, healthy result."""
+        from backend.app.core.config import settings
+
+        (tmp_path / "bambuddy.log").write_text(
+            "2026-05-22 10:00:00,000 INFO [backend.app.main] Application startup complete\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(settings, "log_dir", tmp_path)
+
+        response = await async_client.get("/api/v1/system/health")
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["log_available"] is True
+        assert result["findings"] == []
+        assert result["summary"]["total"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_health_detects_known_issue(self, async_client: AsyncClient, tmp_path, monkeypatch):
+        """A known signature in the log surfaces as a finding."""
+        from backend.app.core.config import settings
+
+        (tmp_path / "bambuddy.log").write_text(
+            "2026-05-22 10:00:00,000 WARNING [backend.app.services.bambu_ftp] "
+            "FTP connection permission error to 10.0.0.9: 530\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(settings, "log_dir", tmp_path)
+
+        response = await async_client.get("/api/v1/system/health")
+
+        assert response.status_code == 200
+        result = response.json()
+        ids = [f["signature_id"] for f in result["findings"]]
+        assert "ftp-auth-rejected" in ids
+        assert result["summary"]["layer8"] >= 1

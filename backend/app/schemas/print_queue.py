@@ -28,6 +28,10 @@ class PrintQueueItemCreate(BaseModel):
     require_previous_success: bool = False
     auto_off_after: bool = False  # Power off printer after print completes
     manual_start: bool = False  # Requires manual trigger to start (staged)
+    # Persistent "Print Anyway" acknowledgement (#1698-followup). When set,
+    # PrintModal already showed the deficit warning and the user confirmed,
+    # so the scheduler does not re-flag this item on the next tick.
+    skip_filament_check: bool = False
     # AMS mapping: list of global tray IDs for each filament slot
     # Format: [5, -1, 2, -1] where position = slot_id-1, value = global tray ID (-1 = unused)
     ams_mapping: list[int] | None = None
@@ -40,10 +44,18 @@ class PrintQueueItemCreate(BaseModel):
     layer_inspect: bool = False
     timelapse: bool = False
     use_ams: bool = True
+    # Nozzle offset calibration — dual-nozzle printers only (#1682). Default True
+    # matches BambuStudio's default; the MQTT layer ignores the flag on
+    # single-nozzle printers so the wire value stays "skip" there.
+    nozzle_offset_cali: bool = True
     # Auto-print G-code injection
     gcode_injection: bool = False
     # Batch: create multiple copies (creates a batch if > 1)
     quantity: int = 1
+    # Existing batch to add this item into. When set, the item's batch_id is
+    # populated on insert so the queue UI groups it with its siblings. Used by
+    # the multi-plate auto-batch flow and by the "Group as batch" action.
+    batch_id: int | None = None
     # Project to associate the resulting archive with
     project_id: int | None = None
 
@@ -67,6 +79,7 @@ class PrintQueueItemUpdate(BaseModel):
     layer_inspect: bool | None = None
     timelapse: bool | None = None
     use_ams: bool | None = None
+    nozzle_offset_cali: bool | None = None
     # Auto-print G-code injection
     gcode_injection: bool | None = None
 
@@ -86,6 +99,14 @@ class PrintQueueItemResponse(BaseModel):
     require_previous_success: bool
     auto_off_after: bool
     manual_start: bool
+    # True when the dispatch scheduler last evaluated this item and the
+    # assigned spool could not satisfy at least one slot's required grams
+    # (#1496). Display-only — the ▶ click recomputes deficit against live
+    # spool state.
+    filament_short: bool = False
+    # User has acknowledged "Print Anyway" — scheduler skips the deficit check
+    # for this item (#1698-followup).
+    skip_filament_check: bool = False
     ams_mapping: list[int] | None = None
     plate_id: int | None = None  # Plate ID for multi-plate 3MF files
     # Print options
@@ -95,6 +116,7 @@ class PrintQueueItemResponse(BaseModel):
     layer_inspect: bool = False
     timelapse: bool = False
     use_ams: bool = True
+    nozzle_offset_cali: bool = True
     status: Literal["pending", "printing", "completed", "failed", "skipped", "cancelled"]
     started_at: UTCDatetime
     completed_at: UTCDatetime
@@ -104,6 +126,13 @@ class PrintQueueItemResponse(BaseModel):
     # Nested info for UI (populated in route)
     archive_name: str | None = None
     archive_thumbnail: str | None = None
+    # True when the linked archive has been soft-deleted (its files are gone
+    # from disk). In that case the *archive_name* / *archive_thumbnail* /
+    # downstream metadata fields are intentionally left None so the frontend
+    # doesn't 404-storm the now-missing thumbnail / plates / plate-thumbnail
+    # endpoints (#1348 follow-up). Frontends can render a "source deleted"
+    # badge based on this flag.
+    archive_deleted: bool = False
     library_file_name: str | None = None  # Name of library file (if library_file_id is set)
     library_file_thumbnail: str | None = None  # Thumbnail of library file
     printer_name: str | None = None
@@ -114,6 +143,11 @@ class PrintQueueItemResponse(BaseModel):
     layer_height: float | None = None  # e.g. 0.2 (from archive/library file)
     nozzle_diameter: float | None = None  # e.g. 0.4 (from archive/library file)
     sliced_for_model: str | None = None  # e.g. "P1S" (from archive/library file)
+    # Build plate type (e.g. "Textured PEI Plate") so the user knows which
+    # plate to mount on the printer (#1281). Per-plate accurate on multi-plate
+    # 3MFs: when `plate_id` is set, the value is the matching plate's
+    # `curr_bed_type` rather than the archive-level first-plate default.
+    bed_type: str | None = None
 
     # User tracking (Issue #206)
     created_by_id: int | None = None
@@ -159,6 +193,7 @@ class PrintQueueBulkUpdate(BaseModel):
     layer_inspect: bool | None = None
     timelapse: bool | None = None
     use_ams: bool | None = None
+    nozzle_offset_cali: bool | None = None
     # Auto-print G-code injection
     gcode_injection: bool | None = None
 
@@ -168,6 +203,26 @@ class PrintQueueBulkUpdateResponse(BaseModel):
 
     updated_count: int
     skipped_count: int  # Items that were not pending
+    message: str
+
+
+class PrintBatchCreate(BaseModel):
+    """Create a batch, either empty (multi-plate pre-batch flow) or by
+    assigning existing pending queue items into it (manual "Group as batch")."""
+
+    name: str
+    archive_id: int | None = None
+    library_file_id: int | None = None
+    # Existing pending queue items to assign to this batch. None / empty for
+    # the empty-batch flow (client passes the returned id on subsequent
+    # addToQueue calls).
+    item_ids: list[int] | None = None
+
+
+class PrintBatchUngroupResponse(BaseModel):
+    """Response after ungrouping a batch."""
+
+    ungrouped_count: int
     message: str
 
 

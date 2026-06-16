@@ -25,7 +25,7 @@ async def get_status(
 ):
     """Scheduler status, per-printer classification, and recent detection history."""
     settings = await obico_detection_service._load_settings()
-    status = obico_detection_service.get_status()
+    status = obico_detection_service.get_status(settings["sensitivity"])
     return {
         **status,
         "enabled": settings["enabled"],

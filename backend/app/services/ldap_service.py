@@ -29,6 +29,16 @@ class LDAPUserInfo:
 
 
 @dataclass
+class LDAPSearchResult:
+    """A directory user returned by the admin search endpoint (no auth performed)."""
+
+    username: str
+    email: str | None
+    display_name: str | None
+    dn: str
+
+
+@dataclass
 class LDAPConfig:
     """LDAP configuration parsed from settings."""
 
@@ -91,6 +101,104 @@ def _create_server(config: LDAPConfig) -> Server:
     return Server(config.server_url, use_ssl=use_ssl, tls=tls, get_info=ALL, connect_timeout=10)
 
 
+def _open_service_connection(config: LDAPConfig, server: Server, *, check_names: bool = True) -> Connection:
+    """Open and bind a service-account LDAP connection. Raises on failure.
+
+    `check_names` toggles ldap3's client-side attribute-name validation. The
+    default keeps it on so typos in `user_filter` fail loudly. The fuzzy
+    directory search disables it because its fixed OR filter spans both AD-only
+    (sAMAccountName, displayName) and OpenLDAP-only attribute names — without
+    this bypass ldap3 throws `LDAPAttributeError` before any request is sent
+    on a directory whose schema doesn't define one of the names.
+    """
+    conn = Connection(
+        server,
+        user=config.bind_dn,
+        password=config.bind_password,
+        auto_bind=False,
+        raise_exceptions=True,
+        read_only=True,
+        check_names=check_names,
+    )
+    conn.open()
+    if config.security == "starttls" and not config.server_url.startswith("ldaps://"):
+        conn.start_tls()
+    conn.bind()
+    return conn
+
+
+def _pick_canonical_username(entry, fallback: str) -> str:
+    """Prefer sAMAccountName, then uid, then the supplied fallback."""
+    if hasattr(entry, "sAMAccountName") and entry.sAMAccountName:
+        return str(entry.sAMAccountName)
+    if hasattr(entry, "uid") and entry.uid:
+        return str(entry.uid)
+    return fallback
+
+
+def _extract_user_info(
+    service_conn: Connection, config: LDAPConfig, user_entry, fallback_username: str
+) -> LDAPUserInfo:
+    """Build an LDAPUserInfo from an already-fetched directory entry.
+
+    Collects memberOf groups, POSIX memberUid groups, and the primary
+    gidNumber group; dedups DNs case-insensitively. Uses the supplied
+    service-bound connection to resolve POSIX groups.
+    """
+    email = str(user_entry.mail) if hasattr(user_entry, "mail") and user_entry.mail else None
+    display_name = (
+        str(user_entry.displayName) if hasattr(user_entry, "displayName") and user_entry.displayName else None
+    )
+
+    # Collect groups from memberOf attribute (Active Directory / groupOfNames)
+    groups = [str(g) for g in user_entry.memberOf] if hasattr(user_entry, "memberOf") and user_entry.memberOf else []
+
+    canonical_username = _pick_canonical_username(user_entry, fallback_username)
+
+    # Also search for POSIX groups (memberUid-based) using the service account
+    posix_filter = f"(&(objectClass=posixGroup)(memberUid={_ldap_escape(canonical_username)}))"
+    service_conn.search(
+        search_base=config.search_base,
+        search_filter=posix_filter,
+        search_scope=SUBTREE,
+        attributes=["cn"],
+    )
+    for entry in service_conn.entries:
+        groups.append(str(entry.entry_dn))
+
+    # POSIX primary group: user's gidNumber matches a posixGroup's gidNumber.
+    # Standard Unix semantics treat this as full group membership, so we need
+    # to resolve it to a group DN alongside the memberUid results.
+    if hasattr(user_entry, "gidNumber") and user_entry.gidNumber:
+        primary_gid = str(user_entry.gidNumber)
+        primary_filter = f"(&(objectClass=posixGroup)(gidNumber={_ldap_escape(primary_gid)}))"
+        service_conn.search(
+            search_base=config.search_base,
+            search_filter=primary_filter,
+            search_scope=SUBTREE,
+            attributes=["cn"],
+        )
+        for entry in service_conn.entries:
+            groups.append(str(entry.entry_dn))
+
+    # Dedupe group DNs (user may be in a group via both memberUid and primary gidNumber).
+    # Case-insensitive comparison — LDAP DNs are case-insensitive by spec.
+    seen_lower: set[str] = set()
+    deduped_groups: list[str] = []
+    for g in groups:
+        key = g.lower()
+        if key not in seen_lower:
+            seen_lower.add(key)
+            deduped_groups.append(g)
+
+    return LDAPUserInfo(
+        username=canonical_username,
+        email=email,
+        display_name=display_name,
+        groups=deduped_groups,
+    )
+
+
 def authenticate_ldap_user(config: LDAPConfig, username: str, password: str) -> LDAPUserInfo | None:
     """Authenticate a user via LDAP bind.
 
@@ -105,20 +213,8 @@ def authenticate_ldap_user(config: LDAPConfig, username: str, password: str) -> 
 
     server = _create_server(config)
 
-    # Step 1: Service account bind + user search
     try:
-        service_conn = Connection(
-            server,
-            user=config.bind_dn,
-            password=config.bind_password,
-            auto_bind=False,
-            raise_exceptions=True,
-            read_only=True,
-        )
-        service_conn.open()
-        if config.security == "starttls" and not config.server_url.startswith("ldaps://"):
-            service_conn.start_tls()
-        service_conn.bind()
+        service_conn = _open_service_connection(config, server)
     except Exception as e:
         logger.warning("LDAP service account bind failed: %s", e)
         return None
@@ -159,70 +255,118 @@ def authenticate_ldap_user(config: LDAPConfig, username: str, password: str) -> 
             logger.info("LDAP bind failed for user %s: %s", username, e)
             return None
 
-        # Step 3: Extract user info
-        email = str(user_entry.mail) if hasattr(user_entry, "mail") and user_entry.mail else None
-        display_name = (
-            str(user_entry.displayName) if hasattr(user_entry, "displayName") and user_entry.displayName else None
+        info = _extract_user_info(service_conn, config, user_entry, username)
+        logger.info(
+            "LDAP authentication successful for user: %s (DN: %s, groups: %d)",
+            info.username,
+            user_dn,
+            len(info.groups),
         )
+        return info
+    finally:
+        service_conn.unbind()
 
-        # Collect groups from memberOf attribute (Active Directory / groupOfNames)
-        groups = (
-            [str(g) for g in user_entry.memberOf] if hasattr(user_entry, "memberOf") and user_entry.memberOf else []
-        )
 
-        # Also search for POSIX groups (memberUid-based) using the service account
-        canonical_username = username
-        if hasattr(user_entry, "sAMAccountName") and user_entry.sAMAccountName:
-            canonical_username = str(user_entry.sAMAccountName)
-        elif hasattr(user_entry, "uid") and user_entry.uid:
-            canonical_username = str(user_entry.uid)
+def lookup_ldap_user(config: LDAPConfig, username: str) -> LDAPUserInfo | None:
+    """Look up a directory user by exact username via the service-account bind.
 
-        posix_filter = f"(&(objectClass=posixGroup)(memberUid={_ldap_escape(canonical_username)}))"
+    Performs no password verification — intended for the admin manual-provision
+    flow, where the caller has already been authenticated as a BamBuddy admin
+    and now needs the directory attributes (email, display name, group DNs)
+    to create the user.
+
+    Uses the same `user_filter` template that the login path uses, so anything
+    that logs in successfully via auto-provision is also resolvable here.
+    """
+    server = _create_server(config)
+
+    try:
+        service_conn = _open_service_connection(config, server)
+    except Exception as e:
+        logger.warning("LDAP service account bind failed during lookup: %s", e)
+        raise
+
+    try:
+        search_filter = config.user_filter.replace("{username}", _ldap_escape(username))
         service_conn.search(
             search_base=config.search_base,
-            search_filter=posix_filter,
+            search_filter=search_filter,
             search_scope=SUBTREE,
-            attributes=["cn"],
+            attributes=["*"],
         )
+        if not service_conn.entries:
+            logger.info("LDAP lookup: user not found: %s", username)
+            return None
+        return _extract_user_info(service_conn, config, service_conn.entries[0], username)
+    finally:
+        service_conn.unbind()
+
+
+def search_ldap_users(config: LDAPConfig, query: str, limit: int = 25) -> list[LDAPSearchResult]:
+    """Fuzzy search the directory for users matching `query`.
+
+    Uses a fixed OR filter across sAMAccountName, uid, mail, displayName, and
+    cn — covering both Active Directory and OpenLDAP layouts. The query is
+    RFC-4515 escaped so a typed `*` doesn't enumerate the whole directory.
+    Returns up to `limit` results (default 25). Service-bind failures raise so
+    the caller can surface a 503; "no matches" returns an empty list.
+
+    Callers should enforce a minimum query length (≥2 chars) — short queries
+    against a large directory are wasteful and effectively unbounded.
+    """
+    query = query.strip()
+    if len(query) < 2:
+        return []
+
+    escaped = _ldap_escape(query)
+    search_filter = (
+        f"(|(sAMAccountName=*{escaped}*)(uid=*{escaped}*)(mail=*{escaped}*)(displayName=*{escaped}*)(cn=*{escaped}*))"
+    )
+
+    server = _create_server(config)
+
+    try:
+        # check_names=False so OpenLDAP directories (no sAMAccountName/displayName
+        # in schema) don't reject the cross-schema OR filter — see helper docstring.
+        service_conn = _open_service_connection(config, server, check_names=False)
+    except Exception as e:
+        logger.warning("LDAP service account bind failed during search: %s", e)
+        raise
+
+    try:
+        # attributes=["*"] requests all user attributes. We can't enumerate the
+        # AD/OpenLDAP-specific names (sAMAccountName, displayName) explicitly
+        # because ldap3 validates the attribute list against the server schema
+        # even with check_names=False — and OpenLDAP rejects the AD names. The
+        # `*` wildcard is hardcoded in ldap3's ATTRIBUTES_EXCLUDED_FROM_CHECK so
+        # it bypasses that validation, and the server returns whatever it has.
+        service_conn.search(
+            search_base=config.search_base,
+            search_filter=search_filter,
+            search_scope=SUBTREE,
+            attributes=["*"],
+            size_limit=limit,
+        )
+        results: list[LDAPSearchResult] = []
         for entry in service_conn.entries:
-            groups.append(str(entry.entry_dn))
-
-        # POSIX primary group: user's gidNumber matches a posixGroup's gidNumber.
-        # Standard Unix semantics treat this as full group membership, so we need
-        # to resolve it to a group DN alongside the memberUid results.
-        if hasattr(user_entry, "gidNumber") and user_entry.gidNumber:
-            primary_gid = str(user_entry.gidNumber)
-            primary_filter = f"(&(objectClass=posixGroup)(gidNumber={_ldap_escape(primary_gid)}))"
-            service_conn.search(
-                search_base=config.search_base,
-                search_filter=primary_filter,
-                search_scope=SUBTREE,
-                attributes=["cn"],
+            username = _pick_canonical_username(entry, "")
+            if not username and hasattr(entry, "cn") and entry.cn:
+                # Last resort — some OpenLDAP layouts only have cn
+                username = str(entry.cn)
+            if not username:
+                continue
+            email = str(entry.mail) if hasattr(entry, "mail") and entry.mail else None
+            display_name = str(entry.displayName) if hasattr(entry, "displayName") and entry.displayName else None
+            results.append(
+                LDAPSearchResult(
+                    username=username,
+                    email=email,
+                    display_name=display_name,
+                    dn=str(entry.entry_dn),
+                )
             )
-            for entry in service_conn.entries:
-                groups.append(str(entry.entry_dn))
-
-        # Dedupe group DNs (user may be in a group via both memberUid and primary gidNumber).
-        # Case-insensitive comparison — LDAP DNs are case-insensitive by spec.
-        seen_lower: set[str] = set()
-        deduped_groups: list[str] = []
-        for g in groups:
-            key = g.lower()
-            if key not in seen_lower:
-                seen_lower.add(key)
-                deduped_groups.append(g)
-        groups = deduped_groups
-
-        logger.info(
-            "LDAP authentication successful for user: %s (DN: %s, groups: %d)", canonical_username, user_dn, len(groups)
-        )
-
-        return LDAPUserInfo(
-            username=canonical_username,
-            email=email,
-            display_name=display_name,
-            groups=groups,
-        )
+        logger.info("LDAP directory search for %r returned %d result(s)", query, len(results))
+        return results
     finally:
         service_conn.unbind()
 

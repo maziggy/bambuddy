@@ -14,6 +14,7 @@ const mockStats = {
   total_prints: 150,
   successful_prints: 140,
   failed_prints: 10,
+  cancelled_prints: 0,
   total_print_time_hours: 500.5,
   total_filament_grams: 5500,
   total_cost: 125.50,
@@ -164,7 +165,7 @@ describe('StatsPage', () => {
       render(<StatsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Dashboard')).toBeInTheDocument();
+        expect(screen.getByText('Statistics')).toBeInTheDocument();
       });
     });
 
@@ -210,8 +211,41 @@ describe('StatsPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Success Rate')).toBeInTheDocument();
-        // Success rate: 140/(140+10) = 93%
+        // Success rate: 140 / 150 total = 93%
         expect(screen.getByText('93%')).toBeInTheDocument();
+      });
+    });
+
+    it('excludes cancelled prints from the rate denominator and surfaces them in the breakdown (#1390)', async () => {
+      // 40 completed, 20 failed (printer-detected), 40 user-cancelled out of
+      // 100 total. The earlier fix divided by total_prints and reported 40%,
+      // which conflated user intent with print quality — cancelling a roll
+      // because you changed your mind shouldn't be counted against the
+      // printer's success rate. New behaviour: gauge = 40 / (40 + 20) = 67%;
+      // cancelled count still visible in the row breakdown so the missing
+      // 40 prints don't silently disappear.
+      server.use(
+        http.get('/api/v1/archives/stats', () =>
+          HttpResponse.json({
+            ...mockStats,
+            total_prints: 100,
+            successful_prints: 40,
+            failed_prints: 20,
+            cancelled_prints: 35,
+          }),
+        ),
+      );
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Success Rate')).toBeInTheDocument();
+        expect(screen.getByText('67%')).toBeInTheDocument();
+        // Cancelled count surfaces in the breakdown so the missing prints
+        // aren't silently swallowed (was the original bug in #1390). Pick a
+        // value distinct from successful_prints/failed_prints to keep the
+        // getByText query unambiguous.
+        expect(screen.getByText('Cancelled:')).toBeInTheDocument();
+        expect(screen.getByText('35')).toBeInTheDocument();
       });
     });
   });
@@ -256,6 +290,49 @@ describe('StatsPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Failure Analysis')).toBeInTheDocument();
+      });
+    });
+
+    it('translates camelCase failure-reason keys instead of rendering them raw (#1687 follow-up)', async () => {
+      // The widget groups by the raw PrintLogEntry.failure_reason column.
+      // The new editor stores camelCase keys (`filamentRunout`), so the widget
+      // must translate them — otherwise users see the literal key text.
+      server.use(
+        http.get('/api/v1/archives/analysis/failures', () => {
+          return HttpResponse.json({
+            ...mockFailureAnalysis,
+            failures_by_reason: { filamentRunout: 2, cloggedNozzle: 1 },
+          });
+        }),
+      );
+
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Filament runout')).toBeInTheDocument();
+        expect(screen.getByText('Clogged nozzle')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('filamentRunout')).not.toBeInTheDocument();
+      expect(screen.queryByText('cloggedNozzle')).not.toBeInTheDocument();
+    });
+
+    it('renders legacy translated-text failure reasons unchanged (#1687 follow-up)', async () => {
+      // Old rows from before the key/value migration stored the translated
+      // text. The defaultValue fallback in the t() call must surface them
+      // as-is rather than turning them into the literal key string.
+      server.use(
+        http.get('/api/v1/archives/analysis/failures', () => {
+          return HttpResponse.json({
+            ...mockFailureAnalysis,
+            failures_by_reason: { 'Custom legacy reason': 4 },
+          });
+        }),
+      );
+
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Custom legacy reason')).toBeInTheDocument();
       });
     });
 
@@ -351,6 +428,48 @@ describe('StatsPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Longest Print')).toBeInTheDocument();
       });
+    });
+
+    it('Longest Print excludes failed prints (#1390)', async () => {
+      // After slim started populating actual_time_seconds for non-completed
+      // rows (so Printer Stats By Time would match Quick Stats), a failed
+      // print's elapsed duration could outrank successful prints in the
+      // Records widget. RecordsWidget gates "Longest Print" on
+      // status === 'completed' to preserve the pre-fix semantic.
+      server.use(
+        http.get('/api/v1/archives/slim', () =>
+          HttpResponse.json([
+            {
+              id: 10, created_at: '2024-02-01T10:00:00Z',
+              started_at: '2024-02-01T10:00:00Z', completed_at: null,
+              print_name: 'Aborted 25h Marathon', status: 'failed',
+              printer_id: 1, filament_type: 'PLA', filament_color: '#000000',
+              filament_used_grams: 50, actual_time_seconds: 90000,
+              print_time_seconds: 86400, cost: 1.50, quantity: 1,
+            },
+            {
+              id: 11, created_at: '2024-02-02T10:00:00Z',
+              started_at: '2024-02-02T10:00:00Z',
+              completed_at: '2024-02-02T18:00:00Z',
+              print_name: 'Successful 8h Print', status: 'completed',
+              printer_id: 1, filament_type: 'PLA', filament_color: '#FF0000',
+              filament_used_grams: 80, actual_time_seconds: 28800,
+              print_time_seconds: 27000, cost: 2.40, quantity: 1,
+            },
+          ]),
+        ),
+      );
+      render(<StatsPage />);
+
+      // Wait for the records widget itself to render.
+      await waitFor(() => {
+        expect(screen.getByText('Longest Print')).toBeInTheDocument();
+      });
+      // The failed 25h print must not surface as any record — its presence
+      // anywhere here would mean the status gate regressed.
+      expect(screen.queryByText('Aborted 25h Marathon')).not.toBeInTheDocument();
+      // The completed 8h print is the only candidate left, so it wins.
+      expect(screen.getAllByText('Successful 8h Print').length).toBeGreaterThan(0);
     });
 
     it('shows heaviest print record', async () => {

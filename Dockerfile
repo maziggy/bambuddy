@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iproute2 \
     libcap2-bin \
     openssh-client \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Install the Tailscale CLI only (no tailscaled — the daemon runs on the host).
@@ -47,10 +48,14 @@ RUN curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg \
 # which depends on ambient capability support in the container runtime.
 RUN setcap cap_net_bind_service=+ep "$(readlink -f /usr/local/bin/python3)"
 
-# Install Python dependencies with cache mount
+# Install Python dependencies with cache mount.
+# pip is upgraded to >=26.1 first to close CVE-2026-6357 — the python:3.13-slim
+# base image ships pip 26.0.1, which runs its self-update check after installing
+# wheels (so a hostile wheel could hijack stdlib imports during install).
 COPY requirements.txt ./
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --root-user-action=ignore -r requirements.txt
+    pip install --root-user-action=ignore --upgrade 'pip>=26.1' \
+ && pip install --root-user-action=ignore -r requirements.txt
 
 # Copy backend
 COPY backend/ ./backend/
@@ -116,6 +121,16 @@ ENV PORT=8000
 ENV HOME=/app
 ENV USER=bambuddy
 ENV LOGNAME=bambuddy
+
+# Matplotlib (imported lazily by the STL thumbnail generator) tries to create
+# its font/style cache at $HOME/.config/matplotlib on first import. /app is
+# root-owned and not writable by the PUID:PGID the entrypoint drops to,
+# which trips an EPERM warning in everyone's logs and forces matplotlib
+# to fall back to a per-restart temp dir (paying the font-scan cost on
+# every container restart). Pinning the cache dir to /tmp/matplotlib
+# silences the warning and keeps the cache alive for the container's
+# lifetime. /tmp is writable by any uid, so this works regardless of PUID.
+ENV MPLCONFIGDIR=/tmp/matplotlib
 
 EXPOSE 322
 EXPOSE 990

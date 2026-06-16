@@ -17,18 +17,17 @@
 #   docker compose up -d                       # starts OrcaSlicer only
 #   docker compose --profile bambu up -d       # starts both
 #
-# First build pulls the source from the fork over git (~5 min — downloads
-# the BambuStudio AppImage, ~220 MB) and caches the image locally.
-# Subsequent runs reuse the cache. Pin the slicer versions via .env.
+# First start pulls pre-built images from GHCR (~110 MB OrcaSlicer,
+# ~220 MB BambuStudio). No local build, no git in the BuildKit worker,
+# works on QNAP / Synology / Container Station out of the box.
+#
+# Both images are linux/amd64 only. OrcaSlicer's ARM64 path is on hold
+# pending an upstream extraction fix; BambuStudio doesn't publish ARM64
+# at all.
 
 services:
   orca-slicer-api:
-    build:
-      context: https://github.com/maziggy/orca-slicer-api.git#bambuddy/profile-resolver
-      dockerfile: Dockerfile
-      args:
-        ORCA_VERSION: "${ORCA_VERSION:-2.3.2}"
-    image: bambuddy-orca-slicer-api:orca${ORCA_VERSION:-2.3.2}
+    image: ghcr.io/maziggy/orca-slicer-api:${SIDECAR_TAG:-latest}
     container_name: orca-slicer-api
     restart: unless-stopped
     ports:
@@ -46,12 +45,7 @@ services:
       retries: 3
 
   bambu-studio-api:
-    build:
-      context: https://github.com/maziggy/orca-slicer-api.git#bambuddy/profile-resolver
-      dockerfile: Dockerfile.bambu-studio
-      args:
-        BAMBU_VERSION: "${BAMBU_VERSION:-02.06.00.51}"
-    image: bambuddy-bambu-studio-api:bambu${BAMBU_VERSION:-02.06.00.51}
+    image: ghcr.io/maziggy/bambu-studio-api:${SIDECAR_TAG:-latest}
     container_name: bambu-studio-api
     restart: unless-stopped
     ports:

@@ -200,7 +200,7 @@ describe('dual-color / tri-color hard-split bars (#1154 follow-up)', () => {
 describe('Sparkle prominence + checkerboard density (#1154 follow-up cosmetic)', () => {
   it('renders dense sparkle on card preset (at least 10 dots)', () => {
     // The original Sparkle pattern was 4 dots — too subtle on a 200×60px
-    // banner. Now we use situation-aware dot counts: more dots for larger presets. 
+    // banner. Now we use situation-aware dot counts: more dots for larger presets.
     // Verify the card preset produces a dense pattern with at least 10 dots.
     render(<FilamentSwatch rgba="ff0000ff" effectType="sparkle" effectSize="card" />);
     const el = screen.getByTestId('filament-swatch');

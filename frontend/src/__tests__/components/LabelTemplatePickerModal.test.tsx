@@ -176,7 +176,13 @@ describe('LabelTemplatePickerModal', () => {
         spoolmanMode={false}
       />,
     );
-    expect(screen.getByText(/AMS holder/i).closest('button')).toBeDisabled();
+    // Two AMS holder variants exist (#1426). Both must be disabled when no
+    // spools are selected — the empty-selection guard is global, not per-template.
+    const amsButtons = screen.getAllByText(/AMS holder/i).map((el) => el.closest('button'));
+    expect(amsButtons).toHaveLength(2);
+    for (const btn of amsButtons) {
+      expect(btn).toBeDisabled();
+    }
   });
 
   it('sends only the currently checked IDs to the local endpoint', async () => {
@@ -218,12 +224,14 @@ describe('LabelTemplatePickerModal', () => {
       />,
     );
 
-    fireEvent.click(screen.getByText(/AMS holder/i));
+    // Pick the larger AMS holder variant explicitly (#1426: two AMS templates
+     // exist now — pin which one the test sends so the assertion stays meaningful).
+    fireEvent.click(screen.getByText(/AMS holder — large \(75 × 55 mm\)/i));
 
     await waitFor(() => {
       expect(api.printSpoolmanSpoolLabels).toHaveBeenCalledWith({
         spool_ids: [1],
-        template: 'ams_30x15',
+        template: 'ams_holder_75x55',
       });
     });
     expect(api.printSpoolLabels).not.toHaveBeenCalled();
@@ -296,9 +304,10 @@ describe('LabelTemplatePickerModal', () => {
       />,
     );
 
-    // All five templates must be in the DOM. Use the dimension suffix to
-    // disambiguate the two "Box label …" entries.
-    expect(screen.getByText(/AMS holder/i)).toBeInTheDocument();
+    // All six templates must be in the DOM (#1426 added two AMS variants).
+    // Use the dimension suffix to disambiguate same-family entries.
+    expect(screen.getByText(/AMS holder — small \(74 × 33 mm\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/AMS holder — large \(75 × 55 mm\)/i)).toBeInTheDocument();
     expect(screen.getByText(/Box label \(40 × 30 mm\)/i)).toBeInTheDocument();
     expect(screen.getByText(/Box label \(62 × 29 mm\)/i)).toBeInTheDocument();
     expect(screen.getByText(/Avery L7160/i)).toBeInTheDocument();
@@ -311,12 +320,72 @@ describe('LabelTemplatePickerModal', () => {
     const templatesSection = container.querySelector('div.grid.sm\\:grid-cols-2');
     expect(templatesSection).not.toBeNull();
     expect(templatesSection!.className).toContain('grid-cols-1');
-    expect(templatesSection!.querySelectorAll('button').length).toBe(5);
+    expect(templatesSection!.querySelectorAll('button').length).toBe(6);
 
     // Spool list still uses min-h-0 so it can yield further on very tight viewports.
     const spoolListScroller = container.querySelector('div.flex-1.overflow-y-auto');
     expect(spoolListScroller).not.toBeNull();
     expect(spoolListScroller!.className).toContain('min-h-0');
     expect(spoolListScroller!.className).not.toMatch(/min-h-\[\d/);
+  });
+
+  // #1410: an "ID | colour" sort toggle in the modal must flow through to the
+  // PDF — the backend (labels.py) prints in the order it receives spool_ids,
+  // so the modal's "submit in ID order" default was forcing every PDF to
+  // appear in spool-number order regardless of user choice. Toggling to
+  // colour mode must reorder both the visible list AND the payload so the
+  // printed sheet groups colours together.
+  it('sorts the submit payload by HSL hue when sort mode is "By colour" (#1410)', async () => {
+    vi.mocked(api.printSpoolLabels).mockResolvedValue(PDF_BLOB);
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[1, 2, 3, 4]}  // Red / Blue / Black / Ivory all picked
+        spoolmanMode={false}
+      />,
+    );
+
+    // Default is ID-sorted; flip to colour.
+    fireEvent.click(screen.getByRole('button', { name: 'By colour' }));
+    fireEvent.click(screen.getByText(/Box label \(62 × 29 mm\)/i));
+
+    await waitFor(() => {
+      // Expected colour-sort order for the SPOOLS fixture:
+      //   Red    (1) — hue 0°   — chromatic
+      //   Ivory  (4) — hue ≈34° — chromatic
+      //   Blue   (2) — hue 240° — chromatic
+      //   Black  (3) — saturation ≈0 → neutrals bucket, lightness 0 → last
+      // Rainbow first, then neutrals (dark→light) per design choice for #1410.
+      expect(api.printSpoolLabels).toHaveBeenCalledWith({
+        spool_ids: [1, 4, 2, 3],
+        template: 'box_62x29',
+      });
+    });
+  });
+
+  it('keeps ID-order submission by default (#1410 regression guard)', async () => {
+    // Adding the sort toggle must NOT change the default behaviour — IDs go
+    // in ascending order unless the user explicitly clicks "By colour".
+    vi.mocked(api.printSpoolLabels).mockResolvedValue(PDF_BLOB);
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[1, 2, 3, 4]}
+        spoolmanMode={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByText(/Box label \(40 × 30 mm\)/i));
+
+    await waitFor(() => {
+      expect(api.printSpoolLabels).toHaveBeenCalledWith({
+        spool_ids: [1, 2, 3, 4],
+        template: 'box_40x30',
+      });
+    });
   });
 });

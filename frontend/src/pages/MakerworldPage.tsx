@@ -179,10 +179,16 @@ export function MakerworldPage() {
   // directly to a printer. The "slice in slicer" action below imports the
   // 3MF and hands it to the user's configured slicer; from there the
   // slicer's own "send to printer" flow takes over.
-  const preferredSlicer: SlicerType = settingsQuery.data?.preferred_slicer || 'bambu_studio';
+  // API-sidecar slicer (in-app SliceModal) is `preferred_slicer`; desktop
+  // "Open in Slicer" handoff respects the `open_in_slicer` override, falling
+  // back to `preferred_slicer` when unset (#1329). The button label shows
+  // whichever slicer this button actually drives — depends on useSlicerApi.
+  const useSlicerApi = settingsQuery.data?.use_slicer_api ?? false;
+  const apiSlicer: SlicerType = settingsQuery.data?.preferred_slicer || 'bambu_studio';
+  const desktopSlicer: SlicerType = settingsQuery.data?.open_in_slicer || apiSlicer;
+  const preferredSlicer: SlicerType = useSlicerApi ? apiSlicer : desktopSlicer;
   const preferredSlicerName =
     preferredSlicer === 'orcaslicer' ? 'OrcaSlicer' : 'Bambu Studio';
-  const useSlicerApi = settingsQuery.data?.use_slicer_api ?? false;
 
   // Slice-via-API modal source. When set, the SliceModal is shown for the
   // referenced library file; it covers MakerWorld's "Slice in <Slicer>" /
@@ -408,15 +414,16 @@ export function MakerworldPage() {
   const downloadCount = pickNumber(design, 'downloadCount');
 
   return (
-    <div className="p-6 max-w-screen-2xl mx-auto space-y-6">
-      <div className="flex items-center gap-3">
-        <Globe className="w-7 h-7 text-brand-500" />
-        <h1 className="text-2xl font-bold">{t('makerworld.title')}</h1>
+    <div className="p-4 md:p-8 max-w-screen-2xl space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+          <Globe className="w-7 h-7 text-bambu-green" />
+          {t('makerworld.title')}
+        </h1>
+        <p className="text-bambu-gray mt-1">
+          {t('makerworld.description')}
+        </p>
       </div>
-
-      <p className="text-sm text-gray-600 dark:text-gray-400">
-        {t('makerworld.description')}
-      </p>
 
       {/* Two-column layout: main flow on the left, sticky "Recent imports"
           sidebar on the right at lg+. Collapses to single column on narrow
@@ -434,7 +441,7 @@ export function MakerworldPage() {
                 </p>
                 <p className="text-amber-800 dark:text-amber-200 mt-1">
                   {t('makerworld.signInRequiredBody')}{' '}
-                  <Link to="/settings?tab=cloud" className="underline">
+                  <Link to="/profiles" className="underline">
                     {t('makerworld.openCloudSettings')}
                   </Link>
                 </p>

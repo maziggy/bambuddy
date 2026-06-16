@@ -2,8 +2,8 @@ import json
 import logging
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +38,14 @@ from backend.app.schemas.spool import (
     normalize_extra_colors,
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
+from backend.app.services.slicer_filament_resolver import resolve_slicer_filament
+from backend.app.services.spool_csv import (
+    MAX_CSV_IMPORT_BYTES,
+    ImportPreview,
+    ImportResult,
+    parse_and_validate,
+    serialize,
+)
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
     MATERIAL_TEMPS,
@@ -52,29 +60,12 @@ _GENERIC_ID_VALUES = set(GENERIC_FILAMENT_IDS.values())
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
+# Bounded read size for the CSV import body so a chunked upload with no
+# Content-Length can't stream past the cap into memory before we notice.
+_CSV_UPLOAD_CHUNK_BYTES = 64 * 1024
+
 # FilamentColors.xyz API
 FILAMENT_COLORS_API = "https://filamentcolors.xyz/api"
-
-# Generic Bambu filament IDs by material — fallback when no specific
-# preset is resolvable. Keep aligned with the inline table in
-# apply_spool_to_slot_via_mqtt below; both paths must produce the same
-# value for a given material.
-_GENERIC_FILAMENT_IDS: dict[str, str] = {
-    "PLA": "GFL99",
-    "PETG": "GFG99",
-    "ABS": "GFB99",
-    "ASA": "GFB98",
-    "PC": "GFC99",
-    "PA": "GFN99",
-    "NYLON": "GFN99",
-    "TPU": "GFU99",
-    "PVA": "GFS99",
-    "HIPS": "GFS98",
-    "PLA-CF": "GFL98",
-    "PETG-CF": "GFG98",
-    "PA-CF": "GFN98",
-    "PETG HF": "GFG96",
-}
 
 
 async def apply_spool_to_slot_via_mqtt(
@@ -118,79 +109,32 @@ async def apply_spool_to_slot_via_mqtt(
     )
     tray_color = spool.rgba or "FFFFFFFF"
 
-    _generic_id_values = set(_GENERIC_FILAMENT_IDS.values())
+    _generic_id_values = _GENERIC_ID_VALUES
+    _known_materials = set(MATERIAL_TEMPS.keys()) | set(GENERIC_FILAMENT_IDS.keys())
 
-    tray_info_idx = ""
-    setting_id = ""
-    sf = spool.slicer_filament or ""
-
-    if sf:
-        base_sf = sf.split("_")[0] if "_" in sf else sf
-        if base_sf.startswith("GFS") or base_sf.startswith("PFUS"):
-            setting_id = base_sf
-            try:
-                from backend.app.api.routes.cloud import build_authenticated_cloud
-
-                cloud = await build_authenticated_cloud(db, current_user)
-                if cloud is not None and cloud.is_authenticated:
-                    try:
-                        detail = await cloud.get_setting_detail(base_sf)
-                        if detail.get("filament_id"):
-                            tray_info_idx = detail["filament_id"]
-                            cloud_name = detail.get("name", "")
-                            if cloud_name:
-                                tray_sub_brands = cloud_name.replace(r"@.*$", "").split("@")[0].strip()
-                        elif detail.get("base_id"):
-                            bid = detail["base_id"].split("_")[0]
-                            if bid.startswith("GFS") and len(bid) >= 5:
-                                tray_info_idx = f"GF{bid[3:]}"
-                            else:
-                                tray_info_idx = bid
-                    finally:
-                        await cloud.close()
-                elif cloud is not None:
-                    await cloud.close()
-            except Exception as e:
-                logger.warning("Spool assign: cloud lookup failed for %r: %s", sf, e)
-
-            if not tray_info_idx:
-                tray_info_idx, setting_id = normalize_slicer_filament(sf)
-        elif base_sf.startswith("GF"):
-            tray_info_idx, setting_id = normalize_slicer_filament(sf)
-        else:
-            try:
-                local_id = int(sf)
-                from backend.app.models.local_preset import LocalPreset as LP
-
-                lp_result = await db.execute(select(LP).where(LP.id == local_id, LP.preset_type == "filament"))
-                lp = lp_result.scalar_one_or_none()
-                if lp:
-                    mat = (spool.material or lp.filament_type or "").upper().strip()
-                    tray_info_idx = (
-                        _GENERIC_FILAMENT_IDS.get(mat)
-                        or _GENERIC_FILAMENT_IDS.get(mat.split("-")[0].split(" ")[0])
-                        or ""
-                    )
-                    if lp.name:
-                        tray_sub_brands = lp.name.split("@")[0].strip()
-            except (ValueError, TypeError):
-                tray_info_idx, setting_id = normalize_slicer_filament(sf)
-
-    if tray_info_idx and spool.slicer_filament_name:
-        from backend.app.api.routes.cloud import _BUILTIN_FILAMENT_NAMES
-
-        expected_name = _BUILTIN_FILAMENT_NAMES.get(tray_info_idx, "")
-        if expected_name and expected_name != spool.slicer_filament_name:
-            for fid, fname in _BUILTIN_FILAMENT_NAMES.items():
-                if fname == spool.slicer_filament_name:
-                    tray_info_idx = fid
-                    setting_id = filament_id_to_setting_id(fid)
-                    break
+    # slicer_filament → (tray_info_idx, setting_id) resolution is shared with
+    # the Spoolman-mode route via this helper (#1713). The helper handles
+    # GFS/PFUS/PFCN cloud lookup, GF normalize, integer LocalPreset id,
+    # the builtin-name realignment, AND the defensive PFUS/PFCN/material-name
+    # sanitization. When it returns an empty tray_info_idx the local
+    # current-tray-state + generic-material fallback below rescues the slot.
+    tray_info_idx, setting_id, sub_brand_override = await resolve_slicer_filament(
+        db=db,
+        current_user=current_user,
+        slicer_filament=spool.slicer_filament,
+        slicer_filament_name=spool.slicer_filament_name,
+        material=spool.material,
+    )
+    if sub_brand_override:
+        tray_sub_brands = sub_brand_override
 
     if not tray_info_idx:
         if (
             current_tray_info_idx
             and current_tray_info_idx not in _generic_id_values
+            and not current_tray_info_idx.startswith("PFUS")
+            and not current_tray_info_idx.startswith("PFCN")
+            and current_tray_info_idx.upper() not in _known_materials
             and current_tray_type
             and current_tray_type.upper() == tray_type.upper()
         ):
@@ -198,12 +142,20 @@ async def apply_spool_to_slot_via_mqtt(
         elif tray_type:
             material = tray_type.upper().strip()
             generic = (
-                _GENERIC_FILAMENT_IDS.get(material)
-                or _GENERIC_FILAMENT_IDS.get(material.split("-")[0].split(" ")[0])
+                GENERIC_FILAMENT_IDS.get(material)
+                or GENERIC_FILAMENT_IDS.get(material.split("-")[0].split(" ")[0])
                 or ""
             )
             if generic:
                 tray_info_idx = generic
+
+    # Ensure setting_id is always derivable from tray_info_idx. The local-preset
+    # path above sets tray_info_idx to a generic ID (e.g. "GFL99") but leaves
+    # setting_id empty — without this fallback the slicer gets a half-configured
+    # slot (filament id without setting id) and shows empty fields in the slot
+    # detail modal.
+    if tray_info_idx and not setting_id:
+        setting_id = filament_id_to_setting_id(tray_info_idx)
 
     temp_min, temp_max = MATERIAL_TEMPS.get((spool.material or "").upper(), (200, 240))
     if spool.nozzle_temp_min is not None:
@@ -301,92 +253,43 @@ async def apply_spool_to_slot_via_mqtt(
             nozzle_diameter=nozzle_diameter,
         )
     else:
-        # No stored K-profile for this slot — preserve the slot's current live
-        # cali_idx if the printer has one. cali_idx is read from state.raw_data
-        # using the same idiom as the route's `current_tray_info_idx` lookup.
-        # Negative values (e.g. -1) mean "no calibration recorded" and must not
-        # be sent.
-        live_cali_idx: int | None = None
-        if state and getattr(state, "raw_data", None):
-            if ams_id == 255:
-                for vt in state.raw_data.get("vt_tray") or []:
-                    if isinstance(vt, dict) and int(vt.get("id", 254)) == (tray_id + 254):
-                        raw = vt.get("cali_idx")
-                        if isinstance(raw, int):
-                            live_cali_idx = raw
-                        break
-            else:
-                ams_section = state.raw_data.get("ams", {})
-                ams_list = (
-                    ams_section.get("ams", [])
-                    if isinstance(ams_section, dict)
-                    else ams_section
-                    if isinstance(ams_section, list)
-                    else []
-                )
-                tray_dict = _find_tray_in_ams_data(ams_list, ams_id, tray_id)
-                if tray_dict:
-                    raw = tray_dict.get("cali_idx")
-                    if isinstance(raw, int):
-                        live_cali_idx = raw
-        if live_cali_idx is not None and live_cali_idx >= 0:
-            cali_filament_id = spool.slicer_filament or effective_tray_info_idx
-            client.extrusion_cali_sel(
-                ams_id=ams_id,
-                tray_id=tray_id,
-                cali_idx=live_cali_idx,
-                filament_id=cali_filament_id,
-                nozzle_diameter=nozzle_diameter,
-            )
-            logger.info(
-                "No stored K-profile for spool %d — preserved live cali_idx=%d",
-                spool.id,
-                live_cali_idx,
-            )
+        # No stored K-profile for this spool — always reset the slot to Default
+        # K (cali_idx=-1). The live cali_idx on the slot belongs to whatever
+        # filament was there before, so preserving it would apply the wrong
+        # filament's calibration to the new spool. Default K is the firmware's
+        # documented "no specific profile" value (see BambuClient.extrusion_cali_sel
+        # docstring).
+        cali_filament_id = spool.slicer_filament or effective_tray_info_idx
+        client.extrusion_cali_sel(
+            ams_id=ams_id,
+            tray_id=tray_id,
+            cali_idx=-1,
+            filament_id=cali_filament_id,
+            nozzle_diameter=nozzle_diameter,
+        )
+        logger.info(
+            "No stored K-profile for spool %d — reset slot to Default K (cali_idx=-1)",
+            spool.id,
+        )
 
     # Persist slot preset mapping for UI display (preset_name on hover card).
-    try:
-        from backend.app.models.slot_preset import SlotPresetMapping
+    # Shared with the RFID auto-assign path — both must keep this row in sync
+    # with the currently-assigned spool, otherwise the slot card surfaces the
+    # previous spool's preset name (the PrintersPage display chain consults
+    # slot_preset_mappings.preset_name first).
+    from backend.app.services.slot_preset_writer import upsert_slot_preset_for_spool
 
-        preset_name = spool.slicer_filament_name or tray_sub_brands or tray_type
-        preset_source = "cloud"
-        if sf:
-            base_sf_mapping = sf.split("_")[0] if "_" in sf else sf
-            try:
-                int(base_sf_mapping)
-                preset_id_to_save = f"local_{base_sf_mapping}"
-                preset_source = "local"
-            except (ValueError, TypeError):
-                preset_id_to_save = filament_id_to_setting_id(tray_info_idx) if tray_info_idx else setting_id
-        else:
-            preset_id_to_save = filament_id_to_setting_id(tray_info_idx) if tray_info_idx else ""
-
-        if preset_id_to_save:
-            existing_mapping = await db.execute(
-                select(SlotPresetMapping).where(
-                    SlotPresetMapping.printer_id == printer_id,
-                    SlotPresetMapping.ams_id == ams_id,
-                    SlotPresetMapping.tray_id == tray_id,
-                )
-            )
-            mapping = existing_mapping.scalar_one_or_none()
-            if mapping:
-                mapping.preset_id = preset_id_to_save
-                mapping.preset_name = preset_name
-                mapping.preset_source = preset_source
-            else:
-                mapping = SlotPresetMapping(
-                    printer_id=printer_id,
-                    ams_id=ams_id,
-                    tray_id=tray_id,
-                    preset_id=preset_id_to_save,
-                    preset_name=preset_name,
-                    preset_source=preset_source,
-                )
-                db.add(mapping)
-            await db.commit()
-    except Exception as e:
-        logger.warning("Failed to save slot preset mapping for spool %d: %s", spool.id, e)
+    await upsert_slot_preset_for_spool(
+        db=db,
+        spool=spool,
+        printer_id=printer_id,
+        ams_id=ams_id,
+        tray_id=tray_id,
+        tray_info_idx=tray_info_idx,
+        tray_sub_brands=tray_sub_brands,
+        tray_type=tray_type,
+        setting_id=setting_id,
+    )
 
     logger.info(
         "Auto-configured AMS slot ams=%d tray=%d for spool %d on printer %d",
@@ -487,6 +390,10 @@ class ColorLookupResult(BaseModel):
     found: bool
     hex_color: str | None = None
     material: str | None = None
+
+
+class ColorByMaterialResult(BaseModel):
+    color_name: str | None = None
 
 
 # ── Spool Catalog CRUD ─────────────────────────────────────────────────────
@@ -766,6 +673,73 @@ async def lookup_color(
     return ColorLookupResult(found=False)
 
 
+@router.get("/colors/by-material", response_model=ColorByMaterialResult)
+async def get_color_by_material(
+    hex: str,
+    material: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_auth_if_enabled),
+):
+    """Disambiguated hex→name lookup that respects material context.
+
+    ``/colors/map`` collapses every catalog entry sharing a hex to a single
+    name with "Bambu Lab > is_default > first" priority — that loses, e.g.,
+    "PLA Matte Charcoal" (#000000) behind "PLA Basic Black" (also #000000).
+    This endpoint preserves the material context so the queue scheduler's
+    Filament Override label can show the actually-sliced sub-brand colour
+    instead of the generic bucket. #1718.
+
+    Returns ``color_name=None`` when the hex isn't in the catalog at all.
+    When the hex IS in the catalog but no entry matches the requested
+    material (or none was supplied), falls back to the same priority order
+    as ``/colors/map`` so callers without a material hint don't regress.
+
+    Not gated on INVENTORY_READ for the same reason ``/colors/map`` isn't —
+    every queue / archive view that renders a sliced filament colour needs
+    this, including read-only roles.
+    """
+    key = hex.lstrip("#").lower()[:6]
+    if len(key) != 6:
+        return ColorByMaterialResult(color_name=None)
+
+    material_norm = (material or "").strip().lower()
+
+    # Catalog rows are stored as ``#RRGGBB`` (verified at write time and
+    # against production); lookup uses lower-cased hex equality so mixed-case
+    # writes from older imports still match.
+    result = await db.execute(
+        select(
+            ColorCatalogEntry.color_name,
+            ColorCatalogEntry.manufacturer,
+            ColorCatalogEntry.material,
+            ColorCatalogEntry.is_default,
+        ).where(func.lower(ColorCatalogEntry.hex_color) == f"#{key}")
+    )
+    candidates = [(name, mfg, mat, is_default) for name, mfg, mat, is_default in result.all() if name]
+    if not candidates:
+        return ColorByMaterialResult(color_name=None)
+
+    if material_norm:
+        for name, _mfg, mat, _is_default in candidates:
+            if mat and mat.strip().lower() == material_norm:
+                return ColorByMaterialResult(color_name=name)
+
+    # Same priority order as ``/colors/map`` so a caller passing no (or an
+    # unrecognised) material gets the existing answer, not a degraded one.
+    best_name: str | None = None
+    best_priority = -1
+    for name, mfg, _mat, is_default in candidates:
+        priority = 0
+        if mfg and mfg.strip().lower() == "bambu lab":
+            priority += 2
+        if is_default:
+            priority += 1
+        if priority > best_priority:
+            best_name = name
+            best_priority = priority
+    return ColorByMaterialResult(color_name=best_name)
+
+
 @router.get("/colors/search", response_model=list[ColorEntryResponse])
 async def search_colors(
     manufacturer: str | None = None,
@@ -799,7 +773,13 @@ async def sync_from_filamentcolors(
         total_available = 0
 
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            # Identify honestly as Bambuddy rather than leaking httpx's
+            # default "python-httpx/x.y" UA — consistent with every other
+            # outbound client (bambu_cloud, makerworld, firmware_check).
+            async with httpx.AsyncClient(
+                timeout=120.0,
+                headers={"User-Agent": "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)"},
+            ) as client:
                 page = 1
                 while True:
                     response = await client.get(
@@ -906,6 +886,92 @@ async def list_spools(
     query = query.order_by(Spool.material, Spool.brand, Spool.color_name)
     result = await db.execute(query)
     return list(result.scalars().all())
+
+
+# ── CSV import / export (#1576) ──────────────────────────────────────────────
+# Declared before the dynamic `/spools/{spool_id}` route below so the literal
+# `export` / `import` segments match here instead of being parsed as an int id.
+
+
+@router.get("/spools/export")
+async def export_spools_csv(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """Export the active inventory as CSV (same schema the importer accepts)."""
+    from datetime import datetime, timezone
+
+    query = select(Spool).where(Spool.archived_at.is_(None)).order_by(Spool.material, Spool.brand, Spool.color_name)
+    result = await db.execute(query)
+    spools = list(result.scalars().all())
+    content = serialize(spools)
+    # Date-stamp the filename so repeat exports don't overwrite each other in
+    # the browser's default download folder.
+    filename = f"bambuddy_inventory_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/spools/import", response_model=ImportPreview | ImportResult)
+async def import_spools_csv(
+    file: UploadFile = File(...),
+    dry_run: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Import spools from a CSV file.
+
+    With ``dry_run=true`` returns an ImportPreview (per-row valid/error/skipped,
+    colours resolved) and writes nothing — the UI shows this before the user
+    confirms. With ``dry_run=false`` it validates the same way and then persists
+    only the valid rows in a single transaction (invalid rows are skipped, the
+    user fixes the CSV and re-uploads), returning an ImportResult summary.
+    """
+
+    def _too_large() -> HTTPException:
+        return HTTPException(
+            status_code=413,
+            detail={
+                "code": "csv_import_too_large",
+                "message": f"CSV file exceeds the {MAX_CSV_IMPORT_BYTES // (1024 * 1024)} MB limit.",
+            },
+        )
+
+    # Reject by declared size first (fast path when Content-Length is set), then
+    # read in bounded chunks and bail the moment the accumulated body crosses the
+    # cap — file.size is None for chunked uploads, so the loop is what actually
+    # keeps an oversized stream from filling memory.
+    if file.size is not None and file.size > MAX_CSV_IMPORT_BYTES:
+        raise _too_large()
+    raw = bytearray()
+    while chunk := await file.read(_CSV_UPLOAD_CHUNK_BYTES):
+        raw.extend(chunk)
+        if len(raw) > MAX_CSV_IMPORT_BYTES:
+            raise _too_large()
+    preview = await parse_and_validate(bytes(raw), db)
+
+    if dry_run:
+        return preview
+
+    created = 0
+    for row in preview.rows:
+        if row.status == "valid" and row.spool is not None:
+            db.add(Spool(**row.spool))
+            created += 1
+
+    if created:
+        await db.commit()
+        await ws_manager.broadcast({"type": "inventory_changed"})
+
+    return ImportResult(
+        created=created,
+        skipped=preview.skipped_count,
+        errors=preview.error_count,
+        error_rows=[r for r in preview.rows if r.status == "error"],
+    )
 
 
 @router.get("/spools/{spool_id}", response_model=SpoolResponse)
@@ -1040,6 +1106,66 @@ async def restore_spool(
     result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool_id))
     await ws_manager.broadcast({"type": "inventory_changed"})
     return result.scalar_one()
+
+
+@router.post("/spools/{spool_id}/reset-consumed-counter", response_model=SpoolResponse)
+async def reset_spool_consumed_counter(
+    spool_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Zero the displayed "Total Consumed" counter without touching remaining.
+
+    Stamps `weight_used_baseline = weight_used` so the Inventory page's
+    `weight_used - baseline` display reads 0, while `label_weight -
+    weight_used` (remaining) is unchanged. weight_locked is also left
+    alone — the spool keeps receiving AMS auto-sync updates. Matches
+    Spoolman's split between used_weight and remaining_weight (#1390).
+
+    The earlier name `/reset-usage` was misleading: callers reasonably
+    expected `weight_used` itself to drop to 0 and were surprised when
+    the response showed it unchanged. The current name describes what
+    the endpoint actually does — reset the "Total Consumed" counter
+    widget, not the lifetime weight_used field.
+    """
+    result = await db.execute(select(Spool).where(Spool.id == spool_id))
+    spool = result.scalar_one_or_none()
+    if not spool:
+        raise HTTPException(404, "Spool not found")
+
+    spool.weight_used_baseline = spool.weight_used or 0
+    await db.commit()
+    result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool_id))
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    return result.scalar_one()
+
+
+@router.post("/spools/reset-consumed-counter-bulk")
+async def bulk_reset_spool_consumed_counter(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Bulk-stamp baseline = weight_used across the given spool IDs.
+
+    Caller passes an explicit list of IDs — no "reset all" shortcut, since
+    a typo on a wildcard would wipe the entire inventory's tracking.
+    Same semantics as the per-spool endpoint: remaining is preserved,
+    weight_locked is left alone.
+    """
+    spool_ids = payload.get("spool_ids")
+    if not isinstance(spool_ids, list) or not spool_ids:
+        raise HTTPException(400, "spool_ids must be a non-empty list")
+    if not all(isinstance(sid, int) for sid in spool_ids):
+        raise HTTPException(400, "spool_ids must contain integers")
+
+    result = await db.execute(select(Spool).where(Spool.id.in_(spool_ids)))
+    spools = list(result.scalars().all())
+    for spool in spools:
+        spool.weight_used_baseline = spool.weight_used or 0
+    await db.commit()
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    return {"reset": len(spools)}
 
 
 # ── K-Profiles ───────────────────────────────────────────────────────────────
@@ -1247,30 +1373,40 @@ async def assign_spool(
 
     # 4. Auto-configure AMS slot via MQTT.
     #
-    # Skip the publish entirely when the target slot is empty: Bambu firmware
-    # silently drops ams_filament_setting / extrusion_cali_sel for unloaded
-    # slots (there is no filament context for the cali_idx to attach to). The
-    # SpoolAssignment row is preserved with an empty fingerprint_type, which
-    # acts as the "pending config" marker — when the spool is physically
-    # inserted later, on_ams_change re-fires the full configuration. This is
-    # the SpoolBuddy primary workflow: weigh-then-assign before insertion.
+    # Only suppress the publish when the firmware's *explicit* empty signal
+    # (state ∈ {9, 10}) is set — "no spool" / "spool present but no feed".
+    # Every other state, including state=3 (the default idle on A1 Mini BMCU /
+    # P1S Standard AMS for both loaded and unconfigured slots) and missing
+    # state (older firmwares), is treated as the user's assertion that a
+    # spool is in the slot and we attempt the MQTT push.
     #
-    # Empty-detection: prefer the printer's tray.state when it's reported
-    # (11=loaded, 9=empty, 10=spool present but filament not in feeder).
-    # tray_type alone is wrong post-"Reset slot" — that flow clears tray_type
-    # to "" while leaving filament physically loaded, and the old check
-    # would then mark it as a pending-config SpoolBuddy assignment, skip
-    # MQTT, and the slot would stay unconfigured forever because the
-    # on_ams_change replay only fires on an empty→loaded transition that
-    # never comes (the slot is already loaded). When state is not reported
-    # (older firmware), fall back to the tray_type heuristic.
-    if tray_state is not None:
-        slot_is_empty = tray_state != 11
-    else:
-        slot_is_empty = not (fingerprint_type and fingerprint_type.strip())
+    # The pre-existing "skip when slot looks empty" guard read state=3 +
+    # tray_type="" as "empty" and skipped MQTT. On these firmwares that
+    # combination is the post-"Reset Slot" state with the spool still
+    # physically inserted — there is NO AMS signal that distinguishes it
+    # from a truly-empty slot, so the guard created a deadlock: MQTT never
+    # fired, the AMS never reported any change (because nothing changed
+    # physically), and on_ams_change replay therefore never re-fired the
+    # config either. Reporter (#1322 follow-up by @RosdasHH) verified
+    # empirically that removing the guard makes the slot configure
+    # correctly because Bambu firmware DOES accept the push for a
+    # physically-loaded slot, even when tray_type is "" and state is 3.
+    #
+    # Trade-off for the truly-empty slot case: firmware drops the push
+    # silently (per Bambu's documented behavior), the SpoolAssignment row
+    # still has empty fingerprint_type because nothing in the assign path
+    # updates that column, and on_ams_change at main.py:1031-1054 still
+    # fires the deferred config when a spool eventually appears. So the
+    # SpoolBuddy weigh-then-assign-before-insert workflow continues to
+    # work — just without the optimization of skipping a no-op MQTT call.
+    #
+    # state ∈ {9, 10} stays as an explicit short-circuit so we don't churn
+    # a doomed MQTT push when the firmware has positively confirmed "no
+    # spool" — and to keep the on_ams_change replay path as the single
+    # source of truth for those slots.
+    slot_is_definitely_empty = tray_state == 9 or tray_state == 10
     configured = False
-    pending_config = slot_is_empty
-    if not slot_is_empty:
+    if not slot_is_definitely_empty:
         try:
             configured = await apply_spool_to_slot_via_mqtt(
                 db=db,
@@ -1284,6 +1420,11 @@ async def assign_spool(
             )
         except Exception as e:
             logger.warning("MQTT auto-configure failed for spool %d: %s", spool.id, e)
+    # pending_config is the "config not landed yet" UI marker. True when the
+    # firmware said empty, OR when MQTT couldn't actually publish (printer
+    # offline, no client, transient failure). on_ams_change replay re-fires
+    # the config in either case once the AMS reports a non-empty fingerprint.
+    pending_config = slot_is_definitely_empty or not configured
 
     # Return assignment with spool data
     result = await db.execute(

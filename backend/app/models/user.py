@@ -45,6 +45,20 @@ class User(Base):
     # "global" or "china"; NULL treated as "global" for legacy rows.
     cloud_region: Mapped[str | None] = mapped_column(String(10), nullable=True, default=None)
 
+    # Per-user Orca Cloud credentials. Unlike Bambu Cloud, Orca uses Supabase PKCE
+    # with short-lived access tokens (1h) and rotating single-use refresh tokens,
+    # so we store the refresh token + expiry alongside the access token.
+    orca_cloud_token: Mapped[str | None] = mapped_column(String(2000), nullable=True, default=None)
+    orca_cloud_refresh_token: Mapped[str | None] = mapped_column(String(128), nullable=True, default=None)
+    orca_cloud_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    orca_cloud_email: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    orca_cloud_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+    # Transient PKCE state held between /orca-cloud/auth/start and /orca-cloud/auth/finish.
+    # Cleared on successful finish; expires after 10 minutes if the user abandons the flow.
+    orca_cloud_pending_verifier: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+    orca_cloud_pending_state: Mapped[str | None] = mapped_column(String(32), nullable=True, default=None)
+    orca_cloud_pending_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+
     # Relationship to groups through association table
     groups: Mapped[list[Group]] = relationship(
         "Group",

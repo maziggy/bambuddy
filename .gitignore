@@ -62,6 +62,11 @@ node_modules/
 
 data/
 
+# Local-dev runtime caches (matplotlib MPLCONFIGDIR lands here when DATA_DIR
+# is unset, so base_dir resolves to the repo root). In Docker this sits
+# inside the /app/data volume and is already covered.
+.cache/
+
 # JWT secret file (should be in data dir, but protect project root too)
 .jwt_secret
 
@@ -83,3 +88,7 @@ advertisements/
 
 # gitleaks reports
 gitleaks-report.json
+
+scripts/pip-audit.sh
+
+security/

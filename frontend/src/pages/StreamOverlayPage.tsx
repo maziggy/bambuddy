@@ -144,11 +144,33 @@ export function StreamOverlayPage() {
   useEffect(() => {
     if (!id) return;
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/ws`;
-    const ws = new WebSocket(wsUrl);
+    let ws: WebSocket | null = null;
+    let cancelled = false;
 
-    ws.onmessage = (event) => {
+    // GHSA-r2qv follow-up: mint a ws-token before connecting. Uses
+    // api.getWebSocketToken so the JWT Authorization header rides along
+    // (raw fetch+credentials:'include' would miss it — Bambuddy uses
+    // Bearer tokens, not cookies, for JWT auth). Auth-disabled deployments
+    // succeed even without a token.
+    (async () => {
+      let token: string | undefined;
+      try {
+        const resp = await api.getWebSocketToken();
+        token = resp.token;
+      } catch {
+        // Token mint failed — auth disabled, no JWT yet, or transient
+        // network error. Fall through; auth-disabled deployments still
+        // succeed, auth-enabled ones close with 4401 and the page's
+        // polling fallback continues to refresh the status.
+      }
+      if (cancelled) return;
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+      const wsUrl = `${protocol}//${window.location.host}/api/v1/ws${tokenParam}`;
+      ws = new WebSocket(wsUrl);
+
+      ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'printer_status' && data.printer_id === id) {
@@ -159,12 +181,14 @@ export function StreamOverlayPage() {
       }
     };
 
-    ws.onerror = () => {
-      // WebSocket error - polling will continue as fallback
-    };
+      ws.onerror = () => {
+        // WebSocket error - polling will continue as fallback
+      };
+    })();
 
     return () => {
-      ws.close();
+      cancelled = true;
+      if (ws) ws.close();
     };
   }, [id, queryClient]);
 

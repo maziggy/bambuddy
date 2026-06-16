@@ -43,10 +43,10 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -71,7 +71,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build Docker image
         run: docker build -t bambuddy:security-scan .
@@ -116,10 +116,10 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -132,14 +132,21 @@ jobs:
       - name: Run pip-audit
         id: pip-audit
         run: |
-          # CVE-2026-4539: low-severity ReDoS in Pygments AdlLexer (indirect dep via mkdocs-material/pytest/rich).
-          # No fix available yet. Remove --ignore-vuln once Pygments releases a patched version.
-          pip-audit --desc on --format json --output pip-audit-results.json --ignore-vuln CVE-2026-4539 || echo "vulnerabilities_found=true" >> $GITHUB_OUTPUT
-          pip-audit --desc on --ignore-vuln CVE-2026-4539 || true
+          # CVE-2025-45768 (PYSEC-2025-183 / GHSA-65pc-fj4g-8rjx): disputed by PyJWT maintainers.
+          # Advisory says "key length is chosen by the application that uses the library" — no
+          # PyJWT fix exists or will exist. Bambuddy is safe: backend/app/core/auth.py:184 uses
+          # secrets.token_urlsafe(64) (~86 chars of entropy) for auto-generated secrets and
+          # rejects file-loaded secrets shorter than 32 chars at :177. Keep ignored permanently.
+          pip-audit --desc on --format json --output pip-audit-results.json \
+            --ignore-vuln CVE-2025-45768 \
+            || echo "vulnerabilities_found=true" >> $GITHUB_OUTPUT
+          pip-audit --desc on \
+            --ignore-vuln CVE-2025-45768 \
+            || true
 
       - name: Upload audit results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pip-audit-results
           path: pip-audit-results.json
@@ -147,7 +154,7 @@ jobs:
 
       - name: Create or close pip security issue
         if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
@@ -264,10 +271,10 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -314,7 +321,7 @@ jobs:
 
       - name: Upload audit results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: npm-audit-results
           path: frontend/npm-audit-results.json
@@ -322,7 +329,7 @@ jobs:
 
       - name: Create or close npm security issue
         if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');

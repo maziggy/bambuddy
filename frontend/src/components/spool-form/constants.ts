@@ -18,6 +18,11 @@ export const DEFAULT_BRANDS = [
 // Known filament variants/subtypes
 export const KNOWN_VARIANTS = [
   'Basic', 'Matte', 'Silk', 'Silk+', 'Tough', 'Tough+', 'HF', 'High Flow', 'Engineering',
+  // CF (Carbon Fiber) / GF (Glass Fiber) — match Bambu's PETG-CF / PA6-GF /
+  // ABS-GF naming so users adding a third-party CF/GF spool can pick the
+  // base material + subtype here instead of needing a -CF Material entry
+  // (#1345).
+  'CF', 'GF',
   'Galaxy', 'Glow', 'Marble', 'Metal', 'Rainbow', 'Sparkle', 'Wood',
   'Translucent', 'Transparent', 'Clear', 'Lite', 'Pro', 'Plus', 'Max',
   'Super', 'Ultra', 'Flex', 'Soft', 'Hard', 'Strong', 'Impact',
@@ -25,7 +30,9 @@ export const KNOWN_VARIANTS = [
   'Gradient', 'Dual Color', 'Tri Color', 'Multicolor',
 ];
 
-// Quick color swatches - most common colors (shown by default)
+// Quick color swatches - most common colors (shown by default).
+// `Clear` is the only 8-char preset (alpha 00) — native `<input type="color">`
+// cannot pick alpha, so a dedicated preset is the only way to set it (#1545).
 export const QUICK_COLORS: ColorPreset[] = [
   { name: 'Black', hex: '000000' },
   { name: 'White', hex: 'FFFFFF' },
@@ -39,6 +46,7 @@ export const QUICK_COLORS: ColorPreset[] = [
   { name: 'Pink', hex: 'FF69B4' },
   { name: 'Brown', hex: '8B4513' },
   { name: 'Silver', hex: 'C0C0C0' },
+  { name: 'Clear', hex: '00000000' },
 ];
 
 // Extended color palette (shown when expanded)

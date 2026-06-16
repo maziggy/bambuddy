@@ -51,9 +51,10 @@ import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { KProfilesView } from '../components/KProfilesView';
 import { LocalProfilesView } from '../components/LocalProfilesView';
+import { OrcaCloudView } from '../components/OrcaCloudView';
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
-type ProfileTab = 'cloud' | 'local' | 'kprofiles';
+type ProfileTab = 'cloud' | 'orca_cloud' | 'local' | 'kprofiles';
 type LoginStep = 'email' | 'code' | 'token';
 type PresetType = 'all' | 'filament' | 'printer' | 'process';
 
@@ -305,7 +306,7 @@ function LoginForm({ onSuccess, t }: { onSuccess: () => void; t: TFunction }) {
 // FILTER DROPDOWN
 // ============================================================================
 
-function FilterDropdown({
+export function FilterDropdown({
   label,
   value,
   options,
@@ -2868,11 +2869,14 @@ export function ProfilesPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8">
+    <div className="p-4 md:p-8">
       {/* Page Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">{t('profiles.title')}</h1>
-        <p className="text-bambu-gray">{t('profiles.subtitle')}</p>
+        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+          <Cloud className="w-7 h-7 text-bambu-green" />
+          {t('profiles.title')}
+        </h1>
+        <p className="text-bambu-gray mt-1">{t('profiles.subtitle')}</p>
       </div>
 
       {/* Tab Navigation */}
@@ -2886,7 +2890,18 @@ export function ProfilesPage() {
           }`}
         >
           <Cloud className="w-4 h-4" />
-          {t('profiles.tabs.cloud')}
+          {t('profiles.tabs.bambuCloud')}
+        </button>
+        <button
+          onClick={() => setActiveTab('orca_cloud')}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            activeTab === 'orca_cloud'
+              ? 'text-bambu-green border-bambu-green'
+              : 'text-bambu-gray hover:text-white border-transparent'
+          }`}
+        >
+          <Cloud className="w-4 h-4" />
+          {t('profiles.tabs.orcaCloud')}
         </button>
         <button
           onClick={() => setActiveTab('local')}
@@ -2968,6 +2983,9 @@ export function ProfilesPage() {
           )}
         </>
       )}
+
+      {/* Orca Cloud Profiles Tab */}
+      {activeTab === 'orca_cloud' && <OrcaCloudView />}
 
       {/* Local Profiles Tab */}
       {activeTab === 'local' && <LocalProfilesView />}

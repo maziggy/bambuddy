@@ -72,9 +72,26 @@ class PrintQueueItem(Base):
     layer_inspect: Mapped[bool] = mapped_column(Boolean, default=False)
     timelapse: Mapped[bool] = mapped_column(Boolean, default=False)
     use_ams: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Nozzle offset calibration — dual-nozzle printers only, MQTT-gated (#1682)
+    nozzle_offset_cali: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Status: pending, printing, completed, failed, skipped, cancelled
     status: Mapped[str] = mapped_column(String(20), default="pending")
+
+    # Set by the dispatch scheduler when the assigned spool can't satisfy
+    # this print's per-slot filament weight (#1496). Display-only flag — the
+    # actual deficit is recomputed live every time the user clicks ▶, so
+    # swapping a spool to a fuller one between flag and dispatch clears the
+    # block automatically.
+    filament_short: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # User has acknowledged the filament-shortage warning for this item
+    # ("Print Anyway"). Set by the start route when the user passes
+    # skip_filament_check=true, or at queue-creation time if PrintModal's
+    # frontend deficit warning was acknowledged. Survives scheduler ticks so
+    # the dispatch no longer bounces between "user said anyway" and
+    # "scheduler re-flagged" (#1698-followup).
+    skip_filament_check: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Tracking
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

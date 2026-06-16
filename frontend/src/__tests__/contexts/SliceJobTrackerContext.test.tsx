@@ -341,6 +341,105 @@ describe('SliceJobTrackerProvider — persistent progress toast', () => {
     expect(text.textContent).toMatch(/75%/);
   });
 
+  it('shows "Plate X of Y" prefix when the snapshot carries multi-plate loop fields (#1493)', async () => {
+    // Cross-class slice-all wraps each per-plate sub-slice's progress
+    // snapshot with multi_plate_index / multi_plate_count so the toast
+    // surfaces loop position alongside the slicer's stage message.
+    mockApi.getSliceJob.mockResolvedValue({
+      job_id: 9,
+      status: 'running',
+      kind: 'library_file',
+      source_id: 300,
+      source_name: 'Mewtwo.3mf',
+      created_at: new Date().toISOString(),
+      started_at: new Date().toISOString(),
+      completed_at: null,
+      progress: {
+        stage: 'Generating G-code',
+        total_percent: 47,
+        plate_percent: 47,
+        plate_index: 2,
+        plate_count: 5,
+        updated_at: Date.now(),
+        multi_plate_index: 2,
+        multi_plate_count: 5,
+      },
+    });
+
+    render(
+      <Wrapper>
+        <TrackTrigger id={9} name="Mewtwo.3mf" />
+      </Wrapper>,
+    );
+
+    act(() => {
+      screen.getByText('track-9').click();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    // The augmented toast carries the "Plate 2 of 5" prefix.
+    const text = screen.getByText(/Plate 2 of 5/);
+    expect(text.textContent).toMatch(/Mewtwo\.3mf/);
+    expect(text.textContent).toMatch(/Generating G-code/);
+    expect(text.textContent).toMatch(/47%/);
+  });
+
+  it('does NOT add the "Plate X of Y" prefix when the loop fields are absent', async () => {
+    // Sanity: a normal single-plate slice (no slice-all loop) still
+    // renders the existing progress message, no "Plate" prefix.
+    mockApi.getSliceJob.mockResolvedValue({
+      job_id: 10,
+      status: 'running',
+      kind: 'library_file',
+      source_id: 301,
+      source_name: 'Single.3mf',
+      created_at: new Date().toISOString(),
+      started_at: new Date().toISOString(),
+      completed_at: null,
+      progress: {
+        stage: 'Generating G-code',
+        total_percent: 50,
+        plate_percent: 50,
+        plate_index: 1,
+        plate_count: 1,
+        updated_at: Date.now(),
+      },
+    });
+
+    render(
+      <Wrapper>
+        <TrackTrigger id={10} name="Single.3mf" />
+      </Wrapper>,
+    );
+
+    act(() => {
+      screen.getByText('track-10').click();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(screen.queryByText(/Plate \d+ of \d+/)).toBeNull();
+    const text = screen.getByText(/Generating G-code/);
+    expect(text.textContent).toMatch(/Single\.3mf/);
+  });
+
   it('falls back to elapsed-time message when progress is null', async () => {
     // Sidecar without --pipe support / pre-progress feature: state.progress
     // stays null and the toast shows the existing "Slicing X — 47s" text.

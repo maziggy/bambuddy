@@ -18,12 +18,13 @@ from dataclasses import dataclass
 
 import requests
 
-
 API_PATH_BULK_CREATE = "/api/v1/inventory/spools/bulk"
+
 
 @dataclass(frozen=True)
 class TestSpool:
     "Class representing a spool definition and count for the test spool set"
+
     effect_type: str
     colors: dict[str, str]
     quantity: int = 1
@@ -188,10 +189,7 @@ def main() -> None:
                 timeout=args.timeout,
             )
             ids = [str(item.get("id", "?")) for item in created_spools]
-            print(
-                f"  Created effect={variant.effect_type:<11} qty={len(created_spools)} "
-                f"ids={','.join(ids)}"
-            )
+            print(f"  Created effect={variant.effect_type:<11} qty={len(created_spools)} ids={','.join(ids)}")
             created += len(created_spools)
         except (requests.RequestException, ValueError) as exc:
             print(f"  FAILED effect={variant.effect_type}: {exc}", file=sys.stderr)

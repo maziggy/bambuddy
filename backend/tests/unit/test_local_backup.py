@@ -12,9 +12,15 @@ from backend.app.services.local_backup import LocalBackupService
 
 
 class TestCalculateNextRun:
-    """Tests for _calculate_next_run scheduling logic."""
+    """Tests for _calculate_next_run scheduling logic.
 
-    def test_hourly_returns_next_full_hour(self):
+    The HH:MM picker is interpreted in the container's local timezone (TZ env
+    var, UTC fallback). Each test pins TZ so the assertions don't depend on
+    the test runner's environment.
+    """
+
+    def test_hourly_returns_next_full_hour(self, monkeypatch):
+        monkeypatch.setenv("TZ", "UTC")
         service = LocalBackupService()
         now = datetime(2026, 4, 12, 14, 30, 0, tzinfo=timezone.utc)
         with patch("backend.app.services.local_backup.datetime") as mock_dt:
@@ -24,47 +30,48 @@ class TestCalculateNextRun:
         assert result.hour == 15
         assert result.minute == 0
 
-    def test_daily_before_target_time_schedules_today(self):
+    def test_daily_before_target_time_schedules_today_utc(self, monkeypatch):
+        monkeypatch.setenv("TZ", "UTC")
         service = LocalBackupService()
         now = datetime(2026, 4, 12, 2, 0, 0, tzinfo=timezone.utc)
         with patch("backend.app.services.local_backup.datetime") as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             result = service._calculate_next_run("daily", "03:00")
-        assert result.day == 12
-        assert result.hour == 3
+        assert result == datetime(2026, 4, 12, 3, 0, 0, tzinfo=timezone.utc)
 
-    def test_daily_after_target_time_schedules_tomorrow(self):
+    def test_daily_after_target_time_schedules_tomorrow_utc(self, monkeypatch):
+        monkeypatch.setenv("TZ", "UTC")
         service = LocalBackupService()
         now = datetime(2026, 4, 12, 4, 0, 0, tzinfo=timezone.utc)
         with patch("backend.app.services.local_backup.datetime") as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             result = service._calculate_next_run("daily", "03:00")
-        assert result.day == 13
-        assert result.hour == 3
+        assert result == datetime(2026, 4, 13, 3, 0, 0, tzinfo=timezone.utc)
 
-    def test_weekly_adds_full_week(self):
+    def test_weekly_adds_full_week_utc(self, monkeypatch):
+        monkeypatch.setenv("TZ", "UTC")
         service = LocalBackupService()
         now = datetime(2026, 4, 12, 2, 0, 0, tzinfo=timezone.utc)
         with patch("backend.app.services.local_backup.datetime") as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             result = service._calculate_next_run("weekly", "03:00")
-        expected = datetime(2026, 4, 19, 3, 0, 0, tzinfo=timezone.utc)
-        assert result == expected
+        assert result == datetime(2026, 4, 19, 3, 0, 0, tzinfo=timezone.utc)
 
-    def test_weekly_after_target_time_adds_full_week_from_tomorrow(self):
+    def test_weekly_after_target_time_adds_full_week_from_tomorrow_utc(self, monkeypatch):
+        monkeypatch.setenv("TZ", "UTC")
         service = LocalBackupService()
         now = datetime(2026, 4, 12, 4, 0, 0, tzinfo=timezone.utc)
         with patch("backend.app.services.local_backup.datetime") as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             result = service._calculate_next_run("weekly", "03:00")
-        expected = datetime(2026, 4, 20, 3, 0, 0, tzinfo=timezone.utc)
-        assert result == expected
+        assert result == datetime(2026, 4, 20, 3, 0, 0, tzinfo=timezone.utc)
 
-    def test_invalid_time_defaults_to_0300(self):
+    def test_invalid_time_defaults_to_0300(self, monkeypatch):
+        monkeypatch.setenv("TZ", "UTC")
         service = LocalBackupService()
         now = datetime(2026, 4, 12, 2, 0, 0, tzinfo=timezone.utc)
         with patch("backend.app.services.local_backup.datetime") as mock_dt:
@@ -74,7 +81,8 @@ class TestCalculateNextRun:
         assert result.hour == 3
         assert result.minute == 0
 
-    def test_unknown_schedule_type_defaults_to_daily(self):
+    def test_unknown_schedule_type_defaults_to_daily(self, monkeypatch):
+        monkeypatch.setenv("TZ", "UTC")
         service = LocalBackupService()
         now = datetime(2026, 4, 12, 2, 0, 0, tzinfo=timezone.utc)
         with patch("backend.app.services.local_backup.datetime") as mock_dt:
@@ -83,6 +91,90 @@ class TestCalculateNextRun:
             result = service._calculate_next_run("every_5_min", "03:00")
         # Should fall through to daily behavior (time-based)
         assert result.hour == 3
+
+    def test_daily_berlin_local_time_converts_to_utc(self, monkeypatch):
+        """User in Europe/Berlin entering 21:00 should run at 19:00 UTC (CEST/UTC+2)."""
+        monkeypatch.setenv("TZ", "Europe/Berlin")
+        service = LocalBackupService()
+        # Mid-June: Europe/Berlin is CEST (+02:00)
+        now = datetime(2026, 6, 15, 10, 0, 0, tzinfo=timezone.utc)  # 12:00 Berlin
+        with patch("backend.app.services.local_backup.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = service._calculate_next_run("daily", "21:00")
+        # 21:00 Berlin (CEST, +02:00) on 2026-06-15 == 19:00 UTC same day
+        assert result == datetime(2026, 6, 15, 19, 0, 0, tzinfo=timezone.utc)
+
+    def test_daily_istanbul_local_time_converts_to_utc(self, monkeypatch):
+        """The #1602 reporter: UTC+3 user entering 21:00 should run at 18:00 UTC."""
+        monkeypatch.setenv("TZ", "Europe/Istanbul")
+        service = LocalBackupService()
+        now = datetime(2026, 6, 15, 10, 0, 0, tzinfo=timezone.utc)  # 13:00 Istanbul
+        with patch("backend.app.services.local_backup.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = service._calculate_next_run("daily", "21:00")
+        assert result == datetime(2026, 6, 15, 18, 0, 0, tzinfo=timezone.utc)
+
+    def test_no_tz_env_falls_back_to_utc(self, monkeypatch):
+        monkeypatch.delenv("TZ", raising=False)
+        service = LocalBackupService()
+        now = datetime(2026, 6, 15, 10, 0, 0, tzinfo=timezone.utc)
+        with patch("backend.app.services.local_backup.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = service._calculate_next_run("daily", "21:00")
+        # No TZ → behaves as UTC: 21:00 today is in the future of 10:00, so today
+        assert result == datetime(2026, 6, 15, 21, 0, 0, tzinfo=timezone.utc)
+
+    def test_unrecognised_tz_falls_back_to_utc(self, monkeypatch):
+        monkeypatch.setenv("TZ", "Not/A_Real_Zone")
+        service = LocalBackupService()
+        now = datetime(2026, 6, 15, 10, 0, 0, tzinfo=timezone.utc)
+        with patch("backend.app.services.local_backup.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = service._calculate_next_run("daily", "21:00")
+        assert result == datetime(2026, 6, 15, 21, 0, 0, tzinfo=timezone.utc)
+
+    def test_zoneinfo_completely_unavailable_falls_back_to_stdlib_utc(self, monkeypatch):
+        """Windows installer ships an embedded Python without the IANA tz DB
+        (no system tzdata, no ``tzdata`` PyPI package). Even ``ZoneInfo("UTC")``
+        raises ``ZoneInfoNotFoundError`` then, and /api/local-backup/status
+        500s. The fallback must catch that and return ``datetime.timezone.utc``
+        so scheduling still works without the DB.
+        """
+        from zoneinfo import ZoneInfoNotFoundError
+
+        from backend.app.services import local_backup as lb_module
+
+        monkeypatch.delenv("TZ", raising=False)
+
+        def _always_missing(_key):
+            raise ZoneInfoNotFoundError("no tz database on this platform")
+
+        monkeypatch.setattr(lb_module, "ZoneInfo", _always_missing)
+        assert lb_module._local_zone() is timezone.utc
+
+    def test_dst_spring_forward_gap_does_not_crash(self, monkeypatch):
+        """Europe/Berlin spring-forward 2026-03-29 jumps 02:00 → 03:00 local;
+        02:30 wall-clock does not exist. ``replace(hour=2, minute=30)`` should
+        still normalise to a valid UTC instant via astimezone, not raise.
+        """
+        monkeypatch.setenv("TZ", "Europe/Berlin")
+        service = LocalBackupService()
+        # 2026-03-29 00:30 UTC == 01:30 Berlin (CET, just before the gap)
+        now = datetime(2026, 3, 29, 0, 30, 0, tzinfo=timezone.utc)
+        with patch("backend.app.services.local_backup.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            # 02:30 local is in the non-existent gap on that day.
+            result = service._calculate_next_run("daily", "02:30")
+        # Result must be a UTC-aware datetime — exact value depends on
+        # zoneinfo's gap normalisation; we just guarantee no crash and that
+        # the run is in the future of ``now``.
+        assert result.tzinfo == timezone.utc
+        assert result > now
 
 
 class TestPruneBackups:

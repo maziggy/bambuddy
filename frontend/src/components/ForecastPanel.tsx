@@ -1193,7 +1193,7 @@ function ShoppingListPanel({
           color_name: null, rgba: null, extra_colors: null, effect_type: null,
           nozzle_temp_min: null, nozzle_temp_max: null,
           note: item.note ?? null,
-          tag_uid: null, tray_uuid: null,
+          tag_uid: null, tag_uid_2: null, tray_uuid: null,
           data_origin: 'manual', tag_type: null,
           cost_per_kg: null,
           last_scale_weight: null, last_weighed_at: null,

@@ -5,7 +5,7 @@ import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -1501,6 +1501,7 @@ async def unassign_spool(
 
 class LinkTagRequest(BaseModel):
     tag_uid: str | None = None
+    tag_uid_2: str | None = None
     tray_uuid: str | None = None
     tag_type: str | None = None
     data_origin: str | None = "nfc_link"
@@ -1538,32 +1539,49 @@ async def link_tag_to_spool(
         raise HTTPException(400, "Cannot link tag to archived spool")
 
     normalized_tag_uid = (normalize_tag_uid(data.tag_uid) or None) if data.tag_uid is not None else None
+    normalized_tag_uid_2 = (normalize_tag_uid(data.tag_uid_2) or None) if data.tag_uid_2 is not None else None
     normalized_tray_uuid = (normalize_tray_uuid(data.tray_uuid) or None) if data.tray_uuid is not None else None
 
     _validate_tag_input(data.tag_uid, normalized_tag_uid, "tag_uid")
+    _validate_tag_input(data.tag_uid_2, normalized_tag_uid_2, "tag_uid_2")
     _validate_tag_input(data.tray_uuid, normalized_tray_uuid, "tray_uuid", exact_len=32)
 
-    # Check for conflicts: tag already linked to another active spool
-    if normalized_tag_uid:
+    # Conflict check helper: a UID must not be in use by another active spool
+    # (checked across both tag_uid and tag_uid_2 columns).
+    async def _check_uid_conflict(norm_uid: str, field: str) -> None:
         conflict = await db.execute(
             select(Spool).where(
-                func.upper(Spool.tag_uid) == normalized_tag_uid,
+                or_(
+                    func.upper(Spool.tag_uid) == norm_uid,
+                    func.upper(Spool.tag_uid_2) == norm_uid,
+                ),
                 Spool.id != spool_id,
                 Spool.archived_at.is_(None),
             )
         )
         if conflict.scalar_one_or_none():
-            raise HTTPException(409, "Tag UID already linked to another active spool")
+            raise HTTPException(409, f"{field} already linked to another active spool")
         # Auto-clear from archived spools (tag recycling)
-        archived_with_tag = await db.execute(
+        archived_rows = await db.execute(
             select(Spool).where(
-                func.upper(Spool.tag_uid) == normalized_tag_uid,
+                or_(
+                    func.upper(Spool.tag_uid) == norm_uid,
+                    func.upper(Spool.tag_uid_2) == norm_uid,
+                ),
                 Spool.id != spool_id,
                 Spool.archived_at.is_not(None),
             )
         )
-        for old_spool in archived_with_tag.scalars().all():
-            old_spool.tag_uid = None
+        for old_spool in archived_rows.scalars().all():
+            if old_spool.tag_uid and normalize_tag_uid(old_spool.tag_uid) == norm_uid:
+                old_spool.tag_uid = None
+            if old_spool.tag_uid_2 and normalize_tag_uid(old_spool.tag_uid_2) == norm_uid:
+                old_spool.tag_uid_2 = None
+
+    if normalized_tag_uid:
+        await _check_uid_conflict(normalized_tag_uid, "tag_uid")
+    if normalized_tag_uid_2:
+        await _check_uid_conflict(normalized_tag_uid_2, "tag_uid_2")
 
     if normalized_tray_uuid:
         conflict = await db.execute(
@@ -1587,6 +1605,8 @@ async def link_tag_to_spool(
 
     if data.tag_uid is not None:
         spool.tag_uid = normalized_tag_uid
+    if data.tag_uid_2 is not None:
+        spool.tag_uid_2 = normalized_tag_uid_2
     if data.tray_uuid is not None:
         spool.tray_uuid = normalized_tray_uuid
     if data.tag_type is not None:

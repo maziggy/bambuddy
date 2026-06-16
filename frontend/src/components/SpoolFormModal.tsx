@@ -547,7 +547,7 @@ export function SpoolFormModal({
       if (spoolmanMode) {
         return api.updateSpoolmanInventorySpool(spool!.id, CLEAR_TAG_PAYLOAD as Parameters<typeof api.updateSpoolmanInventorySpool>[1]);
       }
-      return api.updateSpool(spool!.id, CLEAR_TAG_PAYLOAD as Parameters<typeof api.updateSpool>[1]);
+      return api.updateSpool(spool!.id, { ...CLEAR_TAG_PAYLOAD, tag_uid_2: null } as Parameters<typeof api.updateSpool>[1]);
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
@@ -953,7 +953,7 @@ export function SpoolFormModal({
               <Button
                 variant="secondary"
                 onClick={() => deleteTagMutation.mutate()}
-                disabled={isPending || !spool?.tag_uid}
+                disabled={isPending || (!spool?.tag_uid && !spool?.tag_uid_2 && !spool?.tray_uuid)}
               >
                 <Tag className="w-4 h-4" />
                 {t('inventory.clearRfid', 'Clear RFID Tag')}

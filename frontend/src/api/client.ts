@@ -2636,6 +2636,7 @@ export interface InventorySpool {
   last_used: string | null;
   encode_time: string | null;
   tag_uid: string | null;
+  tag_uid_2: string | null;  // Secondary RFID tag UID (same spool, different reader hardware)
   tray_uuid: string | null;
   data_origin: string | null;
   tag_type: string | null;
@@ -5116,7 +5117,7 @@ export const api = {
     request<ColorLookupResult>(`/inventory/colors/lookup?manufacturer=${encodeURIComponent(manufacturer)}&color_name=${encodeURIComponent(colorName)}${material ? `&material=${encodeURIComponent(material)}` : ''}`),
   searchColors: (manufacturer?: string, material?: string) =>
     request<ColorCatalogEntry[]>(`/inventory/colors/search?${manufacturer ? `manufacturer=${encodeURIComponent(manufacturer)}` : ''}${manufacturer && material ? '&' : ''}${material ? `material=${encodeURIComponent(material)}` : ''}`),
-  linkTagToSpool: (spoolId: number, data: { tag_uid?: string; tray_uuid?: string; tag_type?: string; data_origin?: string }) =>
+  linkTagToSpool: (spoolId: number, data: { tag_uid?: string; tag_uid_2?: string; tray_uuid?: string; tag_type?: string; data_origin?: string }) =>
     request<InventorySpool>(`/inventory/spools/${spoolId}/link-tag`, {
       method: 'PATCH',
       body: JSON.stringify(data),

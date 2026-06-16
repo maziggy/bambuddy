@@ -8,7 +8,7 @@ import { spoolColorString } from '../../utils/colors';
 interface LinkSpoolModalProps {
   isOpen: boolean;
   onClose: () => void;
-  tagId: string;
+  tagId: string | null;
   untaggedSpools: InventorySpool[];
   onLink: (spool: InventorySpool) => void;
 }

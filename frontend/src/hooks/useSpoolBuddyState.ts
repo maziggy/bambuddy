@@ -3,6 +3,7 @@ import { useEffect, useReducer, useCallback } from 'react';
 export interface MatchedSpool {
   id: number;
   tag_uid: string;
+  tag_uid_2: string | null;
   material: string;
   subtype: string | null;
   color_name: string | null;
@@ -19,14 +20,15 @@ export interface SpoolBuddyState {
   rawAdc: number | null;
   matchedSpool: MatchedSpool | null;
   unknownTagUid: string | null;
-  unknownTrayUuid: string | null;
+  unknownTrayUuid: string | null;  // tray_uuid from the scanned tag (null for non-Bambu tags)
+  currentTrayUuid: string | null;  // tray_uuid for the currently displayed tag (matched or unknown)
   deviceOnline: boolean;
   deviceId: string | null;
 }
 
 type Action =
   | { type: 'WEIGHT_UPDATE'; weight: number; stable: boolean; rawAdc: number; deviceId: string }
-  | { type: 'TAG_MATCHED'; spool: MatchedSpool; deviceId: string }
+  | { type: 'TAG_MATCHED'; spool: MatchedSpool; trayUuid: string | null; deviceId: string }
   | { type: 'UNKNOWN_TAG'; tagUid: string; trayUuid: string | null; deviceId: string }
   | { type: 'TAG_REMOVED'; deviceId: string }
   | { type: 'DEVICE_ONLINE'; deviceId: string }
@@ -39,6 +41,7 @@ const initialState: SpoolBuddyState = {
   matchedSpool: null,
   unknownTagUid: null,
   unknownTrayUuid: null,
+  currentTrayUuid: null,
   deviceOnline: false,
   deviceId: null,
 };
@@ -60,6 +63,7 @@ function reducer(state: SpoolBuddyState, action: Action): SpoolBuddyState {
         matchedSpool: action.spool,
         unknownTagUid: null,
         unknownTrayUuid: null,
+        currentTrayUuid: action.trayUuid,
         deviceId: action.deviceId,
       };
     case 'UNKNOWN_TAG':
@@ -68,6 +72,7 @@ function reducer(state: SpoolBuddyState, action: Action): SpoolBuddyState {
         matchedSpool: null,
         unknownTagUid: action.tagUid,
         unknownTrayUuid: action.trayUuid ?? null,
+        currentTrayUuid: action.trayUuid ?? null,
         deviceId: action.deviceId,
       };
     case 'TAG_REMOVED':
@@ -76,6 +81,7 @@ function reducer(state: SpoolBuddyState, action: Action): SpoolBuddyState {
         matchedSpool: null,
         unknownTagUid: null,
         unknownTrayUuid: null,
+        currentTrayUuid: null,
       };
     case 'DEVICE_ONLINE':
       return {
@@ -119,6 +125,7 @@ export function useSpoolBuddyState() {
         spool: {
           id: spool.id,
           tag_uid: detail.tag_uid ?? detail.data?.tag_uid ?? '',
+          tag_uid_2: spool.tag_uid_2 ?? null,
           material: spool.material ?? '',
           subtype: spool.subtype ?? null,
           color_name: spool.color_name ?? null,
@@ -128,6 +135,7 @@ export function useSpoolBuddyState() {
           core_weight: spool.core_weight ?? 0,
           weight_used: spool.weight_used ?? 0,
         },
+        trayUuid: detail.tray_uuid ?? detail.data?.tray_uuid ?? null,
         deviceId: detail.device_id ?? detail.data?.device_id ?? '',
       });
     }

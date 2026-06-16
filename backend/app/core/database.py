@@ -2539,6 +2539,10 @@ async def run_migrations(conn):
         "CREATE INDEX IF NOT EXISTS ix_spoolman_k_profile_spool ON spoolman_k_profile (spoolman_spool_id)",
     )
 
+    # Migration: Add secondary tag UID column for spools that can be identified by
+    # two different NFC reader hardware UIDs (e.g. same spool read by two readers
+    # that report different first-byte values due to hardware variance).
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN tag_uid_2 VARCHAR(32)")
     # Migration: Add provider column to github_backup_config for multi-provider support
     await _safe_execute(conn, "ALTER TABLE github_backup_config ADD COLUMN provider VARCHAR(30) DEFAULT 'github'")
 

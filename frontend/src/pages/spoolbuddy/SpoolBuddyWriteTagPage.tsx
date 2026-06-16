@@ -94,9 +94,9 @@ export function SpoolBuddyWriteTagPage() {
   const filteredSpools = useMemo(() => {
     let list: InventorySpool[];
     if (activeTab === 'existing') {
-      list = spools.filter(s => !s.tag_uid && !s.archived_at);
+      list = spools.filter(s => !s.tag_uid && !s.tag_uid_2 && !s.tray_uuid && !s.archived_at);
     } else if (activeTab === 'replace') {
-      list = spools.filter(s => (s.tag_uid || s.tray_uuid) && !s.archived_at);
+      list = spools.filter(s => (s.tag_uid || s.tag_uid_2 || s.tray_uuid) && !s.archived_at);
     } else {
       return [];
     }
@@ -353,7 +353,7 @@ export function SpoolBuddyWriteTagPage() {
 }
 
 function isReplaceTagged(spool: InventorySpool): boolean {
-  return !!(spool.tag_uid || spool.tray_uuid);
+  return !!(spool.tag_uid || spool.tag_uid_2 || spool.tray_uuid);
 }
 
 // --- Spool list item ---
@@ -394,8 +394,10 @@ function SpoolListItem({ spool, selected, showTag, onClick }: {
           {spool.color_name && <span>{spool.color_name}</span>}
           <span>{remaining}g / {spool.label_weight}g ({pct}%)</span>
         </div>
-        {showTag && spool.tag_uid && (
-          <div className="text-xs text-zinc-500 mt-0.5 font-mono">{spool.tag_uid}</div>
+        {showTag && (spool.tag_uid || spool.tag_uid_2) && (
+          <div className="text-xs text-zinc-500 mt-0.5 font-mono">
+            {[spool.tag_uid, spool.tag_uid_2].filter(Boolean).join(' / ')}
+          </div>
         )}
       </div>
 
@@ -723,6 +725,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
       last_used: null,
       encode_time: null,
       tag_uid: null,
+      tag_uid_2: null,
       tray_uuid: null,
       data_origin: null,
       tag_type: null,

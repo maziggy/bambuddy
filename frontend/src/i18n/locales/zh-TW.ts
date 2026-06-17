@@ -1016,7 +1016,40 @@ export default {
     batchCancelled: '已取消剩餘批次項目',
     cancelBatchConfirmTitle: '取消批次',
     cancelBatchConfirmMessage: '取消此批次中所有剩餘的待處理項目？',
-    batch: '批次',
+    batch: {
+      defaultName: '批次',
+      label: '{{count}} 項',
+      label_plural: '{{count}} 項',
+      pendingCount: '{{count}} 待處理',
+      pendingCount_plural: '{{count}} 待處理',
+      expand: '展開批次',
+      collapse: '收合批次',
+      groupAsBatch: '組合為批次…',
+      groupAsBatchDescription: '將選取的 {{count}} 項組合為一個可收合的批次。',
+      nameLabel: '批次名稱',
+      namePlaceholder: '例如：週五禮物',
+      create: '建立批次',
+      ungroup: '取消分組',
+      ungroupConfirmTitle: '取消批次分組？',
+      ungroupConfirmMessage: '項目將保留在佇列中，但不再分組在一起。',
+    },
+    tabs: {
+      queue: '佇列',
+      history: '歷史',
+      timeline: '時間軸',
+    },
+    layout: {
+      flatList: '清單',
+      byPrinter: '依印表機',
+      groupByPrinter: '依印表機分組',
+    },
+    history: {
+      emptyTitle: '目前沒有歷史記錄',
+      emptyDescription: '已完成、已取消與失敗的列印將顯示於此。',
+    },
+    dragGhost: {
+      multiCount: '{{count}} 項',
+    },
     // Sections
     sections: {
       currentlyPrinting: '正在列印',
@@ -1144,6 +1177,10 @@ export default {
       updateFailed: '更新項目失敗',
       bulkCancelled: '已取消 {{count}} 個項目',
       bulkCancelFailed: '批次取消項目失敗',
+      batchCreated: '已建立批次「{{name}}」',
+      batchCreateFailed: '建立批次失敗',
+      batchUngrouped: '已取消分組 {{count}} 項',
+      batchUngroupFailed: '取消批次分組失敗',
     },
     // Timeline view
     timeline: {
@@ -1151,6 +1188,7 @@ export default {
       timelineView: '時間線',
       unassigned: '未分配',
       noData: '當天沒有計畫的列印任務',
+      nothingCommitted: '此時間視窗內沒有已確定的排程。暫存項目、等待項目以及閒置印表機上的 ASAP 任務不會顯示 — 設定排程時間或釋放暫存項目即可在此處查看。',
       allDoneBy: '所有列印預計在 {{time}} 前完成',
       staged: '暫存',
       filterAll: '全部顯示',
@@ -1167,6 +1205,12 @@ export default {
         next: '後一天',
         today: '今天',
       },
+      window: {
+        back12h: '後退 12 小時',
+        forward12h: '前進 12 小時',
+        now: '現在',
+      },
+      printerColumnHeader: '印表機',
     },
     // Permissions
     permissions: {
@@ -2142,7 +2186,7 @@ export default {
     defaultPrinterDescription: '為上傳、重印和其他操作預選此印表機。',
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
-    sidebarOrderDescription: '拖曳側邊欄項目以重新排序。在此處重設為預設順序。',
+    sidebarOrderDescription: '使用側邊欄版面配置重新排序項目、重設可見性並管理自訂連結。',
     setDefault: '設為預設',
     sidebarOrderSetDefaultHint: '設為預設將目前選單順序套用於尚未自訂的使用者。',
     sidebarDefaultSet: '已設定預設選單順序。',
@@ -2323,6 +2367,17 @@ export default {
       linkedAccounts: '已連結的 SSO 帳戶',
       linkedAccountsDesc: '以下外部身份提供者已與您的帳戶連結。',
       oidcUnlinked: '帳戶已解除連結。',
+    },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: '工作階段政策',
+      description: '新使用者登入的最長工作階段有效期。已發行的權杖會保留其原有的到期時間。',
+      preset24h: '24 小時',
+      preset7d: '7 天',
+      preset30d: '30 天',
+      customHoursLabel: '自訂工作階段有效期（小時）',
+      hoursSuffix: '小時',
+      warning: '較長的工作階段會削弱自動登出保護。僅建議在受信任的單一使用者部署中使用。',
     },
 
     // OIDC provider settings
@@ -3621,6 +3676,28 @@ export default {
     disableWeightSyncDesc: '不從 AMS 估計值更新剩餘容量。如果您更喜歡 Spoolman 的用量追蹤而非 AMS 百分比估計，請使用此選項。新耗材仍將使用 AMS 估計值作為初始重量。',
     reportPartialUsage: '報告失敗列印的部分用量',
     reportPartialUsageDesc: '當列印失敗或被取消時，根據層進度報告估計的耗材使用量。',
+  },
+
+  locations: {
+    title: '儲存位置',
+    subtitle: '管理貨架、抽屜等線軸實體存放位置',
+    add: '新增位置',
+    addShort: '新增',
+    edit: '編輯位置',
+    name: '名稱',
+    spools: '線軸',
+    empty: '尚無儲存位置。建立第一個貨架或抽屜。',
+    manage: '位置',
+    createPlaceholder: '例如：A 架、抽屜 1',
+    nameRequired: '位置名稱為必填',
+    created: '位置已建立',
+    updated: '位置已更新',
+    deleted: '位置已刪除',
+    saveFailed: '儲存位置失敗',
+    deleteFailed: '刪除位置失敗',
+    deleteBlocked: '刪除前請移走此位置上的所有線軸',
+    confirmDelete: '刪除「{{name}}」？',
+    confirmDeleteMessage: '此位置將從目錄中移除。請先移走線軸。',
   },
 
   // Inventory
@@ -5051,6 +5128,17 @@ export default {
 
   // External Links
   externalLinks: {
+    title: '側邊欄連結',
+    sidebarLayout: '側邊欄',
+    sidebarLayoutDescription: '顯示或隱藏內建頁面、加入外部連結，並拖曳項目以重新排序側邊欄導覽。',
+    systemPages: 'Bambuddy 頁面',
+    externalLinks: '外部連結',
+    visibleInSidebar: '顯示於側邊欄',
+    hiddenFromSidebar: '隱藏於側邊欄',
+    requiredInSidebar: '側邊欄中必須顯示',
+    hidePage: '隱藏頁面',
+    showPage: '顯示頁面',
+    settingsCannotBeHidden: '設定無法隱藏',
     noLinksConfigured: '未設定外部連結',
     deleteLink: '刪除連結',
     removeCustomIcon: '移除自訂圖示',

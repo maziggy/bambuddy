@@ -1015,7 +1015,40 @@ export default {
     batchCancelled: '残りのバッチアイテムをキャンセルしました',
     cancelBatchConfirmTitle: 'バッチをキャンセル',
     cancelBatchConfirmMessage: 'このバッチの残りの保留中アイテムをすべてキャンセルしますか？',
-    batch: 'バッチ',
+    batch: {
+      defaultName: 'バッチ',
+      label: '{{count}}件',
+      label_plural: '{{count}}件',
+      pendingCount: '{{count}}件待機中',
+      pendingCount_plural: '{{count}}件待機中',
+      expand: 'バッチを展開',
+      collapse: 'バッチを折りたたむ',
+      groupAsBatch: 'バッチとしてグループ化…',
+      groupAsBatchDescription: '選択した{{count}}件をひとつの折りたたみ可能なバッチにまとめます。',
+      nameLabel: 'バッチ名',
+      namePlaceholder: '例：金曜のプレゼント',
+      create: 'バッチを作成',
+      ungroup: 'グループ解除',
+      ungroupConfirmTitle: 'バッチのグループを解除しますか？',
+      ungroupConfirmMessage: 'アイテムはキューに残りますが、グループ化されなくなります。',
+    },
+    tabs: {
+      queue: 'キュー',
+      history: '履歴',
+      timeline: 'タイムライン',
+    },
+    layout: {
+      flatList: 'リスト',
+      byPrinter: 'プリンター別',
+      groupByPrinter: 'プリンター別にグループ化',
+    },
+    history: {
+      emptyTitle: '履歴はまだありません',
+      emptyDescription: '完了・キャンセル・失敗した印刷がここに表示されます。',
+    },
+    dragGhost: {
+      multiCount: '{{count}}件',
+    },
     // Sections
     sections: {
       currentlyPrinting: '印刷中',
@@ -1143,6 +1176,10 @@ export default {
       updateFailed: 'アイテムの更新に失敗しました',
       bulkCancelled: '{{count}}件のアイテムをキャンセルしました',
       bulkCancelFailed: 'アイテムのキャンセルに失敗しました',
+      batchCreated: 'バッチ「{{name}}」を作成しました',
+      batchCreateFailed: 'バッチの作成に失敗しました',
+      batchUngrouped: '{{count}}件のグループを解除しました',
+      batchUngroupFailed: 'バッチのグループ解除に失敗しました',
     },
     // Timeline view
     timeline: {
@@ -1150,6 +1187,7 @@ export default {
       timelineView: 'タイムライン',
       unassigned: '未割当',
       noData: 'この日の予定された印刷はありません',
+      nothingCommitted: 'この時間枠に確定したスケジュールはありません。手動開始のステージ済み項目、待機中の項目、アイドル状態のプリンターのASAPジョブは表示されません — 予定時刻を設定するか、ステージ済み項目をリリースすると表示されます。',
       allDoneBy: 'すべての印刷は {{time}} までに完了予定',
       staged: 'ステージング',
       filterAll: 'すべて表示',
@@ -1166,6 +1204,12 @@ export default {
         next: '翌日',
         today: '今日',
       },
+      window: {
+        back12h: '12時間戻る',
+        forward12h: '12時間進む',
+        now: '現在',
+      },
+      printerColumnHeader: 'プリンター',
     },
     // Permissions
     permissions: {
@@ -2141,7 +2185,7 @@ export default {
     defaultPrinterDescription: 'アップロード、再印刷、その他の操作でこのプリンターを事前選択します。',
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
-    sidebarOrderDescription: 'サイドバーの項目をドラッグして並べ替え。ここでデフォルトの順序にリセット。',
+    sidebarOrderDescription: 'サイドバーレイアウトで項目の並べ替え、表示状態のリセット、カスタムリンクの管理を行います。',
     setDefault: 'デフォルト設定',
     sidebarOrderSetDefaultHint: 'デフォルト設定は、まだカスタマイズしていないユーザーに現在のメニュー順序を適用します。',
     sidebarDefaultSet: 'デフォルトメニュー順序を設定しました。',
@@ -2335,6 +2379,17 @@ export default {
       linkedAccounts: 'リンクされたSSOアカウント',
       linkedAccountsDesc: 'これらの外部IDプロバイダーがあなたのアカウントにリンクされています。',
       oidcUnlinked: 'アカウントのリンクを解除しました。',
+    },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: 'セッションポリシー',
+      description: '新しいユーザーログインの最大セッション有効期間。すでに発行されたトークンは元の有効期限を保持します。',
+      preset24h: '24時間',
+      preset7d: '7日',
+      preset30d: '30日',
+      customHoursLabel: 'カスタムセッション有効期間（時間）',
+      hoursSuffix: '時間',
+      warning: '長いセッションは自動ログアウト保護を弱めます。信頼できる単一ユーザー環境でのみ推奨されます。',
     },
 
     // OIDC provider settings
@@ -3633,6 +3688,28 @@ export default {
     disableWeightSyncDesc: 'AMS推定値から残量を更新しません。AMSの割合ベースの推定よりもSpoolmanの使用量追跡を優先する場合に使用してください。新しいスプールは引き続きAMS推定値を初期重量として使用します。',
     reportPartialUsage: '失敗した印刷の部分使用量を報告',
     reportPartialUsageDesc: '印刷が失敗またはキャンセルされた場合、レイヤー進捗に基づいてその時点までの推定フィラメント使用量を報告します。',
+  },
+
+  locations: {
+    title: '保管場所',
+    subtitle: '棚・引き出しなど、スプールの物理的な保管場所を管理',
+    add: '場所を追加',
+    addShort: '追加',
+    edit: '場所を編集',
+    name: '名前',
+    spools: 'スプール',
+    empty: '保管場所がありません。最初の棚または引き出しを作成してください。',
+    manage: '保管場所',
+    createPlaceholder: '例: 棚A、引き出し1',
+    nameRequired: '場所名が必要です',
+    created: '場所を作成しました',
+    updated: '場所を更新しました',
+    deleted: '場所を削除しました',
+    saveFailed: '場所の保存に失敗しました',
+    deleteFailed: '場所の削除に失敗しました',
+    deleteBlocked: '削除前にこの場所のスプールをすべて移動してください',
+    confirmDelete: '「{{name}}」を削除しますか？',
+    confirmDeleteMessage: 'この場所はカタログから削除されます。先にスプールを移動してください。',
   },
 
   // Inventory
@@ -5064,6 +5141,17 @@ export default {
 
   // External Links
   externalLinks: {
+    title: 'サイドバーリンク',
+    sidebarLayout: 'サイドバー',
+    sidebarLayoutDescription: '組み込みページの表示/非表示を切り替え、外部リンクを追加し、項目をドラッグしてサイドバーナビゲーションを並べ替えます。',
+    systemPages: 'Bambuddyページ',
+    externalLinks: '外部リンク',
+    visibleInSidebar: 'サイドバーに表示',
+    hiddenFromSidebar: 'サイドバーで非表示',
+    requiredInSidebar: 'サイドバーで必須',
+    hidePage: 'ページを非表示',
+    showPage: 'ページを表示',
+    settingsCannotBeHidden: '設定は非表示にできません',
     noLinksConfigured: '外部リンクが設定されていません',
     deleteLink: 'リンクを削除',
     removeCustomIcon: 'カスタムアイコンを削除',

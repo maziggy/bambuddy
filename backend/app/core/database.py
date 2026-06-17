@@ -181,6 +181,7 @@ async def init_db():
         kprofile_note,
         library,
         local_preset,
+        location,
         long_lived_token,
         maintenance,
         notification,
@@ -2913,6 +2914,134 @@ async def run_migrations(conn):
     # Data migration: drop the embedded 3MF Title (`print_name`) from library
     # file metadata so the FileManager displays the filename, not the title (#1489).
     await _migrate_drop_library_print_name(conn)
+
+    # Backfill NULL print_archives.created_at — older rows (and rows imported
+    # via the SQLite ↔ Postgres cross-DB restore path) can land with NULL
+    # because the column was originally created without a DEFAULT clause and
+    # server_default=func.now() only fires at table creation, not column
+    # population. The list_archives response model requires a datetime, so a
+    # single NULL row 500s the whole endpoint (#1732).
+    async with conn.begin_nested():
+        if is_sqlite():
+            await conn.execute(
+                text(
+                    "UPDATE print_archives "
+                    "SET created_at = COALESCE(completed_at, started_at, datetime('now')) "
+                    "WHERE created_at IS NULL"
+                )
+            )
+        else:
+            await conn.execute(
+                text(
+                    "UPDATE print_archives "
+                    "SET created_at = COALESCE(completed_at, started_at, NOW()) "
+                    "WHERE created_at IS NULL"
+                )
+            )
+
+    # Migration: structured storage locations (#1004). Flat catalog of physical
+    # shelves/drawers; spool.location_id FK with storage_location kept denormalized.
+    await _safe_execute(
+        conn,
+        """
+        CREATE TABLE IF NOT EXISTS locations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name VARCHAR(255) NOT NULL UNIQUE,
+            name_key VARCHAR(255),
+            identifier VARCHAR(100),
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+        if is_sqlite()
+        else """
+        CREATE TABLE IF NOT EXISTS locations (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL UNIQUE,
+            name_key VARCHAR(255),
+            identifier VARCHAR(100),
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+    )
+    await _safe_execute(conn, "ALTER TABLE locations ADD COLUMN name_key VARCHAR(255)")
+    await _safe_execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS ix_locations_name_key ON locations (name_key)")
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN location_id INTEGER REFERENCES locations(id)")
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_spool_location_id ON spool (location_id)")
+
+    # Backfill name_key on legacy rows FIRST. If a pre-existing locations
+    # row was manually inserted before this migration ran, its name_key is
+    # NULL. The dedup INSERT below would then be silently skipped by
+    # UNIQUE(name) (legacy row already has the name), AND the spool-link
+    # UPDATE that joins on name_key would miss it. Doing this backfill BEFORE
+    # the INSERT keeps the join consistent on both branches of the migration.
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                """
+                UPDATE locations
+                SET name_key = LOWER(TRIM(name))
+                WHERE name_key IS NULL OR TRIM(name_key) = ''
+                """
+            )
+        )
+
+    # Backfill locations from existing free-text storage_location values.
+    # GROUP BY name_key so case variants ("Drybox 1" / "DRYBOX 1") collapse to
+    # one row; INSERT OR IGNORE / ON CONFLICT keeps the migration idempotent.
+    _location_backfill_sql = (
+        """
+        INSERT OR IGNORE INTO locations (name, name_key, created_at, updated_at)
+        SELECT MIN(TRIM(storage_location)), LOWER(TRIM(storage_location)), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM spool
+        WHERE TRIM(COALESCE(storage_location, '')) != ''
+        GROUP BY LOWER(TRIM(storage_location))
+        """
+        if is_sqlite()
+        else """
+        INSERT INTO locations (name, name_key, created_at, updated_at)
+        SELECT MIN(TRIM(storage_location)), LOWER(TRIM(storage_location)), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM spool
+        WHERE TRIM(COALESCE(storage_location, '')) != ''
+        GROUP BY LOWER(TRIM(storage_location))
+        ON CONFLICT (name_key) DO NOTHING
+        """
+    )
+    async with conn.begin_nested():
+        await conn.execute(text(_location_backfill_sql))
+        await conn.execute(
+            text(
+                """
+                UPDATE spool
+                SET location_id = (
+                    SELECT l.id FROM locations l
+                    WHERE l.name_key = LOWER(TRIM(spool.storage_location))
+                    LIMIT 1
+                )
+                WHERE TRIM(COALESCE(storage_location, '')) != ''
+                  AND location_id IS NULL
+                """
+            )
+        )
+
+    # Sanity check: any spools that still have a free-text storage_location
+    # but no location_id link mean a row slipped through the dedup INSERT
+    # (most likely a pre-existing manually-inserted locations row with a
+    # hostile name shape that the UNIQUE(name) check tripped on). Surface
+    # the count so ops can investigate — the user won't see those spools in
+    # location-filtered queries until they're manually linked or re-saved.
+    orphan_count_row = await conn.execute(
+        text("SELECT COUNT(*) FROM spool WHERE TRIM(COALESCE(storage_location, '')) != '' AND location_id IS NULL")
+    )
+    orphan_count = orphan_count_row.scalar() or 0
+    if orphan_count:
+        logger.warning(
+            "Storage-location migration left %d spool(s) with free-text storage_location "
+            "but no location_id link. Re-save those spools or merge the orphaned location "
+            "names manually.",
+            orphan_count,
+        )
 
 
 async def seed_notification_templates():

@@ -1016,7 +1016,40 @@ export default {
     batchCancelled: 'Kalan yığın öğeleri iptal edildi',
     cancelBatchConfirmTitle: 'Yığını İptal Et',
     cancelBatchConfirmMessage: 'Bu yığındaki tüm bekleyen öğeler iptal edilsin mi?',
-    batch: 'Yığın',
+    batch: {
+      defaultName: 'Yığın',
+      label: '{{count}} öğe',
+      label_plural: '{{count}} öğe',
+      pendingCount: '{{count}} bekleyen',
+      pendingCount_plural: '{{count}} bekleyen',
+      expand: 'Yığını genişlet',
+      collapse: 'Yığını daralt',
+      groupAsBatch: 'Yığın olarak grupla…',
+      groupAsBatchDescription: 'Seçilen {{count}} öğeyi tek bir daraltılabilir yığında birleştirin.',
+      nameLabel: 'Yığın adı',
+      namePlaceholder: 'örn. Cuma hediyeleri',
+      create: 'Yığın oluştur',
+      ungroup: 'Gruptan çıkar',
+      ungroupConfirmTitle: 'Yığını gruptan çıkar?',
+      ungroupConfirmMessage: 'Öğeler kuyrukta kalacak ancak artık birlikte gruplanmayacak.',
+    },
+    tabs: {
+      queue: 'Kuyruk',
+      history: 'Geçmiş',
+      timeline: 'Zaman çizelgesi',
+    },
+    layout: {
+      flatList: 'Liste',
+      byPrinter: 'Yazıcıya göre',
+      groupByPrinter: 'Yazıcıya göre grupla',
+    },
+    history: {
+      emptyTitle: 'Henüz geçmiş yok',
+      emptyDescription: 'Tamamlanan, iptal edilen ve başarısız baskılar burada görünür.',
+    },
+    dragGhost: {
+      multiCount: '{{count}} öğe',
+    },
     // Bölümler
     sections: {
       currentlyPrinting: 'Şu Anda Yazdırılan',
@@ -1144,6 +1177,10 @@ export default {
       updateFailed: 'Öğeler güncellenemedi',
       bulkCancelled: '{{count}} öğe iptal edildi',
       bulkCancelFailed: 'Öğeler iptal edilemedi',
+      batchCreated: '"{{name}}" yığını oluşturuldu',
+      batchCreateFailed: 'Yığın oluşturma başarısız',
+      batchUngrouped: '{{count}} öğe gruptan çıkarıldı',
+      batchUngroupFailed: 'Yığını gruptan çıkarma başarısız',
     },
     // Zaman çizelgesi görünümü
     timeline: {
@@ -1151,6 +1188,7 @@ export default {
       timelineView: 'Zaman Çizelgesi',
       unassigned: 'Atanmamış',
       noData: 'Bu gün için zamanlanmış baskı yok',
+      nothingCommitted: 'Bu pencerede onaylanmış programlar yok. Hazırlanmış öğeler, beklemedeki öğeler ve boştaki yazıcılardaki ASAP işleri gösterilmez — burada görmek için zamanlanmış bir saat belirleyin veya hazırlanmış bir öğeyi serbest bırakın.',
       allDoneBy: 'Tüm baskıların {{time}}\'e kadar bitmesi tahmin ediliyor',
       staged: 'Hazırlandı',
       filterAll: 'Tümünü Göster',
@@ -1167,6 +1205,12 @@ export default {
         next: 'Sonraki gün',
         today: 'Bugün',
       },
+      window: {
+        back12h: '12 saat geri',
+        forward12h: '12 saat ileri',
+        now: 'Şimdi',
+      },
+      printerColumnHeader: 'Yazıcı',
     },
     // İzinler
     permissions: {
@@ -2145,7 +2189,7 @@ export default {
     defaultPrinterDescription: 'Yüklemeler, tekrar baskılar ve diğer işlemler için bu yazıcıyı önceden seç.',
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
-    sidebarOrderDescription: 'Yeniden sıralamak için kenar çubuğundaki öğeleri sürükleyin. Varsayılan sıraya buradan sıfırlayın.',
+    sidebarOrderDescription: 'Öğeleri yeniden sıralamak, görünürlüğü sıfırlamak ve özel bağlantıları yönetmek için Kenar çubuğu düzenini kullanın.',
     setDefault: 'Varsayılan Yap',
     sidebarOrderSetDefaultHint: 'Varsayılan ayarla, mevcut menü sırasını henüz özelleştirmemiş kullanıcılara uygular.',
     sidebarDefaultSet: 'Varsayılan menü sırası ayarlandı.',
@@ -2339,6 +2383,17 @@ export default {
       linkedAccounts: 'Bağlı SSO Hesapları',
       linkedAccountsDesc: 'Bu harici kimlik sağlayıcıları hesabınıza bağlıdır.',
       oidcUnlinked: 'Hesap bağlantısı kaldırıldı.',
+    },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: 'Oturum Politikası',
+      description: 'Yeni kullanıcı girişleri için maksimum oturum süresi. Daha önce verilmiş belirteçler özgün son kullanma tarihlerini korur.',
+      preset24h: '24 saat',
+      preset7d: '7 gün',
+      preset30d: '30 gün',
+      customHoursLabel: 'Özel oturum süresi (saat)',
+      hoursSuffix: 'saat',
+      warning: 'Daha uzun oturumlar otomatik oturum kapatma korumasını azaltır. Yalnızca güvenilir tek kullanıcılı dağıtımlar için önerilir.',
     },
 
     // OIDC sağlayıcı ayarları
@@ -3622,6 +3677,28 @@ export default {
     disableWeightSyncDesc: "AMS tahminlerinden kalan kapasiteyi güncelleme. AMS yüzde tabanlı tahminler yerine Spoolman'ın kullanım takibini tercih ediyorsanız bunu kullanın. Yeni makaralar yine de başlangıç ağırlığı olarak AMS tahminini kullanacak.",
     reportPartialUsage: 'Başarısız Baskılar için Kısmi Kullanımı Bildir',
     reportPartialUsageDesc: 'Bir baskı başarısız olduğunda veya iptal edildiğinde, katman ilerlemesine göre o noktaya kadar kullanılan tahmini filamenti bildir.',
+  },
+
+  locations: {
+    title: 'Depolama Konumları',
+    subtitle: 'Makaralarınız için raf, çekmece ve diğer fiziksel depolama yerlerini yönetin',
+    add: 'Konum Ekle',
+    addShort: 'Ekle',
+    edit: 'Konumu Düzenle',
+    name: 'Ad',
+    spools: 'Makaralar',
+    empty: 'Henüz depolama konumu yok. İlk rafınızı veya çekmecenizi oluşturun.',
+    manage: 'Konumlar',
+    createPlaceholder: 'örn. Raf A, Çekmece 1',
+    nameRequired: 'Konum adı zorunludur',
+    created: 'Konum oluşturuldu',
+    updated: 'Konum güncellendi',
+    deleted: 'Konum silindi',
+    saveFailed: 'Konum kaydedilemedi',
+    deleteFailed: 'Konum silinemedi',
+    deleteBlocked: 'Silmeden önce bu konumdaki tüm makaraları taşıyın',
+    confirmDelete: '"{{name}}" silinsin mi?',
+    confirmDeleteMessage: 'Bu konum kataloğdan kaldırılacak. Önce makaralar taşınmalıdır.',
   },
 
   // Envanter
@@ -5007,6 +5084,17 @@ export default {
 
   // Harici Bağlantılar
   externalLinks: {
+    title: 'Kenar çubuğu bağlantıları',
+    sidebarLayout: 'Kenar çubuğu',
+    sidebarLayoutDescription: 'Yerleşik sayfaları gösterin veya gizleyin, harici bağlantılar ekleyin ve kenar çubuğu gezinmesini yeniden sıralamak için öğeleri sürükleyin.',
+    systemPages: 'Bambuddy sayfaları',
+    externalLinks: 'Harici bağlantılar',
+    visibleInSidebar: 'Kenar çubuğunda görünür',
+    hiddenFromSidebar: 'Kenar çubuğunda gizli',
+    requiredInSidebar: 'Kenar çubuğunda gerekli',
+    hidePage: 'Sayfayı gizle',
+    showPage: 'Sayfayı göster',
+    settingsCannotBeHidden: 'Ayarlar gizlenemez',
     noLinksConfigured: 'Yapılandırılmış harici bağlantı yok',
     deleteLink: 'Bağlantıyı Sil',
     removeCustomIcon: 'Özel simgeyi kaldır',

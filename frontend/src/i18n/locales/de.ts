@@ -1016,7 +1016,40 @@ export default {
     batchCancelled: 'Verbleibende Stapeleinträge abgebrochen',
     cancelBatchConfirmTitle: 'Stapel abbrechen',
     cancelBatchConfirmMessage: 'Alle verbleibenden ausstehenden Einträge in diesem Stapel abbrechen?',
-    batch: 'Stapel',
+    batch: {
+      defaultName: 'Stapel',
+      label: '{{count}} Eintrag',
+      label_plural: '{{count}} Einträge',
+      pendingCount: '{{count}} ausstehend',
+      pendingCount_plural: '{{count}} ausstehend',
+      expand: 'Stapel ausklappen',
+      collapse: 'Stapel einklappen',
+      groupAsBatch: 'Als Stapel gruppieren…',
+      groupAsBatchDescription: 'Fasse die {{count}} ausgewählten Einträge zu einem einklappbaren Stapel zusammen.',
+      nameLabel: 'Stapelname',
+      namePlaceholder: 'z. B. Freitagsgeschenke',
+      create: 'Stapel erstellen',
+      ungroup: 'Gruppierung aufheben',
+      ungroupConfirmTitle: 'Stapel auflösen?',
+      ungroupConfirmMessage: 'Die Einträge bleiben in der Warteschlange, sind aber nicht mehr gruppiert.',
+    },
+    tabs: {
+      queue: 'Warteschlange',
+      history: 'Verlauf',
+      timeline: 'Zeitachse',
+    },
+    layout: {
+      flatList: 'Liste',
+      byPrinter: 'Nach Drucker',
+      groupByPrinter: 'Nach Drucker gruppieren',
+    },
+    history: {
+      emptyTitle: 'Noch kein Verlauf',
+      emptyDescription: 'Abgeschlossene, abgebrochene und fehlgeschlagene Drucke erscheinen hier.',
+    },
+    dragGhost: {
+      multiCount: '{{count}} Einträge',
+    },
     // Sections
     sections: {
       currentlyPrinting: 'Aktuell druckend',
@@ -1144,6 +1177,10 @@ export default {
       updateFailed: 'Elemente konnten nicht aktualisiert werden',
       bulkCancelled: '{{count}} Element(e) abgebrochen',
       bulkCancelFailed: 'Elemente konnten nicht abgebrochen werden',
+      batchCreated: 'Stapel „{{name}}“ erstellt',
+      batchCreateFailed: 'Stapel konnte nicht erstellt werden',
+      batchUngrouped: '{{count}} Eintrag/Einträge aus Stapel gelöst',
+      batchUngroupFailed: 'Stapel konnte nicht aufgelöst werden',
     },
     // Timeline view
     timeline: {
@@ -1151,6 +1188,7 @@ export default {
       timelineView: 'Zeitstrahl',
       unassigned: 'Nicht zugewiesen',
       noData: 'Keine geplanten Drucke für diesen Tag',
+      nothingCommitted: 'Keine festgelegten Pläne in diesem Zeitfenster. Vorgemerkte Einträge, wartende Einträge und ASAP-Aufträge auf inaktiven Druckern werden nicht angezeigt — leg eine geplante Zeit fest oder gib einen vorgemerkten Eintrag frei, damit er hier erscheint.',
       allDoneBy: 'Alle Drucke voraussichtlich fertig um {{time}}',
       staged: 'Bereitgestellt',
       filterAll: 'Alle anzeigen',
@@ -1167,6 +1205,12 @@ export default {
         next: 'Nächster Tag',
         today: 'Heute',
       },
+      window: {
+        back12h: '12 Stunden zurück',
+        forward12h: '12 Stunden vor',
+        now: 'Jetzt',
+      },
+      printerColumnHeader: 'Drucker',
     },
     // Permissions
     permissions: {
@@ -2142,7 +2186,7 @@ export default {
     defaultPrinterDescription: 'Diesen Drucker für Uploads, Nachdrucke und andere Vorgänge vorauswählen.',
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
-    sidebarOrderDescription: 'Elemente in der Seitenleiste per Drag & Drop neu anordnen. Hier auf Standardreihenfolge zurücksetzen.',
+    sidebarOrderDescription: 'Nutze das Seitenleisten-Layout, um Elemente neu anzuordnen, Sichtbarkeit zurückzusetzen und benutzerdefinierte Links zu verwalten.',
     setDefault: 'Standard setzen',
     sidebarOrderSetDefaultHint: 'Standard setzen übernimmt die aktuelle Menüreihenfolge für Benutzer, die ihre noch nicht angepasst haben.',
     sidebarDefaultSet: 'Standard-Menüreihenfolge wurde festgelegt.',
@@ -2336,6 +2380,17 @@ export default {
       linkedAccounts: 'Verknüpfte SSO-Konten',
       linkedAccountsDesc: 'Diese externen Identitätsanbieter sind mit deinem Konto verknüpft.',
       oidcUnlinked: 'Konto getrennt.',
+    },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: 'Sitzungsrichtlinie',
+      description: 'Maximale Sitzungsdauer für neue Benutzeranmeldungen. Bereits ausgegebene Token behalten ihren ursprünglichen Ablauf.',
+      preset24h: '24 Stunden',
+      preset7d: '7 Tage',
+      preset30d: '30 Tage',
+      customHoursLabel: 'Individuelle Sitzungsdauer in Stunden',
+      hoursSuffix: 'Stunden',
+      warning: 'Längere Sitzungen reduzieren den automatischen Abmeldeschutz. Nur für vertrauenswürdige Einzelnutzer-Installationen empfohlen.',
     },
 
     // OIDC provider settings
@@ -3633,6 +3688,28 @@ export default {
     disableWeightSyncDesc: 'Verbleibende Kapazität nicht aus AMS-Schätzungen aktualisieren. Verwenden Sie dies, wenn Sie die Verbrauchserfassung von Spoolman gegenüber den prozentualen AMS-Schätzungen bevorzugen. Neue Spulen verwenden weiterhin die AMS-Schätzung als Anfangsgewicht.',
     reportPartialUsage: 'Teilverbrauch bei fehlgeschlagenen Drucken melden',
     reportPartialUsageDesc: 'Wenn ein Druck fehlschlägt oder abgebrochen wird, den geschätzten Filamentverbrauch bis zu diesem Zeitpunkt basierend auf dem Schichtfortschritt melden.',
+  },
+
+  locations: {
+    title: 'Lagerorte',
+    subtitle: 'Regale, Schubladen und andere physische Lagerplätze für Spulen verwalten',
+    add: 'Lagerort hinzufügen',
+    addShort: 'Hinzufügen',
+    edit: 'Lagerort bearbeiten',
+    name: 'Name',
+    spools: 'Spulen',
+    empty: 'Noch keine Lagerorte. Erstellen Sie Ihr erstes Regal oder Ihre erste Schublade.',
+    manage: 'Lagerorte',
+    createPlaceholder: 'z. B. Regal A, Schublade 1',
+    nameRequired: 'Name des Lagerorts ist erforderlich',
+    created: 'Lagerort erstellt',
+    updated: 'Lagerort aktualisiert',
+    deleted: 'Lagerort gelöscht',
+    saveFailed: 'Lagerort konnte nicht gespeichert werden',
+    deleteFailed: 'Lagerort konnte nicht gelöscht werden',
+    deleteBlocked: 'Entfernen Sie zuerst alle Spulen von diesem Lagerort',
+    confirmDelete: '„{{name}}“ löschen?',
+    confirmDeleteMessage: 'Dieser Lagerort wird aus dem Katalog entfernt. Spulen müssen zuerst verschoben werden.',
   },
 
   // Inventar
@@ -5063,6 +5140,17 @@ export default {
 
   // External Links
   externalLinks: {
+    title: 'Seitenleisten-Links',
+    sidebarLayout: 'Seitenleiste',
+    sidebarLayoutDescription: 'Integrierte Seiten ein- oder ausblenden, externe Links hinzufügen und Elemente ziehen, um die Seitenleisten-Navigation neu zu ordnen.',
+    systemPages: 'Bambuddy-Seiten',
+    externalLinks: 'Externe Links',
+    visibleInSidebar: 'In Seitenleiste sichtbar',
+    hiddenFromSidebar: 'In Seitenleiste ausgeblendet',
+    requiredInSidebar: 'In Seitenleiste erforderlich',
+    hidePage: 'Seite ausblenden',
+    showPage: 'Seite anzeigen',
+    settingsCannotBeHidden: 'Einstellungen können nicht ausgeblendet werden',
     noLinksConfigured: 'Keine externen Links konfiguriert',
     deleteLink: 'Link löschen',
     removeCustomIcon: 'Benutzerdefiniertes Symbol entfernen',

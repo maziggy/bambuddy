@@ -1016,7 +1016,46 @@ export default {
     batchCancelled: 'Remaining batch items cancelled',
     cancelBatchConfirmTitle: 'Cancel Batch',
     cancelBatchConfirmMessage: 'Cancel all remaining pending items in this batch?',
-    batch: 'Batch',
+    batch: {
+      defaultName: 'Batch',
+      label: '{{count}} item',
+      label_plural: '{{count}} items',
+      pendingCount: '{{count}} pending',
+      pendingCount_plural: '{{count}} pending',
+      expand: 'Expand batch',
+      collapse: 'Collapse batch',
+      groupAsBatch: 'Group as batch…',
+      groupAsBatchDescription: 'Combine the {{count}} selected items into a single collapsible batch.',
+      nameLabel: 'Batch name',
+      namePlaceholder: 'e.g. Friday gifts',
+      create: 'Create batch',
+      ungroup: 'Ungroup',
+      ungroupConfirmTitle: 'Ungroup batch?',
+      ungroupConfirmMessage: 'The items will stay in the queue but no longer be grouped together.',
+    },
+    // Tabs
+    tabs: {
+      queue: 'Queue',
+      history: 'History',
+      timeline: 'Timeline',
+    },
+    // Layout toggle on the Queue tab — distinct from the sort dropdown
+    // (those control order; these control whether items render as one flat
+    // list or grouped under per-printer section headers).
+    layout: {
+      flatList: 'List',
+      byPrinter: 'By Printer',
+      groupByPrinter: 'Group by Printer',
+    },
+    // History tab empty state
+    history: {
+      emptyTitle: 'No history yet',
+      emptyDescription: 'Completed, cancelled, and failed prints will appear here.',
+    },
+    // Drag ghost label when multi-dragging
+    dragGhost: {
+      multiCount: '{{count}} items',
+    },
     // Sections
     sections: {
       currentlyPrinting: 'Currently Printing',
@@ -1144,6 +1183,10 @@ export default {
       updateFailed: 'Failed to update items',
       bulkCancelled: 'Cancelled {{count}} item(s)',
       bulkCancelFailed: 'Failed to cancel items',
+      batchCreated: 'Batch "{{name}}" created',
+      batchCreateFailed: 'Failed to create batch',
+      batchUngrouped: 'Ungrouped {{count}} item(s)',
+      batchUngroupFailed: 'Failed to ungroup batch',
     },
     // Timeline view
     timeline: {
@@ -1151,6 +1194,7 @@ export default {
       timelineView: 'Timeline',
       unassigned: 'Unassigned',
       noData: 'No scheduled prints for this day',
+      nothingCommitted: 'No committed schedules in this window. Staged items, waiting items, and ASAP jobs on idle printers are not shown — set a scheduled time or release a staged item to see it here.',
       allDoneBy: 'All prints estimated done by {{time}}',
       staged: 'Staged',
       filterAll: 'Show All',
@@ -1167,6 +1211,13 @@ export default {
         next: 'Next day',
         today: 'Today',
       },
+      // Rolling-24h Gantt window
+      window: {
+        back12h: 'Back 12 hours',
+        forward12h: 'Forward 12 hours',
+        now: 'Now',
+      },
+      printerColumnHeader: 'Printer',
     },
     // Permissions
     permissions: {
@@ -2145,7 +2196,7 @@ export default {
     defaultPrinterDescription: 'Pre-select this printer for uploads, reprints, and other operations.',
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
-    sidebarOrderDescription: 'Drag items in the sidebar to reorder. Reset to default order here.',
+    sidebarOrderDescription: 'Use Sidebar to reorder items, reset visibility, and manage custom links.',
     setDefault: 'Set Default',
     sidebarOrderSetDefaultHint: 'Set default applies the current menu order to users who haven\'t customized theirs.',
     sidebarDefaultSet: 'Default menu order has been set.',
@@ -2339,6 +2390,18 @@ export default {
       linkedAccounts: 'Linked SSO Accounts',
       linkedAccountsDesc: 'These external identity providers are linked to your account.',
       oidcUnlinked: 'Account unlinked.',
+    },
+
+    // Session Policy (#1706) — admin-configurable session lifetime ceiling.
+    sessionPolicy: {
+      title: 'Session Policy',
+      description: 'Maximum session lifetime for new user logins. Already-issued tokens keep their original expiry.',
+      preset24h: '24 hours',
+      preset7d: '7 days',
+      preset30d: '30 days',
+      customHoursLabel: 'Custom session lifetime in hours',
+      hoursSuffix: 'hours',
+      warning: 'Longer sessions reduce automatic logout protection. Recommended only for trusted single-user deployments.',
     },
 
     // OIDC provider settings
@@ -3636,6 +3699,28 @@ export default {
     disableWeightSyncDesc: "Don't update remaining capacity from AMS estimates. Use this if you prefer Spoolman's usage tracking over AMS percentage-based estimates. New spools will still use the AMS estimate as their initial weight.",
     reportPartialUsage: 'Report Partial Usage for Failed Prints',
     reportPartialUsageDesc: 'When a print fails or is cancelled, report the estimated filament used up to that point based on layer progress.',
+  },
+
+  locations: {
+    title: 'Storage Locations',
+    subtitle: 'Manage shelves, drawers, and other physical storage spots for your spools',
+    add: 'Add Location',
+    addShort: 'Add',
+    edit: 'Edit Location',
+    name: 'Name',
+    spools: 'Spools',
+    empty: 'No storage locations yet. Create your first shelf or drawer.',
+    manage: 'Locations',
+    createPlaceholder: 'e.g. Shelf A, Drawer 1',
+    nameRequired: 'Location name is required',
+    created: 'Location created',
+    updated: 'Location updated',
+    deleted: 'Location deleted',
+    saveFailed: 'Failed to save location',
+    deleteFailed: 'Failed to delete location',
+    deleteBlocked: 'Remove all spools from this location before deleting',
+    confirmDelete: 'Delete "{{name}}"?',
+    confirmDeleteMessage: 'This location will be removed from the catalog. Spools must be moved first.',
   },
 
   // Inventory
@@ -5076,6 +5161,17 @@ export default {
 
   // External Links
   externalLinks: {
+    title: 'Sidebar Links',
+    sidebarLayout: 'Sidebar',
+    sidebarLayoutDescription: 'Show or hide built-in pages, add external links, and drag items to reorder the sidebar navigation.',
+    systemPages: 'Bambuddy pages',
+    externalLinks: 'External links',
+    visibleInSidebar: 'Visible in sidebar',
+    hiddenFromSidebar: 'Hidden from sidebar',
+    requiredInSidebar: 'Required in sidebar',
+    hidePage: 'Hide page',
+    showPage: 'Show page',
+    settingsCannotBeHidden: 'Settings cannot be hidden',
     noLinksConfigured: 'No external links configured',
     deleteLink: 'Delete Link',
     removeCustomIcon: 'Remove custom icon',

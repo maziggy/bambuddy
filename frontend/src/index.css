@@ -523,3 +523,10 @@ body {
 .calendar-scroll::-webkit-scrollbar-thumb:hover {
   background-color: color-mix(in srgb, var(--text-muted) 80%, transparent);
 }
+
+/* History row thumbnail hover-to-enlarge — desktop only (no hover on touch). */
+@media (hover: hover) and (pointer: fine) {
+  .history-thumb-hover:hover .history-thumb-preview {
+    opacity: 1;
+  }
+}

@@ -640,6 +640,32 @@ export function PrintModal({
 
     const filamentOverridesArray = buildFilamentOverridesArray();
 
+    // Multi-plate auto-batch: when the user adds 2+ plates from one source in
+    // a single add-to-queue submission, pre-create a PrintBatch and pass its
+    // id to each subsequent addToQueue call so the queue UI groups them as a
+    // collapsible batch. Only triggered for single-target submissions —
+    // multi-printer fan-out keeps the old per-item shape.
+    const shouldAutoBatch =
+      mode === 'add-to-queue'
+      && platesToQueue.length > 1
+      && (assignmentMode === 'model' || selectedPrinters.length === 1);
+    let autoBatchId: number | null = null;
+    if (shouldAutoBatch) {
+      try {
+        const baseName = (archiveName || '').replace(/\.gcode\.3mf$/i, '').replace(/\.3mf$/i, '');
+        const batchName = `${baseName || 'Batch'} · ${platesToQueue.length} plates`;
+        const batch = await api.createBatch({
+          name: batchName,
+          archive_id: isLibraryFile ? undefined : archiveId,
+          library_file_id: isLibraryFile ? libraryFileId : undefined,
+        });
+        autoBatchId = batch.id;
+      } catch {
+        // Non-fatal: fall back to ungrouped items so the queue still works.
+        autoBatchId = null;
+      }
+    }
+
     // Common queue data for add-to-queue and edit modes
     const getQueueData = (printerId: number | null, plateOverride?: number | null): PrintQueueItemCreate => ({
       printer_id: assignmentMode === 'printer' ? printerId : null,
@@ -664,6 +690,7 @@ export function PrintModal({
         : undefined,
       ...printOptions,
       project_id: projectId ?? undefined,
+      batch_id: autoBatchId ?? undefined,
     });
 
     // Model-based assignment

@@ -1016,7 +1016,40 @@ export default {
     batchCancelled: 'Elementi rimanenti del lotto annullati',
     cancelBatchConfirmTitle: 'Annulla lotto',
     cancelBatchConfirmMessage: 'Annullare tutti gli elementi in sospeso rimanenti in questo lotto?',
-    batch: 'Lotto',
+    batch: {
+      defaultName: 'Lotto',
+      label: '{{count}} elemento',
+      label_plural: '{{count}} elementi',
+      pendingCount: '{{count}} in attesa',
+      pendingCount_plural: '{{count}} in attesa',
+      expand: 'Espandi lotto',
+      collapse: 'Comprimi lotto',
+      groupAsBatch: 'Raggruppa come lotto…',
+      groupAsBatchDescription: 'Combina gli {{count}} elementi selezionati in un unico lotto comprimibile.',
+      nameLabel: 'Nome lotto',
+      namePlaceholder: 'es. Regali del venerdì',
+      create: 'Crea lotto',
+      ungroup: 'Separa',
+      ungroupConfirmTitle: 'Separare il lotto?',
+      ungroupConfirmMessage: 'Gli elementi resteranno in coda ma non saranno più raggruppati.',
+    },
+    tabs: {
+      queue: 'Coda',
+      history: 'Cronologia',
+      timeline: 'Linea temporale',
+    },
+    layout: {
+      flatList: 'Elenco',
+      byPrinter: 'Per stampante',
+      groupByPrinter: 'Raggruppa per stampante',
+    },
+    history: {
+      emptyTitle: 'Nessuna cronologia',
+      emptyDescription: 'Le stampe completate, annullate e fallite appariranno qui.',
+    },
+    dragGhost: {
+      multiCount: '{{count}} elementi',
+    },
     // Sections
     sections: {
       currentlyPrinting: 'In stampa',
@@ -1144,6 +1177,10 @@ export default {
       updateFailed: 'Aggiornamento elementi non riuscito',
       bulkCancelled: 'Annullati {{count}} elementi',
       bulkCancelFailed: 'Annullamento elementi non riuscito',
+      batchCreated: 'Lotto «{{name}}» creato',
+      batchCreateFailed: 'Creazione lotto non riuscita',
+      batchUngrouped: '{{count}} elemento/i separato/i',
+      batchUngroupFailed: 'Separazione del lotto non riuscita',
     },
     // Timeline view
     timeline: {
@@ -1151,6 +1188,7 @@ export default {
       timelineView: 'Cronologia',
       unassigned: 'Non assegnato',
       noData: 'Nessuna stampa programmata per questo giorno',
+      nothingCommitted: 'Nessuna pianificazione confermata in questa finestra. Elementi preparati, in attesa e ASAP su stampanti inattive non sono mostrati — imposta un orario pianificato o rilascia un elemento preparato per vederlo qui.',
       allDoneBy: 'Tutte le stampe completate entro le {{time}}',
       staged: 'In attesa',
       filterAll: 'Mostra tutto',
@@ -1167,6 +1205,12 @@ export default {
         next: 'Giorno successivo',
         today: 'Oggi',
       },
+      window: {
+        back12h: 'Indietro di 12 ore',
+        forward12h: 'Avanti di 12 ore',
+        now: 'Adesso',
+      },
+      printerColumnHeader: 'Stampante',
     },
     // Permissions
     permissions: {
@@ -2097,7 +2141,7 @@ export default {
     defaultPrinterDescription: 'Preseleziona questa stampante per upload, ristampe e altre operazioni.',
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
-    sidebarOrderDescription: 'Trascina gli elementi nella barra laterale per riordinare. Ripristina l\'ordine predefinito qui.',
+    sidebarOrderDescription: 'Usa il layout della barra laterale per riordinare gli elementi, ripristinare la visibilità e gestire i link personalizzati.',
     setDefault: 'Imposta predefinito',
     sidebarOrderSetDefaultHint: 'Imposta predefinito applica l\'ordine attuale del menu agli utenti che non hanno ancora personalizzato il proprio.',
     sidebarDefaultSet: 'L\'ordine predefinito del menu è stato impostato.',
@@ -2278,6 +2322,17 @@ export default {
       linkedAccounts: 'Account SSO collegati',
       linkedAccountsDesc: 'Questi provider di identità esterni sono collegati al tuo account.',
       oidcUnlinked: 'Account scollegato.',
+    },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: 'Criterio di sessione',
+      description: 'Durata massima della sessione per i nuovi accessi utente. I token già emessi mantengono la scadenza originale.',
+      preset24h: '24 ore',
+      preset7d: '7 giorni',
+      preset30d: '30 giorni',
+      customHoursLabel: 'Durata personalizzata della sessione in ore',
+      hoursSuffix: 'ore',
+      warning: 'Le sessioni più lunghe riducono la protezione di disconnessione automatica. Consigliato solo per installazioni mono-utente attendibili.',
     },
 
     // OIDC provider settings
@@ -3621,6 +3676,28 @@ export default {
     disableWeightSyncDesc: 'Non aggiornare la capacità rimanente dalle stime AMS. Usalo se preferisci il tracciamento di Spoolman rispetto alle stime AMS. Le nuove bobine useranno comunque la stima AMS come peso iniziale.',
     reportPartialUsage: 'Segnala uso parziale per stampe fallite',
     reportPartialUsageDesc: 'Quando una stampa fallisce o viene annullata, segnala il filamento stimato usato fino a quel punto in base all\'avanzamento layer.',
+  },
+
+  locations: {
+    title: 'Ubicazioni di stoccaggio',
+    subtitle: 'Gestisci scaffali, cassetti e altri posti fisici per le bobine',
+    add: 'Aggiungi ubicazione',
+    addShort: 'Aggiungi',
+    edit: 'Modifica ubicazione',
+    name: 'Nome',
+    spools: 'Bobine',
+    empty: 'Nessuna ubicazione di stoccaggio. Crea il tuo primo scaffale o cassetto.',
+    manage: 'Ubicazioni',
+    createPlaceholder: 'es. Scaffale A, Cassetto 1',
+    nameRequired: 'Il nome dell\'ubicazione è obbligatorio',
+    created: 'Ubicazione creata',
+    updated: 'Ubicazione aggiornata',
+    deleted: 'Ubicazione eliminata',
+    saveFailed: 'Impossibile salvare l\'ubicazione',
+    deleteFailed: 'Impossibile eliminare l\'ubicazione',
+    deleteBlocked: 'Rimuovi prima tutte le bobine da questa ubicazione',
+    confirmDelete: 'Eliminare «{{name}}»?',
+    confirmDeleteMessage: 'Questa ubicazione verrà rimossa dal catalogo. Sposta prima le bobine.',
   },
 
   // Inventory
@@ -5052,6 +5129,17 @@ export default {
 
   // External Links
   externalLinks: {
+    title: 'Link della barra laterale',
+    sidebarLayout: 'Barra laterale',
+    sidebarLayoutDescription: 'Mostra o nascondi le pagine integrate, aggiungi link esterni e trascina gli elementi per riordinare la navigazione laterale.',
+    systemPages: 'Pagine Bambuddy',
+    externalLinks: 'Link esterni',
+    visibleInSidebar: 'Visibile nella barra laterale',
+    hiddenFromSidebar: 'Nascosto nella barra laterale',
+    requiredInSidebar: 'Obbligatorio nella barra laterale',
+    hidePage: 'Nascondi pagina',
+    showPage: 'Mostra pagina',
+    settingsCannotBeHidden: 'Le impostazioni non possono essere nascoste',
     noLinksConfigured: 'Nessun link esterno configurato',
     deleteLink: 'Elimina link',
     removeCustomIcon: 'Rimuovi icona personalizzata',

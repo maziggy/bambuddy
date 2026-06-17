@@ -52,6 +52,10 @@ class PrintQueueItemCreate(BaseModel):
     gcode_injection: bool = False
     # Batch: create multiple copies (creates a batch if > 1)
     quantity: int = 1
+    # Existing batch to add this item into. When set, the item's batch_id is
+    # populated on insert so the queue UI groups it with its siblings. Used by
+    # the multi-plate auto-batch flow and by the "Group as batch" action.
+    batch_id: int | None = None
     # Project to associate the resulting archive with
     project_id: int | None = None
 
@@ -199,6 +203,26 @@ class PrintQueueBulkUpdateResponse(BaseModel):
 
     updated_count: int
     skipped_count: int  # Items that were not pending
+    message: str
+
+
+class PrintBatchCreate(BaseModel):
+    """Create a batch, either empty (multi-plate pre-batch flow) or by
+    assigning existing pending queue items into it (manual "Group as batch")."""
+
+    name: str
+    archive_id: int | None = None
+    library_file_id: int | None = None
+    # Existing pending queue items to assign to this batch. None / empty for
+    # the empty-batch flow (client passes the returned id on subsequent
+    # addToQueue calls).
+    item_ids: list[int] | None = None
+
+
+class PrintBatchUngroupResponse(BaseModel):
+    """Response after ungrouping a batch."""
+
+    ungrouped_count: int
     message: str
 
 

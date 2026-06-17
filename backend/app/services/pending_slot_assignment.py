@@ -22,12 +22,12 @@ logger = logging.getLogger(__name__)
 _timeout_tasks: dict[int, asyncio.Task] = {}
 
 
-async def _resolve_spool(db: AsyncSession, spool_id: int | None, tray_uuid: str | None, tag_uid: str | None) -> Spool | None:
+async def _resolve_spool(
+    db: AsyncSession, spool_id: int | None, tray_uuid: str | None, tag_uid: str | None
+) -> Spool | None:
     """Find an inventory spool by spool_id (preferred), tray_uuid, or tag_uid (fallback)."""
     if spool_id:
-        result = await db.execute(
-            select(Spool).where(Spool.id == spool_id, Spool.archived_at.is_(None))
-        )
+        result = await db.execute(select(Spool).where(Spool.id == spool_id, Spool.archived_at.is_(None)))
         spool = result.scalar_one_or_none()
         if spool:
             return spool
@@ -96,7 +96,7 @@ async def create_pending_assignment(
     assignment = PendingSlotAssignment(
         tray_uuid=tray_uuid,
         tag_uid=tag_uid,
-        spool_id= spool.id if spool else None,
+        spool_id=spool.id if spool else None,
         printer_id=printer_id,
         source=source,
         status="pending",
@@ -209,9 +209,7 @@ async def cancel_pending_assignment(db: AsyncSession, assignment_id: int) -> Pen
 
 async def get_pending_assignment(db: AsyncSession, assignment_id: int) -> PendingSlotAssignment | None:
     """Get a pending assignment by ID."""
-    result = await db.execute(
-        select(PendingSlotAssignment).where(PendingSlotAssignment.id == assignment_id)
-    )
+    result = await db.execute(select(PendingSlotAssignment).where(PendingSlotAssignment.id == assignment_id))
     return result.scalar_one_or_none()
 
 
@@ -228,13 +226,12 @@ async def try_complete_pending_assignments(
     """
     # Find pending assignments that match this printer (or any printer)
     result = await db.execute(
-        select(PendingSlotAssignment).where(
+        select(PendingSlotAssignment)
+        .where(
             PendingSlotAssignment.status == "pending",
-            (
-                (PendingSlotAssignment.printer_id == printer_id)
-                | (PendingSlotAssignment.printer_id.is_(None))
-            ),
-        ).order_by(PendingSlotAssignment.created_at.asc())
+            ((PendingSlotAssignment.printer_id == printer_id) | (PendingSlotAssignment.printer_id.is_(None))),
+        )
+        .order_by(PendingSlotAssignment.created_at.asc())
     )
     pending_assignments = result.scalars().all()
 
@@ -360,9 +357,7 @@ async def restore_pending_timeouts() -> None:
     from backend.app.core.database import async_session
 
     async with async_session() as db:
-        result = await db.execute(
-            select(PendingSlotAssignment).where(PendingSlotAssignment.status == "pending")
-        )
+        result = await db.execute(select(PendingSlotAssignment).where(PendingSlotAssignment.status == "pending"))
         pending = result.scalars().all()
         now = datetime.now(timezone.utc)
         for assignment in pending:
@@ -380,4 +375,3 @@ async def restore_pending_timeouts() -> None:
                 "Restored %d pending slot assignment timeout tasks on startup",
                 len([a for a in pending if a.status == "pending"]),
             )
-

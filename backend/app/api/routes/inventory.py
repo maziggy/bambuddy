@@ -26,6 +26,8 @@ from backend.app.models.spool_catalog import SpoolCatalogEntry
 from backend.app.models.spool_k_profile import SpoolKProfile
 from backend.app.models.user import User
 from backend.app.schemas.spool import (
+    PendingSlotAssignmentCreateRequest,
+    PendingSlotAssignmentResponse,
     SpoolAssignmentCreate,
     SpoolAssignmentResponse,
     SpoolBulkCreate,
@@ -36,8 +38,6 @@ from backend.app.schemas.spool import (
     SpoolUpdate,
     normalize_effect_type,
     normalize_extra_colors,
-    PendingSlotAssignmentResponse,
-    PendingSlotAssignmentCreateRequest,
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
 from backend.app.services.slicer_filament_resolver import resolve_slicer_filament
@@ -1500,6 +1500,7 @@ async def unassign_spool(
 
 # ── Pending Slot Assignments (assign-on-next-slot) ────────────────────────────
 
+
 @router.post("/spools/assign-on-next-slot", response_model=PendingSlotAssignmentResponse)
 async def assign_on_next_slot(
     body: PendingSlotAssignmentCreateRequest,
@@ -1509,7 +1510,13 @@ async def assign_on_next_slot(
     """Create a pending spool-to-slot assignment request."""
     from backend.app.services.pending_slot_assignment import create_pending_assignment
 
-    logger.info("Received assign-on-next-slot request: spool_id=%d tray_uuid=%s tag_uid=%s source=%s", body.spool_id, body.tray_uuid, body.tag_uid, body.source)
+    logger.info(
+        "Received assign-on-next-slot request: spool_id=%d tray_uuid=%s tag_uid=%s source=%s",
+        body.spool_id,
+        body.tray_uuid,
+        body.tag_uid,
+        body.source,
+    )
     assignment = await create_pending_assignment(
         db,
         tray_uuid=body.tray_uuid,

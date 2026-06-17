@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 # Visual variant applied to a spool's swatch — purely cosmetic, does not
 # affect MQTT/firmware. Kept independent of `subtype` so users can override
@@ -243,7 +243,6 @@ class SpoolAssignmentResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
 
 
 class PendingSlotAssignmentCreateRequest(BaseModel):

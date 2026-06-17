@@ -200,12 +200,12 @@ export function ExternalLinksSettings() {
     <>
       <Card id="card-sidebar-links">
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-3">
             <div className="flex items-center gap-2">
               <Link2 className="w-5 h-5 text-bambu-green" />
               <h2 className="text-lg font-semibold text-white">{t('externalLinks.sidebarLayout')}</h2>
             </div>
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex flex-wrap items-center gap-2">
               {canSetDefaultSidebarOrder && (
                 <label className="flex items-center gap-2 text-sm text-bambu-gray">
                   <span>{t('settings.setDefault')}</span>

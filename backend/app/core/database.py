@@ -181,6 +181,7 @@ async def init_db():
         kprofile_note,
         library,
         local_preset,
+        location,
         long_lived_token,
         maintenance,
         notification,
@@ -199,7 +200,6 @@ async def init_db():
         slot_preset,
         smart_plug,
         smart_plug_energy_snapshot,
-        location,
         spool,
         spool_assignment,
         spool_catalog,
@@ -2970,6 +2970,23 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN location_id INTEGER REFERENCES locations(id)")
     await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_spool_location_id ON spool (location_id)")
 
+    # Backfill name_key on legacy rows FIRST. If a pre-existing locations
+    # row was manually inserted before this migration ran, its name_key is
+    # NULL. The dedup INSERT below would then be silently skipped by
+    # UNIQUE(name) (legacy row already has the name), AND the spool-link
+    # UPDATE that joins on name_key would miss it. Doing this backfill BEFORE
+    # the INSERT keeps the join consistent on both branches of the migration.
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                """
+                UPDATE locations
+                SET name_key = LOWER(TRIM(name))
+                WHERE name_key IS NULL OR TRIM(name_key) = ''
+                """
+            )
+        )
+
     # Backfill locations from existing free-text storage_location values.
     # GROUP BY name_key so case variants ("Drybox 1" / "DRYBOX 1") collapse to
     # one row; INSERT OR IGNORE / ON CONFLICT keeps the migration idempotent.
@@ -3008,16 +3025,22 @@ async def run_migrations(conn):
             )
         )
 
-    # Backfill name_key for rows created before the column existed.
-    async with conn.begin_nested():
-        await conn.execute(
-            text(
-                """
-                UPDATE locations
-                SET name_key = LOWER(TRIM(name))
-                WHERE name_key IS NULL OR TRIM(name_key) = ''
-                """
-            )
+    # Sanity check: any spools that still have a free-text storage_location
+    # but no location_id link mean a row slipped through the dedup INSERT
+    # (most likely a pre-existing manually-inserted locations row with a
+    # hostile name shape that the UNIQUE(name) check tripped on). Surface
+    # the count so ops can investigate — the user won't see those spools in
+    # location-filtered queries until they're manually linked or re-saved.
+    orphan_count_row = await conn.execute(
+        text("SELECT COUNT(*) FROM spool WHERE TRIM(COALESCE(storage_location, '')) != '' AND location_id IS NULL")
+    )
+    orphan_count = orphan_count_row.scalar() or 0
+    if orphan_count:
+        logger.warning(
+            "Storage-location migration left %d spool(s) with free-text storage_location "
+            "but no location_id link. Re-save those spools or merge the orphaned location "
+            "names manually.",
+            orphan_count,
         )
 
 

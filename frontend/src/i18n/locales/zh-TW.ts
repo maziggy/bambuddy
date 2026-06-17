@@ -3688,7 +3688,6 @@ export default {
     spools: '線軸',
     empty: '尚無儲存位置。建立第一個貨架或抽屜。',
     manage: '位置',
-    backToInventory: '返回庫存',
     createPlaceholder: '例如：A 架、抽屜 1',
     nameRequired: '位置名稱為必填',
     created: '位置已建立',

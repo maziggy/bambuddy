@@ -3688,7 +3688,6 @@ export default {
     spools: 'Bobine',
     empty: 'Nessuna ubicazione di stoccaggio. Crea il tuo primo scaffale o cassetto.',
     manage: 'Ubicazioni',
-    backToInventory: 'Torna all\'inventario',
     createPlaceholder: 'es. Scaffale A, Cassetto 1',
     nameRequired: 'Il nome dell\'ubicazione è obbligatorio',
     created: 'Ubicazione creata',

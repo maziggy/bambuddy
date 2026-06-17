@@ -150,3 +150,70 @@ async def test_rename_location_duplicate_name_raises(db_session: AsyncSession):
 
     with pytest.raises(ValueError, match="already exists"):
         await rename_location(db_session, second, "Shelf A")
+
+
+@pytest.mark.asyncio
+async def test_rename_location_picks_up_legacy_row_with_trailing_whitespace(db_session: AsyncSession):
+    """A legacy spool whose `storage_location` carries trailing whitespace
+    must still get relinked by the rename cascade — the SQL `TRIM()` strips
+    the column, so the Python comparison must also strip `old_name`."""
+    loc = Location()
+    assign_location_name(loc, "Old Shelf")
+    # Simulate a legacy row whose name was stored with the same value but
+    # the column entry has whitespace padding (this happens in old free-text
+    # data + manual DB edits).
+    legacy_spool = Spool(material="PLA", location_id=None, storage_location="  Old Shelf  ")
+    db_session.add(loc)
+    db_session.add(legacy_spool)
+    await db_session.commit()
+    await db_session.refresh(loc)
+    await db_session.refresh(legacy_spool)
+
+    # Force the in-memory name to carry trailing whitespace so the rename
+    # path lifts a non-stripped `old_name`. This is the asymmetry the fix
+    # addresses (#1505 review IMPORTANT 10).
+    loc.name = "Old Shelf  "
+
+    await rename_location(db_session, loc, "New Shelf")
+    await db_session.commit()
+    await db_session.refresh(legacy_spool)
+
+    assert legacy_spool.storage_location == "New Shelf"
+    assert legacy_spool.location_id == loc.id
+
+
+@pytest.mark.asyncio
+async def test_sync_locations_from_spoolman_logs_and_returns_false_on_unavailable(db_session: AsyncSession, caplog):
+    """Bare `except Exception: return False` was the prior shape — verify the
+    narrowed catch surfaces a warning so ops can see Spoolman outages."""
+    from backend.app.services.spoolman import SpoolmanUnavailableError
+
+    class FailingClient:
+        async def get_distinct_locations(self):
+            raise SpoolmanUnavailableError("Cannot reach Spoolman")
+
+    with caplog.at_level("WARNING", logger="backend.app.services.location_service"):
+        changed = await sync_locations_from_spoolman(db_session, FailingClient())
+
+    assert changed is False
+    assert any("location sync from Spoolman failed" in rec.message for rec in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_sync_locations_from_spoolman_handles_dict_payload(db_session: AsyncSession):
+    """Newer Spoolman returns `list[dict]` from `/location`; the SpoolmanClient
+    normalises to `list[str]`, so sync_locations_from_spoolman should accept
+    both shapes via the client contract."""
+
+    class DictShapeClient:
+        async def get_distinct_locations(self):
+            # SpoolmanClient.get_distinct_locations is the one that normalises;
+            # at this layer the contract is `list[str]`. Simulate post-normalisation.
+            return ["Cabinet 3", "Cabinet 3"]  # dedup tested elsewhere — sanity here
+
+    changed = await sync_locations_from_spoolman(db_session, DictShapeClient())
+    assert changed is True
+    await db_session.commit()
+
+    cabinet = await get_location_by_name(db_session, "Cabinet 3")
+    assert cabinet is not None

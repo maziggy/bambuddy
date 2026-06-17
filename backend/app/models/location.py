@@ -1,9 +1,13 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
+
+if TYPE_CHECKING:
+    from backend.app.models.spool import Spool
 
 
 class Location(Base):
@@ -21,9 +25,3 @@ class Location(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     spools: Mapped[list["Spool"]] = relationship(back_populates="location")
-
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from backend.app.models.spool import Spool

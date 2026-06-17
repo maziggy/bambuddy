@@ -3700,7 +3700,6 @@ export default {
     spools: 'Spulen',
     empty: 'Noch keine Lagerorte. Erstellen Sie Ihr erstes Regal oder Ihre erste Schublade.',
     manage: 'Lagerorte',
-    backToInventory: 'Zurück zum Inventar',
     createPlaceholder: 'z. B. Regal A, Schublade 1',
     nameRequired: 'Name des Lagerorts ist erforderlich',
     created: 'Lagerort erstellt',

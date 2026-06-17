@@ -22,8 +22,8 @@ from backend.app.core.websocket import ws_manager
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.location import Location
-from backend.app.models.spool import Spool
 from backend.app.models.settings import Settings
+from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spool_catalog import SpoolCatalogEntry
 from backend.app.models.spool_k_profile import SpoolKProfile
@@ -48,6 +48,7 @@ from backend.app.services.location_service import (
     count_internal_spools_at_location,
     get_location_by_id,
     get_location_by_name,
+    location_name_key,
     prepare_internal_spool_payload,
     rename_location as rename_location_record,
 )
@@ -550,12 +551,22 @@ async def _spool_counts_for_locations(
             except Exception:
                 logger.warning("Failed to fetch Spoolman spools for location counts", exc_info=True)
             else:
-                by_name: dict[str, int] = {}
+                # Use the canonical key helper so this matches what the
+                # migration backfill, Location.name_key, and every other
+                # codepath store as the case-insensitive lookup key. Plain
+                # str.lower() drifts for non-ASCII (Turkish ı/İ, German ß)
+                # and caused mismatched delete-block counts in Spoolman mode.
+                by_key: dict[str, int] = {}
                 for spool in spools:
-                    name = (spool.get("location") or "").strip().lower()
-                    if name:
-                        by_name[name] = by_name.get(name, 0) + 1
-                return {loc.id: by_name.get(loc.name_key, 0) for loc in locations}
+                    raw = spool.get("location")
+                    if not raw or not isinstance(raw, str) or not raw.strip():
+                        continue
+                    try:
+                        key = location_name_key(raw)
+                    except ValueError:
+                        continue
+                    by_key[key] = by_key.get(key, 0) + 1
+                return {loc.id: by_key.get(loc.name_key, 0) for loc in locations}
 
     counts: dict[int, int] = {}
     for loc in locations:
@@ -632,13 +643,28 @@ async def update_location(
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+        # Cascade to Spoolman BEFORE the local commit so a Spoolman failure
+        # rolls back the local rename instead of leaving the catalog and
+        # Spoolman's per-spool `location` field permanently diverged. Without
+        # this ordering, a partial failure makes the next location-sync recreate
+        # the old name as a duplicate catalog row (#1505 review blocker).
         settings = await _load_settings_map(db)
         client = await _ensure_spoolman_client(settings)
         if client:
             try:
                 await client.rename_location(old_name, location.name)
             except Exception as exc:
-                logger.warning("Spoolman location rename failed for %s -> %s: %s", old_name, location.name, exc)
+                logger.warning(
+                    "Spoolman location rename failed for %s -> %s: %s",
+                    old_name,
+                    location.name,
+                    exc,
+                )
+                await db.rollback()
+                raise HTTPException(
+                    status_code=502,
+                    detail="Spoolman rename failed; local rename rolled back",
+                ) from exc
 
     try:
         await db.commit()
@@ -1177,9 +1203,7 @@ async def create_spool(
 ):
     """Create a new spool."""
     try:
-        payload = await prepare_internal_spool_payload(
-            db, spool_data.model_dump(), set(spool_data.model_fields_set)
-        )
+        payload = await prepare_internal_spool_payload(db, spool_data.model_dump(), set(spool_data.model_fields_set))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     spool = Spool(**payload)

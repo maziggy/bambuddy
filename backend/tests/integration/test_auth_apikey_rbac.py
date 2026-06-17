@@ -96,6 +96,7 @@ class TestApiKeyRbacAllowed:
         mock_client.base_url = "http://localhost:7912"
         mock_client.health_check = AsyncMock(return_value=True)
         mock_client.get_all_spools = AsyncMock(return_value=[])
+        mock_client.get_distinct_locations = AsyncMock(return_value=[])
         with patch(
             "backend.app.api.routes.spoolman_inventory._get_client",
             AsyncMock(return_value=mock_client),

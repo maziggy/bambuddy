@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback, type ReactNode } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -20,6 +20,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { ColumnConfigModal, type ColumnConfig } from '../components/ColumnConfigModal';
 import { LabelTemplatePickerModal } from '../components/LabelTemplatePickerModal';
 import { SpoolCsvImportModal } from '../components/SpoolCsvImportModal';
+import { LocationsModal } from '../components/LocationsModal';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { resolveSpoolColorName } from '../utils/colors';
@@ -482,6 +483,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   // CSV import/export (#1576). Local inventory only — hidden in Spoolman mode.
   const [csvImportOpen, setCsvImportOpen] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
+  const [locationsModalOpen, setLocationsModalOpen] = useState(false);
 
   // Filter state
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('active');
@@ -1185,13 +1187,10 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
             {exportingCsv ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             {t('inventory.csv.exportButton', 'Export CSV')}
           </Button>
-          <Link
-            to="/inventory/locations"
-            className="inline-flex items-center justify-center font-medium rounded-lg transition-colors px-4 py-2 text-sm gap-2 min-h-[44px] md:min-h-0 bg-bambu-dark-tertiary hover:bg-bambu-gray-dark text-white"
-          >
+          <Button variant="secondary" onClick={() => setLocationsModalOpen(true)}>
             <MapPin className="w-4 h-4" />
             {t('locations.manage')}
-          </Link>
+          </Button>
           <Button
             variant="secondary"
             disabled={filteredSpools.length === 0}
@@ -2030,6 +2029,12 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           }}
         />
       )}
+
+      <LocationsModal
+        open={locationsModalOpen}
+        onClose={() => setLocationsModalOpen(false)}
+        onPickLocation={(id) => setStorageLocationFilter(String(id))}
+      />
     </div>
   );
 }

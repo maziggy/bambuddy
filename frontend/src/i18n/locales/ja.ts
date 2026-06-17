@@ -3700,7 +3700,6 @@ export default {
     spools: 'スプール',
     empty: '保管場所がありません。最初の棚または引き出しを作成してください。',
     manage: '保管場所',
-    backToInventory: '在庫に戻る',
     createPlaceholder: '例: 棚A、引き出し1',
     nameRequired: '場所名が必要です',
     created: '場所を作成しました',

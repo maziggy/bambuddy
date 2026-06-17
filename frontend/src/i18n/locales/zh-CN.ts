@@ -3688,7 +3688,6 @@ export default {
     spools: '线轴',
     empty: '尚无存储位置。创建第一个货架或抽屉。',
     manage: '位置',
-    backToInventory: '返回库存',
     createPlaceholder: '例如：A 架、抽屉 1',
     nameRequired: '位置名称为必填项',
     created: '位置已创建',

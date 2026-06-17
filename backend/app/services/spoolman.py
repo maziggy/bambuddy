@@ -545,21 +545,84 @@ class SpoolmanClient:
         return await self._get_with_retry("/spool", params=params or None)
 
     async def get_distinct_locations(self) -> list[str]:
-        """Return distinct location strings currently assigned to Spoolman spools."""
-        return await self._get_with_retry("/location")
+        """Return distinct location strings currently assigned to Spoolman spools.
 
-    async def rename_location(self, current_name: str, new_name: str) -> str:
-        """Bulk-rename a location string on all Spoolman spools."""
+        Spoolman's `/location` endpoint shape varies across versions: older
+        releases return `list[str]`, newer ones return `list[dict]` with a
+        `name` field. Normalize to `list[str]` so callers can iterate without
+        runtime shape checks.
+        """
+        raw = await self._get_with_retry("/location")
+        if not isinstance(raw, list):
+            return []
+        names: list[str] = []
+        for entry in raw:
+            if isinstance(entry, str):
+                names.append(entry)
+            elif isinstance(entry, dict):
+                name = entry.get("name")
+                if isinstance(name, str):
+                    names.append(name)
+        return names
+
+    async def rename_location(self, current_name: str, new_name: str) -> int:
+        """Bulk-rename a location string on all Spoolman spools.
+
+        Tries the bulk `PATCH /location/{name}` endpoint first. Spoolman
+        versions older than ~0.16 don't expose it and respond 404/405 — in
+        that case fall back to iterating every spool currently at
+        ``current_name`` and PATCHing each one's ``location`` field directly.
+        Returns the number of spools renamed (or 0 if the bulk endpoint
+        succeeded without enumerating).
+        """
         from urllib.parse import quote
 
         encoded = quote(current_name, safe="")
         client = await self._get_client()
-        response = await client.patch(
-            f"{self.api_url}/location/{encoded}",
-            json={"name": new_name},
-        )
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = await client.patch(
+                f"{self.api_url}/location/{encoded}",
+                json={"name": new_name},
+            )
+            response.raise_for_status()
+            return 0
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code not in (404, 405):
+                raise
+            logger.info(
+                "Spoolman bulk-rename endpoint unavailable (status %d); falling back to per-spool PATCH",
+                exc.response.status_code,
+            )
+
+        # Per-spool fallback: enumerate every spool currently at the old name
+        # and PATCH each. Keep going on individual failures so a single
+        # already-deleted spool doesn't strand the rest at the old name —
+        # collect errors and re-raise as a single SpoolmanClientError if any
+        # leftover survives.
+        spools = await self.get_all_spools(allow_archived=True)
+        renamed = 0
+        failures: list[str] = []
+        for spool in spools:
+            if (spool.get("location") or "").strip() != current_name:
+                continue
+            try:
+                await self._request_spool(
+                    "PATCH",
+                    spool["id"],
+                    json_body={"location": new_name},
+                    operation="rename-location",
+                )
+                renamed += 1
+            except SpoolmanNotFoundError:
+                continue
+            except Exception as exc:  # noqa: BLE001 — accumulate and re-raise below
+                failures.append(f"spool {spool.get('id')}: {exc}")
+        if failures:
+            raise SpoolmanClientError(
+                f"Spoolman rename fallback failed for {len(failures)} spool(s): {'; '.join(failures[:3])}",
+                status_code=502,
+            )
+        return renamed
 
     async def delete_spool(self, spool_id: int) -> None:
         """Delete a spool from Spoolman."""

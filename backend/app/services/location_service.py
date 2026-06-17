@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass
 
+import httpx
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.location import Location
 from backend.app.models.spool import Spool
+
+logger = logging.getLogger(__name__)
 
 DUPLICATE_LOCATION_NAME = "A location with this name already exists"
 
@@ -90,7 +95,15 @@ async def _insert_location_if_absent(db: AsyncSession, name: str) -> bool:
             await db.flush()
         return True
     except IntegrityError:
-        return False
+        # Race: another writer inserted the same name between our check and
+        # flush. The row already exists by definition — surface as "not added"
+        # rather than re-raising. Anything else (NULL constraint, FK, check
+        # constraint) would be a programming bug — re-fetch to verify so we
+        # don't silently drop unrelated IntegrityErrors.
+        if await get_location_by_name(db, normalized):
+            return False
+        logger.warning("IntegrityError on insert of location %r without surviving row", normalized)
+        raise
 
 
 async def resolve_location_by_name(db: AsyncSession, name: str, *, create: bool = True) -> Location | None:
@@ -198,11 +211,7 @@ async def count_spools_at_location_by_name(db: AsyncSession, name: str) -> int:
 
 async def enrich_spool_dicts_with_location_id(db: AsyncSession, spools: list[dict]) -> None:
     """Attach location_id to mapped Spoolman-style spool dicts in place."""
-    keys = {
-        location_name_key(s["storage_location"])
-        for s in spools
-        if (s.get("storage_location") or "").strip()
-    }
+    keys = {location_name_key(s["storage_location"]) for s in spools if (s.get("storage_location") or "").strip()}
     if not keys:
         for s in spools:
             s["location_id"] = None
@@ -225,18 +234,20 @@ async def rename_location(db: AsyncSession, location: Location, new_name: str) -
         raise ValueError(DUPLICATE_LOCATION_NAME)
 
     old_name = location.name
+    # Mirror the SQL TRIM on the Python side so a legacy row whose
+    # `storage_location` has trailing whitespace still matches against the
+    # `old_name` we just lifted off the Location row. Without `.strip()` the
+    # equality is asymmetric (SQL strips the column; Python doesn't) and
+    # legacy rows quietly fall out of the rename cascade.
+    old_name_key = old_name.strip().lower()
     assign_location_name(location, normalized)
-    await db.execute(
-        update(Spool)
-        .where(Spool.location_id == location.id)
-        .values(storage_location=normalized)
-    )
+    await db.execute(update(Spool).where(Spool.location_id == location.id).values(storage_location=normalized))
     # Keep legacy rows in sync when only storage_location was set.
     await db.execute(
         update(Spool)
         .where(
             Spool.location_id.is_(None),
-            func.lower(func.trim(Spool.storage_location)) == old_name.lower(),
+            func.lower(func.trim(Spool.storage_location)) == old_name_key,
         )
         .values(storage_location=normalized, location_id=location.id)
     )
@@ -250,11 +261,17 @@ async def rename_location(db: AsyncSession, location: Location, new_name: str) -
 async def sync_locations_from_spoolman(db: AsyncSession, client) -> bool:
     """Import distinct Spoolman location strings into the local catalog.
 
-    Returns True when new rows were staged (caller must commit).
+    Returns True when new rows were staged (caller must commit). Logs and
+    returns False on Spoolman fetch failures so the calling read path keeps
+    serving the local catalog instead of 500ing; bare-Exception swallow used
+    to be the shape here and hid both transport errors and shape regressions.
     """
+    from backend.app.services.spoolman import SpoolmanClientError, SpoolmanUnavailableError
+
     try:
         names = await client.get_distinct_locations()
-    except Exception:
+    except (SpoolmanUnavailableError, SpoolmanClientError, httpx.HTTPError) as exc:
+        logger.warning("location sync from Spoolman failed: %s", exc)
         return False
 
     # Collapse case variants before insert — Spoolman may return both
@@ -275,11 +292,32 @@ async def sync_locations_from_spoolman(db: AsyncSession, client) -> bool:
     return changed
 
 
-async def maybe_sync_spoolman_locations(db: AsyncSession) -> bool:
-    """Sync Spoolman location names into the local catalog when integration is enabled."""
+# Per-URL last-sync timestamp guard. Calling list_spools runs the sync, so on
+# a polling UI without this guard every refetch round-trips to Spoolman and
+# opens a write transaction — measurable latency and SQLite write contention.
+# 60s is long enough to absorb dashboard polling, short enough that a manual
+# spool rename in Spoolman shows up on the next minute's refresh.
+_SPOOLMAN_LOCATION_SYNC_TTL_SECONDS = 60.0
+_spoolman_location_sync_last_run: dict[str, float] = {}
+
+
+def _spoolman_location_sync_cache_clear() -> None:
+    """Test hook: drop the TTL cache so each test starts from a clean slate."""
+    _spoolman_location_sync_last_run.clear()
+
+
+async def maybe_sync_spoolman_locations(db: AsyncSession, *, client=None) -> bool:
+    """Sync Spoolman location names into the local catalog when integration is enabled.
+
+    Pass ``client`` when the caller has already resolved one (the GET /spools
+    route does); otherwise the function falls back to ``init_spoolman_client``.
+    Passing the route's client keeps test fixtures honest — without it, the
+    fall-back path imports from ``backend.app.services.spoolman`` directly and
+    bypasses any patch that targets the route module's alias, which causes
+    real TCP connects to whatever ``spoolman_url`` happens to point at.
+    """
     from backend.app.api.routes._spoolman_helpers import assert_safe_spoolman_url
     from backend.app.models.settings import Settings
-    from backend.app.services.spoolman import get_spoolman_client, init_spoolman_client
 
     result = await db.execute(select(Settings))
     settings = {s.key: s.value for s in result.scalars().all()}
@@ -288,13 +326,29 @@ async def maybe_sync_spoolman_locations(db: AsyncSession) -> bool:
     url = settings.get("spoolman_url", "").strip()
     if not url:
         return False
+
+    # Debounce: skip the round-trip when we synced this URL recently.
+    cache_key = url.rstrip("/")
+    last_run = _spoolman_location_sync_last_run.get(cache_key, 0.0)
+    now = time.monotonic()
+    if now - last_run < _SPOOLMAN_LOCATION_SYNC_TTL_SECONDS:
+        return False
+
     try:
         assert_safe_spoolman_url(url)
-    except ValueError:
+    except ValueError as exc:
+        logger.warning("Spoolman URL rejected by SSRF guard during location sync: %s", exc)
         return False
-    client = await get_spoolman_client()
-    if not client or client.base_url != url.rstrip("/"):
-        client = await init_spoolman_client(url)
+
+    if client is None:
+        from backend.app.services.spoolman import get_spoolman_client, init_spoolman_client
+
+        client = await get_spoolman_client()
+        if not client or client.base_url != cache_key:
+            client = await init_spoolman_client(url)
     if not client:
         return False
-    return await sync_locations_from_spoolman(db, client)
+
+    changed = await sync_locations_from_spoolman(db, client)
+    _spoolman_location_sync_last_run[cache_key] = now
+    return changed

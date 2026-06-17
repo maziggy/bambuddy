@@ -3689,7 +3689,6 @@ export default {
     spools: 'Bobines',
     empty: 'Aucun emplacement de stockage. Créez votre première étagère ou tiroir.',
     manage: 'Emplacements',
-    backToInventory: 'Retour à l\'inventaire',
     createPlaceholder: 'ex. Étagère A, Tiroir 1',
     nameRequired: 'Le nom de l\'emplacement est requis',
     created: 'Emplacement créé',

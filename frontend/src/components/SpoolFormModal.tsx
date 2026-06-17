@@ -948,8 +948,12 @@ export function SpoolFormModal({
                       await invalidateInventoryLocations(queryClient);
                       return { id: created.id, name: created.name };
                     } catch (e) {
+                      // Surface the backend's actual error so the user can
+                      // distinguish 409 duplicate / 400 validation / 500 from
+                      // a generic "save failed" message.
                       console.error(e);
-                      showToast(t('locations.saveFailed'), 'error');
+                      const message = e instanceof Error ? e.message : t('locations.saveFailed');
+                      showToast(message || t('locations.saveFailed'), 'error');
                       return null;
                     }
                   }}

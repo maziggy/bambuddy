@@ -116,3 +116,59 @@ async def test_list_locations_is_read_only(async_client: AsyncClient, db_session
     assert resp.status_code == 200
     assert len(resp.json()) == 1
     assert before == after == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_update_location_404_on_unknown_id(async_client: AsyncClient):
+    resp = await async_client.patch(
+        "/api/v1/inventory/locations/99999",
+        json={"name": "Ghost"},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Location not found"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_delete_location_404_on_unknown_id(async_client: AsyncClient):
+    resp = await async_client.delete("/api/v1/inventory/locations/99999")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Location not found"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_locations_routes_require_auth_when_enabled(async_client: AsyncClient):
+    """All five /locations endpoints must return 401 when auth is enabled and
+    no credentials are presented. Mirror of the pattern from
+    test_queue_start_user_attribution._enable_auth_with_admin — required by
+    project policy: every permission-gated route gets a fail-closed test on
+    first ship, no follow-ups (the two CVSS 9.8/9.9 advisories shipped from
+    this exact gap)."""
+    await async_client.post(
+        "/api/v1/auth/setup",
+        json={
+            "auth_enabled": True,
+            "admin_username": "locations1505admin",
+            "admin_password": "AdminPass1!",
+        },
+    )
+
+    # GET /locations — read-gated
+    list_resp = await async_client.get("/api/v1/inventory/locations")
+    assert list_resp.status_code == 401, list_resp.text
+
+    # POST /locations — write-gated
+    create_resp = await async_client.post("/api/v1/inventory/locations", json={"name": "Locked"})
+    assert create_resp.status_code == 401, create_resp.text
+
+    # PATCH /locations/{id} — write-gated. Use a synthetic id; the auth gate
+    # runs before the not-found check, so 401 is the correct expectation even
+    # when the id doesn't exist.
+    patch_resp = await async_client.patch("/api/v1/inventory/locations/99999", json={"name": "Locked2"})
+    assert patch_resp.status_code == 401, patch_resp.text
+
+    # DELETE /locations/{id} — write-gated
+    delete_resp = await async_client.delete("/api/v1/inventory/locations/99999")
+    assert delete_resp.status_code == 401, delete_resp.text

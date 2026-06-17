@@ -3703,7 +3703,6 @@ export default {
     spools: 'Bobinas',
     empty: 'Aún no hay ubicaciones de almacenamiento. Cree su primer estante o cajón.',
     manage: 'Ubicaciones',
-    backToInventory: 'Volver al inventario',
     createPlaceholder: 'p. ej. Estante A, Cajón 1',
     nameRequired: 'El nombre de la ubicación es obligatorio',
     created: 'Ubicación creada',

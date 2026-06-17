@@ -3711,7 +3711,6 @@ export default {
     spools: 'Spools',
     empty: 'No storage locations yet. Create your first shelf or drawer.',
     manage: 'Locations',
-    backToInventory: 'Back to Inventory',
     createPlaceholder: 'e.g. Shelf A, Drawer 1',
     nameRequired: 'Location name is required',
     created: 'Location created',

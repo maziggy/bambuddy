@@ -34,6 +34,7 @@ from backend.app.api.routes._spoolman_helpers import (
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
+from backend.app.core.websocket import ws_manager
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
@@ -436,10 +437,14 @@ async def list_spools(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ) -> list[dict]:
     """Return all Spoolman spools in the InventorySpool format."""
-    if await maybe_sync_spoolman_locations(db):
+    client = await _get_client(db)
+    # Sync after we have the route-resolved client so tests that patch the
+    # route module's get_spoolman_client/init_spoolman_client also catch the
+    # sync's client lookup — otherwise the location_service path imports from
+    # backend.app.services.spoolman directly and bypasses the patch.
+    if await maybe_sync_spoolman_locations(db, client=client):
         await db.commit()
 
-    client = await _get_client(db)
     async with _translate_spoolman_errors():
         spools = await client.get_all_spools(allow_archived=include_archived)
 
@@ -580,6 +585,7 @@ async def create_spool(
                 )
 
     result = _map_spoolman_spool(spool)
+    await ws_manager.broadcast({"type": "inventory_changed"})
     if price_warnings:
         return JSONResponse(status_code=207, content={**result, "warnings": price_warnings})
     return result
@@ -648,6 +654,8 @@ async def bulk_create_spools(
 
     if not created:
         raise HTTPException(status_code=500, detail="Failed to create any spools in Spoolman")
+
+    await ws_manager.broadcast({"type": "inventory_changed"})
 
     if len(created) < payload.quantity:
         # Some spool creations failed — return 207 Multi-Status so the caller
@@ -863,6 +871,7 @@ async def update_spool(
         async with _translate_spoolman_errors():
             updated = await client.merge_spool_extra(spool_id, new_extra)
 
+    await ws_manager.broadcast({"type": "inventory_changed"})
     return _map_spoolman_spool(updated)
 
 
@@ -876,6 +885,7 @@ async def delete_spool(
     client = await _get_client(db)
     async with _translate_spoolman_errors():
         await client.delete_spool(spool_id)
+    await ws_manager.broadcast({"type": "inventory_changed"})
     return {"status": "deleted"}
 
 
@@ -890,10 +900,12 @@ async def archive_spool(
     async with _translate_spoolman_errors():
         spool = await client.set_spool_archived(spool_id, archived=True)
     try:
-        return _map_spoolman_spool(spool)
+        mapped = _map_spoolman_spool(spool)
     except ValueError as exc:
         logger.warning("Malformed Spoolman spool (id=%r): %s", spool_id, exc)
         raise HTTPException(status_code=502, detail="Spoolman returned malformed spool data") from exc
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    return mapped
 
 
 @router.post("/spools/{spool_id}/restore")
@@ -907,10 +919,12 @@ async def restore_spool(
     async with _translate_spoolman_errors():
         spool = await client.set_spool_archived(spool_id, archived=False)
     try:
-        return _map_spoolman_spool(spool)
+        mapped = _map_spoolman_spool(spool)
     except ValueError as exc:
         logger.warning("Malformed Spoolman spool (id=%r): %s", spool_id, exc)
         raise HTTPException(status_code=502, detail="Spoolman returned malformed spool data") from exc
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    return mapped
 
 
 @router.post("/spools/{spool_id}/reset-consumed-counter")
@@ -934,10 +948,12 @@ async def reset_spool_consumed_counter(
     async with _translate_spoolman_errors():
         spool = await client.reset_spool_usage(spool_id)
     try:
-        return _map_spoolman_spool(spool)
+        mapped = _map_spoolman_spool(spool)
     except ValueError as exc:
         logger.warning("Malformed Spoolman spool (id=%r): %s", spool_id, exc)
         raise HTTPException(status_code=502, detail="Spoolman returned malformed spool data") from exc
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    return mapped
 
 
 @router.post("/spools/reset-consumed-counter-bulk")
@@ -968,6 +984,8 @@ async def bulk_reset_spool_consumed_counter(
             reset_count += 1
         except HTTPException as exc:
             logger.warning("Spoolman reset-consumed-counter failed for spool %s: %s", spool_id, exc.detail)
+    if reset_count:
+        await ws_manager.broadcast({"type": "inventory_changed"})
     return {"reset": reset_count}
 
 
@@ -1001,6 +1019,7 @@ async def sync_spool_weight(
     upd_filament = updated.get("filament") or {}
     label_weight = _safe_int(upd_filament.get("weight"), 1000)
     weight_used = max(0.0, label_weight - remaining)
+    await ws_manager.broadcast({"type": "inventory_changed"})
     return {"status": "ok", "weight_used": weight_used}
 
 
@@ -1043,6 +1062,7 @@ async def link_tag_to_spoolman_spool(
             updated = await client.update_spool_full(spool_id=spool_id, extra=cur_extra)
 
     logger.info("Linked tag %s to Spoolman spool %s", tag, spool_id)
+    await ws_manager.broadcast({"type": "inventory_changed"})
     return _map_spoolman_spool(updated)
 
 

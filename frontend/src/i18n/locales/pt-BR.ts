@@ -3688,7 +3688,6 @@ export default {
     spools: 'Bobinas',
     empty: 'Nenhum local de armazenamento. Crie sua primeira prateleira ou gaveta.',
     manage: 'Locais',
-    backToInventory: 'Voltar ao inventário',
     createPlaceholder: 'ex. Prateleira A, Gaveta 1',
     nameRequired: 'O nome do local é obrigatório',
     created: 'Local criado',

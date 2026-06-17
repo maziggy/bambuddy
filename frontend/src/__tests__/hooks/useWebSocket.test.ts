@@ -447,7 +447,7 @@ describe('useWebSocket hook', () => {
         wrapper: createWrapper(queryClient),
       });
 
-      const ws = getLatestWs()!;
+      const ws = await waitForWs();
 
       act(() => {
         ws.open();

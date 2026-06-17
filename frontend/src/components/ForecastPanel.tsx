@@ -1465,22 +1465,22 @@ function ShoppingListPanel({
                               onClick={() => statusMutation.mutate({ id: item.id, status: isPurchased ? 'pending' : 'purchased' })}
                               disabled={isMutating || isReceived}
                               title={isPurchased ? t('forecast.resetToPending') : t('forecast.markPurchased')}
-                              className={`p-1 rounded transition-colors disabled:opacity-30 ${
+                              className={`p-1.5 rounded transition-colors disabled:opacity-30 ${
                                 isPurchased
-                                  ? 'text-blue-400 hover:text-bambu-gray'
-                                  : 'text-bambu-gray hover:text-blue-400'
+                                  ? 'text-blue-400 hover:text-blue-300'
+                                  : 'text-blue-400/50 hover:text-blue-400'
                               }`}
                             >
-                              {isPurchased ? <RotateCcw className="w-3.5 h-3.5" /> : <CreditCard className="w-3.5 h-3.5" />}
+                              {isPurchased ? <RotateCcw className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />}
                             </button>
                             {/* Received icon — available only after purchasing */}
                             <button
                               onClick={() => statusMutation.mutate({ id: item.id, status: 'received', item, avgSpoolG })}
                               disabled={isMutating || !isPurchased || isReceived}
                               title={t('forecast.markReceived')}
-                              className="p-1 rounded transition-colors text-bambu-gray hover:text-bambu-green disabled:opacity-30"
+                              className="p-1.5 rounded transition-colors text-bambu-green/50 hover:text-bambu-green disabled:opacity-30"
                             >
-                              <PackageCheck className="w-3.5 h-3.5" />
+                              <PackageCheck className="w-4 h-4" />
                             </button>
                             {/* Delete */}
                             <button

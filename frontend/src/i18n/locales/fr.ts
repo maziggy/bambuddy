@@ -2146,7 +2146,7 @@ export default {
     defaultPrinterDescription: 'Présélectionner cette imprimante pour les téléversements, réimpressions et autres opérations.',
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
-    sidebarOrderDescription: 'Glissez les éléments dans la barre latérale pour réorganiser. Réinitialiser l\'ordre par défaut ici.',
+    sidebarOrderDescription: 'Utilisez la disposition de la barre latérale pour réorganiser les éléments, réinitialiser la visibilité et gérer les liens personnalisés.',
     setDefault: 'Définir par défaut',
     sidebarOrderSetDefaultHint: 'Définir par défaut applique l\'ordre actuel du menu aux utilisateurs qui n\'ont pas encore personnalisé le leur.',
     sidebarDefaultSet: 'L\'ordre du menu par défaut a été défini.',
@@ -2327,6 +2327,17 @@ export default {
       linkedAccounts: 'Comptes SSO liés',
       linkedAccountsDesc: 'Ces fournisseurs d\'identité externes sont liés à votre compte.',
       oidcUnlinked: 'Compte dissocié.',
+    },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: 'Politique de session',
+      description: 'Durée maximale des sessions pour les nouvelles connexions utilisateur. Les jetons déjà émis conservent leur expiration d\'origine.',
+      preset24h: '24 heures',
+      preset7d: '7 jours',
+      preset30d: '30 jours',
+      customHoursLabel: 'Durée de session personnalisée en heures',
+      hoursSuffix: 'heures',
+      warning: 'Les sessions plus longues réduisent la protection de déconnexion automatique. Recommandé uniquement pour les déploiements mono-utilisateur de confiance.',
     },
 
     // OIDC provider settings
@@ -3670,6 +3681,28 @@ export default {
     disableWeightSyncDesc: 'Ne pas utiliser les estimations AMS. Utile si vous préférez le suivi Spoolman.',
     reportPartialUsage: 'Rapporter consommation partielle pour échecs',
     reportPartialUsageDesc: 'Si l\'impression échoue, rapporte le filament consommé selon les couches.',
+  },
+
+  locations: {
+    title: 'Emplacements de stockage',
+    subtitle: 'Gérez étagères, tiroirs et autres emplacements physiques pour vos bobines',
+    add: 'Ajouter un emplacement',
+    addShort: 'Ajouter',
+    edit: 'Modifier l\'emplacement',
+    name: 'Nom',
+    spools: 'Bobines',
+    empty: 'Aucun emplacement de stockage. Créez votre première étagère ou tiroir.',
+    manage: 'Emplacements',
+    createPlaceholder: 'ex. Étagère A, Tiroir 1',
+    nameRequired: 'Le nom de l\'emplacement est requis',
+    created: 'Emplacement créé',
+    updated: 'Emplacement mis à jour',
+    deleted: 'Emplacement supprimé',
+    saveFailed: 'Échec de l\'enregistrement de l\'emplacement',
+    deleteFailed: 'Échec de la suppression de l\'emplacement',
+    deleteBlocked: 'Retirez d\'abord toutes les bobines de cet emplacement',
+    confirmDelete: 'Supprimer « {{name}} » ?',
+    confirmDeleteMessage: 'Cet emplacement sera retiré du catalogue. Déplacez d\'abord les bobines.',
   },
 
   // Inventory
@@ -5101,6 +5134,17 @@ export default {
 
   // External Links
   externalLinks: {
+    title: 'Liens de la barre latérale',
+    sidebarLayout: 'Barre latérale',
+    sidebarLayoutDescription: 'Affichez ou masquez les pages intégrées, ajoutez des liens externes et faites glisser les éléments pour réorganiser la navigation latérale.',
+    systemPages: 'Pages Bambuddy',
+    externalLinks: 'Liens externes',
+    visibleInSidebar: 'Visible dans la barre latérale',
+    hiddenFromSidebar: 'Masqué dans la barre latérale',
+    requiredInSidebar: 'Obligatoire dans la barre latérale',
+    hidePage: 'Masquer la page',
+    showPage: 'Afficher la page',
+    settingsCannotBeHidden: 'Les paramètres ne peuvent pas être masqués',
     noLinksConfigured: 'Aucun lien externe configuré',
     deleteLink: 'Supprimer lien',
     removeCustomIcon: 'Retirer icône personnalisée',

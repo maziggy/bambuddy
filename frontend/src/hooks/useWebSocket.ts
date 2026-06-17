@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '../contexts/ToastContext';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
+import { inventoryLocationsQueryKey } from '../utils/inventoryQueries';
 
 interface WebSocketMessage {
   type: string;
@@ -288,6 +289,8 @@ export function useWebSocket() {
       case 'inventory_changed':
         // Spool created/updated/deleted/archived/restored - refresh inventory across all tabs
         debouncedInvalidate('inventory-spools');
+        debouncedInvalidate('spoolman-inventory-spools');
+        debouncedInvalidate(inventoryLocationsQueryKey[0]);
         break;
 
       case 'spool_assignment_changed':

@@ -69,6 +69,7 @@ def mock_spoolman_client():
     # #1457: assign route enumerates spools to clear stale fallback-tag links.
     client.get_spools = AsyncMock(return_value=[])
     client.merge_spool_extra = AsyncMock(return_value={"id": 0, "extra": {}})
+    client.get_distinct_locations = AsyncMock(return_value=[])
 
     with patch(
         "backend.app.api.routes.spoolman_inventory._get_client",

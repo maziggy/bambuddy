@@ -1155,6 +1155,8 @@ export interface AppSettings {
   bed_cooled_threshold: number;
   // Inventory low stock threshold
   low_stock_threshold: number;
+  // Session policy (#1706) — admin-set ceiling, hours, [1, 720]
+  session_max_hours: number;
   // User email notifications toggle
   user_notifications_enabled: boolean;
   // Default print options
@@ -1313,6 +1315,15 @@ export interface SpoolCatalogEntry {
   name: string;
   weight: number;
   is_default: boolean;
+}
+
+export interface StorageLocation {
+  id: number;
+  name: string;
+  identifier: string | null;
+  spool_count: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ColorCatalogEntry {
@@ -2650,6 +2661,7 @@ export interface InventorySpool {
   low_stock_threshold_pct: number | null;
   k_profiles?: SpoolKProfile[];
   storage_location?: string | null;
+  location_id?: number | null;
 }
 
 export interface SpoolmanBulkCreateResult {
@@ -5082,6 +5094,14 @@ export const api = {
     request<{ deleted: number }>('/inventory/catalog/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
   resetSpoolCatalog: () =>
     request<{ status: string }>('/inventory/catalog/reset', { method: 'POST' }),
+  getLocations: () =>
+    request<StorageLocation[]>('/inventory/locations'),
+  createLocation: (data: { name: string; identifier?: string | null }) =>
+    request<StorageLocation>('/inventory/locations', { method: 'POST', body: JSON.stringify(data) }),
+  updateLocation: (id: number, data: { name?: string; identifier?: string | null }) =>
+    request<StorageLocation>(`/inventory/locations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteLocation: (id: number) =>
+    request<{ status: string }>(`/inventory/locations/${id}`, { method: 'DELETE' }),
   getColorCatalog: () =>
     request<ColorCatalogEntry[]>('/inventory/colors'),
   getColorNameMap: () =>

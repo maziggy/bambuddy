@@ -2190,7 +2190,7 @@ export default {
     defaultPrinterDescription: '為上傳、重印和其他操作預選此印表機。',
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
-    sidebarOrderDescription: '拖曳側邊欄項目以重新排序。在此處重設為預設順序。',
+    sidebarOrderDescription: '使用側邊欄版面配置重新排序項目、重設可見性並管理自訂連結。',
     setDefault: '設為預設',
     sidebarOrderSetDefaultHint: '設為預設將目前選單順序套用於尚未自訂的使用者。',
     sidebarDefaultSet: '已設定預設選單順序。',
@@ -2371,6 +2371,17 @@ export default {
       linkedAccounts: '已連結的 SSO 帳戶',
       linkedAccountsDesc: '以下外部身份提供者已與您的帳戶連結。',
       oidcUnlinked: '帳戶已解除連結。',
+    },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: '工作階段政策',
+      description: '新使用者登入的最長工作階段有效期。已發行的權杖會保留其原有的到期時間。',
+      preset24h: '24 小時',
+      preset7d: '7 天',
+      preset30d: '30 天',
+      customHoursLabel: '自訂工作階段有效期（小時）',
+      hoursSuffix: '小時',
+      warning: '較長的工作階段會削弱自動登出保護。僅建議在受信任的單一使用者部署中使用。',
     },
 
     // OIDC provider settings
@@ -3669,6 +3680,28 @@ export default {
     disableWeightSyncDesc: '不從 AMS 估計值更新剩餘容量。如果您更喜歡 Spoolman 的用量追蹤而非 AMS 百分比估計，請使用此選項。新耗材仍將使用 AMS 估計值作為初始重量。',
     reportPartialUsage: '報告失敗列印的部分用量',
     reportPartialUsageDesc: '當列印失敗或被取消時，根據層進度報告估計的耗材使用量。',
+  },
+
+  locations: {
+    title: '儲存位置',
+    subtitle: '管理貨架、抽屜等線軸實體存放位置',
+    add: '新增位置',
+    addShort: '新增',
+    edit: '編輯位置',
+    name: '名稱',
+    spools: '線軸',
+    empty: '尚無儲存位置。建立第一個貨架或抽屜。',
+    manage: '位置',
+    createPlaceholder: '例如：A 架、抽屜 1',
+    nameRequired: '位置名稱為必填',
+    created: '位置已建立',
+    updated: '位置已更新',
+    deleted: '位置已刪除',
+    saveFailed: '儲存位置失敗',
+    deleteFailed: '刪除位置失敗',
+    deleteBlocked: '刪除前請移走此位置上的所有線軸',
+    confirmDelete: '刪除「{{name}}」？',
+    confirmDeleteMessage: '此位置將從目錄中移除。請先移走線軸。',
   },
 
   // Inventory
@@ -5099,6 +5132,17 @@ export default {
 
   // External Links
   externalLinks: {
+    title: '側邊欄連結',
+    sidebarLayout: '側邊欄',
+    sidebarLayoutDescription: '顯示或隱藏內建頁面、加入外部連結，並拖曳項目以重新排序側邊欄導覽。',
+    systemPages: 'Bambuddy 頁面',
+    externalLinks: '外部連結',
+    visibleInSidebar: '顯示於側邊欄',
+    hiddenFromSidebar: '隱藏於側邊欄',
+    requiredInSidebar: '側邊欄中必須顯示',
+    hidePage: '隱藏頁面',
+    showPage: '顯示頁面',
+    settingsCannotBeHidden: '設定無法隱藏',
     noLinksConfigured: '未設定外部連結',
     deleteLink: '刪除連結',
     removeCustomIcon: '移除自訂圖示',

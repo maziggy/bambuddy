@@ -529,3 +529,139 @@ class TestGetExternalFilamentsRaisesOnError:
             pytest.raises(SpoolmanUnavailableError),
         ):
             await client.get_external_filaments()
+
+
+# ---------------------------------------------------------------------------
+# get_distinct_locations — shape normalisation (#1505 review BLOCKER 3)
+# ---------------------------------------------------------------------------
+
+
+class TestGetDistinctLocationsShape:
+    @pytest.mark.asyncio
+    async def test_passes_through_list_of_strings(self, client):
+        with patch.object(client, "_get_with_retry", AsyncMock(return_value=["Drybox 1", "Shelf"])):
+            result = await client.get_distinct_locations()
+        assert result == ["Drybox 1", "Shelf"]
+
+    @pytest.mark.asyncio
+    async def test_extracts_name_from_list_of_dicts(self, client):
+        with patch.object(
+            client,
+            "_get_with_retry",
+            AsyncMock(return_value=[{"id": 1, "name": "Drybox 1"}, {"id": 2, "name": "Shelf"}]),
+        ):
+            result = await client.get_distinct_locations()
+        assert result == ["Drybox 1", "Shelf"]
+
+    @pytest.mark.asyncio
+    async def test_drops_non_string_and_dict_without_name(self, client):
+        with patch.object(
+            client,
+            "_get_with_retry",
+            AsyncMock(return_value=[{"id": 1}, None, 42, "Shelf"]),
+        ):
+            result = await client.get_distinct_locations()
+        assert result == ["Shelf"]
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_list_on_non_list_payload(self, client):
+        # A misconfigured proxy or auth-redirect can serve HTML; the old shape
+        # would TypeError on iteration. We coerce to [].
+        with patch.object(client, "_get_with_retry", AsyncMock(return_value={"error": "unauthorized"})):
+            result = await client.get_distinct_locations()
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# rename_location — bulk endpoint + per-spool fallback (#1505 review BLOCKER 2)
+# ---------------------------------------------------------------------------
+
+
+class TestRenameLocationBulkAndFallback:
+    @pytest.mark.asyncio
+    async def test_bulk_endpoint_success_returns_zero(self, client):
+        """Modern Spoolman PATCH /location/{name} succeeds — fallback not used."""
+        mock_http = AsyncMock()
+        mock_http.patch = AsyncMock(return_value=_make_response(None))
+        with patch.object(client, "_get_client", AsyncMock(return_value=mock_http)):
+            result = await client.rename_location("Drybox 1", "Drybox 2")
+        assert result == 0
+        # Confirm the bulk path was used (no per-spool PATCH).
+        mock_http.patch.assert_called_once()
+        assert "/location/" in mock_http.patch.call_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_bulk_endpoint_404_falls_back_to_per_spool_patch(self, client):
+        """Older Spoolman versions return 404 on the bulk endpoint — the
+        fallback iterates every spool currently at the old name."""
+        bulk_response = MagicMock()
+        bulk_response.status_code = 404
+        bulk_response.raise_for_status = MagicMock(
+            side_effect=httpx.HTTPStatusError("404 Not Found", request=MagicMock(), response=MagicMock(status_code=404))
+        )
+        mock_http = AsyncMock()
+        mock_http.patch = AsyncMock(return_value=bulk_response)
+
+        spools_at_old = [
+            {"id": 11, "location": "Drybox 1"},
+            {"id": 12, "location": "Drybox 1"},
+            {"id": 13, "location": "Shelf A"},  # different location — must be skipped
+        ]
+        patch_response = MagicMock()
+        patch_response.status_code = 200
+        patch_response.raise_for_status = MagicMock()
+        patch_response.json.return_value = {"id": 0, "location": "Drybox 2"}
+
+        with (
+            patch.object(client, "_get_client", AsyncMock(return_value=mock_http)),
+            patch.object(client, "get_all_spools", AsyncMock(return_value=spools_at_old)),
+            patch.object(client, "_request_spool", AsyncMock(return_value=patch_response)) as request_spool_mock,
+        ):
+            result = await client.rename_location("Drybox 1", "Drybox 2")
+
+        assert result == 2
+        # Only the two matching spools should be PATCHed.
+        assert request_spool_mock.await_count == 2
+        called_ids = sorted(call.args[1] for call in request_spool_mock.await_args_list)
+        assert called_ids == [11, 12]
+        # And each call should set the new location string.
+        for call in request_spool_mock.await_args_list:
+            assert call.kwargs["json_body"] == {"location": "Drybox 2"}
+
+    @pytest.mark.asyncio
+    async def test_bulk_endpoint_405_also_falls_back(self, client):
+        """Some Spoolman versions return 405 Method Not Allowed instead of 404
+        when the bulk endpoint is missing — same fallback."""
+        bulk_response = MagicMock()
+        bulk_response.status_code = 405
+        bulk_response.raise_for_status = MagicMock(
+            side_effect=httpx.HTTPStatusError(
+                "405 Method Not Allowed", request=MagicMock(), response=MagicMock(status_code=405)
+            )
+        )
+        mock_http = AsyncMock()
+        mock_http.patch = AsyncMock(return_value=bulk_response)
+
+        with (
+            patch.object(client, "_get_client", AsyncMock(return_value=mock_http)),
+            patch.object(client, "get_all_spools", AsyncMock(return_value=[])),
+        ):
+            result = await client.rename_location("Drybox 1", "Drybox 2")
+        # No spools at the old name → nothing to do, fallback returns 0.
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_bulk_endpoint_non_404_5xx_propagates(self, client):
+        """A genuine server error must NOT silently fall back."""
+        bulk_response = MagicMock()
+        bulk_response.status_code = 500
+        bulk_response.raise_for_status = MagicMock(
+            side_effect=httpx.HTTPStatusError("500", request=MagicMock(), response=MagicMock(status_code=500))
+        )
+        mock_http = AsyncMock()
+        mock_http.patch = AsyncMock(return_value=bulk_response)
+        with (
+            patch.object(client, "_get_client", AsyncMock(return_value=mock_http)),
+            pytest.raises(httpx.HTTPStatusError),
+        ):
+            await client.rename_location("Drybox 1", "Drybox 2")

@@ -15,7 +15,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { api } from '../api/client';
-import type { LocalPreset } from '../api/client';
+import type { LocalPreset, LocalPresetsResponse } from '../api/client';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
@@ -276,7 +276,21 @@ export function LocalProfilesView() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteLocalPreset(id),
-    onSuccess: () => {
+    onSuccess: (_, id) => {
+      // Optimistically drop the row from the cached list so the rendered table
+      // updates the instant the DELETE returns. Without this the row stays
+      // visible until invalidateQueries' background refetch completes, and a
+      // quick re-click on the same row opens a second delete-confirm modal
+      // that resolves to a 404 (server already deleted it). The cache holds a
+      // grouped response (filament / printer / process), not a flat list.
+      queryClient.setQueryData<LocalPresetsResponse>(['localPresets'], (old) => {
+        if (!old) return old;
+        return {
+          filament: old.filament.filter((p) => p.id !== id),
+          printer: old.printer.filter((p) => p.id !== id),
+          process: old.process.filter((p) => p.id !== id),
+        };
+      });
       queryClient.invalidateQueries({ queryKey: ['localPresets'] });
       // Match the import path: the SliceModal's `slicerPresets` query needs
       // to be invalidated too, otherwise the deleted preset keeps appearing

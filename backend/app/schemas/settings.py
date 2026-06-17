@@ -240,6 +240,20 @@ class AppSettings(BaseModel):
         description="Low stock threshold percentage (%) for inventory filtering and display",
     )
 
+    # Session policy (#1706) — admin-set ceiling for user session lifetime.
+    # Default 24h preserves the M-2 audit reduction from 7 days. Max 720h
+    # (30 days) bounds blast radius if an admin chooses a long session.
+    session_max_hours: int = Field(
+        default=24,
+        ge=1,
+        le=720,
+        description=(
+            "Maximum session lifetime in hours for user logins (default 24, max 720). "
+            "Applies to new logins only; already-issued tokens keep their original expiry. "
+            "Longer sessions reduce automatic logout protection."
+        ),
+    )
+
     # User email notifications (requires Advanced Authentication)
     user_notifications_enabled: bool = Field(
         default=True,
@@ -414,6 +428,7 @@ class AppSettingsUpdate(BaseModel):
     prometheus_enabled: bool | None = None
     prometheus_token: str | None = None
     low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)
+    session_max_hours: int | None = Field(default=None, ge=1, le=720)
     user_notifications_enabled: bool | None = None
     default_bed_levelling: bool | None = None
     default_flow_cali: bool | None = None
@@ -518,6 +533,11 @@ class AppSettingsUpdate(BaseModel):
             raise ValueError("default_sidebar_order must be valid JSON or empty")
         if isinstance(parsed, dict):
             order = parsed.get("order")
+            hidden_system_item_ids = parsed.get("hiddenSystemItemIds", [])
+            if not isinstance(hidden_system_item_ids, list) or not all(
+                isinstance(item, str) for item in hidden_system_item_ids
+            ):
+                raise ValueError("sidebar hidden system item IDs must be an array of strings")
         elif isinstance(parsed, list):
             order = parsed
         else:

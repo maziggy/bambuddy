@@ -41,13 +41,13 @@ from sqlalchemy.orm import selectinload, undefer
 from backend.app.api.routes._oidc_helpers import assert_safe_public_https_url
 from backend.app.api.routes.settings import get_setting, set_setting
 from backend.app.core.auth import (
-    ACCESS_TOKEN_EXPIRE_MINUTES,
     RequirePermissionIfAuthEnabled,
     create_access_token,
     get_current_active_user,
     get_user_by_email,
     get_user_by_username,
     is_auth_enabled,
+    resolve_session_max_minutes,
     verify_password,
 )
 from backend.app.core.database import get_db
@@ -1242,7 +1242,7 @@ async def verify_2fa(
 
         access_token = create_access_token(
             data={"sub": user.username},
-            expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+            expires_delta=timedelta(minutes=await resolve_session_max_minutes(db)),
         )
         result = await db.execute(select(User).where(User.id == user.id).options(selectinload(User.groups)))
         user = result.scalar_one()
@@ -1258,7 +1258,7 @@ async def verify_2fa(
 
     access_token = create_access_token(
         data={"sub": user.username},
-        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+        expires_delta=timedelta(minutes=await resolve_session_max_minutes(db)),
     )
 
     # Reload with groups for permission calculation
@@ -2146,7 +2146,7 @@ async def oidc_exchange(
 
     access_token = create_access_token(
         data={"sub": user.username},
-        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+        expires_delta=timedelta(minutes=await resolve_session_max_minutes(db)),
     )
 
     return LoginResponse(

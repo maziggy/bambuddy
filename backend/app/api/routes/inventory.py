@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -20,11 +21,14 @@ from backend.app.core.permissions import Permission
 from backend.app.core.websocket import ws_manager
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.color_catalog import ColorCatalogEntry
+from backend.app.models.location import Location
+from backend.app.models.settings import Settings
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spool_catalog import SpoolCatalogEntry
 from backend.app.models.spool_k_profile import SpoolKProfile
 from backend.app.models.user import User
+from backend.app.schemas.location import LocationCreate, LocationResponse, LocationUpdate
 from backend.app.schemas.spool import (
     SpoolAssignmentCreate,
     SpoolAssignmentResponse,
@@ -38,6 +42,16 @@ from backend.app.schemas.spool import (
     normalize_extra_colors,
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
+from backend.app.services.location_service import (
+    DUPLICATE_LOCATION_NAME,
+    assign_location_name,
+    count_internal_spools_at_location,
+    get_location_by_id,
+    get_location_by_name,
+    location_name_key,
+    prepare_internal_spool_payload,
+    rename_location as rename_location_record,
+)
 from backend.app.services.slicer_filament_resolver import resolve_slicer_filament
 from backend.app.services.spool_csv import (
     MAX_CSV_IMPORT_BYTES,
@@ -46,6 +60,7 @@ from backend.app.services.spool_csv import (
     parse_and_validate,
     serialize,
 )
+from backend.app.services.spoolman import SpoolmanClient, get_spoolman_client, init_spoolman_client
 from backend.app.utils.filament_ids import (
     GENERIC_FILAMENT_IDS,
     MATERIAL_TEMPS,
@@ -491,6 +506,198 @@ async def reset_spool_catalog(
         db.add(SpoolCatalogEntry(name=name, weight=weight, is_default=True))
     await db.commit()
     return {"status": "reset"}
+
+
+# ── Storage Locations (#1004) ───────────────────────────────────────────────
+
+
+async def _load_settings_map(db: AsyncSession) -> dict[str, str]:
+    result = await db.execute(select(Settings))
+    return {s.key: s.value for s in result.scalars().all()}
+
+
+def _spoolman_is_enabled(settings: dict[str, str]) -> bool:
+    return settings.get("spoolman_enabled", "false").lower() == "true"
+
+
+async def _ensure_spoolman_client(settings: dict[str, str]) -> SpoolmanClient | None:
+    if not _spoolman_is_enabled(settings):
+        return None
+    url = settings.get("spoolman_url", "").strip()
+    if not url:
+        return None
+    from backend.app.api.routes._spoolman_helpers import assert_safe_spoolman_url
+
+    try:
+        assert_safe_spoolman_url(url)
+    except ValueError:
+        return None
+    client = await get_spoolman_client()
+    if not client or client.base_url != url.rstrip("/"):
+        client = await init_spoolman_client(url)
+    return client
+
+
+async def _spool_counts_for_locations(
+    db: AsyncSession,
+    locations: list[Location],
+    settings: dict[str, str],
+) -> dict[int, int]:
+    if _spoolman_is_enabled(settings):
+        client = await _ensure_spoolman_client(settings)
+        if client:
+            try:
+                spools = await client.get_all_spools(allow_archived=False)
+            except Exception:
+                logger.warning("Failed to fetch Spoolman spools for location counts", exc_info=True)
+            else:
+                # Use the canonical key helper so this matches what the
+                # migration backfill, Location.name_key, and every other
+                # codepath store as the case-insensitive lookup key. Plain
+                # str.lower() drifts for non-ASCII (Turkish ı/İ, German ß)
+                # and caused mismatched delete-block counts in Spoolman mode.
+                by_key: dict[str, int] = {}
+                for spool in spools:
+                    raw = spool.get("location")
+                    if not raw or not isinstance(raw, str) or not raw.strip():
+                        continue
+                    try:
+                        key = location_name_key(raw)
+                    except ValueError:
+                        continue
+                    by_key[key] = by_key.get(key, 0) + 1
+                return {loc.id: by_key.get(loc.name_key, 0) for loc in locations}
+
+    counts: dict[int, int] = {}
+    for loc in locations:
+        counts[loc.id] = await count_internal_spools_at_location(db, loc.id)
+    return counts
+
+
+def _location_to_response(location: Location, spool_count: int) -> LocationResponse:
+    return LocationResponse(
+        id=location.id,
+        name=location.name,
+        identifier=location.identifier,
+        spool_count=spool_count,
+        created_at=location.created_at,
+        updated_at=location.updated_at,
+    )
+
+
+@router.get("/locations", response_model=list[LocationResponse])
+async def list_locations(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """List all storage locations with spool counts."""
+    settings = await _load_settings_map(db)
+    result = await db.execute(select(Location).order_by(Location.name))
+    locations = list(result.scalars().all())
+    counts = await _spool_counts_for_locations(db, locations, settings)
+    return [_location_to_response(loc, counts.get(loc.id, 0)) for loc in locations]
+
+
+@router.post("/locations", response_model=LocationResponse, status_code=201)
+async def create_location(
+    data: LocationCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Create a storage location."""
+    existing = await get_location_by_name(db, data.name)
+    if existing:
+        raise HTTPException(status_code=409, detail=DUPLICATE_LOCATION_NAME)
+    location = Location(identifier=data.identifier)
+    assign_location_name(location, data.name)
+    db.add(location)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=DUPLICATE_LOCATION_NAME) from exc
+    await db.refresh(location)
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    return _location_to_response(location, 0)
+
+
+@router.patch("/locations/{location_id}", response_model=LocationResponse)
+async def update_location(
+    location_id: int,
+    data: LocationUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Update a storage location (rename propagates to assigned spools)."""
+    location = await get_location_by_id(db, location_id)
+    if not location:
+        raise HTTPException(status_code=404, detail="Location not found")
+
+    old_name = location.name
+    if data.identifier is not None:
+        location.identifier = data.identifier or None
+
+    if data.name is not None and data.name != old_name:
+        try:
+            await rename_location_record(db, location, data.name)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        # Cascade to Spoolman BEFORE the local commit so a Spoolman failure
+        # rolls back the local rename instead of leaving the catalog and
+        # Spoolman's per-spool `location` field permanently diverged. Without
+        # this ordering, a partial failure makes the next location-sync recreate
+        # the old name as a duplicate catalog row (#1505 review blocker).
+        settings = await _load_settings_map(db)
+        client = await _ensure_spoolman_client(settings)
+        if client:
+            try:
+                await client.rename_location(old_name, location.name)
+            except Exception as exc:
+                logger.warning(
+                    "Spoolman location rename failed for %s -> %s: %s",
+                    old_name,
+                    location.name,
+                    exc,
+                )
+                await db.rollback()
+                raise HTTPException(
+                    status_code=502,
+                    detail="Spoolman rename failed; local rename rolled back",
+                ) from exc
+
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=DUPLICATE_LOCATION_NAME) from exc
+    await db.refresh(location)
+    settings = await _load_settings_map(db)
+    counts = await _spool_counts_for_locations(db, [location], settings)
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    return _location_to_response(location, counts.get(location.id, 0))
+
+
+@router.delete("/locations/{location_id}")
+async def delete_location(
+    location_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Delete a storage location when no spools are assigned."""
+    location = await get_location_by_id(db, location_id)
+    if not location:
+        raise HTTPException(status_code=404, detail="Location not found")
+
+    settings = await _load_settings_map(db)
+    counts = await _spool_counts_for_locations(db, [location], settings)
+    if counts.get(location.id, 0) > 0:
+        raise HTTPException(status_code=409, detail="Location has spools assigned and cannot be deleted")
+
+    await db.delete(location)
+    await db.commit()
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    return {"status": "deleted"}
 
 
 # ── Color Catalog CRUD ─────────────────────────────────────────────────────
@@ -1038,7 +1245,11 @@ async def create_spool(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Create a new spool."""
-    spool = Spool(**spool_data.model_dump())
+    try:
+        payload = await prepare_internal_spool_payload(db, spool_data.model_dump(), set(spool_data.model_fields_set))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    spool = Spool(**payload)
     db.add(spool)
     await db.commit()
     await db.refresh(spool)
@@ -1055,8 +1266,13 @@ async def bulk_create_spools(
 ):
     """Create multiple identical spools."""
     spools = []
+    fields_set = set(data.spool.model_fields_set)
+    try:
+        payload = await prepare_internal_spool_payload(db, data.spool.model_dump(), fields_set)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     for _ in range(data.quantity):
-        spool = Spool(**data.spool.model_dump())
+        spool = Spool(**payload)
         db.add(spool)
         spools.append(spool)
     await db.commit()
@@ -1080,6 +1296,10 @@ async def update_spool(
         raise HTTPException(404, "Spool not found")
 
     update_data = spool_data.model_dump(exclude_unset=True)
+    try:
+        update_data = await prepare_internal_spool_payload(db, update_data, set(spool_data.model_fields_set))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     # Auto-lock weight when user explicitly sets weight_used
     if "weight_used" in update_data and "weight_locked" not in update_data:
         update_data["weight_locked"] = True

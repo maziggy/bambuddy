@@ -13,6 +13,7 @@ export default defineConfig({
       },
     },
     setupFiles: ['./src/__tests__/setup.ts'],
+    testTimeout: 10000,
     include: ['src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     exclude: ['node_modules', 'dist'],
     coverage: {

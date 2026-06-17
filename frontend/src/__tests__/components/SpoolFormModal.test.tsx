@@ -21,6 +21,7 @@ vi.mock('../../api/client', () => ({
     getCloudStatus: vi.fn().mockResolvedValue({ is_authenticated: false }),
     getFilamentPresets: vi.fn().mockResolvedValue([]),
     getSpoolCatalog: vi.fn().mockResolvedValue([]),
+    getLocations: vi.fn().mockResolvedValue([]),
     getColorCatalog: vi.fn().mockResolvedValue([]),
     getLocalPresets: vi.fn().mockResolvedValue({ filament: [] }),
     getBuiltinFilaments: vi.fn().mockResolvedValue([]),
@@ -932,20 +933,25 @@ describe('SpoolFormModal — Unassign button (#1336)', () => {
   });
 });
 
-describe('SpoolFormModal storageLocationTouched', () => {
+describe('SpoolFormModal locationIdTouched', () => {
   /**
    * Regression tests for the round-trip bug: saving the edit modal without
-   * touching the Storage Location field must NOT include storage_location in
+   * touching the Storage Location field must NOT include location_id in
    * the PATCH payload, so Spoolman's location field is never overwritten with
    * a stale cached value.
    */
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(api.getLocations).mockResolvedValue([
+      { id: 1, name: 'IKEAREGAL', identifier: null, spool_count: 1, created_at: '', updated_at: '' },
+      { id: 2, name: 'Shelf B', identifier: null, spool_count: 0, created_at: '', updated_at: '' },
+    ]);
   });
 
   const spoolWithStorageLocation: InventorySpool = {
     ...existingSpool,
     storage_location: 'IKEAREGAL',
+    location_id: 1,
   };
 
   it('excludes storage_location from PATCH when editing without changing it', async () => {
@@ -975,11 +981,12 @@ describe('SpoolFormModal storageLocationTouched', () => {
     expect(spoolId).toBe(1);
     // storage_location must NOT be in the payload — prevents Spoolman location overwrite
     expect(payload).not.toHaveProperty('storage_location');
+    expect(payload).not.toHaveProperty('location_id');
     // Other fields should still be present
     expect(payload).toHaveProperty('material', 'PLA');
   });
 
-  it('includes storage_location in PATCH when editing and changing it', async () => {
+  it('includes location_id in PATCH when editing and changing it', async () => {
     render(
       <SpoolFormModal
         isOpen={true}
@@ -994,9 +1001,9 @@ describe('SpoolFormModal storageLocationTouched', () => {
       expect(screen.getByText('Edit Spool')).toBeInTheDocument();
     });
 
-    // Find the storage location input and change it
-    const locationInput = screen.getByPlaceholderText('e.g. Shelf A, Drawer 1');
-    fireEvent.change(locationInput, { target: { value: 'Shelf B' } });
+    // Change storage location via the catalog dropdown
+    const locationSelect = screen.getByLabelText(/storage location/i);
+    fireEvent.change(locationSelect, { target: { value: '2' } });
 
     const saveButton = screen.getByRole('button', { name: /save/i });
     fireEvent.click(saveButton);
@@ -1007,11 +1014,11 @@ describe('SpoolFormModal storageLocationTouched', () => {
 
     const [spoolId, payload] = vi.mocked(api.updateSpool).mock.calls[0];
     expect(spoolId).toBe(1);
-    // storage_location MUST be present since the user changed it
-    expect(payload).toHaveProperty('storage_location', 'Shelf B');
+    expect(payload).toHaveProperty('location_id', 2);
+    expect(payload).not.toHaveProperty('storage_location');
   });
 
-  it('includes storage_location when creating a new spool', async () => {
+  it('includes location_id when creating a new spool', async () => {
     render(
       <SpoolFormModal
         isOpen={true}
@@ -1035,8 +1042,8 @@ describe('SpoolFormModal storageLocationTouched', () => {
     });
 
     const [payload] = vi.mocked(api.createSpool).mock.calls[0];
-    // storage_location MUST be included for new spools (default empty string → null)
-    expect(payload).toHaveProperty('storage_location', null);
+    expect(payload).toHaveProperty('location_id', null);
+    expect(payload).not.toHaveProperty('storage_location');
   });
 });
 

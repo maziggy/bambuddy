@@ -15,7 +15,6 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.settings import get_external_login_url
 from backend.app.core.auth import (
-    ACCESS_TOKEN_EXPIRE_MINUTES,
     ALGORITHM,
     SECRET_KEY,
     Permission,
@@ -31,6 +30,7 @@ from backend.app.core.auth import (
     get_user_by_email,
     get_user_by_username,
     is_jti_revoked,
+    resolve_session_max_minutes,
     revoke_jti,
     security,
 )
@@ -495,8 +495,9 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
             two_fa_methods=methods,
         )
 
-    # No 2FA — issue full token immediately
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    # No 2FA — issue full token immediately. Session lifetime honours the
+    # admin-configurable ceiling (#1706); resolver clamps to [1h, 720h].
+    access_token_expires = timedelta(minutes=await resolve_session_max_minutes(db))
     access_token = create_access_token(data={"sub": user.username}, expires_delta=access_token_expires)
 
     return LoginResponse(

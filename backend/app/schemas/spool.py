@@ -125,6 +125,7 @@ class SpoolBase(BaseModel):
     # assignment). Column has lived on the ORM since the inventory rework
     # but was missing from this schema, so writes were silently dropped (#1291).
     storage_location: str | None = Field(default=None, max_length=255)
+    location_id: int | None = Field(default=None, gt=0)
 
 
 class SpoolCreate(SpoolBase):
@@ -174,6 +175,7 @@ class SpoolUpdate(BaseModel):
     category: str | None = Field(default=None, max_length=50)
     low_stock_threshold_pct: int | None = Field(default=None, ge=1, le=99)
     storage_location: str | None = Field(default=None, max_length=255)
+    location_id: int | None = Field(default=None, gt=0)
 
 
 class SpoolKProfileBase(BaseModel):

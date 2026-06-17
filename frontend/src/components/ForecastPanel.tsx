@@ -1137,10 +1137,10 @@ function SafetyMarginField({
           <span className="text-lg font-semibold text-white">{value}</span>
           <span className="text-xs text-bambu-gray">{unit}</span>
           {displayG !== null && unit === 'days' && (
-            <span className="text-xs text-bambu-gray/60">≈ {displayG}g</span>
+            <span className="text-lg font-semibold text-white">≈ {displayG}g</span>
           )}
           {unit === 'g' && dailyRateG !== null && (
-            <span className="text-xs text-bambu-gray/60">≈ {Math.round(value / dailyRateG)}d</span>
+            <span className="text-lg font-semibold text-white">≈ {Math.round(value / dailyRateG)}d</span>
           )}
           <button onClick={onEdit} className="p-1 text-bambu-gray hover:text-white rounded transition-colors"><Edit2 className="w-3 h-3" /></button>
         </div>

@@ -182,6 +182,8 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('material');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [materialFilter, setMaterialFilter] = useState('');
+  const [brandFilter, setBrandFilter] = useState('');
   const [cartModal, setCartModal] = useState<SkuForecast | null>(null);
   const [listOpen, setListOpen] = useState(false);
   const [chartDays, setChartDays] = useState<ChartDays>(30);
@@ -288,8 +290,18 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
     });
   }, [groups, settingsMap, usageBySpoolId, globalLeadTime]);
 
+  const uniqueMaterials = useMemo(() =>
+    [...new Set(groups.map((g) => g.material))].sort(),
+    [groups]);
+
+  const uniqueBrands = useMemo(() =>
+    [...new Set(groups.map((g) => g.brand).filter(Boolean))].sort() as string[],
+    [groups]);
+
   const sortedForecasts = useMemo(() => {
-    const arr = [...forecasts];
+    let arr = [...forecasts];
+    if (materialFilter) arr = arr.filter((f) => f.group.material === materialFilter);
+    if (brandFilter) arr = arr.filter((f) => f.group.brand === brandFilter);
     arr.sort((a, b) => {
       let va: number | string = 0;
       let vb: number | string = 0;
@@ -312,7 +324,7 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return arr;
-  }, [forecasts, sortKey, sortDir]);
+  }, [forecasts, sortKey, sortDir, materialFilter, brandFilter]);
 
   const alerts = useMemo(() => forecasts.filter((f) => !f.settings?.alerts_snoozed && (f.stockBreakAlert || f.reorderAlert)), [forecasts]);
 
@@ -374,6 +386,34 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
             }}
           />
         )}
+
+        {/* Material filter */}
+        <select
+          value={materialFilter}
+          onChange={(e) => setMaterialFilter(e.target.value)}
+          className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer focus:outline-none ${
+            materialFilter
+              ? 'bg-bambu-green/20 text-bambu-green border-bambu-green/30'
+              : 'bg-transparent text-bambu-gray border-bambu-dark-tertiary hover:bg-bambu-dark-tertiary'
+          }`}
+        >
+          <option value="">{t('inventory.material')}</option>
+          {uniqueMaterials.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+
+        {/* Brand filter */}
+        <select
+          value={brandFilter}
+          onChange={(e) => setBrandFilter(e.target.value)}
+          className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer focus:outline-none ${
+            brandFilter
+              ? 'bg-bambu-green/20 text-bambu-green border-bambu-green/30'
+              : 'bg-transparent text-bambu-gray border-bambu-dark-tertiary hover:bg-bambu-dark-tertiary'
+          }`}
+        >
+          <option value="">{t('inventory.brand')}</option>
+          {uniqueBrands.map((b) => <option key={b} value={b}>{b}</option>)}
+        </select>
 
         {/* Shopping list toggle */}
         <button
@@ -833,7 +873,7 @@ function ForecastRow({
         {/* Color dot */}
         <td className="px-4 py-3">
           <span
-            className="block w-3 h-3 rounded-full border border-black/20"
+            className="block w-5 h-5 rounded-full border border-black/20"
             style={colorStyle}
           />
         </td>

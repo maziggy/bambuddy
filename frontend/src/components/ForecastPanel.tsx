@@ -24,6 +24,7 @@ interface SkuGroup {
   material: string;
   subtype: string | null;
   brand: string | null;
+  colorName: string | null;
   spools: InventorySpool[];
 }
 
@@ -59,8 +60,8 @@ const CHART_COLORS = ['#1DB954', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 
-function skuKey(material: string, subtype: string | null, brand: string | null) {
-  return `${material}||${subtype ?? ''}||${brand ?? ''}`;
+function skuKey(material: string, subtype: string | null, brand: string | null, colorName: string | null) {
+  return `${material}||${subtype ?? ''}||${brand ?? ''}||${colorName ?? ''}`;
 }
 
 function addDays(date: Date, days: number): Date {
@@ -194,7 +195,7 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
 
   const settingsMap = useMemo(() => {
     const m = new Map<string, FilamentSkuSettings>();
-    for (const s of skuSettingsList) m.set(skuKey(s.material, s.subtype, s.brand), s);
+    for (const s of skuSettingsList) m.set(skuKey(s.material, s.subtype, s.brand, s.color_name), s);
     return m;
   }, [skuSettingsList]);
 
@@ -212,8 +213,8 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
     const map = new Map<string, SkuGroup>();
     for (const spool of spools) {
       if (spool.archived_at) continue;
-      const key = skuKey(spool.material, spool.subtype, spool.brand);
-      const g = map.get(key) ?? { key, material: spool.material, subtype: spool.subtype, brand: spool.brand, spools: [] };
+      const key = skuKey(spool.material, spool.subtype, spool.brand, spool.color_name);
+      const g = map.get(key) ?? { key, material: spool.material, subtype: spool.subtype, brand: spool.brand, colorName: spool.color_name, spools: [] };
       g.spools.push(spool);
       map.set(key, g);
     }
@@ -545,7 +546,7 @@ function SortableTh({
 
 function AlertBanner({ forecast: f, onCart }: { forecast: SkuForecast; onCart: () => void }) {
   const { t } = useTranslation();
-  const label = [f.group.brand, f.group.material, f.group.subtype].filter(Boolean).join(' ');
+  const label = [f.group.brand, f.group.material, f.group.subtype, f.group.colorName].filter(Boolean).join(' ');
   const isBreak = f.stockBreakAlert;
 
   return (
@@ -593,7 +594,7 @@ function UsageChart({ forecasts, days: maxDays, onDaysChange }: {
 
   const series = forecasts.map((f, idx) => ({
     key: f.group.key,
-    label: [f.group.brand, f.group.material, f.group.subtype].filter(Boolean).join(' '),
+    label: [f.group.brand, f.group.material, f.group.subtype, f.group.colorName].filter(Boolean).join(' '),
     color: CHART_COLORS[idx % CHART_COLORS.length],
     rop: f.reorderPointG,
     points: buildProjectionSeries(f, maxDays),
@@ -790,7 +791,7 @@ function ForecastRow({
 
   const snoozed = f.settings?.alerts_snoozed ?? false;
 
-  const label = [f.group.brand, f.group.material, f.group.subtype].filter(Boolean).join(' ');
+  const label = [f.group.brand, f.group.material, f.group.subtype, f.group.colorName].filter(Boolean).join(' ');
   // Use getSwatchStyle so a Clear (alpha=00) lead spool renders as a
   // checkerboard rather than collapsing to solid black (#1545).
   const colorStyle = f.group.spools[0]?.rgba ? getSwatchStyle(f.group.spools[0].rgba) : { backgroundColor: '#4B5563' };
@@ -804,7 +805,7 @@ function ForecastRow({
     : 'text-green-400';
 
   function upsert(lead: number, marginVal: number, marginUnitArg: 'days' | 'g', alertsSnoozed = snoozed) {
-    upsertMutation.mutate({ material: f.group.material, subtype: f.group.subtype, brand: f.group.brand, lead_time_days: lead, safety_margin_value: marginVal, safety_margin_unit: marginUnitArg, alerts_snoozed: alertsSnoozed });
+    upsertMutation.mutate({ material: f.group.material, subtype: f.group.subtype, brand: f.group.brand, color_name: f.group.colorName, lead_time_days: lead, safety_margin_value: marginVal, safety_margin_unit: marginUnitArg, alerts_snoozed: alertsSnoozed });
   }
 
   function toggleSnooze(e: React.MouseEvent) {
@@ -1190,7 +1191,7 @@ function ShoppingListPanel({
           label_weight: spoolWeight,
           core_weight: 0,
           core_weight_catalog_id: null,
-          color_name: null, rgba: null, extra_colors: null, effect_type: null,
+          color_name: item.color_name, rgba: null, extra_colors: null, effect_type: null,
           nozzle_temp_min: null, nozzle_temp_max: null,
           note: item.note ?? null,
           tag_uid: null, tray_uuid: null,
@@ -1224,7 +1225,7 @@ function ShoppingListPanel({
   const cartForecasts = useMemo(() =>
     items.map((item) => ({
       item,
-      forecast: forecastMap.get(skuKey(item.material, item.subtype, item.brand)) ?? null,
+      forecast: forecastMap.get(skuKey(item.material, item.subtype, item.brand, item.color_name)) ?? null,
     })),
     [items, forecastMap]
   );
@@ -1240,9 +1241,9 @@ function ShoppingListPanel({
   );
 
   function downloadCsv() {
-    const headers = [t('forecast.qty'), t('forecast.material'), 'Brand', 'Subtype', `${t('forecast.weight')} (g)`, `${t('forecast.leadTime')} (d)`, t('forecast.expectedRestock'), t('forecast.status'), t('forecast.note')];
+    const headers = [t('forecast.qty'), t('forecast.material'), 'Brand', 'Subtype', 'Color', `${t('forecast.weight')} (g)`, `${t('forecast.leadTime')} (d)`, t('forecast.expectedRestock'), t('forecast.status'), t('forecast.note')];
     const rows = items.map((i) => {
-      const f = forecastMap.get(skuKey(i.material, i.subtype, i.brand)) ?? null;
+      const f = forecastMap.get(skuKey(i.material, i.subtype, i.brand, i.color_name)) ?? null;
       const avgSpoolG = f && f.totalSpools > 0 ? f.totalLabelG / f.totalSpools : 1000;
       const totalWeightG = Math.round(i.quantity_spools * avgSpoolG);
       const lt = f?.effectiveLeadTimeDays ?? globalLeadTime ?? 0;
@@ -1252,6 +1253,7 @@ function ShoppingListPanel({
         i.material,
         i.brand ?? '',
         i.subtype ?? '',
+        i.color_name ?? '',
         totalWeightG,
         lt || '',
         restock,
@@ -1342,9 +1344,9 @@ function ShoppingListPanel({
             </thead>
             <tbody className="divide-y divide-bambu-dark-tertiary">
               {items.map((item) => {
-                const lbl = [item.brand, item.material, item.subtype].filter(Boolean).join(' ');
+                const lbl = [item.brand, item.material, item.subtype, item.color_name].filter(Boolean).join(' ');
                 const hasBreak = breakAlerts.some((a) => a.item.id === item.id);
-                const f = forecastMap.get(skuKey(item.material, item.subtype, item.brand)) ?? null;
+                const f = forecastMap.get(skuKey(item.material, item.subtype, item.brand, item.color_name)) ?? null;
                 const avgSpoolG = f && f.totalSpools > 0 ? f.totalLabelG / f.totalSpools : 1000;
                 const totalWeightG = Math.round(item.quantity_spools * avgSpoolG);
                 const lt = f?.effectiveLeadTimeDays ?? globalLeadTime ?? 0;
@@ -1474,7 +1476,7 @@ function CartLogisticsRow({
   onRemove: () => void;
 }) {
   const { t } = useTranslation();
-  const label = [item.brand, item.material, item.subtype].filter(Boolean).join(' ');
+  const label = [item.brand, item.material, item.subtype, item.color_name].filter(Boolean).join(' ');
 
   // Build a timeline showing stock depletion, arrival bump, then post-arrival depletion.
   // Two points are inserted at day `lt` (just-before and just-after arrival) so the
@@ -1706,10 +1708,10 @@ function AddToCartModal({
 }: {
   forecast: SkuForecast;
   onClose: () => void;
-  onAdd: (item: { material: string; subtype: string | null; brand: string | null; quantity_spools: number; note: string | null }) => void;
+  onAdd: (item: { material: string; subtype: string | null; brand: string | null; color_name: string | null; quantity_spools: number; note: string | null }) => void;
 }) {
   const { t } = useTranslation();
-  const label = [f.group.brand, f.group.material, f.group.subtype].filter(Boolean).join(' ');
+  const label = [f.group.brand, f.group.material, f.group.subtype, f.group.colorName].filter(Boolean).join(' ');
   const [mode, setMode] = useState<'qty' | 'duration'>('qty');
   const [qty, setQty] = useState('1');
   const [durationDays, setDurationDays] = useState('30');
@@ -1728,7 +1730,7 @@ function AddToCartModal({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    onAdd({ material: f.group.material, subtype: f.group.subtype, brand: f.group.brand, quantity_spools: finalQty, note: note || null });
+    onAdd({ material: f.group.material, subtype: f.group.subtype, brand: f.group.brand, color_name: f.group.colorName, quantity_spools: finalQty, note: note || null });
   }
 
   return (

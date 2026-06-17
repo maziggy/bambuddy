@@ -2578,9 +2578,10 @@ async def run_migrations(conn):
                 lead_time_days INTEGER NOT NULL DEFAULT 0,
                 safety_margin_value INTEGER NOT NULL DEFAULT 14,
                 safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
+                color_name VARCHAR(100),
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE (material, subtype, brand)
+                UNIQUE (material, subtype, brand, color_name)
             )""",
         )
         async with conn.begin_nested():
@@ -2594,6 +2595,9 @@ async def run_migrations(conn):
         await _safe_execute(
             conn, "ALTER TABLE filament_sku_settings ADD COLUMN alerts_snoozed BOOLEAN NOT NULL DEFAULT 0"
         )
+        # Migration: add color_name so forecasts distinguish colours within a SKU.
+        await _safe_execute(conn, "ALTER TABLE filament_sku_settings ADD COLUMN color_name VARCHAR(100)")
+        await _safe_execute(conn, "ALTER TABLE filament_shopping_list ADD COLUMN color_name VARCHAR(100)")
         # Backfill and drop legacy safety_margin_days column — SQLite requires a table rebuild.
         # Only run if the stale column still exists.
         cols_result = await conn.execute(text("PRAGMA table_info(filament_sku_settings)"))
@@ -2616,28 +2620,77 @@ async def run_migrations(conn):
                         material VARCHAR(50) NOT NULL,
                         subtype VARCHAR(50),
                         brand VARCHAR(100),
+                        color_name VARCHAR(100),
                         lead_time_days INTEGER NOT NULL DEFAULT 0,
                         safety_margin_value INTEGER NOT NULL DEFAULT 14,
                         safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
                         alerts_snoozed BOOLEAN NOT NULL DEFAULT 0,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE (material, subtype, brand)
+                        UNIQUE (material, subtype, brand, color_name)
                     )"""
                     )
                 )
                 await conn.execute(
                     text(
                         """INSERT INTO filament_sku_settings_new
-                        (id, material, subtype, brand, lead_time_days, safety_margin_value,
+                        (id, material, subtype, brand, color_name, lead_time_days, safety_margin_value,
                          safety_margin_unit, alerts_snoozed, created_at, updated_at)
-                       SELECT id, material, subtype, brand, lead_time_days, safety_margin_value,
+                       SELECT id, material, subtype, brand, color_name, lead_time_days, safety_margin_value,
                               safety_margin_unit, COALESCE(alerts_snoozed, 0), created_at, updated_at
                        FROM filament_sku_settings"""
                     )
                 )
                 await conn.execute(text("DROP TABLE filament_sku_settings"))
                 await conn.execute(text("ALTER TABLE filament_sku_settings_new RENAME TO filament_sku_settings"))
+        # Widen the unique key to include color_name on pre-existing tables. The
+        # auto-created UNIQUE index still covers only (material, subtype, brand)
+        # after the ADD COLUMN above, so rebuild the table to refresh it (#forecast
+        # -color-grouping). Detected by inspecting the index columns; skipped once
+        # color_name is already part of the key.
+        idx_rows = await conn.execute(text("PRAGMA index_list(filament_sku_settings)"))
+        needs_uq_rebuild = False
+        for idx in idx_rows.fetchall():
+            if idx[3] != "u":  # origin: only auto-created UNIQUE-constraint indexes
+                continue
+            info = await conn.execute(text(f"PRAGMA index_info({idx[1]})"))
+            cols = {row[2] for row in info.fetchall()}
+            if "material" in cols and "color_name" not in cols:
+                needs_uq_rebuild = True
+                break
+        if needs_uq_rebuild:
+            async with conn.begin_nested():
+                await conn.execute(text("DROP TABLE IF EXISTS filament_sku_settings_uqfix"))
+                await conn.execute(
+                    text(
+                        """CREATE TABLE filament_sku_settings_uqfix (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        material VARCHAR(50) NOT NULL,
+                        subtype VARCHAR(50),
+                        brand VARCHAR(100),
+                        color_name VARCHAR(100),
+                        lead_time_days INTEGER NOT NULL DEFAULT 0,
+                        safety_margin_value INTEGER NOT NULL DEFAULT 14,
+                        safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
+                        alerts_snoozed BOOLEAN NOT NULL DEFAULT 0,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE (material, subtype, brand, color_name)
+                    )"""
+                    )
+                )
+                await conn.execute(
+                    text(
+                        """INSERT INTO filament_sku_settings_uqfix
+                        (id, material, subtype, brand, color_name, lead_time_days, safety_margin_value,
+                         safety_margin_unit, alerts_snoozed, created_at, updated_at)
+                       SELECT id, material, subtype, brand, color_name, lead_time_days, safety_margin_value,
+                              safety_margin_unit, COALESCE(alerts_snoozed, 0), created_at, updated_at
+                       FROM filament_sku_settings"""
+                    )
+                )
+                await conn.execute(text("DROP TABLE filament_sku_settings"))
+                await conn.execute(text("ALTER TABLE filament_sku_settings_uqfix RENAME TO filament_sku_settings"))
         await _safe_execute(
             conn,
             """CREATE TABLE IF NOT EXISTS filament_shopping_list (
@@ -2645,6 +2698,7 @@ async def run_migrations(conn):
                 material VARCHAR(50) NOT NULL,
                 subtype VARCHAR(50),
                 brand VARCHAR(100),
+                color_name VARCHAR(100),
                 quantity_spools INTEGER NOT NULL DEFAULT 1,
                 note VARCHAR(500),
                 status VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -2672,9 +2726,10 @@ async def run_migrations(conn):
                 lead_time_days INTEGER NOT NULL DEFAULT 0,
                 safety_margin_value INTEGER NOT NULL DEFAULT 14,
                 safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
+                color_name VARCHAR(100),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE (material, subtype, brand)
+                UNIQUE (material, subtype, brand, color_name)
             )""",
         )
         async with conn.begin_nested():
@@ -2690,6 +2745,21 @@ async def run_migrations(conn):
         await _safe_execute(
             conn,
             "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS alerts_snoozed BOOLEAN NOT NULL DEFAULT FALSE",
+        )
+        # Migration: add color_name and widen the unique key to include it so
+        # forecasts distinguish colours within a SKU (#forecast-color-grouping).
+        await _safe_execute(conn, "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS color_name VARCHAR(100)")
+        await _safe_execute(conn, "ALTER TABLE filament_shopping_list ADD COLUMN IF NOT EXISTS color_name VARCHAR(100)")
+        # The original UNIQUE (material, subtype, brand) constraint is named by
+        # Postgres automatically; drop it and recreate over the wider key.
+        await _safe_execute(
+            conn,
+            "ALTER TABLE filament_sku_settings DROP CONSTRAINT IF EXISTS filament_sku_settings_material_subtype_brand_key",
+        )
+        await _safe_execute(
+            conn,
+            "ALTER TABLE filament_sku_settings ADD CONSTRAINT filament_sku_settings_material_subtype_brand_color_name_key "
+            "UNIQUE (material, subtype, brand, color_name)",
         )
         # Only backfill from safety_margin_days if that column still exists (PostgreSQL).
         col_check = await conn.execute(
@@ -2713,6 +2783,7 @@ async def run_migrations(conn):
                 material VARCHAR(50) NOT NULL,
                 subtype VARCHAR(50),
                 brand VARCHAR(100),
+                color_name VARCHAR(100),
                 quantity_spools INTEGER NOT NULL DEFAULT 1,
                 note VARCHAR(500),
                 status VARCHAR(20) NOT NULL DEFAULT 'pending',

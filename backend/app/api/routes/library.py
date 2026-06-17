@@ -3091,15 +3091,33 @@ def _sanitize_project_settings_sentinels(zip_bytes: bytes) -> bytes:
             if not isinstance(config, dict):
                 return zip_bytes
             removed = [key for key in _PROJECT_SETTINGS_SENTINEL_KEYS if config.get(key) == "-1"]
-            if not removed:
+            # Fix filament_map_2: value '0' means external spool, which causes ';VT H-1'
+            # in the output gcode so the printer ignores the AMS entirely. Remap any '0'
+            # to '1' (AMS tray 0); start_print()'s MQTT ams_mapping overrides the actual
+            # physical tray at runtime. Existing AMS assignments (value >= '1') are untouched.
+            filament_map_2 = config.get("filament_map_2")
+            fm2_patched_values = None
+            if isinstance(filament_map_2, list):
+                new_fm2 = ["1" if str(v) == "0" else v for v in filament_map_2]
+                if new_fm2 != filament_map_2:
+                    config["filament_map_2"] = new_fm2
+                    fm2_patched_values = new_fm2
+            if not removed and fm2_patched_values is None:
                 return zip_bytes
             for key in removed:
                 config.pop(key, None)
             patched = json.dumps(config)
-            logger.info(
-                "3MF sanitiser: removed sentinel '-1' for keys %s — slicer will use --load-settings defaults",
-                sorted(removed),
-            )
+            if removed:
+                logger.info(
+                    "3MF sanitiser: removed sentinel '-1' for keys %s — slicer will use --load-settings defaults",
+                    sorted(removed),
+                )
+            if fm2_patched_values is not None:
+                logger.info(
+                    "3MF sanitiser: patched filament_map_2 %s -> %s — AMS tray 0 instead of external spool",
+                    filament_map_2,
+                    fm2_patched_values,
+                )
             dst = BytesIO()
             with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
                 for item in zin.infolist():

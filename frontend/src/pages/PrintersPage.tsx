@@ -5098,7 +5098,7 @@ function PrinterCard({
 
               <div className="flex items-center gap-2">
                 <div
-                  className="flex h-8 min-w-14 flex-shrink-0 items-center justify-center rounded-lg bg-bambu-dark-tertiary px-2 text-xs font-medium text-bambu-gray"
+                  className="flex h-8 min-w-14 flex-shrink-0 items-center justify-end px-2 text-xs font-medium text-bambu-gray"
                   title={t('smartPlugs.power')}
                 >
                   {plugStatus?.energy?.power !== null && plugStatus?.energy?.power !== undefined ? `${Math.round(plugStatus.energy.power)}W` : '--'}

@@ -440,6 +440,9 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
                   <SortableTh col="material" active={sortKey} dir={sortDir} onSort={handleSort}>
                     {t('forecast.sku')}
                   </SortableTh>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">
+                    {t('locations.spools')}
+                  </th>
                   <SortableTh col="stock" active={sortKey} dir={sortDir} onSort={handleSort}>
                     {t('forecast.stock')}
                   </SortableTh>
@@ -824,7 +827,7 @@ function ForecastRow({
   return (
     <>
       <tr
-        className={`cursor-pointer hover:bg-bambu-dark-tertiary/40 transition-colors ${rowAlertBorder} ${snoozed ? 'opacity-50' : ''}`}
+        className={`border-b border-bambu-dark-tertiary/50 cursor-pointer hover:bg-bambu-dark-tertiary/30 transition-colors ${rowAlertBorder} ${snoozed ? 'opacity-50' : ''}`}
         onClick={() => setExpanded((e) => !e)}
       >
         {/* Color dot */}
@@ -837,25 +840,33 @@ function ForecastRow({
 
         {/* SKU */}
         <td className="px-4 py-3">
-          <div className="text-sm font-medium text-white">{label}</div>
-          <div className="text-xs text-bambu-gray">{t('forecast.spoolCount', { count: f.totalSpools })}</div>
+          <span className="text-sm text-white">{label}</span>
+        </td>
+
+        {/* Spools */}
+        <td className="px-4 py-3">
+          <span className="text-sm text-bambu-gray">{f.totalSpools}</span>
         </td>
 
         {/* Stock */}
-        <td className="px-4 py-3 min-w-[120px]">
-          <div className="h-1.5 bg-bambu-dark-tertiary rounded-full overflow-hidden mb-1 w-24">
-            <div
-              className={`h-full rounded-full ${remainPct > 50 ? 'bg-bambu-green' : remainPct > 20 ? 'bg-yellow-500' : 'bg-red-500'}`}
-              style={{ width: `${Math.min(remainPct, 100)}%` }}
-            />
+        <td className="px-4 py-3 min-w-[140px]">
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-2 bg-bambu-dark-tertiary rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full ${remainPct > 50 ? 'bg-bambu-green' : remainPct > 20 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                style={{ width: `${Math.min(remainPct, 100)}%` }}
+              />
+            </div>
+            <span className="text-xs text-bambu-gray min-w-[40px] text-right">{Math.round(f.totalRemainingG)}g</span>
           </div>
-          <span className="text-xs text-bambu-gray">{Math.round(f.totalRemainingG)}g</span>
         </td>
 
         {/* Rate */}
         <td className="px-4 py-3">
-          <div className="text-sm text-white">{f.dailyRateG !== null ? `${f.dailyRateG.toFixed(1)}g/d` : '—'}</div>
-          <div className="mt-0.5">{tierBadge}</div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-sm text-white">{f.dailyRateG !== null ? `${f.dailyRateG.toFixed(1)}g/d` : '—'}</span>
+            {tierBadge}
+          </div>
         </td>
 
         {/* Days left */}
@@ -874,7 +885,7 @@ function ForecastRow({
 
         {/* Reorder by */}
         <td className="px-4 py-3">
-          <span className={`text-sm font-medium ${!snoozed && f.reorderAlert ? 'text-yellow-400' : 'text-bambu-gray'}`}>
+          <span className={`text-sm ${!snoozed && f.reorderAlert ? 'text-yellow-400' : 'text-bambu-gray'}`}>
             {f.reorderTriggerDate ? formatDate(f.reorderTriggerDate) : '—'}
           </span>
         </td>
@@ -920,7 +931,7 @@ function ForecastRow({
       {/* ── Expanded detail row ── */}
       {expanded && (
         <tr className="bg-bambu-dark-tertiary/10">
-          <td colSpan={8} className="px-6 py-4">
+          <td colSpan={9} className="px-6 py-4">
             <div className="space-y-3">
 
               {/* Single compact row: read-only stats + editable settings */}
@@ -986,10 +997,10 @@ function ForecastRow({
                     <table className="w-full">
                       <thead>
                         <tr className="border-b border-bambu-dark-tertiary bg-bambu-dark-tertiary/30">
-                          <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">#</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('inventory.remaining')}</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('inventory.used')}</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.labelWeight')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">#</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('inventory.remaining')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('inventory.used')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.labelWeight')}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-bambu-dark-tertiary">
@@ -1325,13 +1336,13 @@ function ShoppingListPanel({
           <table className="w-full">
             <thead>
               <tr className="border-b border-bambu-dark-tertiary bg-bambu-dark-tertiary/20">
-                <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.qty')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.material')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.weight')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.leadTime')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.expectedRestock')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.status')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.note')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.qty')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.material')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.weight')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.leadTime')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.expectedRestock')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.status')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.note')}</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.actions')}</th>
               </tr>
             </thead>

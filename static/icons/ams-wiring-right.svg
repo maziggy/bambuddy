@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 50">
+  <!-- Vertical lines from slots down to horizontal bar -->
+  <line x1="28" y1="0" x2="28" y2="14" stroke="#909090" stroke-width="2" />
+  <line x1="82" y1="0" x2="82" y2="14" stroke="#909090" stroke-width="2" />
+  <line x1="138" y1="0" x2="138" y2="14" stroke="#909090" stroke-width="2" />
+  <line x1="192" y1="0" x2="192" y2="14" stroke="#909090" stroke-width="2" />
+
+  <!-- Horizontal bar across all slots -->
+  <line x1="28" y1="14" x2="192" y2="14" stroke="#909090" stroke-width="2" />
+
+  <!-- Center hub box -->
+  <rect x="96" y="8" width="28" height="12" rx="2" fill="#c0c0c0" stroke="#909090" stroke-width="1" />
+
+  <!-- Wire from hub: down, then left to edge (at same level as hub horizontal bar) -->
+  <line x1="110" y1="20" x2="110" y2="35" stroke="#909090" stroke-width="2" />
+  <line x1="0" y1="35" x2="110" y2="35" stroke="#909090" stroke-width="2" />
+</svg>

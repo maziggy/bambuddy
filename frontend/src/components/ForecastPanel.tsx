@@ -901,7 +901,7 @@ function ForecastRow({
             {canWrite && (
               <button
                 onClick={toggleSnooze}
-                className={`p-1 rounded transition-colors ${snoozed ? 'text-bambu-gray/70 hover:text-white' : 'text-bambu-dark-tertiary hover:text-bambu-gray'}`}
+                className={`p-1 rounded transition-colors ${snoozed ? 'text-amber-400/80 hover:text-amber-300' : 'text-slate-400 hover:text-white'}`}
                 title={t(snoozed ? 'forecast.alertsEnabled' : 'forecast.alertsSnoozed')}
               >
                 <BellOff className="w-3.5 h-3.5" />

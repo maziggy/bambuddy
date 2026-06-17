@@ -1,0 +1,200 @@
+2026-06-17 08:01:13,862 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-06-17 08:01:14,083 INFO [backend.app.api.routes.printers] [968d10ab] Cover: resolved plate 1 before download (subtask=Gridfinity_bin_1x1x7)
+2026-06-17 08:01:14,086 INFO [backend.app.api.routes.printers] [968d10ab] Cover using cached 3MF from /app/data/archive/unassigned/20260617_003356_Gridfinity bin 1x1x7/Gridfinity bin 1x1x7.gcode.3mf (avoided duplicate FTP)
+2026-06-17 08:01:14,088 INFO [backend.app.api.routes.printers] [968d10ab] Downloaded file size: 5875683 bytes
+2026-06-17 08:01:15,674 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 48732 bytes
+2026-06-17 08:01:15,674 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 ([PRINTER])
+2026-06-17 08:01:15,677 INFO [backend.app.services.notification_service] [-] No notification providers configured for print_start event on printer 1
+2026-06-17 08:01:15,697 INFO [backend.app.main] [-] Loaded 35 printable objects for printer 1
+2026-06-17 08:01:16,535 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-06-17 08:01:16,704 INFO [backend.app.main] [-] [TIMELAPSE] Baseline at print start: 1 video files for printer 1
+2026-06-17 08:03:58,057 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Tray change during print: tray=0 at layer=0
+2026-06-17 08:05:11,795 INFO [backend.app.api.routes.cloud] [b89b62c3] get_filament_info called with 4 IDs: ['GFL95', 'GFG00', 'GFSNL03', 'GFU99']
+2026-06-17 08:05:11,929 WARNING [backend.app.api.routes.cloud] [b89b62c3] Failed to get cloud preset GFL95 (API ID: GFSL95): Failed to get setting detail: 400
+2026-06-17 08:05:12,021 WARNING [backend.app.api.routes.cloud] [b89b62c3] Failed to get cloud preset GFG00 (API ID: GFSG00): Failed to get setting detail: 400
+2026-06-17 08:05:12,112 WARNING [backend.app.api.routes.cloud] [b89b62c3] Failed to get cloud preset GFSNL03 (API ID: GFSNL03): Failed to get setting detail: 400
+2026-06-17 08:05:12,204 WARNING [backend.app.api.routes.cloud] [b89b62c3] Failed to get cloud preset GFU99 (API ID: GFSU99): Failed to get setting detail: 400
+2026-06-17 08:05:12,246 INFO [uvicorn.access] [-] [IP]:59448 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-06-17 08:05:33,814 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 08:07:42,544 INFO [uvicorn.access] [-] [IP]:59201 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-06-17 08:07:42,558 INFO [backend.app.api.routes.printers] [9f39d980] Cover: resolved plate 1 before download (subtask=Gridfinity_bin_1x1x7)
+2026-06-17 08:10:33,824 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 08:15:33,834 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 08:20:33,844 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 08:25:33,855 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 08:30:33,865 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 08:35:33,926 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 08:39:17,902 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-17 08:39:17,903 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-06-17 08:39:19,560 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 47379 bytes
+2026-06-17 08:40:33,939 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 08:44:21,040 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-06-17 08:44:21,080 INFO [uvicorn.access] [-] [IP]:49409 - "POST /api/v1/cloud/filament-info HTTP/1.1" 401
+2026-06-17 08:44:24,051 INFO [uvicorn.access] [-] [IP]:49407 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-17 08:44:24,101 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-17 08:44:27,172 INFO [uvicorn.access] [-] [IP]:49407 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-17 08:44:27,199 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-17 08:44:28,475 INFO [uvicorn.access] [-] [IP]:49407 - "POST /api/v1/auth/login HTTP/1.1" 200
+2026-06-17 08:44:28,628 INFO [backend.app.api.routes.cloud] [5bad080b] get_filament_info called with 4 IDs: ['GFL95', 'GFG00', 'GFSNL03', 'GFU99']
+2026-06-17 08:44:28,771 WARNING [backend.app.api.routes.cloud] [5bad080b] Failed to get cloud preset GFL95 (API ID: GFSL95): Failed to get setting detail: 400
+2026-06-17 08:44:28,869 WARNING [backend.app.api.routes.cloud] [5bad080b] Failed to get cloud preset GFG00 (API ID: GFSG00): Failed to get setting detail: 400
+2026-06-17 08:44:28,966 WARNING [backend.app.api.routes.cloud] [5bad080b] Failed to get cloud preset GFSNL03 (API ID: GFSNL03): Failed to get setting detail: 400
+2026-06-17 08:44:29,019 INFO [uvicorn.access] [-] [IP]:49446 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-06-17 08:44:29,031 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-06-17 08:44:29,031 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-06-17 08:44:29,033 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-06-17 08:44:29,058 WARNING [backend.app.api.routes.cloud] [5bad080b] Failed to get cloud preset GFU99 (API ID: GFSU99): Failed to get setting detail: 400
+2026-06-17 08:44:29,062 INFO [uvicorn.access] [-] [IP]:49444 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-06-17 08:44:30,235 INFO [uvicorn.access] [-] [IP]:49407 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-06-17 08:44:30,250 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-06-17 08:44:30,251 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-06-17 08:44:30,252 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-06-17 08:44:53,008 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-06-17 08:44:53,009 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-06-17 08:45:33,950 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 08:50:33,964 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 08:55:33,974 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 09:00:33,984 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 09:05:33,995 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 09:10:34,006 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 09:15:34,016 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 09:20:34,027 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 09:25:34,040 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 09:30:34,047 INFO [backend.app.main] [-] Sending temperature alarm for [PRINTER] AMS-A: 35.2°C > 35.0°C
+2026-06-17 09:30:34,053 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 09:35:34,064 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 09:40:34,076 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 09:45:34,087 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 09:50:34,098 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 09:55:34,111 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 09:56:53,329 INFO [uvicorn.access] [-] [IP]:51732 - "POST /api/v1/auth/login HTTP/1.1" 200
+2026-06-17 09:56:53,434 INFO [uvicorn.access] [-] [IP]:51732 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-06-17 09:56:53,727 INFO [uvicorn.access] [-] [IP]:51751 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-06-17 09:56:53,786 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-06-17 09:56:53,787 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-06-17 09:56:53,788 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-06-17 09:56:53,897 INFO [backend.app.api.routes.cloud] [a5588464] get_filament_info called with 4 IDs: ['GFL95', 'GFG00', 'GFSNL03', 'GFU99']
+2026-06-17 09:56:53,945 INFO [backend.app.api.routes.printers] [8f0cbd8b] Cover: resolved plate 1 before download (subtask=Gridfinity_bin_1x1x7)
+2026-06-17 09:56:54,298 WARNING [backend.app.api.routes.cloud] [a5588464] Failed to get cloud preset GFL95 (API ID: GFSL95): Failed to get setting detail: 400
+2026-06-17 09:56:54,396 WARNING [backend.app.api.routes.cloud] [a5588464] Failed to get cloud preset GFG00 (API ID: GFSG00): Failed to get setting detail: 400
+2026-06-17 09:56:54,495 WARNING [backend.app.api.routes.cloud] [a5588464] Failed to get cloud preset GFSNL03 (API ID: GFSNL03): Failed to get setting detail: 400
+2026-06-17 09:56:54,596 WARNING [backend.app.api.routes.cloud] [a5588464] Failed to get cloud preset GFU99 (API ID: GFSU99): Failed to get setting detail: 400
+2026-06-17 09:56:54,598 INFO [uvicorn.access] [-] [IP]:51750 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-06-17 09:59:02,506 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-06-17 10:00:34,160 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 10:05:18,370 INFO [backend.app.main] [-] Evicted 1 stale expected-print entries (TTL=7200s)
+2026-06-17 10:05:34,209 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 10:10:34,259 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 10:15:34,309 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 10:20:34,358 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 10:25:34,407 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 10:30:34,413 INFO [backend.app.main] [-] Sending temperature alarm for [PRINTER] AMS-A: 36.3°C > 35.0°C
+2026-06-17 10:30:34,457 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 10:35:34,509 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 10:40:34,560 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 10:45:34,610 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 10:50:34,622 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 10:55:34,670 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 11:00:34,720 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 11:05:34,770 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 11:10:34,832 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 11:15:34,883 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 11:20:34,894 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 11:25:34,905 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 11:30:34,912 INFO [backend.app.main] [-] Sending temperature alarm for [PRINTER] AMS-A: 36.3°C > 35.0°C
+2026-06-17 11:30:34,956 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 11:35:35,006 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 11:40:35,055 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 11:45:35,105 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 11:50:35,156 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 11:55:35,211 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 12:00:35,221 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 12:01:55,254 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-17 12:01:55,254 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-06-17 12:01:56,993 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 66491 bytes
+2026-06-17 12:05:35,233 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 12:10:35,243 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 12:15:35,256 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 12:20:35,266 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 12:25:35,277 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 12:30:35,284 INFO [backend.app.main] [-] Sending temperature alarm for [PRINTER] AMS-A: 36.4°C > 35.0°C
+2026-06-17 12:30:35,290 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 12:35:35,302 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 12:40:35,312 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 12:45:35,362 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 12:50:35,414 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 12:55:35,464 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 13:00:35,479 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 13:05:35,529 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 13:10:35,579 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 13:15:35,628 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 13:20:35,679 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 13:25:35,730 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 13:30:35,738 INFO [backend.app.main] [-] Sending temperature alarm for [PRINTER] AMS-A: 36.1°C > 35.0°C
+2026-06-17 13:30:35,744 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 13:35:35,755 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 13:40:35,806 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 13:45:35,819 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 13:50:35,836 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 13:55:35,885 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 14:00:35,936 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 14:05:36,025 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 14:10:36,075 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 14:15:36,086 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 14:20:36,096 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 14:25:36,106 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 14:30:36,113 INFO [backend.app.main] [-] Sending temperature alarm for [PRINTER] AMS-A: 37.3°C > 35.0°C
+2026-06-17 14:30:36,118 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 14:35:36,129 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 14:40:36,140 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 14:45:36,161 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 14:50:36,176 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 14:51:05,252 INFO [uvicorn.access] [-] [IP]:33500 - "POST /api/v1/auth/login HTTP/1.1" 200
+2026-06-17 14:51:05,423 INFO [uvicorn.access] [-] [IP]:33500 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-06-17 14:51:05,654 INFO [uvicorn.access] [-] [IP]:33500 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-06-17 14:51:05,699 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-06-17 14:51:05,699 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-06-17 14:51:05,701 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-06-17 14:51:05,788 INFO [backend.app.api.routes.cloud] [727e3926] get_filament_info called with 4 IDs: ['GFL95', 'GFG00', 'GFSNL03', 'GFU99']
+2026-06-17 14:51:05,929 INFO [backend.app.api.routes.printers] [9a280851] Cover: resolved plate 1 before download (subtask=Gridfinity_bin_1x1x7)
+2026-06-17 14:51:05,952 WARNING [backend.app.api.routes.cloud] [727e3926] Failed to get cloud preset GFL95 (API ID: GFSL95): Failed to get setting detail: 400
+2026-06-17 14:51:06,044 WARNING [backend.app.api.routes.cloud] [727e3926] Failed to get cloud preset GFG00 (API ID: GFSG00): Failed to get setting detail: 400
+2026-06-17 14:51:06,131 WARNING [backend.app.api.routes.cloud] [727e3926] Failed to get cloud preset GFSNL03 (API ID: GFSNL03): Failed to get setting detail: 400
+2026-06-17 14:51:06,218 WARNING [backend.app.api.routes.cloud] [727e3926] Failed to get cloud preset GFU99 (API ID: GFSU99): Failed to get setting detail: 400
+2026-06-17 14:51:06,220 INFO [uvicorn.access] [-] [IP]:33554 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-06-17 14:53:19,282 INFO [backend.app.api.routes.printers] [ef93ea76] Cover: resolved plate 1 before download (subtask=Gridfinity_bin_1x1x7)
+2026-06-17 14:53:32,914 INFO [backend.app.api.routes.printers] [177f25dc] Cover: resolved plate 1 before download (subtask=Gridfinity_bin_1x1x7)
+2026-06-17 14:54:21,926 INFO [uvicorn.access] [-] [IP]:58074 - "POST /api/v1/printers/1/refresh-status HTTP/1.1" 200
+2026-06-17 14:55:36,186 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-17 14:57:09,180 INFO [backend.app.api.routes.printers] [aadfbe7a] Cover: resolved plate 1 before download (subtask=Gridfinity_bin_1x1x7)
+2026-06-17 14:57:09,255 INFO [backend.app.api.routes.cloud] [b9417f27] get_filament_info called with 4 IDs: ['GFL95', 'GFG00', 'GFSNL03', 'GFU99']
+2026-06-17 14:57:09,407 WARNING [backend.app.api.routes.cloud] [b9417f27] Failed to get cloud preset GFL95 (API ID: GFSL95): Failed to get setting detail: 400
+2026-06-17 14:57:09,514 WARNING [backend.app.api.routes.cloud] [b9417f27] Failed to get cloud preset GFG00 (API ID: GFSG00): Failed to get setting detail: 400
+2026-06-17 14:57:09,618 WARNING [backend.app.api.routes.cloud] [b9417f27] Failed to get cloud preset GFSNL03 (API ID: GFSNL03): Failed to get setting detail: 400
+2026-06-17 14:57:09,713 WARNING [backend.app.api.routes.cloud] [b9417f27] Failed to get cloud preset GFU99 (API ID: GFSU99): Failed to get setting detail: 400
+2026-06-17 14:57:09,716 INFO [uvicorn.access] [-] [IP]:50282 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-06-17 14:59:09,264 INFO [backend.app.api.routes.support] [926d1346] Log level changed to DEBUG
+2026-06-17 14:59:09,264 INFO [backend.app.api.routes.bug_report] [926d1346] Bug report: enabled debug logging
+2026-06-17 14:59:09,265 DEBUG [backend.app.services.bambu_mqtt] [926d1346] [[SERIAL]] Requesting status update (pushall)
+2026-06-17 14:59:09,266 INFO [uvicorn.access] [-] [IP]:36268 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-06-17 14:59:09,511 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: Gridfinity_bin_1x1x7.3mf, subtask_name: Gridfinity_bin_1x1x7
+2026-06-17 14:59:09,511 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '0', 'tray_now': '0', 'tray_pre': '0', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 21, 'insert_flag': True, 'power_on_flag': False}
+2026-06-17 14:59:09,513 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 0
+2026-06-17 14:59:09,514 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-06-17 14:59:09,514 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-06-17 14:59:09,515 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-06-17 14:59:09,516 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-06-17 14:59:09,517 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-17 14:59:09,517 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-06-17 14:59:09,517 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-06-17 14:59:09,518 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-06-17 14:59:09,518 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-06-17 14:59:09,520 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-06-17 14:59:09,521 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-06-17 14:59:09,522 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-06-17 14:59:09,522 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-06-17 14:59:09,523 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: Gridfinity_bin_1x1x7.3mf, subtask: Gridfinity_bin_1x1x7
+2026-06-17 14:59:11,008 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: added 30s, total=97620s (27.12h)
+2026-06-17 14:59:11,011 DEBUG [backend.app.main] [-] Updated runtime for 1 printer(s)
+2026-06-17 14:59:11,527 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-17 14:59:11,527 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -48dBm

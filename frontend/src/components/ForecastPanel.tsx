@@ -1090,7 +1090,7 @@ function ForecastRow({
 function LogisticStat({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
     <div className="bg-bambu-dark-tertiary/40 rounded-lg p-3" title={hint}>
-      <div className="text-xs text-bambu-gray mb-1">{label}</div>
+      <div className="text-xs font-medium text-white mb-1">{label}</div>
       <div className="text-lg font-semibold text-white">{value}</div>
     </div>
   );

@@ -1136,9 +1136,11 @@ function IndicatorControlPopover({
   customMin,
   customMax,
   customStep = 1,
+  widthClass = 'w-[240px]',
   isPending,
   onClose,
   onSubmit,
+  children,
 }: {
   title: string;
   options: Array<{ label: string; value: number }>;
@@ -1146,9 +1148,11 @@ function IndicatorControlPopover({
   customMin?: number;
   customMax?: number;
   customStep?: number;
+  widthClass?: string;
   isPending?: boolean;
   onClose: () => void;
   onSubmit: (value: number) => void;
+  children?: React.ReactNode;
 }) {
   const [customValue, setCustomValue] = useState('');
   const showCustomInput = unit !== undefined;
@@ -1163,7 +1167,7 @@ function IndicatorControlPopover({
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
-        className="absolute left-1/2 top-full z-50 mt-1 flex w-[240px] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-2xl"
+        className={`absolute left-1/2 top-full z-50 mt-1 flex ${widthClass} -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-2xl`}
         onClick={e => e.stopPropagation()}
       >
         <div className="shrink-0 px-3 py-2.5 text-center text-sm font-medium text-white">{title}</div>
@@ -1183,6 +1187,7 @@ function IndicatorControlPopover({
             ))}
           </div>
         </div>
+        {children}
         {showCustomInput && (
           <>
             <div className="shrink-0 h-px bg-bambu-dark-tertiary" />
@@ -1215,6 +1220,87 @@ function IndicatorControlPopover({
         )}
       </div>
     </>
+  );
+}
+
+const NOZZLE_TEMPERATURE_OPTIONS = [
+  { label: 'Off', value: 0 },
+  { label: '120 C', value: 120 },
+  { label: '220 C', value: 220 },
+  { label: '260 C', value: 260 },
+];
+
+function NozzleTemperatureControlBox({
+  label,
+  current,
+  target,
+  isActive,
+  isPending,
+  onSubmit,
+}: {
+  label: string;
+  current?: number;
+  target?: number;
+  isActive: boolean;
+  isPending?: boolean;
+  onSubmit: (value: number) => void;
+}) {
+  const [customValue, setCustomValue] = useState('');
+
+  const submitCustom = () => {
+    const value = Number(customValue);
+    if (!Number.isFinite(value)) return;
+    onSubmit(Math.min(320, Math.max(0, Math.round(value))));
+  };
+
+  return (
+    <div className={`rounded-lg border p-2 ${isActive ? 'border-amber-400/60 bg-amber-400/10' : 'border-bambu-dark-tertiary bg-bambu-dark'}`}>
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className={`text-xs font-medium ${isActive ? 'text-amber-300' : 'text-white'}`}>{label}</span>
+        <span className="text-[10px] text-bambu-gray">
+          {Math.round(current ?? 0)}°C
+          {target !== undefined ? ` / ${Math.round(target)}°` : ''}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-1">
+        {NOZZLE_TEMPERATURE_OPTIONS.map(option => (
+          <button
+            key={`${label}-${option.value}`}
+            type="button"
+            disabled={isPending}
+            onClick={() => onSubmit(option.value)}
+            className="h-7 rounded-md border border-bambu-dark-tertiary bg-bambu-dark-secondary px-1.5 text-[11px] font-medium text-white transition-colors hover:bg-bambu-dark-tertiary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      <form
+        className="mt-1.5 flex gap-1"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submitCustom();
+        }}
+      >
+        <input
+          type="number"
+          min={0}
+          max={320}
+          step={1}
+          value={customValue}
+          onChange={e => setCustomValue(e.target.value)}
+          placeholder="Custom"
+          className="h-7 min-w-0 flex-1 rounded-md border border-bambu-dark-tertiary bg-bambu-dark-secondary px-1.5 text-[11px] text-white placeholder:text-bambu-gray/60 focus:border-bambu-green focus:outline-none"
+        />
+        <button
+          type="submit"
+          disabled={isPending || customValue.trim() === ''}
+          className="h-7 rounded-md border border-bambu-dark-tertiary bg-bambu-dark-secondary px-2 text-[11px] font-medium text-white transition-colors hover:bg-bambu-dark-tertiary disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Set
+        </button>
+      </form>
+    </div>
   );
 }
 
@@ -3409,12 +3495,7 @@ function PrinterCard({
                           customMin={0}
                           customMax={320}
                           isPending={nozzleTemperatureMutation.isPending}
-                          options={[
-                            { label: 'Off', value: 0 },
-                            { label: '120 C', value: 120 },
-                            { label: '220 C', value: 220 },
-                            { label: '260 C', value: 260 },
-                          ]}
+                          options={NOZZLE_TEMPERATURE_OPTIONS}
                           onClose={() => setStatusControlMenu(null)}
                           onSubmit={(target) => nozzleTemperatureMutation.mutate({ target, nozzle: status.active_extruder ?? 0 })}
                         />
@@ -3486,14 +3567,35 @@ function PrinterCard({
                           {statusControlMenu === 'nozzle-select' && (
                             <IndicatorControlPopover
                               title="Set Nozzle Selection"
-                              isPending={selectExtruderMutation.isPending}
+                              widthClass="w-[300px]"
+                              isPending={selectExtruderMutation.isPending || nozzleTemperatureMutation.isPending}
                               options={[
                                 { label: 'Left', value: 1 },
                                 { label: 'Right', value: 0 },
                               ]}
                               onClose={() => setStatusControlMenu(null)}
                               onSubmit={(extruder) => selectExtruderMutation.mutate(extruder)}
-                            />
+                            >
+                              <div className="shrink-0 h-px bg-bambu-dark-tertiary" />
+                              <div className="grid grid-cols-2 gap-2 px-3 py-2.5">
+                                <NozzleTemperatureControlBox
+                                  label="Left Temp"
+                                  current={status.temperatures.nozzle}
+                                  target={status.temperatures.nozzle_target}
+                                  isActive={activeNozzle === 'L'}
+                                  isPending={nozzleTemperatureMutation.isPending}
+                                  onSubmit={(target) => nozzleTemperatureMutation.mutate({ target, nozzle: 1 })}
+                                />
+                                <NozzleTemperatureControlBox
+                                  label="Right Temp"
+                                  current={status.temperatures.nozzle_2}
+                                  target={status.temperatures.nozzle_2_target}
+                                  isActive={activeNozzle === 'R'}
+                                  isPending={nozzleTemperatureMutation.isPending}
+                                  onSubmit={(target) => nozzleTemperatureMutation.mutate({ target, nozzle: 0 })}
+                                />
+                              </div>
+                            </IndicatorControlPopover>
                           )}
                         </div>
                       </DualNozzleHoverCard>

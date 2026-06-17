@@ -710,13 +710,24 @@ function UsageChart({ forecasts, days: maxDays, onDaysChange }: {
             width={48}
           />
           <Tooltip
-            contentStyle={{ background: '#1a1a2e', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }}
-            labelStyle={{ color: '#9CA3AF' }}
-            itemStyle={{ color: '#E5E7EB' }}
-            formatter={(value, name) => {
-              if (typeof value !== 'number') return '';
-              const s = series.find((x) => x.key === String(name));
-              return `${value}g — ${s?.label ?? name}`;
+            content={({ label: dateLabel, payload }) => {
+              if (!payload?.length) return null;
+              return (
+                <div style={{ background: '#1a1a2e', border: '1px solid #374151', borderRadius: 8, fontSize: 12, padding: '8px 12px' }}>
+                  <div style={{ color: '#9CA3AF', marginBottom: 6 }}>{dateLabel}</div>
+                  {payload.map((p) => {
+                    const s = series.find((x) => x.key === String(p.dataKey));
+                    if (typeof p.value !== 'number') return null;
+                    return (
+                      <div key={String(p.dataKey)} style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#E5E7EB', marginBottom: 2 }}>
+                        <span style={{ color: s?.color ?? '#9CA3AF', fontSize: 10 }}>●</span>
+                        <span>{s?.label ?? String(p.dataKey)}</span>
+                        <span style={{ color: '#9CA3AF', marginLeft: 4 }}>{p.value}g</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
             }}
           />
           <Legend

@@ -921,69 +921,62 @@ function ForecastRow({
       {expanded && (
         <tr className="bg-bambu-dark-tertiary/10">
           <td colSpan={8} className="px-6 py-4">
-            <div className="space-y-4">
+            <div className="space-y-3">
 
-              {/* Logistics summary */}
-              <div className="grid grid-cols-3 gap-3">
+              {/* Single compact row: read-only stats + editable settings */}
+              <div className={`grid gap-2 ${canWrite ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2'}`}>
                 <LogisticStat
                   label={t('forecast.effectiveLeadTime')}
                   value={`${f.effectiveLeadTimeDays}d`}
                   hint={t('forecast.effectiveLeadTimeHint', { global: globalLeadTime, sku: f.settings?.lead_time_days ?? 0 })}
                 />
                 <LogisticStat
-                  label={t('forecast.safetyMarginLabel')}
-                  value={`${Math.round(f.safetyStockG)}g`}
-                  hint={t('forecast.safetyMarginHint')}
-                />
-                <LogisticStat
                   label={t('forecast.reorderPoint')}
                   value={`${Math.round(f.reorderPointG)}g`}
                   hint={t('forecast.reorderPointHint')}
                 />
+                {canWrite && (
+                  <>
+                    <SettingField
+                      label={t('forecast.skuLeadTimeOverride')}
+                      hint={t('forecast.skuLeadTimeHint')}
+                      unit={t('forecast.leadTime')}
+                      editing={editingLead}
+                      value={f.settings?.lead_time_days ?? 0}
+                      inputValue={leadInput}
+                      onInputChange={setLeadInput}
+                      onEdit={() => { setLeadInput(String(f.settings?.lead_time_days ?? 0)); setEditingLead(true); }}
+                      onSave={() => {
+                        const v = parseInt(leadInput, 10);
+                        if (!isNaN(v) && v >= 0) { upsert(v, f.settings?.safety_margin_value ?? 14, marginUnit); setEditingLead(false); }
+                      }}
+                      onCancel={() => setEditingLead(false)}
+                      isPending={upsertMutation.isPending}
+                      saveLabel={t('forecast.save')}
+                      cancelLabel={t('forecast.cancel')}
+                    />
+                    <SafetyMarginField
+                      value={f.settings?.safety_margin_value ?? 14}
+                      unit={marginUnit}
+                      editing={editingMargin}
+                      inputValue={marginInput}
+                      dailyRateG={f.dailyRateG}
+                      onInputChange={setMarginInput}
+                      onUnitChange={(u) => setMarginUnit(u)}
+                      onEdit={() => { setMarginInput(String(f.settings?.safety_margin_value ?? 14)); setMarginUnit(f.settings?.safety_margin_unit ?? 'days'); setEditingMargin(true); }}
+                      onSave={() => {
+                        const v = parseInt(marginInput, 10);
+                        if (!isNaN(v) && v >= 0) { upsert(f.settings?.lead_time_days ?? 0, v, marginUnit); setEditingMargin(false); }
+                      }}
+                      onCancel={() => setEditingMargin(false)}
+                      isPending={upsertMutation.isPending}
+                      saveLabel={t('forecast.save')}
+                      cancelLabel={t('forecast.cancel')}
+                      safetyMarginLabel={t('forecast.safetyMarginLabel')}
+                    />
+                  </>
+                )}
               </div>
-
-              {/* Per-SKU settings — write-gated */}
-              {canWrite && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <SettingField
-                    label={t('forecast.skuLeadTimeOverride')}
-                    hint={t('forecast.skuLeadTimeHint')}
-                    unit={t('forecast.leadTime')}
-                    editing={editingLead}
-                    value={f.settings?.lead_time_days ?? 0}
-                    inputValue={leadInput}
-                    onInputChange={setLeadInput}
-                    onEdit={() => { setLeadInput(String(f.settings?.lead_time_days ?? 0)); setEditingLead(true); }}
-                    onSave={() => {
-                      const v = parseInt(leadInput, 10);
-                      if (!isNaN(v) && v >= 0) { upsert(v, f.settings?.safety_margin_value ?? 14, marginUnit); setEditingLead(false); }
-                    }}
-                    onCancel={() => setEditingLead(false)}
-                    isPending={upsertMutation.isPending}
-                    saveLabel={t('forecast.save')}
-                    cancelLabel={t('forecast.cancel')}
-                  />
-                  <SafetyMarginField
-                    value={f.settings?.safety_margin_value ?? 14}
-                    unit={marginUnit}
-                    editing={editingMargin}
-                    inputValue={marginInput}
-                    dailyRateG={f.dailyRateG}
-                    onInputChange={setMarginInput}
-                    onUnitChange={(u) => setMarginUnit(u)}
-                    onEdit={() => { setMarginInput(String(f.settings?.safety_margin_value ?? 14)); setMarginUnit(f.settings?.safety_margin_unit ?? 'days'); setEditingMargin(true); }}
-                    onSave={() => {
-                      const v = parseInt(marginInput, 10);
-                      if (!isNaN(v) && v >= 0) { upsert(f.settings?.lead_time_days ?? 0, v, marginUnit); setEditingMargin(false); }
-                    }}
-                    onCancel={() => setEditingMargin(false)}
-                    isPending={upsertMutation.isPending}
-                    saveLabel={t('forecast.save')}
-                    cancelLabel={t('forecast.cancel')}
-                    safetyMarginLabel={t('forecast.safetyMarginLabel')}
-                  />
-                </div>
-              )}
 
               {/* Individual spools — shown when group has >1 spool */}
               {f.group.spools.length > 1 && (

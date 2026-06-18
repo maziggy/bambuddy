@@ -2172,7 +2172,7 @@ function PrinterCard({
       api.setNozzleTemperature(printer.id, target, nozzle),
     onSuccess: (result) => {
       setStatusControlMenu(null);
-      showToast(result.message || 'Nozzle temperature set');
+      showToast(result.message);
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
     },
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
@@ -2182,7 +2182,7 @@ function PrinterCard({
     mutationFn: (target: number) => api.setBedTemperature(printer.id, target),
     onSuccess: (result) => {
       setStatusControlMenu(null);
-      showToast(result.message || 'Bed temperature set');
+      showToast(result.message);
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
     },
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
@@ -2206,7 +2206,7 @@ function PrinterCard({
     },
     onSuccess: (result) => {
       setStatusControlMenu(null);
-      showToast(result.message || 'Fan speed set');
+      showToast(result.message);
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
     },
     onError: (error: Error, _variables, context) => {
@@ -2229,7 +2229,7 @@ function PrinterCard({
     },
     onSuccess: (result) => {
       setStatusControlMenu(null);
-      showToast(result.message || 'Nozzle selected');
+      showToast(result.message);
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
     },
     onError: (error: Error, _extruder, context) => {

@@ -3065,7 +3065,12 @@ async def extruder_jog(
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     db: AsyncSession = Depends(get_db),
 ):
-    """Extrude or retract filament by a relative distance."""
+    """Extrude or retract filament by a relative distance.
+
+    No client-side cold-extrude guard: Bambu firmware refuses extrusion
+    below its min-extrude temperature, so a cold call is rejected at the
+    printer, not silently damaging the extruder gear.
+    """
     if distance == 0 or abs(distance) > 100:
         raise HTTPException(400, "Extruder movement must be non-zero and ≤ 100 mm")
 

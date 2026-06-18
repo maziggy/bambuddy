@@ -1232,6 +1232,35 @@ class PrintScheduler:
             # _prefer_lowest_sort_key for the full rationale.
             if prefer_lowest:
                 available.sort(key=lambda f: self._prefer_lowest_sort_key(f, inventory_remain_overrides))
+                # INFO-level decision trace for "Prefer Lowest Filament" #1766.
+                # One line per filament req so a bug report can be diagnosed
+                # without enabling debug logging: shows what the matcher saw
+                # (req shape + sorted candidate trays with their remain values
+                # and any inventory override that was applied). Mirrored by
+                # the picked-match log at the bottom of the loop.
+                logger.info(
+                    "[prefer-lowest] req slot=%s type=%r color=%r tii=%r nozzle=%s; available (sorted lowest-first): %s",
+                    req.get("slot_id"),
+                    req_type,
+                    req_color,
+                    req_tray_info_idx,
+                    req_nozzle_id,
+                    [
+                        {
+                            "gtid": f.get("global_tray_id"),
+                            "type": f.get("type"),
+                            "color": f.get("color"),
+                            "tii": f.get("tray_info_idx"),
+                            "remain": f.get("remain"),
+                            "inv_g": (
+                                inventory_remain_overrides.get(f.get("global_tray_id"))
+                                if inventory_remain_overrides
+                                else None
+                            ),
+                        }
+                        for f in available
+                    ],
+                )
 
             # Check if tray_info_idx is unique among available trays
             if req_tray_info_idx:
@@ -1287,6 +1316,35 @@ class PrintScheduler:
                 comparisons.append({"slot_id": req.get("slot_id", 0), "global_tray_id": match["global_tray_id"]})
             else:
                 comparisons.append({"slot_id": req.get("slot_id", 0), "global_tray_id": -1})
+            if prefer_lowest:
+                # Pair with the "available (sorted)" log above so the reporter
+                # bundle shows BOTH what the matcher saw AND which match bucket
+                # won — fast triage when "Prefer Lowest Filament" picks the
+                # wrong slot (#1766).
+                if match:
+                    bucket = (
+                        "idx"
+                        if idx_match is not None
+                        else "exact_color"
+                        if exact_match is not None
+                        else "similar_color"
+                        if similar_match is not None
+                        else "type_only"
+                    )
+                    logger.info(
+                        "[prefer-lowest] picked gtid=%s via %s for req slot=%s",
+                        match["global_tray_id"],
+                        bucket,
+                        req.get("slot_id"),
+                    )
+                else:
+                    logger.info(
+                        "[prefer-lowest] NO MATCH for req slot=%s (type=%r color=%r tii=%r)",
+                        req.get("slot_id"),
+                        req_type,
+                        req_color,
+                        req_tray_info_idx,
+                    )
 
         # Build mapping array
         if not comparisons:

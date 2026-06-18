@@ -2186,7 +2186,7 @@ export default {
     defaultPrinterDescription: 'Diesen Drucker für Uploads, Nachdrucke und andere Vorgänge vorauswählen.',
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
-    sidebarOrderDescription: 'Elemente in der Seitenleiste per Drag & Drop neu anordnen. Hier auf Standardreihenfolge zurücksetzen.',
+    sidebarOrderDescription: 'Nutze das Seitenleisten-Layout, um Elemente neu anzuordnen, Sichtbarkeit zurückzusetzen und benutzerdefinierte Links zu verwalten.',
     setDefault: 'Standard setzen',
     sidebarOrderSetDefaultHint: 'Standard setzen übernimmt die aktuelle Menüreihenfolge für Benutzer, die ihre noch nicht angepasst haben.',
     sidebarDefaultSet: 'Standard-Menüreihenfolge wurde festgelegt.',
@@ -2380,6 +2380,17 @@ export default {
       linkedAccounts: 'Verknüpfte SSO-Konten',
       linkedAccountsDesc: 'Diese externen Identitätsanbieter sind mit deinem Konto verknüpft.',
       oidcUnlinked: 'Konto getrennt.',
+    },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: 'Sitzungsrichtlinie',
+      description: 'Maximale Sitzungsdauer für neue Benutzeranmeldungen. Bereits ausgegebene Token behalten ihren ursprünglichen Ablauf.',
+      preset24h: '24 Stunden',
+      preset7d: '7 Tage',
+      preset30d: '30 Tage',
+      customHoursLabel: 'Individuelle Sitzungsdauer in Stunden',
+      hoursSuffix: 'Stunden',
+      warning: 'Längere Sitzungen reduzieren den automatischen Abmeldeschutz. Nur für vertrauenswürdige Einzelnutzer-Installationen empfohlen.',
     },
 
     // OIDC provider settings
@@ -3677,6 +3688,28 @@ export default {
     disableWeightSyncDesc: 'Verbleibende Kapazität nicht aus AMS-Schätzungen aktualisieren. Verwenden Sie dies, wenn Sie die Verbrauchserfassung von Spoolman gegenüber den prozentualen AMS-Schätzungen bevorzugen. Neue Spulen verwenden weiterhin die AMS-Schätzung als Anfangsgewicht.',
     reportPartialUsage: 'Teilverbrauch bei fehlgeschlagenen Drucken melden',
     reportPartialUsageDesc: 'Wenn ein Druck fehlschlägt oder abgebrochen wird, den geschätzten Filamentverbrauch bis zu diesem Zeitpunkt basierend auf dem Schichtfortschritt melden.',
+  },
+
+  locations: {
+    title: 'Lagerorte',
+    subtitle: 'Regale, Schubladen und andere physische Lagerplätze für Spulen verwalten',
+    add: 'Lagerort hinzufügen',
+    addShort: 'Hinzufügen',
+    edit: 'Lagerort bearbeiten',
+    name: 'Name',
+    spools: 'Spulen',
+    empty: 'Noch keine Lagerorte. Erstellen Sie Ihr erstes Regal oder Ihre erste Schublade.',
+    manage: 'Lagerorte',
+    createPlaceholder: 'z. B. Regal A, Schublade 1',
+    nameRequired: 'Name des Lagerorts ist erforderlich',
+    created: 'Lagerort erstellt',
+    updated: 'Lagerort aktualisiert',
+    deleted: 'Lagerort gelöscht',
+    saveFailed: 'Lagerort konnte nicht gespeichert werden',
+    deleteFailed: 'Lagerort konnte nicht gelöscht werden',
+    deleteBlocked: 'Entfernen Sie zuerst alle Spulen von diesem Lagerort',
+    confirmDelete: '„{{name}}“ löschen?',
+    confirmDeleteMessage: 'Dieser Lagerort wird aus dem Katalog entfernt. Spulen müssen zuerst verschoben werden.',
   },
 
   // Inventar
@@ -5107,6 +5140,17 @@ export default {
 
   // External Links
   externalLinks: {
+    title: 'Seitenleisten-Links',
+    sidebarLayout: 'Seitenleiste',
+    sidebarLayoutDescription: 'Integrierte Seiten ein- oder ausblenden, externe Links hinzufügen und Elemente ziehen, um die Seitenleisten-Navigation neu zu ordnen.',
+    systemPages: 'Bambuddy-Seiten',
+    externalLinks: 'Externe Links',
+    visibleInSidebar: 'In Seitenleiste sichtbar',
+    hiddenFromSidebar: 'In Seitenleiste ausgeblendet',
+    requiredInSidebar: 'In Seitenleiste erforderlich',
+    hidePage: 'Seite ausblenden',
+    showPage: 'Seite anzeigen',
+    settingsCannotBeHidden: 'Einstellungen können nicht ausgeblendet werden',
     noLinksConfigured: 'Keine externen Links konfiguriert',
     deleteLink: 'Link löschen',
     removeCustomIcon: 'Benutzerdefiniertes Symbol entfernen',

@@ -2141,7 +2141,7 @@ export default {
     defaultPrinterDescription: 'Pré-selecionar esta impressora para uploads, reimpressões e outras operações.',
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
-    sidebarOrderDescription: 'Arraste itens na barra lateral para reordenar. Restaurar ordem padrão aqui.',
+    sidebarOrderDescription: 'Use o layout da barra lateral para reordenar itens, restaurar a visibilidade e gerenciar links personalizados.',
     setDefault: 'Definir padrão',
     sidebarOrderSetDefaultHint: 'Definir padrão aplica a ordem atual do menu aos usuários que ainda não personalizaram o seu.',
     sidebarDefaultSet: 'Ordem padrão do menu foi definida.',
@@ -2322,6 +2322,17 @@ export default {
       linkedAccounts: 'Contas SSO vinculadas',
       linkedAccountsDesc: 'Estes provedores de identidade externos estão vinculados à sua conta.',
       oidcUnlinked: 'Conta desvinculada.',
+    },
+    // Session Policy (#1706)
+    sessionPolicy: {
+      title: 'Política de sessão',
+      description: 'Duração máxima da sessão para novos logins de usuário. Tokens já emitidos mantêm sua expiração original.',
+      preset24h: '24 horas',
+      preset7d: '7 dias',
+      preset30d: '30 dias',
+      customHoursLabel: 'Duração personalizada da sessão em horas',
+      hoursSuffix: 'horas',
+      warning: 'Sessões mais longas reduzem a proteção de logout automático. Recomendado apenas para implantações de usuário único confiáveis.',
     },
 
     // OIDC provider settings
@@ -3665,6 +3676,28 @@ export default {
     disableWeightSyncDesc: 'Não atualize a capacidade restante a partir das estimativas do AMS. Use isso se preferir o rastreamento de uso do Spoolman em vez das estimativas baseadas em porcentagem do AMS. Novos carretéis ainda usarão a estimativa do AMS como seu peso inicial.',
     reportPartialUsage: 'Relatar Uso Parcial para Impressões Falhadas',
     reportPartialUsageDesc: 'Quando uma impressão falha ou é cancelada, relate o filamento estimado usado até aquele ponto com base no progresso das camadas.',
+  },
+
+  locations: {
+    title: 'Locais de armazenamento',
+    subtitle: 'Gerencie prateleiras, gavetas e outros locais físicos para bobinas',
+    add: 'Adicionar local',
+    addShort: 'Adicionar',
+    edit: 'Editar local',
+    name: 'Nome',
+    spools: 'Bobinas',
+    empty: 'Nenhum local de armazenamento. Crie sua primeira prateleira ou gaveta.',
+    manage: 'Locais',
+    createPlaceholder: 'ex. Prateleira A, Gaveta 1',
+    nameRequired: 'O nome do local é obrigatório',
+    created: 'Local criado',
+    updated: 'Local atualizado',
+    deleted: 'Local excluído',
+    saveFailed: 'Falha ao salvar local',
+    deleteFailed: 'Falha ao excluir local',
+    deleteBlocked: 'Remova todas as bobinas deste local antes de excluir',
+    confirmDelete: 'Excluir «{{name}}»?',
+    confirmDeleteMessage: 'Este local será removido do catálogo. Mova as bobinas primeiro.',
   },
 
   // Inventory
@@ -5096,6 +5129,17 @@ export default {
 
   // External Links
   externalLinks: {
+    title: 'Links da barra lateral',
+    sidebarLayout: 'Barra lateral',
+    sidebarLayoutDescription: 'Mostre ou oculte páginas integradas, adicione links externos e arraste itens para reordenar a navegação lateral.',
+    systemPages: 'Páginas do Bambuddy',
+    externalLinks: 'Links externos',
+    visibleInSidebar: 'Visível na barra lateral',
+    hiddenFromSidebar: 'Oculto na barra lateral',
+    requiredInSidebar: 'Obrigatório na barra lateral',
+    hidePage: 'Ocultar página',
+    showPage: 'Mostrar página',
+    settingsCannotBeHidden: 'Configurações não pode ser ocultado',
     noLinksConfigured: 'Nenhum link externo configurado',
     deleteLink: 'Excluir link',
     removeCustomIcon: 'Remover ícone personalizado',

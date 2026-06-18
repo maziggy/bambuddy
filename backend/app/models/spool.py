@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -61,6 +61,7 @@ class Spool(Base):
     cost_per_kg: Mapped[float | None] = mapped_column(Float)  # Cost per kilogram
 
     storage_location: Mapped[str | None] = mapped_column(String(255))  # User-editable storage location
+    location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"), index=True)
 
     last_used: Mapped[datetime | None] = mapped_column(DateTime)  # Last time this spool was used in a print
     encode_time: Mapped[datetime | None] = mapped_column(DateTime)  # When spool was encoded/written to tag
@@ -74,7 +75,9 @@ class Spool(Base):
 
     k_profiles: Mapped[list["SpoolKProfile"]] = relationship(back_populates="spool", cascade="all, delete-orphan")
     assignments: Mapped[list["SpoolAssignment"]] = relationship(back_populates="spool", cascade="all, delete-orphan")
+    location: Mapped["Location | None"] = relationship(back_populates="spools")
 
 
+from backend.app.models.location import Location  # noqa: E402
 from backend.app.models.spool_assignment import SpoolAssignment  # noqa: E402
 from backend.app.models.spool_k_profile import SpoolKProfile  # noqa: E402

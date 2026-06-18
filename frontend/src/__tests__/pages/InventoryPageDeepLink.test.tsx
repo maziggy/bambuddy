@@ -141,6 +141,7 @@ function setupCommonHandlers(spoolList: object[]) {
     http.get('/api/v1/inventory/color-catalog', () => HttpResponse.json([])),
     http.get('/api/v1/inventory/colors', () => HttpResponse.json([])),
     http.get('/api/v1/inventory/spool-catalog', () => HttpResponse.json([])),
+    http.get('/api/v1/inventory/locations', () => HttpResponse.json([])),
     http.get('/api/v1/printers/', () => HttpResponse.json([])),
   );
 }

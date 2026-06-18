@@ -6,7 +6,7 @@ import {
   Plus, Loader2, Trash2, Archive, RotateCcw, Edit2, Package,
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   TrendingDown, Layers, Printer, AlertTriangle, X, Clock, LayoutGrid, TableProperties, Columns,
-  ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw, TrendingUp, Lock, Copy, Eraser,
+  ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw, TrendingUp, Lock, Copy, Eraser, MapPin,
   Upload, Download,
 } from 'lucide-react';
 import { ForecastPanel } from '../components/ForecastPanel';
@@ -20,6 +20,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { ColumnConfigModal, type ColumnConfig } from '../components/ColumnConfigModal';
 import { LabelTemplatePickerModal } from '../components/LabelTemplatePickerModal';
 import { SpoolCsvImportModal } from '../components/SpoolCsvImportModal';
+import { LocationsModal } from '../components/LocationsModal';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { resolveSpoolColorName } from '../utils/colors';
@@ -27,6 +28,10 @@ import { getCurrencySymbol } from '../utils/currency';
 import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
 import { formatSlotLabel } from '../utils/amsHelpers';
 import { filterSpoolsByQuery } from '../utils/inventorySearch';
+import {
+  inventoryLocationsQueryKey,
+  invalidateSpoolAndLocationQueries,
+} from '../utils/inventoryQueries';
 import { aggregateGroupSpool } from '../utils/inventoryGrouping';
 
 type ArchiveFilter = 'active' | 'archived';
@@ -478,6 +483,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   // CSV import/export (#1576). Local inventory only — hidden in Spoolman mode.
   const [csvImportOpen, setCsvImportOpen] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
+  const [locationsModalOpen, setLocationsModalOpen] = useState(false);
 
   // Filter state
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('active');
@@ -487,10 +493,6 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   const [categoryFilter, setCategoryFilter] = useState('');
   const [spoolFilter, setSpoolFilter] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'stock' | 'configured'>('all');
-  // #1400: storage-location dropdown. Uses the sentinel `__none__` for the
-  // "no storage location set" group, same pattern as the category filter so
-  // users can find unfiled spools.
-  const [storageLocationFilter, setStorageLocationFilter] = useState('');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [sortState, setSortState] = useState<SortState>(loadSortState);
@@ -525,6 +527,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
 
   // Query key and fetch function differ based on data source
   const spoolsQueryKey = spoolmanMode ? ['spoolman-inventory-spools'] : ['inventory-spools'];
+  const refreshSpoolQueries = () => invalidateSpoolAndLocationQueries(queryClient, spoolsQueryKey);
   const { data: spools, isLoading } = useQuery({
     queryKey: spoolsQueryKey,
     queryFn: () =>
@@ -551,6 +554,20 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   const spoolmanCsvHint = spoolmanMode
     ? t('inventory.csv.spoolmanHint', 'In Spoolman mode, use Spoolman\'s built-in CSV import/export.')
     : undefined;
+
+  const { data: storageLocations = [] } = useQuery({
+    queryKey: inventoryLocationsQueryKey,
+    queryFn: api.getLocations,
+  });
+
+  // Deep-link / filter: ?location_id=<id> or ?location_id=__none__
+  const _rawLocationParam = searchParams.get('location_id');
+  const storageLocationFilter =
+    _rawLocationParam === '__none__'
+      ? '__none__'
+      : _rawLocationParam && /^\d+$/.test(_rawLocationParam) && Number(_rawLocationParam) > 0
+        ? _rawLocationParam
+        : '';
 
   // Deep-link: open edit modal for ?spool=<id>
   // Prefer the already-loaded spool list (no extra API call); fall back to a
@@ -662,7 +679,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     mutationFn: (id: number) =>
       spoolmanMode ? api.deleteSpoolmanInventorySpool(id) : api.deleteSpool(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
+      refreshSpoolQueries();
       showToast(t('inventory.spoolDeleted'), 'success');
     },
     onError: (error: Error) => {
@@ -680,7 +697,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     mutationFn: (id: number) =>
       spoolmanMode ? api.archiveSpoolmanInventorySpool(id) : api.archiveSpool(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
+      refreshSpoolQueries();
       showToast(t('inventory.spoolArchived'), 'success');
     },
     onError: (error: Error) => {
@@ -698,7 +715,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     mutationFn: (id: number) =>
       spoolmanMode ? api.restoreSpoolmanInventorySpool(id) : api.restoreSpool(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: spoolsQueryKey });
+      refreshSpoolQueries();
       showToast(t('inventory.spoolRestored'), 'success');
     },
     onError: (error: Error) => {
@@ -948,9 +965,15 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     // spools that haven't been assigned a storage location yet.
     if (storageLocationFilter) {
       if (storageLocationFilter === '__none__') {
-        filtered = filtered.filter((s) => !s.storage_location?.trim());
+        filtered = filtered.filter((s) => !s.location_id && !s.storage_location?.trim());
       } else {
-        filtered = filtered.filter((s) => s.storage_location?.trim() === storageLocationFilter);
+        const locId = Number(storageLocationFilter);
+        const locName = storageLocations.find((l) => l.id === locId)?.name?.trim().toLowerCase();
+        filtered = filtered.filter((s) => {
+          if (s.location_id != null) return s.location_id === locId;
+          if (locName) return (s.storage_location || '').trim().toLowerCase() === locName;
+          return false;
+        });
       }
     }
 
@@ -967,10 +990,21 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     }
 
     return filtered;
-  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, categoryFilter, spoolFilter, stockFilter, storageLocationFilter, search, lowStockThreshold]);
+  }, [spools, archiveFilter, usageFilter, materialFilter, brandFilter, categoryFilter, spoolFilter, stockFilter, storageLocationFilter, search, lowStockThreshold, storageLocations]);
 
   // Reset page on filter changes
   const resetPage = () => setPageIndex(0);
+
+  const setStorageLocationFilter = useCallback((value: string) => {
+    setSearchParams((prev) => {
+      prev.delete('location_id');
+      if (value) {
+        prev.set('location_id', value);
+      }
+      return prev;
+    }, { replace: true });
+    resetPage();
+  }, [setSearchParams]);
 
   // Unique values for filter dropdowns
   const uniqueMaterials = [...new Set(spools?.map((s) => s.material) || [])].sort();
@@ -984,8 +1018,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   });
   // #1400: storage-location distinct values. `.trim()` so accidental
   // trailing whitespace doesn't show up as a separate option.
-  const uniqueStorageLocations = [...new Set(spools?.map((s) => s.storage_location?.trim()).filter(Boolean) as string[] || [])].sort();
-  const hasUnsetStorageLocation = (spools ?? []).some((s) => !s.storage_location?.trim());
+  const hasUnsetStorageLocation = (spools ?? []).some((s) => !s.location_id && !s.storage_location?.trim());
 
   // Check if any filters are non-default
   const hasActiveFilters = archiveFilter !== 'active' || usageFilter !== 'all' || !!materialFilter || !!brandFilter || !!categoryFilter || !!spoolFilter || !!storageLocationFilter || stockFilter !== 'all' || !!search;
@@ -1111,9 +1144,12 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     setBrandFilter('');
     setCategoryFilter('');
     setSpoolFilter('');
-    setStorageLocationFilter('');
     setStockFilter('all');
     setSearch('');
+    setSearchParams((prev) => {
+      prev.delete('location_id');
+      return prev;
+    }, { replace: true });
     resetPage();
   };
 
@@ -1150,6 +1186,10 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           >
             {exportingCsv ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             {t('inventory.csv.exportButton', 'Export CSV')}
+          </Button>
+          <Button variant="secondary" onClick={() => setLocationsModalOpen(true)}>
+            <MapPin className="w-4 h-4" />
+            {t('locations.manage')}
           </Button>
           <Button
             variant="secondary"
@@ -1577,10 +1617,10 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
         {/* Storage location dropdown chip (#1400) — only render when at
             least one spool carries a storage location, otherwise it's noise
             (matches the category chip pattern). */}
-        {(uniqueStorageLocations.length > 0 || storageLocationFilter) && (
+        {(storageLocations.length > 0 || storageLocationFilter) && (
           <select
             value={storageLocationFilter}
-            onChange={(e) => { setStorageLocationFilter(e.target.value); resetPage(); }}
+            onChange={(e) => { setStorageLocationFilter(e.target.value); }}
             className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer focus:outline-none ${
               storageLocationFilter
                 ? 'bg-bambu-green/20 text-bambu-green border-bambu-green/30'
@@ -1588,8 +1628,8 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
             }`}
           >
             <option value="">{t('inventory.storageLocation')}</option>
-            {uniqueStorageLocations.map((loc) => (
-              <option key={loc} value={loc}>{loc}</option>
+            {storageLocations.map((loc) => (
+              <option key={loc.id} value={String(loc.id)}>{loc.name}</option>
             ))}
             {hasUnsetStorageLocation && (
               <option value="__none__">{t('inventory.storageLocationNone')}</option>
@@ -1989,6 +2029,12 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           }}
         />
       )}
+
+      <LocationsModal
+        open={locationsModalOpen}
+        onClose={() => setLocationsModalOpen(false)}
+        onPickLocation={(id) => setStorageLocationFilter(String(id))}
+      />
     </div>
   );
 }

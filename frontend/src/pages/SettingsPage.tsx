@@ -36,7 +36,6 @@ import { TwoFactorSettings } from '../components/TwoFactorSettings';
 import { OIDCProviderSettings } from '../components/OIDCProviderSettings';
 import { SecurityStatusCard } from '../components/SecurityStatusCard';
 import { APIBrowser } from '../components/APIBrowser';
-import { Toggle } from '../components/Toggle';
 import { virtualPrinterApi, spoolbuddyApi } from '../api/client';
 import { defaultNavItems, getDefaultView, setDefaultView } from '../components/Layout';
 import { availableLanguages } from '../i18n';
@@ -87,11 +86,12 @@ registerSettingsSearch({ labelKey: 'settings.tabs.spoolbuddy', tab: 'spoolbuddy'
 registerSettingsSearch({ labelKey: 'settings.currentUser', tab: 'users', subTab: 'users', keywords: 'current user profile password change', anchor: 'card-currentuser' });
 registerSettingsSearch({ labelKey: 'settings.users', tab: 'users', subTab: 'users', keywords: 'users accounts list', anchor: 'card-users' });
 registerSettingsSearch({ labelKey: 'settings.groups', tab: 'users', subTab: 'users', keywords: 'groups roles permissions administrators operators viewers', anchor: 'card-groups' });
+registerSettingsSearch({ labelKey: 'settings.sessionPolicy.title', labelFallback: 'Session Policy', tab: 'users', subTab: 'users', keywords: 'session timeout expiry logout remember me jwt token lifetime', anchor: 'card-session-policy' });
 registerSettingsSearch({ labelKey: 'settings.email.smtpSettings', labelFallback: 'SMTP Configuration', tab: 'users', subTab: 'email', keywords: 'smtp email send server port password auth starttls ssl', anchor: 'card-smtp' });
 registerSettingsSearch({ labelKey: 'settings.ldap.title', labelFallback: 'LDAP Authentication', tab: 'users', subTab: 'ldap', keywords: 'ldap active directory ad authentication bind dn search base group mapping', anchor: 'card-ldap' });
 registerSettingsSearch({ labelKey: 'settings.tabs.backup', tab: 'backup', keywords: 'backup github restore download cloud sync profiles archives', anchor: 'card-backup' });
-// Sidebar Links (external links settings is rendered in the General tab)
-registerSettingsSearch({ labelKey: 'externalLinks.title', labelFallback: 'Sidebar Links', tab: 'general', keywords: 'sidebar links external custom navigation url add', anchor: 'card-sidebar-links' });
+// Sidebar (system pages and external links settings is rendered in the General tab)
+registerSettingsSearch({ labelKey: 'externalLinks.sidebarLayout', labelFallback: 'Sidebar', tab: 'general', keywords: 'sidebar layout links pages hide show external custom navigation url add', anchor: 'card-sidebar-links' });
 // Filament tab — integrations
 registerSettingsSearch({ labelKey: 'settings.filamentTracking', tab: 'filament', keywords: 'spoolman filament tracking inventory sync remote integration', anchor: 'card-spoolman' });
 registerSettingsSearch({ labelKey: 'settings.catalog.spoolCatalog', labelFallback: 'Spool Catalog', tab: 'filament', keywords: 'spool catalog entries brand material reset import export', anchor: 'card-spool-catalog' });
@@ -262,42 +262,6 @@ export function SettingsPage() {
     setDefaultViewState(path);
     setDefaultView(path);
     showToast(t('settings.toast.settingsSaved'), 'success');
-  };
-
-  const handleResetSidebarOrder = () => {
-    localStorage.removeItem('sidebarOrder');
-    window.location.reload();
-  };
-
-  const isDefaultSidebarEnabled = !!localSettings?.default_sidebar_order;
-
-  const handleToggleDefaultSidebarOrder = async (enabled: boolean) => {
-    try {
-      if (enabled) {
-        let orderArr: string[];
-        const stored = localStorage.getItem('sidebarOrder');
-        try {
-          orderArr = stored ? JSON.parse(stored) : defaultNavItems.map(i => i.id);
-        } catch {
-          orderArr = defaultNavItems.map(i => i.id);
-        }
-        if (!Array.isArray(orderArr) || orderArr.length === 0) {
-          orderArr = defaultNavItems.map(i => i.id);
-        }
-        const payload = JSON.stringify({ order: orderArr });
-        await api.updateSettings({ default_sidebar_order: payload });
-        setLocalSettings(prev => prev ? { ...prev, default_sidebar_order: payload } : prev);
-        showToast(t('settings.sidebarDefaultSet'), 'success');
-      } else {
-        await api.updateSettings({ default_sidebar_order: '' });
-        setLocalSettings(prev => prev ? { ...prev, default_sidebar_order: '' } : prev);
-        showToast(t('settings.sidebarDefaultCleared'), 'success');
-      }
-      queryClient.invalidateQueries({ queryKey: ['settings'] });
-      queryClient.invalidateQueries({ queryKey: ['default-sidebar-order'] });
-    } catch {
-      showToast(t('settings.sidebarDefaultFailed'), 'error');
-    }
   };
 
   const { data: settings, isLoading } = useQuery({
@@ -1012,7 +976,8 @@ export function SettingsPage() {
       (settings.default_nozzle_offset_cali ?? true) !== (localSettings.default_nozzle_offset_cali ?? true) ||
       (settings.stagger_group_size ?? 2) !== (localSettings.stagger_group_size ?? 2) ||
       (settings.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
-      (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false);
+      (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
+      (settings.session_max_hours ?? 24) !== (localSettings.session_max_hours ?? 24);
 
     if (!hasChanges) {
       return;
@@ -1099,6 +1064,7 @@ export function SettingsPage() {
         stagger_group_size: localSettings.stagger_group_size,
         stagger_interval_minutes: localSettings.stagger_interval_minutes,
         require_plate_clear: localSettings.require_plate_clear,
+        session_max_hours: localSettings.session_max_hours,
       };
       updateMutation.mutate(settingsToSave);
     }, 500);
@@ -1604,35 +1570,6 @@ export function SettingsPage() {
                 <p className="text-xs text-bambu-gray mt-1">
                   {t('settings.defaultPrinterDescription')}
                 </p>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white">{t('settings.sidebarOrder')}</p>
-                  <p className="text-sm text-bambu-gray">
-                    {t('settings.sidebarOrderDescription')}
-                    {authEnabled && hasPermission('settings:update') && ` ${t('settings.sidebarOrderSetDefaultHint')}`}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleResetSidebarOrder}
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    {t('settings.reset')}
-                  </Button>
-                  {authEnabled && hasPermission('settings:update') && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-bambu-gray whitespace-nowrap">{t('settings.setDefault')}</span>
-                      <Toggle
-                        checked={isDefaultSidebarEnabled}
-                        onChange={handleToggleDefaultSidebarOrder}
-                        disabled={isLoading}
-                      />
-                    </div>
-                  )}
-                </div>
               </div>
             </CardContent>
           </Card>
@@ -2256,13 +2193,168 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Data Management */}
+          <Card id="card-data">
+            <CardHeader>
+              <h2 className="text-lg font-semibold text-white">{t('settings.dataManagement')}</h2>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white">{t('settings.clearNotificationLogs')}</p>
+                  <p className="text-sm text-bambu-gray">
+                    {t('settings.clearNotificationLogsDescription')}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowClearLogsConfirm(true)}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {t('common.clear')}
+                </Button>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white">{t('settings.resetUiPreferences')}</p>
+                  <p className="text-sm text-bambu-gray">
+                    {t('settings.resetUiPreferencesDescription')}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowClearStorageConfirm(true)}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {t('settings.reset')}
+                </Button>
+              </div>
+              <div className="pt-4 border-t border-bambu-dark-tertiary">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white">{t('settings.storageUsage', 'Storage Usage')}</p>
+                    <p className="text-sm text-bambu-gray">
+                      {t('settings.storageUsageDescription', 'Breakdown of data usage by category')}
+                    </p>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleStorageUsageRefresh}
+                    disabled={storageUsageFetching || storageUsageRefreshing}
+                  >
+                    <RefreshCw
+                      className={`w-4 h-4 ${storageUsageFetching || storageUsageRefreshing ? 'animate-spin' : ''}`}
+                    />
+                    {t('common.refresh', 'Refresh')}
+                  </Button>
+                </div>
+                <div className="mt-3">
+                  {storageUsageLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-bambu-gray">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t('common.loading', 'Loading')}
+                    </div>
+                  ) : storageUsage ? (
+                    <>
+                      <div className="w-full h-3 bg-bambu-dark rounded-full overflow-hidden flex">
+                        {storageUsage.categories
+                          .filter((category) => category.bytes > 0)
+                          .map((category, index) => (
+                            <div
+                              key={category.key}
+                              className={`${getStorageColor(category.key, index)} h-full`}
+                              style={{ width: `${category.percent_of_total}%` }}
+                              title={`${category.label}: ${category.formatted}`}
+                            />
+                          ))}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        {storageUsage.categories
+                          .filter((category) => category.bytes > 0)
+                          .map((category, index) => (
+                            <div key={category.key} className="flex items-center gap-2 text-xs">
+                              <span
+                                className={`w-3 h-3 rounded-full ${getStorageColor(category.key, index)}`}
+                              />
+                              <span className="text-bambu-gray">{category.label}</span>
+                              <span className="text-white">{category.formatted}</span>
+                              <span className="text-bambu-gray">({category.percent_of_total.toFixed(1)}%)</span>
+                            </div>
+                          ))}
+                      </div>
+                      <div className="mt-2 text-xs text-bambu-gray">
+                        {t('settings.storageUsageTotal', 'Total')}: <span className="text-white">{storageUsage.total_formatted}</span>
+                        {storageUsage.scan_errors > 0 && (
+                          <span className="ml-2 text-amber-400">
+                            {t('settings.storageUsageErrors', 'Scan errors')}: {storageUsage.scan_errors}
+                          </span>
+                        )}
+                      </div>
+                      {storageUsage.other_breakdown?.length > 0 && (
+                        <div className="mt-4">
+                          <p className="text-xs text-bambu-gray mb-2">
+                            {t('settings.storageUsageOtherBreakdown', 'Other breakdown')}
+                          </p>
+                          <div className="space-y-2">
+                            {storageUsage.other_breakdown.map((item) => (
+                              <div key={`${item.bucket}-${item.kind}`} className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-white">{item.label}</span>
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full border ${
+                                      item.kind === 'system'
+                                        ? 'border-slate-500 text-slate-300'
+                                        : 'border-bambu-green text-bambu-green'
+                                    }`}
+                                  >
+                                    {item.kind === 'system'
+                                      ? t('settings.storageUsageSystem', 'System')
+                                      : t('settings.storageUsageData', 'Data')}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-bambu-gray">
+                                  <span className="text-white">{item.formatted}</span>
+                                  <span>({item.percent_of_total.toFixed(1)}%)</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-bambu-gray">
+                      {t('settings.storageUsageUnavailable', 'Storage usage data is unavailable')}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-between pt-4 border-t border-bambu-dark-tertiary">
+                <div>
+                  <p className="text-white">{t('settings.backupRestore')}</p>
+                  <p className="text-sm text-bambu-gray">
+                    {t('settings.backupRestoreDescription')}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleTabChange('backup')}
+                >
+                  <Database className="w-4 h-4" />
+                  {t('settings.goToBackup')}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Third Column - Sidebar Links & Updates */}
+        {/* Third Column - Updates & Sidebar Links */}
         <div className="space-y-3 flex-1 lg:max-w-sm">
-          {/* Sidebar Links */}
-          <ExternalLinksSettings />
-
           <Card id="card-updates">
             <CardHeader>
               <h2 className="text-lg font-semibold text-white">{t('settings.updates')}</h2>
@@ -2443,163 +2535,8 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Data Management */}
-          <Card id="card-data">
-            <CardHeader>
-              <h2 className="text-lg font-semibold text-white">{t('settings.dataManagement')}</h2>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white">{t('settings.clearNotificationLogs')}</p>
-                  <p className="text-sm text-bambu-gray">
-                    {t('settings.clearNotificationLogsDescription')}
-                  </p>
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setShowClearLogsConfirm(true)}
-                >
-                  <Trash2 className="w-4 h-4" />
-                  {t('common.clear')}
-                </Button>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white">{t('settings.resetUiPreferences')}</p>
-                  <p className="text-sm text-bambu-gray">
-                    {t('settings.resetUiPreferencesDescription')}
-                  </p>
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setShowClearStorageConfirm(true)}
-                >
-                  <Trash2 className="w-4 h-4" />
-                  {t('settings.reset')}
-                </Button>
-              </div>
-              <div className="pt-4 border-t border-bambu-dark-tertiary">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-white">{t('settings.storageUsage', 'Storage Usage')}</p>
-                    <p className="text-sm text-bambu-gray">
-                      {t('settings.storageUsageDescription', 'Breakdown of data usage by category')}
-                    </p>
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleStorageUsageRefresh}
-                    disabled={storageUsageFetching || storageUsageRefreshing}
-                  >
-                    <RefreshCw
-                      className={`w-4 h-4 ${storageUsageFetching || storageUsageRefreshing ? 'animate-spin' : ''}`}
-                    />
-                    {t('common.refresh', 'Refresh')}
-                  </Button>
-                </div>
-                <div className="mt-3">
-                  {storageUsageLoading ? (
-                    <div className="flex items-center gap-2 text-sm text-bambu-gray">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      {t('common.loading', 'Loading')}
-                    </div>
-                  ) : storageUsage ? (
-                    <>
-                      <div className="w-full h-3 bg-bambu-dark rounded-full overflow-hidden flex">
-                        {storageUsage.categories
-                          .filter((category) => category.bytes > 0)
-                          .map((category, index) => (
-                            <div
-                              key={category.key}
-                              className={`${getStorageColor(category.key, index)} h-full`}
-                              style={{ width: `${category.percent_of_total}%` }}
-                              title={`${category.label}: ${category.formatted}`}
-                            />
-                          ))}
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-3">
-                        {storageUsage.categories
-                          .filter((category) => category.bytes > 0)
-                          .map((category, index) => (
-                            <div key={category.key} className="flex items-center gap-2 text-xs">
-                              <span
-                                className={`w-3 h-3 rounded-full ${getStorageColor(category.key, index)}`}
-                              />
-                              <span className="text-bambu-gray">{category.label}</span>
-                              <span className="text-white">{category.formatted}</span>
-                              <span className="text-bambu-gray">({category.percent_of_total.toFixed(1)}%)</span>
-                            </div>
-                          ))}
-                      </div>
-                      <div className="mt-2 text-xs text-bambu-gray">
-                        {t('settings.storageUsageTotal', 'Total')}: <span className="text-white">{storageUsage.total_formatted}</span>
-                        {storageUsage.scan_errors > 0 && (
-                          <span className="ml-2 text-amber-400">
-                            {t('settings.storageUsageErrors', 'Scan errors')}: {storageUsage.scan_errors}
-                          </span>
-                        )}
-                      </div>
-                      {storageUsage.other_breakdown?.length > 0 && (
-                        <div className="mt-4">
-                          <p className="text-xs text-bambu-gray mb-2">
-                            {t('settings.storageUsageOtherBreakdown', 'Other breakdown')}
-                          </p>
-                          <div className="space-y-2">
-                            {storageUsage.other_breakdown.map((item) => (
-                              <div key={`${item.bucket}-${item.kind}`} className="flex items-center justify-between text-xs">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-white">{item.label}</span>
-                                  <span
-                                    className={`px-2 py-0.5 rounded-full border ${
-                                      item.kind === 'system'
-                                        ? 'border-slate-500 text-slate-300'
-                                        : 'border-bambu-green text-bambu-green'
-                                    }`}
-                                  >
-                                    {item.kind === 'system'
-                                      ? t('settings.storageUsageSystem', 'System')
-                                      : t('settings.storageUsageData', 'Data')}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2 text-bambu-gray">
-                                  <span className="text-white">{item.formatted}</span>
-                                  <span>({item.percent_of_total.toFixed(1)}%)</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <p className="text-sm text-bambu-gray">
-                      {t('settings.storageUsageUnavailable', 'Storage usage data is unavailable')}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center justify-between pt-4 border-t border-bambu-dark-tertiary">
-                <div>
-                  <p className="text-white">{t('settings.backupRestore')}</p>
-                  <p className="text-sm text-bambu-gray">
-                    {t('settings.backupRestoreDescription')}
-                  </p>
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => handleTabChange('backup')}
-                >
-                  <Database className="w-4 h-4" />
-                  {t('settings.goToBackup')}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Sidebar Links */}
+          <ExternalLinksSettings />
         </div>
       </div>
       )}
@@ -5117,8 +5054,73 @@ export function SettingsPage() {
 
           {authEnabled && (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              {/* Left Column: Current User + User List */}
+              {/* Left Column: Session Policy + Current User + User List */}
               <div className="space-y-3">
+                {/* Session Policy (#1706) — admin-set ceiling for user session lifetime */}
+                <Card id="card-session-policy">
+                  <CardHeader>
+                    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                      <Lock className="w-5 h-5 text-bambu-green" />
+                      {t('settings.sessionPolicy.title')}
+                    </h3>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-bambu-gray mb-4">
+                      {t('settings.sessionPolicy.description')}
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                      {[
+                        { hours: 24, labelKey: 'settings.sessionPolicy.preset24h' },
+                        { hours: 168, labelKey: 'settings.sessionPolicy.preset7d' },
+                        { hours: 720, labelKey: 'settings.sessionPolicy.preset30d' },
+                      ].map((preset) => {
+                        const current = localSettings?.session_max_hours ?? 24;
+                        const isActive = current === preset.hours;
+                        return (
+                          <button
+                            key={preset.hours}
+                            type="button"
+                            onClick={() => updateSetting('session_max_hours', preset.hours)}
+                            disabled={authEnabled && !hasPermission('settings:update')}
+                            className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                              isActive
+                                ? 'bg-bambu-green text-white'
+                                : 'bg-bambu-dark-tertiary text-bambu-gray hover:text-white hover:bg-bambu-dark'
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          >
+                            {t(preset.labelKey)}
+                          </button>
+                        );
+                      })}
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min={1}
+                          max={720}
+                          value={localSettings?.session_max_hours ?? 24}
+                          onChange={(e) => {
+                            const raw = parseInt(e.target.value, 10);
+                            if (Number.isNaN(raw)) return;
+                            updateSetting('session_max_hours', Math.max(1, Math.min(720, raw)));
+                          }}
+                          disabled={authEnabled && !hasPermission('settings:update')}
+                          aria-label={t('settings.sessionPolicy.customHoursLabel')}
+                          className="w-20 px-2 py-2 bg-bambu-dark-tertiary text-white text-sm rounded-lg border border-bambu-dark-tertiary focus:border-bambu-green focus:outline-none disabled:opacity-50"
+                        />
+                        <span className="text-sm text-bambu-gray">{t('settings.sessionPolicy.hoursSuffix')}</span>
+                      </div>
+                    </div>
+                    {(localSettings?.session_max_hours ?? 24) > 24 && (
+                      <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+                        <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+                        <p className="text-xs text-yellow-200">
+                          {t('settings.sessionPolicy.warning')}
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
                 {/* Current User Card */}
                 {user && (
                   <Card>

@@ -507,6 +507,8 @@ export interface PrinterStatus {
   awaiting_plate_clear: boolean;
   // AMS drying support
   supports_drying: boolean;
+  // Active chamber heater (responds to M141). True only for H2C/H2D/H2DPro/H2S/X2D.
+  supports_chamber_heater?: boolean;
 }
 
 export interface PrinterCreate {
@@ -3561,6 +3563,11 @@ export const api = {
 
   setBedTemperature: (printerId: number, target: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/temperature/bed?target=${target}`, {
+      method: 'POST',
+    }),
+
+  setChamberTemperature: (printerId: number, target: number) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/temperature/chamber?target=${target}`, {
       method: 'POST',
     }),
 

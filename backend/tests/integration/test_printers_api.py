@@ -3330,6 +3330,90 @@ class TestSetBedTemperatureAPI:
         assert response.status_code == 500
 
 
+class TestSetChamberTemperatureAPI:
+    """Integration tests for POST /printers/{id}/temperature/chamber.
+
+    Gated on supports_chamber_heater(model). Sensor-only models that report
+    chamber temp but have no heater (X1C, X1E, P2S) get a 400 at the route
+    level rather than a silent no-op at the firmware level.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_not_found(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/printers/99999/temperature/chamber?target=45")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("sensor_only_model", ["X1C", "X1E", "P2S"])
+    async def test_sensor_only_model_rejected(self, async_client: AsyncClient, printer_factory, sensor_only_model):
+        """Models with sensor but no heater must 400 before any client call."""
+        printer = await printer_factory(name="P", model=sensor_only_model)
+        mock_client = MagicMock()
+        mock_client.set_chamber_temperature.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/chamber?target=45")
+        assert response.status_code == 400
+        # Client must NOT be called for sensor-only models.
+        mock_client.set_chamber_temperature.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_not_connected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="H2D")
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = None
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/chamber?target=45")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("heater_model", ["H2C", "H2D", "H2DPRO", "H2S", "X2D"])
+    async def test_success_per_heater_model(self, async_client: AsyncClient, printer_factory, heater_model):
+        """All five heater-equipped models accept the command."""
+        printer = await printer_factory(name="P", model=heater_model)
+        mock_client = MagicMock()
+        mock_client.set_chamber_temperature.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/chamber?target=45")
+        assert response.status_code == 200
+        mock_client.set_chamber_temperature.assert_called_once_with(45)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_target_zero_allowed(self, async_client: AsyncClient, printer_factory):
+        """target=0 turns the chamber heater off."""
+        printer = await printer_factory(name="P", model="H2D")
+        mock_client = MagicMock()
+        mock_client.set_chamber_temperature.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/chamber?target=0")
+        assert response.status_code == 200
+        mock_client.set_chamber_temperature.assert_called_once_with(0)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_target_out_of_range_rejected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="H2D")
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/chamber?target=100")
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_client_failure_returns_500(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="H2D")
+        mock_client = MagicMock()
+        mock_client.set_chamber_temperature.return_value = False
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/chamber?target=45")
+        assert response.status_code == 500
+
+
 class TestSetFanSpeedAPI:
     """Integration tests for POST /printers/{id}/fan-speed (#1661).
 

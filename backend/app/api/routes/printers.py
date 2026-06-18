@@ -52,6 +52,7 @@ from backend.app.services.printer_manager import (
     get_derived_status_name,
     printer_manager,
     resolve_plate_id,
+    supports_chamber_heater,
     supports_chamber_temp,
     supports_drying,
 )
@@ -725,6 +726,7 @@ async def get_printer_status(
         developer_mode=state.developer_mode if state else None,
         awaiting_plate_clear=printer_manager.is_awaiting_plate_clear(printer_id),
         supports_drying=supports_drying(printer.model, state.firmware_version),
+        supports_chamber_heater=supports_chamber_heater(printer.model),
         current_archive_id=current_archive_id,
         current_plate_id=current_plate_id,
         fila_switch=(
@@ -2853,6 +2855,39 @@ async def set_bed_temperature(
         raise HTTPException(500, "Failed to set bed temperature")
 
     return {"success": True, "message": f"Bed temperature set to {target}°C"}
+
+
+@router.post("/{printer_id}/temperature/chamber")
+async def set_chamber_temperature(
+    printer_id: int,
+    target: int = Query(..., ge=0, le=60, description="Target chamber temperature in Celsius; 0 turns heating off"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set the chamber target temperature.
+
+    Gated on `supports_chamber_heater(model)`: only H2C, H2D, H2D Pro, H2S,
+    and X2D have an active chamber heater. Sensor-only models (X1C, X1E,
+    P2S) report chamber temp but silently swallow M141, so we 400 here
+    rather than send a no-op.
+    """
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    if not supports_chamber_heater(printer.model):
+        raise HTTPException(400, f"Model {printer.model or 'unknown'} does not have an active chamber heater")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.set_chamber_temperature(target)
+    if not success:
+        raise HTTPException(500, "Failed to set chamber temperature")
+
+    return {"success": True, "message": f"Chamber temperature set to {target}°C"}
 
 
 @router.post("/{printer_id}/fan-speed")

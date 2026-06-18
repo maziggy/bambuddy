@@ -2234,6 +2234,16 @@ function PrinterCard({
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
   });
 
+  const chamberTemperatureMutation = useMutation({
+    mutationFn: (target: number) => api.setChamberTemperature(printer.id, target),
+    onSuccess: (result) => {
+      setStatusControlMenu(null);
+      showToast(result.message);
+      queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
+    },
+    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
+  });
+
   const fanSpeedMutation = useMutation({
     mutationFn: ({ fan, speed }: { fan: 'part' | 'aux' | 'chamber'; speed: number }) =>
       api.setFanSpeed(printer.id, fan, speed),
@@ -3605,15 +3615,45 @@ function PrinterCard({
                         />
                       )}
                     </div>
-                    {status.temperatures.chamber !== undefined && (
-                      <div className="text-center px-2 py-1.5 bg-bambu-dark rounded-lg flex-1 flex flex-col justify-center items-center">
-                        <HeaterThermometer className="w-3.5 h-3.5 mb-0.5" color="text-green-400" isHeating={chamberHeating} />
-                        <p className="text-[9px] text-bambu-gray">{t('printers.temperatures.chamber')}</p>
-                        <p className="text-[11px] text-white">
-                          {Math.round(status.temperatures.chamber || 0)}°C
-                        </p>
-                      </div>
-                    )}
+                    {status.temperatures.chamber !== undefined && (() => {
+                      // Sensor-only models (X1C, X1E, P2S) show the chamber reading
+                      // but can't act on M141, so we keep the card read-only there.
+                      const hasChamberHeater = status.supports_chamber_heater === true;
+                      return (
+                        <div
+                          className={hasChamberHeater
+                            ? statusControlClass
+                            : 'text-center px-2 py-1.5 bg-bambu-dark rounded-lg flex-1 flex flex-col justify-center items-center'}
+                          title={hasChamberHeater ? statusControlTitle : undefined}
+                          onClick={hasChamberHeater
+                            ? () => canUseStatusControls && setStatusControlMenu(statusControlMenu === 'chamber-temp' ? null : 'chamber-temp')
+                            : undefined}
+                        >
+                          <HeaterThermometer className="w-3.5 h-3.5 mb-0.5" color="text-green-400" isHeating={chamberHeating} />
+                          <p className="text-[9px] text-bambu-gray">{t('printers.temperatures.chamber')}</p>
+                          <p className="text-[11px] text-white">
+                            {Math.round(status.temperatures.chamber || 0)}°C
+                          </p>
+                          {hasChamberHeater && statusControlMenu === 'chamber-temp' && (
+                            <IndicatorControlPopover
+                              title="Set Chamber Temperature"
+                              unit="°C"
+                              customMin={0}
+                              customMax={60}
+                              isPending={chamberTemperatureMutation.isPending}
+                              options={[
+                                { label: 'Off', value: 0 },
+                                { label: '35 C', value: 35 },
+                                { label: '45 C', value: 45 },
+                                { label: '60 C', value: 60 },
+                              ]}
+                              onClose={() => setStatusControlMenu(null)}
+                              onSubmit={(target) => chamberTemperatureMutation.mutate(target)}
+                            />
+                          )}
+                        </div>
+                      );
+                    })()}
                     {/* Active nozzle indicator for dual-nozzle printers */}
                     {isDualNozzle && (
                       <DualNozzleHoverCard

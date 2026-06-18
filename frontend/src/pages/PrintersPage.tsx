@@ -4054,6 +4054,7 @@ function PrinterCard({
                       {(() => (
                         <div className="relative">
                           <button
+                            data-testid="speed-control"
                             onClick={() => setShowSpeedMenu(showSpeedMenu === printer.id ? null : printer.id)}
                             disabled={!isPrinting || !hasPermission('printers:control')}
                             className={`${iconControlClass} ${

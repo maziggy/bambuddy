@@ -177,6 +177,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
   return (
     <div
       ref={triggerRef}
+      data-testid="filament-slot"
       className={`relative ${className}`}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}

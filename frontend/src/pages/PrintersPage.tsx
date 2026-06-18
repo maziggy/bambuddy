@@ -3,6 +3,14 @@ import { createPortal } from 'react-dom';
 import { compareFwVersions } from '../utils/firmwareVersion';
 import { formatPrintName } from '../utils/printName';
 import { computePopoverPosition } from '../utils/popoverPosition';
+import {
+  BED_TEMP_DEFAULTS,
+  CHAMBER_TEMP_DEFAULTS,
+  FAN_SPEED_DEFAULTS,
+  NOZZLE_TEMP_DEFAULTS,
+  buildPresetOptions,
+  parsePresetTriple,
+} from '../utils/temperatureFanPresets';
 
 // AMS drying popover dimensions — w-[240px] on the popover, estimated height
 // covers header + filament select + temp slider + duration + rotate-tray
@@ -1269,12 +1277,7 @@ function IndicatorControlPopover({
   );
 }
 
-const NOZZLE_TEMPERATURE_OPTIONS = [
-  { label: 'Off', value: 0 },
-  { label: '120 C', value: 120 },
-  { label: '220 C', value: 220 },
-  { label: '260 C', value: 260 },
-];
+const NOZZLE_TEMPERATURE_OPTIONS = buildPresetOptions(NOZZLE_TEMP_DEFAULTS, 'C');
 
 function NozzleTemperatureControlBox({
   label,
@@ -1283,6 +1286,7 @@ function NozzleTemperatureControlBox({
   isActive,
   isPending,
   onSubmit,
+  options = NOZZLE_TEMPERATURE_OPTIONS,
 }: {
   label: string;
   current?: number;
@@ -1290,6 +1294,7 @@ function NozzleTemperatureControlBox({
   isActive: boolean;
   isPending?: boolean;
   onSubmit: (value: number) => void;
+  options?: Array<{ label: string; value: number }>;
 }) {
   const [customValue, setCustomValue] = useState('');
 
@@ -1309,7 +1314,7 @@ function NozzleTemperatureControlBox({
         </span>
       </div>
       <div className="grid grid-cols-2 gap-1">
-        {NOZZLE_TEMPERATURE_OPTIONS.map(option => (
+        {options.map(option => (
           <button
             key={`${label}-${option.value}`}
             type="button"
@@ -1689,6 +1694,10 @@ function PrinterCard({
   isSelected = false,
   onToggleSelect,
   onOpenCompactCard,
+  nozzleTempPresets = NOZZLE_TEMP_DEFAULTS,
+  bedTempPresets = BED_TEMP_DEFAULTS,
+  chamberTempPresets = CHAMBER_TEMP_DEFAULTS,
+  fanSpeedPresets = FAN_SPEED_DEFAULTS,
 }: {
   printer: Printer;
   hideIfDisconnected?: boolean;
@@ -1723,6 +1732,10 @@ function PrinterCard({
   isSelected?: boolean;
   onToggleSelect?: (id: number) => void;
   onOpenCompactCard?: (id: number) => void;
+  nozzleTempPresets?: readonly [number, number, number];
+  bedTempPresets?: readonly [number, number, number];
+  chamberTempPresets?: readonly [number, number, number];
+  fanSpeedPresets?: readonly [number, number, number];
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -3562,6 +3575,7 @@ function PrinterCard({
                                 isActive={activeNozzle === 'L'}
                                 isPending={nozzleTemperatureMutation.isPending}
                                 onSubmit={(target) => nozzleTemperatureMutation.mutate({ target, nozzle: 1 })}
+                                options={buildPresetOptions(nozzleTempPresets, 'C')}
                               />
                               <NozzleTemperatureControlBox
                                 label="Right Temp"
@@ -3570,6 +3584,7 @@ function PrinterCard({
                                 isActive={activeNozzle === 'R'}
                                 isPending={nozzleTemperatureMutation.isPending}
                                 onSubmit={(target) => nozzleTemperatureMutation.mutate({ target, nozzle: 0 })}
+                                options={buildPresetOptions(nozzleTempPresets, 'C')}
                               />
                             </div>
                           </IndicatorControlPopover>
@@ -3580,7 +3595,7 @@ function PrinterCard({
                             customMin={0}
                             customMax={320}
                             isPending={nozzleTemperatureMutation.isPending}
-                            options={NOZZLE_TEMPERATURE_OPTIONS}
+                            options={buildPresetOptions(nozzleTempPresets, 'C')}
                             onClose={() => setStatusControlMenu(null)}
                             onSubmit={(target) => nozzleTemperatureMutation.mutate({ target, nozzle: status.active_extruder ?? 0 })}
                           />
@@ -3604,12 +3619,7 @@ function PrinterCard({
                           customMin={0}
                           customMax={140}
                           isPending={bedTemperatureMutation.isPending}
-                          options={[
-                            { label: 'Off', value: 0 },
-                            { label: '55 C', value: 55 },
-                            { label: '75 C', value: 75 },
-                            { label: '90 C', value: 90 },
-                          ]}
+                          options={buildPresetOptions(bedTempPresets, 'C')}
                           onClose={() => setStatusControlMenu(null)}
                           onSubmit={(target) => bedTemperatureMutation.mutate(target)}
                         />
@@ -3641,12 +3651,7 @@ function PrinterCard({
                               customMin={0}
                               customMax={60}
                               isPending={chamberTemperatureMutation.isPending}
-                              options={[
-                                { label: 'Off', value: 0 },
-                                { label: '35 C', value: 35 },
-                                { label: '45 C', value: 45 },
-                                { label: '60 C', value: 60 },
-                              ]}
+                              options={buildPresetOptions(chamberTempPresets, 'C')}
                               onClose={() => setStatusControlMenu(null)}
                               onSubmit={(target) => chamberTemperatureMutation.mutate(target)}
                             />
@@ -3726,12 +3731,7 @@ function PrinterCard({
                               customMin={0}
                               customMax={100}
                               isPending={fanSpeedMutation.isPending}
-                              options={[
-                                { label: 'Off', value: 0 },
-                                { label: '50 %', value: 50 },
-                                { label: '75 %', value: 75 },
-                                { label: '100 %', value: 100 },
-                              ]}
+                              options={buildPresetOptions(fanSpeedPresets, '%')}
                               onClose={() => setStatusControlMenu(null)}
                               onSubmit={(speed) => fanSpeedMutation.mutate({ fan: key as 'part' | 'aux' | 'chamber', speed })}
                             />
@@ -7287,6 +7287,26 @@ export function PrintersPage() {
     queryFn: api.getUiPreferences,
   });
 
+  // Parse user-configured temperature/fan presets once, with defensive fallback
+  // to built-in defaults on parse failure (validators on the backend already
+  // reject malformed writes, so this is just forward-compat).
+  const effectiveNozzleTempPresets = useMemo(
+    () => parsePresetTriple(settings?.nozzle_temp_presets, NOZZLE_TEMP_DEFAULTS, 0, 320),
+    [settings?.nozzle_temp_presets],
+  );
+  const effectiveBedTempPresets = useMemo(
+    () => parsePresetTriple(settings?.bed_temp_presets, BED_TEMP_DEFAULTS, 0, 140),
+    [settings?.bed_temp_presets],
+  );
+  const effectiveChamberTempPresets = useMemo(
+    () => parsePresetTriple(settings?.chamber_temp_presets, CHAMBER_TEMP_DEFAULTS, 0, 60),
+    [settings?.chamber_temp_presets],
+  );
+  const effectiveFanSpeedPresets = useMemo(
+    () => parsePresetTriple(settings?.fan_speed_presets, FAN_SPEED_DEFAULTS, 0, 100),
+    [settings?.fan_speed_presets],
+  );
+
   // Compute drying presets: user-configured (from settings) merged over built-in defaults
   const effectiveDryingPresets = useMemo(() => {
     if (settings?.drying_presets) {
@@ -8175,6 +8195,10 @@ export function PrintersPage() {
                       onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
                       checkPrinterFirmware={settings?.check_printer_firmware !== false}
                       dryingPresets={effectiveDryingPresets}
+                      nozzleTempPresets={effectiveNozzleTempPresets}
+                      bedTempPresets={effectiveBedTempPresets}
+                      chamberTempPresets={effectiveChamberTempPresets}
+                      fanSpeedPresets={effectiveFanSpeedPresets}
                       requirePlateClear={settings?.require_plate_clear === true}
                       selectionMode={selectionMode}
                       isSelected={selectedPrinterIds.has(printer.id)}
@@ -8220,6 +8244,10 @@ export function PrintersPage() {
               onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
               checkPrinterFirmware={settings?.check_printer_firmware !== false}
               dryingPresets={effectiveDryingPresets}
+              nozzleTempPresets={effectiveNozzleTempPresets}
+              bedTempPresets={effectiveBedTempPresets}
+              chamberTempPresets={effectiveChamberTempPresets}
+              fanSpeedPresets={effectiveFanSpeedPresets}
               requirePlateClear={settings?.require_plate_clear === true}
               selectionMode={selectionMode}
               isSelected={selectedPrinterIds.has(printer.id)}

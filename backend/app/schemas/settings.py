@@ -293,6 +293,27 @@ class AppSettings(BaseModel):
         description="Shortest Job First — scheduler prioritizes shorter print jobs over longer ones",
     )
 
+    # User-configurable presets for the printer-card temperature / fan-speed
+    # popovers. Each is a JSON array of exactly 3 ints (the "Off" button is
+    # rendered separately and is not configurable). Empty string = use built-in
+    # defaults. Validators on AppSettingsUpdate enforce the shape on writes.
+    nozzle_temp_presets: str = Field(
+        default="",
+        description="JSON array of 3 nozzle-temperature preset values in C (0-320). Empty = use defaults [120, 220, 260]",
+    )
+    bed_temp_presets: str = Field(
+        default="",
+        description="JSON array of 3 bed-temperature preset values in C (0-140). Empty = use defaults [55, 75, 90]",
+    )
+    chamber_temp_presets: str = Field(
+        default="",
+        description="JSON array of 3 chamber-temperature preset values in C (0-60). Empty = use defaults [35, 45, 60]",
+    )
+    fan_speed_presets: str = Field(
+        default="",
+        description="JSON array of 3 fan-speed preset values in % (0-100). Empty = use defaults [50, 75, 100]",
+    )
+
     # LDAP authentication (#794)
     ldap_enabled: bool = Field(default=False, description="Enable LDAP authentication")
     ldap_server_url: str = Field(default="", description="LDAP server URL (e.g., ldap://ldap.example.com:389)")
@@ -440,6 +461,10 @@ class AppSettingsUpdate(BaseModel):
     stagger_interval_minutes: int | None = Field(default=None, ge=1, le=60)
     require_plate_clear: bool | None = None
     queue_shortest_first: bool | None = None
+    nozzle_temp_presets: str | None = None
+    bed_temp_presets: str | None = None
+    chamber_temp_presets: str | None = None
+    fan_speed_presets: str | None = None
     gcode_snippets: str | None = None
     local_backup_enabled: bool | None = None
     local_backup_schedule: str | None = None
@@ -503,6 +528,43 @@ class AppSettingsUpdate(BaseModel):
         if not isinstance(parsed, list) or not all(isinstance(item, int) for item in parsed):
             raise ValueError("obico_enabled_printers must be a JSON array of printer IDs (integers)")
         return v
+
+    @staticmethod
+    def _validate_preset_triple(v: str | None, field_name: str, lo: int, hi: int) -> str | None:
+        """Validate a JSON array of exactly 3 ints in [lo, hi]. Empty = defaults."""
+        if v is None or v == "":
+            return v
+        try:
+            parsed = json.loads(v)
+        except json.JSONDecodeError:
+            raise ValueError(f"{field_name} must be valid JSON or empty")
+        if not isinstance(parsed, list) or len(parsed) != 3:
+            raise ValueError(f"{field_name} must be a JSON array of exactly 3 integers")
+        if not all(isinstance(item, int) and not isinstance(item, bool) for item in parsed):
+            raise ValueError(f"{field_name} entries must all be integers")
+        if not all(lo <= item <= hi for item in parsed):
+            raise ValueError(f"{field_name} entries must each be in [{lo}, {hi}]")
+        return v
+
+    @field_validator("nozzle_temp_presets")
+    @classmethod
+    def validate_nozzle_temp_presets(cls, v: str | None) -> str | None:
+        return cls._validate_preset_triple(v, "nozzle_temp_presets", 0, 320)
+
+    @field_validator("bed_temp_presets")
+    @classmethod
+    def validate_bed_temp_presets(cls, v: str | None) -> str | None:
+        return cls._validate_preset_triple(v, "bed_temp_presets", 0, 140)
+
+    @field_validator("chamber_temp_presets")
+    @classmethod
+    def validate_chamber_temp_presets(cls, v: str | None) -> str | None:
+        return cls._validate_preset_triple(v, "chamber_temp_presets", 0, 60)
+
+    @field_validator("fan_speed_presets")
+    @classmethod
+    def validate_fan_speed_presets(cls, v: str | None) -> str | None:
+        return cls._validate_preset_triple(v, "fan_speed_presets", 0, 100)
 
     @field_validator("obico_sensitivity")
     @classmethod

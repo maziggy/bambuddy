@@ -2997,3 +2997,189 @@ class TestConfigureAmsSlotPersistsKProfile:
         assert response.status_code == 200
         # MQTT was indeed called
         mock_client.extrusion_cali_sel.assert_called_once()
+
+
+class TestPrinterAccessCodeVisibility:
+    """Regression coverage: GET /printers and GET /printers/{id} must NOT
+    return ``access_code`` to callers without PRINTERS_UPDATE authority.
+
+    Holding ``access_code`` lets the caller talk to the printer's MQTT
+    directly with serial+code, bypassing every PRINTERS_CONTROL /
+    PRINTERS_FILES / PRINTERS_AMS_RFID check Bambuddy enforces.
+
+    Trust matrix encoded here:
+      - Auth disabled                  → access_code visible (single-trust mode)
+      - JWT Admin                      → access_code visible
+      - JWT Operator (has *_UPDATE)    → access_code visible (VP-card UX)
+      - JWT Viewer                     → access_code STRIPPED
+      - API key with can_read_status   → access_code STRIPPED
+    """
+
+    @pytest.fixture
+    async def auth_setup(self, async_client: AsyncClient):
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "pcadmin",
+                "admin_password": "AdminPass1!",
+            },
+        )
+
+        async def _login(username, password):
+            resp = await async_client.post(
+                "/api/v1/auth/login",
+                json={"username": username, "password": password},
+            )
+            return resp.json()["access_token"]
+
+        admin_token = await _login("pcadmin", "AdminPass1!")
+
+        groups = (
+            await async_client.get(
+                "/api/v1/groups/",
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
+        ).json()
+        operators_group = next(g for g in groups if g["name"] == "Operators")
+        viewers_group = next(g for g in groups if g["name"] == "Viewers")
+
+        for username, password, group in (
+            ("pcoperator", "Operpass1!", operators_group["id"]),
+            ("pcviewer", "Viewpass1!", viewers_group["id"]),
+        ):
+            await async_client.post(
+                "/api/v1/users/",
+                headers={"Authorization": f"Bearer {admin_token}"},
+                json={"username": username, "password": password, "group_ids": [group]},
+            )
+
+        operator_token = await _login("pcoperator", "Operpass1!")
+        viewer_token = await _login("pcviewer", "Viewpass1!")
+
+        return {
+            "admin_token": admin_token,
+            "operator_token": operator_token,
+            "viewer_token": viewer_token,
+        }
+
+    async def _seed_printer_with_known_code(self, async_client: AsyncClient, admin_token: str) -> int:
+        resp = await async_client.post(
+            "/api/v1/printers/",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={
+                "name": "AC-Visibility",
+                "serial_number": "00M09AVISIBILITY",
+                "ip_address": "192.168.42.42",
+                "access_code": "SECRET-CODE",
+                "is_active": True,
+                "model": "X1C",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        return resp.json()["id"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auth_disabled_includes_access_code(self, async_client: AsyncClient, printer_factory):
+        """Single-trust mode: behaviour preserved, code is visible."""
+        printer = await printer_factory(name="AuthOff", access_code="LOCAL-CODE")
+
+        list_resp = await async_client.get("/api/v1/printers/")
+        detail_resp = await async_client.get(f"/api/v1/printers/{printer.id}")
+
+        assert list_resp.status_code == 200
+        assert detail_resp.status_code == 200
+        match = next(p for p in list_resp.json() if p["id"] == printer.id)
+        assert match["access_code"] == "LOCAL-CODE"
+        assert detail_resp.json()["access_code"] == "LOCAL-CODE"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_jwt_includes_access_code(self, async_client: AsyncClient, auth_setup):
+        printer_id = await self._seed_printer_with_known_code(async_client, auth_setup["admin_token"])
+        headers = {"Authorization": f"Bearer {auth_setup['admin_token']}"}
+
+        list_resp = await async_client.get("/api/v1/printers/", headers=headers)
+        detail_resp = await async_client.get(f"/api/v1/printers/{printer_id}", headers=headers)
+
+        assert list_resp.status_code == 200
+        assert detail_resp.status_code == 200
+        match = next(p for p in list_resp.json() if p["id"] == printer_id)
+        assert match["access_code"] == "SECRET-CODE"
+        assert detail_resp.json()["access_code"] == "SECRET-CODE"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_jwt_includes_access_code(self, async_client: AsyncClient, auth_setup):
+        """Operators hold PRINTERS_UPDATE (default role) — the VP-card UX
+        surfaces the target printer's access_code so they can configure
+        their slicer. The visibility predicate must keep working for them.
+        """
+        printer_id = await self._seed_printer_with_known_code(async_client, auth_setup["admin_token"])
+        headers = {"Authorization": f"Bearer {auth_setup['operator_token']}"}
+
+        list_resp = await async_client.get("/api/v1/printers/", headers=headers)
+        detail_resp = await async_client.get(f"/api/v1/printers/{printer_id}", headers=headers)
+
+        assert list_resp.status_code == 200
+        assert detail_resp.status_code == 200
+        match = next(p for p in list_resp.json() if p["id"] == printer_id)
+        assert match["access_code"] == "SECRET-CODE"
+        assert detail_resp.json()["access_code"] == "SECRET-CODE"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_viewer_jwt_excludes_access_code(self, async_client: AsyncClient, auth_setup):
+        """The fix: Viewers hold PRINTERS_READ but not PRINTERS_UPDATE, and
+        must NOT be able to read the printer's secret.
+        """
+        printer_id = await self._seed_printer_with_known_code(async_client, auth_setup["admin_token"])
+        headers = {"Authorization": f"Bearer {auth_setup['viewer_token']}"}
+
+        list_resp = await async_client.get("/api/v1/printers/", headers=headers)
+        detail_resp = await async_client.get(f"/api/v1/printers/{printer_id}", headers=headers)
+
+        assert list_resp.status_code == 200
+        assert detail_resp.status_code == 200
+        match = next(p for p in list_resp.json() if p["id"] == printer_id)
+        # Field absent OR null — both are acceptable (no usable secret reaches the wire).
+        assert "access_code" not in match or match["access_code"] is None
+        body = detail_resp.json()
+        assert "access_code" not in body or body["access_code"] is None
+        # And the rest of the payload still arrives so the UI keeps working.
+        assert match["name"] == "AC-Visibility"
+        assert body["name"] == "AC-Visibility"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_api_key_excludes_access_code(self, async_client: AsyncClient, auth_setup, db_session):
+        """API keys with can_read_status hold PRINTERS_READ but the predicate
+        gates on PRINTERS_UPDATE (admin-only / API-key-unmapped). The key
+        must NOT be able to exfiltrate access_code.
+        """
+        from backend.app.core.auth import generate_api_key
+        from backend.app.models.api_key import APIKey
+
+        printer_id = await self._seed_printer_with_known_code(async_client, auth_setup["admin_token"])
+
+        full_key, key_hash, key_prefix = generate_api_key()
+        api_key = APIKey(
+            name="visibility-key",
+            key_hash=key_hash,
+            key_prefix=key_prefix,
+            can_read_status=True,
+            enabled=True,
+        )
+        db_session.add(api_key)
+        await db_session.commit()
+
+        list_resp = await async_client.get("/api/v1/printers/", headers={"X-API-Key": full_key})
+        detail_resp = await async_client.get(f"/api/v1/printers/{printer_id}", headers={"X-API-Key": full_key})
+
+        assert list_resp.status_code == 200
+        assert detail_resp.status_code == 200
+        match = next(p for p in list_resp.json() if p["id"] == printer_id)
+        assert "access_code" not in match or match["access_code"] is None
+        body = detail_resp.json()
+        assert "access_code" not in body or body["access_code"] is None

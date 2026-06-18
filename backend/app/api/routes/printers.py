@@ -8,7 +8,11 @@ from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequireCameraStreamTokenIfAuthEnabled, RequirePermissionIfAuthEnabled
+from backend.app.core.auth import (
+    RequireCameraStreamTokenIfAuthEnabled,
+    RequirePermissionIfAuthEnabled,
+    is_auth_enabled,
+)
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -16,6 +20,7 @@ from backend.app.core.tasks import spawn_background_task
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.printer import Printer
 from backend.app.models.slot_preset import SlotPresetMapping
+from backend.app.models.user import User
 from backend.app.schemas.printer import (
     AmsLabelBody,
     AMSTray,
@@ -28,6 +33,7 @@ from backend.app.schemas.printer import (
     PrinterCreate,
     PrinterDiagnosticResult,
     PrinterResponse,
+    PrinterResponseWithSecret,
     PrinterStatus,
     PrinterUpdate,
     PrintOptionsResponse,
@@ -55,14 +61,50 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["printers"])
 
 
-@router.get("/", response_model=list[PrinterResponse])
+async def _caller_can_view_printer_secrets(user: User | None, db: AsyncSession) -> bool:
+    """Whether the caller is trusted enough to see ``access_code`` on a printer
+    response. Fail-CLOSED: anything that isn't an authenticated user holding
+    PRINTERS_UPDATE returns False.
+
+    - Auth disabled  → True (single trust domain — same as today's local UI).
+    - JWT user with PRINTERS_UPDATE → True (Admin or Operator; the same roles
+      that already manage printers and the Virtual Printer card UX that
+      surfaces a target's code for slicer configuration).
+    - JWT Viewer → False (the bug fix: Viewers must not be able to read
+      access_code via PRINTERS_READ and then go around Bambuddy to MQTT).
+    - API-key principal (``user is None`` because the dep returns None for
+      API keys) → False. PRINTERS_UPDATE is admin-only and absent from
+      ``_APIKEY_SCOPE_BY_PERMISSION``, so no API key can hold it.
+    """
+    if not await is_auth_enabled(db):
+        return True
+    if user is None:
+        return False
+    return user.has_permission(Permission.PRINTERS_UPDATE.value)
+
+
+def _serialize_printer(printer: Printer, *, include_secret: bool):
+    """Build the response shape that matches the caller's authority."""
+    if include_secret:
+        return PrinterResponseWithSecret.model_validate(printer)
+    return PrinterResponse.model_validate(printer)
+
+
+@router.get("/")
 async def list_printers(
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all configured printers."""
+    """List all configured printers.
+
+    ``access_code`` is included in each item only when the caller is trusted
+    to see it (Admin / Operator JWT, or auth-disabled mode). Viewers and
+    API keys never receive it.
+    """
     result = await db.execute(select(Printer).order_by(Printer.name))
-    return list(result.scalars().all())
+    printers = list(result.scalars().all())
+    include_secret = await _caller_can_view_printer_secrets(user, db)
+    return [_serialize_printer(p, include_secret=include_secret) for p in printers]
 
 
 @router.post("/", response_model=PrinterResponse)
@@ -262,18 +304,24 @@ async def get_developer_mode_warnings(
     return warnings
 
 
-@router.get("/{printer_id}", response_model=PrinterResponse)
+@router.get("/{printer_id}")
 async def get_printer(
     printer_id: int,
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get a specific printer."""
+    """Get a specific printer.
+
+    ``access_code`` is included only when the caller is trusted to see it
+    (Admin / Operator JWT, or auth-disabled mode). Viewers and API keys
+    never receive it.
+    """
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
     if not printer:
         raise HTTPException(404, "Printer not found")
-    return printer
+    include_secret = await _caller_can_view_printer_secrets(user, db)
+    return _serialize_printer(printer, include_secret=include_secret)
 
 
 @router.patch("/{printer_id}", response_model=PrinterResponse)

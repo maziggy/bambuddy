@@ -5135,9 +5135,13 @@ function PrinterCard({
           </>
         )}
 
-        {/* Smart Plug Controls - hidden in compact mode */}
-        {smartPlug && viewMode === 'expanded' && (
-          <div className="mt-4">
+        {/* Bottom block (power row + action bar). Wrapped together so the
+            power row hugs the action bar at the card bottom instead of
+            floating up when there's less filament content above. */}
+        {viewMode === 'expanded' && (
+          <div className="mt-auto">
+        {smartPlug && (
+          <div className="pt-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">
                 {t('printers.power', 'Power')}
@@ -5145,22 +5149,22 @@ function PrinterCard({
               <div className="flex-1 h-[2px] bg-bambu-dark-tertiary" />
             </div>
             <div className="flex items-center gap-2 rounded-[10px] bg-bambu-dark p-2">
-              {/* Plug name */}
+              {/* Plug name + current power */}
               <div className="flex items-center gap-2 min-w-0 pl-1">
                 <Zap className="w-4 h-4 text-bambu-gray flex-shrink-0" />
                 <span className="text-sm text-white truncate">{smartPlug.name}</span>
+                <span
+                  className="px-1.5 py-0.5 rounded-full bg-bambu-dark-tertiary text-bambu-gray text-[10px] font-medium flex-shrink-0"
+                  title={t('smartPlugs.power')}
+                >
+                  {plugStatus?.energy?.power !== null && plugStatus?.energy?.power !== undefined ? `${Math.round(plugStatus.energy.power)}W` : '--'}
+                </span>
               </div>
 
               {/* Spacer */}
               <div className="flex-1" />
 
               <div className="flex items-center gap-2">
-                <div
-                  className="flex h-8 min-w-14 flex-shrink-0 items-center justify-end px-2 text-xs font-medium text-bambu-gray"
-                  title={t('smartPlugs.power')}
-                >
-                  {plugStatus?.energy?.power !== null && plugStatus?.energy?.power !== undefined ? `${Math.round(plugStatus.energy.power)}W` : '--'}
-                </div>
                 {/* Auto-off */}
                 <button
                   onClick={() => toggleAutoOffMutation.mutate(!smartPlug.auto_off)}
@@ -5233,9 +5237,8 @@ function PrinterCard({
           </div>
         )}
 
-        {/* Connection Info & Actions - hidden in compact mode */}
-        {viewMode === 'expanded' && (
-          <div className="mt-auto pt-4">
+        {/* Connection Info & Actions */}
+        <div className="pt-4">
             <div className="mb-3 h-[2px] bg-bambu-dark-tertiary" />
             <div className="flex items-center justify-between gap-2">
               {printerActionsMenu}
@@ -5293,6 +5296,7 @@ function PrinterCard({
                 )}
               </div>
             </div>
+        </div>
           </div>
         )}
       </CardContent>

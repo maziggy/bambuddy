@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { compareFwVersions } from '../utils/firmwareVersion';
 import { formatPrintName } from '../utils/printName';
 import { computePopoverPosition } from '../utils/popoverPosition';
@@ -1131,62 +1132,104 @@ function ToolbarMenu({
 
 function IndicatorControlPopover({
   title,
-  options,
+  options = [],
   unit,
   customMin,
   customMax,
   customStep = 1,
   widthClass = 'w-[240px]',
+  popoverWidth = 240,
+  popoverHeight = 280,
   isPending,
   onClose,
   onSubmit,
   children,
 }: {
   title: string;
-  options: Array<{ label: string; value: number }>;
+  options?: Array<{ label: string; value: number }>;
   unit?: string;
   customMin?: number;
   customMax?: number;
   customStep?: number;
   widthClass?: string;
+  popoverWidth?: number;
+  popoverHeight?: number;
   isPending?: boolean;
   onClose: () => void;
-  onSubmit: (value: number) => void;
+  onSubmit?: (value: number) => void;
   children?: React.ReactNode;
 }) {
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const [customValue, setCustomValue] = useState('');
+
+  // Anchor to the trigger (the popover's DOM parent before portaling) so we
+  // can position via fixed coords. Portaling to document.body escapes
+  // ancestor stacking contexts — sibling PrinterCard wrappers create their
+  // own contexts and would otherwise cover the popover even at z-[60].
+  useLayoutEffect(() => {
+    const trigger = anchorRef.current?.parentElement;
+    if (!trigger) return;
+    const measure = () => {
+      const rect = trigger.getBoundingClientRect();
+      setCoords(computePopoverPosition({
+        triggerRect: rect,
+        popoverWidth,
+        estimatedHeight: popoverHeight,
+        horizontalAlign: 'center',
+      }));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+    };
+  }, [popoverWidth, popoverHeight]);
+
   const showCustomInput = unit !== undefined;
   const submitCustom = () => {
     const value = Number(customValue);
     if (!Number.isFinite(value)) return;
     const bounded = Math.min(customMax ?? value, Math.max(customMin ?? value, value));
-    onSubmit(Math.round(bounded));
+    onSubmit?.(Math.round(bounded));
   };
 
   return (
     <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div
-        className={`absolute left-1/2 top-full z-50 mt-1 flex ${widthClass} -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-2xl`}
-        onClick={e => e.stopPropagation()}
-      >
+      <span ref={anchorRef} className="hidden" aria-hidden="true" />
+      {createPortal(
+        <>
+          <div className="fixed inset-0 z-[1000]" onClick={onClose} />
+          <div
+            className={`fixed z-[1001] flex ${widthClass} flex-col overflow-hidden rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-2xl`}
+            style={{
+              top: coords?.top ?? -9999,
+              left: coords?.left ?? -9999,
+              visibility: coords ? 'visible' : 'hidden',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
         <div className="shrink-0 px-3 py-2.5 text-center text-sm font-medium text-white">{title}</div>
         <div className="shrink-0 h-px bg-bambu-dark-tertiary" />
-        <div className="px-3 py-2.5">
-          <div className="grid grid-cols-2 gap-1.5">
-            {options.map(option => (
-              <button
-                key={`${option.label}-${option.value}`}
-                type="button"
-                disabled={isPending}
-                onClick={() => onSubmit(option.value)}
-                className="h-8 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2 text-xs font-medium text-white transition-colors hover:bg-bambu-dark-tertiary disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {option.label}
-              </button>
-            ))}
+        {options.length > 0 && (
+          <div className="px-3 py-2.5">
+            <div className="grid grid-cols-2 gap-1.5">
+              {options.map(option => (
+                <button
+                  key={`${option.label}-${option.value}`}
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => onSubmit?.(option.value)}
+                  className="h-8 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2 text-xs font-medium text-white transition-colors hover:bg-bambu-dark-tertiary disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
         {children}
         {showCustomInput && (
           <>
@@ -1218,7 +1261,10 @@ function IndicatorControlPopover({
             </form>
           </>
         )}
-      </div>
+          </div>
+        </>,
+        document.body
+      )}
     </>
   );
 }
@@ -3489,16 +3535,46 @@ function PrinterCard({
                         </>
                       )}
                       {statusControlMenu === 'nozzle-temp' && (
-                        <IndicatorControlPopover
-                          title="Set Nozzle Temperature"
-                          unit="°C"
-                          customMin={0}
-                          customMax={320}
-                          isPending={nozzleTemperatureMutation.isPending}
-                          options={NOZZLE_TEMPERATURE_OPTIONS}
-                          onClose={() => setStatusControlMenu(null)}
-                          onSubmit={(target) => nozzleTemperatureMutation.mutate({ target, nozzle: status.active_extruder ?? 0 })}
-                        />
+                        isDualNozzle ? (
+                          <IndicatorControlPopover
+                            title="Set Nozzle Temperatures"
+                            widthClass="w-[300px]"
+                            popoverWidth={300}
+                            popoverHeight={260}
+                            isPending={nozzleTemperatureMutation.isPending}
+                            onClose={() => setStatusControlMenu(null)}
+                          >
+                            <div className="grid grid-cols-2 gap-2 px-3 py-2.5">
+                              <NozzleTemperatureControlBox
+                                label="Left Temp"
+                                current={status.temperatures.nozzle}
+                                target={status.temperatures.nozzle_target}
+                                isActive={activeNozzle === 'L'}
+                                isPending={nozzleTemperatureMutation.isPending}
+                                onSubmit={(target) => nozzleTemperatureMutation.mutate({ target, nozzle: 1 })}
+                              />
+                              <NozzleTemperatureControlBox
+                                label="Right Temp"
+                                current={status.temperatures.nozzle_2}
+                                target={status.temperatures.nozzle_2_target}
+                                isActive={activeNozzle === 'R'}
+                                isPending={nozzleTemperatureMutation.isPending}
+                                onSubmit={(target) => nozzleTemperatureMutation.mutate({ target, nozzle: 0 })}
+                              />
+                            </div>
+                          </IndicatorControlPopover>
+                        ) : (
+                          <IndicatorControlPopover
+                            title="Set Nozzle Temperature"
+                            unit="°C"
+                            customMin={0}
+                            customMax={320}
+                            isPending={nozzleTemperatureMutation.isPending}
+                            options={NOZZLE_TEMPERATURE_OPTIONS}
+                            onClose={() => setStatusControlMenu(null)}
+                            onSubmit={(target) => nozzleTemperatureMutation.mutate({ target, nozzle: status.active_extruder ?? 0 })}
+                          />
+                        )
                       )}
                     </div>
                     <div
@@ -3568,34 +3644,16 @@ function PrinterCard({
                             <IndicatorControlPopover
                               title="Set Nozzle Selection"
                               widthClass="w-[300px]"
-                              isPending={selectExtruderMutation.isPending || nozzleTemperatureMutation.isPending}
+                              popoverWidth={300}
+                              popoverHeight={140}
+                              isPending={selectExtruderMutation.isPending}
                               options={[
                                 { label: 'Left', value: 1 },
                                 { label: 'Right', value: 0 },
                               ]}
                               onClose={() => setStatusControlMenu(null)}
                               onSubmit={(extruder) => selectExtruderMutation.mutate(extruder)}
-                            >
-                              <div className="shrink-0 h-px bg-bambu-dark-tertiary" />
-                              <div className="grid grid-cols-2 gap-2 px-3 py-2.5">
-                                <NozzleTemperatureControlBox
-                                  label="Left Temp"
-                                  current={status.temperatures.nozzle}
-                                  target={status.temperatures.nozzle_target}
-                                  isActive={activeNozzle === 'L'}
-                                  isPending={nozzleTemperatureMutation.isPending}
-                                  onSubmit={(target) => nozzleTemperatureMutation.mutate({ target, nozzle: 1 })}
-                                />
-                                <NozzleTemperatureControlBox
-                                  label="Right Temp"
-                                  current={status.temperatures.nozzle_2}
-                                  target={status.temperatures.nozzle_2_target}
-                                  isActive={activeNozzle === 'R'}
-                                  isPending={nozzleTemperatureMutation.isPending}
-                                  onSubmit={(target) => nozzleTemperatureMutation.mutate({ target, nozzle: 0 })}
-                                />
-                              </div>
-                            </IndicatorControlPopover>
+                            />
                           )}
                         </div>
                       </DualNozzleHoverCard>

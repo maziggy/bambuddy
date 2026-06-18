@@ -219,10 +219,11 @@ describe('PrintersPage', () => {
       render(<PrintersPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('R 0.4')).toBeInTheDocument();
+        expect(screen.getByText('L / R')).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByText('R 0.4').closest('div[title]')!);
+      // Dual-nozzle temps live on the L/R temperature card, not the nozzle-select card.
+      fireEvent.click(screen.getByText('L / R').parentElement!);
 
       const leftTempBox = screen.getByText('Left Temp').parentElement!.parentElement!;
       fireEvent.click(within(leftTempBox).getByRole('button', { name: '220 C' }));
@@ -231,7 +232,7 @@ describe('PrintersPage', () => {
         expect(temperatureRequests).toContainEqual({ target: '220', nozzle: '1' });
       });
 
-      fireEvent.click(screen.getByText('R 0.4').closest('div[title]')!);
+      fireEvent.click(screen.getByText('L / R').parentElement!);
 
       const rightTempBox = screen.getByText('Right Temp').parentElement!.parentElement!;
       fireEvent.click(within(rightTempBox).getByRole('button', { name: '260 C' }));

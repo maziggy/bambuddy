@@ -763,32 +763,43 @@ export function PrintModal({
 
           try {
             if (mode === 'reprint' && !useStagger) {
-              // Reprint mode - start print immediately (single plate only, multi-select not available)
               const printerMapping = getMappingForPrinter(printerId);
-              if (isLibraryFile) {
-                await api.printLibraryFile(libraryFileId!, printerId, {
-                  plate_id: selectedPlate ?? undefined,
-                  plate_name: selectedPlateName,
-                  ams_mapping: printerMapping,
-                  ...printOptions,
-                  project_id: projectId,
-                  cleanup_library_after_dispatch: cleanupLibraryAfterDispatch,
-                });
-              } else {
-                // project_id is intentionally omitted here: reprintArchive targets an existing
-                // archive that already carries its own project association from the original print.
-                await api.reprintArchive(archiveId!, printerId, {
-                  plate_id: selectedPlate ?? undefined,
-                  plate_name: selectedPlateName,
-                  ams_mapping: printerMapping,
-                  ...printOptions,
-                });
-              }
-              // Queue remaining copies if quantity > 1
-              if (effectiveQuantity > 1) {
+              if (scheduleOptions.gcodeInjection && effectiveQuantity > 1) {
+                // Auto-print injection only happens in the scheduler path. A direct
+                // immediate reprint bypasses it, so the first copy would print without
+                // its end-snippet and stay stuck on the plate — defeating auto-eject and
+                // blocking the injected copies queued behind it. Queue *all* copies so
+                // every one is dispatched (and injected) by the scheduler.
                 const queueData = getQueueData(printerId, plateId);
-                queueData.quantity = effectiveQuantity - 1;
+                queueData.quantity = effectiveQuantity;
                 await addToQueueMutation.mutateAsync(queueData);
+              } else {
+                // Reprint mode - start print immediately (single plate only, multi-select not available)
+                if (isLibraryFile) {
+                  await api.printLibraryFile(libraryFileId!, printerId, {
+                    plate_id: selectedPlate ?? undefined,
+                    plate_name: selectedPlateName,
+                    ams_mapping: printerMapping,
+                    ...printOptions,
+                    project_id: projectId,
+                    cleanup_library_after_dispatch: cleanupLibraryAfterDispatch,
+                  });
+                } else {
+                  // project_id is intentionally omitted here: reprintArchive targets an existing
+                  // archive that already carries its own project association from the original print.
+                  await api.reprintArchive(archiveId!, printerId, {
+                    plate_id: selectedPlate ?? undefined,
+                    plate_name: selectedPlateName,
+                    ams_mapping: printerMapping,
+                    ...printOptions,
+                  });
+                }
+                // Queue remaining copies if quantity > 1
+                if (effectiveQuantity > 1) {
+                  const queueData = getQueueData(printerId, plateId);
+                  queueData.quantity = effectiveQuantity - 1;
+                  await addToQueueMutation.mutateAsync(queueData);
+                }
               }
             } else if (mode === 'edit-queue-item' && progressCounter === 1) {
               // Edit mode - update the original queue item for the first entry
@@ -884,6 +895,21 @@ export function PrintModal({
 
   // Quantity only applies for single-printer or model-based assignment (not multi-printer)
   const effectiveQuantity = (assignmentMode === 'printer' && selectedPrinters.length > 1) ? 1 : quantity;
+
+  // Keep scheduleOptions.gcodeInjection in sync with the checkbox's render
+  // condition. The checkbox only renders for reprint + snippets configured +
+  // quantity > 1, so if the user ticks it at quantity 2 then drops back to 1
+  // the box hides but the state stays true — and the immediate-reprint path
+  // would then silently bypass injection.
+  useEffect(() => {
+    if (
+      mode === 'reprint' &&
+      scheduleOptions.gcodeInjection &&
+      (effectiveQuantity <= 1 || !settings?.gcode_snippets)
+    ) {
+      setScheduleOptions((opts) => ({ ...opts, gcodeInjection: false }));
+    }
+  }, [mode, effectiveQuantity, settings?.gcode_snippets, scheduleOptions.gcodeInjection]);
 
   // Modal title and action button text based on mode
   const getModalConfig = () => {

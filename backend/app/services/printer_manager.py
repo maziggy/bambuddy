@@ -85,6 +85,43 @@ def supports_chamber_temp(model: str | None) -> bool:
     return model_upper in CHAMBER_TEMP_SUPPORTED_MODELS
 
 
+# Models with an ACTIVE chamber heater (M141 has an effect).
+# Many printers in CHAMBER_TEMP_SUPPORTED_MODELS only have a passive sensor —
+# X1C, X1E, P2S report chamber temperature but cannot actively heat it. Only
+# the models below ship a PTC heater that responds to M141.
+CHAMBER_HEATER_MODELS = frozenset(
+    [
+        # Display names
+        "H2C",
+        "H2D",
+        "H2DPRO",
+        "H2S",
+        "X2D",
+        # Internal codes (from MQTT/SSDP)
+        "O1C",  # H2C
+        "O1C2",  # H2C dual-nozzle variant
+        "O1D",  # H2D
+        "O1E",  # H2D Pro
+        "O2D",  # H2D Pro alternate code
+        "O1S",  # H2S
+        "N6",  # X2D
+    ]
+)
+
+
+def supports_chamber_heater(model: str | None) -> bool:
+    """Check if a printer model has an active chamber heater (responds to M141).
+
+    The chamber temperature SENSOR is more widely deployed than the chamber
+    HEATER — X1C/X1E/P2S report chamber temp but ignore M141. Only H2C, H2D,
+    H2D Pro, H2S, X2D actually heat. Sensor-only models silently swallow the
+    command at the firmware level, so we 400 at the route to surface that.
+    """
+    if not model:
+        return False
+    return model.strip().upper() in CHAMBER_HEATER_MODELS
+
+
 def has_stg_cur_idle_bug(model: str | None) -> bool:
     """Check if a printer model may incorrectly report stg_cur=0 when idle.
 

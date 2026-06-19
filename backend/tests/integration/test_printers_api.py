@@ -2997,3 +2997,646 @@ class TestConfigureAmsSlotPersistsKProfile:
         assert response.status_code == 200
         # MQTT was indeed called
         mock_client.extrusion_cali_sel.assert_called_once()
+
+
+class TestPrinterAccessCodeVisibility:
+    """Regression coverage: GET /printers and GET /printers/{id} must NOT
+    return ``access_code`` to callers without PRINTERS_UPDATE authority.
+
+    Holding ``access_code`` lets the caller talk to the printer's MQTT
+    directly with serial+code, bypassing every PRINTERS_CONTROL /
+    PRINTERS_FILES / PRINTERS_AMS_RFID check Bambuddy enforces.
+
+    Trust matrix encoded here:
+      - Auth disabled                  → access_code visible (single-trust mode)
+      - JWT Admin                      → access_code visible
+      - JWT Operator (has *_UPDATE)    → access_code visible (VP-card UX)
+      - JWT Viewer                     → access_code STRIPPED
+      - API key with can_read_status   → access_code STRIPPED
+    """
+
+    @pytest.fixture
+    async def auth_setup(self, async_client: AsyncClient):
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "pcadmin",
+                "admin_password": "AdminPass1!",
+            },
+        )
+
+        async def _login(username, password):
+            resp = await async_client.post(
+                "/api/v1/auth/login",
+                json={"username": username, "password": password},
+            )
+            return resp.json()["access_token"]
+
+        admin_token = await _login("pcadmin", "AdminPass1!")
+
+        groups = (
+            await async_client.get(
+                "/api/v1/groups/",
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
+        ).json()
+        operators_group = next(g for g in groups if g["name"] == "Operators")
+        viewers_group = next(g for g in groups if g["name"] == "Viewers")
+
+        for username, password, group in (
+            ("pcoperator", "Operpass1!", operators_group["id"]),
+            ("pcviewer", "Viewpass1!", viewers_group["id"]),
+        ):
+            await async_client.post(
+                "/api/v1/users/",
+                headers={"Authorization": f"Bearer {admin_token}"},
+                json={"username": username, "password": password, "group_ids": [group]},
+            )
+
+        operator_token = await _login("pcoperator", "Operpass1!")
+        viewer_token = await _login("pcviewer", "Viewpass1!")
+
+        return {
+            "admin_token": admin_token,
+            "operator_token": operator_token,
+            "viewer_token": viewer_token,
+        }
+
+    async def _seed_printer_with_known_code(self, async_client: AsyncClient, admin_token: str) -> int:
+        resp = await async_client.post(
+            "/api/v1/printers/",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={
+                "name": "AC-Visibility",
+                "serial_number": "00M09AVISIBILITY",
+                "ip_address": "192.168.42.42",
+                "access_code": "SECRET-CODE",
+                "is_active": True,
+                "model": "X1C",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        return resp.json()["id"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auth_disabled_includes_access_code(self, async_client: AsyncClient, printer_factory):
+        """Single-trust mode: behaviour preserved, code is visible."""
+        printer = await printer_factory(name="AuthOff", access_code="LOCAL-CODE")
+
+        list_resp = await async_client.get("/api/v1/printers/")
+        detail_resp = await async_client.get(f"/api/v1/printers/{printer.id}")
+
+        assert list_resp.status_code == 200
+        assert detail_resp.status_code == 200
+        match = next(p for p in list_resp.json() if p["id"] == printer.id)
+        assert match["access_code"] == "LOCAL-CODE"
+        assert detail_resp.json()["access_code"] == "LOCAL-CODE"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_jwt_includes_access_code(self, async_client: AsyncClient, auth_setup):
+        printer_id = await self._seed_printer_with_known_code(async_client, auth_setup["admin_token"])
+        headers = {"Authorization": f"Bearer {auth_setup['admin_token']}"}
+
+        list_resp = await async_client.get("/api/v1/printers/", headers=headers)
+        detail_resp = await async_client.get(f"/api/v1/printers/{printer_id}", headers=headers)
+
+        assert list_resp.status_code == 200
+        assert detail_resp.status_code == 200
+        match = next(p for p in list_resp.json() if p["id"] == printer_id)
+        assert match["access_code"] == "SECRET-CODE"
+        assert detail_resp.json()["access_code"] == "SECRET-CODE"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_jwt_includes_access_code(self, async_client: AsyncClient, auth_setup):
+        """Operators hold PRINTERS_UPDATE (default role) — the VP-card UX
+        surfaces the target printer's access_code so they can configure
+        their slicer. The visibility predicate must keep working for them.
+        """
+        printer_id = await self._seed_printer_with_known_code(async_client, auth_setup["admin_token"])
+        headers = {"Authorization": f"Bearer {auth_setup['operator_token']}"}
+
+        list_resp = await async_client.get("/api/v1/printers/", headers=headers)
+        detail_resp = await async_client.get(f"/api/v1/printers/{printer_id}", headers=headers)
+
+        assert list_resp.status_code == 200
+        assert detail_resp.status_code == 200
+        match = next(p for p in list_resp.json() if p["id"] == printer_id)
+        assert match["access_code"] == "SECRET-CODE"
+        assert detail_resp.json()["access_code"] == "SECRET-CODE"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_viewer_jwt_excludes_access_code(self, async_client: AsyncClient, auth_setup):
+        """The fix: Viewers hold PRINTERS_READ but not PRINTERS_UPDATE, and
+        must NOT be able to read the printer's secret.
+        """
+        printer_id = await self._seed_printer_with_known_code(async_client, auth_setup["admin_token"])
+        headers = {"Authorization": f"Bearer {auth_setup['viewer_token']}"}
+
+        list_resp = await async_client.get("/api/v1/printers/", headers=headers)
+        detail_resp = await async_client.get(f"/api/v1/printers/{printer_id}", headers=headers)
+
+        assert list_resp.status_code == 200
+        assert detail_resp.status_code == 200
+        match = next(p for p in list_resp.json() if p["id"] == printer_id)
+        # Field absent OR null — both are acceptable (no usable secret reaches the wire).
+        assert "access_code" not in match or match["access_code"] is None
+        body = detail_resp.json()
+        assert "access_code" not in body or body["access_code"] is None
+        # And the rest of the payload still arrives so the UI keeps working.
+        assert match["name"] == "AC-Visibility"
+        assert body["name"] == "AC-Visibility"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_api_key_excludes_access_code(self, async_client: AsyncClient, auth_setup, db_session):
+        """API keys with can_read_status hold PRINTERS_READ but the predicate
+        gates on PRINTERS_UPDATE (admin-only / API-key-unmapped). The key
+        must NOT be able to exfiltrate access_code.
+        """
+        from backend.app.core.auth import generate_api_key
+        from backend.app.models.api_key import APIKey
+
+        printer_id = await self._seed_printer_with_known_code(async_client, auth_setup["admin_token"])
+
+        full_key, key_hash, key_prefix = generate_api_key()
+        api_key = APIKey(
+            name="visibility-key",
+            key_hash=key_hash,
+            key_prefix=key_prefix,
+            can_read_status=True,
+            enabled=True,
+        )
+        db_session.add(api_key)
+        await db_session.commit()
+
+        list_resp = await async_client.get("/api/v1/printers/", headers={"X-API-Key": full_key})
+        detail_resp = await async_client.get(f"/api/v1/printers/{printer_id}", headers={"X-API-Key": full_key})
+
+        assert list_resp.status_code == 200
+        assert detail_resp.status_code == 200
+        match = next(p for p in list_resp.json() if p["id"] == printer_id)
+        assert "access_code" not in match or match["access_code"] is None
+        body = detail_resp.json()
+        assert "access_code" not in body or body["access_code"] is None
+
+
+class TestSetNozzleTemperatureAPI:
+    """Integration tests for POST /printers/{id}/temperature/nozzle (#1661)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_not_found(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/printers/99999/temperature/nozzle?target=220")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_not_connected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="X1C")
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = None
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/nozzle?target=220")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_default_nozzle_index(self, async_client: AsyncClient, printer_factory):
+        """Omitting nozzle defaults to 0 (right/default)."""
+        printer = await printer_factory(name="P", model="X1C")
+        mock_client = MagicMock()
+        mock_client.set_nozzle_temperature.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/nozzle?target=220")
+        assert response.status_code == 200
+        mock_client.set_nozzle_temperature.assert_called_once_with(220, 0)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_dual_nozzle_left(self, async_client: AsyncClient, printer_factory):
+        """nozzle=1 reaches the client method as the second positional arg."""
+        printer = await printer_factory(name="P", model="H2D")
+        mock_client = MagicMock()
+        mock_client.set_nozzle_temperature.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/nozzle?target=260&nozzle=1")
+        assert response.status_code == 200
+        mock_client.set_nozzle_temperature.assert_called_once_with(260, 1)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_target_zero_allowed(self, async_client: AsyncClient, printer_factory):
+        """target=0 turns the heater off; must NOT be rejected by Query bounds."""
+        printer = await printer_factory(name="P", model="X1C")
+        mock_client = MagicMock()
+        mock_client.set_nozzle_temperature.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/nozzle?target=0")
+        assert response.status_code == 200
+        mock_client.set_nozzle_temperature.assert_called_once_with(0, 0)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_target_out_of_range_rejected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="X1C")
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/nozzle?target=400")
+        assert response.status_code == 422  # FastAPI bounds violation
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_nozzle_index_out_of_range_rejected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="H2D")
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/nozzle?target=220&nozzle=2")
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_client_failure_returns_500(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="X1C")
+        mock_client = MagicMock()
+        mock_client.set_nozzle_temperature.return_value = False
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/nozzle?target=220")
+        assert response.status_code == 500
+
+
+class TestSetBedTemperatureAPI:
+    """Integration tests for POST /printers/{id}/temperature/bed (#1661)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_not_found(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/printers/99999/temperature/bed?target=60")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_not_connected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="X1C")
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = None
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/bed?target=60")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_success(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="X1C")
+        mock_client = MagicMock()
+        mock_client.set_bed_temperature.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/bed?target=60")
+        assert response.status_code == 200
+        mock_client.set_bed_temperature.assert_called_once_with(60)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_target_zero_allowed(self, async_client: AsyncClient, printer_factory):
+        """target=0 turns the bed heater off."""
+        printer = await printer_factory(name="P", model="X1C")
+        mock_client = MagicMock()
+        mock_client.set_bed_temperature.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/bed?target=0")
+        assert response.status_code == 200
+        mock_client.set_bed_temperature.assert_called_once_with(0)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_target_out_of_range_rejected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="X1C")
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/bed?target=200")
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_client_failure_returns_500(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="X1C")
+        mock_client = MagicMock()
+        mock_client.set_bed_temperature.return_value = False
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/bed?target=60")
+        assert response.status_code == 500
+
+
+class TestSetChamberTemperatureAPI:
+    """Integration tests for POST /printers/{id}/temperature/chamber.
+
+    Gated on supports_chamber_heater(model). Sensor-only models that report
+    chamber temp but have no heater (X1C, X1E, P2S) get a 400 at the route
+    level rather than a silent no-op at the firmware level.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_not_found(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/printers/99999/temperature/chamber?target=45")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("sensor_only_model", ["X1C", "X1E", "P2S"])
+    async def test_sensor_only_model_rejected(self, async_client: AsyncClient, printer_factory, sensor_only_model):
+        """Models with sensor but no heater must 400 before any client call."""
+        printer = await printer_factory(name="P", model=sensor_only_model)
+        mock_client = MagicMock()
+        mock_client.set_chamber_temperature.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/chamber?target=45")
+        assert response.status_code == 400
+        # Client must NOT be called for sensor-only models.
+        mock_client.set_chamber_temperature.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_not_connected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="H2D")
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = None
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/chamber?target=45")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("heater_model", ["H2C", "H2D", "H2DPRO", "H2S", "X2D"])
+    async def test_success_per_heater_model(self, async_client: AsyncClient, printer_factory, heater_model):
+        """All five heater-equipped models accept the command."""
+        printer = await printer_factory(name="P", model=heater_model)
+        mock_client = MagicMock()
+        mock_client.set_chamber_temperature.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/chamber?target=45")
+        assert response.status_code == 200
+        mock_client.set_chamber_temperature.assert_called_once_with(45)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_target_zero_allowed(self, async_client: AsyncClient, printer_factory):
+        """target=0 turns the chamber heater off."""
+        printer = await printer_factory(name="P", model="H2D")
+        mock_client = MagicMock()
+        mock_client.set_chamber_temperature.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/chamber?target=0")
+        assert response.status_code == 200
+        mock_client.set_chamber_temperature.assert_called_once_with(0)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_target_out_of_range_rejected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="H2D")
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/chamber?target=100")
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_client_failure_returns_500(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="H2D")
+        mock_client = MagicMock()
+        mock_client.set_chamber_temperature.return_value = False
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/temperature/chamber?target=45")
+        assert response.status_code == 500
+
+
+class TestSetFanSpeedAPI:
+    """Integration tests for POST /printers/{id}/fan-speed (#1661).
+
+    The fan-id mapping (part->1, aux->2, chamber->3) is the critical
+    correctness gate — wrong mapping would target the wrong physical fan.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_invalid_fan_name_rejected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="X1C")
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/fan-speed?fan=foo&speed=50")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_not_connected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="X1C")
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = None
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/fan-speed?fan=part&speed=50")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "fan_name,expected_fan_id",
+        [("part", 1), ("aux", 2), ("chamber", 3)],
+    )
+    async def test_fan_id_mapping(self, async_client: AsyncClient, printer_factory, fan_name, expected_fan_id):
+        """Verify each fan name maps to the correct hardware fan-id."""
+        printer = await printer_factory(name="P", model="X1C")
+        mock_client = MagicMock()
+        mock_client.set_fan_speed.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/fan-speed?fan={fan_name}&speed=100")
+        assert response.status_code == 200
+        called_fan_id, called_pwm = mock_client.set_fan_speed.call_args.args
+        assert called_fan_id == expected_fan_id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize(
+        "speed_pct,expected_pwm",
+        [(0, 0), (50, 128), (100, 255)],
+    )
+    async def test_pwm_conversion(self, async_client: AsyncClient, printer_factory, speed_pct, expected_pwm):
+        """0-100% must convert to 0-255 PWM (round-to-nearest)."""
+        printer = await printer_factory(name="P", model="X1C")
+        mock_client = MagicMock()
+        mock_client.set_fan_speed.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/fan-speed?fan=part&speed={speed_pct}")
+        assert response.status_code == 200
+        _called_fan_id, called_pwm = mock_client.set_fan_speed.call_args.args
+        assert called_pwm == expected_pwm
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_speed_out_of_range_rejected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="X1C")
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/fan-speed?fan=part&speed=150")
+        assert response.status_code == 422
+
+
+class TestSelectExtruderAPI:
+    """Integration tests for POST /printers/{id}/select-extruder (#1661)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_not_found(self, async_client: AsyncClient):
+        response = await async_client.post("/api/v1/printers/99999/select-extruder?extruder=0")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_not_connected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="H2D")
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = None
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/select-extruder?extruder=0")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("extruder", [0, 1])
+    async def test_select_each_extruder(self, async_client: AsyncClient, printer_factory, extruder):
+        printer = await printer_factory(name="P", model="H2D")
+        mock_client = MagicMock()
+        mock_client.select_extruder.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/select-extruder?extruder={extruder}")
+        assert response.status_code == 200
+        mock_client.select_extruder.assert_called_once_with(extruder)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_extruder_index_out_of_range_rejected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="H2D")
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/select-extruder?extruder=2")
+        assert response.status_code == 422
+
+
+class TestXYJogAPI:
+    """Integration tests for POST /printers/{id}/xy-jog (#1661)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_zero_movement_rejected(self, async_client: AsyncClient, printer_factory):
+        """x=0 AND y=0 (or omitted) must be rejected — no-op jog is a UI bug."""
+        printer = await printer_factory(name="P", model="X1C")
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/xy-jog")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("x,y", [(201, 0), (0, 201), (-300, 0), (0, -250)])
+    async def test_oversize_movement_rejected(self, async_client: AsyncClient, printer_factory, x, y):
+        """Per-axis bound is 200mm; over-bound must be rejected."""
+        printer = await printer_factory(name="P", model="X1C")
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/xy-jog?x={x}&y={y}")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_not_connected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="X1C")
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = None
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/xy-jog?x=10&y=0")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_success_x_only_emits_relative_gcode(self, async_client: AsyncClient, printer_factory):
+        """X-only jog should emit G91/G90 wrapping and only include the X axis."""
+        printer = await printer_factory(name="P", model="X1C")
+        mock_client = MagicMock()
+        mock_client.send_gcode.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/xy-jog?x=10&y=0")
+        assert response.status_code == 200
+        sent = mock_client.send_gcode.call_args.args[0]
+        assert sent.startswith("G91\n")
+        assert sent.endswith("\nG90")
+        assert "X10.00" in sent
+        assert "Y" not in sent  # y=0 must NOT be included
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_success_both_axes(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="X1C")
+        mock_client = MagicMock()
+        mock_client.send_gcode.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/xy-jog?x=-5&y=7")
+        assert response.status_code == 200
+        sent = mock_client.send_gcode.call_args.args[0]
+        assert "X-5.00" in sent and "Y7.00" in sent
+
+
+class TestExtruderJogAPI:
+    """Integration tests for POST /printers/{id}/extruder-jog (#1661).
+
+    Note: Bambu firmware enforces the cold-extrude guard
+    (min-temp refusal) so the route deliberately does not gate on temp.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_zero_distance_rejected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="X1C")
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/extruder-jog?distance=0")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("distance", [101, -200])
+    async def test_oversize_distance_rejected(self, async_client: AsyncClient, printer_factory, distance):
+        """Per-axis bound is 100mm; over-bound must be rejected."""
+        printer = await printer_factory(name="P", model="X1C")
+        response = await async_client.post(f"/api/v1/printers/{printer.id}/extruder-jog?distance={distance}")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_not_connected(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="X1C")
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = None
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/extruder-jog?distance=5")
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_extrude_uses_relative_e_mode(self, async_client: AsyncClient, printer_factory):
+        """Extruder jog must wrap with M83 (relative E) and restore M82 (absolute E)."""
+        printer = await printer_factory(name="P", model="X1C")
+        mock_client = MagicMock()
+        mock_client.send_gcode.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/extruder-jog?distance=5")
+        assert response.status_code == 200
+        sent = mock_client.send_gcode.call_args.args[0]
+        assert sent.startswith("M83\n")
+        assert sent.endswith("\nM82")
+        assert "E5.00" in sent
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_retract_uses_negative_distance(self, async_client: AsyncClient, printer_factory):
+        printer = await printer_factory(name="P", model="X1C")
+        mock_client = MagicMock()
+        mock_client.send_gcode.return_value = True
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/extruder-jog?distance=-3.5")
+        assert response.status_code == 200
+        sent = mock_client.send_gcode.call_args.args[0]
+        assert "E-3.50" in sent

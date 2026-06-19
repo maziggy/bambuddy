@@ -361,7 +361,7 @@ export default {
       unload: 'Décharger',
     },
     bedJog: {
-      title: 'Déplacer le plateau',
+      title: 'Commandes de déplacement',
       bed: 'Plateau',
       step: 'Pas (mm)',
       up: 'Monter le plateau',
@@ -1873,6 +1873,13 @@ export default {
     defaultTimelapseDesc: 'Enregistrer une vidéo timelapse',
     defaultNozzleOffsetCali: 'Calibration du décalage des buses',
     defaultNozzleOffsetCaliDesc: 'Calibrer les décalages entre les buses',
+    tempFanPresetsTitle: 'Préréglages de température et de ventilateur',
+    tempFanPresetsDescription: 'Personnalisez les valeurs de sélection rapide affichées dans les fenêtres contextuelles de température et de vitesse du ventilateur de la carte imprimante. Le bouton Arrêt est toujours affiché.',
+    tempFanPresetsNozzle: 'Température de la buse',
+    tempFanPresetsBed: 'Température du plateau',
+    tempFanPresetsChamber: 'Température de la chambre',
+    tempFanPresetsFan: 'Vitesse du ventilateur',
+    tempFanPresetsReset: 'Rétablir les valeurs par défaut',
     staggeredStart: 'Démarrage échelonné',
     staggeredStartDescription: 'Taille de groupe et intervalle par défaut lors de l\'échelonnement des démarrages de lots multi-imprimantes. Modifiable par lot dans la fenêtre d\'impression.',
     plateClear: 'Confirmation de plateau libre',
@@ -4565,6 +4572,10 @@ export default {
     queueForceColorMatch: {
       title: 'Forcer la correspondance des couleurs',
       description: 'Refuser l\'envoi vers une imprimante qui n\'a pas exactement le type de filament et la couleur chargés. Désactivé par défaut — sans cela, la file d\'attente utilise uniquement la correspondance par modèle et peut choisir une imprimante avec la mauvaise couleur.',
+    },
+    gcodeInjection: {
+      title: 'Injection G-code',
+      description: 'Applique les extraits de G-code configurés par modèle dans les Paramètres aux travaux de ce VP. Désactivé par défaut.',
     },
     tailscaleDisabled: {
       title: 'Intégration Tailscale',

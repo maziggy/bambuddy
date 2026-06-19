@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { screen, waitFor, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { PrintersPage } from '../../pages/PrintersPage';
@@ -180,6 +180,65 @@ describe('PrintersPage', () => {
       await waitFor(() => {
         // Temperatures are shown in the UI
         expect(screen.getAllByText(/25/)).toBeTruthy();
+      });
+    });
+
+    it('sets left and right nozzle temperatures from the nozzle selector', async () => {
+      localStorage.setItem('printerCardSize', '2');
+      const temperatureRequests: Array<{ target: string | null; nozzle: string | null }> = [];
+      const dualNozzlePrinter = { ...mockPrinters[0], model: 'H2D', nozzle_count: 2 };
+      const dualNozzleStatus = {
+        ...mockPrinterStatus,
+        active_extruder: 0,
+        temperatures: {
+          ...mockPrinterStatus.temperatures,
+          nozzle: 31,
+          nozzle_target: 0,
+          nozzle_2: 32,
+          nozzle_2_target: 0,
+        },
+        nozzle_rack: [
+          { id: 0, nozzle_type: 'HS', nozzle_diameter: '0.4', wear: 5, stat: 1, max_temp: 300, serial_number: '', filament_color: '', filament_id: '', filament_type: '' },
+          { id: 1, nozzle_type: 'HS', nozzle_diameter: '0.4', wear: 3, stat: 1, max_temp: 300, serial_number: '', filament_color: '', filament_id: '', filament_type: '' },
+        ],
+      };
+
+      server.use(
+        http.get('/api/v1/printers/', () => HttpResponse.json([dualNozzlePrinter])),
+        http.get('/api/v1/printers/:id/status', () => HttpResponse.json(dualNozzleStatus)),
+        http.post('/api/v1/printers/:id/temperature/nozzle', ({ request }) => {
+          const url = new URL(request.url);
+          temperatureRequests.push({
+            target: url.searchParams.get('target'),
+            nozzle: url.searchParams.get('nozzle'),
+          });
+          return HttpResponse.json({ success: true, message: 'Nozzle temperature set' });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('L / R')).toBeInTheDocument();
+      });
+
+      // Dual-nozzle temps live on the L/R temperature card, not the nozzle-select card.
+      fireEvent.click(screen.getByText('L / R').parentElement!);
+
+      const leftTempBox = screen.getByText('Left Temp').parentElement!.parentElement!;
+      fireEvent.click(within(leftTempBox).getByRole('button', { name: '220 C' }));
+
+      await waitFor(() => {
+        expect(temperatureRequests).toContainEqual({ target: '220', nozzle: '1' });
+      });
+
+      fireEvent.click(screen.getByText('L / R').parentElement!);
+
+      const rightTempBox = screen.getByText('Right Temp').parentElement!.parentElement!;
+      fireEvent.click(within(rightTempBox).getByRole('button', { name: '260 C' }));
+
+      await waitFor(() => {
+        expect(temperatureRequests).toContainEqual({ target: '260', nozzle: '0' });
       });
     });
   });

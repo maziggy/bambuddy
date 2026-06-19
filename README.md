@@ -24,6 +24,11 @@
 </p>
 
 <p align="center">
+  <sub><strong>Backed by</strong></sub><br>
+  <a href="https://northpole3dprinting.com/"><img src="static/img/sponsors/northpole-3d-printing.jpg" alt="North Pole 3D Printing" height="60"></a>
+</p>
+
+<p align="center">
   <a href="https://demo.bambuddy.cool"><strong>🎮 Try the Live Demo</strong></a> •
   <a href="#-features">Features</a> •
   <a href="#-screenshots">Screenshots</a> •
@@ -141,8 +146,8 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - **Streaming overlay for OBS** - Embeddable page with camera + status for live streaming (`/overlay/:printerId`), configurable FPS (`?fps=30`), status-only mode (`?camera=false`)
 - External camera support (MJPEG, RTSP, HTTP snapshot, USB/V4L2) with layer-based timelapse
 - **Build plate empty detection** - Auto-pause print if objects detected on plate (multi-reference calibration, ROI adjustment)
-- Fan status monitoring (part cooling, auxiliary, chamber)
-- Printer control (stop, pause, resume, chamber light, print speed, **airduct mode** for P2S/H2*, **build-plate Z-jog** with Studio-style not-homed warning)
+- Fan monitoring and **speed control** for part-cooling, auxiliary, and chamber fans (0–100% with customizable quick-select presets)
+- Printer control (stop, pause, resume, chamber light, print speed, **airduct mode** for P2S/H2*, **temperature setpoints** for nozzle / bed / **chamber heater** on H2C/H2D/H2DPro/H2S/X2D, **Z-jog / XY-jog / extruder jog**, customizable temperature & fan presets under Settings → Workflow)
 - **Status badges on printer card**: SD Card (green / red), Enclosure Door (green / yellow — X1/P1S/P2S/H2*), Airduct Mode (cooling / heating)
 - **Force Refresh** menu item — request a full status push from the printer without reconnecting
 - Bulk printer actions (multi-select cards, then stop/pause/resume/clear all — select by state or location)
@@ -346,6 +351,8 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 ---
 
 ## 📸 Screenshots
+
+> **Refreshed printer card in 0.2.5b2** — tighter layout, popovers for all controls (temperature setpoints, fan speeds, jog), and a bottom-aligned power row. The screenshots below predate the refresh.
 
 <details>
 <summary><strong>Click to expand screenshots</strong></summary>

@@ -331,7 +331,7 @@ export default {
       unload: '언로드'
     },
     bedJog: {
-      title: '빌드 플레이트 이동',
+      title: '조그 컨트롤',
       bed: '베드',
       step: '이동 거리 (mm)',
       up: '플레이트 위로',
@@ -1799,6 +1799,13 @@ export default {
     defaultTimelapseDesc: '타임랩스 영상 녹화',
     defaultNozzleOffsetCali: '노즐 오프셋 보정',
     defaultNozzleOffsetCaliDesc: '익스트루더 간 노즐 오프셋 보정',
+    tempFanPresetsTitle: '온도 및 팬 프리셋',
+    tempFanPresetsDescription: '프린터 카드의 온도 및 팬 속도 팝오버에 표시되는 빠른 선택 값을 사용자 지정합니다. 끄기 버튼은 항상 표시됩니다.',
+    tempFanPresetsNozzle: '노즐 온도',
+    tempFanPresetsBed: '베드 온도',
+    tempFanPresetsChamber: '챔버 온도',
+    tempFanPresetsFan: '팬 속도',
+    tempFanPresetsReset: '기본값으로 재설정',
     staggeredStart: '엇갈린 시작',
     staggeredStartDescription: '다중 프린터 일괄 시작 시 기본 그룹 크기 및 간격. 인쇄 모달에서 배치별로 재정의할 수 있습니다.',
     plateClear: '플레이트 비움 확인',
@@ -4316,6 +4323,10 @@ export default {
     queueForceColorMatch: {
       title: '색상 일치 강제',
       description: '정확한 필라멘트 유형과 색상이 장착되지 않은 프린터에는 발송을 거부합니다. 기본적으로 꺼져 있음 — 이 옵션 없이는 대기열이 모델 전용 매칭을 사용하여 잘못된 색상이 장착된 프린터를 선택할 수 있습니다.'
+    },
+    gcodeInjection: {
+      title: 'G-code 주입',
+      description: '설정에서 모델별로 구성한 G-code 스니펫을 이 가상 프린터의 작업에 적용합니다. 기본값은 꺼짐입니다.'
     },
     tailscaleDisabled: {
       title: 'Tailscale 통합',

@@ -88,6 +88,10 @@ class TestUiPreferencesEndpoint:
             "ams_temp_good",
             "ams_temp_fair",
             "bed_cooled_threshold",
+            "nozzle_temp_presets",
+            "bed_temp_presets",
+            "chamber_temp_presets",
+            "fan_speed_presets",
         }
         assert set(data.keys()) == expected
 

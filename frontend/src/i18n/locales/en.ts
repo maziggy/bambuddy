@@ -361,7 +361,7 @@ export default {
       unload: 'Unload',
     },
     bedJog: {
-      title: 'Move build plate',
+      title: 'Jog Controls',
       bed: 'Bed',
       step: 'Step (mm)',
       up: 'Move plate up',
@@ -1927,6 +1927,13 @@ export default {
     defaultTimelapseDesc: 'Record timelapse video',
     defaultNozzleOffsetCali: 'Nozzle Offset Calibration',
     defaultNozzleOffsetCaliDesc: 'Calibrate nozzle offsets between extruders',
+    tempFanPresetsTitle: 'Temperature & Fan Presets',
+    tempFanPresetsDescription: 'Customize the quick-select values shown in printer-card temperature and fan-speed popovers. The Off button is always shown.',
+    tempFanPresetsNozzle: 'Nozzle temperature',
+    tempFanPresetsBed: 'Bed temperature',
+    tempFanPresetsChamber: 'Chamber temperature',
+    tempFanPresetsFan: 'Fan speed',
+    tempFanPresetsReset: 'Reset to defaults',
     staggeredStart: 'Staggered Start',
     staggeredStartDescription: 'Default group size and interval when staggering multi-printer batch starts. Can be overridden per batch in the print modal.',
     plateClear: 'Plate-Clear Confirmation',
@@ -4596,6 +4603,10 @@ export default {
     queueForceColorMatch: {
       title: 'Force color match',
       description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong color loaded.',
+    },
+    gcodeInjection: {
+      title: 'G-code injection',
+      description: 'Apply the per-model G-code snippets configured in Settings to jobs from this VP. Off by default.',
     },
     tailscaleDisabled: {
       title: 'Tailscale integration',

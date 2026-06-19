@@ -1799,7 +1799,7 @@ export default {
     apiKeyCreated: 'Clé API créée avec succès',
     apiKeyCopyWarning: 'Copiez cette clé maintenant - elle ne sera plus affichée !',
     useInApiBrowser: 'Utiliser dans l\'explorateur API',
-    apiKeyQrButton: 'QR code',
+    apiKeyQrButton: 'Code QR',
     apiKeyQrTitle: 'Scanner pour configurer',
     apiKeyQrCaption: 'Scannez avec votre application mobile pour ajouter ce serveur et cette clé API.',
     apiKeyQrWarning: 'Contient votre clé API secrète — ne la partagez pas et ne la capturez pas là où d\'autres peuvent la voir.',

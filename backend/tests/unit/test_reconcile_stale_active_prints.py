@@ -129,6 +129,24 @@ class TestIsActiveArchiveStale:
         assert is_stale is True
         assert "IDLE" in reason
 
+    # #1679: defensive pre-push guard. Even if reconcile gets called against
+    # a PrinterState that's still on construction defaults (state="unknown"
+    # / empty / None, subtask_name=""), the function must NOT report stale —
+    # otherwise the reactive PRINT COMPLETE later creates a duplicate
+    # archive and filament gets double-counted. The on_printer_status_change
+    # caller is the primary fix (gates the reconcile spawn on real state),
+    # but this guard is belt-and-braces for any future caller.
+    @pytest.mark.parametrize("degenerate_state", ["unknown", "UNKNOWN", "Unknown", "", None])
+    def test_pre_push_state_returns_not_stale_even_with_empty_subtask(self, degenerate_state):
+        archive = _archive(subtask_id="ABC123")
+        state = _state(degenerate_state, subtask_id="", subtask_name="")
+        is_stale, _ = _is_active_archive_stale(archive, state)
+        assert is_stale is False, (
+            f"state.state={degenerate_state!r} means MQTT hasn't pushed real data yet; "
+            "treating an in-flight archive as stale here causes the #1679 "
+            "duplicate-archive + filament-double-count regression"
+        )
+
 
 class TestReconcileStaleActivePrints:
     """Orchestrator-level tests — mock the printer manager + DB session so

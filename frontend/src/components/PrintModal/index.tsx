@@ -13,6 +13,7 @@ import { buildLoadedFilaments, useFilamentMapping } from '../../hooks/useFilamen
 import { useMultiPrinterFilamentMapping, type PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
 import { getColorName } from '../../utils/colors';
 import { getCurrencySymbol } from '../../utils/currency';
+import { getBedTypeInfo } from '../../utils/bedType';
 import { toDateTimeLocalValue, parseUTCDate } from '../../utils/date';
 import { getGlobalTrayId, isPlaceholderDate } from '../../utils/amsHelpers';
 import { FilamentMapping } from './FilamentMapping';
@@ -100,6 +101,7 @@ export function PrintModal({
         vibration_cali: queueItem.vibration_cali ?? DEFAULT_PRINT_OPTIONS.vibration_cali,
         layer_inspect: queueItem.layer_inspect ?? DEFAULT_PRINT_OPTIONS.layer_inspect,
         timelapse: queueItem.timelapse ?? DEFAULT_PRINT_OPTIONS.timelapse,
+        nozzle_offset_cali: queueItem.nozzle_offset_cali ?? DEFAULT_PRINT_OPTIONS.nozzle_offset_cali,
       };
     }
     return DEFAULT_PRINT_OPTIONS;
@@ -237,6 +239,7 @@ export function PrintModal({
       vibration_cali: settings.default_vibration_cali ?? DEFAULT_PRINT_OPTIONS.vibration_cali,
       layer_inspect: settings.default_layer_inspect ?? DEFAULT_PRINT_OPTIONS.layer_inspect,
       timelapse: settings.default_timelapse ?? DEFAULT_PRINT_OPTIONS.timelapse,
+      nozzle_offset_cali: settings.default_nozzle_offset_cali ?? DEFAULT_PRINT_OPTIONS.nozzle_offset_cali,
     });
   }, [settings, mode]);
 
@@ -438,21 +441,6 @@ export function PrintModal({
     }
   }, [settings?.per_printer_mapping_expanded, selectedPrinters, initialExpandApplied, multiPrinterMapping]);
 
-  // Keep scheduleOptions.gcodeInjection in sync with the checkbox's render
-  // condition. The checkbox only renders for reprint + snippets configured +
-  // quantity > 1, so if the user ticks it at quantity 2 then drops back to 1
-  // the box hides but the state stays true — and the immediate-reprint path
-  // would then silently bypass injection.
-  useEffect(() => {
-    if (
-      mode === 'reprint' &&
-      scheduleOptions.gcodeInjection &&
-      (effectiveQuantity <= 1 || !settings?.gcode_snippets)
-    ) {
-      setScheduleOptions((opts) => ({ ...opts, gcodeInjection: false }));
-    }
-  }, [mode, effectiveQuantity, settings?.gcode_snippets, scheduleOptions.gcodeInjection]);
-  
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -652,6 +640,32 @@ export function PrintModal({
 
     const filamentOverridesArray = buildFilamentOverridesArray();
 
+    // Multi-plate auto-batch: when the user adds 2+ plates from one source in
+    // a single add-to-queue submission, pre-create a PrintBatch and pass its
+    // id to each subsequent addToQueue call so the queue UI groups them as a
+    // collapsible batch. Only triggered for single-target submissions —
+    // multi-printer fan-out keeps the old per-item shape.
+    const shouldAutoBatch =
+      mode === 'add-to-queue'
+      && platesToQueue.length > 1
+      && (assignmentMode === 'model' || selectedPrinters.length === 1);
+    let autoBatchId: number | null = null;
+    if (shouldAutoBatch) {
+      try {
+        const baseName = (archiveName || '').replace(/\.gcode\.3mf$/i, '').replace(/\.3mf$/i, '');
+        const batchName = `${baseName || 'Batch'} · ${platesToQueue.length} plates`;
+        const batch = await api.createBatch({
+          name: batchName,
+          archive_id: isLibraryFile ? undefined : archiveId,
+          library_file_id: isLibraryFile ? libraryFileId : undefined,
+        });
+        autoBatchId = batch.id;
+      } catch {
+        // Non-fatal: fall back to ungrouped items so the queue still works.
+        autoBatchId = null;
+      }
+    }
+
     // Common queue data for add-to-queue and edit modes
     const getQueueData = (printerId: number | null, plateOverride?: number | null): PrintQueueItemCreate => ({
       printer_id: assignmentMode === 'printer' ? printerId : null,
@@ -665,6 +679,10 @@ export function PrintModal({
       auto_off_after: scheduleOptions.autoOffAfter,
       gcode_injection: scheduleOptions.gcodeInjection,
       manual_start: scheduleOptions.scheduleType === 'manual',
+      // When the user clicks "Print Anyway" on the frontend deficit warning,
+      // persist that acknowledgement so the scheduler doesn't immediately
+      // re-flag the item on its first dispatch tick (#1698-followup).
+      skip_filament_check: options?.skipFilamentCheck === true ? true : undefined,
       ams_mapping: printerId ? getMappingForPrinter(printerId) : undefined,
       plate_id: plateOverride !== undefined ? plateOverride : selectedPlate,
       scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
@@ -672,6 +690,7 @@ export function PrintModal({
         : undefined,
       ...printOptions,
       project_id: projectId ?? undefined,
+      batch_id: autoBatchId ?? undefined,
     });
 
     // Model-based assignment
@@ -877,6 +896,21 @@ export function PrintModal({
   // Quantity only applies for single-printer or model-based assignment (not multi-printer)
   const effectiveQuantity = (assignmentMode === 'printer' && selectedPrinters.length > 1) ? 1 : quantity;
 
+  // Keep scheduleOptions.gcodeInjection in sync with the checkbox's render
+  // condition. The checkbox only renders for reprint + snippets configured +
+  // quantity > 1, so if the user ticks it at quantity 2 then drops back to 1
+  // the box hides but the state stays true — and the immediate-reprint path
+  // would then silently bypass injection.
+  useEffect(() => {
+    if (
+      mode === 'reprint' &&
+      scheduleOptions.gcodeInjection &&
+      (effectiveQuantity <= 1 || !settings?.gcode_snippets)
+    ) {
+      setScheduleOptions((opts) => ({ ...opts, gcodeInjection: false }));
+    }
+  }, [mode, effectiveQuantity, settings?.gcode_snippets, scheduleOptions.gcodeInjection]);
+
   // Modal title and action button text based on mode
   const getModalConfig = () => {
     const printerCount = selectedPrinters.length;
@@ -943,6 +977,23 @@ export function PrintModal({
     isLibraryFile || (isMultiPlate ? selectedPlate !== null : true)
   );
 
+  // Dual-nozzle gate for the Nozzle Offset Calibration toggle (#1682).
+  // Mirrors backend `DUAL_NOZZLE_MODELS` so model-based assignment can show
+  // the toggle without a specific printer selected. For printer-mode we rely
+  // on the canonical `nozzle_count` field auto-detected from MQTT.
+  const DUAL_NOZZLE_MODELS = useMemo(
+    () => new Set(['H2D', 'H2DPRO', 'H2C', 'X2D']),
+    [],
+  );
+  const showDualNozzleOptions = useMemo(() => {
+    if (assignmentMode === 'model') {
+      if (!targetModel) return false;
+      return DUAL_NOZZLE_MODELS.has(targetModel.toUpperCase().replace(/[\s-]/g, ''));
+    }
+    if (!printers || selectedPrinters.length === 0) return false;
+    return selectedPrinters.some(id => printers.find(p => p.id === id)?.nozzle_count === 2);
+  }, [assignmentMode, targetModel, printers, selectedPrinters, DUAL_NOZZLE_MODELS]);
+
   return (
     <div
       className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
@@ -985,6 +1036,26 @@ export function PrintModal({
                 </>
               )}
             </p>
+
+            {/* Build-plate badge for the selected (or sole) plate — surfaced
+                early so the user knows which plate to mount before scheduling
+                (#1281). PlateSelector renders its own per-plate badges for
+                multi-plate files; this badge covers the single-plate case and
+                the multi-plate case where exactly one plate is selected. */}
+            {(() => {
+              if (!plates.length) return null;
+              const target = selectedPlate != null
+                ? plates.find(p => p.index === selectedPlate)
+                : plates[0];
+              const bed = getBedTypeInfo(target?.bed_type);
+              if (!bed) return null;
+              return (
+                <p className="flex items-center gap-1.5 text-xs text-bambu-gray -mt-2" title={bed.label}>
+                  <img src={bed.icon} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
+                  <span className="truncate">{bed.label}</span>
+                </p>
+              );
+            })()}
 
             {/* Plate selection - first so users know filament requirements before selecting printers */}
             <PlateSelector
@@ -1088,12 +1159,21 @@ export function PrintModal({
                 defaultExpanded={!!initialSelectedPrinterIds?.length || (settings?.per_printer_mapping_expanded ?? false)}
                 currencySymbol={currencySymbol}
                 defaultCostPerKg={defaultCostPerKg}
+                forceColorMatch={forceColorMatch}
+                onForceColorMatchChange={(slotId, value) =>
+                  setForceColorMatch((prev) => ({ ...prev, [slotId]: value }))
+                }
               />
             )}
 
             {/* Print options */}
             {(mode === 'reprint' || effectivePrinterCount > 0 || (assignmentMode === 'model' && targetModel)) && (
-              <PrintOptionsPanel options={printOptions} onChange={setPrintOptions} defaultExpanded={!!initialSelectedPrinterIds?.length} />
+              <PrintOptionsPanel
+                options={printOptions}
+                onChange={setPrintOptions}
+                defaultExpanded={!!initialSelectedPrinterIds?.length}
+                showDualNozzleOptions={showDualNozzleOptions}
+              />
             )}
 
             {/* Quantity — create multiple copies (batch). Hidden for multi-printer selection. */}

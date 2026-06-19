@@ -2,8 +2,8 @@
  * Tests for the AuthContext permission helpers.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import { http, HttpResponse } from 'msw';
@@ -11,7 +11,7 @@ import { server } from '../mocks/server';
 import { AuthProvider, useAuth } from '../../contexts/AuthContext';
 import { ThemeProvider } from '../../contexts/ThemeContext';
 import { ToastProvider } from '../../contexts/ToastContext';
-import type { Permission } from '../../api/client';
+import { setAuthToken, type Permission } from '../../api/client';
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -262,6 +262,67 @@ describe('AuthContext', () => {
           'groups:delete' as Permission
         )
       ).toBe(true);
+    });
+  });
+
+  describe('auth:expired event (#1698)', () => {
+    beforeEach(() => {
+      // authToken is a module-level variable initialised once at import time;
+      // writing to sessionStorage after import doesn't propagate. Use the
+      // canonical setter so checkAuthStatus() finds the token and loads /me.
+      setAuthToken('valid-token');
+      server.use(
+        http.get('/api/v1/auth/status', () => {
+          return HttpResponse.json({
+            auth_enabled: true,
+            requires_setup: false,
+          });
+        })
+      );
+    });
+
+    afterEach(() => {
+      setAuthToken(null);
+    });
+
+    it('clears user when an auth:expired event is dispatched', async () => {
+      const { result } = renderHook(() => useAuth(), {
+        wrapper: createWrapper(),
+      });
+
+      // Wait for the initial user load from /auth/me.
+      await waitFor(() => {
+        expect(result.current.user).not.toBeNull();
+      });
+
+      // Simulate client.ts dispatching the event after a 401 + token clear.
+      act(() => {
+        window.dispatchEvent(new CustomEvent('auth:expired'));
+      });
+
+      // User is cleared synchronously — ProtectedRoute (App.tsx:101) sees
+      // user === null and redirects to /login on the next render.
+      await waitFor(() => {
+        expect(result.current.user).toBeNull();
+      });
+    });
+
+    it('does not crash when the event fires after unmount', async () => {
+      const { result, unmount } = renderHook(() => useAuth(), {
+        wrapper: createWrapper(),
+      });
+
+      await waitFor(() => {
+        expect(result.current.user).not.toBeNull();
+      });
+
+      unmount();
+
+      // mountedRef guards setUser; dispatching after unmount must be a no-op,
+      // not a React state-update-after-unmount warning.
+      expect(() => {
+        window.dispatchEvent(new CustomEvent('auth:expired'));
+      }).not.toThrow();
     });
   });
 });

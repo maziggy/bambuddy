@@ -535,234 +535,6 @@ class TestSliceLibraryFile:
         assert "3D/3dmodel.model" in names
 
 
-class TestSliceWithBundle:
-    """Bundle dispatch path: when SliceRequest.bundle is set, the dispatch
-    forwards bundle id + per-category preset names to the sidecar instead
-    of resolving cloud/local/standard PresetRefs. Same fallback semantics
-    apply for 3MF inputs whose CLI run fails."""
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_bundle_dispatch_forwards_form_fields(self, async_client: AsyncClient, slice_test_setup):
-        captured: dict = {}
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            captured["body"] = request.content
-            return httpx.Response(
-                status_code=200,
-                content=b"PK\x03\x04 fake-3mf",
-                headers={
-                    "x-print-time-seconds": "200",
-                    "x-filament-used-g": "1.5",
-                    "x-filament-used-mm": "150",
-                },
-            )
-
-        _install_mock_sidecar(handler)
-        response = await async_client.post(
-            f"/api/v1/library/files/{slice_test_setup['src_file_id']}/slice",
-            json={
-                "bundle": {
-                    "bundle_id": "abc123def456abcd",
-                    "printer_name": "# Bambu Lab H2D 0.4 nozzle",
-                    "process_name": "# 0.20mm Standard @BBL H2D",
-                    "filament_names": [
-                        "# Bambu PLA Basic @BBL H2D",
-                        "# Bambu PETG HF @BBL H2D 0.4 nozzle",
-                    ],
-                },
-            },
-        )
-        assert response.status_code == 202, response.text
-        final = await _wait_for_job(async_client, response.json()["job_id"])
-        assert final["status"] == "completed", final
-
-        # Multipart form body should carry the bundle selectors instead of
-        # the JSON profile attachments. Quick string-level check is enough
-        # to confirm the dispatch picked the bundle branch.
-        body = captured["body"]
-        assert b'name="bundle"' in body
-        assert b"abc123def456abcd" in body
-        assert b'name="printerName"' in body
-        assert b'name="processName"' in body
-        assert b'name="filamentNames"' in body
-        # Multi-color filament list joined with ';' on the wire.
-        assert b"# Bambu PLA Basic @BBL H2D;# Bambu PETG HF @BBL H2D 0.4 nozzle" in body
-        # Profile attachments must NOT be present — bundle dispatch skips
-        # PresetRef resolution entirely.
-        assert b'name="printerProfile"' not in body
-        assert b'name="presetProfile"' not in body
-        assert b'name="filamentProfile"' not in body
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_bundle_dispatch_forwards_bed_type_when_set(self, async_client: AsyncClient, slice_test_setup):
-        """#1337 follow-up: bed-type override flows through the bundle path
-        as a `bedType` form field so the sidecar can pass
-        `--curr_bed_type` to the CLI. Bambuddy can't patch the bundle's
-        process JSON locally — the sidecar materialises it from the stored
-        .bbscfg — so the form field is the only handle."""
-        captured: dict = {}
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            captured["body"] = bytes(request.content)
-            return httpx.Response(
-                status_code=200,
-                content=b"PK\x03\x04 fake",
-                headers={
-                    "x-print-time-seconds": "10",
-                    "x-filament-used-g": "0.1",
-                    "x-filament-used-mm": "1.0",
-                },
-            )
-
-        _install_mock_sidecar(handler)
-        response = await async_client.post(
-            f"/api/v1/library/files/{slice_test_setup['src_file_id']}/slice",
-            json={
-                "bundle": {
-                    "bundle_id": "abc",
-                    "printer_name": "# X1C",
-                    "process_name": "# 0.20mm",
-                    "filament_names": ["# Bambu PLA"],
-                },
-                "bed_type": "Engineering Plate",
-            },
-        )
-        assert response.status_code == 202
-        final = await _wait_for_job(async_client, response.json()["job_id"])
-        assert final["status"] == "completed", final
-        body = captured["body"]
-        assert b'name="bedType"' in body
-        assert b"Engineering Plate" in body
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_bundle_dispatch_omits_bed_type_when_unset(self, async_client: AsyncClient, slice_test_setup):
-        """Companion test: no bed_type ⇒ no bedType form field, so the
-        bundle's own curr_bed_type is preserved end-to-end."""
-        captured: dict = {}
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            captured["body"] = bytes(request.content)
-            return httpx.Response(
-                status_code=200,
-                content=b"PK\x03\x04 fake",
-                headers={
-                    "x-print-time-seconds": "10",
-                    "x-filament-used-g": "0.1",
-                    "x-filament-used-mm": "1.0",
-                },
-            )
-
-        _install_mock_sidecar(handler)
-        response = await async_client.post(
-            f"/api/v1/library/files/{slice_test_setup['src_file_id']}/slice",
-            json={
-                "bundle": {
-                    "bundle_id": "abc",
-                    "printer_name": "# X1C",
-                    "process_name": "# 0.20mm",
-                    "filament_names": ["# Bambu PLA"],
-                },
-            },
-        )
-        assert response.status_code == 202
-        final = await _wait_for_job(async_client, response.json()["job_id"])
-        assert final["status"] == "completed", final
-        assert b'name="bedType"' not in captured["body"]
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_bundle_dispatch_3mf_falls_back_to_embedded_on_5xx(
-        self, async_client: AsyncClient, db_session, slice_test_setup
-    ):
-        # Same fallback as the preset-based path: if the resolved bundle
-        # triplet crashes the CLI on a 3MF, retry with embedded settings
-        # so the user gets *something* rather than a hard failure.
-        src_3mf_path = slice_test_setup["tmp_path"] / "library" / "files" / "complex_bundle.3mf"
-        src_3mf_path.write_bytes(_make_3mf_with_settings({"prime_tower_brim_width": "-1"}))
-        threemf = LibraryFile(
-            filename="complex_bundle.3mf",
-            file_path=str(src_3mf_path.relative_to(slice_test_setup["tmp_path"])),
-            file_type="3mf",
-            file_size=src_3mf_path.stat().st_size,
-        )
-        db_session.add(threemf)
-        await db_session.commit()
-        await db_session.refresh(threemf)
-
-        call_count = {"n": 0}
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            call_count["n"] += 1
-            # First call: bundle path → simulate CLI 5xx
-            if call_count["n"] == 1:
-                return httpx.Response(
-                    status_code=500,
-                    json={"message": "Failed to slice the model"},
-                )
-            # Retry: no profiles / no bundle → succeed with embedded settings
-            return httpx.Response(
-                status_code=200,
-                content=b"PK\x03\x04 fake-3mf",
-                headers={
-                    "x-print-time-seconds": "100",
-                    "x-filament-used-g": "1.0",
-                    "x-filament-used-mm": "100",
-                },
-            )
-
-        _install_mock_sidecar(handler)
-        response = await async_client.post(
-            f"/api/v1/library/files/{threemf.id}/slice",
-            json={
-                "bundle": {
-                    "bundle_id": "abc",
-                    "printer_name": "P",
-                    "process_name": "Q",
-                    "filament_names": ["F"],
-                },
-            },
-        )
-        assert response.status_code == 202
-
-        final = await _wait_for_job(async_client, response.json()["job_id"])
-        assert final["status"] == "completed", final
-        assert final["result"]["used_embedded_settings"] is True
-        assert call_count["n"] == 2  # bundle attempt + embedded fallback
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_bundle_dispatch_404_surfaces_as_400(self, async_client: AsyncClient, slice_test_setup):
-        # Sidecar returns 404 when the bundle / preset name isn't found —
-        # the slicer client classifies this as user-correctable input
-        # error so the dispatch returns 400 to the caller, not 502.
-        def handler(_: httpx.Request) -> httpx.Response:
-            return httpx.Response(
-                status_code=404,
-                json={"message": 'process preset "Imaginary" not found in bundle "abc"'},
-            )
-
-        _install_mock_sidecar(handler)
-        response = await async_client.post(
-            f"/api/v1/library/files/{slice_test_setup['src_file_id']}/slice",
-            json={
-                "bundle": {
-                    "bundle_id": "abc",
-                    "printer_name": "P",
-                    "process_name": "Imaginary",
-                    "filament_names": ["F"],
-                },
-            },
-        )
-        assert response.status_code == 202
-        final = await _wait_for_job(async_client, response.json()["job_id"])
-        assert final["status"] == "failed"
-        assert final["error_status"] == 400
-        assert "imaginary" in (final["error_detail"] or "").lower()
-
-
 # ---------------------------------------------------------------------------
 # GET /slice-jobs/{id}
 # ---------------------------------------------------------------------------
@@ -1603,24 +1375,19 @@ class TestCanonicalPrinterModel:
 
 class TestNozzleClassGuard:
     """guard_nozzle_class_reslice is now a no-op (#1493). Cross-class re-slicing
-    is handled by the two-pass conversion in _run_slicer_with_fallback for
-    both preset and bundle dispatch — so the guard never blocks. The function
-    is kept (and these tests with it) so external forks / pinned versions
-    that call it still link, and so a future regression that re-introduces a
-    raise inside the helper gets caught here."""
+    is handled by the two-pass conversion in _run_slicer_with_fallback — so the
+    guard never blocks. The function is kept (and these tests with it) so
+    external forks / pinned versions that call it still link, and so a future
+    regression that re-introduces a raise inside the helper gets caught here."""
 
     @staticmethod
-    def _bundle_request() -> object:
-        return type("_Req", (), {"bundle": object()})()
-
-    @staticmethod
-    def _preset_request() -> object:
-        return type("_Req", (), {"bundle": None})()
+    def _request() -> object:
+        return type("_Req", (), {})()
 
     @pytest.mark.asyncio
-    async def test_single_to_dual_bundle_is_allowed(self, monkeypatch):
-        """Bundle-mode cross-class: handled by the two-pass converter via
-        slice_with_bundle on the cube, so the guard does NOT raise."""
+    async def test_single_to_dual_is_allowed(self, monkeypatch):
+        """Cross-class re-slice: handled by the two-pass converter, so the
+        guard does NOT raise."""
         import backend.app.api.routes.library as lib
 
         async def _target(_db, _user, _request):
@@ -1628,28 +1395,17 @@ class TestNozzleClassGuard:
 
         monkeypatch.setattr(lib, "_resolve_target_printer_model", _target)
         # No raise — the converter handles this case now.
-        await guard_nozzle_class_reslice(None, None, self._bundle_request(), "X1C")
+        await guard_nozzle_class_reslice(None, None, self._request(), "X1C")
 
     @pytest.mark.asyncio
-    async def test_dual_to_single_bundle_is_allowed(self, monkeypatch):
+    async def test_dual_to_single_is_allowed(self, monkeypatch):
         import backend.app.api.routes.library as lib
 
         async def _target(_db, _user, _request):
             return "X1C"
 
         monkeypatch.setattr(lib, "_resolve_target_printer_model", _target)
-        await guard_nozzle_class_reslice(None, None, self._bundle_request(), "H2D")
-
-    @pytest.mark.asyncio
-    async def test_preset_path_is_not_blocked(self, monkeypatch):
-        """Preset path cross-class is also handled by the two-pass converter."""
-        import backend.app.api.routes.library as lib
-
-        async def _target(_db, _user, _request):
-            return "H2D"
-
-        monkeypatch.setattr(lib, "_resolve_target_printer_model", _target)
-        await guard_nozzle_class_reslice(None, None, self._preset_request(), "X1C")
+        await guard_nozzle_class_reslice(None, None, self._request(), "H2D")
 
     @pytest.mark.asyncio
     async def test_same_nozzle_class_is_allowed(self, monkeypatch):
@@ -1659,7 +1415,7 @@ class TestNozzleClassGuard:
             return "P1S"
 
         monkeypatch.setattr(lib, "_resolve_target_printer_model", _target)
-        await guard_nozzle_class_reslice(None, None, self._bundle_request(), "X1C")
+        await guard_nozzle_class_reslice(None, None, self._request(), "X1C")
 
     @pytest.mark.asyncio
     async def test_no_source_model_is_a_noop(self, monkeypatch):
@@ -1669,7 +1425,7 @@ class TestNozzleClassGuard:
             return "H2D"
 
         monkeypatch.setattr(lib, "_resolve_target_printer_model", _target)
-        await guard_nozzle_class_reslice(None, None, self._bundle_request(), None)
+        await guard_nozzle_class_reslice(None, None, self._request(), None)
 
     @pytest.mark.asyncio
     async def test_null_request_is_a_noop(self):

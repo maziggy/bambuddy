@@ -1445,6 +1445,140 @@ class TestVirtualPrinterInstance:
         # Position = max(7) + 1 = 8 — NOT the legacy hardcoded 1.
         assert queue_item.position == 8
 
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_multi_plate_send_all_enqueues_one_per_plate(self, tmp_path):
+        """#1733: BambuStudio / OrcaSlicer "Send All" of a multi-plate project
+        uploads ONE 3MF containing every plate. Pre-fix only the first plate
+        index was extracted and one queue item was created; plates 2..N were
+        silently dropped. Post-fix every `<plate>` block in `slice_info.config`
+        produces its own PrintQueueItem with the correct ``plate_id``, sharing
+        the same backing archive, with consecutive positions for plate-order
+        execution.
+        """
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items: list = []
+
+        class _RecordingDb:
+            def __init__(self):
+                # Capture inserted items as they're added; assign a fake .id
+                # on flush so the manager's logger doesn't see None.
+                self._next_id = 1000
+
+                def _add(item):
+                    added_items.append(item)
+
+                self.add = _add
+                self.commit = AsyncMock()
+
+            async def execute(self, query):  # noqa: ARG002
+                """Return MAX(position) = 0 so plate items land at 1, 2, 3."""
+                result = MagicMock()
+                result.scalar = MagicMock(return_value=0)
+                return result
+
+            async def flush(self):
+                # Mimic the FK populate so queue_item.id is available after add().
+                for item in added_items:
+                    if getattr(item, "id", None) is None:
+                        item.id = self._next_id
+                        self._next_id += 1
+
+        mock_db = _RecordingDb()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=44,
+            name="MultiPlateSendAll",
+            mode="queue",
+            model="O1D",  # H2D — matches the live VP H2D-1 Proxy in #1733
+            access_code="12345678",
+            serial_suffix="391800044",
+            target_printer_id=1,
+            auto_dispatch=False,  # manual_start, mirrors the live VP
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        # Build a 3MF with three plates baked into slice_info.config —
+        # mirrors what BambuStudio / OrcaSlicer's "Send All" puts on the wire.
+        file_path = tmp_path / "Cube.gcode.3mf"
+        _write_3mf_with_filaments(
+            file_path, [{"id": 1, "type": "PLA", "color": "#000000", "used_g": "15.61"}], plate_index=1
+        )
+        # Append plate 2 and 3 blocks to slice_info.config to mimic Send All.
+        with zipfile.ZipFile(file_path, "r") as zf:
+            existing = zf.read("Metadata/slice_info.config").decode()
+        # Inject two additional <plate> blocks (indices 2 and 3) inside <config>.
+        multi_plate_config = existing.replace(
+            "</config>",
+            (
+                '<plate><metadata key="index" value="2"/>'
+                '<filament id="2" type="PETG" color="#FB0207" used_g="14.45"/>'
+                "</plate>"
+                '<plate><metadata key="index" value="3"/>'
+                '<filament id="3" type="PLA" color="#FFFFFF" used_g="12.10"/>'
+                "</plate>"
+                "</config>"
+            ),
+        )
+        # Repack the zip with the expanded slice_info.config.
+        import io as _io
+
+        buf = _io.BytesIO()
+        with zipfile.ZipFile(file_path, "r") as src, zipfile.ZipFile(buf, "w") as dst:
+            for name in src.namelist():
+                if name == "Metadata/slice_info.config":
+                    dst.writestr(name, multi_plate_config)
+                else:
+                    dst.writestr(name, src.read(name))
+            # Plate-2 and plate-3 gcode payloads so `extract_filament_requirements`
+            # has something to read for each — contents irrelevant, presence matters.
+            dst.writestr("Metadata/plate_2.gcode", "; plate 2 gcode\n")
+            dst.writestr("Metadata/plate_3.gcode", "; plate 3 gcode\n")
+        file_path.write_bytes(buf.getvalue())
+
+        mock_archive = MagicMock()
+        mock_archive.id = 999
+        mock_archive.printer_id = None
+        mock_archive.filename = "Cube.gcode.3mf"
+        mock_archive.print_name = "Cube"
+        mock_archive.status = "archived"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+            patch(
+                "backend.app.core.websocket.ws_manager.send_archive_created",
+                new_callable=AsyncMock,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        # Three queue items, one per plate, with the correct plate_id and
+        # consecutive positions starting at MAX(position)+1 = 1.
+        assert len(added_items) == 3, f"Expected 3 queue items for 3-plate Send All, got {len(added_items)}"
+        plate_ids = [q.plate_id for q in added_items]
+        assert plate_ids == [1, 2, 3], f"plate_ids should preserve slice_info order, got {plate_ids}"
+        positions = [q.position for q in added_items]
+        assert positions == [1, 2, 3], f"positions should be consecutive, got {positions}"
+        archive_ids = {q.archive_id for q in added_items}
+        assert archive_ids == {999}, f"All queue items must share the single backing archive, got {archive_ids}"
+        # auto_dispatch=False on the VP → every item is manual_start.
+        assert all(q.manual_start for q in added_items)
+
 
 class TestVirtualPrinterManager:
     """Tests for VirtualPrinterManager orchestrator."""

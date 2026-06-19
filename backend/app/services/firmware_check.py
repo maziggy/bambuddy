@@ -62,6 +62,7 @@ MODEL_TO_API_KEY = {
     "A1 Mini": "a1-mini",
     "A1-Mini": "a1-mini",
     "A1mini": "a1-mini",
+    "A2L": "a2l",
     "H2D": "h2d",
     "H2C": "h2c",
     "H2S": "h2s",
@@ -88,6 +89,7 @@ MODEL_TO_API_KEY = {
     "N1": "a1-mini",
     "N6": "x2d",
     "N7": "p2s",
+    "N9": "a2l",
 }
 
 # Reverse mapping: API key to model codes
@@ -103,6 +105,7 @@ API_KEY_TO_DEV_MODEL = {
     "x1e": "C13",
     "x2d": "N6",
     "h2d-pro": "O1E",
+    "a2l": "N9",
 }
 
 # Wiki firmware release history pages (primary version source)
@@ -118,6 +121,10 @@ API_KEY_TO_WIKI_PATH = {
     "p2s": "/en/p2s/manual/p2s-firmware-release-history",
     "x2d": "/en/x2d/manual/x2d-firmware-release-history",
     "h2d-pro": "/en/h2d-pro/manual/firmware-release-history",
+    # A2L wiki path follows the established pattern but isn't yet published —
+    # _fetch_all_versions_from_wiki silently returns [] on 404 so this is safe
+    # to ship before Bambu publishes the page.
+    "a2l": "/en/a2l/manual/a2l-firmware-release-history",
 }
 
 

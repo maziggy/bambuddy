@@ -331,7 +331,7 @@ export default {
       unload: '언로드'
     },
     bedJog: {
-      title: '빌드 플레이트 이동',
+      title: '조그 컨트롤',
       bed: '베드',
       step: '이동 거리 (mm)',
       up: '플레이트 위로',
@@ -592,6 +592,12 @@ export default {
   },
   archives: {
     title: '인쇄 아카이브',
+    no3mfBanner: {
+      title: '최근 일부 인쇄가 썸네일과 함께 아카이브되지 않았습니다',
+      body: '슬라이서가 프린터의 SD 카드에 .gcode.3mf 파일을 남기지 않아서 Bambuddy가 썸네일이나 슬라이서 메타데이터를 가져올 수 없었습니다. 일반적으로 슬라이서 (Bambu Studio / OrcaSlicer 장치 탭)에서 "전송된 파일을 외부 저장소에 저장"이 꺼져 있을 때 발생합니다.',
+      docsLink: '설치 단계 4 보기',
+      dismissLabel: '이 알림 닫기'
+    },
     searchPlaceholder: '아카이브 검색...',
     filterByPrinter: '프린터별 필터',
     filterByStatus: '상태별 필터',
@@ -725,6 +731,7 @@ export default {
       noDownload: '아카이브를 다운로드할 권한이 없습니다',
       noCopyLink: '다운로드 링크를 복사할 권한이 없습니다',
       noDelete: '이 아카이브를 삭제할 권한이 없습니다',
+      noEdit: '이 항목을 편집할 권한이 없습니다',
       noCreate: '아카이브를 만들 권한이 없습니다'
     },
     platePicker: {
@@ -805,7 +812,9 @@ export default {
       deleteArchives: '아카이브 삭제',
       deleteArchivesConfirm: '{{count}}개 아카이브를 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.',
       deleteCount: '{{count}}개 삭제',
-      deletePurgeStats: '빠른 통계에서도 이 인쇄 항목 제거 (필라멘트, 시간, 비용, 에너지)'
+      deletePurgeStats: '빠른 통계에서도 이 인쇄 항목 제거 (필라멘트, 시간, 비용, 에너지)',
+      deleteQueueItemsWarning: '이 아카이브와 연결된 {{count}}개의 대기열 항목도 함께 제거됩니다.',
+      deleteBlockedByPrinting: '삭제할 수 없습니다 — {{count}}개의 대기열 항목이 현재 인쇄 중입니다. 인쇄를 먼저 중지한 다음 다시 시도하십시오.'
     },
     page: {
       title: '아카이브',
@@ -861,7 +870,22 @@ export default {
       clearLogConfirm: '모든 인쇄 로그 항목이 영구적으로 삭제됩니다. 아카이브와 대기열 항목은 영향받지 않습니다. 이 작업은 취소할 수 없습니다. 계속하시겠습니까?',
       clearLogButton: '모두 지우기',
       cleared: '{{count}}개 로그 항목이 지워졌습니다',
-      clearFailed: '인쇄 로그 지우기 실패'
+      clearFailed: '인쇄 로그 지우기 실패',
+      deleteEntryTitle: '인쇄 로그 항목 삭제',
+      deleteEntryConfirm: '이 항목이 로그에서 삭제되며 필라멘트, 시간 및 비용 기여도가 빠른 통계에서 제외됩니다. 해당 아카이브(있는 경우)는 영향을 받지 않습니다. 이 작업은 취소할 수 없습니다.',
+      entryDeleted: '인쇄 로그 항목이 삭제되었습니다',
+      entryDeleteFailed: '인쇄 로그 항목 삭제 실패',
+      editEntryTitle: '인쇄 로그 항목 편집',
+      editEntryDescription: '이 인쇄를 분류합니다. 실패 분석 위젯이 이 값으로 그룹화하므로 업데이트가 통계에 즉시 반영됩니다.',
+      entryUpdated: '인쇄 로그 항목이 업데이트되었습니다',
+      entryUpdateFailed: '인쇄 로그 항목 업데이트 실패',
+      statuses: {
+        completed: '완료됨',
+        failed: '실패',
+        stopped: '중지됨',
+        cancelled: '취소됨',
+        skipped: '건너뜀'
+      }
     },
     runLog: {
       title: '인쇄 기록',
@@ -936,7 +960,40 @@ export default {
     batchCancelled: '남은 배치 항목이 취소되었습니다',
     cancelBatchConfirmTitle: '배치 취소',
     cancelBatchConfirmMessage: '이 배치의 남은 대기 항목을 모두 취소하시겠습니까?',
-    batch: '배치',
+    batch: {
+      defaultName: '배치',
+      label: '{{count}}개 항목',
+      label_plural: '{{count}}개 항목',
+      pendingCount: '{{count}}개 대기 중',
+      pendingCount_plural: '{{count}}개 대기 중',
+      expand: '배치 펼치기',
+      collapse: '배치 접기',
+      groupAsBatch: '배치로 묶기…',
+      groupAsBatchDescription: '선택한 {{count}}개 항목을 접을 수 있는 하나의 배치로 묶습니다.',
+      nameLabel: '배치 이름',
+      namePlaceholder: '예: 금요일 선물',
+      create: '배치 만들기',
+      ungroup: '그룹 해제',
+      ungroupConfirmTitle: '배치 그룹을 해제하시겠습니까?',
+      ungroupConfirmMessage: '항목은 큐에 남아 있지만 더 이상 함께 그룹화되지 않습니다.',
+    },
+    tabs: {
+      queue: '큐',
+      history: '기록',
+      timeline: '타임라인',
+    },
+    layout: {
+      flatList: '목록',
+      byPrinter: '프린터별',
+      groupByPrinter: '프린터별로 묶기',
+    },
+    history: {
+      emptyTitle: '아직 기록이 없습니다',
+      emptyDescription: '완료·취소·실패한 인쇄가 여기에 표시됩니다.',
+    },
+    dragGhost: {
+      multiCount: '{{count}}개 항목',
+    },
     sections: {
       currentlyPrinting: '현재 인쇄 중',
       queued: '대기 중',
@@ -1015,6 +1072,7 @@ export default {
       layerInspection: '첫 번째 층 검사',
       timelapse: '타임랩스',
       useAms: 'AMS 사용',
+      nozzleOffsetCali: '노즐 오프셋 보정',
       applyChanges: '변경사항 적용',
       selectAll: '전체 선택',
       deselectAll: '전체 해제',
@@ -1050,13 +1108,18 @@ export default {
       clearHistoryFailed: '기록 지우기 실패',
       updateFailed: '항목 업데이트 실패',
       bulkCancelled: '{{count}}개 항목이 취소되었습니다',
-      bulkCancelFailed: '항목 취소 실패'
+      bulkCancelFailed: '항목 취소 실패',
+      batchCreated: '"{{name}}" 배치를 만들었습니다',
+      batchCreateFailed: '배치 만들기에 실패했습니다',
+      batchUngrouped: '{{count}}개 항목의 그룹을 해제했습니다',
+      batchUngroupFailed: '배치 그룹 해제에 실패했습니다',
     },
     timeline: {
       listView: '목록',
       timelineView: '타임라인',
       unassigned: '미할당',
       noData: '이 날에 예약된 인쇄 없음',
+      nothingCommitted: '이 시간 창에 확정된 일정이 없습니다. 대기 중인 항목, 보류된 항목, 유휴 프린터의 ASAP 작업은 표시되지 않습니다 — 예약 시간을 설정하거나 대기 항목을 릴리스하면 여기에 표시됩니다.',
       allDoneBy: '모든 인쇄 예상 완료 시간: {{time}}',
       staged: '준비됨',
       filterAll: '모두 표시',
@@ -1072,7 +1135,13 @@ export default {
         previous: '이전 날',
         next: '다음 날',
         today: '오늘'
-      }
+      },
+      window: {
+        back12h: '12시간 이전',
+        forward12h: '12시간 이후',
+        now: '지금',
+      },
+      printerColumnHeader: '프린터',
     },
     permissions: {
       noStopPrint: '인쇄를 정지할 권한이 없습니다',
@@ -1728,6 +1797,15 @@ export default {
     defaultLayerInspectDesc: '첫 번째 층 AI 검사',
     defaultTimelapse: '타임랩스',
     defaultTimelapseDesc: '타임랩스 영상 녹화',
+    defaultNozzleOffsetCali: '노즐 오프셋 보정',
+    defaultNozzleOffsetCaliDesc: '익스트루더 간 노즐 오프셋 보정',
+    tempFanPresetsTitle: '온도 및 팬 프리셋',
+    tempFanPresetsDescription: '프린터 카드의 온도 및 팬 속도 팝오버에 표시되는 빠른 선택 값을 사용자 지정합니다. 끄기 버튼은 항상 표시됩니다.',
+    tempFanPresetsNozzle: '노즐 온도',
+    tempFanPresetsBed: '베드 온도',
+    tempFanPresetsChamber: '챔버 온도',
+    tempFanPresetsFan: '팬 속도',
+    tempFanPresetsReset: '기본값으로 재설정',
     staggeredStart: '엇갈린 시작',
     staggeredStartDescription: '다중 프린터 일괄 시작 시 기본 그룹 크기 및 간격. 인쇄 모달에서 배치별로 재정의할 수 있습니다.',
     plateClear: '플레이트 비움 확인',
@@ -1802,7 +1880,10 @@ export default {
     newWindow: '새 창',
     embeddedOverlay: '내장 오버레이',
     preferredSlicer: '선호하는 슬라이서',
-    preferredSlicerDescription: '파일을 열 슬라이서 앱을 선택하세요',
+    preferredSlicerDescription: 'API 사이드카를 통한 앱 내 슬라이싱에 사용되는 슬라이서',
+    openInSlicerLabel: '슬라이서에서 열기',
+    openInSlicerInherit: 'API 슬라이서와 동일',
+    openInSlicerDescription: "'슬라이서에서 열기' 버튼이 사용하는 데스크톱 슬라이서입니다. 'API 슬라이서와 동일'로 두어 상속하거나 로컬에서 사용할 다른 슬라이서를 선택하세요.",
     orcaslicerKnownIssuesWarning: 'OrcaSlicer 2.3.2 / 2.4.0-dev에는 Bambu 제작 3MF 파일 슬라이싱을 차단하는 알려진 CLI 버그가 있습니다. 업스트림 수정이 출시될 때까지 Bambu Studio를 사용하는 것이 좋습니다.',
     useSlicerApi: '슬라이서 API 사용',
     useSlicerApiDescription: '켜면 "슬라이스" 작업이 앱 내 슬라이서 모달을 열고 슬라이서 API 사이드카를 호출합니다. 끄면 URI 스킴을 통해 데스크톱 슬라이서로 전달합니다.',
@@ -1810,21 +1891,11 @@ export default {
     orcaslicerApiUrl: 'OrcaSlicer 사이드카 URL',
     bambuStudioApiUrl: 'Bambu Studio 사이드카 URL',
     slicerApiUrlDescription: '슬라이서 API 사이드카 컨테이너의 URL. SLICER_API_URL / BAMBU_STUDIO_API_URL 환경 변수 기본값을 사용하려면 비워두세요.',
-    slicerBundles: {
-      title: '슬라이서 번들',
-      description: 'BambuStudio에서 내보낸 프린터 프리셋 번들(.bbscfg)을 가져오세요. 가져온 후 슬라이스 요청이 JSON 프로필 트리플렛을 다시 업로드하지 않고 번들에서 이름으로 프리셋을 선택할 수 있습니다.',
-      uploadButton: '번들 업로드',
-      uploading: '업로드 중…',
-      loading: '번들 로딩 중…',
-      empty: '아직 가져온 번들 없음.',
-      summary: '{{processCount}}개 프로세스 · {{filamentCount}}개 필라멘트 프리셋',
-      delete: '삭제',
-      uploadSuccess: '{{name}} 가져옴',
-      uploadError: '번들 업로드 실패: {{message}}',
-      deleteSuccess: '번들 제거됨',
-      deleteError: '번들 삭제 실패: {{message}}',
-      confirmDeleteTitle: '이 번들을 제거하시겠습니까?',
-      confirmDeleteMessage: '"{{name}}"을(를) 참조하는 슬라이스 요청은 번들이 재가져오기될 때까지 실패합니다.'
+    slicerBundlesRemoved: {
+      title: '슬라이서 번들 (제거됨)',
+      description: '프린터 프리셋 번들 (.bbscfg) 가져오기가 제거되었습니다. BambuStudio의 번들 내보내기에는 사용자 정의 프리셋만 포함되므로, 가져오기로는 표준 프로세스 / 필라멘트가 제공되지 않았고 슬라이싱은 임베디드 설정으로 되돌아갔습니다.',
+      alternatives: '개별 사용자 정의는 단일 프리셋 가져오기를, 또는 Bambu Cloud / Orca Cloud를 통해 동기화하세요. 표준 프리셋은 슬라이서 사이드카에서 자동으로 제공됩니다.',
+      lookupOrder: '슬라이스 시점의 프리셋 조회 순서: 1) 가져옴 (로컬), 2) Orca Cloud, 3) Bambu Cloud, 4) 표준 (사이드카 폴백).',
     },
     externalCameras: '외부 카메라',
     costTracking: '비용 추적',
@@ -1994,7 +2065,7 @@ export default {
     defaultPrinterDescription: '업로드, 재인쇄 등 작업에서 이 프린터를 미리 선택합니다.',
     slicerBambuStudio: 'Bambu Studio',
     slicerOrcaSlicer: 'OrcaSlicer',
-    sidebarOrderDescription: '사이드바의 항목을 드래그하여 순서를 변경하세요. 여기서 기본 순서로 초기화하세요.',
+    sidebarOrderDescription: '사이드바 레이아웃에서 항목 순서를 변경하고, 표시 상태를 초기화하고, 사용자 지정 링크를 관리하세요.',
     setDefault: '기본값 설정',
     sidebarOrderSetDefaultHint: '기본값 설정은 현재 메뉴 순서를 사용자 지정하지 않은 사용자에게 적용합니다.',
     sidebarDefaultSet: '기본 메뉴 순서가 설정되었습니다.',
@@ -2173,6 +2244,17 @@ export default {
       linkedAccounts: '연결된 SSO 계정',
       linkedAccountsDesc: '이 외부 ID 제공자가 계정에 연결되어 있습니다.',
       oidcUnlinked: '계정 연결이 해제되었습니다.'
+    },
+    // 세션 정책 (#1706)
+    sessionPolicy: {
+      title: '세션 정책',
+      description: '신규 사용자 로그인의 최대 세션 수명입니다. 이미 발급된 토큰은 원래 만료 시간을 유지합니다.',
+      preset24h: '24시간',
+      preset7d: '7일',
+      preset30d: '30일',
+      customHoursLabel: '사용자 지정 세션 수명(시간)',
+      hoursSuffix: '시간',
+      warning: '세션이 길어질수록 자동 로그아웃 보호가 약해집니다. 신뢰할 수 있는 단일 사용자 배포에서만 권장됩니다.'
     },
     oidc: {
       title: 'SSO / OIDC 제공자',
@@ -3364,9 +3446,6 @@ export default {
     actionAllTitle: '모든 플레이트를 단일 다중 플레이트 출력으로 슬라이싱합니다 (단일 아카이브). 필라멘트 선택은 프로젝트가 정의하는 모든 슬롯을 포함합니다.',
     allPlatesToggle: '{{count}}개 플레이트 모두 슬라이싱',
     otherPrinters: '다른 프린터',
-    bundle: '슬라이서 번들',
-    bundleNone: '— 없음 (개별로 프리셋 선택) —',
-    bundleAllRequired: '번들 프로세스 및 모든 필라멘트 슬롯을 선택해야 합니다',
     runningWithProgressMultiPlate: '플레이트 {{plateIndex}}/{{plateCount}} • {{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
     failedTitle: '슬라이싱 실패',
     bedType: {
@@ -3411,6 +3490,29 @@ export default {
     reportPartialUsage: '실패한 인쇄물에 대한 부분 사용량 보고',
     reportPartialUsageDesc: '인쇄가 실패하거나 취소될 때 레이어 진행률을 기반으로 해당 시점까지 사용된 예상 필라멘트를 보고합니다.'
   },
+
+  locations: {
+    title: '보관 위치',
+    subtitle: '스풀의 선반, 서랍 등 물리적 보관 장소를 관리합니다',
+    add: '위치 추가',
+    addShort: '추가',
+    edit: '위치 편집',
+    name: '이름',
+    spools: '스풀',
+    empty: '아직 보관 위치가 없습니다. 첫 번째 선반이나 서랍을 만드세요.',
+    manage: '위치',
+    createPlaceholder: '예: 선반 A, 서랍 1',
+    nameRequired: '위치 이름은 필수입니다',
+    created: '위치가 생성되었습니다',
+    updated: '위치가 업데이트되었습니다',
+    deleted: '위치가 삭제되었습니다',
+    saveFailed: '위치 저장에 실패했습니다',
+    deleteFailed: '위치 삭제에 실패했습니다',
+    deleteBlocked: '삭제하기 전에 이 위치의 모든 스풀을 옮기세요',
+    confirmDelete: '"{{name}}"을(를) 삭제하시겠습니까?',
+    confirmDeleteMessage: '이 위치가 카탈로그에서 제거됩니다. 스풀을 먼저 옮겨야 합니다.',
+  },
+
   inventory: {
     title: '스풀 재고',
     spoolmanMixedContentTitle: 'HTTPS에서 Spoolman을 불러올 수 없음 — 브라우저가 혼합 콘텐츠를 차단함',
@@ -3467,6 +3569,31 @@ export default {
         color: '색상 순'
       }
     },
+    csv: {
+      importButton: 'CSV 가져오기',
+      exportButton: 'CSV 내보내기',
+      modalTitle: 'CSV에서 스풀 가져오기',
+      selectFile: 'CSV 파일을 선택하거나 여기로 끌어다 놓으세요',
+      dragHint: '헤더: material(필수), brand, subtype, color_name, rgba, …',
+      parsing: '파일을 읽는 중…',
+      previewError: 'CSV 파일을 읽을 수 없습니다',
+      validCount: '유효 {{count}}개',
+      errorCount: '오류 {{count}}개',
+      skippedCount: '건너뜀 {{count}}개',
+      colRow: '행',
+      colStatus: '상태',
+      colColor: '색상',
+      colorResolved: '카탈로그에서 색상 채움',
+      colorCrossMaterial: '다른 재료에서 색상을 가져옴 — 카탈로그에 정확히 일치하는 항목 없음',
+      duplicateExisting: '이 재료, 브랜드, 색상의 스풀이 이미 존재합니다 — 그래도 새 스풀로 가져옵니다',
+      spoolmanHint: 'Spoolman 모드에서는 Spoolman의 기본 CSV 가져오기/내보내기를 사용하세요.',
+      importValidRows: '유효한 {{count}}개 행 가져오기',
+      noValidRows: '유효한 행 없음',
+      importing: '가져오는 중…',
+      importSuccess: '{{count}}개 스풀을 가져왔습니다',
+      importError: '가져오기 실패',
+      exportError: '내보내기 실패',
+    },
     addSpool: '스풀 추가',
     editSpool: '스풀 편집',
     copySpool: '스풀 복사',
@@ -3519,6 +3646,7 @@ export default {
     assignSpool: '스풀 할당',
     unassignSpool: '할당 해제',
     assignSuccess: '스풀 할당 및 AMS 슬롯 구성됨',
+    assignPendingInsert: '할당됨. 스풀을 삽입하면 슬롯이 구성됩니다.',
     assignFailed: '스풀 할당 실패',
     selectSpool: '이 슬롯에 할당할 스풀 선택',
     assigned: '할당됨',
@@ -3728,6 +3856,7 @@ export default {
     used: '사용됨',
     remainingUnit: '남음',
     slotEmpty: '비어 있음',
+    slotUnconfigured: '?',
     emptySlotReset: '필라멘트가 할당되지 않음'
   },
   printModal: {
@@ -4730,6 +4859,17 @@ export default {
     removeLink: '링크 제거'
   },
   externalLinks: {
+    title: '사이드바 링크',
+    sidebarLayout: '사이드바',
+    sidebarLayoutDescription: '기본 제공 페이지를 표시하거나 숨기고, 외부 링크를 추가하고, 항목을 드래그하여 사이드바 탐색 순서를 변경하세요.',
+    systemPages: 'Bambuddy 페이지',
+    externalLinks: '외부 링크',
+    visibleInSidebar: '사이드바에 표시',
+    hiddenFromSidebar: '사이드바에서 숨김',
+    requiredInSidebar: '사이드바에 필수',
+    hidePage: '페이지 숨기기',
+    showPage: '페이지 표시',
+    settingsCannotBeHidden: '설정은 숨길 수 없습니다',
     noLinksConfigured: '구성된 외부 링크 없음',
     deleteLink: '링크 삭제',
     removeCustomIcon: '사용자 지정 아이콘 제거',
@@ -4888,6 +5028,8 @@ export default {
     noMatchingPresets: '일치하는 프리셋을 찾을 수 없습니다.',
     custom: '사용자 지정',
     builtin: '기본 제공',
+    orcaCloud: 'Orca Cloud',
+    bambuCloud: 'Bambu Cloud',
     settingsSentToPrinter: '설정이 프린터로 전송됨',
     filamentProfile: '필라멘트 프로필',
     kProfileLabel: 'K 프로필 (압력 전진)',
@@ -5666,6 +5808,12 @@ export default {
         title: '파일 전송 포트 (FTPS 990)',
         pass: '연결 가능 — 인쇄 파일 전송이 작동합니다.',
         warn: '포트 990에 연결할 수 없습니다. 모니터링은 작동할 수 있지만 프린터로 파일 전송에 실패합니다. 포트 990이 차단되지 않았는지 확인하세요.'
+      },
+      external_storage: {
+        title: '전송된 파일을 외부 저장소에 저장 (설치 단계 4)',
+        pass: '프린터가 이 옵션이 켜져 있다고 보고합니다 — 전송된 파일이 SD 카드에 저장되며 아카이브에 썸네일과 슬라이서 메타데이터가 포함됩니다.',
+        fail: '프린터가 이 옵션이 꺼져 있다고 보고합니다. "전송된 파일을 외부 저장소에 저장"을 활성화하세요 — 최신 펌웨어 (P2S 01.02 / Bambu Studio 2.6 이상)에서는 프린터의 인쇄 설정에 토글이 있고, 이전 버전에서는 Bambu Studio / OrcaSlicer의 장치 탭에 있습니다. 이 옵션이 없으면 아카이브된 모든 인쇄물에 썸네일과 슬라이서 메타데이터가 없습니다.',
+        skip: '확인되지 않음 — 활성 MQTT 연결이 필요합니다. 이 설정이 슬라이서에만 존재하는 이전 슬라이서에서는 프린터가 보고하지 않으므로, 옵션이 꺼져 있어도 이 검사는 통과합니다 — 설치 단계 4를 수동으로 확인하세요.'
       },
       port_rtsps: {
         title: '카메라 포트 (RTSPS 322)',

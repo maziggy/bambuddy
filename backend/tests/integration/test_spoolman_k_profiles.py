@@ -67,6 +67,7 @@ def mock_spoolman_client():
     client.health_check = AsyncMock(return_value=True)
     client.get_spool = AsyncMock(return_value=SAMPLE_SPOOL)
     client.get_all_spools = AsyncMock(return_value=[SAMPLE_SPOOL])
+    client.get_distinct_locations = AsyncMock(return_value=[])
 
     with patch(
         "backend.app.api.routes.spoolman_inventory._get_client",

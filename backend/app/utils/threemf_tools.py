@@ -485,6 +485,56 @@ def extract_filament_usage_from_3mf(file_path: Path, plate_id: int | None = None
     return filament_usage
 
 
+def extract_bed_type_from_3mf(file_path: Path, plate_id: int | None = None) -> str | None:
+    """Extract the build plate type (`curr_bed_type`) for a specific plate (#1281).
+
+    ``archive.bed_type`` is captured at ingest time but is one value per archive
+    (the first plate's `curr_bed_type` — see services/archive.py:235). For a
+    multi-plate 3MF where different plates target different beds (e.g. a 40-plate
+    file mixing PEI + Engineering), the archive-level value lies. When a queue
+    item or print modal targets a specific plate, this re-reads the 3MF and
+    returns that plate's actual bed type.
+
+    Args:
+        file_path: Path to the 3MF file
+        plate_id: Plate index to filter for; if None, returns the first plate's
+            ``curr_bed_type`` (matches the archive-level capture).
+
+    Returns:
+        Bed type string (e.g. "Textured PEI Plate"), or None if not found.
+    """
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            if "Metadata/slice_info.config" not in zf.namelist():
+                return None
+
+            content = zf.read("Metadata/slice_info.config").decode()
+            root = ET.fromstring(content)
+
+            for plate_elem in root.findall(".//plate"):
+                plate_index = None
+                bed_value: str | None = None
+                for meta in plate_elem.findall("metadata"):
+                    key = meta.get("key")
+                    if key == "index":
+                        try:
+                            plate_index = int(meta.get("value", "0"))
+                        except ValueError:
+                            pass  # Skip plate with unparseable index
+                    elif key == "curr_bed_type" and meta.get("value"):
+                        bed_value = (meta.get("value") or "").strip()
+
+                if plate_id is None:
+                    # First plate wins when no plate_id is requested.
+                    return bed_value
+                if plate_index == plate_id:
+                    return bed_value
+    except Exception:
+        pass  # Return None on any failure rather than raising — caller decides
+
+    return None
+
+
 # Header values exposed as `{placeholder}` substitutions inside snippets.
 # Aliases let users write Prusa-style names (`{max_layer_z}`) that map onto
 # Bambu/Orca header keys (`max_z_height`).

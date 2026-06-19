@@ -13,7 +13,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 
 ## Corporate Sponsors ($300/mo+)
 
-*None yet — be the first. Your logo on the bambuddy.cool homepage and press.html, plus co-marketing.*
+- [@northpole3dprinting](https://github.com/northpole3dprinting)
 
 ## Sustaining Sponsors ($150/mo+)
 
@@ -47,7 +47,9 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@PJMCL1618033](https://github.com/PJMCL1618033
 - [@mgf99](https://github.com/mgf99)
 - [@Geoff-S](https://github.com/Geoff-S)
-
+- [@andyspinball](https://github.com/andyspinball
+- [@avandeputte](https://github.com/avandeputte)
+- [@joeferrante](https://github.com/joeferrante)
 ---
 
 ## One-time and historical supporters

@@ -10,6 +10,15 @@ function isTrayEmpty(tray: AMSTray): boolean {
   return !tray.tray_type || tray.tray_type === '';
 }
 
+// Mirror of PrintersPage.getEmptySlotKind (#1694): 'physical' when firmware
+// confirms no spool (state 9/10), 'reset' when tray_type is absent but the
+// firmware hasn't confirmed empty (= spool loaded, slot just unconfigured).
+function getEmptySlotKind(tray: AMSTray): 'physical' | 'reset' | null {
+  if (tray.tray_type) return null;
+  const state = (tray as { state?: number | null }).state ?? null;
+  return state === 9 || state === 10 ? 'physical' : 'reset';
+}
+
 function getAmsName(id: number): string {
   if (id <= 3) return `AMS ${String.fromCharCode(65 + id)}`;
   if (id >= 128 && id <= 135) return `AMS HT ${String.fromCharCode(65 + id - 128)}`;
@@ -147,6 +156,7 @@ interface SpoolSlotProps {
 
 function SpoolSlot({ tray, slotIndex, isActive, fillOverride, spoolmanFill, onClick }: SpoolSlotProps) {
   const isEmpty = isTrayEmpty(tray);
+  const emptyKind = getEmptySlotKind(tray);
   const color = trayColorToCSS(tray.tray_color);
   const amsFill = tray.remain !== null && tray.remain !== undefined && tray.remain >= 0 ? tray.remain : null;
   // If inventory says 0% but AMS reports positive remain, prefer AMS (#676)
@@ -181,8 +191,11 @@ function SpoolSlot({ tray, slotIndex, isActive, fillOverride, spoolmanFill, onCl
       </div>
 
       {/* Material type */}
-      <span className="text-sm text-white/70 truncate max-w-full">
-        {isEmpty ? 'Empty' : tray.tray_type || 'Unknown'}
+      <span
+        className="text-sm text-white/70 truncate max-w-full"
+        title={emptyKind === 'reset' ? 'Spool loaded — slot not configured' : undefined}
+      >
+        {isEmpty ? (emptyKind === 'reset' ? '?' : 'Empty') : tray.tray_type || 'Unknown'}
       </span>
 
       {/* Fill level bar */}

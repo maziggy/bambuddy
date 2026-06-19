@@ -137,6 +137,25 @@ class TestCalculateNextRun:
             result = service._calculate_next_run("daily", "21:00")
         assert result == datetime(2026, 6, 15, 21, 0, 0, tzinfo=timezone.utc)
 
+    def test_zoneinfo_completely_unavailable_falls_back_to_stdlib_utc(self, monkeypatch):
+        """Windows installer ships an embedded Python without the IANA tz DB
+        (no system tzdata, no ``tzdata`` PyPI package). Even ``ZoneInfo("UTC")``
+        raises ``ZoneInfoNotFoundError`` then, and /api/local-backup/status
+        500s. The fallback must catch that and return ``datetime.timezone.utc``
+        so scheduling still works without the DB.
+        """
+        from zoneinfo import ZoneInfoNotFoundError
+
+        from backend.app.services import local_backup as lb_module
+
+        monkeypatch.delenv("TZ", raising=False)
+
+        def _always_missing(_key):
+            raise ZoneInfoNotFoundError("no tz database on this platform")
+
+        monkeypatch.setattr(lb_module, "ZoneInfo", _always_missing)
+        assert lb_module._local_zone() is timezone.utc
+
     def test_dst_spring_forward_gap_does_not_crash(self, monkeypatch):
         """Europe/Berlin spring-forward 2026-03-29 jumps 02:00 → 03:00 local;
         02:30 wall-clock does not exist. ``replace(hour=2, minute=30)`` should

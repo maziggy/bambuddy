@@ -134,6 +134,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "default_vibration_cali",
             "default_layer_inspect",
             "default_timelapse",
+            "default_nozzle_offset_cali",
             "ldap_enabled",
             "ldap_auto_provision",
         ]:
@@ -158,10 +159,16 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "stagger_group_size",
             "stagger_interval_minutes",
             "forecast_global_lead_time_days",
+            "session_max_hours",
         ]:
             settings_dict[setting.key] = int(setting.value)
         elif setting.key == "default_printer_id":
             settings_dict[setting.key] = int(setting.value) if setting.value and setting.value != "None" else None
+        elif setting.key == "open_in_slicer":
+            # None means "inherit from preferred_slicer" (#1329). The PUT path
+            # serializes None as the literal string "None"; strip it back so
+            # the frontend sees a true null and falls back as intended.
+            settings_dict[setting.key] = setting.value if setting.value and setting.value != "None" else None
         else:
             settings_dict[setting.key] = setting.value
 
@@ -339,6 +346,12 @@ _UI_PREFERENCE_FIELDS: tuple[str, ...] = (
     "ams_temp_good",
     "ams_temp_fair",
     "bed_cooled_threshold",
+    # Temperature / fan-speed presets for the printer-card popovers. Numbers
+    # only; no PII / credentials.
+    "nozzle_temp_presets",
+    "bed_temp_presets",
+    "chamber_temp_presets",
+    "fan_speed_presets",
 )
 
 
@@ -439,8 +452,16 @@ async def update_spoolman_settings(
     if "spoolman_report_partial_usage" in settings:
         await set_setting(db, "spoolman_report_partial_usage", settings["spoolman_report_partial_usage"])
 
+    spoolman_changed = "spoolman_enabled" in settings or "spoolman_url" in settings
+
     await db.commit()
     db.expire_all()
+
+    if spoolman_changed:
+        from backend.app.services.location_service import maybe_sync_spoolman_locations
+
+        if await maybe_sync_spoolman_locations(db):
+            await db.commit()
 
     # Return updated settings
     return await get_spoolman_settings(db)
@@ -688,6 +709,15 @@ async def _import_sqlite_to_postgres(sqlite_path: Path, postgres_url: str):
                     table.constraints.discard(fk)
 
         async with pg_engine.begin() as conn:
+            # Cap how long DROP TABLE will wait for AccessExclusiveLock so
+            # any residual concurrent writer (per-printer MQTT clients
+            # writing reactively, an AMS history recorder firing on its
+            # hourly cadence) surfaces a fast `lock_timeout` error instead
+            # of blocking the restore for 30 s or producing a deadlock.
+            # SET LOCAL scopes to this transaction only; outside this
+            # restore path the global default (no timeout) applies.
+            await conn.execute(text("SET LOCAL lock_timeout = '10s'"))
+
             # Drop every existing table in the public schema with CASCADE
             # rather than `metadata.drop_all`. Two reasons:
             #   1. The user's live DB may carry orphan tables from removed
@@ -903,6 +933,35 @@ async def restore_backup(
                     await asyncio.sleep(1)
             except Exception as e:
                 logger.warning("Failed to stop virtual printer: %s", e)
+
+            # 3b. Pause timer-based background services BEFORE the DB swap.
+            # close_all_connections() below only disposes the engine's pool,
+            # not the asyncio tasks that opened sessions from it. The print
+            # scheduler (30 s cadence), smart-plug snapshot loop (30 s),
+            # notification digest loop, and background dispatch worker all
+            # wake up and call async_session(), which lazily re-creates a
+            # pool connection holding RowExclusiveLock on print_queue /
+            # smart_plug_energy_snapshots / etc. The DROP TABLE CASCADE
+            # pass in the PostgreSQL restore path needs AccessExclusiveLock
+            # on every public table, producing an AB/BA deadlock and a
+            # full restore rollback. Successful restore already requires a
+            # container restart, so we don't restart the services here.
+            try:
+                from backend.app.services.background_dispatch import background_dispatch
+                from backend.app.services.notification_service import notification_service
+                from backend.app.services.print_scheduler import scheduler as print_scheduler
+                from backend.app.services.smart_plug_manager import smart_plug_manager
+
+                logger.info("Pausing background services for restore...")
+                print_scheduler.stop()
+                smart_plug_manager.stop_scheduler()
+                notification_service.stop_digest_scheduler()
+                await background_dispatch.stop()
+                # In-flight loop iterations need a moment to commit + release
+                # their DB sessions before we dispose() the engine pool.
+                await asyncio.sleep(1.0)
+            except Exception as e:
+                logger.warning("Could not cleanly pause background services: %s", e)
 
             # 4. Close current database connections
             logger.info("Closing database connections...")

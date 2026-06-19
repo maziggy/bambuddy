@@ -569,3 +569,71 @@ class TestUpdatesAPI:
         # at the captured cwd. If this fails the cwd is wrong even if it isn't
         # base_dir — useful diagnostic if someone refactors path handling.
         assert (Path(pip_cwd) / "requirements.txt").exists()
+
+    @pytest.mark.asyncio
+    async def test_perform_update_runs_git_in_app_dir_when_data_dir_on_separate_mount(self, tmp_path):
+        """Regression for #1715: when DATA_DIR is on a path separate from the
+        install (e.g. WorkingDirectory=/opt/bambuddy + DATA_DIR=/srv/bambuddy/data),
+        ``base_dir`` and the repo working tree are on different mounts. Pre-fix,
+        every git subprocess (`remote get-url`, `remote set-url`, `fetch`,
+        `reset --hard`) used ``cwd=base_dir`` — and git could no longer walk up
+        to find ``.git`` because the data dir is not a subdir of the repo.
+        Every update failed with "not a git repository". The fix routes every
+        git step (and the embedded ``safe.directory`` config) through
+        ``app_dir`` instead. This test pins the cwd of all four git steps so a
+        future refactor that re-introduces ``base_dir`` for any of them surfaces
+        loudly here instead of silently re-breaking native installs."""
+        from backend.app.api.routes import updates as updates_module
+
+        # Separate-mount layout: app_dir and data_dir are SIBLINGS, not parent/
+        # child. base_dir is not under app_dir, so git cannot walk up.
+        app_dir = tmp_path / "opt" / "bambuddy"
+        data_dir = tmp_path / "srv" / "bambuddy" / "data"
+        app_dir.mkdir(parents=True)
+        data_dir.mkdir(parents=True)
+        (app_dir / "requirements.txt").write_text("fastapi\n")
+
+        calls: list[dict] = []
+
+        async def fake_create_subprocess_exec(*args, **kwargs):
+            calls.append({"args": args, "cwd": kwargs.get("cwd")})
+            proc = MagicMock()
+            if "get-url" in args and "origin" in args:
+                proc.communicate = AsyncMock(return_value=(b"git@github.com:maziggy/bambuddy.git\n", b""))
+            else:
+                proc.communicate = AsyncMock(return_value=(b"", b""))
+            proc.returncode = 0
+            return proc
+
+        with (
+            patch.object(updates_module.settings, "base_dir", data_dir),
+            patch.object(updates_module.settings, "app_dir", app_dir),
+            patch.object(updates_module, "_find_executable", return_value="/usr/bin/git"),
+            patch.object(
+                updates_module.asyncio,
+                "create_subprocess_exec",
+                side_effect=fake_create_subprocess_exec,
+            ),
+        ):
+            await updates_module._perform_update("v0.2.4b1")
+
+        # Every git subprocess must run in app_dir (the working tree). A
+        # regression to base_dir would silently break #1715-class installs.
+        git_calls = [c for c in calls if c["args"] and c["args"][0] == "/usr/bin/git"]
+        assert git_calls, "no git subprocess was invoked; setup is wrong"
+        wrong_cwd = [c for c in git_calls if c["cwd"] != str(app_dir)]
+        assert not wrong_cwd, (
+            "git subprocess ran with cwd != app_dir; #1715 would resurface. "
+            f"Offending calls: {[(c['args'][1:5], c['cwd']) for c in wrong_cwd]}"
+        )
+
+        # ``safe.directory`` must equal app_dir (the repo root git discovers),
+        # not the data dir — otherwise git refuses with "dubious ownership"
+        # even when the cwd is technically correct.
+        safe_dir_configs = [
+            arg for c in git_calls for arg in c["args"] if isinstance(arg, str) and arg.startswith("safe.directory=")
+        ]
+        assert safe_dir_configs, "safe.directory config was never set on git calls"
+        assert all(s == f"safe.directory={app_dir}" for s in safe_dir_configs), (
+            f"safe.directory must point at app_dir ({app_dir}); got {safe_dir_configs}"
+        )

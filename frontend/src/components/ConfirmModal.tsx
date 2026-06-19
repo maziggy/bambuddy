@@ -19,6 +19,11 @@ interface ConfirmModalProps {
   variant?: 'danger' | 'warning' | 'default';
   isLoading?: boolean;
   loadingText?: string;
+  // Disable the confirm button without a loading spinner. Used when an
+  // external precondition forbids the action (e.g. #1734 — a related queue
+  // item is mid-print, so the archive delete must be blocked at the UI
+  // layer too even though the backend will 409 anyway).
+  confirmDisabled?: boolean;
   // Optional extra content rendered between the message and the buttons —
   // used for opt-in checkboxes (e.g. the "Also remove from statistics"
   // toggle in the archive delete confirmation, #1343).
@@ -38,6 +43,7 @@ export function ConfirmModal({
   variant = 'default',
   isLoading = false,
   loadingText,
+  confirmDisabled = false,
   children,
   onConfirm,
   onCancel,
@@ -104,7 +110,7 @@ export function ConfirmModal({
             <Button
               onClick={onConfirm}
               className={`flex-1 ${styles.button}`}
-              disabled={isLoading}
+              disabled={isLoading || confirmDisabled}
             >
               {isLoading ? (
                 <>

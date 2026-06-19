@@ -29,3 +29,16 @@ class PrintLogEntrySchema(BaseModel):
 class PrintLogResponse(BaseModel):
     items: list[PrintLogEntrySchema]
     total: int
+
+
+class PrintLogEntryUpdate(BaseModel):
+    """Per-row classification edits (#1687 part 4 — IndividualGhost1905).
+
+    Lets the user set ``failure_reason`` (and re-classify ``status``) directly
+    on a Print Log row, including on orphan entries that have no archive to
+    edit through. The Failure Analysis widget already groups by
+    ``PrintLogEntry.failure_reason``, so this just plugs the editor gap.
+    """
+
+    failure_reason: str | None = None
+    status: str | None = None

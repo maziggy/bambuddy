@@ -64,14 +64,14 @@ import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDu
 import { getCurrencySymbol } from '../utils/currency';
 import { getBedTypeInfo } from '../utils/bedType';
 import { useIsMobile } from '../hooks/useIsMobile';
-import type { Archive, ProjectListItem } from '../api/client';
+import type { Archive, PrintLogEntry, ProjectListItem } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { PrintModal } from '../components/PrintModal';
 import { UploadModal } from '../components/UploadModal';
 import { PurgeArchivesModal } from '../components/PurgeArchivesModal';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { EditArchiveModal } from '../components/EditArchiveModal';
+import { EditArchiveModal, FAILURE_REASON_KEYS } from '../components/EditArchiveModal';
 import { PrintLogModal } from '../components/PrintLogModal';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 import { BatchTagModal } from '../components/BatchTagModal';
@@ -186,6 +186,15 @@ function ArchiveCard({
   // #1343: when true, the delete also drops the row from Quick Stats. Default
   // off — soft delete preserves the archive's filament/time/cost contribution.
   const [deletePurgeStats, setDeletePurgeStats] = useState(false);
+  // #1734: pre-flight count of related queue items so the confirm modal can
+  // tell the user how many will be removed and disable the button if any are
+  // currently printing (the server 409s in that case).
+  const deleteImpactQuery = useQuery({
+    queryKey: ['archive', archive.id, 'delete-impact'],
+    queryFn: () => api.getArchiveDeleteImpact(archive.id),
+    enabled: showDeleteConfirm,
+    staleTime: 0,
+  });
   const [showEdit, setShowEdit] = useState(false);
   const [showPrintLog, setShowPrintLog] = useState(false);
   const [showTimelapse, setShowTimelapse] = useState(false);
@@ -1287,6 +1296,7 @@ function ArchiveCard({
           message={t('archives.modal.deleteConfirm', { name: archive.print_name || archive.filename })}
           confirmText={t('archives.modal.deleteButton')}
           variant="danger"
+          confirmDisabled={(deleteImpactQuery.data?.currently_printing ?? 0) > 0}
           onConfirm={() => {
             deleteMutation.mutate(deletePurgeStats);
             setShowDeleteConfirm(false);
@@ -1297,6 +1307,25 @@ function ArchiveCard({
             setDeletePurgeStats(false);
           }}
         >
+          {/* #1734: warn the user when related queue items will also be removed,
+              and block the action entirely if any are currently printing. */}
+          {(deleteImpactQuery.data?.related_queue_items ?? 0) > 0 && (
+            <div
+              className={
+                (deleteImpactQuery.data?.currently_printing ?? 0) > 0
+                  ? 'text-sm text-red-400 mb-2'
+                  : 'text-sm text-amber-400 mb-2'
+              }
+            >
+              {(deleteImpactQuery.data?.currently_printing ?? 0) > 0
+                ? t('archives.modal.deleteBlockedByPrinting', {
+                    count: deleteImpactQuery.data!.currently_printing,
+                  })
+                : t('archives.modal.deleteQueueItemsWarning', {
+                    count: deleteImpactQuery.data!.related_queue_items,
+                  })}
+            </div>
+          )}
           {/* #1343: opt-in checkbox — by default the archive is soft-deleted,
               so its filament / time / cost contribution stays in Quick Stats. */}
           <label className="flex items-start gap-2 cursor-pointer text-sm text-bambu-gray">
@@ -1563,6 +1592,14 @@ function ArchiveListRow({
   // #1343: opt-in "Also remove from statistics" checkbox state. Default off
   // — soft delete keeps the archive's contribution to Quick Stats.
   const [deletePurgeStats, setDeletePurgeStats] = useState(false);
+  // #1734: pre-flight count of related queue items for the delete modal.
+  // Same shape as the card-view sibling above.
+  const deleteImpactQuery = useQuery({
+    queryKey: ['archive', archive.id, 'delete-impact'],
+    queryFn: () => api.getArchiveDeleteImpact(archive.id),
+    enabled: showDeleteConfirm,
+    staleTime: 0,
+  });
   const navigate = useNavigate();
   const [showReprint, setShowReprint] = useState(false);
   const [showSliceModal, setShowSliceModal] = useState(false);
@@ -2273,6 +2310,7 @@ function ArchiveListRow({
           message={t('archives.modal.deleteConfirm', { name: archive.print_name || archive.filename })}
           confirmText={t('archives.modal.deleteButton')}
           variant="danger"
+          confirmDisabled={(deleteImpactQuery.data?.currently_printing ?? 0) > 0}
           onConfirm={() => {
             deleteMutation.mutate(deletePurgeStats);
             setShowDeleteConfirm(false);
@@ -2283,6 +2321,25 @@ function ArchiveListRow({
             setDeletePurgeStats(false);
           }}
         >
+          {/* #1734: warn the user when related queue items will also be removed,
+              and block the action entirely if any are currently printing. */}
+          {(deleteImpactQuery.data?.related_queue_items ?? 0) > 0 && (
+            <div
+              className={
+                (deleteImpactQuery.data?.currently_printing ?? 0) > 0
+                  ? 'text-sm text-red-400 mb-2'
+                  : 'text-sm text-amber-400 mb-2'
+              }
+            >
+              {(deleteImpactQuery.data?.currently_printing ?? 0) > 0
+                ? t('archives.modal.deleteBlockedByPrinting', {
+                    count: deleteImpactQuery.data!.currently_printing,
+                  })
+                : t('archives.modal.deleteQueueItemsWarning', {
+                    count: deleteImpactQuery.data!.related_queue_items,
+                  })}
+            </div>
+          )}
           {/* #1343: opt-in checkbox — by default the archive is soft-deleted,
               so its filament / time / cost contribution stays in Quick Stats. */}
           <label className="flex items-start gap-2 cursor-pointer text-sm text-bambu-gray">
@@ -2563,6 +2620,23 @@ export function ArchivesPage() {
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  // Install-step-4 nudge — covers the slicer-side variant of "Store sent files
+  // on external storage" that the connection diagnostic can't detect (printer
+  // never hears about it). Symptom: archive created via no-3MF fallback. Once
+  // dismissed, never shown again — fixing step 4 stops new fallbacks anyway.
+  const [no3MFWarningDismissed, setNo3MFWarningDismissed] = useState(
+    () => localStorage.getItem('archiveNo3MFWarningDismissed') === 'true',
+  );
+  const { data: no3MFWarning } = useQuery({
+    queryKey: ['archives', 'no-3mf-warning'],
+    queryFn: api.getNo3MFWarning,
+    staleTime: 5 * 60 * 1000,
+    enabled: !no3MFWarningDismissed,
+  });
+  const dismissNo3MFWarning = () => {
+    localStorage.setItem('archiveNo3MFWarningDismissed', 'true');
+    setNo3MFWarningDismissed(true);
+  };
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [showBatchTag, setShowBatchTag] = useState(false);
@@ -2611,6 +2685,12 @@ export function ArchivesPage() {
     return saved ? Number(saved) : 0;
   });
   const [showClearLogConfirm, setShowClearLogConfirm] = useState(false);
+  const [pendingDeleteEntryId, setPendingDeleteEntryId] = useState<number | null>(null);
+  // Per-row classification editor for Print Log entries (#1687 part 4).
+  // Holds the entry being edited; null = modal closed.
+  const [editingLogEntry, setEditingLogEntry] = useState<PrintLogEntry | null>(null);
+  const [editingLogFailureReason, setEditingLogFailureReason] = useState('');
+  const [editingLogStatus, setEditingLogStatus] = useState('');
   const [logPageSize, setLogPageSize] = useState(() => {
     const saved = localStorage.getItem('logPageSize');
     return saved ? Number(saved) : 25;
@@ -2688,7 +2768,11 @@ export function ArchivesPage() {
   });
 
   const timeFormat: TimeFormat = settings?.time_format || 'system';
-  const preferredSlicer: SlicerType = settings?.preferred_slicer || 'bambu_studio';
+  // Desktop "Open in Slicer" target — falls back to preferred_slicer when the
+  // user hasn't explicitly chosen a different desktop slicer (#1329). This is
+  // ONLY the URI-handoff target; the in-app SliceModal still uses
+  // preferred_slicer for the sidecar.
+  const preferredSlicer: SlicerType = settings?.open_in_slicer || settings?.preferred_slicer || 'bambu_studio';
   const useSlicerApi = settings?.use_slicer_api ?? false;
   const currency = getCurrencySymbol(settings?.currency || 'USD');
 
@@ -2716,6 +2800,35 @@ export function ArchivesPage() {
     },
     onError: () => {
       showToast(t('archives.log.clearFailed'), 'error');
+    },
+  });
+
+  const deleteLogEntryMutation = useMutation({
+    mutationFn: (id: number) => api.deletePrintLogEntry(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['print-log'] });
+      queryClient.invalidateQueries({ queryKey: ['archives-stats'] });
+      showToast(t('archives.log.entryDeleted'));
+    },
+    onError: () => {
+      showToast(t('archives.log.entryDeleteFailed'), 'error');
+    },
+  });
+
+  const updateLogEntryMutation = useMutation({
+    mutationFn: ({ id, body }: { id: number; body: { failure_reason?: string | null; status?: string } }) =>
+      api.updatePrintLogEntry(id, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['print-log'] });
+      // Also invalidate /archives/stats — the Failure Analysis widget there
+      // groups by PrintLogEntry.failure_reason, so a re-classification needs
+      // to flow through (#1687 part 4).
+      queryClient.invalidateQueries({ queryKey: ['archives-stats'] });
+      setEditingLogEntry(null);
+      showToast(t('archives.log.entryUpdated'));
+    },
+    onError: () => {
+      showToast(t('archives.log.entryUpdateFailed'), 'error');
     },
   });
 
@@ -3158,6 +3271,37 @@ export function ArchivesPage() {
             <Trash2 className="w-4 h-4" />
             Delete
           </Button>
+        </div>
+      )}
+
+      {no3MFWarning?.has_fallback && !no3MFWarningDismissed && (
+        <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-amber-200">
+              {t('archives.no3mfBanner.title')}
+            </div>
+            <div className="text-xs text-amber-200/80 mt-1">
+              {t('archives.no3mfBanner.body')}{' '}
+              <a
+                href="https://bambuddy.cool/wiki/getting-started/#step-4-enable-store-sent-files-on-external-storage"
+                target="_blank"
+                rel="noreferrer"
+                className="underline hover:text-amber-100 inline-flex items-center gap-1"
+              >
+                {t('archives.no3mfBanner.docsLink')}
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
+          <button
+            onClick={dismissNo3MFWarning}
+            className="text-amber-200/60 hover:text-amber-200 flex-shrink-0 p-1 -m-1"
+            title={t('archives.no3mfBanner.dismissLabel')}
+            aria-label={t('archives.no3mfBanner.dismissLabel')}
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -3745,6 +3889,7 @@ export function ArchivesPage() {
                         <th className="px-4 py-3 font-medium">{t('archives.log.status')}</th>
                         <th className="px-4 py-3 font-medium">{t('archives.log.duration')}</th>
                         <th className="px-4 py-3 font-medium">{t('archives.log.filament')}</th>
+                        <th className="px-4 py-3 font-medium w-10" aria-label={t('common.actions')} />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-bambu-dark-tertiary">
@@ -3781,6 +3926,11 @@ export function ArchivesPage() {
                             }`}>
                               {entry.status}
                             </span>
+                            {entry.failure_reason && (
+                              <span className="block text-[10px] text-bambu-gray mt-0.5">
+                                {t(`editArchive.failureReasons.${entry.failure_reason}`, { defaultValue: entry.failure_reason })}
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-bambu-gray-light whitespace-nowrap">
                             {entry.duration_seconds ? formatDuration(entry.duration_seconds) : '—'}
@@ -3788,14 +3938,63 @@ export function ArchivesPage() {
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1.5">
                               {entry.filament_color && (
-                                <span
-                                  className="w-3 h-3 rounded-full border border-black/20 flex-shrink-0"
-                                  style={{ backgroundColor: entry.filament_color.startsWith('#') ? entry.filament_color : undefined }}
-                                />
+                                <div className="flex items-center gap-0.5 flex-wrap">
+                                  {entry.filament_color.split(',').map((color, i) => {
+                                    const trimmed = color.trim();
+                                    return (
+                                      <span
+                                        key={i}
+                                        className="w-3 h-3 rounded-full border border-black/20 flex-shrink-0"
+                                        style={{ backgroundColor: trimmed.startsWith('#') ? trimmed : undefined }}
+                                        title={trimmed}
+                                      />
+                                    );
+                                  })}
+                                </div>
                               )}
                               <span className="text-bambu-gray-light text-xs">
                                 {entry.filament_type || '—'}
                               </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="inline-flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingLogEntry(entry);
+                                  setEditingLogFailureReason(entry.failure_reason || '');
+                                  setEditingLogStatus(entry.status);
+                                }}
+                                disabled={
+                                  updateLogEntryMutation.isPending ||
+                                  !(hasPermission('archives:update_all') || hasPermission('archives:update_own'))
+                                }
+                                title={
+                                  hasPermission('archives:update_all') || hasPermission('archives:update_own')
+                                    ? t('archives.log.editEntryTitle')
+                                    : t('archives.permission.noEdit')
+                                }
+                                className="text-bambu-gray hover:text-bambu-blue disabled:opacity-40 disabled:hover:text-bambu-gray transition-colors"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPendingDeleteEntryId(entry.id)}
+                                disabled={
+                                  deleteLogEntryMutation.isPending ||
+                                  !(hasPermission('archives:delete_all') || hasPermission('archives:delete_own'))
+                                }
+                                title={
+                                  hasPermission('archives:delete_all') || hasPermission('archives:delete_own')
+                                    ? t('archives.log.deleteEntryTitle')
+                                    : t('archives.permission.noDelete')
+                                }
+                                className="text-bambu-gray hover:text-red-400 disabled:opacity-40 disabled:hover:text-bambu-gray transition-colors"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -3920,6 +4119,112 @@ export function ArchivesPage() {
           }}
           onCancel={() => setShowClearLogConfirm(false)}
         />
+      )}
+
+      {/* Per-row Print Log entry delete confirmation (#1687) */}
+      {pendingDeleteEntryId !== null && (
+        <ConfirmModal
+          title={t('archives.log.deleteEntryTitle')}
+          message={t('archives.log.deleteEntryConfirm')}
+          confirmText={t('common.delete')}
+          variant="danger"
+          onConfirm={() => {
+            deleteLogEntryMutation.mutate(pendingDeleteEntryId);
+            setPendingDeleteEntryId(null);
+          }}
+          onCancel={() => setPendingDeleteEntryId(null)}
+        />
+      )}
+
+      {/* Per-row Print Log classification editor (#1687 part 4).
+          Reuses editArchive.failureReasons.* and archives.log.statuses.*
+          vocabularies so the dropdown stays in lockstep with the
+          Archive Edit modal — backend validates against the same list. */}
+      {editingLogEntry !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setEditingLogEntry(null)}
+        >
+          <div
+            className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg w-full max-w-md mx-4 p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-white mb-4">
+              {t('archives.log.editEntryTitle')}
+            </h3>
+            <p className="text-xs text-bambu-gray mb-4">
+              {t('archives.log.editEntryDescription')}
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">
+                  {t('editArchive.status')}
+                </label>
+                <select
+                  value={editingLogStatus}
+                  onChange={(e) => setEditingLogStatus(e.target.value)}
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
+                >
+                  <option value="completed">{t('archives.log.statuses.completed', { defaultValue: 'completed' })}</option>
+                  <option value="failed">{t('archives.log.statuses.failed', { defaultValue: 'failed' })}</option>
+                  <option value="stopped">{t('archives.log.statuses.stopped', { defaultValue: 'stopped' })}</option>
+                  <option value="cancelled">{t('archives.log.statuses.cancelled', { defaultValue: 'cancelled' })}</option>
+                  <option value="skipped">{t('archives.log.statuses.skipped', { defaultValue: 'skipped' })}</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">
+                  {t('editArchive.failureReason')}
+                </label>
+                <select
+                  value={editingLogFailureReason}
+                  onChange={(e) => setEditingLogFailureReason(e.target.value)}
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm focus:border-bambu-green focus:outline-none"
+                >
+                  <option value="">{t('editArchive.selectReason')}</option>
+                  {FAILURE_REASON_KEYS.map((key) => (
+                    <option key={key} value={key}>
+                      {t(`editArchive.failureReasons.${key}`)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <Button
+                variant="secondary"
+                onClick={() => setEditingLogEntry(null)}
+              >
+                {t('common.cancel')}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  const body: { failure_reason?: string | null; status?: string } = {};
+                  // Send failure_reason only if it changed — empty string
+                  // clears the classification (backend stores it as NULL).
+                  if (editingLogFailureReason !== (editingLogEntry.failure_reason || '')) {
+                    body.failure_reason = editingLogFailureReason || null;
+                  }
+                  if (editingLogStatus !== editingLogEntry.status) {
+                    body.status = editingLogStatus;
+                  }
+                  if (Object.keys(body).length === 0) {
+                    setEditingLogEntry(null);
+                    return;
+                  }
+                  updateLogEntryMutation.mutate({ id: editingLogEntry.id, body });
+                }}
+                disabled={updateLogEntryMutation.isPending}
+              >
+                {updateLogEntryMutation.isPending ? t('editArchive.saving') : t('common.save')}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -94,8 +94,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     mountedRef.current = true;
     // Check auth status on mount
     checkAuthStatus();
+
+    // Listen for token-expiry events from the API client. setAuthToken(null)
+    // in client.ts only clears storage; without this listener, `user` stays
+    // populated and ProtectedRoute keeps rendering the protected tree until a
+    // manual refresh — every request silently fails in the meantime (#1698).
+    const handleAuthExpired = () => {
+      if (!mountedRef.current) return;
+      setUser(null);
+    };
+    window.addEventListener('auth:expired', handleAuthExpired);
+
     return () => {
       mountedRef.current = false;
+      window.removeEventListener('auth:expired', handleAuthExpired);
     };
   }, []);
 

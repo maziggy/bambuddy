@@ -150,7 +150,19 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
       });
       queryClient.invalidateQueries({ queryKey: ['spool-assignments'] });
       nudgePrinterRepublish();
-      showToast(t('inventory.assignSuccess'), 'success');
+      // When the AMS slot was empty at assign time (tray_state ∈ {9, 10}), the
+      // backend persists the assignment but deliberately skips the MQTT
+      // `ams_filament_setting` push because Bambu firmware drops it silently
+      // for empty slots. `on_ams_change` re-fires the configuration once a
+      // spool is detected in the slot (#1680). The success-but-pending case
+      // gets a distinct toast so the user understands the slot hasn't been
+      // configured on the printer yet — saying "AMS slot configured" reads
+      // as a lie in that state. Mirror of `spoolbuddy/AssignToAmsModal.tsx`,
+      // which has handled this since the SpoolBuddy assign flow shipped.
+      const toastKey = newAssignment.pending_config
+        ? 'inventory.assignPendingInsert'
+        : 'inventory.assignSuccess';
+      showToast(t(toastKey), 'success');
       setShowMismatchConfirm(false);
       setPendingAssignId(null);
       setMismatchDetails(null);

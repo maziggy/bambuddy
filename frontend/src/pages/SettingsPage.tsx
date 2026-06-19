@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatDateOnly } from '../utils/date';
 import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
 import { checkPasswordComplexity } from '../utils/password';
+import { PRESET_CATEGORIES, parsePresetTriple } from '../utils/temperatureFanPresets';
 import type { APIKey, AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
 import { SlicerBundlesPanel } from '../components/SlicerBundlesPanel';
@@ -36,7 +37,6 @@ import { TwoFactorSettings } from '../components/TwoFactorSettings';
 import { OIDCProviderSettings } from '../components/OIDCProviderSettings';
 import { SecurityStatusCard } from '../components/SecurityStatusCard';
 import { APIBrowser } from '../components/APIBrowser';
-import { Toggle } from '../components/Toggle';
 import { virtualPrinterApi, spoolbuddyApi } from '../api/client';
 import { defaultNavItems, getDefaultView, setDefaultView } from '../components/Layout';
 import { availableLanguages } from '../i18n';
@@ -65,6 +65,7 @@ registerSettingsSearch({ labelKey: 'settings.smartPlugs', tab: 'plugs', keywords
 registerSettingsSearch({ labelKey: 'settings.providers', tab: 'notifications', keywords: 'telegram discord email notification providers webhook', anchor: 'card-providers' });
 registerSettingsSearch({ labelKey: 'settings.messageTemplates', tab: 'notifications', keywords: 'message templates notification text edit', anchor: 'card-templates' });
 registerSettingsSearch({ labelKey: 'settings.defaultPrintOptions', labelFallback: 'Default Print Options', tab: 'queue', keywords: 'print bed leveling flow calibration vibration first layer timelapse', anchor: 'card-print-options' });
+registerSettingsSearch({ labelKey: 'settings.tempFanPresetsTitle', labelFallback: 'Temperature & Fan Presets', tab: 'queue', keywords: 'temperature fan presets nozzle bed chamber quick buttons popover', anchor: 'card-temp-fan-presets' });
 registerSettingsSearch({ labelKey: 'settings.staggeredStart', labelFallback: 'Staggered Start', tab: 'queue', keywords: 'staggered batch delay start queue group', anchor: 'card-staggered' });
 registerSettingsSearch({ labelKey: 'settings.plateClear', labelFallback: 'Plate-Clear Confirmation', tab: 'queue', keywords: 'plate clear confirm auto queue', anchor: 'card-plate' });
 registerSettingsSearch({ labelKey: 'settings.gcodeInjection', labelFallback: 'G-code Injection', tab: 'queue', keywords: 'gcode injection start end autoprint farmloop swapmod autoclear printflow', anchor: 'card-gcode' });
@@ -87,11 +88,12 @@ registerSettingsSearch({ labelKey: 'settings.tabs.spoolbuddy', tab: 'spoolbuddy'
 registerSettingsSearch({ labelKey: 'settings.currentUser', tab: 'users', subTab: 'users', keywords: 'current user profile password change', anchor: 'card-currentuser' });
 registerSettingsSearch({ labelKey: 'settings.users', tab: 'users', subTab: 'users', keywords: 'users accounts list', anchor: 'card-users' });
 registerSettingsSearch({ labelKey: 'settings.groups', tab: 'users', subTab: 'users', keywords: 'groups roles permissions administrators operators viewers', anchor: 'card-groups' });
+registerSettingsSearch({ labelKey: 'settings.sessionPolicy.title', labelFallback: 'Session Policy', tab: 'users', subTab: 'users', keywords: 'session timeout expiry logout remember me jwt token lifetime', anchor: 'card-session-policy' });
 registerSettingsSearch({ labelKey: 'settings.email.smtpSettings', labelFallback: 'SMTP Configuration', tab: 'users', subTab: 'email', keywords: 'smtp email send server port password auth starttls ssl', anchor: 'card-smtp' });
 registerSettingsSearch({ labelKey: 'settings.ldap.title', labelFallback: 'LDAP Authentication', tab: 'users', subTab: 'ldap', keywords: 'ldap active directory ad authentication bind dn search base group mapping', anchor: 'card-ldap' });
 registerSettingsSearch({ labelKey: 'settings.tabs.backup', tab: 'backup', keywords: 'backup github restore download cloud sync profiles archives', anchor: 'card-backup' });
-// Sidebar Links (external links settings is rendered in the General tab)
-registerSettingsSearch({ labelKey: 'externalLinks.title', labelFallback: 'Sidebar Links', tab: 'general', keywords: 'sidebar links external custom navigation url add', anchor: 'card-sidebar-links' });
+// Sidebar (system pages and external links settings is rendered in the General tab)
+registerSettingsSearch({ labelKey: 'externalLinks.sidebarLayout', labelFallback: 'Sidebar', tab: 'general', keywords: 'sidebar layout links pages hide show external custom navigation url add', anchor: 'card-sidebar-links' });
 // Filament tab — integrations
 registerSettingsSearch({ labelKey: 'settings.filamentTracking', tab: 'filament', keywords: 'spoolman filament tracking inventory sync remote integration', anchor: 'card-spoolman' });
 registerSettingsSearch({ labelKey: 'settings.catalog.spoolCatalog', labelFallback: 'Spool Catalog', tab: 'filament', keywords: 'spool catalog entries brand material reset import export', anchor: 'card-spool-catalog' });
@@ -262,42 +264,6 @@ export function SettingsPage() {
     setDefaultViewState(path);
     setDefaultView(path);
     showToast(t('settings.toast.settingsSaved'), 'success');
-  };
-
-  const handleResetSidebarOrder = () => {
-    localStorage.removeItem('sidebarOrder');
-    window.location.reload();
-  };
-
-  const isDefaultSidebarEnabled = !!localSettings?.default_sidebar_order;
-
-  const handleToggleDefaultSidebarOrder = async (enabled: boolean) => {
-    try {
-      if (enabled) {
-        let orderArr: string[];
-        const stored = localStorage.getItem('sidebarOrder');
-        try {
-          orderArr = stored ? JSON.parse(stored) : defaultNavItems.map(i => i.id);
-        } catch {
-          orderArr = defaultNavItems.map(i => i.id);
-        }
-        if (!Array.isArray(orderArr) || orderArr.length === 0) {
-          orderArr = defaultNavItems.map(i => i.id);
-        }
-        const payload = JSON.stringify({ order: orderArr });
-        await api.updateSettings({ default_sidebar_order: payload });
-        setLocalSettings(prev => prev ? { ...prev, default_sidebar_order: payload } : prev);
-        showToast(t('settings.sidebarDefaultSet'), 'success');
-      } else {
-        await api.updateSettings({ default_sidebar_order: '' });
-        setLocalSettings(prev => prev ? { ...prev, default_sidebar_order: '' } : prev);
-        showToast(t('settings.sidebarDefaultCleared'), 'success');
-      }
-      queryClient.invalidateQueries({ queryKey: ['settings'] });
-      queryClient.invalidateQueries({ queryKey: ['default-sidebar-order'] });
-    } catch {
-      showToast(t('settings.sidebarDefaultFailed'), 'error');
-    }
   };
 
   const { data: settings, isLoading } = useQuery({
@@ -997,6 +963,7 @@ export function SettingsPage() {
       Number(settings.library_disk_warning_gb ?? 5) !== Number(localSettings.library_disk_warning_gb ?? 5) ||
       (settings.camera_view_mode ?? 'window') !== (localSettings.camera_view_mode ?? 'window') ||
       (settings.preferred_slicer ?? 'bambu_studio') !== (localSettings.preferred_slicer ?? 'bambu_studio') ||
+      (settings.open_in_slicer ?? null) !== (localSettings.open_in_slicer ?? null) ||
       (settings.use_slicer_api ?? false) !== (localSettings.use_slicer_api ?? false) ||
       (settings.orcaslicer_api_url ?? '') !== (localSettings.orcaslicer_api_url ?? '') ||
       (settings.bambu_studio_api_url ?? '') !== (localSettings.bambu_studio_api_url ?? '') ||
@@ -1008,9 +975,15 @@ export function SettingsPage() {
       (settings.default_vibration_cali ?? true) !== (localSettings.default_vibration_cali ?? true) ||
       (settings.default_layer_inspect ?? false) !== (localSettings.default_layer_inspect ?? false) ||
       (settings.default_timelapse ?? false) !== (localSettings.default_timelapse ?? false) ||
+      (settings.default_nozzle_offset_cali ?? true) !== (localSettings.default_nozzle_offset_cali ?? true) ||
       (settings.stagger_group_size ?? 2) !== (localSettings.stagger_group_size ?? 2) ||
       (settings.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
-      (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false);
+      (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
+      (settings.nozzle_temp_presets ?? '') !== (localSettings.nozzle_temp_presets ?? '') ||
+      (settings.bed_temp_presets ?? '') !== (localSettings.bed_temp_presets ?? '') ||
+      (settings.chamber_temp_presets ?? '') !== (localSettings.chamber_temp_presets ?? '') ||
+      (settings.fan_speed_presets ?? '') !== (localSettings.fan_speed_presets ?? '') ||
+      (settings.session_max_hours ?? 24) !== (localSettings.session_max_hours ?? 24);
 
     if (!hasChanges) {
       return;
@@ -1081,6 +1054,7 @@ export function SettingsPage() {
         library_disk_warning_gb: localSettings.library_disk_warning_gb,
         camera_view_mode: localSettings.camera_view_mode,
         preferred_slicer: localSettings.preferred_slicer,
+        open_in_slicer: localSettings.open_in_slicer,
         use_slicer_api: localSettings.use_slicer_api,
         orcaslicer_api_url: localSettings.orcaslicer_api_url,
         bambu_studio_api_url: localSettings.bambu_studio_api_url,
@@ -1092,9 +1066,15 @@ export function SettingsPage() {
         default_vibration_cali: localSettings.default_vibration_cali,
         default_layer_inspect: localSettings.default_layer_inspect,
         default_timelapse: localSettings.default_timelapse,
+        default_nozzle_offset_cali: localSettings.default_nozzle_offset_cali,
         stagger_group_size: localSettings.stagger_group_size,
         stagger_interval_minutes: localSettings.stagger_interval_minutes,
         require_plate_clear: localSettings.require_plate_clear,
+        nozzle_temp_presets: localSettings.nozzle_temp_presets,
+        bed_temp_presets: localSettings.bed_temp_presets,
+        chamber_temp_presets: localSettings.chamber_temp_presets,
+        fan_speed_presets: localSettings.fan_speed_presets,
+        session_max_hours: localSettings.session_max_hours,
       };
       updateMutation.mutate(settingsToSave);
     }, 500);
@@ -1600,35 +1580,6 @@ export function SettingsPage() {
                 <p className="text-xs text-bambu-gray mt-1">
                   {t('settings.defaultPrinterDescription')}
                 </p>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white">{t('settings.sidebarOrder')}</p>
-                  <p className="text-sm text-bambu-gray">
-                    {t('settings.sidebarOrderDescription')}
-                    {authEnabled && hasPermission('settings:update') && ` ${t('settings.sidebarOrderSetDefaultHint')}`}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleResetSidebarOrder}
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    {t('settings.reset')}
-                  </Button>
-                  {authEnabled && hasPermission('settings:update') && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-bambu-gray whitespace-nowrap">{t('settings.setDefault')}</span>
-                      <Toggle
-                        checked={isDefaultSidebarEnabled}
-                        onChange={handleToggleDefaultSidebarOrder}
-                        disabled={isLoading}
-                      />
-                    </div>
-                  )}
-                </div>
               </div>
             </CardContent>
           </Card>
@@ -2252,13 +2203,168 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Data Management */}
+          <Card id="card-data">
+            <CardHeader>
+              <h2 className="text-lg font-semibold text-white">{t('settings.dataManagement')}</h2>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white">{t('settings.clearNotificationLogs')}</p>
+                  <p className="text-sm text-bambu-gray">
+                    {t('settings.clearNotificationLogsDescription')}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowClearLogsConfirm(true)}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {t('common.clear')}
+                </Button>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white">{t('settings.resetUiPreferences')}</p>
+                  <p className="text-sm text-bambu-gray">
+                    {t('settings.resetUiPreferencesDescription')}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowClearStorageConfirm(true)}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {t('settings.reset')}
+                </Button>
+              </div>
+              <div className="pt-4 border-t border-bambu-dark-tertiary">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white">{t('settings.storageUsage', 'Storage Usage')}</p>
+                    <p className="text-sm text-bambu-gray">
+                      {t('settings.storageUsageDescription', 'Breakdown of data usage by category')}
+                    </p>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleStorageUsageRefresh}
+                    disabled={storageUsageFetching || storageUsageRefreshing}
+                  >
+                    <RefreshCw
+                      className={`w-4 h-4 ${storageUsageFetching || storageUsageRefreshing ? 'animate-spin' : ''}`}
+                    />
+                    {t('common.refresh', 'Refresh')}
+                  </Button>
+                </div>
+                <div className="mt-3">
+                  {storageUsageLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-bambu-gray">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {t('common.loading', 'Loading')}
+                    </div>
+                  ) : storageUsage ? (
+                    <>
+                      <div className="w-full h-3 bg-bambu-dark rounded-full overflow-hidden flex">
+                        {storageUsage.categories
+                          .filter((category) => category.bytes > 0)
+                          .map((category, index) => (
+                            <div
+                              key={category.key}
+                              className={`${getStorageColor(category.key, index)} h-full`}
+                              style={{ width: `${category.percent_of_total}%` }}
+                              title={`${category.label}: ${category.formatted}`}
+                            />
+                          ))}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        {storageUsage.categories
+                          .filter((category) => category.bytes > 0)
+                          .map((category, index) => (
+                            <div key={category.key} className="flex items-center gap-2 text-xs">
+                              <span
+                                className={`w-3 h-3 rounded-full ${getStorageColor(category.key, index)}`}
+                              />
+                              <span className="text-bambu-gray">{category.label}</span>
+                              <span className="text-white">{category.formatted}</span>
+                              <span className="text-bambu-gray">({category.percent_of_total.toFixed(1)}%)</span>
+                            </div>
+                          ))}
+                      </div>
+                      <div className="mt-2 text-xs text-bambu-gray">
+                        {t('settings.storageUsageTotal', 'Total')}: <span className="text-white">{storageUsage.total_formatted}</span>
+                        {storageUsage.scan_errors > 0 && (
+                          <span className="ml-2 text-amber-400">
+                            {t('settings.storageUsageErrors', 'Scan errors')}: {storageUsage.scan_errors}
+                          </span>
+                        )}
+                      </div>
+                      {storageUsage.other_breakdown?.length > 0 && (
+                        <div className="mt-4">
+                          <p className="text-xs text-bambu-gray mb-2">
+                            {t('settings.storageUsageOtherBreakdown', 'Other breakdown')}
+                          </p>
+                          <div className="space-y-2">
+                            {storageUsage.other_breakdown.map((item) => (
+                              <div key={`${item.bucket}-${item.kind}`} className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-white">{item.label}</span>
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full border ${
+                                      item.kind === 'system'
+                                        ? 'border-slate-500 text-slate-300'
+                                        : 'border-bambu-green text-bambu-green'
+                                    }`}
+                                  >
+                                    {item.kind === 'system'
+                                      ? t('settings.storageUsageSystem', 'System')
+                                      : t('settings.storageUsageData', 'Data')}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-bambu-gray">
+                                  <span className="text-white">{item.formatted}</span>
+                                  <span>({item.percent_of_total.toFixed(1)}%)</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-bambu-gray">
+                      {t('settings.storageUsageUnavailable', 'Storage usage data is unavailable')}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-between pt-4 border-t border-bambu-dark-tertiary">
+                <div>
+                  <p className="text-white">{t('settings.backupRestore')}</p>
+                  <p className="text-sm text-bambu-gray">
+                    {t('settings.backupRestoreDescription')}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleTabChange('backup')}
+                >
+                  <Database className="w-4 h-4" />
+                  {t('settings.goToBackup')}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Third Column - Sidebar Links & Updates */}
+        {/* Third Column - Updates & Sidebar Links */}
         <div className="space-y-3 flex-1 lg:max-w-sm">
-          {/* Sidebar Links */}
-          <ExternalLinksSettings />
-
           <Card id="card-updates">
             <CardHeader>
               <h2 className="text-lg font-semibold text-white">{t('settings.updates')}</h2>
@@ -2439,163 +2545,8 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Data Management */}
-          <Card id="card-data">
-            <CardHeader>
-              <h2 className="text-lg font-semibold text-white">{t('settings.dataManagement')}</h2>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white">{t('settings.clearNotificationLogs')}</p>
-                  <p className="text-sm text-bambu-gray">
-                    {t('settings.clearNotificationLogsDescription')}
-                  </p>
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setShowClearLogsConfirm(true)}
-                >
-                  <Trash2 className="w-4 h-4" />
-                  {t('common.clear')}
-                </Button>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white">{t('settings.resetUiPreferences')}</p>
-                  <p className="text-sm text-bambu-gray">
-                    {t('settings.resetUiPreferencesDescription')}
-                  </p>
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setShowClearStorageConfirm(true)}
-                >
-                  <Trash2 className="w-4 h-4" />
-                  {t('settings.reset')}
-                </Button>
-              </div>
-              <div className="pt-4 border-t border-bambu-dark-tertiary">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-white">{t('settings.storageUsage', 'Storage Usage')}</p>
-                    <p className="text-sm text-bambu-gray">
-                      {t('settings.storageUsageDescription', 'Breakdown of data usage by category')}
-                    </p>
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleStorageUsageRefresh}
-                    disabled={storageUsageFetching || storageUsageRefreshing}
-                  >
-                    <RefreshCw
-                      className={`w-4 h-4 ${storageUsageFetching || storageUsageRefreshing ? 'animate-spin' : ''}`}
-                    />
-                    {t('common.refresh', 'Refresh')}
-                  </Button>
-                </div>
-                <div className="mt-3">
-                  {storageUsageLoading ? (
-                    <div className="flex items-center gap-2 text-sm text-bambu-gray">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      {t('common.loading', 'Loading')}
-                    </div>
-                  ) : storageUsage ? (
-                    <>
-                      <div className="w-full h-3 bg-bambu-dark rounded-full overflow-hidden flex">
-                        {storageUsage.categories
-                          .filter((category) => category.bytes > 0)
-                          .map((category, index) => (
-                            <div
-                              key={category.key}
-                              className={`${getStorageColor(category.key, index)} h-full`}
-                              style={{ width: `${category.percent_of_total}%` }}
-                              title={`${category.label}: ${category.formatted}`}
-                            />
-                          ))}
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-3">
-                        {storageUsage.categories
-                          .filter((category) => category.bytes > 0)
-                          .map((category, index) => (
-                            <div key={category.key} className="flex items-center gap-2 text-xs">
-                              <span
-                                className={`w-3 h-3 rounded-full ${getStorageColor(category.key, index)}`}
-                              />
-                              <span className="text-bambu-gray">{category.label}</span>
-                              <span className="text-white">{category.formatted}</span>
-                              <span className="text-bambu-gray">({category.percent_of_total.toFixed(1)}%)</span>
-                            </div>
-                          ))}
-                      </div>
-                      <div className="mt-2 text-xs text-bambu-gray">
-                        {t('settings.storageUsageTotal', 'Total')}: <span className="text-white">{storageUsage.total_formatted}</span>
-                        {storageUsage.scan_errors > 0 && (
-                          <span className="ml-2 text-amber-400">
-                            {t('settings.storageUsageErrors', 'Scan errors')}: {storageUsage.scan_errors}
-                          </span>
-                        )}
-                      </div>
-                      {storageUsage.other_breakdown?.length > 0 && (
-                        <div className="mt-4">
-                          <p className="text-xs text-bambu-gray mb-2">
-                            {t('settings.storageUsageOtherBreakdown', 'Other breakdown')}
-                          </p>
-                          <div className="space-y-2">
-                            {storageUsage.other_breakdown.map((item) => (
-                              <div key={`${item.bucket}-${item.kind}`} className="flex items-center justify-between text-xs">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-white">{item.label}</span>
-                                  <span
-                                    className={`px-2 py-0.5 rounded-full border ${
-                                      item.kind === 'system'
-                                        ? 'border-slate-500 text-slate-300'
-                                        : 'border-bambu-green text-bambu-green'
-                                    }`}
-                                  >
-                                    {item.kind === 'system'
-                                      ? t('settings.storageUsageSystem', 'System')
-                                      : t('settings.storageUsageData', 'Data')}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2 text-bambu-gray">
-                                  <span className="text-white">{item.formatted}</span>
-                                  <span>({item.percent_of_total.toFixed(1)}%)</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <p className="text-sm text-bambu-gray">
-                      {t('settings.storageUsageUnavailable', 'Storage usage data is unavailable')}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center justify-between pt-4 border-t border-bambu-dark-tertiary">
-                <div>
-                  <p className="text-white">{t('settings.backupRestore')}</p>
-                  <p className="text-sm text-bambu-gray">
-                    {t('settings.backupRestoreDescription')}
-                  </p>
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => handleTabChange('backup')}
-                >
-                  <Database className="w-4 h-4" />
-                  {t('settings.goToBackup')}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Sidebar Links */}
+          <ExternalLinksSettings />
         </div>
       </div>
       )}
@@ -4057,12 +4008,15 @@ export function SettingsPage() {
                 {t('settings.defaultPrintOptionsDescription', 'Set default values for print options when starting new prints. These can be overridden per print in the print dialog.')}
               </p>
               {[
-                { key: 'default_bed_levelling' as const, label: t('settings.defaultBedLevelling', 'Bed Levelling'), desc: t('settings.defaultBedLevellingDesc', 'Auto-level bed before print'), fallback: true },
-                { key: 'default_flow_cali' as const, label: t('settings.defaultFlowCali', 'Flow Calibration'), desc: t('settings.defaultFlowCaliDesc', 'Calibrate extrusion flow'), fallback: false },
-                { key: 'default_vibration_cali' as const, label: t('settings.defaultVibrationCali', 'Vibration Calibration'), desc: t('settings.defaultVibrationCaliDesc', 'Reduce ringing artifacts'), fallback: true },
-                { key: 'default_layer_inspect' as const, label: t('settings.defaultLayerInspect', 'First Layer Inspection'), desc: t('settings.defaultLayerInspectDesc', 'AI inspection of first layer'), fallback: false },
-                { key: 'default_timelapse' as const, label: t('settings.defaultTimelapse', 'Timelapse'), desc: t('settings.defaultTimelapseDesc', 'Record timelapse video'), fallback: false },
-              ].map(({ key, label, desc, fallback }) => (
+                { key: 'default_bed_levelling' as const, label: t('settings.defaultBedLevelling', 'Bed Levelling'), desc: t('settings.defaultBedLevellingDesc', 'Auto-level bed before print'), fallback: true, dualNozzleOnly: false },
+                { key: 'default_flow_cali' as const, label: t('settings.defaultFlowCali', 'Flow Calibration'), desc: t('settings.defaultFlowCaliDesc', 'Calibrate extrusion flow'), fallback: false, dualNozzleOnly: false },
+                { key: 'default_vibration_cali' as const, label: t('settings.defaultVibrationCali', 'Vibration Calibration'), desc: t('settings.defaultVibrationCaliDesc', 'Reduce ringing artifacts'), fallback: true, dualNozzleOnly: false },
+                { key: 'default_layer_inspect' as const, label: t('settings.defaultLayerInspect', 'First Layer Inspection'), desc: t('settings.defaultLayerInspectDesc', 'AI inspection of first layer'), fallback: false, dualNozzleOnly: false },
+                { key: 'default_timelapse' as const, label: t('settings.defaultTimelapse', 'Timelapse'), desc: t('settings.defaultTimelapseDesc', 'Record timelapse video'), fallback: false, dualNozzleOnly: false },
+                { key: 'default_nozzle_offset_cali' as const, label: t('settings.defaultNozzleOffsetCali', 'Nozzle Offset Calibration'), desc: t('settings.defaultNozzleOffsetCaliDesc', 'Calibrate nozzle offsets between extruders'), fallback: true, dualNozzleOnly: true },
+              ]
+              .filter(({ dualNozzleOnly }) => !dualNozzleOnly || (printers || []).some(p => p.nozzle_count === 2))
+              .map(({ key, label, desc, fallback }) => (
                 <div key={key} className="flex items-center justify-between">
                   <div className="flex-1 mr-4">
                     <p className="text-sm text-white">{label}</p>
@@ -4079,6 +4033,75 @@ export function SettingsPage() {
                   </label>
                 </div>
               ))}
+            </CardContent>
+          </Card>
+
+          {/* Temperature & Fan Presets */}
+          <Card id="card-temp-fan-presets">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Thermometer className="w-4 h-4 text-bambu-green" />
+                {t('settings.tempFanPresetsTitle', 'Temperature & Fan Presets')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-bambu-gray">
+                {t('settings.tempFanPresetsDescription', 'Customize the quick-select values shown in printer-card temperature and fan-speed popovers. The Off button is always shown.')}
+              </p>
+              {PRESET_CATEGORIES.map(category => {
+                const raw = localSettings?.[category.key] ?? '';
+                const triple = parsePresetTriple(raw, category.defaults, category.lo, category.hi);
+                const unitLabel = category.unit === 'C' ? '°C' : '%';
+                const labelKeyMap = {
+                  nozzle_temp_presets: 'tempFanPresetsNozzle',
+                  bed_temp_presets: 'tempFanPresetsBed',
+                  chamber_temp_presets: 'tempFanPresetsChamber',
+                  fan_speed_presets: 'tempFanPresetsFan',
+                } as const;
+                const fallbackLabels = {
+                  nozzle_temp_presets: 'Nozzle temperature',
+                  bed_temp_presets: 'Bed temperature',
+                  chamber_temp_presets: 'Chamber temperature',
+                  fan_speed_presets: 'Fan speed',
+                } as const;
+                const rowLabel = t(`settings.${labelKeyMap[category.key]}`, fallbackLabels[category.key]);
+                return (
+                  <div key={category.key}>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-sm text-white">
+                        {rowLabel} <span className="text-bambu-gray text-xs">({unitLabel} · {category.lo}–{category.hi})</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => updateSetting(category.key, '')}
+                        title={t('settings.tempFanPresetsReset', 'Reset to defaults')}
+                        className="text-bambu-gray hover:text-white transition-colors p-1 rounded hover:bg-bambu-dark-tertiary"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      {[0, 1, 2].map(idx => (
+                        <input
+                          key={idx}
+                          type="number"
+                          min={category.lo}
+                          max={category.hi}
+                          value={triple[idx]}
+                          onChange={(e) => {
+                            const next: [number, number, number] = [triple[0], triple[1], triple[2]];
+                            const parsedValue = parseInt(e.target.value, 10);
+                            const clamped = Math.max(category.lo, Math.min(category.hi, Number.isFinite(parsedValue) ? parsedValue : category.lo));
+                            next[idx] = clamped;
+                            updateSetting(category.key, JSON.stringify(next));
+                          }}
+                          className="flex-1 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </CardContent>
           </Card>
 
@@ -4318,6 +4341,37 @@ export function SettingsPage() {
                     )}
                   </div>
                 )}
+              </div>
+              {/* Desktop "Open in Slicer" override (#1329). Independent of the
+                  API slicer so a user can slice via the Bambu Studio sidecar
+                  but open files locally in OrcaSlicer, or vice versa. */}
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">
+                  {t('settings.openInSlicerLabel', 'Open in Slicer')}
+                </label>
+                <div className="relative">
+                  <select
+                    value={localSettings.open_in_slicer ?? ''}
+                    onChange={(e) =>
+                      updateSetting(
+                        'open_in_slicer',
+                        e.target.value === '' ? null : (e.target.value as 'bambu_studio' | 'orcaslicer'),
+                      )
+                    }
+                    className="w-full px-3 py-2 pr-10 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none cursor-pointer"
+                  >
+                    <option value="">{t('settings.openInSlicerInherit', 'Same as API slicer')}</option>
+                    <option value="bambu_studio">{t('settings.slicerBambuStudio')}</option>
+                    <option value="orcaslicer">{t('settings.slicerOrcaSlicer')}</option>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
+                </div>
+                <p className="text-xs text-bambu-gray mt-1">
+                  {t(
+                    'settings.openInSlicerDescription',
+                    "Desktop slicer used by the 'Open in Slicer' button. Leave on 'Same as API slicer' to inherit, or pick a different slicer to use locally.",
+                  )}
+                </p>
               </div>
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
@@ -5079,8 +5133,73 @@ export function SettingsPage() {
 
           {authEnabled && (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              {/* Left Column: Current User + User List */}
+              {/* Left Column: Session Policy + Current User + User List */}
               <div className="space-y-3">
+                {/* Session Policy (#1706) — admin-set ceiling for user session lifetime */}
+                <Card id="card-session-policy">
+                  <CardHeader>
+                    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                      <Lock className="w-5 h-5 text-bambu-green" />
+                      {t('settings.sessionPolicy.title')}
+                    </h3>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-bambu-gray mb-4">
+                      {t('settings.sessionPolicy.description')}
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                      {[
+                        { hours: 24, labelKey: 'settings.sessionPolicy.preset24h' },
+                        { hours: 168, labelKey: 'settings.sessionPolicy.preset7d' },
+                        { hours: 720, labelKey: 'settings.sessionPolicy.preset30d' },
+                      ].map((preset) => {
+                        const current = localSettings?.session_max_hours ?? 24;
+                        const isActive = current === preset.hours;
+                        return (
+                          <button
+                            key={preset.hours}
+                            type="button"
+                            onClick={() => updateSetting('session_max_hours', preset.hours)}
+                            disabled={authEnabled && !hasPermission('settings:update')}
+                            className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                              isActive
+                                ? 'bg-bambu-green text-white'
+                                : 'bg-bambu-dark-tertiary text-bambu-gray hover:text-white hover:bg-bambu-dark'
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          >
+                            {t(preset.labelKey)}
+                          </button>
+                        );
+                      })}
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min={1}
+                          max={720}
+                          value={localSettings?.session_max_hours ?? 24}
+                          onChange={(e) => {
+                            const raw = parseInt(e.target.value, 10);
+                            if (Number.isNaN(raw)) return;
+                            updateSetting('session_max_hours', Math.max(1, Math.min(720, raw)));
+                          }}
+                          disabled={authEnabled && !hasPermission('settings:update')}
+                          aria-label={t('settings.sessionPolicy.customHoursLabel')}
+                          className="w-20 px-2 py-2 bg-bambu-dark-tertiary text-white text-sm rounded-lg border border-bambu-dark-tertiary focus:border-bambu-green focus:outline-none disabled:opacity-50"
+                        />
+                        <span className="text-sm text-bambu-gray">{t('settings.sessionPolicy.hoursSuffix')}</span>
+                      </div>
+                    </div>
+                    {(localSettings?.session_max_hours ?? 24) > 24 && (
+                      <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+                        <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+                        <p className="text-xs text-yellow-200">
+                          {t('settings.sessionPolicy.warning')}
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
                 {/* Current User Card */}
                 {user && (
                   <Card>

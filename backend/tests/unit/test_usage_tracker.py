@@ -56,11 +56,12 @@ def _make_archive(archive_id=1, file_path="archives/1/test.3mf", extra_data=None
     return archive
 
 
-def _make_queue_item(ams_mapping=None, status="printing"):
+def _make_queue_item(ams_mapping=None, status="printing", plate_id=None):
     """Create a mock PrintQueueItem object."""
     item = MagicMock()
     item.ams_mapping = ams_mapping
     item.status = status
+    item.plate_id = plate_id
     return item
 
 
@@ -2008,6 +2009,48 @@ class TestOnPrintStartAmsMapping:
 
         assert _active_sessions[1].ams_mapping is None
 
+    @pytest.mark.asyncio
+    async def test_captures_queue_plate_id(self):
+        """on_print_start records the queue item's plate_id onto the session (#1697)."""
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            raw_data={"ams": [{"id": 0, "tray": [{"id": 0, "remain": 80}]}]},
+            tray_now=0,
+        )
+
+        queue_item = _make_queue_item(plate_id=2)
+        # on_print_start now executes: SpoolAssignment lookup, then PrintQueueItem lookup.
+        db = AsyncMock()
+        assignment_result = MagicMock()
+        assignment_result.scalars.return_value.all.return_value = []
+        queue_result = MagicMock()
+        queue_result.scalars.return_value.first.return_value = queue_item
+        db.execute = AsyncMock(side_effect=[assignment_result, queue_result])
+
+        await on_print_start(1, {"subtask_name": "Test"}, printer_manager, db=db)
+
+        assert _active_sessions[1].plate_id == 2
+
+    @pytest.mark.asyncio
+    async def test_plate_id_none_when_no_queue_item(self):
+        """Direct/library prints with no queue item leave session.plate_id = None."""
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            raw_data={"ams": [{"id": 0, "tray": [{"id": 0, "remain": 80}]}]},
+            tray_now=0,
+        )
+
+        db = AsyncMock()
+        assignment_result = MagicMock()
+        assignment_result.scalars.return_value.all.return_value = []
+        queue_result = MagicMock()
+        queue_result.scalars.return_value.first.return_value = None
+        db.execute = AsyncMock(side_effect=[assignment_result, queue_result])
+
+        await on_print_start(1, {"subtask_name": "Test"}, printer_manager, db=db)
+
+        assert _active_sessions[1].plate_id is None
+
 
 class TestFindThreemfByFilename:
     """Tests for _find_3mf_by_filename() — library/archive search without archive_id."""
@@ -2205,3 +2248,91 @@ class TestTrackFrom3mfWithPreresolvedPath:
 
         assert len(results) == 1
         assert results[0]["weight_used"] == 2.0
+
+
+class TestTrackFrom3mfPlateId:
+    """plate_id must propagate from PrintSession through _track_from_3mf to the
+    3MF parser, so multi-plate files dispatched for one plate only count that
+    plate's filament (#1697)."""
+
+    @pytest.mark.asyncio
+    async def test_passes_plate_id_to_3mf_extract(self):
+        spool = _make_spool(spool_id=1, label_weight=1000)
+        assignment = _make_assignment(spool_id=1, ams_id=0, tray_id=0)
+
+        db = _mock_db_sequential([assignment, spool])
+
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            raw_data={"ams": [{"id": 0, "tray": []}]},
+            tray_now=0,
+            last_loaded_tray=0,
+            tray_change_log=[],
+        )
+
+        extract_mock = MagicMock(return_value=[{"slot_id": 1, "used_g": 190.0, "type": "PETG", "color": "#888888"}])
+
+        with (
+            patch("backend.app.utils.threemf_tools.extract_filament_usage_from_3mf", extract_mock),
+            patch("backend.app.core.config.settings") as mock_settings,
+        ):
+            mock_settings.base_dir = MagicMock()
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+
+            await _track_from_3mf(
+                printer_id=1,
+                archive_id=None,
+                status="completed",
+                print_name="GridfinityLid",
+                handled_trays=set(),
+                printer_manager=printer_manager,
+                db=db,
+                tray_now_at_start=0,
+                threemf_path=mock_path,
+                plate_id=2,
+            )
+
+        # plate_id=2 passed positionally as second arg
+        assert extract_mock.call_count == 1
+        assert extract_mock.call_args.args[1] == 2
+
+    @pytest.mark.asyncio
+    async def test_plate_id_none_for_non_queue_print(self):
+        spool = _make_spool(spool_id=1, label_weight=1000)
+        assignment = _make_assignment(spool_id=1, ams_id=0, tray_id=0)
+
+        db = _mock_db_sequential([assignment, spool])
+
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            raw_data={"ams": [{"id": 0, "tray": []}]},
+            tray_now=0,
+            last_loaded_tray=0,
+            tray_change_log=[],
+        )
+
+        extract_mock = MagicMock(return_value=[{"slot_id": 1, "used_g": 5.0, "type": "PLA", "color": "#FF0000"}])
+
+        with (
+            patch("backend.app.utils.threemf_tools.extract_filament_usage_from_3mf", extract_mock),
+            patch("backend.app.core.config.settings") as mock_settings,
+        ):
+            mock_settings.base_dir = MagicMock()
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+
+            # No plate_id kwarg — direct/library Print flow.
+            await _track_from_3mf(
+                printer_id=1,
+                archive_id=None,
+                status="completed",
+                print_name="DirectPrint",
+                handled_trays=set(),
+                printer_manager=printer_manager,
+                db=db,
+                tray_now_at_start=0,
+                threemf_path=mock_path,
+            )
+
+        assert extract_mock.call_args.args[1] is None

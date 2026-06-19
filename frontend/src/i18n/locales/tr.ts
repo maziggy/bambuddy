@@ -361,7 +361,7 @@ export default {
       unload: 'Çıkar',
     },
     bedJog: {
-      title: 'Baskı plakasını hareket ettir',
+      title: 'Jog kontrolleri',
       bed: 'Tabla',
       step: 'Adım (mm)',
       up: 'Plakayı yukarı hareket ettir',
@@ -1920,6 +1920,13 @@ export default {
     defaultTimelapseDesc: 'Zaman atlamalı video kaydet',
     defaultNozzleOffsetCali: 'Nozül Ofset Kalibrasyonu',
     defaultNozzleOffsetCaliDesc: 'Ekstrüderler arasındaki nozül ofsetlerini kalibre et',
+    tempFanPresetsTitle: 'Sıcaklık ve Fan Ön Ayarları',
+    tempFanPresetsDescription: 'Yazıcı kartı sıcaklık ve fan hızı pencerelerinde gösterilen hızlı seçim değerlerini özelleştirin. Kapalı düğmesi her zaman gösterilir.',
+    tempFanPresetsNozzle: 'Nozül sıcaklığı',
+    tempFanPresetsBed: 'Tabla sıcaklığı',
+    tempFanPresetsChamber: 'Hazne sıcaklığı',
+    tempFanPresetsFan: 'Fan hızı',
+    tempFanPresetsReset: 'Varsayılanlara sıfırla',
     staggeredStart: 'Kademeli Başlatma',
     staggeredStartDescription: 'Çoklu yazıcı toplu başlatmaları kademelendirilirken varsayılan grup boyutu ve aralığı. Baskı modalinde yığın başına geçersiz kılınabilir.',
     plateClear: 'Plaka Temizleme Onayı',
@@ -4539,6 +4546,10 @@ export default {
     queueForceColorMatch: {
       title: 'Renk eşleşmesini zorla',
       description: 'Tam olarak doğru filament türü ve rengi yüklü olmayan bir yazıcıya sevk etmeyi reddet. Varsayılan olarak kapalı — bu olmadan kuyruk yalnızca model eşleşmesi kullanır ve yanlış renk yüklü bir yazıcı seçebilir.',
+    },
+    gcodeInjection: {
+      title: 'G-code enjeksiyonu',
+      description: "Ayarlar'da model bazında yapılandırılan G-code parçacıklarını bu VP'nin işlerine uygular. Varsayılan olarak kapalı.",
     },
     tailscaleDisabled: {
       title: 'Tailscale entegrasyonu',

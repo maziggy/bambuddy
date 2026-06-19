@@ -467,7 +467,7 @@ def _enforce_auto_link_safety(provider: OIDCProvider) -> None:
     """
     if provider.auto_link_existing_accounts and provider.email_claim == "email" and not provider.require_email_verified:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=AUTO_LINK_REQUIREMENTS_ERROR,
         )
 
@@ -1361,7 +1361,7 @@ async def create_oidc_provider(
         grp_chk = await db.execute(select(Group).where(Group.id == body.default_group_id))
         if not grp_chk.scalar_one_or_none():
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="default_group_id references a non-existent group",
             )
 
@@ -1425,7 +1425,7 @@ async def update_oidc_provider(
         grp_chk = await db.execute(select(Group).where(Group.id == body.default_group_id))
         if not grp_chk.scalar_one_or_none():
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="default_group_id references a non-existent group",
             )
 

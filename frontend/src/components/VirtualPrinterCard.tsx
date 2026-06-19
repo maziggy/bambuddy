@@ -55,6 +55,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   const [localModel, setLocalModel] = useState(printer.model || '');
   const [localAutoDispatch, setLocalAutoDispatch] = useState(printer.auto_dispatch ?? true);
   const [localQueueForceColorMatch, setLocalQueueForceColorMatch] = useState(printer.queue_force_color_match ?? false);
+  const [localGcodeInjection, setLocalGcodeInjection] = useState(printer.gcode_injection ?? false);
   const [localTailscaleDisabled, setLocalTailscaleDisabled] = useState(printer.tailscale_disabled ?? true);
   const [showAccessCode, setShowAccessCode] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -100,6 +101,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
       setLocalModel(printer.model || '');
       setLocalAutoDispatch(printer.auto_dispatch ?? true);
       setLocalQueueForceColorMatch(printer.queue_force_color_match ?? false);
+      setLocalGcodeInjection(printer.gcode_injection ?? false);
       setLocalTailscaleDisabled(printer.tailscale_disabled ?? true);
     }
   }, [printer, pendingAction]);
@@ -430,6 +432,36 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                     <span
                       className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
                         localQueueForceColorMatch ? 'translate-x-5' : ''
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* G-code injection toggle - only for queue mode (#1516) */}
+            {localMode === 'queue' && (
+              <div className="pt-2 border-t border-bambu-dark-tertiary">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-white text-sm font-medium">{t('virtualPrinter.gcodeInjection.title')}</div>
+                    <div className="text-[10px] text-bambu-gray">{t('virtualPrinter.gcodeInjection.description')}</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const newVal = !localGcodeInjection;
+                      setLocalGcodeInjection(newVal);
+                      setPendingAction('gcodeInjection');
+                      updateMutation.mutate({ gcode_injection: newVal });
+                    }}
+                    disabled={pendingAction === 'gcodeInjection'}
+                    className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${
+                      localGcodeInjection ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+                    } ${pendingAction === 'gcodeInjection' ? 'opacity-50' : ''}`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                        localGcodeInjection ? 'translate-x-5' : ''
                       }`}
                     />
                   </button>

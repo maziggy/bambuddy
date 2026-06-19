@@ -361,7 +361,7 @@ export default {
       unload: '卸載',
     },
     bedJog: {
-      title: '移動熱床',
+      title: '點動控制',
       bed: '熱床',
       step: '步長 (mm)',
       up: '熱床上移',
@@ -1918,6 +1918,13 @@ export default {
     defaultTimelapseDesc: '錄製縮時攝影影片',
     defaultNozzleOffsetCali: '噴嘴偏移校準',
     defaultNozzleOffsetCaliDesc: '校準兩個擠出機之間的噴嘴偏移',
+    tempFanPresetsTitle: '溫度與風扇預設',
+    tempFanPresetsDescription: '自訂印表機卡片溫度和風扇速度彈出視窗中顯示的快速選擇值。「關閉」按鈕始終顯示。',
+    tempFanPresetsNozzle: '噴嘴溫度',
+    tempFanPresetsBed: '熱床溫度',
+    tempFanPresetsChamber: '腔室溫度',
+    tempFanPresetsFan: '風扇速度',
+    tempFanPresetsReset: '還原預設值',
     staggeredStart: '錯開啟動',
     staggeredStartDescription: '多台印表機批次啟動時的預設群組大小與間隔。可在列印對話框中逐批覆寫。',
     plateClear: '熱床清空確認',
@@ -4564,6 +4571,10 @@ export default {
     queueForceColorMatch: {
       title: '強制顏色匹配',
       description: '拒絕派發到沒有完全相同耗材類型和顏色的印表機。預設關閉 — 不啟用時，佇列僅按型號匹配，可能選到顏色錯誤的印表機。',
+    },
+    gcodeInjection: {
+      title: 'G-code 注入',
+      description: '將「設定」中依型號設定的 G-code 片段套用到此 VP 的作業。預設關閉。',
     },
     tailscaleDisabled: {
       title: 'Tailscale 整合',

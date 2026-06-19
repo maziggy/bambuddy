@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatDateOnly } from '../utils/date';
 import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
 import { checkPasswordComplexity } from '../utils/password';
+import { PRESET_CATEGORIES, parsePresetTriple } from '../utils/temperatureFanPresets';
 import type { APIKey, AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
 import { SlicerBundlesPanel } from '../components/SlicerBundlesPanel';
@@ -64,6 +65,7 @@ registerSettingsSearch({ labelKey: 'settings.smartPlugs', tab: 'plugs', keywords
 registerSettingsSearch({ labelKey: 'settings.providers', tab: 'notifications', keywords: 'telegram discord email notification providers webhook', anchor: 'card-providers' });
 registerSettingsSearch({ labelKey: 'settings.messageTemplates', tab: 'notifications', keywords: 'message templates notification text edit', anchor: 'card-templates' });
 registerSettingsSearch({ labelKey: 'settings.defaultPrintOptions', labelFallback: 'Default Print Options', tab: 'queue', keywords: 'print bed leveling flow calibration vibration first layer timelapse', anchor: 'card-print-options' });
+registerSettingsSearch({ labelKey: 'settings.tempFanPresetsTitle', labelFallback: 'Temperature & Fan Presets', tab: 'queue', keywords: 'temperature fan presets nozzle bed chamber quick buttons popover', anchor: 'card-temp-fan-presets' });
 registerSettingsSearch({ labelKey: 'settings.staggeredStart', labelFallback: 'Staggered Start', tab: 'queue', keywords: 'staggered batch delay start queue group', anchor: 'card-staggered' });
 registerSettingsSearch({ labelKey: 'settings.plateClear', labelFallback: 'Plate-Clear Confirmation', tab: 'queue', keywords: 'plate clear confirm auto queue', anchor: 'card-plate' });
 registerSettingsSearch({ labelKey: 'settings.gcodeInjection', labelFallback: 'G-code Injection', tab: 'queue', keywords: 'gcode injection start end autoprint farmloop swapmod autoclear printflow', anchor: 'card-gcode' });
@@ -977,6 +979,10 @@ export function SettingsPage() {
       (settings.stagger_group_size ?? 2) !== (localSettings.stagger_group_size ?? 2) ||
       (settings.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
       (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
+      (settings.nozzle_temp_presets ?? '') !== (localSettings.nozzle_temp_presets ?? '') ||
+      (settings.bed_temp_presets ?? '') !== (localSettings.bed_temp_presets ?? '') ||
+      (settings.chamber_temp_presets ?? '') !== (localSettings.chamber_temp_presets ?? '') ||
+      (settings.fan_speed_presets ?? '') !== (localSettings.fan_speed_presets ?? '') ||
       (settings.session_max_hours ?? 24) !== (localSettings.session_max_hours ?? 24);
 
     if (!hasChanges) {
@@ -1064,6 +1070,10 @@ export function SettingsPage() {
         stagger_group_size: localSettings.stagger_group_size,
         stagger_interval_minutes: localSettings.stagger_interval_minutes,
         require_plate_clear: localSettings.require_plate_clear,
+        nozzle_temp_presets: localSettings.nozzle_temp_presets,
+        bed_temp_presets: localSettings.bed_temp_presets,
+        chamber_temp_presets: localSettings.chamber_temp_presets,
+        fan_speed_presets: localSettings.fan_speed_presets,
         session_max_hours: localSettings.session_max_hours,
       };
       updateMutation.mutate(settingsToSave);
@@ -4023,6 +4033,75 @@ export function SettingsPage() {
                   </label>
                 </div>
               ))}
+            </CardContent>
+          </Card>
+
+          {/* Temperature & Fan Presets */}
+          <Card id="card-temp-fan-presets">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Thermometer className="w-4 h-4 text-bambu-green" />
+                {t('settings.tempFanPresetsTitle', 'Temperature & Fan Presets')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-bambu-gray">
+                {t('settings.tempFanPresetsDescription', 'Customize the quick-select values shown in printer-card temperature and fan-speed popovers. The Off button is always shown.')}
+              </p>
+              {PRESET_CATEGORIES.map(category => {
+                const raw = localSettings?.[category.key] ?? '';
+                const triple = parsePresetTriple(raw, category.defaults, category.lo, category.hi);
+                const unitLabel = category.unit === 'C' ? '°C' : '%';
+                const labelKeyMap = {
+                  nozzle_temp_presets: 'tempFanPresetsNozzle',
+                  bed_temp_presets: 'tempFanPresetsBed',
+                  chamber_temp_presets: 'tempFanPresetsChamber',
+                  fan_speed_presets: 'tempFanPresetsFan',
+                } as const;
+                const fallbackLabels = {
+                  nozzle_temp_presets: 'Nozzle temperature',
+                  bed_temp_presets: 'Bed temperature',
+                  chamber_temp_presets: 'Chamber temperature',
+                  fan_speed_presets: 'Fan speed',
+                } as const;
+                const rowLabel = t(`settings.${labelKeyMap[category.key]}`, fallbackLabels[category.key]);
+                return (
+                  <div key={category.key}>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-sm text-white">
+                        {rowLabel} <span className="text-bambu-gray text-xs">({unitLabel} · {category.lo}–{category.hi})</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => updateSetting(category.key, '')}
+                        title={t('settings.tempFanPresetsReset', 'Reset to defaults')}
+                        className="text-bambu-gray hover:text-white transition-colors p-1 rounded hover:bg-bambu-dark-tertiary"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      {[0, 1, 2].map(idx => (
+                        <input
+                          key={idx}
+                          type="number"
+                          min={category.lo}
+                          max={category.hi}
+                          value={triple[idx]}
+                          onChange={(e) => {
+                            const next: [number, number, number] = [triple[0], triple[1], triple[2]];
+                            const parsedValue = parseInt(e.target.value, 10);
+                            const clamped = Math.max(category.lo, Math.min(category.hi, Number.isFinite(parsedValue) ? parsedValue : category.lo));
+                            next[idx] = clamped;
+                            updateSetting(category.key, JSON.stringify(next));
+                          }}
+                          className="flex-1 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </CardContent>
           </Card>
 

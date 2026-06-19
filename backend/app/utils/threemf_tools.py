@@ -5,6 +5,7 @@ per-layer filament usage data from the embedded G-code. This enables
 accurate partial usage reporting for multi-material prints.
 """
 
+import hashlib
 import json
 import logging
 import math
@@ -546,6 +547,7 @@ _HEADER_PLACEHOLDER_ALIASES = {
 _HEADER_KEY_RE = re.compile(r"^;\s*([^:]+?)\s*:\s*(.+?)\s*$")
 _PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 _START_GCODE_END_MARKER = "; MACHINE_START_GCODE_END"
+_EXECUTABLE_BLOCK_END_MARKER = "; EXECUTABLE_BLOCK_END"
 
 
 def _parse_3mf_gcode_header(content: str) -> dict[str, str]:
@@ -618,6 +620,29 @@ def _inject_start_at_marker(content: str, snippet: str) -> str:
     return content[:line_start] + snippet.rstrip("\n") + "\n" + content[line_start:]
 
 
+def _inject_end_before_marker(content: str, snippet: str) -> str:
+    """Insert snippet immediately before `; EXECUTABLE_BLOCK_END`.
+
+    The end snippet must run *inside* the executable block. Bambu firmware
+    (verified on a P1S) does not execute G-code that sits after
+    `; EXECUTABLE_BLOCK_END`, so appending to the file end silently drops the
+    snippet — auto-eject / plate-clear moves never fire. Inserting before the
+    marker places the snippet after the printer's own machine-end sequence but
+    still within the executed block. Falls back to appending at the file end if
+    the marker isn't present.
+    """
+    marker_idx = content.find(_EXECUTABLE_BLOCK_END_MARKER)
+    if marker_idx == -1:
+        logger.warning(
+            "G-code injection: '%s' not found, appending end snippet to file end",
+            _EXECUTABLE_BLOCK_END_MARKER,
+        )
+        return content.rstrip("\n") + "\n" + snippet.rstrip("\n") + "\n"
+    line_start = content.rfind("\n", 0, marker_idx)
+    line_start = 0 if line_start == -1 else line_start + 1
+    return content[:line_start] + snippet.rstrip("\n") + "\n" + content[line_start:]
+
+
 def inject_gcode_into_3mf(
     source_path: Path,
     plate_id: int,
@@ -629,8 +654,12 @@ def inject_gcode_into_3mf(
     Snippets support `{placeholder}` substitution against values parsed from
     the 3MF G-code header block (e.g. `{max_layer_z}` → `16.00`). Start
     snippets are anchored to the `; MACHINE_START_GCODE_END` marker so they
-    run after the printer's own startup (#422). End snippets are appended
-    after the last line of the print.
+    run after the printer's own startup (#422). End snippets are inserted just
+    before `; EXECUTABLE_BLOCK_END` so they run inside the executable block —
+    Bambu firmware (P1S) ignores g-code placed after that marker.
+
+    The plate's `.gcode.md5` sidecar is recomputed so firmware that validates
+    it against the gcode (e.g. P1S) still accepts the modified file.
 
     Args:
         source_path: Path to the original 3MF file.
@@ -672,10 +701,25 @@ def inject_gcode_into_3mf(
 
             if start_gcode:
                 resolved = _substitute_placeholders(start_gcode, header)
+                # Log the post-substitution snippet so the actually-injected G-code
+                # (placeholders like {max_layer_z} already resolved) is visible at DEBUG.
+                logger.debug("G-code injection [%s]: resolved START snippet:\n%s", target_gcode, resolved)
                 gcode_content = _inject_start_at_marker(gcode_content, resolved)
             if end_gcode:
                 resolved = _substitute_placeholders(end_gcode, header)
-                gcode_content = gcode_content.rstrip("\n") + "\n" + resolved + "\n"
+                logger.debug("G-code injection [%s]: resolved END snippet:\n%s", target_gcode, resolved)
+                gcode_content = _inject_end_before_marker(gcode_content, resolved)
+
+            # The printer validates the plate gcode against an embedded
+            # `<plate>.gcode.md5` sidecar (uppercase hex, no trailing newline).
+            # Rewriting the gcode without refreshing this hash makes firmware
+            # reject the file at load (P1S: HMS 0500-4003 "unable to parse"),
+            # so recompute it from the exact bytes we're about to write.
+            gcode_bytes = gcode_content.encode("utf-8")
+            md5_name = target_gcode + ".md5"
+            # Not a security hash — this reproduces Bambu's `.gcode.md5` sidecar
+            # format, so flag it as non-security for the linters (ruff S324 / bandit B324).
+            md5_value = hashlib.md5(gcode_bytes, usedforsecurity=False).hexdigest().upper().encode("ascii")
 
             # Write modified 3MF to temp file
             with tempfile.NamedTemporaryFile(delete=False, suffix=".3mf") as tmp:
@@ -685,7 +729,9 @@ def inject_gcode_into_3mf(
                 for item in zf.namelist():
                     info = zf.getinfo(item)
                     if item == target_gcode:
-                        zf_write.writestr(info, gcode_content.encode("utf-8"))
+                        zf_write.writestr(info, gcode_bytes)
+                    elif item == md5_name:
+                        zf_write.writestr(info, md5_value)
                     else:
                         zf_write.writestr(info, zf.read(item))
 

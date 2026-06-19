@@ -574,6 +574,109 @@ class TestVirtualPrinterInstance:
         assert queue_item.manual_start is True
 
     @pytest.mark.asyncio
+    async def test_add_to_print_queue_gcode_injection_on(self, tmp_path):
+        """#1516: queue items opt into injection when the VP has gcode_injection=True."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        mock_db = AsyncMock()
+        added_items = []
+        mock_db.add = MagicMock(side_effect=added_items.append)
+        mock_db.commit = AsyncMock()
+
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=13,
+            name="InjectOn",
+            mode="queue",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800013",
+            gcode_injection=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "test"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        assert added_items[0].gcode_injection is True
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_gcode_injection_off_by_default(self, tmp_path):
+        """#1516: queue items do NOT inject when the VP leaves gcode_injection at its default."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        mock_db = AsyncMock()
+        added_items = []
+        mock_db.add = MagicMock(side_effect=added_items.append)
+        mock_db.commit = AsyncMock()
+
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=14,
+            name="InjectOff",
+            mode="queue",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800014",
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "test"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        assert added_items[0].gcode_injection is False
+
+    @pytest.mark.asyncio
     async def test_add_to_print_queue_uses_workflow_defaults_from_settings(self, tmp_path):
         """#1235: VP queue-mode constructed PrintQueueItem without specifying
         bed_levelling / flow_cali / vibration_cali / layer_inspect / timelapse,
@@ -1650,6 +1753,7 @@ class TestVirtualPrinterManager:
             "auto_dispatch": True,
             "tailscale_disabled": True,  # Opt-in default (#1070 UX fix)
             "queue_force_color_match": False,  # default — must be explicit so MagicMock truthiness doesn't trip the change detector
+            "gcode_injection": False,  # same reason as above
             "position": 0,
         }
         defaults.update(overrides)
@@ -1849,6 +1953,43 @@ class TestVirtualPrinterManager:
             await manager.sync_from_db()
 
         mock_remove.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sync_from_db_restarts_on_gcode_injection_toggle(self, manager, tmp_path):
+        """Toggling gcode_injection in the DB must restart the running instance.
+
+        Without this, the in-memory ``self.gcode_injection`` keeps its old value
+        and ``_add_to_print_queue`` stamps the stale flag on every new queue
+        item — so disabling injection in the UI silently has no effect until
+        the process restarts.
+        """
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        inst = VirtualPrinterInstance(
+            vp_id=1,
+            name="TestVP",
+            mode="archive",
+            model="C11",
+            access_code="12345678",
+            serial_suffix="391800001",
+            gcode_injection=True,
+            base_dir=tmp_path,
+        )
+        inst.stop_server = AsyncMock()
+        manager._instances[1] = inst
+
+        db_vp = self._make_db_vp(gcode_injection=False)
+        self._setup_sync_mocks(manager, [db_vp], tmp_path)
+
+        with patch.object(manager, "remove_instance", new_callable=AsyncMock) as mock_remove:
+            with patch("backend.app.services.virtual_printer.manager.VirtualPrinterInstance") as MockInst:
+                mock_new = MagicMock()
+                mock_new.start_server = AsyncMock()
+                MockInst.return_value = mock_new
+
+                await manager.sync_from_db()
+
+            mock_remove.assert_called_once_with(1)
 
 
 class TestFTPSession:

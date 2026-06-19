@@ -361,7 +361,7 @@ export default {
       unload: 'Descarregar',
     },
     bedJog: {
-      title: 'Mover a mesa de impressão',
+      title: 'Controles de movimento',
       bed: 'Mesa',
       step: 'Passo (mm)',
       up: 'Mover mesa para cima',
@@ -1873,6 +1873,13 @@ export default {
     defaultTimelapseDesc: 'Gravar vídeo timelapse',
     defaultNozzleOffsetCali: 'Calibração de offset dos bicos',
     defaultNozzleOffsetCaliDesc: 'Calibrar offsets entre extrusores',
+    tempFanPresetsTitle: 'Predefinições de temperatura e ventilador',
+    tempFanPresetsDescription: 'Personalize os valores de seleção rápida exibidos nos popovers de temperatura e velocidade do ventilador do cartão da impressora. O botão Desligar sempre é exibido.',
+    tempFanPresetsNozzle: 'Temperatura do bico',
+    tempFanPresetsBed: 'Temperatura da mesa',
+    tempFanPresetsChamber: 'Temperatura da câmara',
+    tempFanPresetsFan: 'Velocidade do ventilador',
+    tempFanPresetsReset: 'Restaurar padrões',
     staggeredStart: 'Início escalonado',
     staggeredStartDescription: 'Tamanho de grupo e intervalo padrão ao escalonar inícios de lotes multi-impressora. Pode ser sobrescrito por lote no modal de impressão.',
     plateClear: 'Confirmação de placa livre',
@@ -4564,6 +4571,10 @@ export default {
     queueForceColorMatch: {
       title: 'Forçar correspondência de cor',
       description: 'Recusa enviar para uma impressora que não tenha exatamente o tipo e cor de filamento carregados. Desativado por padrão — sem isto, a fila usa apenas correspondência por modelo e pode escolher uma impressora com a cor errada carregada.',
+    },
+    gcodeInjection: {
+      title: 'Injeção de G-code',
+      description: 'Aplica os trechos de G-code configurados por modelo nas Configurações aos trabalhos deste VP. Desativado por padrão.',
     },
     tailscaleDisabled: {
       title: 'Integração Tailscale',

@@ -329,6 +329,8 @@ class PrinterStatus(BaseModel):
     awaiting_plate_clear: bool = False
     # AMS drying support
     supports_drying: bool = False
+    # Active chamber heater (responds to M141). True only for H2C/H2D/H2DPro/H2S/X2D.
+    supports_chamber_heater: bool = False
     # Linked archive for the active print (resolved via subtask_id). Frontend uses
     # this to fetch plate metadata and show the plate name when the source 3MF is
     # multi-plate (#881 follow-up).

@@ -30,6 +30,8 @@ export interface ComputePopoverPositionOpts {
   margin?: number;
   /** Gap between the trigger and the popover. */
   gap?: number;
+  /** Horizontal alignment relative to the trigger. Defaults to right-aligned. */
+  horizontalAlign?: 'right' | 'center';
 }
 
 /**
@@ -65,6 +67,7 @@ export function computePopoverPosition(opts: ComputePopoverPositionOpts): Popove
     viewportWidth = window.innerWidth,
     margin = 8,
     gap = 4,
+    horizontalAlign = 'right',
   } = opts;
 
   // Vertical: prefer below, flip to above only when below overflows AND
@@ -81,8 +84,11 @@ export function computePopoverPosition(opts: ComputePopoverPositionOpts): Popove
     }
   }
 
-  // Horizontal: right-align to trigger; clamp to viewport bounds.
-  let left = triggerRect.right - popoverWidth;
+  // Horizontal: align to trigger; clamp to viewport bounds.
+  const triggerCenter = triggerRect.left + ((triggerRect.right - triggerRect.left) / 2);
+  let left = horizontalAlign === 'center'
+    ? triggerCenter - (popoverWidth / 2)
+    : triggerRect.right - popoverWidth;
   if (left < margin) {
     left = margin;
   } else if (left + popoverWidth > viewportWidth - margin) {

@@ -63,6 +63,7 @@ from backend.app.schemas.library import (
 )
 from backend.app.schemas.slicer import SliceRequest, SliceResponse
 from backend.app.services.archive import ThreeMFParser
+from backend.app.services.plate_thumbnail import inject_plate_thumbnails_if_missing
 from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
 from backend.app.utils.filename import InvalidFilenameError, validate_print_filename
 from backend.app.utils.threemf_tools import (
@@ -3590,6 +3591,11 @@ async def slice_and_persist(
     out_filename = f"{base_name}.gcode.3mf"
     unique_name = f"{uuid.uuid4().hex}.gcode.3mf"
     out_path = get_library_files_dir() / unique_name  # SEC-PATH-OK: unique_name = uuid.uuid4().hex + ".gcode.3mf"
+    # BS/Orca CLIs skip plate_N.png in headless --export-3mf — render +
+    # inject server-side so the library card has a thumbnail. Best-effort:
+    # no-op when the slicer did embed thumbs (desktop Studio path), and
+    # falls through to the unmodified bytes on any render error.
+    result = result._replace(content=inject_plate_thumbnails_if_missing(result.content))
     out_path.write_bytes(result.content)
 
     # Extract thumbnail from the produced 3MF so the library card shows a
@@ -3715,6 +3721,11 @@ async def slice_and_persist_as_archive(
     out_path = (
         archive_dir / out_filename
     )  # SEC-PATH-OK: out_filename = f"{base_name}.gcode.3mf" where base_name went through _safe_filename
+    # See library-slice path: BS/Orca sidecar CLIs don't embed plate_N.png
+    # in headless --export-3mf, so the produced 3MF often has no thumbnail
+    # at all. Server-side render fills the gap; no-op when the slicer did
+    # embed (desktop Studio path) and best-effort on any render error.
+    result = result._replace(content=inject_plate_thumbnails_if_missing(result.content))
     out_path.write_bytes(result.content)
 
     # Extract a thumbnail for the new archive card. Priority order:

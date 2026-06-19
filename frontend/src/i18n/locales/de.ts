@@ -361,7 +361,7 @@ export default {
       unload: 'Entladen',
     },
     bedJog: {
-      title: 'Druckbett bewegen',
+      title: 'Jog-Steuerung',
       bed: 'Bett',
       step: 'Schritt (mm)',
       up: 'Platte hoch',
@@ -1921,6 +1921,13 @@ export default {
     defaultTimelapseDesc: 'Zeitraffervideo aufnehmen',
     defaultNozzleOffsetCali: 'Düsenversatz-Kalibrierung',
     defaultNozzleOffsetCaliDesc: 'Düsenversatz zwischen Extrudern kalibrieren',
+    tempFanPresetsTitle: 'Temperatur- und Lüfter-Vorgaben',
+    tempFanPresetsDescription: 'Passen Sie die Schnellwahlwerte in den Temperatur- und Lüfter-Popovers der Druckerkarte an. Die Aus-Schaltfläche wird immer angezeigt.',
+    tempFanPresetsNozzle: 'Düsentemperatur',
+    tempFanPresetsBed: 'Betttemperatur',
+    tempFanPresetsChamber: 'Kammertemperatur',
+    tempFanPresetsFan: 'Lüftergeschwindigkeit',
+    tempFanPresetsReset: 'Auf Standardwerte zurücksetzen',
     staggeredStart: 'Versetzter Start',
     staggeredStartDescription: 'Standard-Gruppengröße und -Intervall beim Staffeln von Mehrdrucker-Batchstarts. Pro Batch im Druck-Dialog überschreibbar.',
     plateClear: 'Druckplatte-Bestätigung',
@@ -4579,6 +4586,10 @@ export default {
     queueForceColorMatch: {
       title: 'Farbabgleich erzwingen',
       description: 'Druckaufträge nur an Drucker senden, bei denen der genaue Filament-Typ und die genaue Farbe geladen sind. Standardmäßig deaktiviert — ohne diese Option verwendet die Warteschlange nur den Drucker-Modell-Abgleich und wählt möglicherweise einen Drucker mit der falschen Farbe.',
+    },
+    gcodeInjection: {
+      title: 'G-code-Injektion',
+      description: 'Wendet die in den Einstellungen pro Modell konfigurierten G-code-Snippets auf Jobs dieses VP an. Standardmäßig aus.',
     },
     tailscaleDisabled: {
       title: 'Tailscale-Integration',

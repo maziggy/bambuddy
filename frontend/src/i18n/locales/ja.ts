@@ -360,7 +360,7 @@ export default {
       unload: 'アンロード',
     },
     bedJog: {
-      title: 'ビルドプレートを移動',
+      title: 'ジョグ操作',
       bed: 'ベッド',
       step: 'ステップ (mm)',
       up: 'プレートを上へ',
@@ -1920,6 +1920,13 @@ export default {
     defaultTimelapseDesc: 'タイムラプス動画を記録',
     defaultNozzleOffsetCali: 'ノズルオフセットキャリブレーション',
     defaultNozzleOffsetCaliDesc: 'エクストルーダー間のノズルオフセットを校正',
+    tempFanPresetsTitle: '温度・ファンプリセット',
+    tempFanPresetsDescription: 'プリンターカードの温度およびファン速度ポップオーバーに表示されるクイック選択値をカスタマイズします。オフボタンは常に表示されます。',
+    tempFanPresetsNozzle: 'ノズル温度',
+    tempFanPresetsBed: 'ベッド温度',
+    tempFanPresetsChamber: 'チャンバー温度',
+    tempFanPresetsFan: 'ファン速度',
+    tempFanPresetsReset: 'デフォルトにリセット',
     staggeredStart: '段階的開始',
     staggeredStartDescription: '複数プリンターのバッチ開始を段階的に行う際のデフォルトのグループサイズと間隔。プリントモーダルでバッチごとに上書き可能。',
     plateClear: 'プレートクリア確認',
@@ -4580,6 +4587,10 @@ export default {
     queueForceColorMatch: {
       title: '色の一致を強制',
       description: '正確なフィラメントタイプと色がロードされていないプリンターへの送信を拒否します。デフォルトはオフ — これがないと、キューはモデルのみのマッチングを使用し、間違った色がロードされたプリンターを選ぶ可能性があります。',
+    },
+    gcodeInjection: {
+      title: 'G-codeインジェクション',
+      description: '設定でモデルごとに構成したG-codeスニペットを、このVPのジョブに適用します。デフォルトはオフです。',
     },
     tailscaleDisabled: {
       title: 'Tailscale統合',

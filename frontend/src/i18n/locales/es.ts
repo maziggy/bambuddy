@@ -361,7 +361,7 @@ export default {
       unload: 'Descargar',
     },
     bedJog: {
-      title: 'Mover la cama de impresión',
+      title: 'Controles de movimiento',
       bed: 'Cama',
       step: 'Paso (mm)',
       up: 'Subir la cama',
@@ -1924,6 +1924,13 @@ export default {
     defaultTimelapseDesc: 'Grabar vídeo time-lapse',
     defaultNozzleOffsetCali: 'Calibración del offset de boquillas',
     defaultNozzleOffsetCaliDesc: 'Calibrar los desplazamientos entre boquillas',
+    tempFanPresetsTitle: 'Predefinidos de temperatura y ventilador',
+    tempFanPresetsDescription: 'Personalice los valores de selección rápida en las ventanas emergentes de temperatura y velocidad del ventilador de la tarjeta de impresora. El botón Apagar siempre se muestra.',
+    tempFanPresetsNozzle: 'Temperatura de la boquilla',
+    tempFanPresetsBed: 'Temperatura de la cama',
+    tempFanPresetsChamber: 'Temperatura de la cámara',
+    tempFanPresetsFan: 'Velocidad del ventilador',
+    tempFanPresetsReset: 'Restablecer valores predeterminados',
     staggeredStart: 'Inicio escalonado',
     staggeredStartDescription: 'Tamaño de grupo e intervalo predeterminados al escalonar los inicios de lotes en varias impresoras. Se pueden anular por lote en la ventana de impresión.',
     plateClear: 'Confirmación de cama despejada',
@@ -4588,6 +4595,10 @@ export default {
     queueForceColorMatch: {
       title: 'Forzar la coincidencia de color',
       description: 'Negarse a enviar a una impresora que no tiene cargados el tipo y el color exactos de filamento. Desactivado de forma predeterminada — sin esto, la cola usa la coincidencia solo por modelo y puede elegir una impresora con el color equivocado cargado.',
+    },
+    gcodeInjection: {
+      title: 'Inyección de G-code',
+      description: 'Aplica los fragmentos de G-code configurados por modelo en Ajustes a los trabajos de esta IV. Desactivado de forma predeterminada.',
     },
     tailscaleDisabled: {
       title: 'Integración con Tailscale',

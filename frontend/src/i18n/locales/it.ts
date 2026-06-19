@@ -361,7 +361,7 @@ export default {
       unload: 'Scarica',
     },
     bedJog: {
-      title: 'Muovi il piano di stampa',
+      title: 'Controlli jog',
       bed: 'Piano',
       step: 'Passo (mm)',
       up: 'Sposta piano su',
@@ -1877,6 +1877,13 @@ export default {
     defaultTimelapseDesc: 'Registra un video timelapse',
     defaultNozzleOffsetCali: 'Calibrazione offset ugelli',
     defaultNozzleOffsetCaliDesc: 'Calibra gli offset tra gli ugelli',
+    tempFanPresetsTitle: 'Preset di temperatura e ventola',
+    tempFanPresetsDescription: 'Personalizza i valori di selezione rapida mostrati nei popover di temperatura e velocità ventola della scheda stampante. Il pulsante Off è sempre visibile.',
+    tempFanPresetsNozzle: 'Temperatura ugello',
+    tempFanPresetsBed: 'Temperatura piano',
+    tempFanPresetsChamber: 'Temperatura camera',
+    tempFanPresetsFan: 'Velocità ventola',
+    tempFanPresetsReset: 'Ripristina valori predefiniti',
     staggeredStart: 'Avvio scaglionato',
     staggeredStartDescription: 'Dimensione gruppo e intervallo predefiniti per scaglionare avvii di batch multi-stampante. Sovrascrivibili per batch nella finestra di stampa.',
     plateClear: 'Conferma piatto libero',
@@ -4568,6 +4575,10 @@ export default {
     queueForceColorMatch: {
       title: 'Forza corrispondenza colori',
       description: 'Rifiuta di inviare a una stampante che non ha esattamente il tipo di filamento e il colore caricato. Disattivato per impostazione predefinita — senza questo, la coda usa solo la corrispondenza per modello e potrebbe scegliere una stampante con il colore sbagliato.',
+    },
+    gcodeInjection: {
+      title: 'Iniezione G-code',
+      description: 'Applica gli snippet G-code configurati per modello nelle Impostazioni ai lavori di questo VP. Disattivato per impostazione predefinita.',
     },
     tailscaleDisabled: {
       title: 'Integrazione Tailscale',

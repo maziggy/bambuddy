@@ -1142,6 +1142,102 @@ describe('PrintModal', () => {
     });
   });
 
+  describe('reprint G-code injection dispatch (#422 / auto-eject)', () => {
+    // Guards the fix: when "Inject auto-print G-code" is ticked on a reprint with
+    // quantity > 1, ALL copies must go through the queue so every one is injected by
+    // the scheduler. The first copy must NOT be dispatched immediately via the direct
+    // reprint path — that path bypasses injection and would leave the first copy stuck
+    // on the plate for auto-eject setups.
+    const withSnippets = () =>
+      http.get('/api/v1/settings/', () =>
+        HttpResponse.json({ gcode_snippets: { X1C: { start_gcode: '', end_gcode: 'M400' } } }),
+      );
+
+    it('injection ON queues all copies and dispatches none immediately', async () => {
+      const reprintCalls: unknown[] = [];
+      const queueCalls: Record<string, unknown>[] = [];
+      server.use(
+        withSnippets(),
+        http.post('/api/v1/archives/:id/reprint', async ({ request }) => {
+          reprintCalls.push(await request.json().catch(() => ({})));
+          return HttpResponse.json({ status: 'dispatched' });
+        }),
+        http.post('/api/v1/queue/', async ({ request }) => {
+          queueCalls.push((await request.json()) as Record<string, unknown>);
+          return HttpResponse.json({ id: queueCalls.length, status: 'pending' });
+        }),
+      );
+
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="reprint"
+          archiveId={1}
+          archiveName="Benchy"
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      // Quantity > 1 so the injection checkbox is offered
+      const qty = (await screen.findByLabelText('Quantity')) as HTMLInputElement;
+      await user.tripleClick(qty);
+      await user.keyboard('3');
+      expect(qty.value).toBe('3');
+
+      // Checkbox only renders once snippets are loaded AND quantity > 1
+      await user.click(await screen.findByLabelText(/inject auto-print/i));
+
+      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+      await waitFor(() => expect(queueCalls.length).toBe(1));
+      // One queue item carrying all copies, and zero immediate reprint dispatches
+      expect(queueCalls[0].quantity).toBe(3);
+      expect(reprintCalls.length).toBe(0);
+    });
+
+    it('injection OFF keeps the immediate first copy and queues the rest', async () => {
+      const reprintCalls: unknown[] = [];
+      const queueCalls: Record<string, unknown>[] = [];
+      server.use(
+        withSnippets(),
+        http.post('/api/v1/archives/:id/reprint', async ({ request }) => {
+          reprintCalls.push(await request.json().catch(() => ({})));
+          return HttpResponse.json({ status: 'dispatched' });
+        }),
+        http.post('/api/v1/queue/', async ({ request }) => {
+          queueCalls.push((await request.json()) as Record<string, unknown>);
+          return HttpResponse.json({ id: queueCalls.length, status: 'pending' });
+        }),
+      );
+
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="reprint"
+          archiveId={1}
+          archiveName="Benchy"
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      const qty = (await screen.findByLabelText('Quantity')) as HTMLInputElement;
+      await user.tripleClick(qty);
+      await user.keyboard('3');
+      expect(qty.value).toBe('3');
+
+      // Leave injection unticked → first copy prints immediately, rest queue
+      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+      await waitFor(() => expect(reprintCalls.length).toBe(1));
+      expect(queueCalls.length).toBe(1);
+      expect(queueCalls[0].quantity).toBe(2);
+    });
+  });
+
   describe('project_id forwarding', () => {
     beforeEach(() => {
       // Additional handlers needed for library file mode

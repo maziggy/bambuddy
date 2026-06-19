@@ -959,6 +959,14 @@ async def run_migrations(conn):
             conn, "ALTER TABLE virtual_printers ADD COLUMN queue_force_color_match BOOLEAN DEFAULT FALSE"
         )
 
+    # Per-VP opt-in for auto-print G-code injection (#1516). Default false so
+    # existing gcode_snippets users don't silently start injecting on VP/Studio
+    # Send jobs after upgrading.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN gcode_injection BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN gcode_injection BOOLEAN DEFAULT FALSE")
+
     # Migration: Add target_parts_count column to projects for tracking total parts needed
     await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN target_parts_count INTEGER")
 

@@ -308,7 +308,10 @@ export interface Printer {
   name: string;
   serial_number: string;
   ip_address: string;
-  access_code: string;
+  // Optional because the backend only returns access_code when the caller has
+  // PRINTERS_UPDATE — Admin / Operator JWTs or auth-disabled mode. Viewers and
+  // API keys receive a Printer without this field.
+  access_code?: string;
   model: string | null;
   location: string | null;  // Group/location name
   nozzle_count: number;  // 1 or 2, auto-detected from MQTT
@@ -504,6 +507,8 @@ export interface PrinterStatus {
   awaiting_plate_clear: boolean;
   // AMS drying support
   supports_drying: boolean;
+  // Active chamber heater (responds to M141). True only for H2C/H2D/H2DPro/H2S/X2D.
+  supports_chamber_heater?: boolean;
 }
 
 export interface PrinterCreate {
@@ -1173,6 +1178,12 @@ export interface AppSettings {
   require_plate_clear: boolean;
   // Shortest job first scheduling
   queue_shortest_first: boolean;
+  // User-configurable presets for the printer-card popovers (JSON arrays of 3 ints).
+  // Empty string = use built-in defaults.
+  nozzle_temp_presets: string;
+  bed_temp_presets: string;
+  chamber_temp_presets: string;
+  fan_speed_presets: string;
   // Default sidebar order (admin-set for all users)
   default_sidebar_order: string;
   // LDAP authentication
@@ -3550,6 +3561,32 @@ export const api = {
       method: 'POST',
     }),
 
+  setNozzleTemperature: (printerId: number, target: number, nozzle: number = 0) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/temperature/nozzle?target=${target}&nozzle=${nozzle}`,
+      { method: 'POST' }
+    ),
+
+  setBedTemperature: (printerId: number, target: number) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/temperature/bed?target=${target}`, {
+      method: 'POST',
+    }),
+
+  setChamberTemperature: (printerId: number, target: number) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/temperature/chamber?target=${target}`, {
+      method: 'POST',
+    }),
+
+  setFanSpeed: (printerId: number, fan: 'part' | 'aux' | 'chamber', speed: number) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/fan-speed?fan=${fan}&speed=${speed}`, {
+      method: 'POST',
+    }),
+
+  selectExtruder: (printerId: number, extruder: number) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/select-extruder?extruder=${extruder}`, {
+      method: 'POST',
+    }),
+
   setAirductMode: (printerId: number, mode: 'cooling' | 'heating') =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/airduct-mode?mode=${mode}`, {
       method: 'POST',
@@ -3559,6 +3596,16 @@ export const api = {
   bedJog: (printerId: number, distance: number, force: boolean = false) =>
     request<{ success: boolean; message: string }>(
       `/printers/${printerId}/bed-jog?distance=${distance}&force=${force}`,
+      { method: 'POST' }
+    ),
+  xyJog: (printerId: number, x: number, y: number) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/xy-jog?x=${x}&y=${y}`,
+      { method: 'POST' }
+    ),
+  extruderJog: (printerId: number, distance: number) =>
+    request<{ success: boolean; message: string }>(
+      `/printers/${printerId}/extruder-jog?distance=${distance}`,
       { method: 'POST' }
     ),
   homeAxes: (printerId: number, axes: 'z' | 'xy' | 'all' = 'z') =>
@@ -4408,6 +4455,10 @@ export const api = {
       ams_temp_good?: number;
       ams_temp_fair?: number;
       bed_cooled_threshold?: number;
+      nozzle_temp_presets?: string;
+      bed_temp_presets?: string;
+      chamber_temp_presets?: string;
+      fan_speed_presets?: string;
     }>('/settings/ui-preferences'),
   updateSettings: (data: AppSettingsUpdate) =>
     request<AppSettings>('/settings/', {
@@ -6611,6 +6662,7 @@ export interface VirtualPrinterConfig {
   target_printer_id: number | null;
   auto_dispatch: boolean;
   queue_force_color_match: boolean;
+  gcode_injection: boolean;
   tailscale_disabled: boolean;
   bind_ip: string | null;
   remote_interface_ip: string | null;
@@ -6637,6 +6689,7 @@ export const multiVirtualPrinterApi = {
     target_printer_id?: number;
     auto_dispatch?: boolean;
     queue_force_color_match?: boolean;
+    gcode_injection?: boolean;
     bind_ip?: string;
     remote_interface_ip?: string;
   }) =>
@@ -6654,6 +6707,7 @@ export const multiVirtualPrinterApi = {
     target_printer_id?: number;
     auto_dispatch?: boolean;
     queue_force_color_match?: boolean;
+    gcode_injection?: boolean;
     tailscale_disabled?: boolean;
     bind_ip?: string;
     remote_interface_ip?: string;

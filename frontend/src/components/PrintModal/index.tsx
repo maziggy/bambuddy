@@ -438,6 +438,21 @@ export function PrintModal({
     }
   }, [settings?.per_printer_mapping_expanded, selectedPrinters, initialExpandApplied, multiPrinterMapping]);
 
+  // Keep scheduleOptions.gcodeInjection in sync with the checkbox's render
+  // condition. The checkbox only renders for reprint + snippets configured +
+  // quantity > 1, so if the user ticks it at quantity 2 then drops back to 1
+  // the box hides but the state stays true — and the immediate-reprint path
+  // would then silently bypass injection.
+  useEffect(() => {
+    if (
+      mode === 'reprint' &&
+      scheduleOptions.gcodeInjection &&
+      (effectiveQuantity <= 1 || !settings?.gcode_snippets)
+    ) {
+      setScheduleOptions((opts) => ({ ...opts, gcodeInjection: false }));
+    }
+  }, [mode, effectiveQuantity, settings?.gcode_snippets, scheduleOptions.gcodeInjection]);
+  
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

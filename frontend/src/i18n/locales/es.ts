@@ -182,6 +182,7 @@ export default {
       status: 'Estado',
       model: 'Modelo',
       location: 'Ubicación',
+      eta: 'Tiempo restante',
       ascending: 'Orden ascendente',
       descending: 'Orden descendente',
     },

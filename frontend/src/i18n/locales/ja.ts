@@ -181,6 +181,7 @@ export default {
       status: 'ステータス',
       model: 'モデル',
       location: 'ロケーション',
+      eta: '残り時間',
       ascending: '昇順で並べ替え',
       descending: '降順で並べ替え',
     },

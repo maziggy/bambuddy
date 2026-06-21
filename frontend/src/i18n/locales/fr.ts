@@ -182,6 +182,7 @@ export default {
       status: 'Statut',
       model: 'Modèle',
       location: 'Emplacement',
+      eta: 'Temps restant',
       ascending: 'Tri croissant',
       descending: 'Tri décroissant',
     },

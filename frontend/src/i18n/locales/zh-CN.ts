@@ -182,6 +182,7 @@ export default {
       status: '状态',
       model: '型号',
       location: '位置',
+      eta: '剩余时间',
       ascending: '升序排列',
       descending: '降序排列',
     },

@@ -170,6 +170,7 @@ export default {
       status: '상태',
       model: '모델',
       location: '위치',
+      eta: '남은 시간',
       ascending: '오름차순 정렬',
       descending: '내림차순 정렬'
     },

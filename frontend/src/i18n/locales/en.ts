@@ -182,6 +182,7 @@ export default {
       status: 'Status',
       model: 'Model',
       location: 'Location',
+      eta: 'ETA',
       ascending: 'Sort ascending',
       descending: 'Sort descending',
     },

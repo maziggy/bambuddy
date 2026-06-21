@@ -182,6 +182,7 @@ export default {
       status: 'Status',
       model: 'Modell',
       location: 'Standort',
+      eta: 'Restzeit',
       ascending: 'Aufsteigend sortieren',
       descending: 'Absteigend sortieren',
     },

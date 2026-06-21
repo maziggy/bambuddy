@@ -182,6 +182,7 @@ export default {
       status: 'Durum',
       model: 'Model',
       location: 'Konum',
+      eta: 'Kalan süre',
       ascending: 'Artan sırala',
       descending: 'Azalan sırala',
     },

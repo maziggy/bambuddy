@@ -1465,6 +1465,23 @@ function getStatusDisplay(state: string | null | undefined, stg_cur_name: string
   }
 }
 
+// Bambu models that ship with an enclosure chamber fan (firmware field
+// `big_fan2_speed`). Open-frame models (A1 / A1 Mini / A2L / P1P) have no
+// chamber fan — `big_fan2_speed` is meaningless / always 0 there, so the
+// widget is hidden in fanItems instead of rendered greyed-out.
+const MODELS_WITH_CHAMBER_FAN: ReadonlySet<string> = new Set([
+  'X1C',
+  'X1',
+  'X1E',
+  'X2D',
+  'P1S',
+  'P2S',
+  'H2D',
+  'H2D Pro',
+  'H2C',
+  'H2S',
+]);
+
 // Map SSDP model codes to display names
 function mapModelCode(ssdpModel: string | null): string {
   if (!ssdpModel) return '';
@@ -3576,6 +3593,12 @@ function PrinterCard({
               const statusControlClass = `relative text-center px-2 py-1.5 bg-bambu-dark rounded-lg flex-1 flex flex-col justify-center items-center transition-colors ${
                 canUseStatusControls ? 'cursor-pointer hover:bg-bambu-dark-tertiary' : 'cursor-default opacity-80'
               }`;
+              // Chamber fan only exists on enclosed Bambu models. Open-frame
+              // printers (A1, A1 Mini, A2L, P1P) have no chamber fan — showing
+              // the widget there is at best dead UI and at worst suggests a
+              // control that does nothing. Mirrors the enclosure-door badge
+              // gate above.
+              const hasChamberFan = MODELS_WITH_CHAMBER_FAN.has(printer.model ?? '');
               const fanItems = [
                 {
                   key: 'part',
@@ -3591,13 +3614,17 @@ function PrinterCard({
                   Icon: Wind,
                   activeClass: 'text-blue-400',
                 },
-                {
-                  key: 'chamber',
-                  label: t('printers.fans.chamber'),
-                  value: status.big_fan2_speed ?? 0,
-                  Icon: AirVent,
-                  activeClass: 'text-green-400',
-                },
+                ...(hasChamberFan
+                  ? [
+                      {
+                        key: 'chamber',
+                        label: t('printers.fans.chamber'),
+                        value: status.big_fan2_speed ?? 0,
+                        Icon: AirVent,
+                        activeClass: 'text-green-400',
+                      },
+                    ]
+                  : []),
               ];
 
               return (

@@ -243,6 +243,73 @@ describe('PrintersPage', () => {
     });
   });
 
+  describe('fan badges', () => {
+    // Chamber fan only exists on enclosed Bambu models. Open-frame printers
+    // (A1, A1 Mini, A2L, P1P) have no chamber fan — the firmware reports
+    // big_fan2_speed as 0 there and the widget would be dead UI.
+    const statusWithFans = {
+      ...mockPrinterStatus,
+      cooling_fan_speed: 53,
+      big_fan1_speed: 53,
+      big_fan2_speed: 53,
+    };
+
+    const renderWithPrinter = (printer: typeof mockPrinters[number]) => {
+      server.use(
+        http.get('/api/v1/printers/', () => HttpResponse.json([printer])),
+        http.get('/api/v1/printers/:id/status', () => HttpResponse.json(statusWithFans)),
+      );
+      render(<PrintersPage />);
+    };
+
+    it('hides chamber fan badge on A1 Mini (open-frame, no chamber fan)', async () => {
+      renderWithPrinter({ ...mockPrinters[0], model: 'A1 Mini' });
+
+      await waitFor(() => {
+        // Part-cooling badge confirms the fan row rendered.
+        expect(screen.getByTitle('Part Cooling Fan')).toBeInTheDocument();
+      });
+      expect(screen.getByTitle('Auxiliary Fan')).toBeInTheDocument();
+      expect(screen.queryByTitle('Chamber Fan')).not.toBeInTheDocument();
+    });
+
+    it('hides chamber fan badge on A1 (open-frame)', async () => {
+      renderWithPrinter({ ...mockPrinters[0], model: 'A1' });
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Part Cooling Fan')).toBeInTheDocument();
+      });
+      expect(screen.queryByTitle('Chamber Fan')).not.toBeInTheDocument();
+    });
+
+    it('hides chamber fan badge on P1P (open-frame)', async () => {
+      renderWithPrinter({ ...mockPrinters[0], model: 'P1P' });
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Part Cooling Fan')).toBeInTheDocument();
+      });
+      expect(screen.queryByTitle('Chamber Fan')).not.toBeInTheDocument();
+    });
+
+    it('shows chamber fan badge on X1C (enclosed)', async () => {
+      renderWithPrinter({ ...mockPrinters[0], model: 'X1C' });
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Chamber Fan')).toBeInTheDocument();
+      });
+      expect(screen.getByTitle('Part Cooling Fan')).toBeInTheDocument();
+      expect(screen.getByTitle('Auxiliary Fan')).toBeInTheDocument();
+    });
+
+    it('shows chamber fan badge on P1S (enclosed)', async () => {
+      renderWithPrinter({ ...mockPrinters[0], model: 'P1S' });
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Chamber Fan')).toBeInTheDocument();
+      });
+    });
+  });
+
   describe('empty state', () => {
     it('shows empty state when no printers', async () => {
       server.use(

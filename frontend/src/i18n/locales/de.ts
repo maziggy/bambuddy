@@ -3277,6 +3277,7 @@ export default {
     link: 'Verknüpfen',
     dragDropFiles: 'Dateien hierher ziehen',
     dropFilesHere: 'Dateien hier ablegen',
+    releaseToUpload: 'Loslassen zum Hochladen',
     orClickToBrowse: 'oder klicken zum Durchsuchen',
     allFileTypesSupported: 'Alle Dateitypen werden unterstützt. ZIP-Dateien werden extrahiert.',
     zipFilesDetected: 'ZIP-Dateien erkannt',

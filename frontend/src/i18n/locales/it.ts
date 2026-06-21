@@ -3265,6 +3265,7 @@ export default {
     link: 'Collega',
     dragDropFiles: 'Trascina e rilascia file qui',
     dropFilesHere: 'Rilascia file qui',
+    releaseToUpload: 'Rilascia per caricare',
     orClickToBrowse: 'oppure clicca per sfogliare',
     allFileTypesSupported: 'Tutti i tipi di file supportati. I file ZIP saranno estratti.',
     zipFilesDetected: 'File ZIP rilevati',

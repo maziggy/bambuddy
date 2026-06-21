@@ -3265,6 +3265,7 @@ export default {
     link: '链接',
     dragDropFiles: '将文件拖放到此处',
     dropFilesHere: '将文件放在此处',
+    releaseToUpload: '释放以上传',
     orClickToBrowse: '或点击浏览',
     allFileTypesSupported: '支持所有文件类型。ZIP 文件将被解压。',
     zipFilesDetected: '检测到 ZIP 文件',

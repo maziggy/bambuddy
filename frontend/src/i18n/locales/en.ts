@@ -3292,6 +3292,7 @@ export default {
     link: 'Link',
     dragDropFiles: 'Drag & drop files here',
     dropFilesHere: 'Drop files here',
+    releaseToUpload: 'Release to upload',
     orClickToBrowse: 'or click to browse',
     allFileTypesSupported: 'All file types supported. ZIP files will be extracted.',
     zipFilesDetected: 'ZIP files detected',

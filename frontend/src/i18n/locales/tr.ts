@@ -3272,6 +3272,7 @@ export default {
     link: 'Bağla',
     dragDropFiles: 'Dosyaları buraya sürükleyip bırakın',
     dropFilesHere: 'Dosyaları buraya bırakın',
+    releaseToUpload: 'Yüklemek için bırakın',
     orClickToBrowse: 'veya göz atmak için tıklayın',
     allFileTypesSupported: 'Tüm dosya türleri desteklenir. ZIP dosyaları çıkarılacak.',
     zipFilesDetected: 'ZIP dosyaları algılandı',

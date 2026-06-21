@@ -3266,6 +3266,7 @@ export default {
     link: 'Lier',
     dragDropFiles: 'Glissez les fichiers ici',
     dropFilesHere: 'Déposez ici',
+    releaseToUpload: 'Relâcher pour téléverser',
     orClickToBrowse: 'ou cliquez pour parcourir',
     allFileTypesSupported: 'Tous types supportés. ZIP extraits.',
     zipFilesDetected: 'ZIP détectés',

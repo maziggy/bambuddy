@@ -62,6 +62,7 @@ import { FileUploadModal } from '../components/FileUploadModal';
 import { PurgeOldFilesModal } from '../components/PurgeOldFilesModal';
 import { useToast } from '../contexts/ToastContext';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDuration, parseUTCDate } from '../utils/date';
 import { formatFileSize } from '../utils/file';
@@ -959,6 +960,7 @@ export function FileManagerPage() {
   const [showExternalFolderModal, setShowExternalFolderModal] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
   const [showPurgeModal, setShowPurgeModal] = useState(false);
   const [linkFolder, setLinkFolder] = useState<LibraryFolderTree | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'folder' | 'bulk'; id: number; count?: number } | null>(null);
@@ -1450,6 +1452,20 @@ export function FileManagerPage() {
     queryClient.invalidateQueries({ queryKey: ['library-stats'] });
   };
 
+  // Page-wide drag-and-drop upload (#1510). Disabled when the user lacks
+  // library:upload so a non-uploader can't accidentally show the overlay,
+  // and also disabled while the upload modal itself is open so drags into
+  // the modal's own drop zone don't bubble up and flash the page overlay
+  // behind it.
+  const canUpload = hasPermission('library:upload');
+  const { isDraggingOver, dragHandlers } = usePageFileDrop({
+    disabled: !canUpload || showUploadModal,
+    onFiles: (files) => {
+      setDroppedFiles(files);
+      setShowUploadModal(true);
+    },
+  });
+
   const handleDownload = (id: number) => {
     api.downloadLibraryFile(id).catch((err) => {
       console.error('Library file download failed:', err);
@@ -1491,7 +1507,21 @@ export function FileManagerPage() {
   }, [selectedFolderId, folders]);
 
   return (
-    <div className="p-4 md:p-8 min-h-[calc(100vh-64px)] lg:h-[calc(100vh-64px)] flex flex-col">
+    <div
+      className="p-4 md:p-8 min-h-[calc(100vh-64px)] lg:h-[calc(100vh-64px)] flex flex-col relative"
+      {...dragHandlers}
+    >
+      {/* Drag & Drop Overlay — page-wide file upload (#1510) */}
+      {isDraggingOver && (
+        <div className="fixed inset-0 z-50 bg-bambu-dark/90 flex items-center justify-center pointer-events-none">
+          <div className="border-4 border-dashed border-bambu-green rounded-xl p-12 text-center">
+            <Upload className="w-16 h-16 mx-auto mb-4 text-bambu-green" />
+            <p className="text-2xl font-semibold text-white mb-2">{t('fileManager.dropFilesHere')}</p>
+            <p className="text-bambu-gray">{t('fileManager.releaseToUpload')}</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
@@ -2417,8 +2447,12 @@ export function FileManagerPage() {
       {showUploadModal && (
         <FileUploadModal
           folderId={selectedFolderId}
-          onClose={() => setShowUploadModal(false)}
+          onClose={() => {
+            setShowUploadModal(false);
+            setDroppedFiles([]);
+          }}
           onUploadComplete={handleUploadComplete}
+          initialFiles={droppedFiles.length > 0 ? droppedFiles : undefined}
         />
       )}
 

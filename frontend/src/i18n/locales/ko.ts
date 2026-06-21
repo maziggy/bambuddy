@@ -3090,6 +3090,7 @@ export default {
     link: '연결',
     dragDropFiles: '파일을 여기에 드래그 앤 드롭',
     dropFilesHere: '파일을 여기에 드롭',
+    releaseToUpload: '놓아서 업로드',
     orClickToBrowse: '또는 클릭하여 탐색',
     allFileTypesSupported: '모든 파일 형식 지원. ZIP 파일은 압축 해제됩니다.',
     zipFilesDetected: 'ZIP 파일 감지됨',

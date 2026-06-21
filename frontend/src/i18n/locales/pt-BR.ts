@@ -3265,6 +3265,7 @@ export default {
     link: 'Vincular',
     dragDropFiles: 'Arraste e solte os arquivos aqui',
     dropFilesHere: 'Solte os arquivos aqui',
+    releaseToUpload: 'Solte para enviar',
     orClickToBrowse: 'ou clique para procurar',
     allFileTypesSupported: 'Todos os tipos de arquivos são suportados. Arquivos ZIP serão extraídos.',
     zipFilesDetected: 'Arquivos ZIP detectados',

@@ -3280,6 +3280,7 @@ export default {
     link: 'Vincular',
     dragDropFiles: 'Arrastre y suelte archivos aquí',
     dropFilesHere: 'Suelte archivos aquí',
+    releaseToUpload: 'Suelte para subir',
     orClickToBrowse: 'o haga clic para examinar',
     allFileTypesSupported: 'Se admiten todos los tipos de archivo. Los archivos ZIP se extraerán.',
     zipFilesDetected: 'Archivos ZIP detectados',

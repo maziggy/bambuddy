@@ -3277,6 +3277,7 @@ export default {
     link: 'リンク',
     dragDropFiles: 'ファイルをここにドラッグ＆ドロップ',
     dropFilesHere: 'ここにファイルをドロップ',
+    releaseToUpload: '離してアップロード',
     orClickToBrowse: 'またはクリックして選択',
     allFileTypesSupported: 'すべてのファイルタイプに対応。ZIPファイルは展開されます。',
     zipFilesDetected: 'ZIPファイルを検出',

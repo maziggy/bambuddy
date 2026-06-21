@@ -64,6 +64,7 @@ import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDu
 import { getCurrencySymbol } from '../utils/currency';
 import { getBedTypeInfo } from '../utils/bedType';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import type { Archive, PrintLogEntry, ProjectListItem } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
@@ -2618,7 +2619,6 @@ export function ArchivesPage() {
   );
   const [showUpload, setShowUpload] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
-  const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   // Install-step-4 nudge — covers the slicer-side variant of "Store sent files
   // on external storage" that the connection diagnostic can't detect (printer
@@ -3122,34 +3122,20 @@ export function ArchivesPage() {
 
   const hasTopFilters = search || filterPrinter || filterMaterial || filterFavorites || hideFailed || hideDuplicates || filterTag || filterFileType !== 'all';
 
-  // Drag & drop handlers for page-wide upload
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    if (e.dataTransfer.types.includes('Files')) {
-      setIsDraggingOver(true);
-    }
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    // Only hide if leaving the page (not entering a child)
-    if (e.currentTarget === e.target) {
-      setIsDraggingOver(false);
-    }
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDraggingOver(false);
-
-    const droppedFiles = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.3mf'));
-    if (droppedFiles.length > 0) {
-      setUploadFiles(droppedFiles);
+  // Page-wide drag-and-drop upload (#1510). The hook covers the three cancel
+  // paths the previous inline implementation missed (drag-out-of-window, Escape,
+  // dragend outside any drop target). Disabled while the upload modal is open
+  // so drags into the modal's own drop zone don't bubble up and flash the page
+  // overlay behind it.
+  const { isDraggingOver, dragHandlers } = usePageFileDrop({
+    disabled: showUpload,
+    extensions: ['.3mf'],
+    onFiles: (files) => {
+      setUploadFiles(files);
       setShowUpload(true);
-    } else if (e.dataTransfer.files.length > 0) {
-      showToast(t('archives.page.only3mfSupported'), 'warning');
-    }
-  }, [showToast, t]);
+    },
+    onRejected: () => showToast(t('archives.page.only3mfSupported'), 'warning'),
+  });
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -3190,16 +3176,14 @@ export function ArchivesPage() {
   return (
     <div
       className="p-4 md:p-8 relative"
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      {...dragHandlers}
     >
       {/* Drag & Drop Overlay */}
       {isDraggingOver && (
         <div className="fixed inset-0 z-50 bg-bambu-dark/90 flex items-center justify-center pointer-events-none">
           <div className="border-4 border-dashed border-bambu-green rounded-xl p-12 text-center">
             <Upload className="w-16 h-16 mx-auto mb-4 text-bambu-green" />
-            <p className="text-2xl font-semibold text-white mb-2">Drop .3mf files here</p>
+            <p className="text-2xl font-semibold text-white mb-2">{t('archives.page.dropFilesHere')}</p>
             <p className="text-bambu-gray">{t('archives.releaseToUpload')}</p>
           </div>
         </div>

@@ -1,0 +1,200 @@
+2026-06-21 11:06:59,389 ERROR [backend.app.services.camera] [-] Chamber image: connection timeout to [IP]:6000
+2026-06-21 11:06:59,390 WARNING [backend.app.services.obico_detection] [-] Failed to capture snapshot for printer 1
+2026-06-21 11:06:59,807 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-06-21 11:07:01,723 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT COMPLETE detected - state: IDLE, status: aborted, file: Schuhhalter_v3.gcode.3mf, subtask: , was_running: True, timelapse_during_print: False
+2026-06-21 11:07:01,723 INFO [backend.app.main] [-] [CALLBACK] on_print_complete started for printer 1
+2026-06-21 11:07:01,724 INFO [backend.app.main] [-] [TIMING] WebSocket send_print_complete: 0.001s elapsed
+2026-06-21 11:07:01,725 INFO [backend.app.main] [-] Print complete - filename: Schuhhalter_v3.gcode.3mf, subtask: , status: aborted
+2026-06-21 11:07:01,725 INFO [backend.app.main] [-] Looking for archive in _active_prints, keys to try: [(1, 'Schuhhalter_v3.gcode.3mf'), (1, 'Schuhhalter_v3.gcode.3mf')]...
+2026-06-21 11:07:01,725 INFO [backend.app.main] [-] Current _active_prints: [(1, 'Schuhhalter_v3.gcode.3mf'), (1, 'Schuhhalter_v3.3mf')]
+2026-06-21 11:07:01,725 INFO [backend.app.main] [-] Found archive 51 with key (1, 'Schuhhalter_v3.gcode.3mf')
+2026-06-21 11:07:01,725 INFO [backend.app.main] [-] [TIMING] SD card cleanup: 0.002s elapsed
+2026-06-21 11:07:01,730 INFO [backend.app.main] [-] [TIMING] Queue item update: 0.006s elapsed
+2026-06-21 11:07:01,736 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-21 11:07:01,736 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-06-21 11:07:01,738 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] on_print_complete: printer=1, archive=51, session=yes, ams_mapping=None
+2026-06-21 11:07:01,738 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT COMPLETE printer 1: mapping=None, tray_now=254, last_loaded_tray=254
+2026-06-21 11:07:01,743 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: archive 51, plate_id=None, filament_usage=[{'slot_id': 1, 'used_g': 132.17, 'type': 'PETG', 'color': '#161616'}]
+2026-06-21 11:07:01,745 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Color-matched slot_to_tray: [1]
+2026-06-21 11:07:01,746 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: slot_to_tray=[1] (source: color_match)
+2026-06-21 11:07:01,746 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: slot_id=1 -> global_tray=1 -> AMS0-T1 (used_g=132.2, tray_now_override=None)
+2026-06-21 11:07:01,748 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: no spool assignment at printer 1 AMS0-T1
+2026-06-21 11:07:01,752 INFO [backend.app.main] [-] [TIMING] Filament usage tracking: 0.029s elapsed
+2026-06-21 11:07:01,752 INFO [backend.app.main] [-] [TIMING] Archive lookup: 0.029s elapsed
+2026-06-21 11:07:01,753 INFO [backend.app.main] [-] [ARCHIVE] Updating archive 51 status...
+2026-06-21 11:07:01,753 INFO [backend.app.main] [-] [ARCHIVE] failure_reason='User cancelled' (status=aborted)
+2026-06-21 11:07:01,761 INFO [backend.app.main] [-] [ARCHIVE] Archive 51 status updated to aborted, failure_reason=User cancelled
+2026-06-21 11:07:01,761 INFO [backend.app.main] [-] [ARCHIVE] WebSocket notification sent for archive 51
+2026-06-21 11:07:01,762 INFO [backend.app.main] [-] [TIMING] Archive status update: 0.038s elapsed
+2026-06-21 11:07:01,778 INFO [backend.app.main] [-] [PRINT_LOG] Log entry written for archive 51
+2026-06-21 11:07:01,778 INFO [backend.app.main] [-] [TIMING] Print log entry: 0.055s elapsed
+2026-06-21 11:07:01,778 INFO [backend.app.main] [-] [TIMING] Background tasks scheduled (energy, photo): 0.055s elapsed
+2026-06-21 11:07:01,778 INFO [backend.app.main] [-] [TIMING] All background tasks scheduled: 0.055s elapsed
+2026-06-21 11:07:01,779 INFO [backend.app.main] [-] [CALLBACK] on_print_complete finished for printer 1, archive 51
+2026-06-21 11:07:01,779 INFO [backend.app.main] [-] [ENERGY-BG] Starting energy calculation for archive 51
+2026-06-21 11:07:01,780 INFO [backend.app.main] [-] [PHOTO-BG] Starting finish photo capture for archive 51
+2026-06-21 11:07:01,781 INFO [backend.app.main] [-] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-06-21 11:07:01,781 INFO [backend.app.services.smart_plug_manager] [-] Print on printer 1 ended with status 'aborted', skipping auto-off to allow investigation
+2026-06-21 11:07:01,781 INFO [backend.app.main] [-] [AUTO-OFF-BG] Completed
+2026-06-21 11:07:01,783 INFO [backend.app.main] [-] [LAYER-TL] Cancelled layer timelapse for printer 1 (status: aborted)
+2026-06-21 11:07:01,786 INFO [backend.app.main] [-] [ENERGY-BG] No start kWh recorded for archive 51
+2026-06-21 11:07:01,789 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-06-21 11:07:04,414 ERROR [backend.app.services.camera] [-] Chamber image: connection timeout to [IP]:6000
+2026-06-21 11:07:04,414 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 (A1)
+2026-06-21 11:07:04,417 INFO [backend.app.services.notification_service] [-] Found 1 providers for print_start: ['Telegram']
+2026-06-21 11:07:04,548 INFO [backend.app.services.notification_service] [-] Sent notification via Telegram
+2026-06-21 11:07:04,550 INFO [backend.app.main] [-] Loaded 1 printable objects for printer 1
+2026-06-21 11:07:05,325 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 99095 bytes
+2026-06-21 11:07:05,326 INFO [backend.app.services.camera] [-] Saved camera frame to: /app/data/archive/1/20260621_110003_Schuhhalter_v3/photos/finish_20260621_110701_24e0c88f.jpg
+2026-06-21 11:07:05,326 INFO [backend.app.services.camera] [-] Finish photo saved: finish_20260621_110701_24e0c88f.jpg
+2026-06-21 11:07:05,331 INFO [backend.app.main] [-] [PHOTO-BG] Saved: finish_20260621_110701_24e0c88f.jpg
+2026-06-21 11:07:05,332 INFO [backend.app.main] [-] [PHOTO-NOTIFY] Photo task returned: finish_20260621_110701_24e0c88f.jpg
+2026-06-21 11:07:05,332 INFO [backend.app.main] [-] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260621_110701_24e0c88f.jpg
+2026-06-21 11:07:05,336 INFO [backend.app.main] [-] [NOTIFY-BG] Loaded finish photo bytes: 99095 bytes
+2026-06-21 11:07:05,336 INFO [backend.app.services.notification_service] [-] on_print_complete called for printer 1 (A1), status=aborted
+2026-06-21 11:07:05,338 INFO [backend.app.services.notification_service] [-] Found 1 providers for on_print_stopped: ['Telegram']
+2026-06-21 11:07:05,534 INFO [backend.app.services.notification_service] [-] Sent notification via Telegram
+2026-06-21 11:07:05,534 INFO [backend.app.main] [-] [NOTIFY-BG] Completed
+2026-06-21 11:07:27,118 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-21 11:07:52,507 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-06-21 11:07:53,032 INFO [uvicorn.access] [-] [IP]:50120 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-06-21 11:07:53,235 INFO [uvicorn.access] [-] [IP]:50186 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-06-21 11:07:53,371 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-06-21 11:07:53,372 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-06-21 11:07:53,373 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-06-21 11:07:55,228 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-06-21 11:09:07,165 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-21 11:09:07,165 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-06-21 11:09:09,783 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 124775 bytes
+2026-06-21 11:09:10,200 INFO [backend.app.services.notification_service] [-] Sent notification via Telegram
+2026-06-21 11:09:10,200 INFO [backend.app.main] [-] [HMS] Sent notification for 1 error(s) on printer 1
+2026-06-21 11:09:36,151 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT START detected - file: Schuhhalter_v3.gcode.3mf, subtask: Schuhhalter_v3, is_new: True, is_file_change: False
+2026-06-21 11:09:36,151 INFO [backend.app.main] [-] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-06-21 11:09:36,153 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Skipped trays with invalid remain% for printer 1: AMS0-T0(remain=-1), AMS0-T1(remain=-1), AMS0-T2(remain=-1), AMS0-T3(remain=-1)
+2026-06-21 11:09:36,153 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping=None, tray_now=254, last_loaded_tray=254
+2026-06-21 11:09:36,154 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping-related keys: {'ams_extruder_map': {'0': 0}}
+2026-06-21 11:09:36,154 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 0: T0(type=PETG, color=FFFFFFFF, now=?, tar=?), T1(type=PETG, color=161616FF, now=?, tar=?), T2(type=PLA, color=C52C18FF, now=?, tar=?), T3(type=PETG, color=104831FF, now=?, tar=?)
+2026-06-21 11:09:36,156 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (1 trays): {'255-0': 0}
+2026-06-21 11:09:36,158 INFO [backend.app.services.smart_plug_manager] [-] Print started on printer 1, turning on plug 'switch.3d_drucker_steckdose'
+2026-06-21 11:09:36,189 INFO [backend.app.services.homeassistant] [-] Turned ON HA entity 'switch.3d_drucker_steckdose' (switch.3d_drucker_steckdose_switch_decke)
+2026-06-21 11:09:36,193 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=False
+2026-06-21 11:09:36,194 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: Schuhhalter_v3.gcode.3mf, subtask: Schuhhalter_v3
+2026-06-21 11:09:36,196 INFO [backend.app.main] [-] Trying filenames: ['Schuhhalter_v3.gcode.3mf', 'Schuhhalter_v3.3mf']
+2026-06-21 11:09:37,014 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-06-21 11:09:39,450 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-06-21 11:09:53,791 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-06-21 11:10:05,681 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-06-21 11:10:08,033 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT COMPLETE detected - state: IDLE, status: aborted, file: Schuhhalter_v3.gcode.3mf, subtask: , was_running: True, timelapse_during_print: False
+2026-06-21 11:10:08,034 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-06-21 11:10:08,035 INFO [backend.app.main] [-] [CALLBACK] on_print_complete started for printer 1
+2026-06-21 11:10:08,036 INFO [backend.app.main] [-] [TIMING] WebSocket send_print_complete: 0.000s elapsed
+2026-06-21 11:10:08,036 INFO [backend.app.main] [-] Print complete - filename: Schuhhalter_v3.gcode.3mf, subtask: , status: aborted
+2026-06-21 11:10:08,036 INFO [backend.app.main] [-] Looking for archive in _active_prints, keys to try: [(1, 'Schuhhalter_v3.gcode.3mf'), (1, 'Schuhhalter_v3.gcode.3mf')]...
+2026-06-21 11:10:08,036 INFO [backend.app.main] [-] Current _active_prints: []
+2026-06-21 11:10:08,049 INFO [backend.app.main] [-] [TIMING] SD card cleanup: 0.013s elapsed
+2026-06-21 11:10:08,055 INFO [backend.app.main] [-] [TIMING] Queue item update: 0.020s elapsed
+2026-06-21 11:10:08,056 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-21 11:10:08,057 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-06-21 11:10:08,063 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] on_print_complete: printer=1, archive=None, session=yes, ams_mapping=None
+2026-06-21 11:10:08,064 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT COMPLETE printer 1: mapping=None, tray_now=254, last_loaded_tray=254
+2026-06-21 11:10:08,069 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF (no-archive): found previous archive 51 file for 'Schuhhalter_v3.gcode.3mf'
+2026-06-21 11:10:08,070 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: archive None, plate_id=None, filament_usage=[{'slot_id': 1, 'used_g': 132.17, 'type': 'PETG', 'color': '#161616'}]
+2026-06-21 11:10:08,070 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Color-matched slot_to_tray: [1]
+2026-06-21 11:10:08,070 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: slot_to_tray=[1] (source: color_match)
+2026-06-21 11:10:08,070 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: slot_id=1 -> global_tray=1 -> AMS0-T1 (used_g=132.2, tray_now_override=None)
+2026-06-21 11:10:08,072 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: no spool assignment at printer 1 AMS0-T1
+2026-06-21 11:10:08,073 INFO [backend.app.main] [-] [TIMING] Filament usage tracking: 0.037s elapsed
+2026-06-21 11:10:08,073 WARNING [backend.app.main] [-] Could not find archive for print complete: filename=Schuhhalter_v3.gcode.3mf, subtask=
+2026-06-21 11:10:08,076 INFO [backend.app.main] [-] [NOTIFY-BG] Sending notification without archive: printer=1, status=aborted
+2026-06-21 11:10:08,076 INFO [backend.app.services.notification_service] [-] on_print_complete called for printer 1 (A1), status=aborted
+2026-06-21 11:10:08,078 INFO [backend.app.services.notification_service] [-] Found 1 providers for on_print_stopped: ['Telegram']
+2026-06-21 11:10:08,213 INFO [backend.app.services.notification_service] [-] Sent notification via Telegram
+2026-06-21 11:10:08,213 INFO [backend.app.main] [-] [NOTIFY-BG] Completed (no-archive path)
+2026-06-21 11:10:10,070 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-06-21 11:10:10,496 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 96030 bytes
+2026-06-21 11:10:13,792 ERROR [backend.app.services.camera] [-] Chamber image: connection timeout to [IP]:6000
+2026-06-21 11:10:13,792 WARNING [backend.app.services.obico_detection] [-] Failed to capture snapshot for printer 1
+2026-06-21 11:10:21,660 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /Schuhhalter_v3.gcode.3mf: The read operation timed out
+2026-06-21 11:10:21,664 WARNING [backend.app.services.bambu_ftp] [-] FTP download timed out after 30.0s (plus 30.0s grace) for /Schuhhalter_v3.gcode.3mf
+2026-06-21 11:10:21,664 INFO [backend.app.services.bambu_ftp] [-] Download 3MF from /Schuhhalter_v3.gcode.3mf will retry in 2.0s...
+2026-06-21 11:10:24,483 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-06-21 11:10:30,288 INFO [backend.app.services.bambu_ftp] [-] Successfully downloaded /Schuhhalter_v3.gcode.3mf to /app/data/archive/temp/Schuhhalter_v3.gcode.3mf (1350190 bytes)
+2026-06-21 11:10:30,288 INFO [backend.app.services.bambu_ftp] [-] FTP mode cached for [IP]: prot_p
+2026-06-21 11:10:30,297 INFO [backend.app.services.bambu_ftp] [-] Download 3MF from /Schuhhalter_v3.gcode.3mf succeeded on attempt 2/4
+2026-06-21 11:10:30,297 INFO [backend.app.main] [-] Downloaded: /Schuhhalter_v3.gcode.3mf
+2026-06-21 11:10:30,323 INFO [backend.app.main] [-] Created archive 52 for Schuhhalter_v3.gcode.3mf
+2026-06-21 11:10:30,346 WARNING [backend.app.main] [-] [ENERGY] No 'total' in energy response for archive 52
+2026-06-21 11:10:30,350 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-21 11:10:30,351 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-06-21 11:10:32,753 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 112101 bytes
+2026-06-21 11:10:32,754 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 (A1)
+2026-06-21 11:10:32,757 INFO [backend.app.services.notification_service] [-] Found 1 providers for print_start: ['Telegram']
+2026-06-21 11:10:33,056 INFO [backend.app.services.notification_service] [-] Sent notification via Telegram
+2026-06-21 11:10:33,058 INFO [backend.app.main] [-] Loaded 1 printable objects for printer 1
+2026-06-21 11:10:33,876 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-06-21 11:10:34,774 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-06-21 11:10:34,786 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /timelapse/video: 550 
+2026-06-21 11:10:35,589 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-06-21 11:10:35,599 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /record: 550 
+2026-06-21 11:10:36,423 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-06-21 11:10:36,437 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /recording: 550 
+2026-06-21 11:10:36,447 INFO [backend.app.main] [-] [TIMELAPSE] Baseline at print start: 0 video files for printer 1
+2026-06-21 11:11:42,555 INFO [backend.app.services.github_backup] [-] Running scheduled backup for config 1
+2026-06-21 11:11:42,707 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.2 (attempt 1/3)
+2026-06-21 11:11:43,080 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.2, seq_id=62, 0 profiles, expected=0.2
+2026-06-21 11:11:43,080 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.2
+2026-06-21 11:11:43,081 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.2 on attempt 1
+2026-06-21 11:11:43,081 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-21 11:11:43,104 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=63, 0 profiles, expected=0.4
+2026-06-21 11:11:43,104 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-06-21 11:11:43,104 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-06-21 11:11:43,105 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.6 (attempt 1/3)
+2026-06-21 11:11:43,135 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.6, seq_id=64, 0 profiles, expected=0.6
+2026-06-21 11:11:43,135 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.6
+2026-06-21 11:11:43,136 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.6 on attempt 1
+2026-06-21 11:11:43,136 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.8 (attempt 1/3)
+2026-06-21 11:11:43,172 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.8, seq_id=65, 0 profiles, expected=0.8
+2026-06-21 11:11:43,172 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.8
+2026-06-21 11:11:43,172 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.8 on attempt 1
+2026-06-21 11:11:43,175 INFO [backend.app.services.github_backup] [-] Cloud not authenticated, skipping cloud profiles
+2026-06-21 11:11:43,181 INFO [backend.app.services.github_backup] [-] Collected 1 spools and 0 usage records
+2026-06-21 11:11:43,191 INFO [backend.app.services.github_backup] [-] Collected 52 print archives
+2026-06-21 11:12:27,126 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-21 11:12:39,872 INFO [uvicorn.access] [-] [IP]:39296 - "POST /api/v1/auth/login HTTP/1.1" 200
+2026-06-21 11:12:40,014 INFO [uvicorn.access] [-] [IP]:39296 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-06-21 11:12:40,357 INFO [uvicorn.access] [-] [IP]:57128 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-06-21 11:12:40,549 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-06-21 11:12:40,549 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-06-21 11:12:40,551 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-06-21 11:12:40,603 INFO [backend.app.api.routes.cloud] [aa1f140b] get_filament_info called with 3 IDs: ['GFSNL08', 'GFA00', 'GFG99']
+2026-06-21 11:12:40,829 WARNING [backend.app.api.routes.cloud] [aa1f140b] Failed to get cloud preset GFSNL08 (API ID: GFSNL08): Failed to get setting detail: 400
+2026-06-21 11:12:41,195 INFO [uvicorn.access] [-] [IP]:57250 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-06-21 11:13:19,263 INFO [backend.app.api.routes.support] [58f5d238] Log level changed to DEBUG
+2026-06-21 11:13:19,263 INFO [backend.app.api.routes.bug_report] [58f5d238] Bug report: enabled debug logging
+2026-06-21 11:13:19,263 DEBUG [backend.app.services.bambu_mqtt] [58f5d238] [[SERIAL]] Requesting status update (pushall)
+2026-06-21 11:13:19,264 INFO [uvicorn.access] [-] [IP]:40002 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-06-21 11:13:19,319 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-06-21 11:13:19,319 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-06-21 11:13:19,319 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-06-21 11:13:19,319 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '254', 'tray_pre': '254', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 9, 'insert_flag': True, 'power_on_flag': False}
+2026-06-21 11:13:19,319 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 254
+2026-06-21 11:13:19,320 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-06-21 11:13:19,320 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-06-21 11:13:19,320 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-06-21 11:13:19,320 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-06-21 11:13:19,320 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-21 11:13:19,320 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-06-21 11:13:19,321 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-06-21 11:13:19,321 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-06-21 11:13:19,321 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-06-21 11:13:19,321 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 83887104, 'code': 65604, 'action': 0, 'timestamp': 1779189002}]
+2026-06-21 11:13:19,322 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-06-21 11:13:19,322 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -38dBm
+2026-06-21 11:13:19,322 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-06-21 11:13:19,322 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-06-21 11:13:19,345 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 firmware: 10.40.00.00
+2026-06-21 11:13:21,380 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-21 11:13:21,381 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -39dBm
+2026-06-21 11:13:23,432 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-21 11:13:23,433 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -38dBm
+2026-06-21 11:13:27,515 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status

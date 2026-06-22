@@ -1187,7 +1187,7 @@ async def get_spool_by_tag(
     tag_uid: str | None = None,
     include_archived: bool = False,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(Permission.INVENTORY_READ, Permission.INVENTORY_UPDATE),
 ):
     """Find a single spool by its NFC ``tray_uuid`` and/or ``tag_uid``.
 
@@ -1196,9 +1196,9 @@ async def get_spool_by_tag(
     AMS reports over MQTT), so it is tried first; ``tag_uid`` is the fallback.
     At least one identifier must be supplied. Returns 404 when nothing matches.
 
-    Requires ``inventory:read``, which for API keys is granted by either a
-    read-status or a Manage-Inventory scope (#1663) — so a key that can already
-    create/update spools can read them back too.
+    Accepts ``inventory:read`` OR ``inventory:update`` so a Manage-Inventory API
+    key (which has ``inventory:update`` via ``can_manage_inventory``) can read a
+    spool back without widening the global ``INVENTORY_READ`` scope mapping (#1663).
     """
     normalized_tray_uuid = normalize_tray_uuid(tray_uuid) or None
     normalized_tag_uid = normalize_tag_uid(tag_uid) or None

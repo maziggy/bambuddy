@@ -217,12 +217,7 @@ class TestApiKeyScopeAllowlist:
             "can_manage_inventory",
             "can_access_cloud",
         }
-        # Values may be a single flag string or a tuple of flags (any-of) — flatten.
-        used_flags = {
-            flag
-            for value in _APIKEY_SCOPE_BY_PERMISSION.values()
-            for flag in ((value,) if isinstance(value, str) else value)
-        }
+        used_flags = set(_APIKEY_SCOPE_BY_PERMISSION.values())
         assert used_flags <= valid_flags, f"Unknown scope flags in mapping: {used_flags - valid_flags}"
         # And every flag must actually exist on the model.
         for flag in valid_flags:
@@ -253,12 +248,7 @@ class TestApiKeyScopeAllowlist:
         """If a scope flag has no permissions, it's dead code — fail loudly."""
         from backend.app.core.auth import _APIKEY_SCOPE_BY_PERMISSION
 
-        mapped_flags = {
-            flag
-            for value in _APIKEY_SCOPE_BY_PERMISSION.values()
-            for flag in ((value,) if isinstance(value, str) else value)
-        }
-        assert scope_flag in mapped_flags, (
+        assert scope_flag in _APIKEY_SCOPE_BY_PERMISSION.values(), (
             f"No permission maps to {scope_flag} — either remove the flag or classify a permission under it."
         )
 
@@ -361,25 +351,6 @@ class TestCheckApiKeyPermissionsMatrix:
             if f != required_flag
         }
         for other in other_flags:
-            with pytest.raises(HTTPException) as exc:
-                _check_apikey_permissions(_FakeApiKey(**{other: True}), [perm])
-            assert exc.value.status_code == 403
-
-    def test_inventory_read_allowed_by_either_inventory_scope(self):
-        """INVENTORY_READ is granted by can_read_status OR can_manage_inventory (#1663)."""
-        from fastapi import HTTPException
-
-        from backend.app.core.auth import _check_apikey_permissions
-        from backend.app.core.permissions import Permission
-
-        perm = Permission.INVENTORY_READ.value
-
-        # Either inventory scope on its own grants read.
-        _check_apikey_permissions(_FakeApiKey(can_read_status=True), [perm])
-        _check_apikey_permissions(_FakeApiKey(can_manage_inventory=True), [perm])
-
-        # A key with neither (e.g. queue/control only) is denied.
-        for other in ("can_queue", "can_control_printer", "can_manage_library"):
             with pytest.raises(HTTPException) as exc:
                 _check_apikey_permissions(_FakeApiKey(**{other: True}), [perm])
             assert exc.value.status_code == 403

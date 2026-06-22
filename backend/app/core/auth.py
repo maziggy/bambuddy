@@ -58,10 +58,7 @@ logger = logging.getLogger(__name__)
 #                         delete of admin resources, settings writes, user/
 #                         group/api-key/backup admin ops, discovery scan,
 #                         cloud auth, library ALL-ownership perms, purges
-#
-# A permission may map to a SINGLE scope flag (the common case) or to a TUPLE
-# of flags, in which case ANY one of them grants it (see INVENTORY_READ below).
-_APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str | tuple[str, ...]] = {
+_APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     # can_read_status — read-only access to status, history, and configuration
     Permission.PRINTERS_READ: "can_read_status",
     # Legacy flat permissions retained for back-compat with custom API keys —
@@ -79,7 +76,7 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str | tuple[str, ...]] = {
     Permission.LIBRARY_READ_ALL: "can_read_status",
     Permission.PROJECTS_READ: "can_read_status",
     Permission.FILAMENTS_READ: "can_read_status",
-    Permission.INVENTORY_READ: ("can_read_status", "can_manage_inventory"),
+    Permission.INVENTORY_READ: "can_read_status",
     Permission.INVENTORY_VIEW_ASSIGNMENTS: "can_read_status",
     Permission.INVENTORY_FORECAST_READ: "can_read_status",
     Permission.SMART_PLUGS_READ: "can_read_status",
@@ -217,21 +214,16 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
 )
 
 
-def _resolve_apikey_scopes(perm_string: str) -> tuple[str, ...] | None:
-    """Return the scope-flag attribute name(s) gating ``perm_string`` for API keys.
+def _resolve_apikey_scope(perm_string: str) -> str | None:
+    """Return the scope-flag attribute name gating ``perm_string`` for API keys.
 
-    A permission allowed by ANY of several flags returns all of them; a
-    single-flag permission returns a 1-tuple. None when the permission is
-    unmapped (= admin-only / not API-key-usable).
+    None when the permission is unmapped (= admin-only / not API-key-usable).
     """
     try:
         perm = Permission(perm_string)
     except ValueError:
         return None
-    scopes = _APIKEY_SCOPE_BY_PERMISSION.get(perm)
-    if scopes is None:
-        return None
-    return (scopes,) if isinstance(scopes, str) else scopes
+    return _APIKEY_SCOPE_BY_PERMISSION.get(perm)
 
 
 def _check_apikey_permissions(api_key: APIKey, perm_strings: list[str], *, require_any: bool = False) -> None:
@@ -257,17 +249,16 @@ def _check_apikey_permissions(api_key: APIKey, perm_strings: list[str], *, requi
 
     last_failure: HTTPException | None = None
     for perm_str in perm_strings:
-        scope_attrs = _resolve_apikey_scopes(perm_str)
-        if scope_attrs is None:
+        scope_attr = _resolve_apikey_scope(perm_str)
+        if scope_attr is None:
             failure = HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="API keys cannot be used for administrative operations",
             )
-        elif not any(getattr(api_key, scope_attr, False) for scope_attr in scope_attrs):
-            scopes_label = "' or '".join(scope_attrs)
+        elif not getattr(api_key, scope_attr, False):
             failure = HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"API key does not have '{scopes_label}' permission",
+                detail=f"API key does not have '{scope_attr}' permission",
             )
         else:
             failure = None

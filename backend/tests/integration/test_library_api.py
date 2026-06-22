@@ -487,6 +487,139 @@ class TestLibraryFilesAPI:
         assert test_file["created_by_id"] == user.id
         assert test_file["created_by_username"] == "testuploader"
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_files_recursive_includes_subfolders(
+        self, async_client: AsyncClient, folder_factory, file_factory
+    ):
+        """#1268: ?recursive=true with folder_id must include every descendant.
+
+        Tree:
+            toys/             ← f_toys, direct file "robot_top.3mf"
+              cars/           ← child of toys, file "robot_car.3mf"
+                race/         ← grandchild, file "robot_race.3mf"
+            other/            ← unrelated, file "robot_other.3mf" (must NOT appear)
+        """
+        toys = await folder_factory(name="toys")
+        cars = await folder_factory(name="cars", parent_id=toys.id)
+        race = await folder_factory(name="race", parent_id=cars.id)
+        other = await folder_factory(name="other")
+
+        top = await file_factory(folder_id=toys.id, filename="robot_top.3mf")
+        mid = await file_factory(folder_id=cars.id, filename="robot_car.3mf")
+        deep = await file_factory(folder_id=race.id, filename="robot_race.3mf")
+        await file_factory(folder_id=other.id, filename="robot_other.3mf")
+
+        # Non-recursive: only the file directly under toys.
+        r = await async_client.get(f"/api/v1/library/files?folder_id={toys.id}")
+        assert r.status_code == 200
+        assert {f["id"] for f in r.json()} == {top.id}
+
+        # Recursive: toys + cars + race files, but NOT other/.
+        r = await async_client.get(f"/api/v1/library/files?folder_id={toys.id}&recursive=true")
+        assert r.status_code == 200
+        assert {f["id"] for f in r.json()} == {top.id, mid.id, deep.id}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_files_recursive_without_folder_id_is_noop(
+        self, async_client: AsyncClient, folder_factory, file_factory
+    ):
+        """recursive=true is meaningful only with folder_id — without it the
+        existing include_root branch handles scoping. Just confirming the new
+        param doesn't shadow that path."""
+        folder = await folder_factory()
+        f_in = await file_factory(folder_id=folder.id)
+        f_root = await file_factory()
+
+        r = await async_client.get("/api/v1/library/files?include_root=false&recursive=true")
+        assert r.status_code == 200
+        assert {f["id"] for f in r.json()} == {f_in.id, f_root.id}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_folder_readme_returns_first_markdown(
+        self, async_client: AsyncClient, folder_factory, file_factory
+    ):
+        """#1268: /folders/{id}/readme reads on-disk content of the first .md."""
+        folder = await folder_factory()
+        with tempfile.NamedTemporaryFile(suffix=".md", delete=False, mode="w", encoding="utf-8") as f:
+            f.write("# Robot\n\nA cute little robot.")
+            md_path = f.name
+        try:
+            await file_factory(
+                folder_id=folder.id,
+                filename="README.md",
+                file_path=md_path,
+                file_type="md",
+                file_size=Path(md_path).stat().st_size,
+            )
+            r = await async_client.get(f"/api/v1/library/folders/{folder.id}/readme")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["filename"] == "README.md"
+            assert body["content"] == "# Robot\n\nA cute little robot."
+            assert body["truncated"] is False
+        finally:
+            import os
+
+            os.unlink(md_path)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_folder_readme_prefers_readme_over_other_md(
+        self, async_client: AsyncClient, folder_factory, file_factory
+    ):
+        """When the folder has multiple .md files, README.md / description.md
+        wins regardless of insertion order or filename case."""
+        folder = await folder_factory()
+        with tempfile.NamedTemporaryFile(suffix=".md", delete=False, mode="w", encoding="utf-8") as f:
+            f.write("notes notes notes")
+            notes_path = f.name
+        with tempfile.NamedTemporaryFile(suffix=".md", delete=False, mode="w", encoding="utf-8") as f:
+            f.write("the real one")
+            readme_path = f.name
+        try:
+            # notes.md inserted FIRST — naive ordering would pick this one.
+            await file_factory(
+                folder_id=folder.id,
+                filename="notes.md",
+                file_path=notes_path,
+                file_type="md",
+            )
+            await file_factory(
+                folder_id=folder.id,
+                filename="readme.md",  # lowercase to confirm case-insensitive match
+                file_path=readme_path,
+                file_type="md",
+            )
+            r = await async_client.get(f"/api/v1/library/folders/{folder.id}/readme")
+            assert r.status_code == 200
+            assert r.json()["filename"] == "readme.md"
+            assert r.json()["content"] == "the real one"
+        finally:
+            import os
+
+            os.unlink(notes_path)
+            os.unlink(readme_path)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_folder_readme_404_when_no_markdown(
+        self, async_client: AsyncClient, folder_factory, file_factory
+    ):
+        """No .md in the folder → 404 so the FE can hide the side panel."""
+        folder = await folder_factory()
+        await file_factory(folder_id=folder.id, filename="model.3mf", file_type="3mf")
+        r = await async_client.get(f"/api/v1/library/folders/{folder.id}/readme")
+        assert r.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_folder_readme_404_when_folder_missing(self, async_client: AsyncClient):
+        r = await async_client.get("/api/v1/library/folders/999999/readme")
+        assert r.status_code == 404
+
 
 class TestLibraryAddToQueueAPI:
     """Integration tests for /api/v1/library/files/add-to-queue endpoint."""

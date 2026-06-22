@@ -63,6 +63,19 @@ class FolderResponse(BaseModel):
         from_attributes = True
 
 
+class FolderReadmeResponse(BaseModel):
+    """Markdown sidebar payload for a folder (#1268).
+
+    ``filename`` is the on-disk name (so the UI can show "README.md") and
+    ``content`` is the raw markdown — the FE renders it. ``truncated`` is
+    True when the source file was clipped at the size cap.
+    """
+
+    filename: str
+    content: str
+    truncated: bool
+
+
 class FolderTreeItem(BaseModel):
     """Schema for folder tree item (includes children)."""
 
@@ -166,6 +179,16 @@ class FileResponse(BaseModel):
         from_attributes = True
 
 
+class TagSummary(BaseModel):
+    """Compact tag projection — embedded in file listings (#1268)."""
+
+    id: int
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
 class FileListResponse(BaseModel):
     """Schema for file list item (lighter than full response)."""
 
@@ -189,8 +212,63 @@ class FileListResponse(BaseModel):
     filament_used_grams: float | None = None
     sliced_for_model: str | None = None
 
+    # Tags assigned to this file (#1268). Empty list when the file has none —
+    # never null, so the FE can iterate without a guard.
+    tags: list[TagSummary] = []
+
     class Config:
         from_attributes = True
+
+
+# ============ Tag Schemas (#1268) ============
+
+
+class TagResponse(BaseModel):
+    """Tag with the count of files currently using it."""
+
+    id: int
+    name: str
+    file_count: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TagCreate(BaseModel):
+    """Create a new tag (catalog row)."""
+
+    name: str = Field(..., min_length=1, max_length=64)
+
+
+class TagUpdate(BaseModel):
+    """Rename a tag. ``name`` is required — there's nothing else to update."""
+
+    name: str = Field(..., min_length=1, max_length=64)
+
+
+class TagBulkAssignRequest(BaseModel):
+    """Bulk tag assignment payload.
+
+    ``action='add'``      → append tags to every listed file (idempotent on dup).
+    ``action='remove'``   → strip the listed tags from every listed file.
+    ``action='replace'``  → REPLACE the tag set on every listed file with the
+                            exact set in ``tag_ids`` (omitting tag_ids clears
+                            them all).
+    """
+
+    file_ids: list[int] = Field(..., min_length=1)
+    tag_ids: list[int] = Field(default_factory=list)
+    action: str = Field("add", pattern="^(add|remove|replace)$")
+
+
+class TagBulkAssignResponse(BaseModel):
+    """Result of a bulk-assign call."""
+
+    files_updated: int
+    associations_added: int
+    associations_removed: int
 
 
 class FileMoveRequest(BaseModel):

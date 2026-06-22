@@ -16,7 +16,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse as FastAPIFileResponse
-from sqlalchemy import func, select
+from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -31,7 +31,7 @@ from backend.app.core.database import async_session, get_db
 from backend.app.core.permissions import Permission
 from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
-from backend.app.models.library import LibraryFile, LibraryFolder
+from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryFolder
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.project import Project
 from backend.app.models.user import User
@@ -54,9 +54,11 @@ from backend.app.schemas.library import (
     FileUpdate,
     FileUploadResponse,
     FolderCreate,
+    FolderReadmeResponse,
     FolderResponse,
     FolderTreeItem,
     FolderUpdate,
+    TagSummary,
     ZipExtractError,
     ZipExtractResponse,
     ZipExtractResult,
@@ -1035,6 +1037,72 @@ async def get_folder(
     )
 
 
+_README_BYTES_CAP = 512 * 1024  # 512 KiB — model descriptions don't need more
+_README_PREFERRED_STEMS = ("readme", "description")
+
+
+@router.get("/folders/{folder_id}/readme", response_model=FolderReadmeResponse)
+async def get_folder_readme(
+    folder_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
+):
+    """Return the first markdown description file for a folder (#1268).
+
+    Picks ``README.md`` / ``readme.md`` / ``description.md`` first (any case),
+    otherwise the alphabetically-first ``*.md`` in the folder. 404 when no
+    markdown file is present so the FE can hide the side panel.
+    """
+    user, can_read_all = auth_result
+
+    folder_row = await db.execute(select(LibraryFolder.id).where(LibraryFolder.id == folder_id))
+    if folder_row.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Folder not found")
+
+    query = LibraryFile.active().where(
+        LibraryFile.folder_id == folder_id,
+        func.lower(LibraryFile.filename).like("%.md"),
+    )
+    if user is not None and not can_read_all:
+        query = query.where(LibraryFile.created_by_id == user.id)
+    result = await db.execute(query)
+    candidates = result.scalars().all()
+    if not candidates:
+        raise HTTPException(status_code=404, detail="No markdown description in folder")
+
+    def sort_key(f: LibraryFile) -> tuple[int, str]:
+        stem = os.path.splitext(f.filename.lower())[0]
+        try:
+            return (_README_PREFERRED_STEMS.index(stem), f.filename.lower())
+        except ValueError:
+            return (len(_README_PREFERRED_STEMS), f.filename.lower())
+
+    pick = sorted(candidates, key=sort_key)[0]
+
+    abs_path = to_absolute_path(pick.file_path)
+    if not abs_path or not abs_path.exists():
+        raise HTTPException(status_code=404, detail="Markdown file missing on disk")
+
+    try:
+        raw = abs_path.read_bytes()
+    except OSError as e:
+        logger.warning("Folder readme read failed for %s: %s", abs_path, e)
+        raise HTTPException(status_code=500, detail="Could not read markdown file") from None
+
+    truncated = len(raw) > _README_BYTES_CAP
+    if truncated:
+        raw = raw[:_README_BYTES_CAP]
+    # `errors="replace"` so a single bad byte never blanks the panel.
+    content = raw.decode("utf-8", errors="replace")
+
+    return FolderReadmeResponse(filename=pick.filename, content=content, truncated=truncated)
+
+
 @router.put("/folders/{folder_id}", response_model=FolderResponse)
 async def update_folder(
     folder_id: int,
@@ -1722,6 +1790,8 @@ async def list_files(
     include_root: bool = True,
     internal_only: bool = False,
     external_only: bool = False,
+    recursive: bool = False,
+    tag_ids: list[int] = Query(default_factory=list),
     db: AsyncSession = Depends(get_db),
     auth_result: tuple[User | None, bool] = Depends(
         require_ownership_permission(
@@ -1743,6 +1813,16 @@ async def list_files(
         external_only: Restrict the result to files under external folders
                        (`is_external=True`) — the symmetric combined view for users with
                        multiple linked external sources (#1621).
+        recursive: When combined with ``folder_id``, also include files in every
+                   descendant subfolder (#1268). Implemented via a recursive CTE
+                   that walks ``library_folders.parent_id``. Default off so
+                   existing callers (folder browsing, etc.) keep their narrow
+                   single-folder semantics.
+        tag_ids: Restrict the listing to files carrying ALL of these tags
+                 (AND semantics, #1268). When non-empty the folder filter is
+                 intentionally bypassed — tags are cross-cutting and the user
+                 wants "every file with this tag" regardless of where it lives.
+                 ``recursive`` becomes irrelevant in that case.
     """
     if internal_only and external_only:
         raise HTTPException(
@@ -1751,11 +1831,36 @@ async def list_files(
         )
 
     user, can_read_all = auth_result
-    query = LibraryFile.active().options(selectinload(LibraryFile.created_by))
+    query = LibraryFile.active().options(
+        selectinload(LibraryFile.created_by),
+        selectinload(LibraryFile.tags),
+    )
     if user is not None and not can_read_all:
         query = query.where(LibraryFile.created_by_id == user.id)
 
-    if folder_id is not None:
+    if tag_ids:
+        # Cross-cutting filter — every requested tag must be present on the
+        # file. JOIN + GROUP BY + HAVING COUNT(DISTINCT) is portable across
+        # SQLite and Postgres without dialect tricks. We deliberately skip
+        # the folder / project / include_root scoping below so the result
+        # is the global "all files carrying these tags".
+        unique_tag_ids = list(dict.fromkeys(tag_ids))
+        query = (
+            query.join(LibraryFileTag, LibraryFileTag.file_id == LibraryFile.id)
+            .where(LibraryFileTag.tag_id.in_(unique_tag_ids))
+            .group_by(LibraryFile.id)
+            .having(func.count(distinct(LibraryFileTag.tag_id)) == len(unique_tag_ids))
+        )
+    elif folder_id is not None and recursive:
+        # Walk the subtree starting at folder_id and collect every descendant
+        # id. Recursive CTE works on both SQLite (>=3.8.3, shipped 2014) and
+        # Postgres without dialect branching.
+        roots = (
+            select(LibraryFolder.id).where(LibraryFolder.id == folder_id).cte(name="folder_descendants", recursive=True)
+        )
+        descendants = roots.union_all(select(LibraryFolder.id).join(roots, LibraryFolder.parent_id == roots.c.id))
+        query = query.where(LibraryFile.folder_id.in_(select(descendants.c.id)))
+    elif folder_id is not None:
         query = query.where(LibraryFile.folder_id == folder_id)
     elif project_id is not None:
         # Single join instead of one query per folder (avoids N+1 pattern)
@@ -1771,7 +1876,7 @@ async def list_files(
 
     query = query.order_by(LibraryFile.filename)
     result = await db.execute(query)
-    files = result.scalars().all()
+    files = result.scalars().unique().all() if tag_ids else result.scalars().all()
 
     # Get duplicate counts
     hash_counts = {}
@@ -1819,6 +1924,7 @@ async def list_files(
                 print_time_seconds=print_time,
                 filament_used_grams=filament_grams,
                 sliced_for_model=sliced_for_model,
+                tags=[TagSummary(id=t.id, name=t.name) for t in f.tags],
             )
         )
 

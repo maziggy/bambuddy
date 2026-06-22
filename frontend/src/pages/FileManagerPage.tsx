@@ -41,6 +41,7 @@ import {
   RefreshCw,
   Lock,
   FolderSymlink,
+  Tag as TagIcon,
 } from 'lucide-react';
 import { api } from '../api/client';
 import type {
@@ -58,7 +59,10 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { PrintModal } from '../components/PrintModal';
 import { ModelViewerModal } from '../components/ModelViewerModal';
 import { SliceModal } from '../components/SliceModal';
+import { BulkTagsPickerModal } from '../components/BulkTagsPickerModal';
 import { FileUploadModal } from '../components/FileUploadModal';
+import { FolderReadmePanel } from '../components/FolderReadmePanel';
+import { LibraryTagsModal } from '../components/LibraryTagsModal';
 import { PurgeOldFilesModal } from '../components/PurgeOldFilesModal';
 import { useToast } from '../contexts/ToastContext';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -731,6 +735,7 @@ interface FileCardProps {
   onPreview3d?: (file: LibraryFileListItem) => void;
   onRename?: (file: LibraryFileListItem) => void;
   onGenerateThumbnail?: (file: LibraryFileListItem) => void;
+  onTagClick?: (tagId: number) => void;
   thumbnailVersion?: number;
   hasPermission: (permission: Permission) => boolean;
   canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
@@ -738,7 +743,7 @@ interface FileCardProps {
   t: TFunction;
 }
 
-function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onAddToQueue, onPrint, onSlice, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
+function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onAddToQueue, onPrint, onSlice, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, onTagClick, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
   const [showActions, setShowActions] = useState(false);
 
   return (
@@ -803,6 +808,22 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
           <div className="mt-1 text-xs text-bambu-gray flex items-center gap-1">
             <User className="w-3 h-3" />
             {file.created_by_username}
+          </div>
+        )}
+        {(file.tags?.length ?? 0) > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
+            {file.tags!.map((tg) => (
+              <button
+                key={tg.id}
+                type="button"
+                onClick={() => onTagClick?.(tg.id)}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-bambu-green/10 text-bambu-green hover:bg-bambu-green/20 transition-colors max-w-full"
+                title={tg.name}
+              >
+                <TagIcon className="w-2.5 h-2.5 flex-shrink-0" />
+                <span className="truncate">{tg.name}</span>
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -962,6 +983,12 @@ export function FileManagerPage() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
   const [showPurgeModal, setShowPurgeModal] = useState(false);
+  // Tag UI state (#1268). selectedTagIds is the AND-style filter applied to
+  // the listing; setting it bypasses folder scoping on the server so
+  // "every toy" works regardless of which folder is currently selected.
+  const [showTagsModal, setShowTagsModal] = useState(false);
+  const [showBulkTagsModal, setShowBulkTagsModal] = useState(false);
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [linkFolder, setLinkFolder] = useState<LibraryFolderTree | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'folder' | 'bulk'; id: number; count?: number } | null>(null);
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
@@ -1124,8 +1151,49 @@ export function FileManagerPage() {
     staleTime: 30_000,
   });
 
+  // #1268: when a folder is selected and the user has typed a search query,
+  // ask the server to expand the result to every descendant folder so the
+  // client-side filter can match files in subfolders too. Without this the
+  // listing is just the immediate children and "robot.3mf" two levels deep
+  // is invisible from the parent. Only kicks in for folder-scoped views —
+  // root and the internal/external pseudo-nodes already return the union.
+  const searchExpandsSubfolders = selectedFolderId !== null && searchQuery.trim().length > 0;
+  // The tag filter overrides folder scoping server-side (#1268 design call),
+  // so the FE query key includes it as a peer of folder/topLevelView. Sorted
+  // so the cache hits regardless of the order tags were toggled.
+  const tagFilterKey = useMemo(() => [...selectedTagIds].sort((a, b) => a - b), [selectedTagIds]);
+  // Tag catalog — needed to resolve names for the active-filter chip bar.
+  // Cheap query, shared with LibraryTagsModal / BulkTagsPickerModal via the
+  // same queryKey so they all invalidate together on tag CRUD.
+  const { data: tagCatalog = [] } = useQuery({
+    queryKey: ['library-tags'],
+    queryFn: api.getLibraryTags,
+  });
+  const tagsById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const t of tagCatalog) map.set(t.id, t.name);
+    return map;
+  }, [tagCatalog]);
+  // Prune the active filter when a tag is removed from the catalog so the
+  // listing never stalls on a phantom id. Skipped while the catalog query is
+  // still settling (empty array on first paint) — otherwise the user's filter
+  // gets cleared the moment the page mounts.
+  useEffect(() => {
+    if (tagCatalog.length === 0) return;
+    setSelectedTagIds((prev) => {
+      const next = prev.filter((id) => tagsById.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [tagCatalog.length, tagsById]);
+
+  const toggleTagFilter = useCallback((tagId: number) => {
+    setSelectedTagIds((prev) =>
+      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId],
+    );
+  }, []);
+
   const { data: files, isLoading: filesLoading } = useQuery({
-    queryKey: ['library-files', selectedFolderId, topLevelView],
+    queryKey: ['library-files', selectedFolderId, topLevelView, searchExpandsSubfolders, tagFilterKey],
     // When a specific folder is selected we list its contents directly; when
     // no folder is selected the topLevelView pseudo-node decides whether the
     // server scopes the result to internal-managed-storage files or to the
@@ -1137,6 +1205,8 @@ export function FileManagerPage() {
         false,
         undefined,
         selectedFolderId === null ? topLevelView : undefined,
+        searchExpandsSubfolders,
+        tagFilterKey,
       ),
   });
 
@@ -1586,6 +1656,14 @@ export function FileManagerPage() {
             <FolderPlus className="w-4 h-4 mr-2" />
             {t('fileManager.newFolder')}
           </Button>
+          <Button
+            variant="secondary"
+            onClick={() => setShowTagsModal(true)}
+            title={t('fileManager.tags.manageTitle')}
+          >
+            <TagIcon className="w-4 h-4 mr-2" />
+            {t('fileManager.tags.manage')}
+          </Button>
           {hasPermission('library:purge') && (
             <Button
               variant="secondary"
@@ -1858,6 +1936,50 @@ export function FileManagerPage() {
 
         {/* Files area */}
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          {/* Markdown description panel (#1268) — auto-hides if the folder
+              has no README/description.md so non-users pay no UI cost. */}
+          {selectedFolderId !== null && <FolderReadmePanel folderId={selectedFolderId} />}
+          {/* Tag filter rail (#1268). Lists every catalog tag as a togglable
+              chip — active chips are filled green and show an X, inactive
+              chips are outlined and toggle ON when clicked. Clicking an active
+              chip removes it from the filter. Hidden entirely when the
+              catalog is empty so brand-new installs don't see a stray rail. */}
+          {tagCatalog.length > 0 && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 p-2 sm:p-3 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary">
+              <span className="text-xs text-bambu-gray font-medium shrink-0">
+                {t('fileManager.tags.filterLabel')}
+              </span>
+              {tagCatalog.map((tg) => {
+                const active = selectedTagIds.includes(tg.id);
+                return (
+                  <button
+                    key={tg.id}
+                    type="button"
+                    onClick={() => toggleTagFilter(tg.id)}
+                    className={
+                      active
+                        ? 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-bambu-green/20 text-bambu-green border border-bambu-green/40 hover:bg-bambu-green/30 transition-colors'
+                        : 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-bambu-dark text-bambu-gray border border-bambu-dark-tertiary hover:text-white hover:border-bambu-green/40 transition-colors'
+                    }
+                    title={tg.name}
+                  >
+                    <TagIcon className="w-3 h-3" />
+                    <span>{tg.name}</span>
+                    {active && <X className="w-3 h-3" />}
+                  </button>
+                );
+              })}
+              {selectedTagIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedTagIds([])}
+                  className="ml-auto text-xs text-bambu-gray hover:text-white shrink-0"
+                >
+                  {t('fileManager.tags.clearAll')}
+                </button>
+              )}
+            </div>
+          )}
           {/* External folder info bar */}
           {selectedFolder?.is_external && (
             <div className="flex items-center gap-3 mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
@@ -1905,6 +2027,14 @@ export function FileManagerPage() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-9 pr-3 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
                 />
+                {searchExpandsSubfolders && (
+                  <span
+                    className="absolute -bottom-4 left-0 text-[10px] text-bambu-gray whitespace-nowrap"
+                    title={t('fileManager.searchSubfoldersHint')}
+                  >
+                    {t('fileManager.searchSubfoldersHint')}
+                  </span>
+                )}
               </div>
 
               {/* Type filter */}
@@ -2064,6 +2194,16 @@ export function FileManagerPage() {
                       <span className="hidden sm:inline">{t('common.move')}</span>
                     </Button>
                     <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setShowBulkTagsModal(true)}
+                      disabled={!hasAnyPermission('library:update_own', 'library:update_all')}
+                      title={!hasAnyPermission('library:update_own', 'library:update_all') ? t('fileManager.tags.noPermission') : t('fileManager.tags.bulkTooltip')}
+                    >
+                      <TagIcon className="w-4 h-4 sm:mr-1" />
+                      <span className="hidden sm:inline">{t('fileManager.tags.tagAction')}</span>
+                    </Button>
+                    <Button
                       variant="danger"
                       size="sm"
                       onClick={() => {
@@ -2175,6 +2315,7 @@ export function FileManagerPage() {
                     }}
                     onRename={(f) => setRenameItem({ type: 'file', id: f.id, name: f.filename })}
                     onGenerateThumbnail={(f) => singleThumbnailMutation.mutate(f.id)}
+                    onTagClick={toggleTagFilter}
                     thumbnailVersion={thumbnailVersions[file.id]}
                     hasPermission={hasPermission}
                     canModify={canModify}
@@ -2197,20 +2338,21 @@ export function FileManagerPage() {
                     grids that compute `min-content` independently — the header's empty
                     trailing div resolved to 0px, leaving body columns shifted left of
                     their headers. Fixed width keeps header and body in lockstep. */}
-                <div className={`hidden sm:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_220px]' : 'grid-cols-[auto_1fr_100px_100px_100px_220px]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
+                <div className={`hidden sm:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_minmax(0,200px)_220px]' : 'grid-cols-[auto_1fr_100px_100px_100px_minmax(0,200px)_220px]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
                   <div className="w-6" />
                   <div>{t('common.name')}</div>
                   {authEnabled && <div>{t('fileManager.uploadedBy', { defaultValue: 'Uploaded By' })}</div>}
                   <div>{t('common.type')}</div>
                   <div>{t('fileManager.size')}</div>
                   <div>{t('fileManager.prints')}</div>
+                  <div>{t('fileManager.tags.title')}</div>
                   <div />
                 </div>
                 {/* List rows */}
                 {filteredAndSortedFiles.map((file) => (
                   <div
                     key={file.id}
-                    className={`grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_220px]' : 'grid-cols-[auto_1fr_100px_100px_100px_220px]'} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
+                    className={`grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_minmax(0,200px)_220px]' : 'grid-cols-[auto_1fr_100px_100px_100px_minmax(0,200px)_220px]'} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
                       selectedFiles.includes(file.id) ? 'bg-bambu-green/10' : ''
                     }`}
                     onClick={() => handleFileSelect(file.id)}
@@ -2284,6 +2426,30 @@ export function FileManagerPage() {
                     <div className="text-sm text-bambu-gray">{formatFileSize(file.file_size)}</div>
                     {/* Prints */}
                     <div className="text-sm text-bambu-gray">{file.print_count > 0 ? `${file.print_count}x` : '-'}</div>
+                    {/* Tags (#1268) — clickable chips push into the active
+                        filter; minmax(0,200px) on the column lets the cell
+                        shrink/wrap on narrow viewports without pushing the
+                        Actions cell off-screen. */}
+                    <div className="min-w-0" onClick={(e) => e.stopPropagation()}>
+                      {!file.tags || file.tags.length === 0 ? (
+                        <span className="text-xs text-bambu-gray/50">-</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {file.tags.map((tg) => (
+                            <button
+                              key={tg.id}
+                              type="button"
+                              onClick={() => toggleTagFilter(tg.id)}
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-bambu-green/10 text-bambu-green hover:bg-bambu-green/20 transition-colors max-w-full"
+                              title={tg.name}
+                            >
+                              <TagIcon className="w-2.5 h-2.5 flex-shrink-0" />
+                              <span className="truncate">{tg.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     {/* Actions */}
                     <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                       {isSlicedFilename(file.filename) && (
@@ -2459,6 +2625,22 @@ export function FileManagerPage() {
       {showPurgeModal && (
         <PurgeOldFilesModal onClose={() => setShowPurgeModal(false)} />
       )}
+
+      <LibraryTagsModal
+        open={showTagsModal}
+        onClose={() => setShowTagsModal(false)}
+        onPickTag={(tagId) => {
+          if (!selectedTagIds.includes(tagId)) {
+            setSelectedTagIds((prev) => [...prev, tagId]);
+          }
+        }}
+      />
+
+      <BulkTagsPickerModal
+        open={showBulkTagsModal}
+        fileIds={selectedFiles}
+        onClose={() => setShowBulkTagsModal(false)}
+      />
 
       {linkFolder && (
         <LinkFolderModal

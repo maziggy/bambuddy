@@ -46,6 +46,61 @@ class TestLibraryFoldersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_folder_tree_exposes_latest_activity_at_from_files(
+        self, async_client: AsyncClient, folder_factory, db_session
+    ):
+        """#1770: folder list returns latest_activity_at = MAX(folder.updated_at,
+        MAX(immediate-child file.updated_at)) so the frontend can sort by
+        recent activity. Adding a file with a later updated_at must bubble it.
+        """
+        from datetime import datetime, timedelta
+
+        from backend.app.models.library import LibraryFile
+
+        folder = await folder_factory(name="Active Folder")
+        # File whose updated_at is well after the folder's. Activity should
+        # surface this timestamp, not the folder's stale one.
+        future = datetime.utcnow() + timedelta(hours=24)
+        db_session.add(
+            LibraryFile(
+                folder_id=folder.id,
+                filename="model.3mf",
+                file_path="library/model.3mf",
+                file_type="3mf",
+                file_size=123,
+                updated_at=future,
+            )
+        )
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/library/folders")
+        assert response.status_code == 200
+        items = response.json()
+        assert len(items) == 1
+        item = items[0]
+        assert item["id"] == folder.id
+        assert item["latest_activity_at"] is not None
+        # latest_activity_at should be at least the future stamp we set.
+        assert item["latest_activity_at"] >= future.isoformat()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_folder_tree_latest_activity_at_falls_back_to_folder_updated_at(
+        self, async_client: AsyncClient, folder_factory, db_session
+    ):
+        """#1770: a folder with no files reports its own updated_at, not null —
+        otherwise the activity sort would dump every empty folder to one end."""
+        await folder_factory(name="Empty Folder")
+        response = await async_client.get("/api/v1/library/folders")
+        assert response.status_code == 200
+        items = response.json()
+        assert len(items) == 1
+        item = items[0]
+        # latest_activity_at == folder.updated_at when there are no files
+        assert item["latest_activity_at"] is not None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_create_folder(self, async_client: AsyncClient, db_session):
         """Verify folder can be created."""
         data = {"name": "New Folder"}

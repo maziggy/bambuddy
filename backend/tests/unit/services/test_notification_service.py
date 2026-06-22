@@ -1706,6 +1706,149 @@ class TestPrinterErrorNotifications:
             assert captured_variables["error_detail"] == "No details available"
 
 
+class TestAIFailureDetectionNotifications:
+    """Tests for the AI failure-detection event (#1794 — split out of on_printer_error).
+
+    Pins that Obico failure-detection dispatches go through the dedicated
+    on_ai_failure_detection event field, not the multiplexed printer-error
+    field. Mirrors the printer-error coverage above so a regression on either
+    surface fails its own case.
+    """
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @pytest.fixture
+    def mock_provider(self):
+        provider = MagicMock()
+        provider.id = 1
+        provider.name = "Test Provider"
+        provider.provider_type = "webhook"
+        provider.enabled = True
+        provider.config = json.dumps({"webhook_url": "http://test.local/webhook"})
+        provider.on_ai_failure_detection = True
+        provider.on_printer_error = False  # disabled — the regression guard
+        provider.quiet_hours_enabled = False
+        provider.daily_digest_enabled = False
+        provider.printer_id = None
+        return provider
+
+    @pytest.fixture
+    def mock_db(self):
+        db = AsyncMock()
+        db.commit = AsyncMock()
+        return db
+
+    @pytest.mark.asyncio
+    async def test_dispatch_uses_ai_failure_detection_event_not_printer_error(self, service, mock_provider, mock_db):
+        """Regression guard: provider subscribed only to AI alerts must receive
+        the Obico notification."""
+        captured_event = []
+
+        async def capture(db, event_field, printer_id):
+            captured_event.append(event_field)
+            return [mock_provider]
+
+        with (
+            patch.object(service, "_get_providers_for_event", side_effect=capture),
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
+            mock_build.return_value = ("Possible Print Failure Detected", "details")
+
+            await service.on_ai_failure_detection(
+                printer_id=1,
+                printer_name="X1 Carbon",
+                task_name="benchy.3mf",
+                confidence=0.87,
+                action="notify",
+                db=mock_db,
+            )
+
+            assert captured_event == ["on_ai_failure_detection"]
+            mock_send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_skipped_when_only_printer_error_is_enabled(self, service, mock_provider, mock_db):
+        """Pre-#1794 behaviour MUST NOT survive: a provider with only the
+        legacy on_printer_error toggle should NOT receive AI notifications now."""
+        mock_provider.on_ai_failure_detection = False
+        mock_provider.on_printer_error = True
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+        ):
+            mock_get.return_value = []  # the event-field filter excludes the provider
+
+            await service.on_ai_failure_detection(
+                printer_id=1,
+                printer_name="X1 Carbon",
+                task_name="benchy.3mf",
+                confidence=0.87,
+                action="notify",
+                db=mock_db,
+            )
+
+            mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_variables_include_task_name_confidence_action(self, service, mock_provider, mock_db):
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_ai_failure_detection(
+                printer_id=1,
+                printer_name="X1 Carbon",
+                task_name="benchy.3mf",
+                confidence=0.873,
+                action="pause_and_off",
+                db=mock_db,
+            )
+
+            assert captured_variables["printer"] == "X1 Carbon"
+            assert captured_variables["task_name"] == "benchy.3mf"
+            assert captured_variables["confidence"] == "0.87"  # 2-decimal format
+            assert captured_variables["action"] == "pause_and_off"
+
+    @pytest.mark.asyncio
+    async def test_task_name_fallback_when_unknown(self, service, mock_provider, mock_db):
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_ai_failure_detection(
+                printer_id=1,
+                printer_name="Test",
+                task_name="",  # empty
+                confidence=0.5,
+                action="notify",
+                db=mock_db,
+            )
+
+            assert captured_variables["task_name"] == "current job"
+
+
 class TestPlateNotEmptyNotifications:
     """Tests for plate not empty (build plate detection) notifications."""
 

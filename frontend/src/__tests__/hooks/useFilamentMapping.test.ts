@@ -10,6 +10,7 @@ import {
   buildLoadedFilaments,
   computeAmsMapping,
 } from '../../hooks/useFilamentMapping';
+import { effectivePreferLowest } from '../../utils/amsHelpers';
 import type { PrinterStatus } from '../../api/client';
 
 // Helper to create a minimal printer status with AMS data
@@ -1046,5 +1047,147 @@ describe('computeAmsMapping preferLowest', () => {
 
     const result = computeAmsMapping(reqs, status, true);
     expect(result).toEqual([1]); // Known 60% over unknown
+  });
+});
+
+// #1766: the user reported that "Prefer lowest remaining filament" picked the
+// wrong spool when two identical-material/color spools differed only in the
+// inventory-tracked grams (not the printer's `remain%`). The pre-fix sort
+// looked at `remain%` only and ignored Bambuddy's bound inventory entirely;
+// now we pass a globalTrayId -> grams map and the sort lifts inventory-bound
+// spools to tier 0 (matching backend _prefer_lowest_sort_key).
+describe('computeAmsMapping preferLowest with inventory map (#1766)', () => {
+  it('picks spool with lower inventory grams when both spools report same remain%', () => {
+    // Reporter's scenario: two identical Bambu-branded spools, both report
+    // `remain=100` because they were freshly inserted, but inventory has them
+    // at 950 g vs 50 g remaining. Pre-fix sort ties and picks the first.
+    const reqs = {
+      filaments: [{ slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10, tray_info_idx: 'GFA00' }],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'FF0000', tray_info_idx: 'GFA00', remain: 100 },
+          { id: 1, tray_type: 'PLA', tray_color: 'FF0000', tray_info_idx: 'GFA00', remain: 100 },
+        ],
+      },
+    ]);
+    const inventory = new Map<number, number>([[0, 950], [1, 50]]);
+
+    const result = computeAmsMapping(reqs, status, true, inventory);
+    expect(result).toEqual([1]); // Inventory says tray 1 is nearly empty — use it first.
+  });
+
+  it('prefers inventory-tracked spool over non-tracked one even when remain% would order them differently', () => {
+    // Two spools both match by type+color, both have the same tray_info_idx
+    // (identical SKU). Tray 0 has no inventory binding but reports remain=20.
+    // Tray 1 has an inventory binding with 100 g remaining. Tier 0 (bound)
+    // always beats tier 1 (MQTT-only) regardless of value — matches backend.
+    const reqs = {
+      filaments: [{ slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10, tray_info_idx: 'GFA00' }],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'FF0000', tray_info_idx: 'GFA00', remain: 20 },
+          { id: 1, tray_type: 'PLA', tray_color: 'FF0000', tray_info_idx: 'GFA00', remain: 80 },
+        ],
+      },
+    ]);
+    const inventory = new Map<number, number>([[1, 100]]); // Only tray 1 bound
+
+    const result = computeAmsMapping(reqs, status, true, inventory);
+    expect(result).toEqual([1]);
+  });
+
+  it('falls back to remain% sort when no inventory map provided (pre-#1766 behaviour)', () => {
+    // Regression guard: callers that haven't yet wired the map must get the
+    // same sort they always got. None of the existing tests in this file pass
+    // a map; this asserts the default path is unchanged.
+    const reqs = {
+      filaments: [{ slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10 }],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'FF0000', remain: 80 },
+          { id: 1, tray_type: 'PLA', tray_color: 'FF0000', remain: 25 },
+        ],
+      },
+    ]);
+
+    const result = computeAmsMapping(reqs, status, true, undefined);
+    expect(result).toEqual([1]); // Same as the existing no-inventory case.
+  });
+});
+
+// #1766 safety gate: when the printer has AMS Filament Backup OFF, the sort
+// MUST NOT run, even with the user setting on. Otherwise the dispatch picks a
+// near-empty spool the printer can't switch off of when it runs out mid-print.
+// Mirrors backend `_compute_ams_mapping_for_printer` gate.
+describe('effectivePreferLowest gate (#1766)', () => {
+  it('coerces to false when backup is OFF', () => {
+    expect(effectivePreferLowest(true, false)).toBe(false);
+  });
+
+  it('passes through when backup is ON', () => {
+    expect(effectivePreferLowest(true, true)).toBe(true);
+  });
+
+  it('passes through when backup is unknown (null/undefined — A1 family)', () => {
+    expect(effectivePreferLowest(true, null)).toBe(true);
+    expect(effectivePreferLowest(true, undefined)).toBe(true);
+  });
+
+  it('stays false when the user setting is off, regardless of backup state', () => {
+    expect(effectivePreferLowest(false, true)).toBe(false);
+    expect(effectivePreferLowest(false, false)).toBe(false);
+    expect(effectivePreferLowest(undefined, true)).toBe(false);
+  });
+
+  it('slot-priority tie-break: external/VT spools sort AFTER regular AMS', () => {
+    // Mirrors backend `_slot_priority` banding. When tier and value tie, slot
+    // position decides — external (ams_id = -1) must clamp to 10_000 so it
+    // can't beat AMS slot 0 (priority 0).
+    const reqs = {
+      filaments: [{ slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10 }],
+    };
+    const status = createPrinterStatus(
+      [
+        {
+          id: 0,
+          tray: [
+            { id: 0, tray_type: 'PLA', tray_color: 'FF0000', remain: -1 },  // priority 0
+          ],
+        },
+      ],
+      [{ id: 254, tray_type: 'PLA', tray_color: 'FF0000', remain: -1 }],  // priority 10_000
+    );
+    const result = computeAmsMapping(reqs, status, true);
+    expect(result).toEqual([0]); // AMS slot wins the tie; VT does not.
+  });
+
+  it('end-to-end: backup OFF prevents lowest-pick at dispatch (caller-coerced)', () => {
+    // PrintModal computes the effective flag and passes it to computeAmsMapping.
+    // This pins that flow: with backup=false the flag becomes false, the sort
+    // doesn't run, and the first matching tray wins (today's behaviour).
+    const reqs = {
+      filaments: [{ slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10 }],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'FF0000', remain: 80 },
+          { id: 1, tray_type: 'PLA', tray_color: 'FF0000', remain: 5 },  // near-empty
+        ],
+      },
+    ]);
+    const gated = effectivePreferLowest(true, false);
+    const result = computeAmsMapping(reqs, status, gated);
+    expect(result).toEqual([0]); // First match wins; the 5%-remain spool is NOT selected.
   });
 });

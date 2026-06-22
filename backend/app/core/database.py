@@ -193,6 +193,7 @@ async def init_db():
         print_log,
         print_queue,
         printer,
+        printer_sensor_history,
         project,
         project_bom,
         settings,
@@ -966,6 +967,18 @@ async def run_migrations(conn):
         await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN gcode_injection BOOLEAN DEFAULT 0")
     else:
         await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN gcode_injection BOOLEAN DEFAULT FALSE")
+
+    # Migration: nozzle_mapping + nozzles_info on print_queue for H2C rack-swap
+    # slicer-pick preservation (#1780). Opaque JSON-string column carrying
+    # BambuStudio's per-filament physical nozzle position IDs, forwarded
+    # straight from the VP intake to the dispatcher's project_file MQTT
+    # command. NULL on every other model. Nullable TEXT — no Postgres / SQLite
+    # divergence here. `nozzles_info` shipped in the original #1780 attempt
+    # but BambuStudio never actually sends it (verified via wire capture on
+    # H2C, see CHANGELOG 0.2.5b1) — the column stays nullable so old rows
+    # still load; nothing reads or writes to it anymore.
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN nozzle_mapping TEXT")
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN nozzles_info TEXT")
 
     # Migration: Add target_parts_count column to projects for tracking total parts needed
     await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN target_parts_count INTEGER")
@@ -3049,6 +3062,21 @@ async def run_migrations(conn):
             "but no location_id link. Re-save those spools or merge the orphaned location "
             "names manually.",
             orphan_count,
+        )
+
+    # Migration: Add on_ai_failure_detection column to notification_providers (#1794).
+    # Splits Obico AI failure detection out of the multiplexed on_printer_error
+    # event so users can subscribe to spaghetti alerts independently of HMS
+    # hardware-error alerts. Postgres rejects `DEFAULT 0` for BOOLEAN columns.
+    if is_sqlite():
+        await _safe_execute(
+            conn,
+            "ALTER TABLE notification_providers ADD COLUMN on_ai_failure_detection BOOLEAN DEFAULT 0",
+        )
+    else:
+        await _safe_execute(
+            conn,
+            "ALTER TABLE notification_providers ADD COLUMN on_ai_failure_detection BOOLEAN DEFAULT false",
         )
 
 

@@ -750,11 +750,24 @@ async def list_folders(
     )
     file_counts = dict(file_counts_result.all())
 
+    # Latest immediate-child file activity per folder (#1770). Sibling of the
+    # file_counts subquery — same WHERE clause, MAX(updated_at) instead of
+    # COUNT(id). Subfolder descent is not aggregated here; the frontend's
+    # "sort by recent activity" mode is satisfied by immediate-parent bubble.
+    latest_file_activity_result = await db.execute(
+        select(LibraryFile.folder_id, func.max(LibraryFile.updated_at))
+        .where(LibraryFile.folder_id.isnot(None), LibraryFile.deleted_at.is_(None))
+        .group_by(LibraryFile.folder_id)
+    )
+    latest_file_activity = dict(latest_file_activity_result.all())
+
     # Build tree structure
     folder_map = {}
     root_folders = []
 
     for folder, project_name, archive_name in rows:
+        latest_file = latest_file_activity.get(folder.id)
+        latest_activity_at = max(folder.updated_at, latest_file) if latest_file is not None else folder.updated_at
         folder_item = FolderTreeItem(
             id=folder.id,
             name=folder.name,
@@ -767,6 +780,7 @@ async def list_folders(
             external_path=folder.external_path,
             external_readonly=folder.external_readonly,
             file_count=file_counts.get(folder.id, 0),
+            latest_activity_at=latest_activity_at,
             children=[],
         )
         folder_map[folder.id] = folder_item
@@ -804,14 +818,19 @@ async def get_folders_by_project(
 
     folders = []
     for folder, project_name in rows:
-        # Get file count
-        file_count_result = await db.execute(
-            select(func.count(LibraryFile.id)).where(
+        # Get file count + latest file activity (#1770) in one trip
+        agg_result = await db.execute(
+            select(
+                func.count(LibraryFile.id),
+                func.max(LibraryFile.updated_at),
+            ).where(
                 LibraryFile.folder_id == folder.id,
                 LibraryFile.deleted_at.is_(None),
             )
         )
-        file_count = file_count_result.scalar() or 0
+        file_count, latest_file = agg_result.one()
+        file_count = file_count or 0
+        latest_activity_at = max(folder.updated_at, latest_file) if latest_file is not None else folder.updated_at
 
         folders.append(
             FolderResponse(
@@ -827,6 +846,7 @@ async def get_folders_by_project(
                 external_readonly=folder.external_readonly,
                 external_show_hidden=folder.external_show_hidden,
                 file_count=file_count,
+                latest_activity_at=latest_activity_at,
                 created_at=folder.created_at,
                 updated_at=folder.updated_at,
             )
@@ -857,14 +877,19 @@ async def get_folders_by_archive(
 
     folders = []
     for folder, archive_name in rows:
-        # Get file count
-        file_count_result = await db.execute(
-            select(func.count(LibraryFile.id)).where(
+        # Get file count + latest file activity (#1770) in one trip
+        agg_result = await db.execute(
+            select(
+                func.count(LibraryFile.id),
+                func.max(LibraryFile.updated_at),
+            ).where(
                 LibraryFile.folder_id == folder.id,
                 LibraryFile.deleted_at.is_(None),
             )
         )
-        file_count = file_count_result.scalar() or 0
+        file_count, latest_file = agg_result.one()
+        file_count = file_count or 0
+        latest_activity_at = max(folder.updated_at, latest_file) if latest_file is not None else folder.updated_at
 
         folders.append(
             FolderResponse(
@@ -880,6 +905,7 @@ async def get_folders_by_archive(
                 external_readonly=folder.external_readonly,
                 external_show_hidden=folder.external_show_hidden,
                 file_count=file_count,
+                latest_activity_at=latest_activity_at,
                 created_at=folder.created_at,
                 updated_at=folder.updated_at,
             )
@@ -943,6 +969,9 @@ async def create_folder(
         external_readonly=folder.external_readonly,
         external_show_hidden=folder.external_show_hidden,
         file_count=0,
+        # New folder has no files yet — fall back to the folder's own
+        # updated_at so this matches the list-route semantics (#1770).
+        latest_activity_at=folder.updated_at,
         created_at=folder.created_at,
         updated_at=folder.updated_at,
     )
@@ -973,14 +1002,19 @@ async def get_folder(
 
     folder, project_name, archive_name = row
 
-    # Get file count
-    file_count_result = await db.execute(
-        select(func.count(LibraryFile.id)).where(
+    # Get file count + latest file activity (#1770) in one trip
+    agg_result = await db.execute(
+        select(
+            func.count(LibraryFile.id),
+            func.max(LibraryFile.updated_at),
+        ).where(
             LibraryFile.folder_id == folder_id,
             LibraryFile.deleted_at.is_(None),
         )
     )
-    file_count = file_count_result.scalar() or 0
+    file_count, latest_file = agg_result.one()
+    file_count = file_count or 0
+    latest_activity_at = max(folder.updated_at, latest_file) if latest_file is not None else folder.updated_at
 
     return FolderResponse(
         id=folder.id,
@@ -995,6 +1029,7 @@ async def get_folder(
         external_readonly=folder.external_readonly,
         external_show_hidden=folder.external_show_hidden,
         file_count=file_count,
+        latest_activity_at=latest_activity_at,
         created_at=folder.created_at,
         updated_at=folder.updated_at,
     )
@@ -1064,14 +1099,19 @@ async def update_folder(
     await db.commit()
     await db.refresh(folder)
 
-    # Get file count and names
-    file_count_result = await db.execute(
-        select(func.count(LibraryFile.id)).where(
+    # Get file count + latest file activity (#1770) and names
+    agg_result = await db.execute(
+        select(
+            func.count(LibraryFile.id),
+            func.max(LibraryFile.updated_at),
+        ).where(
             LibraryFile.folder_id == folder_id,
             LibraryFile.deleted_at.is_(None),
         )
     )
-    file_count = file_count_result.scalar() or 0
+    file_count, latest_file = agg_result.one()
+    file_count = file_count or 0
+    latest_activity_at = max(folder.updated_at, latest_file) if latest_file is not None else folder.updated_at
 
     # Get project and archive names
     project_name = None
@@ -1096,6 +1136,7 @@ async def update_folder(
         external_readonly=folder.external_readonly,
         external_show_hidden=folder.external_show_hidden,
         file_count=file_count,
+        latest_activity_at=latest_activity_at,
         created_at=folder.created_at,
         updated_at=folder.updated_at,
     )
@@ -1365,6 +1406,9 @@ async def create_external_folder(
         external_readonly=folder.external_readonly,
         external_show_hidden=folder.external_show_hidden,
         file_count=0,
+        # Newly-created external folder hasn't been scanned yet — fall back
+        # to the folder's own updated_at (#1770).
+        latest_activity_at=folder.updated_at,
         created_at=folder.created_at,
         updated_at=folder.updated_at,
     )

@@ -50,6 +50,12 @@ class FolderResponse(BaseModel):
     external_readonly: bool = False
     external_show_hidden: bool = False
     file_count: int = 0  # Computed field
+    # max(folder.updated_at, max(immediate-child file.updated_at)). Used by the
+    # File Manager folder tree's "sort by recent activity" mode (#1770) so that
+    # adding a file inside a folder bubbles it up — folder.updated_at alone only
+    # tracks rename/move events. Recursion across subfolders is intentionally
+    # left out to keep the route a single GROUP BY rather than a recursive CTE.
+    latest_activity_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -71,6 +77,8 @@ class FolderTreeItem(BaseModel):
     external_path: str | None = None
     external_readonly: bool = False
     file_count: int = 0
+    # See FolderResponse.latest_activity_at — #1770 folder sort source.
+    latest_activity_at: datetime | None = None
     children: list["FolderTreeItem"] = []
 
     class Config:

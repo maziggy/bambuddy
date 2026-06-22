@@ -62,6 +62,7 @@ import { FileUploadModal } from '../components/FileUploadModal';
 import { PurgeOldFilesModal } from '../components/PurgeOldFilesModal';
 import { useToast } from '../contexts/ToastContext';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDuration, parseUTCDate } from '../utils/date';
 import { formatFileSize } from '../utils/file';
@@ -959,6 +960,7 @@ export function FileManagerPage() {
   const [showExternalFolderModal, setShowExternalFolderModal] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
   const [showPurgeModal, setShowPurgeModal] = useState(false);
   const [linkFolder, setLinkFolder] = useState<LibraryFolderTree | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'folder' | 'bulk'; id: number; count?: number } | null>(null);
@@ -977,6 +979,17 @@ export function FileManagerPage() {
   });
   const [collapseFoldersByDefault, setCollapseFoldersByDefault] = useState(() => {
     return localStorage.getItem('library-collapse-folders') === 'true';
+  });
+  // Folder tree sort (#1770). 'name' = alphabetical (the prior behaviour);
+  // 'activity' = most recent file activity inside the folder first. Persisted
+  // independently from the file-side sort so each can be tuned to taste.
+  const [folderSortField, setFolderSortField] = useState<'name' | 'activity'>(() => {
+    const saved = localStorage.getItem('library-folder-sort-field');
+    return saved === 'activity' ? 'activity' : 'name';
+  });
+  const [folderSortDirection, setFolderSortDirection] = useState<'asc' | 'desc'>(() => {
+    const saved = localStorage.getItem('library-folder-sort-direction');
+    return saved === 'desc' ? 'desc' : 'asc';
   });
 
   // Resizable sidebar state
@@ -1059,6 +1072,42 @@ export function FileManagerPage() {
     queryKey: ['library-folders'],
     queryFn: () => api.getLibraryFolders(),
   });
+
+  // Recursive folder tree sort (#1770). Applies the same comparator to the
+  // top-level list AND to each level of `children`, so sort order is uniform
+  // at every depth of nesting. When sorting by activity, the comparator falls
+  // back to a created-at fallback for folders with no files (`latest_activity_at`
+  // is null) so they stay grouped at the end / start of the bucket instead of
+  // randomly interspersed.
+  const sortedFolders = useMemo(() => {
+    if (!folders) return folders;
+    const sortLevel = (items: LibraryFolderTree[]): LibraryFolderTree[] => {
+      const sorted = [...items].sort((a, b) => {
+        let comparison = 0;
+        if (folderSortField === 'name') {
+          comparison = a.name.localeCompare(b.name);
+        } else {
+          // activity: newest first on 'desc', oldest first on 'asc'.
+          // Folders with no activity timestamp sort to the end regardless
+          // of direction so an empty folder doesn't elbow a recently-used one.
+          const aTs = a.latest_activity_at ? new Date(a.latest_activity_at).getTime() : null;
+          const bTs = b.latest_activity_at ? new Date(b.latest_activity_at).getTime() : null;
+          if (aTs === null && bTs === null) {
+            comparison = a.name.localeCompare(b.name);
+          } else if (aTs === null) {
+            return 1;
+          } else if (bTs === null) {
+            return -1;
+          } else {
+            comparison = aTs - bTs;
+          }
+        }
+        return folderSortDirection === 'asc' ? comparison : -comparison;
+      });
+      return sorted.map((f) => ({ ...f, children: sortLevel(f.children) }));
+    };
+    return sortLevel(folders);
+  }, [folders, folderSortField, folderSortDirection]);
 
   // Trash count for the header badge (#1008). Empty/error are silently treated
   // as zero so a broken trash endpoint doesn't break the File Manager.
@@ -1403,6 +1452,20 @@ export function FileManagerPage() {
     queryClient.invalidateQueries({ queryKey: ['library-stats'] });
   };
 
+  // Page-wide drag-and-drop upload (#1510). Disabled when the user lacks
+  // library:upload so a non-uploader can't accidentally show the overlay,
+  // and also disabled while the upload modal itself is open so drags into
+  // the modal's own drop zone don't bubble up and flash the page overlay
+  // behind it.
+  const canUpload = hasPermission('library:upload');
+  const { isDraggingOver, dragHandlers } = usePageFileDrop({
+    disabled: !canUpload || showUploadModal,
+    onFiles: (files) => {
+      setDroppedFiles(files);
+      setShowUploadModal(true);
+    },
+  });
+
   const handleDownload = (id: number) => {
     api.downloadLibraryFile(id).catch((err) => {
       console.error('Library file download failed:', err);
@@ -1444,7 +1507,21 @@ export function FileManagerPage() {
   }, [selectedFolderId, folders]);
 
   return (
-    <div className="p-4 md:p-8 min-h-[calc(100vh-64px)] lg:h-[calc(100vh-64px)] flex flex-col">
+    <div
+      className="p-4 md:p-8 min-h-[calc(100vh-64px)] lg:h-[calc(100vh-64px)] flex flex-col relative"
+      {...dragHandlers}
+    >
+      {/* Drag & Drop Overlay — page-wide file upload (#1510) */}
+      {isDraggingOver && (
+        <div className="fixed inset-0 z-50 bg-bambu-dark/90 flex items-center justify-center pointer-events-none">
+          <div className="border-4 border-dashed border-bambu-green rounded-xl p-12 text-center">
+            <Upload className="w-16 h-16 mx-auto mb-4 text-bambu-green" />
+            <p className="text-2xl font-semibold text-white mb-2">{t('fileManager.dropFilesHere')}</p>
+            <p className="text-bambu-gray">{t('fileManager.releaseToUpload')}</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
@@ -1606,7 +1683,7 @@ export function FileManagerPage() {
             {folders?.some((f) => f.is_external) && (
               <option value="__top:external">🔗 {t('fileManager.allExternal')}</option>
             )}
-            {folders && (() => {
+            {sortedFolders && (() => {
               // Flatten folder tree for mobile selector
               const flattenFolders = (items: LibraryFolderTree[], depth = 0): { id: number; name: string; fileCount: number; depth: number }[] => {
                 const result: { id: number; name: string; fileCount: number; depth: number }[] = [];
@@ -1618,7 +1695,7 @@ export function FileManagerPage() {
                 }
                 return result;
               };
-              return flattenFolders(folders).map((folder) => (
+              return flattenFolders(sortedFolders).map((folder) => (
                 <option key={folder.id} value={folder.id}>
                   {'│ '.repeat(folder.depth)}📂 {folder.name} {folder.fileCount > 0 ? `(${folder.fileCount})` : ''}
                 </option>
@@ -1658,6 +1735,35 @@ export function FileManagerPage() {
           <div className="p-3 border-b border-bambu-dark-tertiary flex items-center justify-between">
             <h2 className="text-sm font-medium text-white">{t('fileManager.folders')}</h2>
             <div className="flex items-center gap-1">
+              {/* Folder tree sort (#1770). Dropdown drives the comparator;
+                  direction button flips asc/desc. Both persist to localStorage
+                  on change so the choice survives reloads. */}
+              <select
+                value={folderSortField}
+                onChange={(e) => {
+                  const v = e.target.value === 'activity' ? 'activity' : 'name';
+                  setFolderSortField(v);
+                  localStorage.setItem('library-folder-sort-field', v);
+                }}
+                className="text-xs px-1 py-0.5 rounded bg-bambu-dark border border-bambu-dark-tertiary text-bambu-gray focus:outline-none focus:border-bambu-green"
+                title={t('fileManager.folderSort')}
+                aria-label={t('fileManager.folderSort')}
+              >
+                <option value="name">{t('fileManager.folderSortByName')}</option>
+                <option value="activity">{t('fileManager.folderSortByActivity')}</option>
+              </select>
+              <button
+                onClick={() => {
+                  const newValue = folderSortDirection === 'asc' ? 'desc' : 'asc';
+                  setFolderSortDirection(newValue);
+                  localStorage.setItem('library-folder-sort-direction', newValue);
+                }}
+                className="text-bambu-gray hover:text-white hover:bg-bambu-dark p-1 rounded transition-colors"
+                title={folderSortDirection === 'asc' ? t('fileManager.ascending') : t('fileManager.descending')}
+                aria-label={folderSortDirection === 'asc' ? t('fileManager.ascending') : t('fileManager.descending')}
+              >
+                {folderSortDirection === 'asc' ? <SortAsc className="w-3.5 h-3.5" /> : <SortDesc className="w-3.5 h-3.5" />}
+              </button>
               <button
                 onClick={() => {
                   const newValue = !collapseFoldersByDefault;
@@ -1732,7 +1838,7 @@ export function FileManagerPage() {
             {/* Folder tree — re-key on the collapse toggle so flipping it
                 remounts every FolderTreeItem, which re-reads defaultExpanded
                 and makes the preference take effect immediately. */}
-            {folders?.map((folder) => (
+            {sortedFolders?.map((folder) => (
               <FolderTreeItem
                 key={`${folder.id}-${collapseFoldersByDefault ? 'c' : 'e'}`}
                 folder={folder}
@@ -2086,9 +2192,12 @@ export function FileManagerPage() {
                   column couldn't fit (#1325 follow-up reported in chat). */}
               <div className="bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary overflow-x-auto">
                 {/* List header - hidden on mobile, show simplified on small screens.
-                    The trailing column is `min-content` so it sizes to the widest
-                    action-icon strip across all rows (sliced 3MF = 7 icons ~220px). */}
-                <div className={`hidden sm:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_min-content]' : 'grid-cols-[auto_1fr_100px_100px_100px_min-content]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
+                    Trailing actions column is fixed at 220px (sliced 3MF = 7 icons
+                    ~220px). It used to be `min-content`, but header + body are sibling
+                    grids that compute `min-content` independently — the header's empty
+                    trailing div resolved to 0px, leaving body columns shifted left of
+                    their headers. Fixed width keeps header and body in lockstep. */}
+                <div className={`hidden sm:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_220px]' : 'grid-cols-[auto_1fr_100px_100px_100px_220px]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
                   <div className="w-6" />
                   <div>{t('common.name')}</div>
                   {authEnabled && <div>{t('fileManager.uploadedBy', { defaultValue: 'Uploaded By' })}</div>}
@@ -2101,7 +2210,7 @@ export function FileManagerPage() {
                 {filteredAndSortedFiles.map((file) => (
                   <div
                     key={file.id}
-                    className={`grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_min-content]' : 'grid-cols-[auto_1fr_100px_100px_100px_min-content]'} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
+                    className={`grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_220px]' : 'grid-cols-[auto_1fr_100px_100px_100px_220px]'} gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
                       selectedFiles.includes(file.id) ? 'bg-bambu-green/10' : ''
                     }`}
                     onClick={() => handleFileSelect(file.id)}
@@ -2338,8 +2447,12 @@ export function FileManagerPage() {
       {showUploadModal && (
         <FileUploadModal
           folderId={selectedFolderId}
-          onClose={() => setShowUploadModal(false)}
+          onClose={() => {
+            setShowUploadModal(false);
+            setDroppedFiles([]);
+          }}
           onUploadComplete={handleUploadComplete}
+          initialFiles={droppedFiles.length > 0 ? droppedFiles : undefined}
         />
       )}
 

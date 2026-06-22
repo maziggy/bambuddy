@@ -64,20 +64,23 @@ async def _turn_off_linked_plugs(printer_id: int) -> None:
 
 
 async def _notify(printer_id: int, printer_name: str, task_name: str, score: float, action: str) -> None:
+    """Fire the AI Failure Detection notification (#1794).
+
+    Routed to its own event in 0.2.5b1; previously rode the multiplexed
+    on_printer_error toggle, which made it indistinguishable from HMS
+    hardware errors in the UI.
+    """
     from backend.app.services.notification_service import notification_service
 
-    detail = (
-        f"Possible print failure detected on '{task_name or 'current job'}' "
-        f"(confidence {score:.2f}). Action taken: {action}."
-    )
     async with async_session() as db:
         try:
-            await notification_service.on_printer_error(
+            await notification_service.on_ai_failure_detection(
                 printer_id=printer_id,
                 printer_name=printer_name,
-                error_type="ai_failure_detection",
+                task_name=task_name,
+                confidence=score,
+                action=action,
                 db=db,
-                error_detail=detail,
             )
         except Exception as e:
             logger.error("Obico notify failed for printer %s: %s", printer_id, e)

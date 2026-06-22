@@ -138,6 +138,9 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
             {provider.on_printer_error && (
               <span className="px-2 py-0.5 bg-rose-500/20 text-rose-400 text-xs rounded">{t('notifications.error')}</span>
             )}
+            {provider.on_ai_failure_detection && (
+              <span className="px-2 py-0.5 bg-fuchsia-500/20 text-fuchsia-300 text-xs rounded">{t('notifications.aiFailureDetection')}</span>
+            )}
             {provider.on_filament_low && (
               <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-400 text-xs rounded">{t('notifications.lowFilament')}</span>
             )}
@@ -363,6 +366,17 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                   <Toggle
                     checked={provider.on_printer_error}
                     onChange={(checked) => updateMutation.mutate({ on_printer_error: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">{t('notifications.aiFailureDetection')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.aiFailureDetectionDescription')}</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_ai_failure_detection ?? false}
+                    onChange={(checked) => updateMutation.mutate({ on_ai_failure_detection: checked })}
                   />
                 </div>
 

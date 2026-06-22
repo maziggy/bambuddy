@@ -158,6 +158,16 @@ export default {
       bed: 'Bed',
       chamber: 'Chamber',
     },
+    heaterHistory: {
+      title: 'Heater History',
+      openLabel: 'View heater history',
+      nozzle: 'Nozzle',
+      nozzle2: 'Nozzle 2',
+      bed: 'Bed',
+      chamber: 'Chamber',
+      error: 'Failed to load history',
+      empty: 'No data recorded yet',
+    },
     progress: '{{percent}}% complete',
     timeRemaining: '{{time}} remaining',
     deleteConfirm: 'Are you sure you want to delete "{{name}}"?',
@@ -172,6 +182,7 @@ export default {
       status: 'Status',
       model: 'Model',
       location: 'Location',
+      eta: 'ETA',
       ascending: 'Sort ascending',
       descending: 'Sort descending',
     },
@@ -225,6 +236,23 @@ export default {
     },
     // Maintenance
     maintenanceUpToDate: 'All maintenance up to date - Click to view',
+    // Maintenance Mode (#1476) — operator-flipped "out of service" state.
+    // Distinct from the scheduled-maintenance dashboard above; this one
+    // wraps the backend is_active flag and stops MQTT + queue dispatch.
+    maintenance: {
+      title: 'In Maintenance',
+      subtitle: 'This printer is paused — not connected, not eligible for the queue, not sending notifications.',
+      pillLabel: 'Maintenance',
+      exitButton: 'Exit maintenance',
+      menuEnter: 'Enter maintenance mode',
+      menuExit: 'Exit maintenance mode',
+      toastEntered: '{{name}} is now in maintenance mode',
+      toastExited: '{{name}} is back online',
+      confirmMidPrintTitle: 'Enter maintenance mode mid-print?',
+      confirmMidPrintMessage: '{{name}} is currently printing. Entering maintenance mode will disconnect MQTT and stop progress tracking and completion notifications for this job. Continue?',
+      editFieldLabel: 'Maintenance mode',
+      editFieldHelp: 'When on, this printer is paused from MQTT, queue dispatch and notifications — useful for repair, parallel Bambuddy installs, or temporary suspension.',
+    },
     // Chamber light
     chamberLightOn: 'Turn on chamber light',
     chamberLightOff: 'Turn off chamber light',
@@ -515,6 +543,27 @@ export default {
       startingDrying: 'Starting drying...',
       stoppingDrying: 'Stopping drying...',
       rotateTray: 'Rotate spool during drying',
+    },
+    // AMS Filament Backup status badge (printer-wide auto-switch to another spool)
+    amsBackup: {
+      titleOn: 'AMS Filament Backup is ON. Click to disable.',
+      titleOff: 'AMS Filament Backup is OFF. Click to enable.',
+      titleUnknown: 'AMS Filament Backup status unavailable on this printer.',
+      toastEnabled: 'AMS Filament Backup enabled',
+      toastDisabled: 'AMS Filament Backup disabled',
+      modalTitle: 'AMS Filament Backup',
+      modalHelp: 'When the active slot runs out, the printer cycles through any matching same-preset, same-colour slots in this order.',
+      modalNoSlots: 'No filament loaded.',
+      modalNoPairs: 'No backup pairs — no two slots share the same filament profile and colour.',
+      extruderRightShort: 'R',
+      extruderLeftShort: 'L',
+      stateOn: 'Enabled',
+      stateOff: 'Disabled',
+      stateUnknown: 'Unsupported on this printer',
+    },
+    activeJobSlot: {
+      title: 'This slot is filament {{n}} in the active print',
+      ariaLabel: 'Active print slot {{n}}',
     },
     // Filaments section
     filaments: 'Filaments',
@@ -1032,6 +1081,7 @@ export default {
       ungroup: 'Ungroup',
       ungroupConfirmTitle: 'Ungroup batch?',
       ungroupConfirmMessage: 'The items will stay in the queue but no longer be grouped together.',
+      dragGroup: 'Drag group',
     },
     // Tabs
     tabs: {
@@ -1055,6 +1105,8 @@ export default {
     // Drag ghost label when multi-dragging
     dragGhost: {
       multiCount: '{{count}} items',
+      batch: '{{name}} ({{count}} copy)',
+      batch_plural: '{{name}} ({{count}} copies)',
     },
     // Sections
     sections: {
@@ -1728,6 +1780,7 @@ export default {
     disableFilamentWarningsDesc: 'Don\'t show warnings about insufficient filament when printing or queueing',
     preferLowestFilament: 'Prefer lowest remaining filament',
     preferLowestFilamentDesc: 'When multiple spools match, use the one with the least filament remaining',
+    preferLowestFilamentBackupNote: 'Only takes effect when AMS Filament Backup is enabled on the printer — otherwise the printer cannot switch to a second spool when the picked one runs out.',
     trackingModeBuiltIn: 'Built-in Inventory',
     trackingModeBuiltInDesc: 'RFID auto-matching and usage tracking included',
     trackingModeSpoolmanDesc: 'External filament management server',
@@ -1853,6 +1906,10 @@ export default {
     apiKeyCreated: 'API Key Created Successfully',
     apiKeyCopyWarning: "Copy this key now - it won't be shown again!",
     useInApiBrowser: 'Use in API Browser',
+    apiKeyQrButton: 'QR code',
+    apiKeyQrTitle: 'Scan to configure',
+    apiKeyQrCaption: 'Scan with your mobile app to add this server and API key.',
+    apiKeyQrWarning: "Contains your secret API key — don't share or screenshot it where others can see.",
     createNewApiKey: 'Create New API Key',
     keyName: 'Key Name',
     keyNamePlaceholder: 'e.g., Home Assistant, OctoPrint',
@@ -1961,6 +2018,10 @@ export default {
     dryingPresets: 'Drying Presets',
     dryingPresetsDescription: 'Temperature and duration per filament type. AMS 2 Pro uses lower temps, AMS-HT supports higher temps.',
     dryingFilament: 'Filament',
+    humidityThresholds: 'Humidity Thresholds',
+    humidityThresholdsDescription: 'Per-filament humidity trigger for auto-drying and alarms. Mixed loads in one AMS use the lowest threshold.',
+    humidityThresholdCol: 'Threshold',
+    humidityThresholdDefault: 'Default (unknown types)',
     printModal: 'Print Modal',
     expandCustomMapping: 'Expand custom mapping by default',
     expandCustomMappingDescription: 'When printing to multiple printers, show per-printer AMS mapping expanded',
@@ -2282,6 +2343,8 @@ export default {
     releaseNotes: 'Release Notes',
     updateViaDocker: 'Update via Docker Compose:',
     updateViaHomeAssistant: 'Updates are managed by the Home Assistant Supervisor. Open Settings → Add-ons → Bambuddy in Home Assistant to install the new version.',
+    updateViaWindowsInstaller: 'Windows installations are updated by re-running the installer. Download the new version below — your data, settings and printers are preserved.',
+    downloadWindowsInstaller: 'Download installer for v{{version}}',
     installUpdate: 'Install Update',
     latestVersionRunning: "You're running the latest version",
     failedToCheckUpdates: 'Failed to check for updates: {{error}}',
@@ -3242,6 +3305,7 @@ export default {
     link: 'Link',
     dragDropFiles: 'Drag & drop files here',
     dropFilesHere: 'Drop files here',
+    releaseToUpload: 'Release to upload',
     orClickToBrowse: 'or click to browse',
     allFileTypesSupported: 'All file types supported. ZIP files will be extracted.',
     zipFilesDetected: 'ZIP files detected',
@@ -3286,6 +3350,9 @@ export default {
     collapse: 'Collapse',
     collapseFoldersByDefault: 'Collapse folders by default',
     expandFoldersByDefault: 'Expand folders by default',
+    folderSort: 'Sort folders',
+    folderSortByName: 'By name',
+    folderSortByActivity: 'By recent activity',
     dragToResizeTooltip: 'Drag to resize, double-click to reset',
     searchFiles: 'Search files...',
     allTypes: 'All types',
@@ -3592,6 +3659,18 @@ export default {
     imageName: 'Image Name',
     platform: 'Platform',
     architecture: 'Architecture',
+  },
+
+  // Sponsor surface (System page)
+  sponsors: {
+    sectionTitle: 'Independent & community-funded',
+    tagline: 'Bambuddy is free and stays that way because people choose to support it. No VC, no cloud lock-in.',
+    viewSupporters: 'View supporters',
+    toastPrints: "You've completed {{count}} prints with Bambuddy. Bambuddy stays free thanks to its supporters.",
+    toastCost: "You've tracked {{total}} in filament with Bambuddy. See who keeps the project independent.",
+    toastArchives: '{{count}} prints archived with Bambuddy. See who keeps it independent.',
+    toastAnniversary: 'One year with Bambuddy! See who keeps the project independent.',
+    toastVersionUpdate: 'Updated to v{{version}}. Bambuddy stays free thanks to its supporters.',
   },
 
   // Library (K Profiles)
@@ -4977,6 +5056,8 @@ export default {
     progressMilestonesDescription: 'Notify at 25%, 50%, 75%',
     printerOffline: 'Printer Offline',
     printerError: 'Printer Error',
+    aiFailureDetection: 'AI Failure Detection',
+    aiFailureDetectionDescription: 'Notify when Obico AI detects a possible print failure',
     lowFilamentLabel: 'Low Filament',
     maintenanceDue: 'Maintenance Due',
     maintenanceDueDescription: 'Notify when maintenance is needed',

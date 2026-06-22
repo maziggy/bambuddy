@@ -74,6 +74,12 @@ DEFAULT_TEMPLATES = [
         "body_template": "{printer}\n{error_detail}",
     },
     {
+        "event_type": "ai_failure_detection",
+        "name": "AI Failure Detection",
+        "title_template": "Possible Print Failure Detected",
+        "body_template": "{printer}: {task_name}\nConfidence: {confidence}\nAction taken: {action}",
+    },
+    {
         "event_type": "plate_not_empty",
         "name": "Plate Not Empty",
         "title_template": "Plate Not Empty - Print Paused",

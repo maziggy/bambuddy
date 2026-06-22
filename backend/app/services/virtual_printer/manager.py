@@ -289,9 +289,10 @@ class VirtualPrinterInstance:
         """Handle print command from MQTT.
 
         Captures the slicer's project_file options (`timelapse`, `bed_leveling`,
-        `flow_cali`, `vibration_cali`, `layer_inspect`, `use_ams`) so the
-        VP-queue path can inherit them when adding the item to the queue,
-        rather than falling back to the global default settings (#1403).
+        `flow_cali`, `vibration_cali`, `layer_inspect`, `use_ams`, plus the
+        H2C rack-pick `nozzle_mapping`) so the VP-queue path can inherit them
+        when adding the item to the queue, rather than falling back to the
+        global default settings (#1403, #1780).
         Only queue mode consumes the capture; archive / review / proxy
         modes ignore the print command, so we skip the stash there to keep
         the dict from accumulating one entry per print over the VP's
@@ -301,6 +302,16 @@ class VirtualPrinterInstance:
         moment after the synthetic project_file ack — for every non-proxy
         mode — so the slicer's "Downloading" UI releases on the slicer's
         FTP-first-then-MQTT send order.
+
+        ``filename`` is the slicer's ``subtask_name`` (bare model name, no
+        extension) — used verbatim for `_schedule_finish_release` because
+        push_status echoes it back to the slicer as gcode_file / subtask_name.
+        The queue-side stash key is derived from ``data["file"]`` (the FTP
+        filename with extension) so `_add_to_print_queue`'s
+        ``file_path.name`` lookup matches; falls back to ``filename`` when
+        ``data["file"]`` is absent (legacy slicers / non-3MF uploads).
+        Stash/lookup mismatch was the #1780 root cause — every captured field
+        silently fell back to settings defaults on every Bambu Studio "Send".
         """
         logger.info("[VP %s] Print command for: %s", self.name, filename)
         mode = normalize_vp_mode(self.mode)
@@ -308,6 +319,12 @@ class VirtualPrinterInstance:
             self._schedule_finish_release(filename)
         if mode != VP_MODE_QUEUE:
             return
+        # Stash key must match `_add_to_print_queue`'s lookup, which uses
+        # `file_path.name` (FTP filename WITH extension). The slicer's
+        # `subtask_name` (== this method's `filename` arg) is the bare model
+        # name, no extension — using it as the stash key was the #1780 root
+        # cause.
+        stash_key = data.get("file") or filename
         # Drop the oldest stash if the cache is growing — happens when the
         # slicer sends project_file for a filename whose FTP upload was
         # rejected / cancelled / non-3MF, so _add_to_print_queue's pop
@@ -321,8 +338,8 @@ class VirtualPrinterInstance:
                 logger.debug("[VP %s] Evicted stale slicer options for %s", self.name, stale_key)
             except StopIteration:
                 pass
-        self._slicer_print_options[filename] = dict(data)
-        event = self._slicer_print_options_events.get(filename)
+        self._slicer_print_options[stash_key] = dict(data)
+        event = self._slicer_print_options_events.get(stash_key)
         if event:
             event.set()
 
@@ -525,6 +542,18 @@ class VirtualPrinterInstance:
                 slicer_opts = None
             finally:
                 self._slicer_print_options_events.pop(file_path.name, None)
+        # If the cache still misses, queued workflow flags / nozzle pick will
+        # silently fall back to settings defaults. Surface the missed key so a
+        # future stash/lookup mismatch (the #1780 root cause) is obvious in
+        # the log instead of needing a wire capture to diagnose.
+        if slicer_opts is None:
+            logger.debug(
+                "[VP %s] No slicer options cached for %r (cache keys: %s); "
+                "workflow flags + nozzle pick will fall back to settings defaults.",
+                self.name,
+                file_path.name,
+                sorted(self._slicer_print_options.keys()),
+            )
 
         try:
             import json
@@ -572,6 +601,41 @@ class VirtualPrinterInstance:
                     "layer_inspect", _bool_setting(await get_setting(db, "default_layer_inspect"), False)
                 )
                 timelapse = _slicer_or("timelapse", _bool_setting(await get_setting(db, "default_timelapse"), False))
+
+                # H2C dual-nozzle-rack slicer-pick preservation (#1780).
+                # BambuStudio's project_file MQTT command for rack-swap models
+                # (O1C2 today) carries `nozzle_mapping` — a per-filament array
+                # of physical nozzle position IDs (`list[int]`). Forward it
+                # verbatim onto the queue item so the dispatcher can replay it
+                # in its own project_file command. Without this the H2C
+                # firmware falls back to "last matching nozzle" auto-pick and
+                # ignores the user's Bambu Studio choice. Every other model
+                # has it absent from slicer_opts, so the capture is a
+                # transparent no-op there. (`nozzles_info` was also captured
+                # in the original fix but BambuStudio never actually sends it
+                # — verified via wire capture on H2C — so only `nozzle_mapping`
+                # is forwarded now.)
+                nozzle_mapping_json: str | None = None
+                if slicer_opts is not None:
+                    raw = slicer_opts.get("nozzle_mapping")
+                    if raw is not None:
+                        # BambuStudio's NetworkAgent embeds this as parsed
+                        # JSON in the project_file body (matching the
+                        # ams_mapping shape Bambuddy already consumes as
+                        # list[int]). Accept a JSON-encoded string defensively
+                        # in case any path arrives stringified.
+                        if isinstance(raw, str):
+                            try:
+                                raw = json.loads(raw)
+                            except json.JSONDecodeError:
+                                logger.warning(
+                                    "[VP %s] Slicer nozzle_mapping is unparseable JSON, dropping: %r",
+                                    self.name,
+                                    raw,
+                                )
+                                raw = None
+                        if raw is not None:
+                            nozzle_mapping_json = json.dumps(raw)
 
                 service = ArchiveService(db)
                 archive = await service.archive_print(
@@ -675,6 +739,11 @@ class VirtualPrinterInstance:
                             # gcode_snippets are configured for the target model, so it's
                             # effectively "inject when enabled AND snippets exist".
                             gcode_injection=self.gcode_injection,
+                            # H2C rack-swap slicer pick (#1780). Captured above;
+                            # stamped on every plate so a multi-plate Send All keeps
+                            # the same nozzle pick across plates rather than only the
+                            # first one (mirrors the #1697 / #1188 per-plate loop fix).
+                            nozzle_mapping=nozzle_mapping_json,
                         )
                         db.add(queue_item)
                         await db.flush()  # populate queue_item.id before logging

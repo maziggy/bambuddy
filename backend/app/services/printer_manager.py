@@ -565,8 +565,15 @@ class PrinterManager:
         timelapse: bool = False,
         use_ams: bool = True,
         nozzle_offset_cali: bool = False,
+        nozzle_mapping: str | None = None,
     ) -> bool:
-        """Start a print on a connected printer."""
+        """Start a print on a connected printer.
+
+        ``nozzle_mapping`` is an opaque JSON string captured from BambuStudio's
+        project_file MQTT command (H2C rack-swap slicer pick preservation,
+        #1780). It rides through to the MQTT client untouched; the dispatch
+        builder there parses + injects it only on dual-nozzle models.
+        """
         caller = traceback.extract_stack(limit=3)[0]
         logger.info(
             "PRINT COMMAND: printer=%s, file=%s, caller=%s:%s:%s",
@@ -588,6 +595,7 @@ class PrinterManager:
                 layer_inspect=layer_inspect,
                 use_ams=use_ams,
                 nozzle_offset_cali=nozzle_offset_cali,
+                nozzle_mapping=nozzle_mapping,
             )
         return False
 
@@ -1038,6 +1046,10 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
         "wifi_signal": state.wifi_signal,
         "wired_network": state.wired_network,
         "door_open": state.door_open,
+        # AMS Filament Backup state (auto-switch to second spool). Tri-state:
+        # True / False / None. None = unknown or unsupported (A1 family). UI
+        # uses this to drive the small status icon next to the AMS drying icon.
+        "ams_filament_backup": state.ams_filament_backup,
         # Calibration stage tracking
         "stg_cur": state.stg_cur,
         "stg_cur_name": get_derived_status_name(state, model),

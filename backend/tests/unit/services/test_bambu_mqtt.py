@@ -5081,6 +5081,111 @@ class TestStartPrintRecordsDispatchedPlate:
         assert mqtt_client.state.dispatched_subtask is None
 
 
+class TestStartPrintNozzleMappingDispatch:
+    """H2C dual-nozzle-rack (#1780) — nozzle_mapping on dispatch.
+
+    BambuStudio's project_file MQTT command for O1C2 carries a per-filament
+    physical nozzle position ID array (`nozzle_mapping`). Without forwarding
+    it, the H2C firmware falls back to "last matching nozzle type" auto-pick
+    and ignores the user's slicer choice. Tests pin the gate, the parse, the
+    no-op cases, and the malformed-JSON safety net.
+
+    The original #1780 attempt also captured `nozzles_info` but a wire capture
+    on H2C confirmed BambuStudio never sends that field — the capture/dispatch
+    paths for it were dropped in the same release.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST_O1C2",
+            access_code="12345678",
+        )
+        client._client = MagicMock()
+        client.state.connected = True
+        return client
+
+    def _published_print_cmd(self, mqtt_client):
+        call_args = mqtt_client._client.publish.call_args
+        return json.loads(call_args[0][1])["print"]
+
+    def test_dual_nozzle_includes_nozzle_mapping(self, mqtt_client):
+        """Dual-nozzle + nozzle_mapping present → parsed JSON array injected
+        verbatim onto the dispatched project_file command."""
+        mqtt_client._is_dual_nozzle = True
+
+        mqtt_client.start_print(
+            "test.3mf",
+            nozzle_mapping=json.dumps([16, -1, -1, 1, -1, -1, -1, -1]),
+        )
+
+        cmd = self._published_print_cmd(mqtt_client)
+        # List, not string — the wire shape must match BambuStudio's.
+        assert cmd["nozzle_mapping"] == [16, -1, -1, 1, -1, -1, -1, -1]
+
+    def test_single_nozzle_omits_nozzle_mapping_even_if_set(self, mqtt_client):
+        """A single-nozzle printer must NOT emit the rack field even if the
+        caller passes it (defense-in-depth — the queue item could legitimately
+        carry a stale capture from before a model change)."""
+        mqtt_client._is_dual_nozzle = False
+        mqtt_client.model = "P1S"  # single-nozzle
+
+        mqtt_client.start_print(
+            "test.3mf",
+            nozzle_mapping=json.dumps([16, 0, 19]),
+        )
+
+        cmd = self._published_print_cmd(mqtt_client)
+        assert "nozzle_mapping" not in cmd
+
+    def test_dual_nozzle_no_field_no_injection(self, mqtt_client):
+        """Dual-nozzle printer + no slicer pick (NULL on queue item) → command
+        carries no nozzle_mapping. The firmware then runs its normal
+        auto-pick, which is the pre-fix behaviour for any non-O1C2 dual-
+        nozzle model that has no rack to disambiguate against anyway."""
+        mqtt_client._is_dual_nozzle = True
+
+        mqtt_client.start_print("test.3mf", nozzle_mapping=None)
+
+        cmd = self._published_print_cmd(mqtt_client)
+        assert "nozzle_mapping" not in cmd
+
+    def test_malformed_nozzle_mapping_is_logged_and_omitted(self, mqtt_client, caplog):
+        """Invalid JSON on the queue item must NOT block the dispatch. Log a
+        warning and let the firmware auto-pick — the failure mode is just
+        the pre-fix behaviour, not a worse one. Fail-open is correct here
+        because the alternative would silently brick every dispatch on a
+        single bad row."""
+        mqtt_client._is_dual_nozzle = True
+
+        with caplog.at_level("WARNING"):
+            result = mqtt_client.start_print(
+                "test.3mf",
+                nozzle_mapping="not valid json {",
+            )
+
+        assert result is True  # dispatch still proceeded
+        cmd = self._published_print_cmd(mqtt_client)
+        assert "nozzle_mapping" not in cmd
+        assert any("Invalid nozzle_mapping" in rec.message for rec in caplog.records)
+
+    def test_empty_string_field_is_treated_as_absent(self, mqtt_client):
+        """An empty-string column value (legacy data, or a NOT NULL DB
+        recovery shim) must behave the same as NULL — no injection, no
+        parse error log."""
+        mqtt_client._is_dual_nozzle = True
+
+        mqtt_client.start_print("test.3mf", nozzle_mapping="")
+
+        cmd = self._published_print_cmd(mqtt_client)
+        assert "nozzle_mapping" not in cmd
+
+
 class TestFilamentTrackSwitchDetection:
     """Tests for Filament Track Switch (FTS) accessory detection (#1162).
 
@@ -5664,3 +5769,118 @@ class TestPrintRunningObservedCallback:
             "raw_data",
             "ams_mapping",
         }
+
+
+class TestTotalLayersPreservation:
+    """#1771: P1S firmware resets `total_layer_num` to 0 at print end. Without
+    this guard, the usage tracker's split path saw `state.total_layers = 0` at
+    completion and dumped the whole print onto the last spool.
+
+    These tests pin the preservation pattern (mirror of `_last_valid_layer_num`)
+    and the explicit reset on new print start so the previous print's total
+    can't bleed into the next.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        return client
+
+    def test_nonzero_total_layer_num_sets_state(self, mqtt_client):
+        # Baseline: a fresh push with the slicer's total updates state.total_layers.
+        mqtt_client._process_message({"print": {"total_layer_num": 260}})
+        assert mqtt_client.state.total_layers == 260
+
+    def test_zero_total_layer_num_does_not_clobber_cached_value(self, mqtt_client):
+        # Firmware-reset frame: total_layer_num=0 arrives mid- or end-of-print.
+        # The guard must NOT overwrite the previously-captured 260.
+        mqtt_client._process_message({"print": {"total_layer_num": 260}})
+        mqtt_client._process_message({"print": {"total_layer_num": 0}})
+        assert mqtt_client.state.total_layers == 260
+
+    def test_print_start_explicitly_resets_total_layers(self, mqtt_client):
+        # Without the explicit reset on print start, the previous print's total
+        # would persist into the new print until its first total_layer_num push
+        # arrived — which is exactly the kind of cross-print bleed the
+        # preservation guard above otherwise opens up.
+        mqtt_client._process_message({"print": {"total_layer_num": 260}})
+        assert mqtt_client.state.total_layers == 260
+
+        # Simulate the new-print-start trigger shape (is_new_print path):
+        # state was previously RUNNING on an old file; now we observe a
+        # different file going RUNNING.
+        mqtt_client._previous_gcode_state = "RUNNING"
+        mqtt_client._previous_gcode_file = "/data/Metadata/old_print.gcode"
+        mqtt_client._was_running = True
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "RUNNING",
+                    "gcode_file": "/data/Metadata/new_print.gcode",
+                    "subtask_name": "new_print",
+                }
+            }
+        )
+        assert mqtt_client.state.total_layers == 0
+
+
+class TestAmsFilamentBackupHoldTimer:
+    """Regression: stale push_status arriving within the hold window after a
+    toggle command MUST NOT flip ams_filament_backup back to the printer's
+    old cfg. Same race-guard pattern xcam uses for spaghetti / first-layer
+    detector settings.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from unittest.mock import MagicMock
+
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        # Pretend we're connected so _set_print_option actually publishes.
+        client.state.connected = True
+        client._client = MagicMock()
+        return client
+
+    def test_cfg_push_with_old_value_is_ignored_during_hold(self, mqtt_client):
+        # User toggled ON via badge → command sent → state optimistically set.
+        mqtt_client.set_ams_filament_backup(True)
+        assert mqtt_client.state.ams_filament_backup is True
+
+        # Within the 3 s hold window, a stale push_status arrives still showing
+        # the printer's old cfg (bit 18 cleared). The parser must NOT flip our
+        # optimistic state back to OFF — otherwise the badge flickers ON→OFF→ON.
+        mqtt_client._process_message({"print": {"cfg": "C0340BC219"}})  # bit18=0
+        assert mqtt_client.state.ams_filament_backup is True
+
+    def test_cfg_push_after_hold_expires_overrides_state(self, mqtt_client):
+        # After the hold window, the printer's real cfg becomes authoritative
+        # so a genuine slicer-side or display toggle that we did NOT initiate
+        # propagates correctly.
+        mqtt_client.set_ams_filament_backup(True)
+        mqtt_client._xcam_hold_start["print_option_auto_switch_filament"] = time.time() - 10.0
+
+        mqtt_client._process_message({"print": {"cfg": "C0340BC219"}})  # bit18=0
+        assert mqtt_client.state.ams_filament_backup is False
+
+    def test_cfg_push_with_matching_value_during_hold_is_a_noop(self, mqtt_client):
+        # Same-value push during hold doesn't trigger the change branch at all
+        # (no state mutation, no log spam, hold timer stays armed).
+        mqtt_client.set_ams_filament_backup(True)
+        before_hold = mqtt_client._xcam_hold_start["print_option_auto_switch_filament"]
+
+        mqtt_client._process_message({"print": {"cfg": "C0340FC219"}})  # bit18=1
+        assert mqtt_client.state.ams_filament_backup is True
+        # Hold timer still armed — sub-second push didn't reset it.
+        assert mqtt_client._xcam_hold_start["print_option_auto_switch_filament"] == before_hold

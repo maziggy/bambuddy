@@ -19,6 +19,7 @@ const mockPrinters = [
     access_code: '12345678',
     model: 'X1C',
     enabled: true,
+    is_active: true,
     nozzle_diameter: 0.4,
     nozzle_type: 'hardened_steel',
     location: 'Workshop',
@@ -34,6 +35,7 @@ const mockPrinters = [
     access_code: '87654321',
     model: 'P1S',
     enabled: false,
+    is_active: true,
     nozzle_diameter: 0.4,
     nozzle_type: 'stainless_steel',
     location: null,
@@ -239,6 +241,73 @@ describe('PrintersPage', () => {
 
       await waitFor(() => {
         expect(temperatureRequests).toContainEqual({ target: '260', nozzle: '0' });
+      });
+    });
+  });
+
+  describe('fan badges', () => {
+    // Chamber fan only exists on enclosed Bambu models. Open-frame printers
+    // (A1, A1 Mini, A2L, P1P) have no chamber fan — the firmware reports
+    // big_fan2_speed as 0 there and the widget would be dead UI.
+    const statusWithFans = {
+      ...mockPrinterStatus,
+      cooling_fan_speed: 53,
+      big_fan1_speed: 53,
+      big_fan2_speed: 53,
+    };
+
+    const renderWithPrinter = (printer: typeof mockPrinters[number]) => {
+      server.use(
+        http.get('/api/v1/printers/', () => HttpResponse.json([printer])),
+        http.get('/api/v1/printers/:id/status', () => HttpResponse.json(statusWithFans)),
+      );
+      render(<PrintersPage />);
+    };
+
+    it('hides chamber fan badge on A1 Mini (open-frame, no chamber fan)', async () => {
+      renderWithPrinter({ ...mockPrinters[0], model: 'A1 Mini' });
+
+      await waitFor(() => {
+        // Part-cooling badge confirms the fan row rendered.
+        expect(screen.getByTitle('Part Cooling Fan')).toBeInTheDocument();
+      });
+      expect(screen.getByTitle('Auxiliary Fan')).toBeInTheDocument();
+      expect(screen.queryByTitle('Chamber Fan')).not.toBeInTheDocument();
+    });
+
+    it('hides chamber fan badge on A1 (open-frame)', async () => {
+      renderWithPrinter({ ...mockPrinters[0], model: 'A1' });
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Part Cooling Fan')).toBeInTheDocument();
+      });
+      expect(screen.queryByTitle('Chamber Fan')).not.toBeInTheDocument();
+    });
+
+    it('hides chamber fan badge on P1P (open-frame)', async () => {
+      renderWithPrinter({ ...mockPrinters[0], model: 'P1P' });
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Part Cooling Fan')).toBeInTheDocument();
+      });
+      expect(screen.queryByTitle('Chamber Fan')).not.toBeInTheDocument();
+    });
+
+    it('shows chamber fan badge on X1C (enclosed)', async () => {
+      renderWithPrinter({ ...mockPrinters[0], model: 'X1C' });
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Chamber Fan')).toBeInTheDocument();
+      });
+      expect(screen.getByTitle('Part Cooling Fan')).toBeInTheDocument();
+      expect(screen.getByTitle('Auxiliary Fan')).toBeInTheDocument();
+    });
+
+    it('shows chamber fan badge on P1S (enclosed)', async () => {
+      renderWithPrinter({ ...mockPrinters[0], model: 'P1S' });
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Chamber Fan')).toBeInTheDocument();
       });
     });
   });
@@ -468,6 +537,89 @@ describe('PrintersPage', () => {
       // Disabled printers have visual indication
       const disabledPrinter = screen.getByText('P1S Backup').closest('div');
       expect(disabledPrinter).toBeInTheDocument();
+    });
+  });
+
+  describe('maintenance mode (#1476)', () => {
+    // Wraps the backend is_active flag — already gates MQTT, queue dispatch,
+    // scheduler, metrics, picker. These tests pin the UI surface: status
+    // panel swap, pill swap, and the PATCH on toggle.
+    const inMaintenancePrinter = { ...mockPrinters[0], is_active: false };
+
+    it('shows the maintenance status panel instead of the print container', async () => {
+      server.use(
+        http.get('/api/v1/printers/', () => HttpResponse.json([inMaintenancePrinter])),
+        http.get('/api/v1/printers/:id/status', () =>
+          HttpResponse.json({ ...mockPrinterStatus, connected: false }),
+        ),
+      );
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('In Maintenance')).toBeInTheDocument();
+      });
+      // Exit button rendered
+      expect(screen.getByRole('button', { name: /exit maintenance/i })).toBeInTheDocument();
+      // The "No active job" / "Ready to print" copy from the normal status
+      // panel must NOT be present — confirms the swap, not a stacked render.
+      expect(screen.queryByText(/no active job/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/ready to print/i)).not.toBeInTheDocument();
+    });
+
+    it('shows the amber Maintenance pill in the header (no Connected/Offline)', async () => {
+      server.use(
+        http.get('/api/v1/printers/', () => HttpResponse.json([inMaintenancePrinter])),
+        http.get('/api/v1/printers/:id/status', () =>
+          HttpResponse.json({ ...mockPrinterStatus, connected: false }),
+        ),
+      );
+      render(<PrintersPage />);
+
+      // The header pill row contains "Maintenance" exactly once.
+      await waitFor(() => {
+        expect(screen.getAllByText('Maintenance').length).toBeGreaterThan(0);
+      });
+      // No connection diagnostic CTA (that's reserved for involuntary offline).
+      expect(screen.queryByRole('button', { name: /run.*diagnostic/i })).not.toBeInTheDocument();
+    });
+
+    it('PATCHes is_active=true when the Exit button is clicked', async () => {
+      const patchedBodies: unknown[] = [];
+      server.use(
+        http.get('/api/v1/printers/', () => HttpResponse.json([inMaintenancePrinter])),
+        http.get('/api/v1/printers/:id/status', () =>
+          HttpResponse.json({ ...mockPrinterStatus, connected: false }),
+        ),
+        http.patch('/api/v1/printers/:id', async ({ request }) => {
+          const body = await request.json();
+          patchedBodies.push(body);
+          return HttpResponse.json({ ...inMaintenancePrinter, is_active: true });
+        }),
+      );
+      render(<PrintersPage />);
+
+      const exit = await screen.findByRole('button', { name: /exit maintenance/i });
+      fireEvent.click(exit);
+
+      await waitFor(() => {
+        expect(patchedBodies.length).toBeGreaterThan(0);
+      });
+      expect(patchedBodies[0]).toEqual(expect.objectContaining({ is_active: true }));
+    });
+
+    it('renders the regular status panel when is_active=true', async () => {
+      server.use(
+        http.get('/api/v1/printers/', () => HttpResponse.json([{ ...mockPrinters[0], is_active: true }])),
+        http.get('/api/v1/printers/:id/status', () => HttpResponse.json(mockPrinterStatus)),
+      );
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+      // Active printer never shows the maintenance panel.
+      expect(screen.queryByText('In Maintenance')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /exit maintenance/i })).not.toBeInTheDocument();
     });
   });
 

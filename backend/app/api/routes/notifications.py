@@ -47,6 +47,7 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         # Printer status events
         "on_printer_offline": provider.on_printer_offline,
         "on_printer_error": provider.on_printer_error,
+        "on_ai_failure_detection": provider.on_ai_failure_detection,
         "on_filament_low": provider.on_filament_low,
         "on_maintenance_due": provider.on_maintenance_due,
         # AMS environmental alarms (regular AMS)
@@ -127,6 +128,7 @@ async def create_notification_provider(
         # Printer status events
         on_printer_offline=provider_data.on_printer_offline,
         on_printer_error=provider_data.on_printer_error,
+        on_ai_failure_detection=provider_data.on_ai_failure_detection,
         on_filament_low=provider_data.on_filament_low,
         on_maintenance_due=provider_data.on_maintenance_due,
         # AMS environmental alarms (regular AMS)

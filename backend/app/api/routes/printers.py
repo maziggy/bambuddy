@@ -724,6 +724,7 @@ async def get_printer_status(
         heatbreak_fan_speed=state.heatbreak_fan_speed,
         firmware_version=state.firmware_version,
         developer_mode=state.developer_mode if state else None,
+        ams_filament_backup=state.ams_filament_backup if state else None,
         awaiting_plate_clear=printer_manager.is_awaiting_plate_clear(printer_id),
         supports_drying=supports_drying(printer.model, state.firmware_version),
         supports_chamber_heater=supports_chamber_heater(printer.model),
@@ -1872,6 +1873,56 @@ async def set_print_option(
         "print_halt": print_halt,
         "sensitivity": sensitivity,
     }
+
+
+@router.post("/{printer_id}/ams-backup")
+async def set_ams_backup(
+    printer_id: int,
+    enabled: bool,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Toggle AMS Filament Backup (auto-switch to a backup spool when one runs out)."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client or not client.state.connected:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.set_ams_filament_backup(enabled)
+    if not success:
+        raise HTTPException(500, "Failed to send command to printer")
+
+    return {"success": True, "ams_filament_backup": enabled}
+
+
+@router.get("/{printer_id}/inventory-remain")
+async def get_inventory_remain(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Per-globalTrayId remaining grams for slots bound to an inventory spool.
+
+    Mirrors `_build_inventory_remain_overrides` server-side so the PrintModal
+    client can apply the same two-tier "Prefer Lowest Remaining Filament" sort
+    the dispatcher uses (#1766). Works for both internal inventory and
+    Spoolman; unbound slots are absent from the map (client falls back to the
+    printer's MQTT `remain` for those).
+    """
+    from backend.app.services.print_scheduler import PrintScheduler
+
+    state = printer_manager.get_status(printer_id)
+    if not state:
+        return {"inventory_remain_g": {}}
+
+    scheduler = PrintScheduler()
+    loaded = scheduler._build_loaded_filaments(state)
+    overrides = await scheduler._build_inventory_remain_overrides(db, printer_id, loaded)
+    return {"inventory_remain_g": {str(k): v for k, v in overrides.items()}}
 
 
 # ============================================

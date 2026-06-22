@@ -1293,6 +1293,14 @@ class SimpleMQTTServer:
                     file_3mf = print_data.get("file", filename)
                     await self._send_print_response(writer, sequence_id, file_3mf, serial=client_serial)
                     if self.on_print_command:
+                        # `filename` is the slicer's `subtask_name` (bare model
+                        # name, no extension). Pass it through verbatim — the
+                        # `_schedule_finish_release` chain echoes it back as
+                        # gcode_file + subtask_name in push_status, and the
+                        # slicer matches against its own subtask_name there.
+                        # The FTP filename (with extension) is in print_data
+                        # under "file" for the queue-stash side to use as its
+                        # own key matching `_add_to_print_queue`'s lookup.
                         await self._notify_print_command(filename, print_data)
                     handled_locally = True
 

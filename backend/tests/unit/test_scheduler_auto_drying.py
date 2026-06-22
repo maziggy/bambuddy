@@ -884,3 +884,124 @@ class TestBlockForDryingBugFix(_DryingTestBase):
 
         # Should NOT start drying — block mode with pending items
         mock_pm.send_drying_command.assert_not_called()
+
+
+class TestResolveHumidityThreshold:
+    """Per-filament humidity threshold resolver (#1605).
+
+    Resolves the trigger threshold for an AMS unit from the loaded tray types.
+    Mixed loads use the lowest (most restrictive) value. Empty / unloaded trays
+    contribute no constraint; falls back to the global ``ams_humidity_fair``
+    when no per-type overrides are configured.
+    """
+
+    def test_no_overrides_falls_back_to_global(self):
+        """Empty overrides map → caller's global fallback is used verbatim."""
+        result = PrintScheduler.resolve_humidity_threshold([{"tray_type": "PLA"}], {}, 60)
+        assert result == 60
+
+    def test_single_known_type_uses_override(self):
+        """Single PLA tray with override = 50 returns 50."""
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{"tray_type": "PLA Basic"}],
+            {"default": 60, "PLA": 50},
+            60,
+        )
+        assert result == 50
+
+    def test_mixed_load_picks_lowest(self):
+        """Mixed PLA (60) + Nylon (20) → most restrictive = 20."""
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{"tray_type": "PLA Basic"}, {"tray_type": "PA Glass"}],
+            {"default": 60, "PLA": 60, "PA": 20},
+            60,
+        )
+        assert result == 20
+
+    def test_unknown_type_uses_default_key(self):
+        """Tray type not in the map falls back to the 'default' key, not the
+        caller fallback. Lets the user tune unknown-filament behavior."""
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{"tray_type": "EXOTIC_WOOD"}],
+            {"default": 40, "PLA": 60},
+            999,
+        )
+        assert result == 40
+
+    def test_empty_tray_slots_skipped(self):
+        """Empty tray_type strings (unloaded slots) contribute no constraint."""
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{"tray_type": ""}, {"tray_type": "PLA"}],
+            {"default": 30, "PLA": 50},
+            60,
+        )
+        assert result == 50
+
+    def test_all_empty_trays_uses_default_key(self):
+        """No loaded trays at all → falls back to default key (or fallback if
+        no overrides). Matches the empty-AMS behavior of the existing alarm
+        site so an empty AMS still alarms at the user's default rate."""
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{"tray_type": ""}, {}],
+            {"default": 30, "PLA": 50},
+            60,
+        )
+        assert result == 30
+
+    def test_filament_name_normalized(self):
+        """Tray types like 'PLA Basic', 'pla basic' all normalize to 'PLA'."""
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{"tray_type": "pla basic"}],
+            {"default": 60, "PLA": 25},
+            60,
+        )
+        assert result == 25
+
+    def test_no_tray_type_field_skipped(self):
+        """Missing tray_type field is treated as empty (unloaded)."""
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{}, {"tray_type": "ASA"}],
+            {"default": 60, "ASA": 30},
+            60,
+        )
+        assert result == 30
+
+
+class TestGetHumidityThresholds:
+    """The DB-loading helper for ``ams_humidity_thresholds`` (#1605)."""
+
+    @pytest.fixture
+    def scheduler(self):
+        return PrintScheduler()
+
+    @pytest.mark.asyncio
+    async def test_missing_setting_returns_empty(self, scheduler):
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None)))
+        result = await scheduler._get_humidity_thresholds(db)
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_empty_value_returns_empty(self, scheduler):
+        db = AsyncMock()
+        setting = MagicMock(value="")
+        db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=setting)))
+        result = await scheduler._get_humidity_thresholds(db)
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_returns_empty(self, scheduler):
+        db = AsyncMock()
+        setting = MagicMock(value="not json{")
+        db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=setting)))
+        result = await scheduler._get_humidity_thresholds(db)
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_valid_json_normalizes_keys(self, scheduler):
+        """Filament-type keys uppercase; 'default' preserved."""
+        db = AsyncMock()
+        setting = MagicMock(value='{"default": 60, "pla": 50, "ASA": 30, "garbage": "x"}')
+        db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=setting)))
+        result = await scheduler._get_humidity_thresholds(db)
+        assert result == {"default": 60, "PLA": 50, "ASA": 30}

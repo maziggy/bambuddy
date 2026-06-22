@@ -72,6 +72,9 @@ class AppSettings(BaseModel):
         default=35.0, description="Temperature threshold for fair (orange): <= this value, > is red"
     )
     ams_history_retention_days: int = Field(default=30, description="Number of days to keep AMS sensor history data")
+    printer_sensor_history_retention_days: int = Field(
+        default=30, description="Number of days to keep printer heater history data (nozzle / bed / chamber)"
+    )
 
     # Queue auto-drying settings
     queue_drying_enabled: bool = Field(
@@ -88,6 +91,14 @@ class AppSettings(BaseModel):
     drying_presets: str = Field(
         default="",
         description="JSON blob of drying presets per filament type (empty = use built-in defaults)",
+    )
+    ams_humidity_thresholds: str = Field(
+        default="",
+        description=(
+            "JSON blob of per-filament-type humidity trigger thresholds for auto-drying and alarms. "
+            'Shape: {"default": int, "PLA": int, "ASA": int, ...}. '
+            "Empty = fall back to ams_humidity_fair for all types."
+        ),
     )
 
     # Auto-print G-code injection (#422)
@@ -405,10 +416,12 @@ class AppSettingsUpdate(BaseModel):
     ams_temp_good: float | None = None
     ams_temp_fair: float | None = None
     ams_history_retention_days: int | None = None
+    printer_sensor_history_retention_days: int | None = None
     queue_drying_enabled: bool | None = None
     queue_drying_block: bool | None = None
     ambient_drying_enabled: bool | None = None
     drying_presets: str | None = None
+    ams_humidity_thresholds: str | None = None
     per_printer_mapping_expanded: bool | None = None
     date_format: str | None = None
     time_format: str | None = None

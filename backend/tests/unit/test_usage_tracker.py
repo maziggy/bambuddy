@@ -1415,6 +1415,141 @@ class TestTrayChangeSplit:
         assert results[2]["ams_id"] == 0
         assert results[2]["tray_id"] == 2
 
+    @pytest.mark.asyncio
+    async def test_tray_switch_uses_last_layer_num_when_total_layers_reset(self):
+        """#1771 regression: P1S firmware resets `total_layer_num` to 0 at print
+        end; without the cascade the linear fallback collapsed to `0.0` per
+        non-last segment and dumped the whole print onto the last spool. With
+        the fix, `last_layer_num` (the print's last-valid layer captured before
+        the firmware reset) is the substitute denominator.
+
+        Reporter's exact shape: print needed ~260 g, started on a 180 g spool,
+        AMS Backup switched at ~70% through, second spool finished the print.
+        Before fix: spool 1 → 0 g, spool 2 → 260 g (the bug).
+        After fix:  spool 1 → 180 g, spool 2 → 80 g (correct).
+        """
+        spool_a = _make_spool(spool_id=10, label_weight=1000)
+        spool_b = _make_spool(spool_id=20, label_weight=1000)
+        assign_a = _make_assignment(spool_id=10, ams_id=0, tray_id=0)
+        assign_b = _make_assignment(spool_id=20, ams_id=0, tray_id=1)
+        archive = _make_archive(archive_id=171)
+
+        db = _mock_db_sequential([archive, None, assign_a, spool_a, assign_b, spool_b])
+
+        # Firmware reset: state.total_layers is 0 by the time usage_tracker runs.
+        # last_layer_num threaded in from on_print_complete is the survival value.
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            progress=100,
+            layer_num=0,  # also reset
+            tray_now=1,
+            last_loaded_tray=1,
+            total_layers=0,  # the bug trigger
+            tray_change_log=[(0, 0), (1, 180)],  # switched at layer 180 of 260
+        )
+
+        filament_usage = [{"slot_id": 1, "used_g": 260.0, "type": "PLA", "color": ""}]
+        handled_trays: set[tuple[int, int]] = set()
+
+        with (
+            patch("backend.app.core.config.settings") as mock_settings,
+            patch(
+                "backend.app.utils.threemf_tools.extract_filament_usage_from_3mf",
+                return_value=filament_usage,
+            ),
+            patch(
+                "backend.app.utils.threemf_tools.extract_layer_filament_usage_from_3mf",
+                return_value=None,  # No per-layer 3MF data — force linear fallback path
+            ),
+        ):
+            mock_settings.base_dir = MagicMock()
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            mock_settings.base_dir.__truediv__ = MagicMock(return_value=mock_path)
+
+            results = await _track_from_3mf(
+                printer_id=1,
+                archive_id=171,
+                status="completed",
+                print_name="#1771 repro",
+                handled_trays=handled_trays,
+                printer_manager=printer_manager,
+                db=db,
+                last_layer_num=260,  # survives the firmware reset of total_layer_num
+            )
+
+        # Both segments must be attributed correctly.
+        assert len(results) == 2
+        # Segment 1: tray 0, layers 0-180 of 260 → 260 * 180/260 = 180.0 g
+        assert results[0]["ams_id"] == 0
+        assert results[0]["tray_id"] == 0
+        assert results[0]["weight_used"] == 180.0
+        # Segment 2: tray 1, remainder = 260 - 180 = 80.0 g
+        assert results[1]["ams_id"] == 0
+        assert results[1]["tray_id"] == 1
+        assert results[1]["weight_used"] == 80.0
+
+    @pytest.mark.asyncio
+    async def test_tray_switch_equal_split_when_no_layer_info_at_all(self):
+        """Defensive fence: when neither `state.total_layers` nor `last_layer_num`
+        survives (older firmware / edge case), equal-split across segments is the
+        last-resort fallback. Still wrong but BOUNDED — the original bug dumped
+        the whole print weight onto the last segment, which was strictly worse.
+        """
+        spool_a = _make_spool(spool_id=10, label_weight=1000)
+        spool_b = _make_spool(spool_id=20, label_weight=1000)
+        assign_a = _make_assignment(spool_id=10, ams_id=0, tray_id=0)
+        assign_b = _make_assignment(spool_id=20, ams_id=0, tray_id=1)
+        archive = _make_archive(archive_id=172)
+
+        db = _mock_db_sequential([archive, None, assign_a, spool_a, assign_b, spool_b])
+
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            progress=100,
+            layer_num=0,
+            tray_now=1,
+            last_loaded_tray=1,
+            total_layers=0,  # neither source available
+            tray_change_log=[(0, 0), (1, 50)],
+        )
+
+        filament_usage = [{"slot_id": 1, "used_g": 60.0, "type": "PLA", "color": ""}]
+        handled_trays: set[tuple[int, int]] = set()
+
+        with (
+            patch("backend.app.core.config.settings") as mock_settings,
+            patch(
+                "backend.app.utils.threemf_tools.extract_filament_usage_from_3mf",
+                return_value=filament_usage,
+            ),
+            patch(
+                "backend.app.utils.threemf_tools.extract_layer_filament_usage_from_3mf",
+                return_value=None,
+            ),
+        ):
+            mock_settings.base_dir = MagicMock()
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            mock_settings.base_dir.__truediv__ = MagicMock(return_value=mock_path)
+
+            results = await _track_from_3mf(
+                printer_id=1,
+                archive_id=172,
+                status="completed",
+                print_name="no layer info",
+                handled_trays=handled_trays,
+                printer_manager=printer_manager,
+                db=db,
+                last_layer_num=0,  # also unavailable
+            )
+
+        # 2 segments, equal split: 60g / 2 = 30g each. Last segment uses the
+        # `is_last` remainder branch so it stays at 30.0 too.
+        assert len(results) == 2
+        assert results[0]["weight_used"] == 30.0
+        assert results[1]["weight_used"] == 30.0
+
 
 class TestDecodeMqttMapping:
     """Tests for _decode_mqtt_mapping() — snow-encoded MQTT mapping to global tray IDs."""

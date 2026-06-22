@@ -324,6 +324,10 @@ class PrinterStatus(BaseModel):
     firmware_version: str | None = None
     # Developer LAN mode: True = enabled, False = disabled (MQTT encryption), None = unknown
     developer_mode: bool | None = None
+    # AMS Filament Backup ("auto-switch" to a second spool when one runs out).
+    # True = ON, False = OFF, None = unknown / unsupported (A1 family — protocol field
+    # not yet identified). UI treats None as "status unavailable", not as a hard disable.
+    ams_filament_backup: bool | None = None
     # Queue: printer is awaiting the user to acknowledge the build plate is cleared
     # after a finished/failed print. Persisted across restarts (#961).
     awaiting_plate_clear: bool = False

@@ -1145,6 +1145,45 @@ class NotificationService:
             variables=variables,
         )
 
+    async def on_ai_failure_detection(
+        self,
+        printer_id: int,
+        printer_name: str,
+        task_name: str,
+        confidence: float,
+        action: str,
+        db: AsyncSession,
+        image_data: bytes | None = None,
+    ):
+        """Handle AI failure-detection event (Obico spaghetti / print-failure ML).
+
+        Split out of on_printer_error (#1794) so a user can subscribe to AI
+        alerts without also being paged for every HMS hardware code.
+        """
+        providers = await self._get_providers_for_event(db, "on_ai_failure_detection", printer_id)
+        if not providers:
+            return
+
+        variables = {
+            "printer": printer_name,
+            "task_name": task_name or "current job",
+            "confidence": f"{confidence:.2f}",
+            "action": action,
+        }
+
+        title, message = await self._build_message_from_template(db, "ai_failure_detection", variables)
+        await self._send_to_providers(
+            providers,
+            title,
+            message,
+            db,
+            "ai_failure_detection",
+            printer_id,
+            printer_name,
+            image_data=image_data,
+            variables=variables,
+        )
+
     async def on_plate_not_empty(
         self,
         printer_id: int,

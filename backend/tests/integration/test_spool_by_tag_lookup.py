@@ -84,6 +84,16 @@ class TestSpoolByTagLookup:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_tray_uuid_miss_falls_through_to_tag_uid(self, async_client: AsyncClient, spool_factory):
+        """tray_uuid is tried first, but a miss must fall through to tag_uid, not 404."""
+        by_tag = await spool_factory(tag_uid=TAG_UID)
+        unknown_tray = "FF" * 16
+        resp = await async_client.get(f"/api/v1/inventory/spools/by-tag?tray_uuid={unknown_tray}&tag_uid={TAG_UID}")
+        assert resp.status_code == 200
+        assert resp.json()["id"] == by_tag.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_no_identifier_is_400(self, async_client: AsyncClient):
         resp = await async_client.get("/api/v1/inventory/spools/by-tag")
         assert resp.status_code == 400

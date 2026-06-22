@@ -29,13 +29,16 @@ const resources = {
   tr: { translation: tr },
 };
 
+const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'pt-BR', 'tr', 'zh-CN', 'zh-TW'];
+const APPLIANCE_CONSUMED_KEY = 'bambuddy_appliance_locale_consumed';
+
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources,
     fallbackLng: 'en',
-    supportedLngs: ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'pt-BR', 'tr', 'zh-CN', 'zh-TW'],
+    supportedLngs: SUPPORTED_LNGS,
 
     detection: {
       // Order of detection methods
@@ -54,6 +57,38 @@ i18n
       useSuspense: false,
     },
   });
+
+/**
+ * Bambuddy Appliance hook: on the first SPA load after the firstboot wizard
+ * runs, /api/v1/system/appliance returns the locale the user picked. We
+ * apply it once (gated by a localStorage flag) and stop. On non-appliance
+ * installs the endpoint either 404s or returns nulls — silent no-op.
+ *
+ * This runs AFTER i18n.init so the LanguageDetector has already populated a
+ * default; we override that default exactly once for fresh appliances. The
+ * appliance is then "consumed" and the language picker is the only way to
+ * change locale going forward (the wizard ran once; future intent comes from
+ * the running UI).
+ */
+function applyApplianceLocale() {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  if (window.localStorage.getItem(APPLIANCE_CONSUMED_KEY)) return;
+
+  fetch('/api/v1/system/appliance')
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      if (!data || typeof data.locale !== 'string') return;
+      if (!SUPPORTED_LNGS.includes(data.locale)) return;
+      i18n.changeLanguage(data.locale);
+      window.localStorage.setItem(APPLIANCE_CONSUMED_KEY, '1');
+    })
+    .catch(() => {
+      // Endpoint absent or unreachable — non-appliance install or dev environment.
+      // Leave the detector's choice in place.
+    });
+}
+
+applyApplianceLocale();
 
 export default i18n;
 

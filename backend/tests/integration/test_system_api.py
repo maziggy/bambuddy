@@ -473,3 +473,133 @@ class TestSystemHealthAPI:
         ids = [f["signature_id"] for f in result["findings"]]
         assert "ftp-auth-rejected" in ids
         assert result["summary"]["layer8"] >= 1
+
+
+class TestSystemApplianceAPI:
+    """Integration tests for GET /api/v1/system/appliance (appliance locale defaults)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_appliance_endpoint_returns_nulls_when_no_local_toml(
+        self, async_client: AsyncClient, tmp_path, monkeypatch
+    ):
+        """Non-appliance install: file is absent, every field is null."""
+        from backend.app.api.routes import system as system_routes
+
+        absent = tmp_path / "nope.toml"
+        monkeypatch.setattr(
+            system_routes,
+            "read_local_toml",
+            lambda: __import__("backend.app.core.local_config", fromlist=["read_local_toml"]).read_local_toml(absent),
+        )
+
+        response = await async_client.get("/api/v1/system/appliance")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body == {"hostname": None, "timezone": None, "locale": None, "time_synced": None}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_appliance_endpoint_returns_wizard_values(self, async_client: AsyncClient, tmp_path, monkeypatch):
+        """Appliance install: wizard's local.toml values surface verbatim."""
+        from backend.app.api.routes import system as system_routes
+        from backend.app.core import local_config
+
+        toml = tmp_path / "local.toml"
+        toml.write_text('hostname = "workshop-pi"\ntimezone = "Europe/Berlin"\nlocale = "de"\n')
+        monkeypatch.setattr(system_routes, "read_local_toml", lambda: local_config.read_local_toml(toml))
+
+        response = await async_client.get("/api/v1/system/appliance")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["hostname"] == "workshop-pi"
+        assert body["timezone"] == "Europe/Berlin"
+        assert body["locale"] == "de"
+        # time_synced state is host-dependent in this test; just assert the field exists.
+        assert "time_synced" in body
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_appliance_endpoint_partial(self, async_client: AsyncClient, tmp_path, monkeypatch):
+        """Only locale set: hostname + timezone surface as null."""
+        from backend.app.api.routes import system as system_routes
+        from backend.app.core import local_config
+
+        toml = tmp_path / "local.toml"
+        toml.write_text('locale = "ja"\n')
+        monkeypatch.setattr(system_routes, "read_local_toml", lambda: local_config.read_local_toml(toml))
+
+        response = await async_client.get("/api/v1/system/appliance")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["locale"] == "ja"
+        assert body["hostname"] is None
+        assert body["timezone"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_appliance_endpoint_requires_no_auth(self, async_client: AsyncClient):
+        """The frontend i18n bootstrap reads this before auth might be set up.
+
+        The endpoint must respond 200 even when auth is enabled and the caller
+        is unauthenticated — its contents are non-secret (user-set defaults).
+        """
+        response = await async_client.get("/api/v1/system/appliance")
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_appliance_endpoint_time_synced_ok(self, async_client: AsyncClient, tmp_path, monkeypatch):
+        """NTP gate written by ntp-gate.sh with 'ok' surfaces as time_synced='ok'."""
+        from backend.app.api.routes import system as system_routes
+        from backend.app.core import local_config
+
+        gate = tmp_path / "time-synced"
+        gate.write_text("ok\n")
+        monkeypatch.setattr(system_routes, "read_ntp_gate", lambda: local_config.read_ntp_gate(gate))
+
+        response = await async_client.get("/api/v1/system/appliance")
+        assert response.status_code == 200
+        assert response.json()["time_synced"] == "ok"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_appliance_endpoint_time_synced_warning(
+        self,
+        async_client: AsyncClient,
+        tmp_path,
+        monkeypatch,
+    ):
+        """3-minute NTP timeout marker surfaces as time_synced='warning'."""
+        from backend.app.api.routes import system as system_routes
+        from backend.app.core import local_config
+
+        gate = tmp_path / "time-synced"
+        gate.write_text("warning: ntp sync timed out\n")
+        monkeypatch.setattr(system_routes, "read_ntp_gate", lambda: local_config.read_ntp_gate(gate))
+
+        response = await async_client.get("/api/v1/system/appliance")
+        assert response.status_code == 200
+        assert response.json()["time_synced"] == "warning"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_appliance_endpoint_time_synced_absent(
+        self,
+        async_client: AsyncClient,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Non-appliance install: no gate file -> time_synced is null."""
+        from backend.app.api.routes import system as system_routes
+        from backend.app.core import local_config
+
+        absent = tmp_path / "no-gate-here"
+        monkeypatch.setattr(system_routes, "read_ntp_gate", lambda: local_config.read_ntp_gate(absent))
+
+        response = await async_client.get("/api/v1/system/appliance")
+        assert response.status_code == 200
+        assert response.json()["time_synced"] is None

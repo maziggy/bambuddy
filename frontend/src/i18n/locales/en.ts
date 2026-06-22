@@ -5679,9 +5679,9 @@ export default {
         skip: 'Not checked — needs a live MQTT connection. On older slicers where this setting lives only in the slicer the printer never reports it, so this check will pass even when the option is off — verify install step 4 manually.',
       },
       port_rtsps: {
-        title: 'Camera port (RTSPS 322)',
+        title: 'Camera port ({{protocol}} {{port}})',
         pass: 'Reachable — the camera stream will work.',
-        warn: 'Port 322 is unreachable. The live camera view will not work. This does not affect printing.',
+        warn: 'Port {{port}} is unreachable. The live camera view will not work. This does not affect printing.',
       },
       network_mode: {
         title: 'Docker network mode',

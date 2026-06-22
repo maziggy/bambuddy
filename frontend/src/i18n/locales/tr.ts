@@ -5605,9 +5605,9 @@ export default {
         skip: 'Kontrol edilmedi — etkin bir MQTT bağlantısı gerekli. Bu ayarın yalnızca dilimleyicide bulunduğu eski dilimleyicilerde yazıcı bunu bildirmez, bu nedenle seçenek kapalı olsa bile bu kontrol geçer — kurulum adımı 4\'ü manuel olarak doğrulayın.',
       },
       port_rtsps: {
-        title: 'Kamera portu (RTSPS 322)',
+        title: 'Kamera portu ({{protocol}} {{port}})',
         pass: 'Erişilebilir — kamera akışı çalışacak.',
-        warn: 'Port 322 erişilemez. Canlı kamera görünümü çalışmayacak. Bu, baskıyı etkilemez.',
+        warn: 'Port {{port}} erişilemez. Canlı kamera görünümü çalışmayacak. Bu, baskıyı etkilemez.',
       },
       network_mode: {
         title: 'Docker ağ modu',

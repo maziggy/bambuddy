@@ -5655,9 +5655,9 @@ export default {
         skip: 'Não verificado — é necessária uma conexão MQTT ativa. Em fatiadores mais antigos onde essa configuração existe apenas no fatiador, a impressora não a reporta, então esta verificação passa mesmo com a opção desligada — verifique o passo 4 da instalação manualmente.',
       },
       port_rtsps: {
-        title: 'Porta da câmera (RTSPS 322)',
+        title: 'Porta da câmera ({{protocol}} {{port}})',
         pass: 'Acessível — o streaming da câmera funcionará.',
-        warn: 'A porta 322 está inacessível. A visualização ao vivo da câmera não funcionará. Isso não afeta a impressão.',
+        warn: 'A porta {{port}} está inacessível. A visualização ao vivo da câmera não funcionará. Isso não afeta a impressão.',
       },
       network_mode: {
         title: 'Modo de rede Docker',

@@ -5655,9 +5655,9 @@ export default {
         skip: 'Non verificato — è necessaria una connessione MQTT attiva. Negli slicer più vecchi dove questa impostazione esiste solo nello slicer, la stampante non la segnala, quindi questo controllo passa anche se l\'opzione è disattivata — verifica manualmente il passo 4 dell\'installazione.',
       },
       port_rtsps: {
-        title: 'Porta fotocamera (RTSPS 322)',
+        title: 'Porta fotocamera ({{protocol}} {{port}})',
         pass: 'Raggiungibile — lo streaming della fotocamera funzionerà.',
-        warn: 'La porta 322 non è raggiungibile. La visualizzazione live della fotocamera non funzionerà. Questo non influisce sulla stampa.',
+        warn: 'La porta {{port}} non è raggiungibile. La visualizzazione live della fotocamera non funzionerà. Questo non influisce sulla stampa.',
       },
       network_mode: {
         title: 'Modalità di rete Docker',

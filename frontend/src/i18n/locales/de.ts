@@ -5842,9 +5842,9 @@ export default {
         skip: 'Nicht geprüft — eine aktive MQTT-Verbindung ist erforderlich. Bei älteren Slicern, in denen diese Einstellung nur im Slicer existiert, meldet sie der Drucker nicht — diese Prüfung besteht auch dann, wenn die Option deaktiviert ist. Prüfen Sie Installationsschritt 4 in diesem Fall manuell.',
       },
       port_rtsps: {
-        title: 'Kameraport (RTSPS 322)',
+        title: 'Kameraport ({{protocol}} {{port}})',
         pass: 'Erreichbar — der Kamerastream funktioniert.',
-        warn: 'Port 322 ist nicht erreichbar. Die Live-Kameraansicht funktioniert nicht. Dies betrifft das Drucken nicht.',
+        warn: 'Port {{port}} ist nicht erreichbar. Die Live-Kameraansicht funktioniert nicht. Dies betrifft das Drucken nicht.',
       },
       network_mode: {
         title: 'Docker-Netzwerkmodus',

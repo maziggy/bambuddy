@@ -16,6 +16,7 @@ import socket
 
 from backend.app.models.printer import Printer
 from backend.app.schemas.printer import DiagnosticCheck, PrinterDiagnosticResult
+from backend.app.services.camera import get_camera_port
 from backend.app.services.discovery import is_running_in_docker
 from backend.app.services.printer_manager import printer_manager
 from backend.app.utils.printer_models import has_external_storage
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 PORT_MQTT = 8883  # MQTT over TLS — control + status. Connection-critical.
 PORT_FTPS = 990  # FTPS — file upload; required to send prints.
 PORT_RTSPS = 322  # RTSPS — camera stream; optional.
+PORT_CHAMBER_IMAGE = 6000  # Chamber image protocol — A1/P1 camera stream; optional.
 
 _PORT_PROBE_TIMEOUT = 3.0
 
@@ -52,6 +54,19 @@ async def _check_port(ip: str, port: int, timeout: float = _PORT_PROBE_TIMEOUT) 
         return True
     except Exception:
         return False
+
+
+def _camera_port_for_printer(printer: Printer | None) -> tuple[int, str]:
+    """Return the model-specific camera diagnostic port and display protocol."""
+    if not printer:
+        return PORT_RTSPS, "RTSPS"
+    model = getattr(printer, "model", None)
+    if not model:
+        return PORT_RTSPS, "RTSPS"
+    camera_port = get_camera_port(model)
+    if camera_port == PORT_CHAMBER_IMAGE:
+        return camera_port, "Chamber Image"
+    return camera_port, "RTSPS"
 
 
 def _detect_docker_network_mode() -> str:
@@ -118,15 +133,22 @@ async def run_connection_diagnostic(
     checks: list[DiagnosticCheck] = []
 
     # --- Port reachability (probed in parallel) ---
-    mqtt_ok, ftps_ok, rtsps_ok = await asyncio.gather(
+    camera_port, camera_protocol = _camera_port_for_printer(printer)
+    mqtt_ok, ftps_ok, camera_ok = await asyncio.gather(
         _check_port(ip_address, PORT_MQTT),
         _check_port(ip_address, PORT_FTPS),
-        _check_port(ip_address, PORT_RTSPS),
+        _check_port(ip_address, camera_port),
     )
-    # MQTT is connection-critical; FTPS/RTSPS only degrade printing/camera.
+    # MQTT is connection-critical; FTPS/camera only degrade printing/camera.
     checks.append(DiagnosticCheck(id="port_mqtt", status="pass" if mqtt_ok else "fail"))
     checks.append(DiagnosticCheck(id="port_ftps", status="pass" if ftps_ok else "warn"))
-    checks.append(DiagnosticCheck(id="port_rtsps", status="pass" if rtsps_ok else "warn"))
+    checks.append(
+        DiagnosticCheck(
+            id="port_rtsps",
+            status="pass" if camera_ok else "warn",
+            params={"port": camera_port, "protocol": camera_protocol},
+        )
+    )
 
     # --- Docker network mode ---
     network_mode: str | None = None

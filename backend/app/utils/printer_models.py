@@ -4,6 +4,38 @@ Converts 3MF printer model names (e.g., "Bambu Lab X1 Carbon") to
 normalized short names (e.g., "X1C") that match database storage.
 """
 
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class FullCalibrationProfile:
+    """Verified native full-calibration command profile for one model family."""
+
+    model_family: str
+    option: int
+
+
+@dataclass(frozen=True)
+class CalibrationStage:
+    """One verified native calibration stage exposed by Bambu Studio."""
+
+    code: str
+    option: int
+
+
+# Stable stage identifiers cross the REST boundary. The backend maps them to
+# Bambu Studio's native calibration option bits instead of accepting a raw mask.
+CALIBRATION_STAGES: tuple[CalibrationStage, ...] = (
+    CalibrationStage("bed_leveling", 2),
+    CalibrationStage("vibration_compensation", 4),
+    CalibrationStage("motor_noise_cancellation", 8),
+    CalibrationStage("nozzle_offset", 16),
+    CalibrationStage("high_temperature_bed", 32),
+    CalibrationStage("nozzle_clump_detection", 64),
+)
+_CALIBRATION_STAGES_BY_CODE = {stage.code: stage for stage in CALIBRATION_STAGES}
+
+
 # Map from 3MF printer_model strings to normalized short names
 PRINTER_MODEL_MAP = {
     "Bambu Lab X1 Carbon": "X1C",
@@ -56,6 +88,101 @@ PRINTER_MODEL_ID_MAP = {
     "O1C2": "H2C",
     "O1S": "H2S",
 }
+
+
+# Bambu Studio's Calibration dialog enables every calibration option supported
+# by the connected model by default. Its DeviceManager builds the native MQTT
+# payload as ``print.command="calibration"`` and ORs the selected flags:
+# lidar=1, bed=2, vibration=4, motor-noise=8, nozzle-offset=16,
+# high-temperature-bed=32, clump-position=64.
+#
+# Evidence (pinned upstream source):
+# https://github.com/bambulab/BambuStudio/blob/5875ec284a397703edf38eb8ee9a3903ea99a09f/src/slic3r/GUI/DeviceManager.cpp#L1892-L1913
+# The model-specific support flags come from the matching files under
+# ``resources/printers/`` at that same revision. Unknown profiles intentionally
+# return None: sending a generic mask could enable a calibration stage that a
+# newer or differently configured printer does not implement.
+_FULL_CALIBRATION_PROFILES: dict[str, FullCalibrationProfile] = {
+    # X1 family: micro-LiDAR + bed-leveling + vibration compensation.
+    "X1": FullCalibrationProfile("X1", 7),
+    "X1C": FullCalibrationProfile("X1", 7),
+    "X1E": FullCalibrationProfile("X1", 7),
+    "BLP001": FullCalibrationProfile("X1", 7),
+    "BLP002": FullCalibrationProfile("X1", 7),
+    "C13": FullCalibrationProfile("X1", 7),
+    # P1 family: bed-leveling + vibration compensation.
+    "P1P": FullCalibrationProfile("P1", 6),
+    "P1S": FullCalibrationProfile("P1", 6),
+    "C11": FullCalibrationProfile("P1", 6),
+    "C12": FullCalibrationProfile("P1", 6),
+    # A1 family: bed-leveling + vibration compensation + motor-noise tuning.
+    "A1": FullCalibrationProfile("A1", 14),
+    "A1MINI": FullCalibrationProfile("A1", 14),
+    "N1": FullCalibrationProfile("A1", 14),
+    "N2S": FullCalibrationProfile("A1", 14),
+    "A04": FullCalibrationProfile("A1", 14),
+    "A11": FullCalibrationProfile("A1", 14),
+    "A12": FullCalibrationProfile("A1", 14),
+    # P2S and H2S additionally expose high-temperature-bed and
+    # clump-position calibration in current Bambu Studio model data.
+    "P2S": FullCalibrationProfile("P2S", 102),
+    "N7": FullCalibrationProfile("P2S", 102),
+    "H2S": FullCalibrationProfile("H2S", 102),
+    "O1S": FullCalibrationProfile("H2S", 102),
+    # H2D family: bed-leveling + vibration compensation + nozzle-offset +
+    # high-temperature-bed calibration.
+    "H2D": FullCalibrationProfile("H2D", 54),
+    "H2DPRO": FullCalibrationProfile("H2D", 54),
+    "O1D": FullCalibrationProfile("H2D", 54),
+    "O1E": FullCalibrationProfile("H2D", 54),
+    "O2D": FullCalibrationProfile("H2D", 54),
+}
+
+
+def get_full_calibration_profile(model: str | None) -> FullCalibrationProfile | None:
+    """Return the verified native full-calibration profile for ``model``.
+
+    This is deliberately allow-list based. H2C and unknown/future models are
+    unavailable until their Bambu Studio command profile is independently
+    verified, rather than receiving an assumed H2D-compatible payload.
+    """
+    if not model:
+        return None
+    normalized = model.strip().upper().replace(" ", "").replace("-", "")
+    return _FULL_CALIBRATION_PROFILES.get(normalized)
+
+
+def get_supported_calibration_stages(model: str | None) -> tuple[CalibrationStage, ...]:
+    """Return verified native calibration stages for ``model``."""
+    profile = get_full_calibration_profile(model)
+    if profile is None:
+        return ()
+    return tuple(stage for stage in CALIBRATION_STAGES if profile.option & stage.option)
+
+
+def get_calibration_option(model: str | None, stages: list[str] | None) -> int:
+    """Derive a verified native option bitmask from selected stage codes.
+
+    ``None`` preserves the former full-calibration API behavior. An explicit
+    selection must be non-empty, unique, and supported by the model profile.
+    """
+    profile = get_full_calibration_profile(model)
+    if profile is None:
+        raise ValueError("Calibration is not verified for this printer model")
+    if stages is None:
+        return profile.option
+    if not stages:
+        raise ValueError("Select at least one calibration stage")
+    if len(set(stages)) != len(stages):
+        raise ValueError("Calibration stages must not be duplicated")
+
+    option = 0
+    for code in stages:
+        stage = _CALIBRATION_STAGES_BY_CODE.get(code)
+        if stage is None or not profile.option & stage.option:
+            raise ValueError("Selected calibration stage is not supported by this printer")
+        option |= stage.option
+    return option
 
 
 # Rod/rail type classification for maintenance tasks.

@@ -525,6 +525,12 @@ export default {
     firmwareUpdateAvailable: 'Firmware-Update verfügbar: {{current}} → {{latest}}',
     firmwareUpToDate: 'Firmware {{version}} — Aktuell',
     firmwareUpdateButton: 'Aktualisieren',
+    fullCalibration: {
+      label: 'Vollständige Kalibrierung', description: 'Führt alle von diesem Drucker unterstützten Kalibrierungsschritte aus.', confirmTitle: 'Vollständige Kalibrierung starten?', confirmWarning: 'Der Drucker bewegt das Druckbett und den Druckkopf und kann laute Vibrationsgeräusche erzeugen. Stellen Sie sicher, dass die Druckplatte richtig eingesetzt und der Bereich um den Drucker frei ist. Die Kalibrierung kann mehrere Minuten dauern.', start: 'Kalibrierung starten', starting: 'Kalibrierung wird gestartet…', commandSent: 'Befehl für vollständige Kalibrierung gesendet.', inProgress: 'Kalibrierung läuft', printerMustBeIdle: 'Der Drucker muss im Leerlauf sein', alreadyCalibrating: 'Der Drucker kalibriert bereits', unsupported: 'Kalibrierung nicht unterstützt', failed: 'Kalibrierung konnte nicht gestartet werden',
+      stageSelection: 'Kalibrierungsschritte', plateClearConfirmation: 'Ich bestätige, dass die Druckplatte frei und für die Kalibrierung bereit ist.',
+      stages: { bed_leveling: 'Bettnivellierung', vibration_compensation: 'Vibrationskompensation', motor_noise_cancellation: 'Motorgeräuschunterdrückung', nozzle_offset: 'Düsenversatzkalibrierung', high_temperature_bed: 'Hochtemperatur-Bettkalibrierung', nozzle_clump_detection: 'Düsenklumpenerkennungskalibrierung' },
+      errors: { printer_disconnected: 'Der Drucker ist nicht verbunden', printer_not_idle: 'Der Drucker muss vor dem Start der Kalibrierung im Leerlauf sein oder fertig sein', calibration_already_running: 'Der Drucker kalibriert bereits', calibration_unsupported: 'Kalibrierung wird von diesem Druckermodell nicht unterstützt', calibration_delivery_failed: 'Kalibrierung konnte nicht gestartet werden', plate_clear_confirmation_required: 'Bestätigen Sie, dass die Druckplatte nach einem abgeschlossenen Druck frei ist', invalid_calibration_selection: 'Wählen Sie unterstützte Kalibrierungsschritte' },
+    },
     // Plate detection
     plateDetection: {
       noPermission: 'Sie haben keine Berechtigung, Drucker zu aktualisieren',

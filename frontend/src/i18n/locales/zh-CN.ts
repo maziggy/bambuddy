@@ -525,6 +525,12 @@ export default {
     firmwareUpdateAvailable: '固件更新可用：{{current}} → {{latest}}',
     firmwareUpToDate: '固件 {{version}} — 已是最新',
     firmwareUpdateButton: '更新',
+    fullCalibration: {
+      label: '完整校准', description: '运行此打印机支持的所有校准阶段。', confirmTitle: '开始完整校准？', confirmWarning: '打印机会移动热床和工具头，并可能产生较大的振动噪音。请确保构建板安装正确，且打印机周围区域畅通。校准可能需要几分钟。', start: '开始校准', starting: '正在开始校准…', commandSent: '已发送完整校准命令。', inProgress: '正在校准', printerMustBeIdle: '打印机必须处于空闲状态', alreadyCalibrating: '打印机已在校准中', unsupported: '不支持校准', failed: '无法开始校准',
+      stageSelection: '校准阶段', plateClearConfirmation: '我确认构建板已清空并准备好校准。',
+      stages: { bed_leveling: '热床调平', vibration_compensation: '振动补偿', motor_noise_cancellation: '电机噪音消除', nozzle_offset: '喷嘴偏移校准', high_temperature_bed: '高温热床校准', nozzle_clump_detection: '喷嘴结块检测校准' },
+      errors: { printer_disconnected: '打印机未连接', printer_not_idle: '开始校准前，打印机必须处于空闲或完成状态', calibration_already_running: '打印机已在校准中', calibration_unsupported: '此打印机型号不支持校准', calibration_delivery_failed: '无法开始校准', plate_clear_confirmation_required: '完成打印后，请确认构建板已清空', invalid_calibration_selection: '请选择支持的校准阶段' },
+    },
     // Plate detection
     plateDetection: {
       noPermission: '您没有更新打印机的权限',

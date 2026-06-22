@@ -75,7 +75,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withStreamToken, ApiError } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
-import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
+import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, CalibrationStage, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -1507,6 +1507,9 @@ function PrinterCard({
   const [showHMSModal, setShowHMSModal] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [showPauseConfirm, setShowPauseConfirm] = useState(false);
+  const [showFullCalibrationConfirm, setShowFullCalibrationConfirm] = useState(false);
+  const [selectedCalibrationStages, setSelectedCalibrationStages] = useState<CalibrationStage[]>([]);
+  const [plateClearConfirmed, setPlateClearConfirmed] = useState(false);
   const [showSpeedMenu, setShowSpeedMenu] = useState<number | null>(null);
   const [showAirductMenu, setShowAirductMenu] = useState<number | null>(null);
   const [showBedJogMenu, setShowBedJogMenu] = useState<number | null>(null);
@@ -1951,6 +1954,26 @@ function PrinterCard({
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
     },
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToResumePrint'), 'error'),
+  });
+
+  const fullCalibrationMutation = useMutation({
+    mutationFn: () => api.startFullCalibration(printer.id, {
+      stages: selectedCalibrationStages,
+      plate_clear_confirmed: plateClearConfirmed,
+    }),
+    onSuccess: () => {
+      setShowFullCalibrationConfirm(false);
+      setSelectedCalibrationStages([]);
+      setPlateClearConfirmed(false);
+      queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
+      showToast(t('printers.fullCalibration.commandSent'), 'success');
+    },
+    onError: (error: Error) => {
+      const message = error instanceof ApiError && error.code
+        ? t(`printers.fullCalibration.errors.${error.code}`, error.message)
+        : error.message || t('printers.fullCalibration.failed');
+      showToast(message, 'error');
+    },
   });
 
   const clearPlateMutation = useMutation({
@@ -3126,6 +3149,27 @@ function PrinterCard({
               const isPaused = status.state === 'PAUSE';
               const isPrinting = isRunning || isPaused;
               const isControlBusy = stopPrintMutation.isPending || pausePrintMutation.isPending || resumePrintMutation.isPending;
+              const calibrationStateAllowed = status.state === 'IDLE' || status.state === 'FINISH';
+              const fullCalibrationReady = status.connected
+                && calibrationStateAllowed
+                && status.is_calibrating !== true
+                && hasPermission('printers:control')
+                && !fullCalibrationMutation.isPending;
+              const fullCalibrationReason = !hasPermission('printers:control')
+                ? t('printers.permission.noControl')
+                : !status.connected
+                  ? t('printers.fullCalibration.errors.printer_disconnected')
+                  : status.is_calibrating
+                    ? t('printers.fullCalibration.inProgress')
+                    : !calibrationStateAllowed
+                      ? t('printers.fullCalibration.printerMustBeIdle')
+                      : undefined;
+
+              const openCalibrationDialog = () => {
+                setSelectedCalibrationStages([]);
+                setPlateClearConfirmed(false);
+                setShowFullCalibrationConfirm(true);
+              };
 
               // Fan data
               const partFan = status.cooling_fan_speed;
@@ -3418,6 +3462,36 @@ function PrinterCard({
                       </button>
                     </div>
                   </div>
+
+                  {status.supports_full_calibration === true && (
+                    <button
+                      type="button"
+                      onClick={openCalibrationDialog}
+                      disabled={!fullCalibrationReady}
+                      title={fullCalibrationReason}
+                      className={`mt-2 w-full flex items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                        fullCalibrationReady
+                          ? 'border-bambu-green/40 bg-bambu-green/10 hover:bg-bambu-green/20'
+                          : 'border-bambu-dark-tertiary bg-bambu-dark'
+                      }`}
+                    >
+                      {fullCalibrationMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin text-bambu-green" />
+                      ) : (
+                        <Wrench className="h-4 w-4 flex-shrink-0 text-bambu-green" />
+                      )}
+                      <span className="min-w-0">
+                        <span className="block text-xs font-medium text-white">
+                          {status.is_calibrating
+                            ? t('printers.fullCalibration.inProgress')
+                            : t('printers.fullCalibration.label')}
+                        </span>
+                        <span className="block text-[10px] text-bambu-gray">
+                          {t('printers.fullCalibration.description')}
+                        </span>
+                      </span>
+                    </button>
+                  )}
                 </div>
               );
             })()}
@@ -5273,6 +5347,64 @@ function PrinterCard({
           }}
           onCancel={() => setShowResumeConfirm(false)}
         />
+      )}
+
+      {showFullCalibrationConfirm && (
+        <ConfirmModal
+          title={t('printers.fullCalibration.confirmTitle')}
+          message={t('printers.fullCalibration.confirmWarning')}
+          confirmText={t('printers.fullCalibration.start')}
+          loadingText={t('printers.fullCalibration.starting')}
+          isLoading={fullCalibrationMutation.isPending}
+          confirmDisabled={
+            !selectedCalibrationStages.length
+            || (status?.state === 'FINISH' && !plateClearConfirmed)
+            || (status?.state !== 'IDLE' && status?.state !== 'FINISH')
+            || status?.is_calibrating === true
+            || !status?.connected
+          }
+          variant="warning"
+          onConfirm={() => fullCalibrationMutation.mutate()}
+          onCancel={() => {
+            setShowFullCalibrationConfirm(false);
+            setSelectedCalibrationStages([]);
+            setPlateClearConfirmed(false);
+          }}
+        >
+          <fieldset className="space-y-2">
+            <legend className="text-xs font-medium text-white">
+              {t('printers.fullCalibration.stageSelection')}
+            </legend>
+            {(status?.calibration_stages ?? []).map((stage) => {
+              const label = t(`printers.fullCalibration.stages.${stage}`);
+              const checked = selectedCalibrationStages.includes(stage);
+              return (
+                <label key={stage} className="flex items-center gap-2 text-sm text-bambu-gray cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => setSelectedCalibrationStages((current) =>
+                      checked ? current.filter((item) => item !== stage) : [...current, stage]
+                    )}
+                    className="h-4 w-4 accent-bambu-green"
+                  />
+                  {label}
+                </label>
+              );
+            })}
+          </fieldset>
+          {status?.state === 'FINISH' && (
+            <label className="mt-4 flex items-start gap-2 text-sm text-yellow-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={plateClearConfirmed}
+                onChange={(event) => setPlateClearConfirmed(event.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-yellow-400"
+              />
+              {t('printers.fullCalibration.plateClearConfirmation')}
+            </label>
+          )}
+        </ConfirmModal>
       )}
 
       {/* Bed Jog — not-homed warning (Studio-style) */}

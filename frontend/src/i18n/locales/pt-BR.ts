@@ -525,6 +525,12 @@ export default {
     firmwareUpdateAvailable: 'Atualização de firmware disponível: {{current}} → {{latest}}',
     firmwareUpToDate: 'Firmware {{version}} — Atualizado',
     firmwareUpdateButton: 'Atualizar',
+    fullCalibration: {
+      label: 'Calibração completa', description: 'Executa todas as etapas de calibração compatíveis com esta impressora.', confirmTitle: 'Iniciar calibração completa?', confirmWarning: 'A impressora moverá a mesa e o cabeçote e pode produzir ruídos altos de vibração. Verifique se a placa de impressão está instalada corretamente e se a área ao redor da impressora está livre. A calibração pode levar vários minutos.', start: 'Iniciar calibração', starting: 'Iniciando calibração…', commandSent: 'Comando de calibração completa enviado.', inProgress: 'Calibração em andamento', printerMustBeIdle: 'A impressora deve estar ociosa', alreadyCalibrating: 'A impressora já está calibrando', unsupported: 'Calibração não compatível', failed: 'Falha ao iniciar a calibração',
+      stageSelection: 'Etapas de calibração', plateClearConfirmation: 'Confirmo que a placa de impressão está livre e pronta para a calibração.',
+      stages: { bed_leveling: 'Nivelamento da mesa', vibration_compensation: 'Compensação de vibração', motor_noise_cancellation: 'Cancelamento de ruído do motor', nozzle_offset: 'Calibração de deslocamento do bico', high_temperature_bed: 'Calibração de mesa de alta temperatura', nozzle_clump_detection: 'Calibração de detecção de acúmulo no bico' },
+      errors: { printer_disconnected: 'A impressora não está conectada', printer_not_idle: 'A impressora deve estar ociosa ou finalizada antes de iniciar a calibração', calibration_already_running: 'A impressora já está calibrando', calibration_unsupported: 'A calibração não é compatível com este modelo de impressora', calibration_delivery_failed: 'Falha ao iniciar a calibração', plate_clear_confirmation_required: 'Confirme que a placa de impressão está livre após uma impressão concluída', invalid_calibration_selection: 'Selecione etapas de calibração compatíveis' },
+    },
     // Plate detection
     plateDetection: {
       noPermission: 'Você não tem permissão para atualizar impressoras',

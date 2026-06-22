@@ -71,6 +71,7 @@ const selectToolbarDropdownOption = async (triggerName: RegExp, optionName: RegE
 describe('PrintersPage', () => {
   beforeEach(() => {
     localStorage.removeItem('printerCardSize');
+    localStorage.removeItem('hideDisconnectedPrinters');
 
     server.use(
       http.get('/api/v1/printers/', () => {
@@ -395,6 +396,168 @@ describe('PrintersPage', () => {
       expect(screen.queryByText('Plate Clear')).not.toBeInTheDocument();
       expect(screen.queryByText('Plate in Use')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Mark plate as cleared' })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('full calibration', () => {
+    const calibrationDescription = 'Choose the calibration stages supported by this printer.';
+    const findCalibrationAction = async () => {
+      const description = await screen.findByText(calibrationDescription);
+      const action = description.closest('button');
+      if (!action) throw new Error('Calibration action button not found');
+      return action;
+    };
+
+    const useOneSupportedPrinter = (status: Record<string, unknown> = {}) => {
+      server.use(
+        http.get('/api/v1/printers/', () => HttpResponse.json([mockPrinters[0]])),
+        http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+          ...mockPrinterStatus,
+          supports_full_calibration: true,
+          is_calibrating: false,
+          calibration_stages: ['bed_leveling', 'vibration_compensation'],
+          ...status,
+        })),
+      );
+    };
+
+    it('shows the translated calibration action for a supported printer', async () => {
+      useOneSupportedPrinter();
+      render(<PrintersPage />);
+
+      expect(await findCalibrationAction()).toBeEnabled();
+      expect(screen.getByText(calibrationDescription)).toBeInTheDocument();
+      expect(screen.queryByText('printers.fullCalibration.label')).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ['printing', { state: 'RUNNING' }],
+      ['already calibrating', { state: 'RUNNING', is_calibrating: true }],
+    ])('disables calibration when the printer is %s', async (_, status) => {
+      useOneSupportedPrinter(status);
+      render(<PrintersPage />);
+
+      expect(await findCalibrationAction()).toBeDisabled();
+    });
+
+    it('requires confirmation, sends one request after confirmation, and reports success', async () => {
+      let requests = 0;
+      useOneSupportedPrinter();
+      server.use(
+        http.post('/api/v1/printers/:id/calibration/full', () => {
+          requests += 1;
+          return HttpResponse.json({ status: 'calibration_command_sent' }, { status: 202 });
+        }),
+      );
+      const user = userEvent.setup();
+      render(<PrintersPage />);
+
+      await user.click(await findCalibrationAction());
+      expect(screen.getByText('Start calibration?')).toBeInTheDocument();
+      expect(requests).toBe(0);
+
+      await user.click(screen.getByLabelText('Bed leveling'));
+      await user.click(screen.getByRole('button', { name: 'Start Calibration' }));
+      await waitFor(() => expect(requests).toBe(1));
+      expect(await screen.findByText('Calibration command sent.')).toBeInTheDocument();
+    });
+
+    it('cancels confirmation without sending a request', async () => {
+      let requests = 0;
+      useOneSupportedPrinter();
+      server.use(http.post('/api/v1/printers/:id/calibration/full', () => {
+        requests += 1;
+        return HttpResponse.json({ status: 'calibration_command_sent' }, { status: 202 });
+      }));
+      const user = userEvent.setup();
+      render(<PrintersPage />);
+
+      await user.click(await findCalibrationAction());
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      expect(requests).toBe(0);
+      expect(screen.queryByText('Start calibration?')).not.toBeInTheDocument();
+    });
+
+    it('prevents duplicate calibration requests while the first request is pending', async () => {
+      let requests = 0;
+      useOneSupportedPrinter();
+      server.use(http.post('/api/v1/printers/:id/calibration/full', async () => {
+        requests += 1;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return HttpResponse.json({ status: 'calibration_command_sent' }, { status: 202 });
+      }));
+      const user = userEvent.setup();
+      render(<PrintersPage />);
+
+      await user.click(await findCalibrationAction());
+      await user.click(screen.getByLabelText('Bed leveling'));
+      const confirm = screen.getByRole('button', { name: 'Start Calibration' });
+      await user.click(confirm);
+      expect(confirm).toBeDisabled();
+      await user.click(confirm);
+
+      await waitFor(() => expect(requests).toBe(1));
+    });
+
+    it('shows translated backend errors', async () => {
+      useOneSupportedPrinter();
+      server.use(http.post('/api/v1/printers/:id/calibration/full', () =>
+        HttpResponse.json(
+          { detail: { code: 'printer_not_idle', message: 'untranslated backend fallback' } },
+          { status: 409 },
+        ),
+      ));
+      const user = userEvent.setup();
+      render(<PrintersPage />);
+
+      await user.click(await findCalibrationAction());
+      await user.click(screen.getByLabelText('Bed leveling'));
+      await user.click(screen.getByRole('button', { name: 'Start Calibration' }));
+      expect(await screen.findByText('Printer must be idle or finished before starting calibration')).toBeInTheDocument();
+    });
+
+    it('allows FINISH only after selecting a stage and confirming the plate is clear', async () => {
+      let requestBody: unknown;
+      useOneSupportedPrinter({
+        state: 'FINISH',
+        calibration_stages: [
+          'bed_leveling',
+          'vibration_compensation',
+          'high_temperature_bed',
+          'nozzle_clump_detection',
+        ],
+      });
+      server.use(http.post('/api/v1/printers/:id/calibration/full', async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({ status: 'calibration_command_sent' }, { status: 202 });
+      }));
+      const user = userEvent.setup();
+      render(<PrintersPage />);
+
+      await user.click(await findCalibrationAction());
+      const confirm = screen.getByRole('button', { name: 'Start Calibration' });
+      expect(confirm).toBeDisabled();
+      expect(screen.getByLabelText('High-temperature bed calibration')).toBeInTheDocument();
+      expect(screen.getByLabelText('Nozzle clump detection calibration')).toBeInTheDocument();
+
+      await user.click(screen.getByLabelText('Bed leveling'));
+      expect(confirm).toBeDisabled();
+      await user.click(screen.getByLabelText('I confirm the build plate is clear and ready for calibration.'));
+      await user.click(confirm);
+
+      await waitFor(() => expect(requestBody).toEqual({
+        stages: ['bed_leveling'],
+        plate_clear_confirmed: true,
+      }));
+    });
+
+    it('hides the action for unsupported printers', async () => {
+      useOneSupportedPrinter({ supports_full_calibration: false });
+      render(<PrintersPage />);
+
+      await screen.findByText('X1 Carbon');
+      expect(screen.queryByText(calibrationDescription)).not.toBeInTheDocument();
     });
   });
 

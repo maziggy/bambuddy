@@ -525,6 +525,12 @@ export default {
     firmwareUpdateAvailable: 'Mise à jour firmware : {{current}} → {{latest}}',
     firmwareUpToDate: 'Firmware {{version}} — À jour',
     firmwareUpdateButton: 'Mettre à jour',
+    fullCalibration: {
+      label: 'Calibration complète', description: 'Exécute toutes les étapes de calibration prises en charge par cette imprimante.', confirmTitle: 'Démarrer la calibration complète ?', confirmWarning: 'L’imprimante déplacera le plateau et la tête d’impression et peut produire de forts bruits de vibration. Vérifiez que le plateau est correctement installé et que la zone autour de l’imprimante est dégagée. La calibration peut prendre plusieurs minutes.', start: 'Démarrer la calibration', starting: 'Démarrage de la calibration…', commandSent: 'Commande de calibration complète envoyée.', inProgress: 'Calibration en cours', printerMustBeIdle: 'L’imprimante doit être inactive', alreadyCalibrating: 'L’imprimante est déjà en cours de calibration', unsupported: 'Calibration non prise en charge', failed: 'Échec du démarrage de la calibration',
+      stageSelection: 'Étapes de calibration', plateClearConfirmation: 'Je confirme que le plateau est dégagé et prêt pour la calibration.',
+      stages: { bed_leveling: 'Nivellement du plateau', vibration_compensation: 'Compensation des vibrations', motor_noise_cancellation: 'Réduction du bruit du moteur', nozzle_offset: 'Calibration du décalage de buse', high_temperature_bed: 'Calibration du plateau haute température', nozzle_clump_detection: 'Calibration de détection des amas de buse' },
+      errors: { printer_disconnected: 'L’imprimante n’est pas connectée', printer_not_idle: 'L’imprimante doit être inactive ou terminée avant de démarrer la calibration', calibration_already_running: 'L’imprimante est déjà en cours de calibration', calibration_unsupported: 'La calibration n’est pas prise en charge par ce modèle d’imprimante', calibration_delivery_failed: 'Échec du démarrage de la calibration', plate_clear_confirmation_required: 'Confirmez que le plateau est dégagé après une impression terminée', invalid_calibration_selection: 'Sélectionnez des étapes de calibration prises en charge' },
+    },
     // Plate detection
     plateDetection: {
       noPermission: 'Pas d\'autorisation de modification',

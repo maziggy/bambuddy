@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
 
+from backend.app.utils.printer_models import get_calibration_option, get_full_calibration_profile
+
 logger = logging.getLogger(__name__)
 
 # AMS module name prefixes used in get_version responses.
@@ -409,6 +411,66 @@ STAGE_NAMES = {
 def get_stage_name(stage: int) -> str:
     """Get human-readable stage name from stage number."""
     return STAGE_NAMES.get(stage, f"Unknown stage ({stage})")
+
+
+class FullCalibrationError(RuntimeError):
+    """Base error for a rejected or undeliverable full-calibration request."""
+
+
+class PrinterDisconnectedForCalibrationError(FullCalibrationError):
+    """Raised when a printer cannot accept a command over MQTT."""
+
+
+class PrinterBusyForCalibrationError(FullCalibrationError):
+    """Raised when a printer is neither IDLE nor safely confirmed FINISH."""
+
+
+class PrinterAlreadyCalibratingError(FullCalibrationError):
+    """Raised when the native calibration program is already active."""
+
+
+class FullCalibrationUnsupportedError(FullCalibrationError):
+    """Raised when Bambuddy has no verified profile for the printer model."""
+
+
+class FullCalibrationInvalidSelectionError(FullCalibrationError):
+    """Raised when a requested stage is not in the model's verified profile."""
+
+
+class PlateClearConfirmationRequiredError(FullCalibrationError):
+    """Raised when a FINISH-state calibration lacks an explicit safety check."""
+
+
+class FullCalibrationPublishError(FullCalibrationError):
+    """Raised when paho rejects the command before it reaches the broker."""
+
+
+def _parse_stage_index(value: object) -> int | None:
+    """Safely normalize a firmware stage value without accepting booleans."""
+    if isinstance(value, bool):
+        return None
+    try:
+        stage = int(value)  # Firmware sends both integer and decimal-string forms.
+    except (TypeError, ValueError):
+        return None
+    return stage if -1 <= stage < 255 else None
+
+
+def is_printer_calibrating(state: PrinterState) -> bool:
+    """Whether live MQTT state identifies Bambu's built-in calibration program.
+
+    ``stg_cur`` is also used for ordinary printing, so a stage alone is not
+    enough. Bambu Studio identifies this workflow by the native
+    ``auto_cali_for_user`` program name and an active, valid stage. Requiring a
+    RUNNING/PAUSE state means stale file names cannot leave the UI permanently
+    calibrating after the printer returns to IDLE.
+    """
+    if state.state not in ("RUNNING", "PAUSE"):
+        return False
+    if "auto_cali_for_user" not in (state.gcode_file or ""):
+        return False
+    stage = _parse_stage_index(state.stg_cur)
+    return stage is not None and stage >= 0
 
 
 class BambuMQTTClient:
@@ -2122,14 +2184,21 @@ class BambuMQTTClient:
 
         # Calibration stage tracking
         if "stg_cur" in data:
-            new_stg = data["stg_cur"]
+            new_stg = _parse_stage_index(data["stg_cur"])
             prev_stg = self.state.stg_cur
-            # Always log ANY stg_cur change for debugging filament operations
-            if new_stg != prev_stg:
-                logger.debug(
-                    f"[{self.serial_number}] stg_cur changed: {prev_stg} -> {new_stg} ({get_stage_name(new_stg)})"
-                )
-            self.state.stg_cur = new_stg
+            if new_stg is None:
+                # Firmware variants occasionally send malformed partial stage
+                # data. Clear the derived stage instead of allowing an invalid
+                # value to crash status parsing or leave calibration stuck.
+                logger.debug("[%s] Ignoring malformed stg_cur=%r", self.serial_number, data["stg_cur"])
+                self.state.stg_cur = -1
+            else:
+                # Always log ANY stg_cur change for debugging filament operations
+                if new_stg != prev_stg:
+                    logger.debug(
+                        f"[{self.serial_number}] stg_cur changed: {prev_stg} -> {new_stg} ({get_stage_name(new_stg)})"
+                    )
+                self.state.stg_cur = new_stg
             # #1721 end-of-print finish photo trigger.
             # Stage 22 = "Filament unloading" fires at end-of-print AND
             # during mid-print color swaps. The end-of-print gate
@@ -2164,7 +2233,12 @@ class BambuMQTTClient:
                         }
                     )
         if "stg" in data:
-            self.state.stg = data["stg"] if isinstance(data["stg"], list) else []
+            raw_stages = data["stg"]
+            self.state.stg = (
+                [stage for raw_stage in raw_stages if (stage := _parse_stage_index(raw_stage)) is not None]
+                if isinstance(raw_stages, list)
+                else []
+            )
 
         # Temperature data
         temps = {}
@@ -3851,6 +3925,67 @@ class BambuMQTTClient:
         )
 
         return True
+
+    def start_full_calibration(
+        self,
+        stages: list[str] | None = None,
+        *,
+        plate_clear_confirmed: bool = False,
+    ) -> None:
+        """Start verified native calibration with selected supported stages.
+
+        Stage codes are allow-listed by the centralized Bambu Studio profile;
+        callers cannot provide a raw MQTT option mask. FINISH is permitted only
+        after an explicit build-plate-clear confirmation.
+        """
+        if not self._client or not self.state.connected:
+            raise PrinterDisconnectedForCalibrationError("Printer is not connected")
+
+        profile = get_full_calibration_profile(self.model)
+        if profile is None:
+            raise FullCalibrationUnsupportedError("Full calibration is not verified for this printer model")
+
+        if is_printer_calibrating(self.state):
+            raise PrinterAlreadyCalibratingError("Printer is already calibrating")
+        if self.state.state == "FINISH":
+            if not plate_clear_confirmed:
+                raise PlateClearConfirmationRequiredError(
+                    "Confirm that the build plate is clear before calibrating after a finished print"
+                )
+        elif self.state.state != "IDLE":
+            raise PrinterBusyForCalibrationError("Printer must be idle or finished before starting calibration")
+
+        try:
+            option = get_calibration_option(self.model, stages)
+        except ValueError as exc:
+            raise FullCalibrationInvalidSelectionError(str(exc)) from exc
+
+        self._sequence_id += 1
+        command = {
+            "print": {
+                "command": "calibration",
+                "sequence_id": str(self._sequence_id),
+                "option": option,
+            }
+        }
+
+        try:
+            publish_info = self._client.publish(self.topic_publish, json.dumps(command), qos=1)
+        except Exception as exc:
+            raise FullCalibrationPublishError("Failed to send full calibration command") from exc
+
+        # paho returns an MQTTMessageInfo whose rc reports immediate client-side
+        # delivery failures (for example a disconnected socket). A broker ACK is
+        # intentionally not treated as calibration completion.
+        rc = getattr(publish_info, "rc", mqtt.MQTT_ERR_SUCCESS)
+        if isinstance(rc, int) and rc != mqtt.MQTT_ERR_SUCCESS:
+            raise FullCalibrationPublishError("Failed to send full calibration command")
+
+        logger.info(
+            "Native calibration command accepted for model_family=%s option=%s",
+            profile.model_family,
+            option,
+        )
 
     def disconnect(self, timeout: float = 0):
         """Disconnect from the printer."""

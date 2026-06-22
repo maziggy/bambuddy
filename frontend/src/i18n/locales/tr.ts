@@ -526,6 +526,12 @@ export default {
     firmwareUpToDate: 'Firmware {{version}} — Güncel',
     firmwareUpdateButton: 'Güncelle',
     // Plaka algılama
+    fullCalibration: {
+      label: 'Tam Kalibrasyon', description: 'Bu yazıcının desteklediği tüm kalibrasyon aşamalarını çalıştırır.', confirmTitle: 'Tam kalibrasyon başlatılsın mı?', confirmWarning: 'Yazıcı yatağı ve takım kafasını hareket ettirir ve yüksek titreşim sesleri çıkarabilir. Baskı plakasının doğru takıldığından ve yazıcının çevresinin açık olduğundan emin olun. Kalibrasyon birkaç dakika sürebilir.', start: 'Kalibrasyonu Başlat', starting: 'Kalibrasyon başlatılıyor…', commandSent: 'Tam kalibrasyon komutu gönderildi.', inProgress: 'Kalibrasyon sürüyor', printerMustBeIdle: 'Yazıcı boşta olmalıdır', alreadyCalibrating: 'Yazıcı zaten kalibrasyon yapıyor', unsupported: 'Kalibrasyon desteklenmiyor', failed: 'Kalibrasyon başlatılamadı',
+      stageSelection: 'Kalibrasyon aşamaları', plateClearConfirmation: 'Baskı plakasının boş ve kalibrasyona hazır olduğunu onaylıyorum.',
+      stages: { bed_leveling: 'Yatak seviyeleme', vibration_compensation: 'Titreşim telafisi', motor_noise_cancellation: 'Motor gürültüsü engelleme', nozzle_offset: 'Nozul ofset kalibrasyonu', high_temperature_bed: 'Yüksek sıcaklık yatak kalibrasyonu', nozzle_clump_detection: 'Nozul yığılma algılama kalibrasyonu' },
+      errors: { printer_disconnected: 'Yazıcı bağlı değil', printer_not_idle: 'Kalibrasyonu başlatmadan önce yazıcı boşta veya tamamlanmış durumda olmalıdır', calibration_already_running: 'Yazıcı zaten kalibrasyon yapıyor', calibration_unsupported: 'Bu yazıcı modeli kalibrasyonu desteklemiyor', calibration_delivery_failed: 'Kalibrasyon başlatılamadı', plate_clear_confirmation_required: 'Tamamlanan bir baskıdan sonra baskı plakasının boş olduğunu onaylayın', invalid_calibration_selection: 'Desteklenen kalibrasyon aşamalarını seçin' },
+    },
     plateDetection: {
       noPermission: 'Yazıcıları güncellemek için izniniz yok',
       enabledClick: 'Plaka kontrolü etkin - Devre dışı bırakmak için tıklayın',

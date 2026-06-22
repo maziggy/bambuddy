@@ -525,6 +525,12 @@ export default {
     firmwareUpdateAvailable: '韌體更新可用：{{current}} → {{latest}}',
     firmwareUpToDate: '韌體 {{version}} — 已是最新',
     firmwareUpdateButton: '更新',
+    fullCalibration: {
+      label: '完整校準', description: '執行此印表機支援的所有校準階段。', confirmTitle: '開始完整校準？', confirmWarning: '印表機會移動熱床和工具頭，並可能產生很大的振動噪音。請確認列印板安裝正確，且印表機周圍區域暢通。校準可能需要數分鐘。', start: '開始校準', starting: '正在開始校準…', commandSent: '已傳送完整校準命令。', inProgress: '校準進行中', printerMustBeIdle: '印表機必須處於閒置狀態', alreadyCalibrating: '印表機已在校準中', unsupported: '不支援校準', failed: '無法開始校準',
+      stageSelection: '校準階段', plateClearConfirmation: '我確認列印板已清空並準備好校準。',
+      stages: { bed_leveling: '熱床調平', vibration_compensation: '振動補償', motor_noise_cancellation: '馬達噪音消除', nozzle_offset: '噴嘴偏移校準', high_temperature_bed: '高溫熱床校準', nozzle_clump_detection: '噴嘴結塊偵測校準' },
+      errors: { printer_disconnected: '印表機未連線', printer_not_idle: '開始校準前，印表機必須處於閒置或完成狀態', calibration_already_running: '印表機已在校準中', calibration_unsupported: '此印表機型號不支援校準', calibration_delivery_failed: '無法開始校準', plate_clear_confirmation_required: '完成列印後，請確認列印板已清空', invalid_calibration_selection: '請選擇支援的校準階段' },
+    },
     // Plate detection
     plateDetection: {
       noPermission: '您沒有更新印表機的權限',

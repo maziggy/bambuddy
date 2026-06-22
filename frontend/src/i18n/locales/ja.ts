@@ -524,6 +524,12 @@ export default {
     firmwareUpdateAvailable: 'ファームウェアアップデートあり: {{current}} → {{latest}}',
     firmwareUpToDate: 'ファームウェア {{version}} — 最新',
     firmwareUpdateButton: 'アップデート',
+    fullCalibration: {
+      label: 'フルキャリブレーション', description: 'このプリンターで対応しているすべてのキャリブレーションを実行します。', confirmTitle: 'フルキャリブレーションを開始しますか？', confirmWarning: 'プリンターはベッドとツールヘッドを動かし、大きな振動音を出すことがあります。ビルドプレートが正しく取り付けられ、プリンター周辺が片付いていることを確認してください。キャリブレーションには数分かかる場合があります。', start: 'キャリブレーションを開始', starting: 'キャリブレーションを開始中…', commandSent: 'フルキャリブレーションのコマンドを送信しました。', inProgress: 'キャリブレーション実行中', printerMustBeIdle: 'プリンターはアイドル状態である必要があります', alreadyCalibrating: 'プリンターはすでにキャリブレーション中です', unsupported: 'キャリブレーションは未対応です', failed: 'キャリブレーションを開始できませんでした',
+      stageSelection: 'キャリブレーション項目', plateClearConfirmation: 'ビルドプレートが空で、キャリブレーションの準備ができていることを確認します。',
+      stages: { bed_leveling: 'ベッドレベリング', vibration_compensation: '振動補正', motor_noise_cancellation: 'モーター騒音キャンセル', nozzle_offset: 'ノズルオフセットキャリブレーション', high_temperature_bed: '高温ベッドキャリブレーション', nozzle_clump_detection: 'ノズル付着物検出キャリブレーション' },
+      errors: { printer_disconnected: 'プリンターが接続されていません', printer_not_idle: 'キャリブレーションを開始する前にプリンターをアイドルまたは完了状態にしてください', calibration_already_running: 'プリンターはすでにキャリブレーション中です', calibration_unsupported: 'このプリンターモデルではキャリブレーションに対応していません', calibration_delivery_failed: 'キャリブレーションを開始できませんでした', plate_clear_confirmation_required: '完了した印刷後にビルドプレートが空であることを確認してください', invalid_calibration_selection: '対応するキャリブレーション項目を選択してください' },
+    },
     // Plate detection
     plateDetection: {
       noPermission: 'このページにアクセスする権限がありません。',

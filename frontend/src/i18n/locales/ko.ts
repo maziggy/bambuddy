@@ -485,6 +485,12 @@ export default {
     firmwareUpdateAvailable: '펌웨어 업데이트 가능: {{current}} → {{latest}}',
     firmwareUpToDate: '펌웨어 {{version}} — 최신 상태',
     firmwareUpdateButton: '업데이트',
+    fullCalibration: {
+      label: '전체 보정', description: '이 프린터에서 지원하는 모든 보정 단계를 실행합니다.', confirmTitle: '전체 보정을 시작할까요?', confirmWarning: '프린터가 베드와 툴헤드를 움직이며 큰 진동 소음을 낼 수 있습니다. 빌드 플레이트가 올바르게 장착되어 있고 프린터 주변이 비어 있는지 확인하세요. 보정에는 몇 분이 걸릴 수 있습니다.', start: '보정 시작', starting: '보정 시작 중…', commandSent: '전체 보정 명령을 전송했습니다.', inProgress: '보정 진행 중', printerMustBeIdle: '프린터가 유휴 상태여야 합니다', alreadyCalibrating: '프린터가 이미 보정 중입니다', unsupported: '보정이 지원되지 않음', failed: '보정을 시작하지 못했습니다',
+      stageSelection: '보정 단계', plateClearConfirmation: '빌드 플레이트가 비어 있고 보정할 준비가 되었음을 확인합니다.',
+      stages: { bed_leveling: '베드 레벨링', vibration_compensation: '진동 보정', motor_noise_cancellation: '모터 소음 제거', nozzle_offset: '노즐 오프셋 보정', high_temperature_bed: '고온 베드 보정', nozzle_clump_detection: '노즐 뭉침 감지 보정' },
+      errors: { printer_disconnected: '프린터가 연결되어 있지 않습니다', printer_not_idle: '보정을 시작하기 전에 프린터가 유휴 또는 완료 상태여야 합니다', calibration_already_running: '프린터가 이미 보정 중입니다', calibration_unsupported: '이 프린터 모델에서는 보정이 지원되지 않습니다', calibration_delivery_failed: '보정을 시작하지 못했습니다', plate_clear_confirmation_required: '완료된 출력 후 빌드 플레이트가 비어 있음을 확인하세요', invalid_calibration_selection: '지원되는 보정 단계를 선택하세요' },
+    },
     plateDetection: {
       noPermission: '프린터를 업데이트할 권한이 없습니다',
       enabledClick: '플레이트 확인 활성화됨 - 클릭하여 비활성화',

@@ -460,6 +460,11 @@ export interface PrinterStatus {
   stg_cur: number;  // Current stage number (-1 = not calibrating)
   stg_cur_name: string | null;  // Human-readable current stage name
   stg: number[];  // List of stage numbers in calibration sequence
+  // Full printer calibration is derived by the backend from the native
+  // calibration program and verified model capability profile.
+  is_calibrating?: boolean;
+  supports_full_calibration?: boolean;
+  calibration_stages?: CalibrationStage[];
   // Air conditioning mode (0=cooling, 1=heating)
   airduct_mode: number;
   // Print speed level (1=silent, 2=standard, 3=sport, 4=ludicrous)
@@ -504,6 +509,19 @@ export interface PrinterStatus {
   awaiting_plate_clear: boolean;
   // AMS drying support
   supports_drying: boolean;
+}
+
+export type CalibrationStage =
+  | 'bed_leveling'
+  | 'vibration_compensation'
+  | 'motor_noise_cancellation'
+  | 'nozzle_offset'
+  | 'high_temperature_bed'
+  | 'nozzle_clump_detection';
+
+export interface NativeCalibrationRequest {
+  stages: CalibrationStage[];
+  plate_clear_confirmed: boolean;
 }
 
 export interface PrinterCreate {
@@ -3512,6 +3530,11 @@ export const api = {
   clearPlate: (printerId: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/clear-plate`, {
       method: 'POST',
+    }),
+  startFullCalibration: (printerId: number, calibration: NativeCalibrationRequest) =>
+    request<{ status: 'calibration_command_sent' }>(`/printers/${printerId}/calibration/full`, {
+      method: 'POST',
+      body: JSON.stringify(calibration),
     }),
 
   // Get current print user (for reprint tracking - Issue #206)

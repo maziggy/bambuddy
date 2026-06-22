@@ -105,6 +105,13 @@ RUN mkdir -p /app/data /app/logs && \
 COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
+# The entrypoint drops to PUID:PGID before starting the application.  Build
+# contexts created under a restrictive host umask can otherwise leave copied
+# Python modules and static assets unreadable to that runtime user.  Grant
+# read/traverse access only; application code remains non-writable.
+RUN chmod -R a+rX /app/backend /app/static /app/gcode_viewer && \
+    chmod a+r /app/.git/HEAD
+
 # Environment variables
 ENV PYTHONUNBUFFERED=1
 ENV DATA_DIR=/app/data

@@ -273,6 +273,13 @@ class PrinterStatus(BaseModel):
     stg_cur: int = -1  # Current stage number (-1 = not calibrating)
     stg_cur_name: str | None = None  # Human-readable current stage name
     stg: list[int] = []  # List of stage numbers in calibration sequence
+    # Native printer full-calibration state/capability. The backend derives
+    # these from live MQTT status and a verified model allow-list.
+    is_calibrating: bool = False
+    supports_full_calibration: bool = False
+    # Verified stage codes for the native calibration command. The frontend
+    # renders only these choices and the backend validates them again.
+    calibration_stages: list[str] = Field(default_factory=list)
     # Air conditioning mode (0=cooling, 1=heating)
     airduct_mode: int = 0
     # Print speed level (1=silent, 2=standard, 3=sport, 4=ludicrous)

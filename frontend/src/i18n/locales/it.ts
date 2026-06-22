@@ -525,6 +525,12 @@ export default {
     firmwareUpdateAvailable: 'Aggiornamento firmware disponibile: {{current}} → {{latest}}',
     firmwareUpToDate: 'Firmware {{version}} — Aggiornato',
     firmwareUpdateButton: 'Aggiorna',
+    fullCalibration: {
+      label: 'Calibrazione completa', description: 'Esegue tutte le fasi di calibrazione supportate da questa stampante.', confirmTitle: 'Avviare la calibrazione completa?', confirmWarning: 'La stampante muoverà il piano e la testina e potrebbe produrre forti rumori di vibrazione. Assicurati che il piatto di stampa sia installato correttamente e che l’area intorno alla stampante sia libera. La calibrazione può richiedere diversi minuti.', start: 'Avvia calibrazione', starting: 'Avvio calibrazione…', commandSent: 'Comando di calibrazione completa inviato.', inProgress: 'Calibrazione in corso', printerMustBeIdle: 'La stampante deve essere inattiva', alreadyCalibrating: 'La stampante sta già calibrando', unsupported: 'Calibrazione non supportata', failed: 'Impossibile avviare la calibrazione',
+      stageSelection: 'Fasi di calibrazione', plateClearConfirmation: 'Confermo che il piatto di stampa è libero e pronto per la calibrazione.',
+      stages: { bed_leveling: 'Livellamento del piatto', vibration_compensation: 'Compensazione delle vibrazioni', motor_noise_cancellation: 'Riduzione del rumore del motore', nozzle_offset: 'Calibrazione dell’offset ugello', high_temperature_bed: 'Calibrazione del piatto ad alta temperatura', nozzle_clump_detection: 'Calibrazione rilevamento grumi ugello' },
+      errors: { printer_disconnected: 'La stampante non è connessa', printer_not_idle: 'La stampante deve essere inattiva o completata prima di avviare la calibrazione', calibration_already_running: 'La stampante sta già calibrando', calibration_unsupported: 'La calibrazione non è supportata per questo modello di stampante', calibration_delivery_failed: 'Impossibile avviare la calibrazione', plate_clear_confirmation_required: 'Conferma che il piatto è libero dopo una stampa completata', invalid_calibration_selection: 'Seleziona fasi di calibrazione supportate' },
+    },
     // Plate detection
     plateDetection: {
       noPermission: 'Non hai il permesso di aggiornare le stampanti',

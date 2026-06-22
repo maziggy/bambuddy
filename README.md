@@ -146,6 +146,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - **Streaming overlay for OBS** - Embeddable page with camera + status for live streaming (`/overlay/:printerId`), configurable FPS (`?fps=30`), status-only mode (`?camera=false`)
 - External camera support (MJPEG, RTSP, HTTP snapshot, USB/V4L2) with layer-based timelapse
 - **Build plate empty detection** - Auto-pause print if objects detected on plate (multi-reference calibration, ROI adjustment)
+- **Native printer calibration** — Select supported native calibration stages from a supported printer card; `FINISH` requires an explicit plate-clear confirmation. See [model coverage and safety notes](docs/full-printer-calibration.md)
 - Fan monitoring and **speed control** for part-cooling, auxiliary, and chamber fans (0–100% with customizable quick-select presets)
 - Printer control (stop, pause, resume, chamber light, print speed, **airduct mode** for P2S/H2*, **temperature setpoints** for nozzle / bed / **chamber heater** on H2C/H2D/H2DPro/H2S/X2D, **Z-jog / XY-jog / extruder jog**, customizable temperature & fan presets under Settings → Workflow)
 - **Status badges on printer card**: SD Card (green / red), Enclosure Door (green / yellow — X1/P1S/P2S/H2*), Airduct Mode (cooling / heating)

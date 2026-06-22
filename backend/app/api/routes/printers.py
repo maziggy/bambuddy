@@ -3,7 +3,7 @@ import logging
 import re
 import zipfile
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from backend.app.core.tasks import spawn_background_task
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.printer import Printer
 from backend.app.models.slot_preset import SlotPresetMapping
+from backend.app.schemas.calibration import NativeCalibrationRequest
 from backend.app.schemas.printer import (
     AmsLabelBody,
     AMSTray,
@@ -41,6 +42,16 @@ from backend.app.services.bambu_ftp import (
     get_storage_info_async,
     list_files_async,
 )
+from backend.app.services.bambu_mqtt import (
+    FullCalibrationInvalidSelectionError,
+    FullCalibrationPublishError,
+    FullCalibrationUnsupportedError,
+    PlateClearConfirmationRequiredError,
+    PrinterAlreadyCalibratingError,
+    PrinterBusyForCalibrationError,
+    PrinterDisconnectedForCalibrationError,
+    is_printer_calibrating,
+)
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
 from backend.app.services.printer_manager import (
     get_derived_status_name,
@@ -50,6 +61,7 @@ from backend.app.services.printer_manager import (
     supports_drying,
 )
 from backend.app.utils.http import build_content_disposition
+from backend.app.utils.printer_models import get_full_calibration_profile, get_supported_calibration_stages
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["printers"])
@@ -657,6 +669,9 @@ async def get_printer_status(
         stg_cur=state.stg_cur,
         stg_cur_name=get_derived_status_name(state, printer.model),
         stg=state.stg,
+        is_calibrating=is_printer_calibrating(state),
+        supports_full_calibration=get_full_calibration_profile(printer.model) is not None,
+        calibration_stages=[stage.code for stage in get_supported_calibration_stages(printer.model)],
         airduct_mode=state.airduct_mode,
         speed_level=state.speed_level,
         chamber_light=state.chamber_light,
@@ -1827,6 +1842,75 @@ async def set_print_option(
 # ============================================
 # Calibration
 # ============================================
+
+
+@router.post("/{printer_id}/calibration/full", status_code=status.HTTP_202_ACCEPTED)
+async def start_full_calibration(
+    printer_id: int,
+    calibration: NativeCalibrationRequest | None = None,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send the verified model-specific native calibration command.
+
+    A successful response means paho accepted the QoS-1 publish, not that the
+    printer completed calibration. Clients must use the live status endpoint
+    for progress and completion.
+    """
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(404, "Printer not found")
+
+    try:
+        printer_manager.start_full_calibration(
+            printer_id,
+            calibration.stages if calibration else None,
+            plate_clear_confirmed=calibration.plate_clear_confirmed if calibration else False,
+        )
+    except PrinterDisconnectedForCalibrationError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "printer_disconnected", "message": "Printer is not connected"},
+        ) from exc
+    except PrinterAlreadyCalibratingError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "calibration_already_running", "message": "Printer is already calibrating"},
+        ) from exc
+    except PrinterBusyForCalibrationError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "printer_not_idle", "message": "Printer must be idle or finished before starting calibration"},
+        ) from exc
+    except PlateClearConfirmationRequiredError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "plate_clear_confirmation_required",
+                "message": "Confirm that the build plate is clear before calibrating after a finished print",
+            },
+        ) from exc
+    except FullCalibrationInvalidSelectionError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "invalid_calibration_selection", "message": str(exc)},
+        ) from exc
+    except FullCalibrationUnsupportedError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "calibration_unsupported",
+                "message": "Calibration is not supported for this printer model",
+            },
+        ) from exc
+    except FullCalibrationPublishError as exc:
+        logger.warning("Native calibration MQTT publish failed for printer_id=%s", printer_id)
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "calibration_delivery_failed", "message": "Failed to send calibration command"},
+        ) from exc
+
+    return {"status": "calibration_command_sent"}
 
 
 @router.post("/{printer_id}/calibration")

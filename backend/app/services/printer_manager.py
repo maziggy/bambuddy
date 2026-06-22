@@ -8,7 +8,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.printer import Printer
-from backend.app.services.bambu_mqtt import BambuMQTTClient, MQTTLogEntry, PrinterState, get_stage_name
+from backend.app.services.bambu_mqtt import (
+    BambuMQTTClient,
+    MQTTLogEntry,
+    PrinterDisconnectedForCalibrationError,
+    PrinterState,
+    get_stage_name,
+    is_printer_calibrating,
+)
+from backend.app.utils.printer_models import get_full_calibration_profile
 
 logger = logging.getLogger(__name__)
 
@@ -560,6 +568,19 @@ class PrinterManager:
             return self._clients[printer_id].stop_print()
         return False
 
+    def start_full_calibration(
+        self,
+        printer_id: int,
+        stages: list[str] | None = None,
+        *,
+        plate_clear_confirmed: bool = False,
+    ) -> None:
+        """Resolve ``printer_id`` and delegate a verified calibration request."""
+        client = self._clients.get(printer_id)
+        if client is None:
+            raise PrinterDisconnectedForCalibrationError("Printer is not connected")
+        client.start_full_calibration(stages, plate_clear_confirmed=plate_clear_confirmed)
+
     async def wait_for_cooldown(
         self,
         printer_id: int,
@@ -1004,6 +1025,10 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
         # Calibration stage tracking
         "stg_cur": state.stg_cur,
         "stg_cur_name": get_derived_status_name(state, model),
+        "is_calibrating": is_printer_calibrating(state),
+        # The backend owns this decision so no UI can accidentally treat a
+        # new/unknown model as compatible based on a name substring.
+        "supports_full_calibration": get_full_calibration_profile(model) is not None,
         # Printable objects count for skip objects feature
         "printable_objects_count": len(state.printable_objects),
         # Fan speeds (0-100 percentage, None if not available)

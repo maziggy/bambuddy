@@ -6070,3 +6070,73 @@ class TestTrayNowH2SExternalSpoolOverride:
 
         mqtt_client._process_message(_ams_payload(255))
         assert mqtt_client.state.tray_now == 255
+
+
+class TestKProfileNozzleDiameterParsing:
+    """Regression tests for K-profile nozzle_diameter parsing (issue #1748).
+
+    The printer reports nozzle_diameter only on the extrusion_cali_get response
+    envelope, never on the individual filament entries. Each parsed profile must
+    therefore fall back to the envelope value rather than a hardcoded "0.4", or
+    every profile reads as 0.4mm regardless of the actual nozzle.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        """Create a BambuMQTTClient instance for testing."""
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+
+    @staticmethod
+    def _response(nozzle_diameter, filaments):
+        """Build an extrusion_cali_get response (envelope + filament list)."""
+        data = {"command": "extrusion_cali_get", "filaments": filaments}
+        if nozzle_diameter is not None:
+            data["nozzle_diameter"] = nozzle_diameter
+        return data
+
+    def test_nozzle_diameter_taken_from_envelope_when_absent_on_filament(self, mqtt_client):
+        # Filament entries carry no nozzle_diameter (as the real printer sends them).
+        data = self._response(
+            "0.8",
+            [{"cali_idx": 265, "filament_id": "GFSNL02", "name": "matte", "k_value": "0.01750"}],
+        )
+
+        mqtt_client._handle_kprofile_response(data)
+
+        assert mqtt_client.state.kprofiles[0].nozzle_diameter == "0.8"
+
+    def test_nozzle_diameter_falls_back_to_default_when_envelope_also_absent(self, mqtt_client):
+        # Neither the envelope nor the filament has a diameter -> literal "0.4".
+        data = self._response(
+            None,
+            [{"cali_idx": 1, "filament_id": "GFA05", "name": "pla", "k_value": "0.02000"}],
+        )
+
+        mqtt_client._handle_kprofile_response(data)
+
+        assert mqtt_client.state.kprofiles[0].nozzle_diameter == "0.4"
+
+    def test_explicit_filament_nozzle_diameter_is_preserved(self, mqtt_client):
+        # If a filament ever does carry its own diameter, it wins over the envelope.
+        data = self._response(
+            "0.8",
+            [
+                {
+                    "cali_idx": 2,
+                    "filament_id": "GFA05",
+                    "name": "pla",
+                    "k_value": "0.02000",
+                    "nozzle_diameter": "0.6",
+                }
+            ],
+        )
+
+        mqtt_client._handle_kprofile_response(data)
+
+        assert mqtt_client.state.kprofiles[0].nozzle_diameter == "0.6"

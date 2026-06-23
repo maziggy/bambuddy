@@ -2117,6 +2117,7 @@ class PrintScheduler:
             filename = library_file.filename
 
             # Create archive from library file so usage tracking has access to the 3MF
+            queue_item_id = item.id
             try:
                 from backend.app.services.archive import ArchiveService
 
@@ -2149,7 +2150,30 @@ class PrintScheduler:
                         item.library_file_id,
                     )
             except Exception as e:
-                logger.warning("Queue item %s: Failed to create archive from library file: %s", item.id, e)
+                logger.warning(
+                    "Queue item %s: Failed to create archive from library file: %s",
+                    queue_item_id,
+                    e,
+                    exc_info=True,
+                )
+                await db.rollback()
+                item = await db.get(PrintQueueItem, queue_item_id)
+                if item:
+                    item.status = "failed"
+                    item.error_message = "Failed to create archive from library file"
+                    item.completed_at = datetime.now(timezone.utc)
+                    await db.commit()
+                    await self._power_off_if_needed(db, item)
+                return
+
+            if not archive:
+                item.status = "failed"
+                item.error_message = "Failed to create archive from library file"
+                item.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+                logger.error("Queue item %s: Archive creation from library file returned no archive", item.id)
+                await self._power_off_if_needed(db, item)
+                return
 
         else:
             # Neither archive nor library file specified

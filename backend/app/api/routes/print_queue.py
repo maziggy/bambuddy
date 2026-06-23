@@ -519,6 +519,9 @@ async def add_to_queue(
 
     insert_position = max(1, data.insert_position or 1)
     if data.insert_at_top or data.insert_position is not None:
+        result = await db.execute(select(func.max(PrintQueueItem.position)).where(*queue_scope))
+        max_pos = result.scalar() or 0
+        insert_position = min(insert_position, max_pos + 1)
         await db.execute(
             update(PrintQueueItem)
             .where(*queue_scope)

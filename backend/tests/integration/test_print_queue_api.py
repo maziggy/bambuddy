@@ -1928,6 +1928,166 @@ class TestAbortedStatusNormalisation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_add_to_queue_insert_position_quantity_shifts_existing_by_quantity(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """ASAP batch insertion shifts existing pending items by the inserted quantity."""
+        printer = await printer_factory()
+        first = await archive_factory(print_name="First")
+        second = await archive_factory(print_name="Second")
+        priority = await archive_factory(print_name="Priority")
+
+        assert (
+            await async_client.post("/api/v1/queue/", json={"printer_id": printer.id, "archive_id": first.id})
+        ).status_code == 200
+        assert (
+            await async_client.post("/api/v1/queue/", json={"printer_id": printer.id, "archive_id": second.id})
+        ).status_code == 200
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": priority.id,
+                "quantity": 3,
+                "insert_position": 1,
+            },
+        )
+        assert response.status_code == 200
+        batch_id = response.json()["batch_id"]
+
+        list_response = await async_client.get(f"/api/v1/queue/?printer_id={printer.id}")
+        items = sorted(list_response.json(), key=lambda item: item["position"])
+        assert [item["archive_id"] for item in items] == [
+            priority.id,
+            priority.id,
+            priority.id,
+            first.id,
+            second.id,
+        ]
+        assert [item["position"] for item in items] == [1, 2, 3, 4, 5]
+        assert [item["batch_id"] for item in items[:3]] == [batch_id, batch_id, batch_id]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_insert_position_scopes_unassigned_items(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Unassigned inserts shift only the unassigned queue scope."""
+        printer = await printer_factory()
+        unassigned_first = await archive_factory(print_name="Unassigned First")
+        unassigned_second = await archive_factory(print_name="Unassigned Second")
+        assigned = await archive_factory(print_name="Assigned")
+        priority = await archive_factory(print_name="Unassigned Priority")
+
+        assert (await async_client.post("/api/v1/queue/", json={"archive_id": unassigned_first.id})).status_code == 200
+        assert (await async_client.post("/api/v1/queue/", json={"archive_id": unassigned_second.id})).status_code == 200
+        assigned_response = await async_client.post(
+            "/api/v1/queue/",
+            json={"printer_id": printer.id, "archive_id": assigned.id},
+        )
+        assert assigned_response.status_code == 200
+        assert assigned_response.json()["position"] == 1
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "archive_id": priority.id,
+                "insert_position": 1,
+            },
+        )
+        assert response.status_code == 200
+
+        unassigned_response = await async_client.get("/api/v1/queue/?printer_id=-1")
+        unassigned_items = sorted(unassigned_response.json(), key=lambda item: item["position"])
+        assert [item["archive_id"] for item in unassigned_items] == [
+            priority.id,
+            unassigned_first.id,
+            unassigned_second.id,
+        ]
+        assert [item["position"] for item in unassigned_items] == [1, 2, 3]
+
+        assigned_scope_response = await async_client.get(f"/api/v1/queue/?printer_id={printer.id}&target_model=NONE")
+        assigned_items = sorted(assigned_scope_response.json(), key=lambda item: item["position"])
+        assert [item["archive_id"] for item in assigned_items] == [assigned.id]
+        assert [item["position"] for item in assigned_items] == [1]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_insert_position_greater_than_max_appends_without_gap(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Oversized explicit insert_position appends at max+1 instead of creating sparse positions."""
+        printer = await printer_factory()
+        first = await archive_factory(print_name="First")
+        second = await archive_factory(print_name="Second")
+        appended = await archive_factory(print_name="Append")
+
+        assert (
+            await async_client.post("/api/v1/queue/", json={"printer_id": printer.id, "archive_id": first.id})
+        ).status_code == 200
+        assert (
+            await async_client.post("/api/v1/queue/", json={"printer_id": printer.id, "archive_id": second.id})
+        ).status_code == 200
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": appended.id,
+                "insert_position": 99,
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["position"] == 3
+
+        list_response = await async_client.get(f"/api/v1/queue/?printer_id={printer.id}")
+        items = sorted(list_response.json(), key=lambda item: item["position"])
+        assert [item["archive_id"] for item in items] == [first.id, second.id, appended.id]
+        assert [item["position"] for item in items] == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_consecutive_asap_inserts_stack_in_submission_order(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Consecutive ASAP inserts to the same printer preserve the client submission order."""
+        printer = await printer_factory()
+        existing = await archive_factory(print_name="Existing")
+        first_asap = await archive_factory(print_name="First ASAP")
+        second_asap = await archive_factory(print_name="Second ASAP")
+
+        assert (
+            await async_client.post("/api/v1/queue/", json={"printer_id": printer.id, "archive_id": existing.id})
+        ).status_code == 200
+
+        first_response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": first_asap.id,
+                "insert_position": 1,
+            },
+        )
+        assert first_response.status_code == 200
+
+        second_response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "printer_id": printer.id,
+                "archive_id": second_asap.id,
+                "insert_position": 2,
+            },
+        )
+        assert second_response.status_code == 200
+
+        list_response = await async_client.get(f"/api/v1/queue/?printer_id={printer.id}")
+        items = sorted(list_response.json(), key=lambda item: item["position"])
+        assert [item["archive_id"] for item in items] == [first_asap.id, second_asap.id, existing.id]
+        assert [item["position"] for item in items] == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_add_to_queue_quantity_with_print_options(
         self, async_client: AsyncClient, printer_factory, archive_factory, db_session
     ):

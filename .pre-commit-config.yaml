@@ -40,7 +40,7 @@ repos:
     hooks:
       - id: check-import-shadowing
         name: Check for dangerous import shadowing
-        entry: python -m pytest backend/tests/unit/test_code_quality.py::TestImportShadowing -v --tb=short
+        entry: bash -c 'if [ -x venv/bin/python ]; then venv/bin/python -m pytest backend/tests/unit/test_code_quality.py::TestImportShadowing -v --tb=short; else python3 -m pytest backend/tests/unit/test_code_quality.py::TestImportShadowing -v --tb=short; fi'
         language: system
         pass_filenames: false
         types: [python]

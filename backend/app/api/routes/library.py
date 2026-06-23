@@ -49,7 +49,6 @@ from backend.app.schemas.library import (
     FileDuplicate,
     FileListResponse,
     FileMoveRequest,
-    FilePrintRequest,
     FileResponse as FileResponseSchema,
     FileUpdate,
     FileUploadResponse,
@@ -4117,110 +4116,17 @@ async def slice_library_file(
 async def print_library_file(
     file_id: int,
     printer_id: int,
-    body: FilePrintRequest | None = None,
-    db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.PRINTERS_CONTROL)),
 ):
-    """Dispatch a library file for send/start on a printer.
-
-    The actual send/start work is handled asynchronously by background
-    dispatch so the UI can continue immediately.
-
-    Only sliced files (.gcode or .gcode.3mf) can be printed.
-    """
-    from backend.app.models.printer import Printer
-    from backend.app.services.background_dispatch import DispatchEnqueueRejected, background_dispatch
-    from backend.app.services.printer_manager import printer_manager
-
-    # Use defaults if no body provided
-    if body is None:
-        body = FilePrintRequest()
-
+    """Legacy direct library print endpoint. Use POST /queue/ instead."""
     logger.warning(
-        "Deprecated API used: POST /library/files/%s/print?printer_id=%s; use POST /queue/ instead "
-        "(user_id=%s, username=%s)",
+        "Gone API used: POST /library/files/%s/print?printer_id=%s; use POST /queue/ instead",
         file_id,
         printer_id,
-        current_user.id if current_user else None,
-        current_user.username if current_user else None,
     )
-
-    # Get the library file
-    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
-    lib_file = result.scalar_one_or_none()
-
-    if not lib_file:
-        raise HTTPException(status_code=404, detail="File not found")
-
-    # Validate file is sliced
-    if not is_sliced_file(lib_file.filename):
-        raise HTTPException(
-            status_code=400,
-            detail="Not a sliced file. Only .gcode or .gcode.3mf files can be printed.",
-        )
-
-    # Filenames containing FAT32/exFAT-illegal characters would 553 at
-    # FTP upload time (#1540). Older rows may pre-date the rename-time
-    # validation, so reject the print attempt with an actionable message
-    # rather than silently renaming user data.
-    try:
-        validate_print_filename(lib_file.filename)
-    except InvalidFilenameError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-    # Get the full file path
-    file_path = Path(app_settings.base_dir) / lib_file.file_path
-
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found on disk")
-
-    # Get printer
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(status_code=404, detail="Printer not found")
-
-    # Check printer is connected
-    if not printer_manager.is_connected(printer_id):
-        raise HTTPException(status_code=400, detail="Printer is not connected")
-
-    # Validate project exists before dispatching so a bogus ID yields 404, not a FK-constraint 500
-    if body.project_id is not None:
-        project_result = await db.execute(select(Project).where(Project.id == body.project_id))
-        if not project_result.scalar_one_or_none():
-            raise HTTPException(status_code=404, detail="Project not found")
-
-    plate_name = body.plate_name
-    if not plate_name and body.plate_id is not None:
-        plate_name = f"Plate {body.plate_id}"
-
-    dispatch_source_name = lib_file.filename
-    if plate_name:
-        dispatch_source_name = f"{lib_file.filename} • {plate_name}"
-
-    try:
-        dispatch_result = await background_dispatch.dispatch_print_library_file(
-            file_id=file_id,
-            filename=dispatch_source_name,
-            printer_id=printer_id,
-            printer_name=printer.name,
-            options=body.model_dump(exclude_none=True, exclude={"cleanup_library_after_dispatch"}),
-            project_id=body.project_id,
-            requested_by_user_id=current_user.id if current_user else None,
-            requested_by_username=current_user.username if current_user else None,
-            cleanup_library_after_dispatch=body.cleanup_library_after_dispatch,
-        )
-    except DispatchEnqueueRejected as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
-
-    return {
-        "status": "dispatched",
-        "printer_id": printer_id,
-        "archive_id": None,
-        "filename": lib_file.filename,
-        "dispatch_job_id": dispatch_result["dispatch_job_id"],
-        "dispatch_position": dispatch_result["dispatch_position"],
-    }
+    raise HTTPException(
+        status_code=410,
+        detail="Direct library-file print has been removed. Create a print queue item with POST /queue/.",
+    )
 
 
 # ============ File Detail Endpoints ============

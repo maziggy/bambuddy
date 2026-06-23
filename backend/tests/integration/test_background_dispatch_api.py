@@ -5,242 +5,47 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 
-from backend.app.services.background_dispatch import DispatchEnqueueRejected
-
 
 class TestBackgroundDispatchArchivesAPI:
-    """Tests for archive reprint dispatch endpoint."""
+    """Tests for the removed archive reprint dispatch endpoint."""
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_reprint_returns_dispatched_payload(
-        self, async_client: AsyncClient, archive_factory, printer_factory, db_session, tmp_path
-    ):
-        """Reprint endpoint returns background dispatch metadata."""
-        printer = await printer_factory()
-        archive = await archive_factory(
-            printer.id,
-            filename="widget.gcode.3mf",
-            file_path="archives/test/widget.gcode.3mf",
-        )
-
-        archive_file = tmp_path / archive.file_path
-        archive_file.parent.mkdir(parents=True, exist_ok=True)
-        archive_file.write_bytes(b"3mf-data")
-
-        with (
-            patch("backend.app.api.routes.archives.settings.base_dir", tmp_path),
-            patch("backend.app.services.printer_manager.printer_manager.is_connected", return_value=True),
-            patch(
-                "backend.app.services.background_dispatch.background_dispatch.dispatch_reprint_archive",
-                new=AsyncMock(return_value={"dispatch_job_id": 15, "dispatch_position": 1}),
-            ) as mock_dispatch,
-        ):
+    async def test_reprint_route_returns_410_and_does_not_dispatch(self, async_client: AsyncClient):
+        """Legacy direct reprint endpoint is gone; callers must create queue items."""
+        with patch(
+            "backend.app.services.background_dispatch.background_dispatch.dispatch_reprint_archive",
+            new=AsyncMock(),
+        ) as mock_dispatch:
             response = await async_client.post(
-                f"/api/v1/archives/{archive.id}/reprint?printer_id={printer.id}",
+                "/api/v1/archives/123/reprint?printer_id=456",
                 json={"plate_id": 2},
             )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "dispatched"
-        assert data["dispatch_job_id"] == 15
-        assert data["dispatch_position"] == 1
-        assert data["filename"] == "widget.gcode.3mf"
-
-        mock_dispatch.assert_awaited_once()
-        kwargs = mock_dispatch.await_args.kwargs
-        assert kwargs["archive_name"].endswith("• Plate 2")
-        assert kwargs["options"]["plate_id"] == 2
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_reprint_returns_409_when_enqueue_rejected(
-        self, async_client: AsyncClient, archive_factory, printer_factory, db_session, tmp_path
-    ):
-        """Reprint endpoint maps enqueue rejection to HTTP 409."""
-        printer = await printer_factory()
-        archive = await archive_factory(
-            printer.id,
-            filename="widget2.gcode.3mf",
-            file_path="archives/test/widget2.gcode.3mf",
-        )
-
-        archive_file = tmp_path / archive.file_path
-        archive_file.parent.mkdir(parents=True, exist_ok=True)
-        archive_file.write_bytes(b"3mf-data")
-
-        with (
-            patch("backend.app.api.routes.archives.settings.base_dir", tmp_path),
-            patch("backend.app.services.printer_manager.printer_manager.is_connected", return_value=True),
-            patch(
-                "backend.app.services.background_dispatch.background_dispatch.dispatch_reprint_archive",
-                new=AsyncMock(side_effect=DispatchEnqueueRejected("already has a background dispatch")),
-            ),
-        ):
-            response = await async_client.post(
-                f"/api/v1/archives/{archive.id}/reprint?printer_id={printer.id}",
-                json={"plate_id": 1},
-            )
-
-        assert response.status_code == 409
-        assert "already has a background dispatch" in response.json()["detail"]
+        assert response.status_code == 410
+        assert "POST /queue/" in response.json()["detail"]
+        mock_dispatch.assert_not_awaited()
 
 
 class TestBackgroundDispatchLibraryAPI:
-    """Tests for library print dispatch endpoint."""
-
-    @pytest.fixture
-    async def library_file_factory(self, db_session):
-        """Factory to create library files."""
-
-        async def _create_file(**kwargs):
-            from backend.app.models.library import LibraryFile
-
-            defaults = {
-                "filename": "library_part.gcode.3mf",
-                "file_path": "library/files/library_part.gcode.3mf",
-                "file_type": "gcode",
-                "file_size": 1024,
-            }
-            defaults.update(kwargs)
-            lib_file = LibraryFile(**defaults)
-            db_session.add(lib_file)
-            await db_session.commit()
-            await db_session.refresh(lib_file)
-            return lib_file
-
-        return _create_file
+    """Tests for the removed library print dispatch endpoint."""
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_library_print_returns_dispatched_payload(
-        self, async_client: AsyncClient, library_file_factory, printer_factory, db_session, tmp_path
-    ):
-        """Library print endpoint returns dispatch job metadata."""
-        printer = await printer_factory()
-        lib_file = await library_file_factory()
-
-        disk_path = tmp_path / lib_file.file_path
-        disk_path.parent.mkdir(parents=True, exist_ok=True)
-        disk_path.write_bytes(b"library data")
-
-        with (
-            patch("backend.app.api.routes.library.app_settings.base_dir", tmp_path),
-            patch("backend.app.services.printer_manager.printer_manager.is_connected", return_value=True),
-            patch(
-                "backend.app.services.background_dispatch.background_dispatch.dispatch_print_library_file",
-                new=AsyncMock(return_value={"dispatch_job_id": 21, "dispatch_position": 2}),
-            ) as mock_dispatch,
-        ):
+    async def test_library_print_route_returns_410_and_does_not_dispatch(self, async_client: AsyncClient):
+        """Legacy direct library print endpoint is gone; callers must create queue items."""
+        with patch(
+            "backend.app.services.background_dispatch.background_dispatch.dispatch_print_library_file",
+            new=AsyncMock(),
+        ) as mock_dispatch:
             response = await async_client.post(
-                f"/api/v1/library/files/{lib_file.id}/print?printer_id={printer.id}",
+                "/api/v1/library/files/123/print?printer_id=456",
                 json={"plate_id": 4},
             )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "dispatched"
-        assert data["dispatch_job_id"] == 21
-        assert data["dispatch_position"] == 2
-        assert data["archive_id"] is None
-
-        mock_dispatch.assert_awaited_once()
-        kwargs = mock_dispatch.await_args.kwargs
-        assert kwargs["filename"].endswith("• Plate 4")
-        assert kwargs["options"]["plate_id"] == 4
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_library_print_returns_409_when_enqueue_rejected(
-        self, async_client: AsyncClient, library_file_factory, printer_factory, db_session, tmp_path
-    ):
-        """Library print endpoint maps enqueue rejection to HTTP 409."""
-        printer = await printer_factory()
-        lib_file = await library_file_factory(filename="another_part.gcode")
-
-        disk_path = tmp_path / lib_file.file_path
-        disk_path.parent.mkdir(parents=True, exist_ok=True)
-        disk_path.write_bytes(b"library data")
-
-        with (
-            patch("backend.app.api.routes.library.app_settings.base_dir", tmp_path),
-            patch("backend.app.services.printer_manager.printer_manager.is_connected", return_value=True),
-            patch(
-                "backend.app.services.background_dispatch.background_dispatch.dispatch_print_library_file",
-                new=AsyncMock(side_effect=DispatchEnqueueRejected("queue conflict")),
-            ),
-        ):
-            response = await async_client.post(
-                f"/api/v1/library/files/{lib_file.id}/print?printer_id={printer.id}",
-                json={"plate_id": 1},
-            )
-
-        assert response.status_code == 409
-        assert "queue conflict" in response.json()["detail"]
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_library_print_cleanup_flag_defaults_false(
-        self, async_client: AsyncClient, library_file_factory, printer_factory, db_session, tmp_path
-    ):
-        """Absent cleanup_library_after_dispatch in the request body ⇒ False reaches the dispatcher.
-        Guards the File Manager / Project Detail paths from accidental deletion."""
-        printer = await printer_factory()
-        lib_file = await library_file_factory(filename="filemgr_part.gcode.3mf")
-
-        disk_path = tmp_path / lib_file.file_path
-        disk_path.parent.mkdir(parents=True, exist_ok=True)
-        disk_path.write_bytes(b"library data")
-
-        with (
-            patch("backend.app.api.routes.library.app_settings.base_dir", tmp_path),
-            patch("backend.app.services.printer_manager.printer_manager.is_connected", return_value=True),
-            patch(
-                "backend.app.services.background_dispatch.background_dispatch.dispatch_print_library_file",
-                new=AsyncMock(return_value={"dispatch_job_id": 30, "dispatch_position": 1}),
-            ) as mock_dispatch,
-        ):
-            response = await async_client.post(
-                f"/api/v1/library/files/{lib_file.id}/print?printer_id={printer.id}",
-                json={},
-            )
-
-        assert response.status_code == 200
-        mock_dispatch.assert_awaited_once()
-        assert mock_dispatch.await_args.kwargs["cleanup_library_after_dispatch"] is False
-        # cleanup flag must never leak into the print-option dict forwarded to MQTT
-        assert "cleanup_library_after_dispatch" not in mock_dispatch.await_args.kwargs["options"]
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_library_print_forwards_cleanup_flag_true(
-        self, async_client: AsyncClient, library_file_factory, printer_factory, db_session, tmp_path
-    ):
-        """Direct-Print flow sends cleanup_library_after_dispatch=True, which must reach the dispatcher."""
-        printer = await printer_factory()
-        lib_file = await library_file_factory(filename="transient_part.gcode.3mf")
-
-        disk_path = tmp_path / lib_file.file_path
-        disk_path.parent.mkdir(parents=True, exist_ok=True)
-        disk_path.write_bytes(b"library data")
-
-        with (
-            patch("backend.app.api.routes.library.app_settings.base_dir", tmp_path),
-            patch("backend.app.services.printer_manager.printer_manager.is_connected", return_value=True),
-            patch(
-                "backend.app.services.background_dispatch.background_dispatch.dispatch_print_library_file",
-                new=AsyncMock(return_value={"dispatch_job_id": 31, "dispatch_position": 1}),
-            ) as mock_dispatch,
-        ):
-            response = await async_client.post(
-                f"/api/v1/library/files/{lib_file.id}/print?printer_id={printer.id}",
-                json={"cleanup_library_after_dispatch": True},
-            )
-
-        assert response.status_code == 200
-        mock_dispatch.assert_awaited_once()
-        assert mock_dispatch.await_args.kwargs["cleanup_library_after_dispatch"] is True
+        assert response.status_code == 410
+        assert "POST /queue/" in response.json()["detail"]
+        mock_dispatch.assert_not_awaited()
 
 
 class TestBackgroundDispatchCancelAPI:

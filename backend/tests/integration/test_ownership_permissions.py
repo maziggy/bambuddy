@@ -287,15 +287,15 @@ class TestArchiveOwnershipPermissions(TestOwnershipPermissionsSetup):
         assert response.status_code == 403
 
     # ========================================================================
-    # REPRINT permissions
+    # Legacy reprint endpoint
     # ========================================================================
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_operator_cannot_reprint_others_archive(
+    async def test_reprint_endpoint_is_gone_for_all_callers(
         self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
     ):
-        """Operator cannot reprint another user's archive."""
+        """Direct archive reprint no longer exists; callers must use the queue."""
         printer = await printer_factory()
         archive = await archive_factory(
             printer.id,
@@ -307,7 +307,7 @@ class TestArchiveOwnershipPermissions(TestOwnershipPermissionsSetup):
             headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
         )
 
-        assert response.status_code == 403
+        assert response.status_code == 410
 
 
 class TestQueueOwnershipPermissions(TestOwnershipPermissionsSetup):

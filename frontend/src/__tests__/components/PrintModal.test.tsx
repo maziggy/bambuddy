@@ -73,9 +73,6 @@ describe('PrintModal', () => {
       http.get('/api/v1/printers/:id/status', () => {
         return HttpResponse.json({ connected: true, state: 'IDLE', ams: [], vt_tray: [] });
       }),
-      http.post('/api/v1/archives/:id/reprint', () => {
-        return HttpResponse.json({ success: true });
-      }),
       http.post('/api/v1/queue/', () => {
         return HttpResponse.json({ id: 1, status: 'pending' });
       }),
@@ -1164,14 +1161,9 @@ describe('PrintModal', () => {
       );
 
     it('injection ON queues all copies and dispatches none immediately', async () => {
-      const reprintCalls: unknown[] = [];
       const queueCalls: Record<string, unknown>[] = [];
       server.use(
         withSnippets(),
-        http.post('/api/v1/archives/:id/reprint', async ({ request }) => {
-          reprintCalls.push(await request.json().catch(() => ({})));
-          return HttpResponse.json({ status: 'dispatched' });
-        }),
         http.post('/api/v1/queue/', async ({ request }) => {
           queueCalls.push((await request.json()) as Record<string, unknown>);
           return HttpResponse.json({ id: queueCalls.length, status: 'pending' });
@@ -1204,18 +1196,12 @@ describe('PrintModal', () => {
       await waitFor(() => expect(queueCalls.length).toBe(1));
       // One queue item carrying all copies, and zero immediate reprint dispatches
       expect(queueCalls[0].quantity).toBe(3);
-      expect(reprintCalls.length).toBe(0);
     });
 
     it('injection OFF queues all copies through the scheduler path', async () => {
-      const reprintCalls: unknown[] = [];
       const queueCalls: Record<string, unknown>[] = [];
       server.use(
         withSnippets(),
-        http.post('/api/v1/archives/:id/reprint', async ({ request }) => {
-          reprintCalls.push(await request.json().catch(() => ({})));
-          return HttpResponse.json({ status: 'dispatched' });
-        }),
         http.post('/api/v1/queue/', async ({ request }) => {
           queueCalls.push((await request.json()) as Record<string, unknown>);
           return HttpResponse.json({ id: queueCalls.length, status: 'pending' });
@@ -1243,8 +1229,6 @@ describe('PrintModal', () => {
       await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
 
       await waitFor(() => expect(queueCalls.length).toBe(1));
-      expect(reprintCalls.length).toBe(0);
-      expect(queueCalls.length).toBe(1);
       expect(queueCalls[0].quantity).toBe(3);
     });
   });

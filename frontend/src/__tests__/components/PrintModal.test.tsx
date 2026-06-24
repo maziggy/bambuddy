@@ -1366,6 +1366,7 @@ describe('PrintModal', () => {
         expect(capturedBody?.insert_at_top).toBe(true);
         expect(capturedBody?.insert_position).toBe(1);
         expect(capturedBody?.manual_start).toBe(false);
+        expect(capturedBody?.scheduled_time).toBeUndefined();
       });
     });
 

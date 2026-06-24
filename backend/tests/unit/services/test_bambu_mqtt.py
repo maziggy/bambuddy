@@ -4716,7 +4716,7 @@ class TestZombieSessionDetection:
         the routing in force_reconnect_stale_session falls back to socket-close
         — which is the safe option since loop_stop() from inside the loop
         thread would deadlock. Hard-reset is reserved for async-context callers
-        (background_dispatch dispatch path)."""
+        on the queue dispatch path."""
         import time
 
         state_change_called = []
@@ -5000,9 +5000,8 @@ class TestHardResetClientDirect:
 
     def test_swallows_disconnect_exception(self, mqtt_client):
         """A failing disconnect() (e.g. paho already in error state) must not
-        propagate — the await chain in background_dispatch.py would otherwise
-        raise instead of moving on, and a single broken client could brick
-        every future dispatch."""
+        propagate through async dispatch callers, and a single broken client
+        could brick every future dispatch."""
         original = mqtt_client._client
         original.disconnect.side_effect = RuntimeError("boom")
         # No exception escapes the call (test would fail if it did).

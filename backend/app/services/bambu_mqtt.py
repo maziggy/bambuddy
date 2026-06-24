@@ -675,7 +675,7 @@ class BambuMQTTClient:
         #
         # Two routing paths:
         #
-        # Async-context callers (background_dispatch.py:993 — dispatch deadline)
+        # Async-context callers (queue dispatch deadline)
         #   → full client teardown + fresh client_id. Wipes paho's client-side
         #     QoS 1 queue, which is exactly the #1136 reproducer: an unacked
         #     `project_file` from the broken session would otherwise replay on

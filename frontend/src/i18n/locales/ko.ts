@@ -956,6 +956,7 @@ export default {
     selectAllPlates: '{{count}}개 플레이트 전체 선택',
     deselectAll: '전체 해제',
     printQueued: '인쇄가 대기열에 추가됨',
+    printQueuedWillStartWhenIdle: '프린터가 유휴 상태가 되면 시작됩니다',
     itemsQueued: '{{count}}개 항목이 대기열에 추가됨',
     sending: '전송 중...',
     sendingProgress: '{{current}}/{{total}} 전송 중...',
@@ -1197,34 +1198,6 @@ export default {
       lineItem: '슬롯 {{slot}}: {{required}}g 필요, {{remaining}}g 남음',
       unknown: '알 수 없음',
       printAnyway: '그냥 인쇄'
-    }
-  },
-  backgroundDispatch: {
-    unknownFile: '알 수 없는 파일',
-    unknownPrinter: '알 수 없는 프린터',
-    startingPrints: '인쇄 시작 중',
-    progressSummary: '{{complete}}/{{total}} 완료 • 전송됨: {{dispatched}} • 처리 중: {{processing}}',
-    expandDetails: '전송 상세 펼치기',
-    collapseDetails: '전송 상세 접기',
-    dismissToast: '전송 알림 닫기',
-    cancelDispatchJob: '전송 작업 취소',
-    cancel: '취소',
-    cancelling: '취소 중…',
-    awaitingPrinter: '프린터 대기 중…',
-    status: {
-      dispatched: '전송됨',
-      processing: '처리 중',
-      completed: '완료',
-      failed: '실패',
-      cancelled: '취소됨'
-    },
-    toast: {
-      cancellingUpload: '업로드 취소 중...',
-      cancelled: '전송이 취소되었습니다',
-      cancelFailed: '전송 취소 실패',
-      completeWithFailures: '백그라운드 전송 완료: {{completed}}개 성공, {{failed}}개 실패',
-      completeSuccess: '백그라운드 전송 완료: {{completed}}개 성공',
-      printStartedRemaining: '{{completed}}개 인쇄 시작, {{remaining}}개 더 전송 중...'
     }
   },
   stats: {

@@ -894,7 +894,7 @@ export function PrintModal({
         const waitForIdleToast = await asapToastShouldPromiseLaterStart();
         showToast(
           waitForIdleToast
-            ? t('queue.printQueuedWillStartWhenIdle', { defaultValue: 'Will start when printer is idle' })
+            ? t('queue.printQueuedWillStartWhenIdle')
             : assignmentMode === 'model'
               ? `Queued for any ${targetModel}`
               : t('queue.printQueued'),
@@ -903,7 +903,7 @@ export function PrintModal({
         const waitForIdleToast = await asapToastShouldPromiseLaterStart();
         showToast(
           waitForIdleToast
-            ? t('queue.printQueuedWillStartWhenIdle', { defaultValue: 'Will start when printer is idle' })
+            ? t('queue.printQueuedWillStartWhenIdle')
             : t('queue.itemsQueued', { count: results.success }),
         );
       }

@@ -12,7 +12,6 @@ import {
   Users,
 } from 'lucide-react';
 import { api, type PrinterStatus } from '../../api/client';
-import { useDispatchedPrinterIds } from '../../hooks/useDispatchedPrinterIds';
 import { getColorName } from '../../utils/colors';
 import {
   normalizeColorForCompare,
@@ -256,14 +255,7 @@ export function PrinterSelector({
     return map;
   }, [activePrinters, statusQueries]);
 
-  // Printers with a queued/active background dispatch — accepted by Bambuddy
-  // but not yet reflected in PrinterStatus.state (which only flips on
-  // PRINT_START from the printer itself). Backend rejects double-sends with
-  // 409 anyway; this just stops the operator from picking them in the modal.
-  const dispatchedPrinterIds = useDispatchedPrinterIds();
-
   const isPrinterBusy = (printerId: number): boolean => {
-    if (dispatchedPrinterIds.has(printerId)) return true;
     const status = printerStatusMap.get(printerId);
     if (!status) return false; // Unknown state — don't block
     if (!status.connected) return true;
@@ -271,7 +263,6 @@ export function PrinterSelector({
   };
 
   const getPrinterStateLabel = (printerId: number): string | null => {
-    if (dispatchedPrinterIds.has(printerId)) return 'Dispatching...';
     const status = printerStatusMap.get(printerId);
     if (!status) return null;
     if (!status.connected) return 'Offline';

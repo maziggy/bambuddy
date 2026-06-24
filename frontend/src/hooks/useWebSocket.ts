@@ -342,14 +342,6 @@ export function useWebSocket() {
         break;
       }
 
-      case 'background_dispatch':
-        window.dispatchEvent(
-          new CustomEvent('background-dispatch', {
-            detail: (message as unknown as { data?: Record<string, unknown> }).data || {},
-          })
-        );
-        break;
-
       case 'spoolbuddy_weight':
         window.dispatchEvent(new CustomEvent('spoolbuddy-weight', { detail: message }));
         break;

@@ -23,7 +23,6 @@ from backend.app.api.routes import (
     archive_purge,
     archives,
     auth,
-    background_dispatch as background_dispatch_routes,
     bug_report,
     camera,
     cloud,
@@ -81,7 +80,6 @@ from backend.app.core.websocket import ws_manager
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.services.archive import ArchiveService, peek_plate_index_in_3mf, swap_plate_suffix
 from backend.app.services.archive_purge import archive_purge_service
-from backend.app.services.background_dispatch import background_dispatch
 from backend.app.services.bambu_ftp import (
     FileNotOnPrinterError,
     cache_3mf_download,
@@ -6185,9 +6183,6 @@ async def lifespan(app: FastAPI):
     # Start the print scheduler
     spawn_background_task(print_scheduler.run(), name="print-scheduler")
 
-    # Start background dispatch worker for send/start operations
-    await background_dispatch.start()
-
     # Start the smart plug scheduler for time-based on/off
     smart_plug_manager.start_scheduler()
 
@@ -6253,7 +6248,6 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     print_scheduler.stop()
-    await background_dispatch.stop()
     smart_plug_manager.stop_scheduler()
     notification_service.stop_digest_scheduler()
     github_backup_service.stop_scheduler()
@@ -6720,7 +6714,6 @@ app.include_router(local_presets.router, prefix=app_settings.api_prefix)
 app.include_router(smart_plugs.router, prefix=app_settings.api_prefix)
 app.include_router(print_log.router, prefix=app_settings.api_prefix)
 app.include_router(print_queue.router, prefix=app_settings.api_prefix)
-app.include_router(background_dispatch_routes.router, prefix=app_settings.api_prefix)
 app.include_router(kprofiles.router, prefix=app_settings.api_prefix)
 app.include_router(notifications.router, prefix=app_settings.api_prefix)
 app.include_router(notification_templates.router, prefix=app_settings.api_prefix)

@@ -2329,12 +2329,8 @@ class PrintScheduler:
 
         # Propagate the queue item's owner into printer_manager so the
         # print-complete callback can credit the user in the PrintLogEntry
-        # (#1670). The dispatch path in `background_dispatch.py` does the
-        # equivalent for archive/library "Print" flows; the queue path was
-        # missing this hop, which left the print log's User column blank
-        # for any print started from the queue. `created_by_id` is set
-        # either at queue-add time (UI-added items) or when the user
-        # clicks the manual-start button (#1670 fix in print_queue.py).
+        # (#1670). `created_by_id` is set either at queue-add time (UI-added
+        # items) or when the user clicks the manual-start button.
         await self._propagate_owner_to_printer_manager(db, item)
 
         # IMPORTANT: Set status to "printing" BEFORE sending the print command.
@@ -2660,13 +2656,11 @@ class PrintScheduler:
         if landed_on_subtask:
             return
 
-        # Phase A timeout path — same #1150 / #887/#936 discriminator as
-        # background_dispatch: if the printer's gcode_file changed since
+        # Phase A timeout path: if the printer's gcode_file changed since
         # pre-dispatch, the project_file command landed and the printer is
-        # parsing — a forced reconnect mid-parse triggers 0500_4003. If
-        # gcode_file is unchanged, the publish was silently swallowed
-        # (#887/#936) and the original force_reconnect recovery is what we
-        # want.
+        # parsing — a forced reconnect mid-parse triggers 0500_4003 (#1150).
+        # If gcode_file is unchanged, the publish was silently swallowed
+        # (#887/#936) and force_reconnect recovery is what we want.
         client = printer_manager.get_client(printer_id)
         current_gcode_file = getattr(last_status, "gcode_file", None) if last_status else None
         publish_landed = current_gcode_file is not None and current_gcode_file != pre_gcode_file

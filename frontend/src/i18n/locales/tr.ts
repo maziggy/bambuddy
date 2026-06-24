@@ -1011,6 +1011,7 @@ export default {
     selectAllPlates: 'Tüm {{count}} Plakayı Seç',
     deselectAll: 'Seçimi Kaldır',
     printQueued: 'Baskı kuyruğa eklendi',
+    printQueuedWillStartWhenIdle: 'Yazıcı boştayken başlayacak',
     itemsQueued: '{{count}} öğe kuyruğa eklendi',
     sending: 'Gönderiliyor...',
     sendingProgress: 'Gönderiliyor {{current}}/{{total}}...',
@@ -1261,34 +1262,6 @@ export default {
     },
   },
 
-  backgroundDispatch: {
-    unknownFile: 'Bilinmeyen dosya',
-    unknownPrinter: 'Bilinmeyen yazıcı',
-    startingPrints: 'Baskılar başlatılıyor',
-    progressSummary: '{{complete}}/{{total}} tamamlandı • Sevk edildi: {{dispatched}} • İşleniyor: {{processing}}',
-    expandDetails: 'Sevk ayrıntılarını genişlet',
-    collapseDetails: 'Sevk ayrıntılarını daralt',
-    dismissToast: 'Sevk bildirimini kapat',
-    cancelDispatchJob: 'Sevk işini iptal et',
-    cancel: 'İptal',
-    cancelling: 'İptal ediliyor…',
-    awaitingPrinter: 'Yazıcı bekleniyor…',
-    status: {
-      dispatched: 'Sevk Edildi',
-      processing: 'İşleniyor',
-      completed: 'Tamamlandı',
-      failed: 'Başarısız',
-      cancelled: 'İptal edildi',
-    },
-    toast: {
-      cancellingUpload: 'Yükleme iptal ediliyor...',
-      cancelled: 'Sevk iptal edildi',
-      cancelFailed: 'Sevk iptal edilemedi',
-      completeWithFailures: 'Arka plan sevki tamamlandı: {{completed}} başarılı, {{failed}} başarısız',
-      completeSuccess: 'Arka plan sevki tamamlandı: {{completed}} başarılı',
-      printStartedRemaining: '{{completed}} baskı başlatıldı, {{remaining}} tane daha gönderiliyor...',
-    },
-  },
 
   // İstatistikler sayfası
   stats: {

@@ -6010,16 +6010,6 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ file_ids: fileIds }),
     }),
-  cancelBackgroundDispatchJob: (jobId: number) =>
-    request<{
-      status: 'cancelled' | 'cancelling';
-      job_id: number;
-      source_name: string;
-      printer_id: number;
-      printer_name: string;
-    }>(`/background-dispatch/${jobId}`, {
-      method: 'DELETE',
-    }),
   getLibraryFilePlates: (fileId: number) =>
     request<LibraryFilePlatesResponse>(`/library/files/${fileId}/plates`),
   getLibraryFileFilamentRequirements: (

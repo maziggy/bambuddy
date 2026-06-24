@@ -195,11 +195,11 @@ def validate_print_file_upload(filename: str, content: bytes) -> None:
     — raw ``.gcode`` and corrupt/non-zip ``.3mf`` uploads cascade into a
     confusing "Printing stopped because the printer was unable to parse the
     3mf file" rejection 30 seconds after the user clicks Print. The
-    background dispatcher (``background_dispatch.py``) appends ``.3mf`` to
-    a raw-gcode filename when constructing the FTP destination, which is
-    how the printer ends up with a file named ``.gcode.3mf`` whose body is
-    raw gcode — exactly the shape that triggers the firmware parse
-    failure. Catching both classes here gives an actionable error at the
+    the queue dispatch path appends ``.3mf`` to a raw-gcode filename when
+    constructing the FTP destination, which is how the printer ends up with a
+    file named ``.gcode.3mf`` whose body is raw gcode — exactly the shape that
+    triggers the firmware parse failure. Catching both classes here gives an
+    actionable error at the
     upload itself.
 
     Compares the filename suffix rather than ``os.path.splitext`` because

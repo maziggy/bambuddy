@@ -65,6 +65,18 @@ class PrintQueueItem(Base):
     # Auto-print G-code injection (#422)
     gcode_injection: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # H2C dual-nozzle-rack slicer pick preservation (#1780). BambuStudio's
+    # project_file MQTT command for rack-swap-capable models (O1C2 today)
+    # carries per-filament physical nozzle position IDs in `nozzle_mapping`,
+    # forwarded verbatim through the queue and replayed by the dispatcher so
+    # the firmware honours the user's pick instead of falling back to
+    # "last matching nozzle type" auto-pick. Stored as opaque JSON string
+    # (list[int]); NULL on every other model. `nozzles_info` is a deprecated
+    # column from the original #1780 attempt — kept nullable so old rows still
+    # load; never written to or read from.
+    nozzle_mapping: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nozzles_info: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Print options
     bed_levelling: Mapped[bool] = mapped_column(Boolean, default=True)
     flow_cali: Mapped[bool] = mapped_column(Boolean, default=False)

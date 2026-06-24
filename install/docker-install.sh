@@ -249,7 +249,17 @@ install_docker() {
 create_install_dir() {
     log_info "Creating installation directory..."
 
-    mkdir -p "$INSTALL_PATH"
+    if ! mkdir -p "$INSTALL_PATH" 2>/dev/null; then
+        # The default `/opt/bambuddy` (and any other root-owned parent) needs
+        # elevation. Try without sudo first so user-supplied custom paths
+        # under $HOME / /srv / etc. don't drag in an unnecessary password
+        # prompt. On the fallback path, chown the result to the invoking
+        # user so they can edit docker-compose.yml + .env afterwards
+        # without sudo every time (#1774).
+        log_info "$INSTALL_PATH requires sudo to create..."
+        sudo mkdir -p "$INSTALL_PATH"
+        sudo chown -R "$USER:$USER" "$INSTALL_PATH"
+    fi
     cd "$INSTALL_PATH"
 
     log_success "Directory created: $INSTALL_PATH"

@@ -21,7 +21,7 @@ def _statuses(result):
 
 def _port_probe(overrides=None):
     """Sync side_effect for _check_port. Defaults: every port reachable."""
-    reachable = {8883: True, 990: True, 322: True}
+    reachable = {8883: True, 990: True, 322: True, 6000: True}
     reachable.update(overrides or {})
 
     def _probe(ip, port, timeout=3.0):
@@ -141,6 +141,28 @@ class TestExistingPrinter:
         assert result.overall == "warnings"
         assert s["port_ftps"] == "warn"
         assert s["port_rtsps"] == "warn"
+
+    async def test_a1_mini_uses_chamber_image_camera_port(self):
+        # A1/P1-family printers use the chamber-image camera protocol on 6000,
+        # not RTSPS on 322. A closed 322 must not create a false camera warning.
+        with _Env(ports=_port_probe({322: False, 6000: True}), state=_state()):
+            result = await run_connection_diagnostic(
+                "192.168.1.50",
+                printer=_printer(model="A1 Mini"),
+            )
+        assert _statuses(result)["port_rtsps"] == "pass"
+        camera_check = next(c for c in result.checks if c.id == "port_rtsps")
+        assert camera_check.params == {"port": 6000, "protocol": "Chamber Image"}
+
+    async def test_rtsp_models_still_probe_rtsps_port(self):
+        with _Env(ports=_port_probe({322: False, 6000: True}), state=_state()):
+            result = await run_connection_diagnostic(
+                "192.168.1.50",
+                printer=_printer(model="X1C"),
+            )
+        assert _statuses(result)["port_rtsps"] == "warn"
+        camera_check = next(c for c in result.checks if c.id == "port_rtsps")
+        assert camera_check.params == {"port": 322, "protocol": "RTSPS"}
 
     async def test_developer_mode_off_is_a_problem(self):
         with _Env(state=_state(connected=True, developer_mode=False)):

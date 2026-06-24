@@ -44,6 +44,7 @@ def _state(connected: bool, state: str = "IDLE") -> SimpleNamespace:
         tray_now=0,
         door_open=False,
         subtask_name="",
+        ams_filament_backup=None,
     )
 
 

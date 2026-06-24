@@ -2,13 +2,15 @@
  * Tests for the SettingsPage component.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { SettingsPage } from '../../pages/SettingsPage';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY, SIDEBAR_ORDER_KEY } from '../../utils/sidebarLayout';
+import { setAuthToken } from '../../api/client';
 
 const mockSettings = {
   auto_archive: true,
@@ -41,12 +43,18 @@ describe('SettingsPage', () => {
     // switch in one test (e.g. clicking "Workflow") doesn't carry into
     // sibling tests that expect to land on the default General tab.
     window.history.replaceState({}, '', '/');
+    vi.mocked(localStorage.getItem).mockReset();
+    vi.mocked(localStorage.setItem).mockReset();
+    vi.mocked(localStorage.removeItem).mockReset();
+    vi.mocked(localStorage.clear).mockReset();
+    localStorage.clear();
+    setAuthToken(null);
 
     server.use(
       http.get('/api/v1/settings/', () => {
         return HttpResponse.json(mockSettings);
       }),
-      http.patch('/api/v1/settings/', async ({ request }) => {
+      http.put('/api/v1/settings/', async ({ request }) => {
         const body = await request.json();
         return HttpResponse.json({ ...mockSettings, ...body });
       }),
@@ -70,6 +78,9 @@ describe('SettingsPage', () => {
       }),
       http.get('/api/v1/auth/status', () => {
         return HttpResponse.json({ auth_enabled: false, requires_setup: false });
+      }),
+      http.get('/api/v1/external-links/', () => {
+        return HttpResponse.json([]);
       })
     );
   });
@@ -172,6 +183,244 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Check printer firmware')).toBeInTheDocument();
       });
     });
+
+    it('hides a Bambuddy sidebar page from Sidebar', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await screen.findByRole('heading', { name: 'Sidebar' });
+      await screen.findAllByText('Visible in sidebar');
+
+      vi.mocked(localStorage.setItem).mockClear();
+      await user.click((await screen.findAllByLabelText('Hide page'))[0]);
+
+      expect(localStorage.setItem).toHaveBeenCalledWith(SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY, JSON.stringify(['printers']));
+      expect(screen.getByText('Hidden from sidebar')).toBeInTheDocument();
+    });
+
+    it('shows a previously hidden Bambuddy sidebar page from Sidebar', async () => {
+      vi.mocked(localStorage.getItem).mockImplementation((key) => {
+        if (key === SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY) return JSON.stringify(['printers']);
+        return null;
+      });
+
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await screen.findByRole('heading', { name: 'Sidebar' });
+      await screen.findByText('Hidden from sidebar');
+
+      vi.mocked(localStorage.setItem).mockClear();
+      await user.click(await screen.findByLabelText('Show page'));
+
+      expect(localStorage.setItem).toHaveBeenCalledWith(SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY, JSON.stringify([]));
+      expect(screen.getAllByText('Visible in sidebar').length).toBeGreaterThan(0);
+    });
+
+    it('does not allow Settings to be hidden from Sidebar', async () => {
+      render(<SettingsPage />);
+
+      await screen.findByRole('heading', { name: 'Sidebar' });
+      await screen.findByText('Required in sidebar');
+
+      const settingsVisibilityButton = await screen.findByLabelText('Settings cannot be hidden');
+      expect(settingsVisibilityButton).toBeDisabled();
+      expect(screen.getByText('Required in sidebar')).toBeInTheDocument();
+    });
+
+    it('presents external links and Bambuddy pages in saved sidebar order', async () => {
+      vi.mocked(localStorage.getItem).mockImplementation((key) => {
+        if (key === SIDEBAR_ORDER_KEY) return JSON.stringify(['ext-7', 'printers', 'settings']);
+        return null;
+      });
+      server.use(
+        http.get('/api/v1/external-links/', () =>
+          HttpResponse.json([
+            {
+              id: 7,
+              name: 'Docs',
+              url: 'https://docs.example.test',
+              icon: 'Link',
+              open_in_new_tab: true,
+              custom_icon: null,
+              sort_order: 0,
+              created_at: '2026-01-01T00:00:00Z',
+              updated_at: '2026-01-01T00:00:00Z',
+            },
+          ]),
+        ),
+      );
+
+      render(<SettingsPage />);
+
+      await screen.findByRole('heading', { name: 'Sidebar' });
+      const docs = await screen.findByText('Docs');
+      const printers = screen.getAllByText('Printers').find(element => element.closest('[draggable="true"]'));
+
+      expect(printers).toBeDefined();
+      expect(docs.compareDocumentPosition(printers) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('saves mixed Sidebar order when items are dragged', async () => {
+      server.use(
+        http.get('/api/v1/external-links/', () =>
+          HttpResponse.json([
+            {
+              id: 7,
+              name: 'Docs',
+              url: 'https://docs.example.test',
+              icon: 'Link',
+              open_in_new_tab: true,
+              custom_icon: null,
+              sort_order: 0,
+              created_at: '2026-01-01T00:00:00Z',
+              updated_at: '2026-01-01T00:00:00Z',
+            },
+          ]),
+        ),
+      );
+
+      render(<SettingsPage />);
+
+      await screen.findByRole('heading', { name: 'Sidebar' });
+      const docsRow = (await screen.findByText('Docs')).closest('[draggable="true"]');
+      const printersRow = screen.getAllByText('Printers')
+        .find(element => element.closest('[draggable="true"]'))
+        ?.closest('[draggable="true"]');
+
+      expect(docsRow).not.toBeNull();
+      expect(printersRow).not.toBeNull();
+
+      vi.mocked(localStorage.setItem).mockClear();
+      const dataTransfer = {
+        effectAllowed: '',
+        dropEffect: '',
+        setData: vi.fn(),
+      };
+      fireEvent.dragStart(docsRow!, { dataTransfer });
+      fireEvent.dragOver(printersRow!, { dataTransfer });
+      fireEvent.drop(printersRow!, { dataTransfer });
+
+      expect(localStorage.setItem).toHaveBeenCalledWith(
+        SIDEBAR_ORDER_KEY,
+        JSON.stringify(['ext-7', 'printers', 'inventory', 'archives', 'queue', 'projects', 'files', 'makerworld', 'profiles', 'maintenance', 'stats', 'settings']),
+      );
+    });
+
+    it('resets Sidebar to all pages first and configured links at the bottom', async () => {
+      vi.mocked(localStorage.getItem).mockImplementation((key) => {
+        if (key === SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY) return JSON.stringify(['printers', 'stats']);
+        if (key === SIDEBAR_ORDER_KEY) return JSON.stringify(['ext-7', 'settings', 'printers']);
+        return null;
+      });
+      server.use(
+        http.get('/api/v1/external-links/', () =>
+          HttpResponse.json([
+            {
+              id: 7,
+              name: 'Docs',
+              url: 'https://docs.example.test',
+              icon: 'Link',
+              open_in_new_tab: true,
+              custom_icon: null,
+              sort_order: 0,
+              created_at: '2026-01-01T00:00:00Z',
+              updated_at: '2026-01-01T00:00:00Z',
+            },
+          ]),
+        ),
+      );
+
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      const heading = await screen.findByRole('heading', { name: 'Sidebar' });
+      const card = heading.closest('#card-sidebar-links');
+      expect(card).not.toBeNull();
+      await screen.findByText('Docs');
+
+      vi.mocked(localStorage.setItem).mockClear();
+      await user.click(within(card as HTMLElement).getByRole('button', { name: /reset/i }));
+
+      expect(localStorage.setItem).toHaveBeenCalledWith(SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY, JSON.stringify([]));
+      expect(localStorage.setItem).toHaveBeenCalledWith(
+        SIDEBAR_ORDER_KEY,
+        JSON.stringify(['printers', 'inventory', 'archives', 'queue', 'projects', 'files', 'makerworld', 'profiles', 'maintenance', 'stats', 'settings', 'ext-7']),
+      );
+
+      const settingsRow = screen.getAllByText('Settings')
+        .find(element => element.closest('[draggable="true"]'))
+        ?.closest('[draggable="true"]');
+      const docsRow = screen.getByText('Docs').closest('[draggable="true"]');
+      expect(settingsRow).not.toBeNull();
+      expect(docsRow).not.toBeNull();
+      expect(settingsRow!.compareDocumentPosition(docsRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.queryByText('Hidden from sidebar')).not.toBeInTheDocument();
+    });
+
+    it('sets the current Sidebar order as the backend default for settings admins', async () => {
+      let defaultSidebarOrderPayload: string | null = null;
+      vi.mocked(localStorage.getItem).mockImplementation((key) => {
+        if (key === SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY) return JSON.stringify(['stats']);
+        return null;
+      });
+
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false }),
+        ),
+        http.get('/api/v1/auth/me', () =>
+          HttpResponse.json({
+            id: 1,
+            username: 'admin',
+            role: 'admin',
+            is_active: true,
+            is_admin: false,
+            groups: [{ id: 1, name: 'Administrators' }],
+            permissions: ['settings:update'],
+            created_at: '2026-01-01T00:00:00Z',
+          }),
+        ),
+        http.get('/api/v1/settings/', () =>
+          HttpResponse.json({ ...mockSettings, default_sidebar_order: '' }),
+        ),
+        http.put('/api/v1/settings/', async ({ request }) => {
+          const body = await request.json() as { default_sidebar_order?: string };
+          defaultSidebarOrderPayload = body.default_sidebar_order ?? null;
+          return HttpResponse.json({ ...mockSettings, ...body });
+        }),
+      );
+      setAuthToken('test-token');
+
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      const heading = await screen.findByRole('heading', { name: 'Sidebar' });
+      const card = heading.closest('#card-sidebar-links');
+      expect(card).not.toBeNull();
+
+      await user.click(within(card as HTMLElement).getByRole('switch', { name: 'Set Default' }));
+
+      await waitFor(() => {
+        expect(defaultSidebarOrderPayload).not.toBeNull();
+      });
+      expect(JSON.parse(defaultSidebarOrderPayload!)).toEqual({
+        order: [
+          'printers',
+          'inventory',
+          'archives',
+          'queue',
+          'projects',
+          'files',
+          'makerworld',
+          'profiles',
+          'maintenance',
+          'stats',
+          'settings',
+        ],
+        hiddenSystemItemIds: ['stats'],
+      });
+    });
   });
 
   describe('update CTA per deployment shape', () => {
@@ -238,6 +487,35 @@ describe('SettingsPage', () => {
       });
       expect(screen.queryByText(/Home Assistant Supervisor/i)).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /install update/i })).not.toBeInTheDocument();
+    });
+
+    it('shows the installer-download link for Windows installer installs', async () => {
+      const downloadUrl =
+        'https://github.com/maziggy/bambuddy/releases/download/v0.2.5/bambuddy-0.2.5-windows-x64-setup.exe';
+      await renderWithUpdateCheck({
+        update_available: true,
+        current_version: '0.2.4',
+        latest_version: '0.2.5',
+        release_name: '0.2.5',
+        release_notes: '',
+        release_url: 'https://github.com/maziggy/bambuddy/releases/tag/v0.2.5',
+        published_at: '2099-01-01T00:00:00Z',
+        is_docker: false,
+        is_ha_addon: false,
+        is_windows_installer: true,
+        update_method: 'windows_installer',
+        installer_download_url: downloadUrl,
+      });
+
+      const link = await screen.findByRole('link', { name: /download installer for v0\.2\.5/i });
+      expect(link).toHaveAttribute('href', downloadUrl);
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+      // The in-app update button must NOT render — the git-fetch path can't
+      // work from an installer payload.
+      expect(screen.queryByRole('button', { name: /install update/i })).not.toBeInTheDocument();
+      expect(screen.queryByText(/Home Assistant Supervisor/i)).not.toBeInTheDocument();
+      expect(screen.queryByText('docker compose pull && docker compose up -d')).not.toBeInTheDocument();
     });
   });
 
@@ -353,6 +631,29 @@ describe('SettingsPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Queue Auto-Drying')).toBeInTheDocument();
+      });
+    });
+
+    it('shows per-filament humidity threshold editor on Workflow tab (#1605)', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Workflow')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Workflow'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Humidity Thresholds')).toBeInTheDocument();
+        // Default row is unique to the humidity editor (drying presets has no
+        // default row), so we can pin it without disambiguating from the
+        // adjacent drying-presets table that also lists PLA/ASA/etc.
+        expect(screen.getByText('Default (unknown types)')).toBeInTheDocument();
+        // Filament rows render in both tables — assert by count instead of
+        // a single getByText. 8 default filaments × 2 tables = 16 PLAs etc.
+        expect(screen.getAllByText('PLA').length).toBeGreaterThanOrEqual(2);
+        expect(screen.getAllByText('ASA').length).toBeGreaterThanOrEqual(2);
       });
     });
 

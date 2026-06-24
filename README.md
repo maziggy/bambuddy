@@ -24,6 +24,11 @@
 </p>
 
 <p align="center">
+  <sub><strong>Backed by</strong></sub><br>
+  <a href="https://northpole3dprinting.com/"><img src="static/img/sponsors/northpole-3d-printing.jpg" alt="North Pole 3D Printing" height="60"></a>
+</p>
+
+<p align="center">
   <a href="https://demo.bambuddy.cool"><strong>🎮 Try the Live Demo</strong></a> •
   <a href="#-features">Features</a> •
   <a href="#-screenshots">Screenshots</a> •
@@ -141,24 +146,28 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - **Streaming overlay for OBS** - Embeddable page with camera + status for live streaming (`/overlay/:printerId`), configurable FPS (`?fps=30`), status-only mode (`?camera=false`)
 - External camera support (MJPEG, RTSP, HTTP snapshot, USB/V4L2) with layer-based timelapse
 - **Build plate empty detection** - Auto-pause print if objects detected on plate (multi-reference calibration, ROI adjustment)
-- Fan status monitoring (part cooling, auxiliary, chamber)
-- Printer control (stop, pause, resume, chamber light, print speed, **airduct mode** for P2S/H2*, **build-plate Z-jog** with Studio-style not-homed warning)
+- Fan monitoring and **speed control** for part-cooling, auxiliary, and chamber fans (0–100% with customizable quick-select presets)
+- Printer control (stop, pause, resume, chamber light, print speed, **airduct mode** for P2S/H2*, **temperature setpoints** for nozzle / bed / **chamber heater** on H2C/H2D/H2DPro/H2S/X2D, **Z-jog / XY-jog / extruder jog**, customizable temperature & fan presets under Settings → Workflow)
 - **Status badges on printer card**: SD Card (green / red), Enclosure Door (green / yellow — X1/P1S/P2S/H2*), Airduct Mode (cooling / heating)
 - **Force Refresh** menu item — request a full status push from the printer without reconnecting
+- **Maintenance Mode** — put a printer "out of service" without removing it. Toggle from the card's three-dot menu, the in-card amber banner, or the Edit Printer dialog; the printer disconnects MQTT, drops out of queue dispatch, the scheduler, model-based filament lookups, metrics, and notifications until you take it out again. The card stays visible (amber wrench banner + Exit button) so the printer never disappears from your dashboard. Useful for parallel Bambuddy installs sharing the same hardware, printers under repair or awaiting parts, and temporary suspension.
 - Bulk printer actions (multi-select cards, then stop/pause/resume/clear all — select by state or location)
 - Printer search and filters — live search by name/model/location/serial plus status and location dropdown filters (WebSocket-reactive, mobile-friendly)
 - Resizable printer cards (S/M/L/XL)
 - Skip objects during print
 - AMS slot RFID re-read
 - **AMS slot Load / Unload from the printer card** — Hover any AMS slot or external spool, click the menu button, and load that tray or unload the currently-loaded one without going to the touchscreen; supports dual-extruder H2D (Ext-L / Ext-R drive their own nozzle)
+- **AMS Filament Backup status + control with pair view** — Mirrors BambuStudio's per-printer "AMS Filament Backup" auto-switch (when a spool runs out, the printer rolls over to a same-preset, same-colour spool in another slot). A small badge in the Filaments section header on each printer card shows the live state (blue circular-arrow icon = ON, dim = OFF, "?" = A1 family with no `cfg` field yet); click to open the AMS Filament Backup modal — a BambuStudio Auto Refill-style ring graphic per backup pair, with the filament colour as the ring fill and member slot labels (e.g. `A·1`, `B·3`) on contrast-aware pills around the band. Dual-extruder printers (H2D / H2C / X2D) carry an `R` / `L` badge per ring because the firmware can't cross extruders. State syncs in real time whether you toggled from Bambuddy, BambuStudio, or the printer's touchscreen. Bambuddy's "insufficient filament" check is **backup-aware**: when Backup is ON, the deficit check pools remaining grams across same-`(preset, colour)` spools on the printer, so the warning doesn't fire spuriously when the firmware will swap to a peer mid-print (#1762). Bambuddy's **Prefer Lowest Remaining Filament** sort also respects the toggle — when Backup is OFF the dispatcher skips the prefer-lowest sort entirely so it won't reach for a near-empty spool the printer can't roll off of.
 - AMS slot configuration (model-filtered presets, K profiles, color picker, pre-population for configured slots)
 - AMS info card (hover for serial number, firmware version) with custom friendly names that persist across printers
 - **AMS remote drying** — Start, monitor, and stop drying sessions for AMS 2 Pro and AMS-HT directly from the Printers page with filament-based temperature/duration presets, optional spool rotation; automatic PSU detection and HMS power error reporting
 - **Queue auto-drying** — Automatically dry filament between scheduled prints when humidity exceeds threshold; configurable presets per filament type, optional blocking mode
 - **Ambient drying** — Automatically keep filament dry on idle printers based on humidity, regardless of whether prints are queued
 - Configurable drying presets per filament type (temperature & duration for AMS 2 Pro and AMS-HT)
+- **Per-filament humidity threshold** — Set a different humidity trigger per filament type (e.g. Nylon at 20%, PLA at 60%, ASA at 30%) instead of one global value. Mixed-material AMS units use the most-restrictive threshold across the loaded spools so a single PLA + Nylon unit triggers at Nylon's level. Drives both the auto-drying scheduler and the hourly humidity alarm so the two can never disagree on whether a unit is "too humid"
 - Dual external spool support for H2D (Ext-L / Ext-R)
 - HMS error monitoring with history and clear errors
+- **Heater history charts** — Bambuddy logs nozzle, bed, and chamber readings every minute and surfaces them via a tiny chart icon on each heater tile in the printer card. Click for a per-heater modal with current / average / min / max stats, target overlay, and a 6h / 24h / 48h / 7d time range — works on read-only chamber sensors (X1C / P2S) too. AMS humidity and temperature get the same treatment (already shipped).
 - Print success rates & trends
 - Filament usage tracking
 - Cost analytics & failure analysis
@@ -346,6 +355,8 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 ---
 
 ## 📸 Screenshots
+
+> **Refreshed printer card in 0.2.5b2** — tighter layout, popovers for all controls (temperature setpoints, fan speeds, jog), and a bottom-aligned power row. The screenshots below predate the refresh.
 
 <details>
 <summary><strong>Click to expand screenshots</strong></summary>

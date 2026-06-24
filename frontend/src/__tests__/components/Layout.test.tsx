@@ -2,15 +2,21 @@
  * Tests for the Layout component.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
 import { render } from '../utils';
 import { Layout } from '../../components/Layout';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+import { SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY, SIDEBAR_ORDER_KEY } from '../../utils/sidebarLayout';
 
 describe('Layout', () => {
   beforeEach(() => {
+    vi.mocked(localStorage.getItem).mockReset();
+    vi.mocked(localStorage.setItem).mockReset();
+    vi.mocked(localStorage.removeItem).mockReset();
+    vi.mocked(localStorage.clear).mockReset();
+    localStorage.clear();
     server.use(
       http.get('/api/v1/printers/', () => {
         return HttpResponse.json([
@@ -100,6 +106,55 @@ describe('Layout', () => {
         // Settings link should exist (route /settings)
         const settingsLink = document.querySelector('a[href="/settings"]');
         expect(settingsLink).toBeInTheDocument();
+      });
+    });
+
+    it('hides system nav items stored in sidebar layout preferences', async () => {
+      vi.mocked(localStorage.getItem).mockImplementation((key) => {
+        if (key === SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY) return JSON.stringify(['printers']);
+        return null;
+      });
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        const sidebar = document.querySelector('aside');
+        expect(sidebar).toBeInTheDocument();
+        expect(sidebar?.querySelector('a[href="/inventory"]')).toBeInTheDocument();
+      });
+
+      expect(document.querySelector('aside a[href="/"]')).toBeNull();
+    });
+
+    it('applies admin default sidebar hidden state with the default order', async () => {
+      const storage: Record<string, string> = {};
+      vi.mocked(localStorage.getItem).mockImplementation((key) => storage[key] ?? null);
+      vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
+        storage[key] = value;
+      });
+      server.use(
+        http.get('/api/v1/settings/default-sidebar-order', () =>
+          HttpResponse.json({
+            default_sidebar_order: JSON.stringify({
+              order: ['inventory', 'printers', 'settings'],
+              hiddenSystemItemIds: ['printers'],
+            }),
+          }),
+        ),
+      );
+
+      render(<Layout />);
+
+      await waitFor(() => {
+        const sidebar = document.querySelector('aside');
+        expect(sidebar).toBeInTheDocument();
+        expect(sidebar?.querySelector('a[href="/inventory"]')).toBeInTheDocument();
+      });
+
+      await waitFor(() => {
+        expect(document.querySelector('aside a[href="/"]')).toBeNull();
+        expect(localStorage.setItem).toHaveBeenCalledWith(SIDEBAR_ORDER_KEY, JSON.stringify(['inventory', 'printers', 'settings']));
+        expect(localStorage.setItem).toHaveBeenCalledWith(SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY, JSON.stringify(['printers']));
       });
     });
   });

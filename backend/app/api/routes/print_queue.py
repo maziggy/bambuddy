@@ -38,7 +38,11 @@ from backend.app.schemas.print_queue import (
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.notification_service import notification_service
 from backend.app.utils.printer_models import normalize_printer_model, normalize_printer_model_id
-from backend.app.utils.threemf_tools import extract_bed_type_from_3mf, extract_filament_usage_from_3mf
+from backend.app.utils.threemf_tools import (
+    extract_bed_type_from_3mf,
+    extract_filament_usage_from_3mf,
+    extract_print_time_from_3mf,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,56 +110,10 @@ def _extract_filament_types_from_3mf(file_path: Path, plate_id: int | None = Non
     return sorted(types)
 
 
-def _extract_print_time_from_3mf(file_path: Path, plate_id: int | None = None) -> int | None:
-    """Extract print time (prediction) from a 3MF file.
-
-    Args:
-        file_path: Path to the 3MF file
-        plate_id: Optional plate index to filter for (for multi-plate files)
-
-    Returns:
-        Print time in seconds, or None if not found
-    """
-    try:
-        with zipfile.ZipFile(file_path, "r") as zf:
-            if "Metadata/slice_info.config" not in zf.namelist():
-                return None
-
-            content = zf.read("Metadata/slice_info.config").decode()
-            root = ET.fromstring(content)
-
-            if plate_id is not None:
-                for plate_elem in root.findall(".//plate"):
-                    plate_index = None
-                    for meta in plate_elem.findall("metadata"):
-                        if meta.get("key") == "index":
-                            try:
-                                plate_index = int(meta.get("value", "0"))
-                            except ValueError:
-                                pass  # Skip plate with unparseable index
-                            break
-
-                    if plate_index == plate_id:
-                        for meta in plate_elem.findall("metadata"):
-                            if meta.get("key") == "prediction":
-                                try:
-                                    return int(meta.get("value", "0"))
-                                except ValueError:
-                                    return None
-                        break
-            else:
-                plate_elem = root.find(".//plate")
-                if plate_elem is not None:
-                    for meta in plate_elem.findall("metadata"):
-                        if meta.get("key") == "prediction":
-                            try:
-                                return int(meta.get("value", "0"))
-                            except ValueError:
-                                return None
-    except Exception as e:
-        logger.warning("Failed to extract print time from %s: %s", file_path, e)
-
-    return None
+# Local alias kept so existing call sites stay compact; the implementation lives
+# in utils/threemf_tools.py so the notification path (main.py) can reuse it
+# without importing from a routes module (#1785).
+_extract_print_time_from_3mf = extract_print_time_from_3mf
 
 
 def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
@@ -183,6 +141,17 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
             filament_overrides_parsed = json.loads(item.filament_overrides)
         except json.JSONDecodeError:
             filament_overrides_parsed = None
+
+    # Parse nozzle_mapping from JSON string (#1780 — H2C rack slicer-pick
+    # preservation). Nullable opaque JSON blob stored verbatim from
+    # BambuStudio's project_file; surface it parsed for the response model
+    # and any future "edit print → nozzle" UI.
+    nozzle_mapping_parsed = None
+    if item.nozzle_mapping:
+        try:
+            nozzle_mapping_parsed = json.loads(item.nozzle_mapping)
+        except json.JSONDecodeError:
+            nozzle_mapping_parsed = None
 
     # Create response with parsed ams_mapping
     item_dict = {
@@ -226,6 +195,8 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "been_jumped": item.been_jumped,
         # Auto-print G-code injection
         "gcode_injection": item.gcode_injection,
+        # H2C rack-swap nozzle pick (#1780)
+        "nozzle_mapping": nozzle_mapping_parsed,
     }
     response = PrintQueueItemResponse(**item_dict)
     if item.archive:
@@ -1049,6 +1020,13 @@ async def update_queue_item(
     if "filament_overrides" in update_data:
         update_data["filament_overrides"] = (
             json.dumps(update_data["filament_overrides"]) if update_data["filament_overrides"] else None
+        )
+
+    # Serialize H2C rack-swap nozzle pick (#1780) to JSON for TEXT column
+    # storage; same Text-as-opaque-blob convention as ams_mapping above.
+    if "nozzle_mapping" in update_data:
+        update_data["nozzle_mapping"] = (
+            json.dumps(update_data["nozzle_mapping"]) if update_data["nozzle_mapping"] else None
         )
 
     for field, value in update_data.items():

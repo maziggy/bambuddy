@@ -1706,6 +1706,149 @@ class TestPrinterErrorNotifications:
             assert captured_variables["error_detail"] == "No details available"
 
 
+class TestAIFailureDetectionNotifications:
+    """Tests for the AI failure-detection event (#1794 — split out of on_printer_error).
+
+    Pins that Obico failure-detection dispatches go through the dedicated
+    on_ai_failure_detection event field, not the multiplexed printer-error
+    field. Mirrors the printer-error coverage above so a regression on either
+    surface fails its own case.
+    """
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @pytest.fixture
+    def mock_provider(self):
+        provider = MagicMock()
+        provider.id = 1
+        provider.name = "Test Provider"
+        provider.provider_type = "webhook"
+        provider.enabled = True
+        provider.config = json.dumps({"webhook_url": "http://test.local/webhook"})
+        provider.on_ai_failure_detection = True
+        provider.on_printer_error = False  # disabled — the regression guard
+        provider.quiet_hours_enabled = False
+        provider.daily_digest_enabled = False
+        provider.printer_id = None
+        return provider
+
+    @pytest.fixture
+    def mock_db(self):
+        db = AsyncMock()
+        db.commit = AsyncMock()
+        return db
+
+    @pytest.mark.asyncio
+    async def test_dispatch_uses_ai_failure_detection_event_not_printer_error(self, service, mock_provider, mock_db):
+        """Regression guard: provider subscribed only to AI alerts must receive
+        the Obico notification."""
+        captured_event = []
+
+        async def capture(db, event_field, printer_id):
+            captured_event.append(event_field)
+            return [mock_provider]
+
+        with (
+            patch.object(service, "_get_providers_for_event", side_effect=capture),
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+            patch.object(service, "_build_message_from_template", new_callable=AsyncMock) as mock_build,
+        ):
+            mock_build.return_value = ("Possible Print Failure Detected", "details")
+
+            await service.on_ai_failure_detection(
+                printer_id=1,
+                printer_name="X1 Carbon",
+                task_name="benchy.3mf",
+                confidence=0.87,
+                action="notify",
+                db=mock_db,
+            )
+
+            assert captured_event == ["on_ai_failure_detection"]
+            mock_send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_skipped_when_only_printer_error_is_enabled(self, service, mock_provider, mock_db):
+        """Pre-#1794 behaviour MUST NOT survive: a provider with only the
+        legacy on_printer_error toggle should NOT receive AI notifications now."""
+        mock_provider.on_ai_failure_detection = False
+        mock_provider.on_printer_error = True
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock) as mock_send,
+        ):
+            mock_get.return_value = []  # the event-field filter excludes the provider
+
+            await service.on_ai_failure_detection(
+                printer_id=1,
+                printer_name="X1 Carbon",
+                task_name="benchy.3mf",
+                confidence=0.87,
+                action="notify",
+                db=mock_db,
+            )
+
+            mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_variables_include_task_name_confidence_action(self, service, mock_provider, mock_db):
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_ai_failure_detection(
+                printer_id=1,
+                printer_name="X1 Carbon",
+                task_name="benchy.3mf",
+                confidence=0.873,
+                action="pause_and_off",
+                db=mock_db,
+            )
+
+            assert captured_variables["printer"] == "X1 Carbon"
+            assert captured_variables["task_name"] == "benchy.3mf"
+            assert captured_variables["confidence"] == "0.87"  # 2-decimal format
+            assert captured_variables["action"] == "pause_and_off"
+
+    @pytest.mark.asyncio
+    async def test_task_name_fallback_when_unknown(self, service, mock_provider, mock_db):
+        captured_variables = {}
+
+        async def capture_build(db, event_type, variables):
+            captured_variables.update(variables)
+            return ("Test", "Test")
+
+        with (
+            patch.object(service, "_get_providers_for_event", new_callable=AsyncMock) as mock_get,
+            patch.object(service, "_send_to_providers", new_callable=AsyncMock),
+            patch.object(service, "_build_message_from_template", side_effect=capture_build),
+        ):
+            mock_get.return_value = [mock_provider]
+
+            await service.on_ai_failure_detection(
+                printer_id=1,
+                printer_name="Test",
+                task_name="",  # empty
+                confidence=0.5,
+                action="notify",
+                db=mock_db,
+            )
+
+            assert captured_variables["task_name"] == "current job"
+
+
 class TestPlateNotEmptyNotifications:
     """Tests for plate not empty (build plate detection) notifications."""
 
@@ -2203,3 +2346,199 @@ class TestNtfyOutbound:
 
         assert ok is False
         assert "Cloudflare" in detail
+
+
+class TestEmailProvider:
+    """Tests for SMTP email provider, including #1792 finish-photo inline embed.
+
+    Embed is opt-in via the template: only when the user's template referenced
+    ``{finish_photo_url}`` (so the URL appears in the rendered body) AND the
+    photo bytes are available does ``_send_email`` build the multipart/related
+    shape. Otherwise it stays single-part text — no surprise inline image.
+    """
+
+    PHOTO_URL = "https://printer.local/api/v1/archives/42/photos/finish.jpg"
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    @pytest.fixture
+    def smtp_config(self):
+        return {
+            "smtp_server": "smtp.example.com",
+            "smtp_port": "587",
+            "username": "alice",
+            "password": "secret",
+            "from_email": "bambuddy@example.com",
+            "to_email": "alice@example.com",
+            "security": "starttls",
+            "auth_enabled": "true",
+        }
+
+    @staticmethod
+    def _fake_smtp_class(captured: dict):
+        class FakeSMTP:
+            def __init__(self, host, port):
+                captured["host"] = host
+                captured["port"] = port
+
+            def starttls(self):
+                captured["starttls"] = True
+
+            def login(self, u, p):
+                captured["login"] = (u, p)
+
+            def sendmail(self, frm, to, body):
+                captured["from"] = frm
+                captured["to"] = to
+                captured["raw"] = body
+
+            def quit(self):
+                captured["quit"] = True
+
+        return FakeSMTP
+
+    @pytest.mark.asyncio
+    async def test_email_without_image_or_url_stays_text_only(self, service, smtp_config):
+        """No image_data and no URL in body → original single-part text shape."""
+        captured: dict = {}
+        with patch("backend.app.services.notification_service.smtplib.SMTP", self._fake_smtp_class(captured)):
+            ok, _ = await service._send_email(smtp_config, "Print Failed", "Reason: unknown")
+
+        assert ok is True
+        assert "image/jpeg" not in captured["raw"]
+        assert "multipart/related" not in captured["raw"]
+        assert "cid:bambuddy-finish-photo" not in captured["raw"]
+        assert "Reason: unknown" in captured["raw"]
+
+    @pytest.mark.asyncio
+    async def test_email_image_without_template_reference_stays_text_only(self, service, smtp_config):
+        """image_data present but template didn't include {finish_photo_url} → no embed.
+
+        Pins the template-driven contract: a user whose body is just
+        "Print failed. Reason: unknown" does NOT get a surprise inline image
+        stapled to the bottom, even though the photo bytes are available
+        upstream from the archive.
+        """
+        captured: dict = {}
+        with patch("backend.app.services.notification_service.smtplib.SMTP", self._fake_smtp_class(captured)):
+            ok, _ = await service._send_email(
+                smtp_config,
+                "Print Failed",
+                "Reason: unknown",
+                image_data=b"\xff\xd8\xff\xe0jpeg",
+                finish_photo_url=self.PHOTO_URL,
+            )
+
+        assert ok is True
+        raw = captured["raw"]
+        assert "image/jpeg" not in raw
+        assert "multipart/related" not in raw
+        assert "cid:bambuddy-finish-photo" not in raw
+
+    @pytest.mark.asyncio
+    async def test_email_inlines_when_template_uses_finish_photo_url(self, service, smtp_config):
+        """URL in body + image_data present → multipart/related + cid embed; HTML swaps URL for <img>."""
+        captured: dict = {}
+        body = f"Print failed. Reason: unknown\n\nSnapshot: {self.PHOTO_URL}"
+
+        with patch("backend.app.services.notification_service.smtplib.SMTP", self._fake_smtp_class(captured)):
+            ok, _ = await service._send_email(
+                smtp_config,
+                "Print Failed",
+                body,
+                image_data=b"\xff\xd8\xff\xe0fake-jpeg-bytes",
+                finish_photo_url=self.PHOTO_URL,
+            )
+
+        assert ok is True
+        raw = captured["raw"]
+        # multipart/related shape with both alt parts and an image part
+        assert "multipart/related" in raw
+        assert "multipart/alternative" in raw
+        assert "text/plain" in raw
+        assert "text/html" in raw
+        assert "image/jpeg" in raw
+        # HTML references the exact cid the Content-ID header registers
+        assert "Content-ID: <bambuddy-finish-photo>" in raw
+        assert 'src="cid:bambuddy-finish-photo"' in raw
+        # Inline disposition so renders embedded, not as download attachment
+        assert 'Content-Disposition: inline; filename="finish-photo.jpg"' in raw
+        # Plain-text body keeps the URL so non-HTML clients still get a clickable link
+        assert self.PHOTO_URL in raw
+
+    @pytest.mark.asyncio
+    async def test_email_image_data_without_url_arg_stays_text_only(self, service, smtp_config):
+        """image_data passed but finish_photo_url=None → defence-in-depth, no embed.
+
+        Even if a future caller forgets to thread the URL through but does pass
+        the bytes, the conservative default is no embed (avoids attaching an
+        unreferenced image to an unrelated event type).
+        """
+        captured: dict = {}
+        with patch("backend.app.services.notification_service.smtplib.SMTP", self._fake_smtp_class(captured)):
+            ok, _ = await service._send_email(
+                smtp_config,
+                "Print Failed",
+                f"Snapshot: {self.PHOTO_URL}",
+                image_data=b"\xff\xd8\xff\xe0jpeg",
+                finish_photo_url=None,
+            )
+
+        assert ok is True
+        assert "image/jpeg" not in captured["raw"]
+        assert "multipart/related" not in captured["raw"]
+
+    @pytest.mark.asyncio
+    async def test_email_html_body_escapes_user_content(self, service, smtp_config):
+        """Template-rendered body must not be injected raw into the HTML part."""
+        captured: dict = {}
+        body = f"Filename: <script>alert(1)</script>\nLine 2\nSnapshot: {self.PHOTO_URL}"
+
+        with patch("backend.app.services.notification_service.smtplib.SMTP", self._fake_smtp_class(captured)):
+            ok, _ = await service._send_email(
+                smtp_config,
+                "Print Failed",
+                body,
+                image_data=b"\xff\xd8\xff\xe0jpeg",
+                finish_photo_url=self.PHOTO_URL,
+            )
+
+        assert ok is True
+        raw = captured["raw"]
+        # Raw HTML must NOT round-trip into the HTML part — verify escaped form is present.
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in raw
+        # Newlines in the body become <br> in HTML
+        assert "Line 2" in raw
+        assert "<br>" in raw
+
+    @pytest.mark.asyncio
+    async def test_email_html_swaps_url_for_img_tag(self, service, smtp_config):
+        """In the HTML part, the URL substring is replaced with the <img cid:...> tag.
+
+        Plain text keeps the URL; HTML clients see the inline image where the
+        URL was. The URL must NOT appear inside an <a href> wrapping the image
+        — we replace the URL outright with the img tag (renderers don't need
+        the URL twice in the HTML part when the image is already inline).
+        """
+        captured: dict = {}
+        body = f"See: {self.PHOTO_URL} for the snapshot."
+
+        with patch("backend.app.services.notification_service.smtplib.SMTP", self._fake_smtp_class(captured)):
+            ok, _ = await service._send_email(
+                smtp_config,
+                "Print Failed",
+                body,
+                image_data=b"\xff\xd8\xff\xe0jpeg",
+                finish_photo_url=self.PHOTO_URL,
+            )
+
+        assert ok is True
+        raw = captured["raw"]
+        # The <img> tag appears in the HTML part
+        assert 'src="cid:bambuddy-finish-photo"' in raw
+        # The escaped URL is the marker we replaced — the HTML part should not
+        # contain BOTH the escaped URL AND the cid img (we swapped, not duplicated).
+        # The plain-text part still has the URL; check it's there at least once.
+        assert self.PHOTO_URL in raw

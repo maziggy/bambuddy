@@ -771,22 +771,20 @@ interface QueueRowRenderProps {
 /** Renders either a single item or a collapsible batch group containing N
  *  sibling items. The batch parent shows aggregate stats; children render
  *  with the existing SortableQueueItem (only draggable inside the batch). */
-function QueueRowRender({
-  row,
-  collapsed,
-  onToggleBatch,
-  onUngroup,
-  setEditItem,
-  setConfirmAction,
-  startMutation,
-  selectedItems,
-  handleToggleSelect,
-  timeFormat,
-  hasPermission,
-  canModify,
-  t,
-  aggregateForRows,
-}: QueueRowRenderProps) {
+function QueueRowRender(props: QueueRowRenderProps) {
+  const {
+    row,
+    setEditItem,
+    setConfirmAction,
+    startMutation,
+    selectedItems,
+    handleToggleSelect,
+    timeFormat,
+    hasPermission,
+    canModify,
+    t,
+  } = props;
+
   if (row.kind === 'item') {
     return (
       <SortableQueueItem
@@ -807,22 +805,67 @@ function QueueRowRender({
     );
   }
 
-  // Batch group
-  const agg = aggregateForRows([row]);
-  const allChildIds = row.items.map((i) => i.id);
+  return <SortableBatchRow {...props} />;
+}
+
+/** Batch parent header registered with dnd-kit so the whole group can be
+ *  reordered as one unit. Drag handle lives in the header itself; children
+ *  remain individually draggable while expanded for within-batch reorder. */
+function SortableBatchRow({
+  row,
+  collapsed,
+  onToggleBatch,
+  onUngroup,
+  setEditItem,
+  setConfirmAction,
+  startMutation,
+  selectedItems,
+  handleToggleSelect,
+  timeFormat,
+  hasPermission,
+  canModify,
+  t,
+  aggregateForRows,
+}: QueueRowRenderProps) {
+  // Dispatcher (QueueRowRender) only mounts this with row.kind === 'batch';
+  // narrow up-front so the hook below can reference batchId unconditionally.
+  const batchRow = row as Extract<QueueRow, { kind: 'batch' }>;
+  const canReorder = hasPermission('queue:reorder');
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: `batch-${batchRow.batchId}`, disabled: !canReorder });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  const agg = aggregateForRows([batchRow]);
+  const allChildIds = batchRow.items.map((i) => i.id);
   const allSelected = allChildIds.length > 0 && allChildIds.every((id) => selectedItems.includes(id));
   // Status rollup: worst-of-children (failed > printing > pending).
-  const childStatuses = new Set(row.items.map((i) => i.status));
+  const childStatuses = new Set(batchRow.items.map((i) => i.status));
   // We never put non-pending into a batch grouping but render defensively.
   const rollupStatus: PrintQueueItem['status'] = childStatuses.has('failed')
     ? 'failed'
     : childStatuses.has('printing')
       ? 'printing'
       : 'pending';
-  const pendingChildren = row.items.filter((i) => i.status === 'pending').length;
+  const pendingChildren = batchRow.items.filter((i) => i.status === 'pending').length;
 
   return (
-    <div className="bg-bambu-dark-secondary rounded-xl border border-l-[3px] border-l-cyan-400 border-bambu-dark-tertiary overflow-hidden">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`bg-bambu-dark-secondary rounded-xl border border-l-[3px] border-l-cyan-400 border-bambu-dark-tertiary overflow-hidden ${
+        isDragging ? 'opacity-50 scale-[1.01] shadow-xl z-50' : ''
+      }`}
+    >
       {/* Parent header */}
       <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4">
         <button
@@ -845,6 +888,16 @@ function QueueRowRender({
         >
           {allSelected && <Check className="w-4 h-4" />}
         </button>
+        {canReorder && (
+          <div
+            {...attributes}
+            {...listeners}
+            className="hidden sm:flex items-center justify-center w-8 h-8 rounded-lg bg-bambu-dark cursor-grab active:cursor-grabbing hover:bg-bambu-dark-tertiary transition-colors touch-manipulation shrink-0"
+            title={t('queue.batch.dragGroup', { defaultValue: 'Drag group' })}
+          >
+            <GripVertical className="w-4 h-4 text-bambu-gray" />
+          </div>
+        )}
         <button
           onClick={onToggleBatch}
           className="flex items-center justify-center w-8 h-8 rounded-lg bg-bambu-dark hover:bg-bambu-dark-tertiary transition-colors shrink-0"
@@ -865,7 +918,7 @@ function QueueRowRender({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-sm sm:text-base text-white font-medium truncate">{row.batchName}</p>
+            <p className="text-sm sm:text-base text-white font-medium truncate">{batchRow.batchName}</p>
             <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] sm:text-xs bg-cyan-500/15 text-cyan-300 rounded border border-cyan-500/30">
               {t('queue.batch.label', { count: agg.count })}
             </span>
@@ -909,7 +962,7 @@ function QueueRowRender({
       {/* Children (only when expanded) */}
       {!collapsed && (
         <div className="border-t border-bambu-dark-tertiary bg-black/20 p-2 sm:p-3 space-y-2">
-          {row.items.map((child) => (
+          {batchRow.items.map((child) => (
             <SortableQueueItem
               key={child.id}
               item={child}
@@ -1196,8 +1249,9 @@ export function QueuePage() {
       return {};
     }
   });
-  // Multi-drag bookkeeping for DragOverlay.
-  const [activeDragId, setActiveDragId] = useState<number | null>(null);
+  // Multi-drag bookkeeping for DragOverlay. Numeric for single items, string
+  // `batch-<id>` when a whole group is being dragged.
+  const [activeDragId, setActiveDragId] = useState<number | string | null>(null);
   // "Group as batch" modal.
   const [groupBatchModal, setGroupBatchModal] = useState(false);
   // Ungroup confirm.
@@ -1582,7 +1636,8 @@ export function QueuePage() {
   }, [pendingItems]);
 
   const handleDragStart = (event: DragStartEvent) => {
-    setActiveDragId(typeof event.active.id === 'number' ? event.active.id : null);
+    const id = event.active.id;
+    setActiveDragId(typeof id === 'number' || typeof id === 'string' ? id : null);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -1590,29 +1645,49 @@ export function QueuePage() {
     setActiveDragId(null);
     if (!over || active.id === over.id) return;
 
-    // Multi-drag: when the dragged row is part of a multi-selection, move
-    // all selected items as a contiguous block, preserving their original
-    // relative order. Otherwise, single-row drag (today's behavior).
-    const draggedId = active.id as number;
-    const movingIds = selectedItems.includes(draggedId) && selectedItems.length > 1
-      ? selectedItems.slice().sort((a, b) => {
-          const ai = pendingItems.findIndex((i) => i.id === a);
-          const bi = pendingItems.findIndex((i) => i.id === b);
-          return ai - bi;
-        })
-      : [draggedId];
+    // Resolve dragged source → movingIds (preserving order from pendingItems).
+    //   - `batch-<id>`: every child of that batch, in their current order
+    //   - selected + dragged is one of them: contiguous multi-drag block
+    //   - otherwise: single row
+    let movingIds: number[];
+    const activeId = active.id;
+    if (typeof activeId === 'string' && activeId.startsWith('batch-')) {
+      const batchId = Number(activeId.slice('batch-'.length));
+      movingIds = pendingItems.filter((i) => i.batch_id === batchId).map((i) => i.id);
+    } else {
+      const draggedId = activeId as number;
+      movingIds = selectedItems.includes(draggedId) && selectedItems.length > 1
+        ? selectedItems.slice().sort((a, b) => {
+            const ai = pendingItems.findIndex((i) => i.id === a);
+            const bi = pendingItems.findIndex((i) => i.id === b);
+            return ai - bi;
+          })
+        : [draggedId];
+    }
+    if (movingIds.length === 0) return;
 
-    const overIndex = pendingItems.findIndex(i => i.id === over.id);
+    // Resolve drop target → index inside pendingItems. A `batch-<id>` drop
+    // target anchors at the batch's first child, so dropping above another
+    // batch lands the moving block immediately before it.
+    let overIndex: number;
+    const overId = over.id;
+    if (typeof overId === 'string' && overId.startsWith('batch-')) {
+      const overBatchId = Number(overId.slice('batch-'.length));
+      overIndex = pendingItems.findIndex((i) => i.batch_id === overBatchId);
+    } else {
+      overIndex = pendingItems.findIndex((i) => i.id === overId);
+    }
     if (overIndex === -1) return;
 
     // Remove the moving items, then re-insert at overIndex (adjusted).
+    const overAnchor = pendingItems[overIndex];
     const remaining = pendingItems.filter((i) => !movingIds.includes(i.id));
-    let insertAt = remaining.findIndex((i) => i.id === over.id);
+    let insertAt = remaining.findIndex((i) => i.id === overAnchor.id);
     if (insertAt === -1) insertAt = overIndex;
     // If dragging downward across the drop target, insert AFTER it; upward
     // = before. dnd-kit's `over` is the row under the pointer, not the gap.
-    const draggedOriginalIndex = pendingItems.findIndex((i) => i.id === draggedId);
-    if (draggedOriginalIndex < overIndex) insertAt += 1;
+    const firstMovingIndex = pendingItems.findIndex((i) => i.id === movingIds[0]);
+    if (firstMovingIndex < overIndex) insertAt += 1;
     const reordered = [
       ...remaining.slice(0, insertAt),
       ...movingIds
@@ -1653,18 +1728,21 @@ export function QueuePage() {
     return rows;
   }, [pendingItems, t]);
 
-  // SortableContext ID list. Only include IDs whose DOM node actually
-  // renders — collapsed batch children are detached from the DOM, so
-  // registering them with dnd-kit confuses the collision resolver when
-  // dragging past a collapsed batch row. v1 batch parent isn't itself
-  // draggable (within-batch reorder only); collapsed batches just act as
-  // unmovable obstacles.
-  const sortableIds = useMemo<number[]>(() => {
-    const ids: number[] = [];
+  // SortableContext ID list.
+  // - Standalone pending items: their numeric id.
+  // - Batch parents: the synthetic `batch-<id>` string, always present so the
+  //   group itself is draggable and acts as a drop target whether collapsed
+  //   or expanded.
+  // - Expanded batch children: their numeric id, so within-batch reorder
+  //   keeps working. Collapsed children are detached from the DOM and
+  //   intentionally omitted to keep dnd-kit's collision resolver clean.
+  const sortableIds = useMemo<(number | string)[]>(() => {
+    const ids: (number | string)[] = [];
     for (const row of groupedRows) {
       if (row.kind === 'item') {
         ids.push(row.item.id);
       } else {
+        ids.push(`batch-${row.batchId}`);
         const collapsed = batchCollapsed[row.batchId] ?? true;
         if (!collapsed) {
           for (const child of row.items) ids.push(child.id);
@@ -2166,14 +2244,40 @@ export function QueuePage() {
                   )}
                 </SortableContext>
                 <DragOverlay>
-                  {activeDragId !== null && selectedItems.includes(activeDragId) && selectedItems.length > 1 ? (
-                    <div className="flex items-center gap-3 px-3 py-2 bg-bambu-dark-secondary border-2 border-cyan-400 rounded-lg shadow-2xl">
-                      <Package className="w-4 h-4 text-cyan-300" />
-                      <span className="text-sm text-white font-medium">
-                        {t('queue.dragGhost.multiCount', { count: selectedItems.length })}
-                      </span>
-                    </div>
-                  ) : null}
+                  {(() => {
+                    if (activeDragId === null) return null;
+                    // Batch drag — show the group ghost with copy count.
+                    if (typeof activeDragId === 'string' && activeDragId.startsWith('batch-')) {
+                      const batchId = Number(activeDragId.slice('batch-'.length));
+                      const siblings = pendingItems.filter((i) => i.batch_id === batchId);
+                      if (siblings.length === 0) return null;
+                      const name = siblings[0].batch_name || t('queue.batch.defaultName');
+                      return (
+                        <div className="flex items-center gap-3 px-3 py-2 bg-bambu-dark-secondary border-2 border-cyan-400 rounded-lg shadow-2xl">
+                          <Package className="w-4 h-4 text-cyan-300" />
+                          <span className="text-sm text-white font-medium">
+                            {t('queue.dragGhost.batch', {
+                              defaultValue: '{{name}} ({{count}} copies)',
+                              name,
+                              count: siblings.length,
+                            })}
+                          </span>
+                        </div>
+                      );
+                    }
+                    // Multi-row drag — show the N-item ghost.
+                    if (typeof activeDragId === 'number' && selectedItems.includes(activeDragId) && selectedItems.length > 1) {
+                      return (
+                        <div className="flex items-center gap-3 px-3 py-2 bg-bambu-dark-secondary border-2 border-cyan-400 rounded-lg shadow-2xl">
+                          <Package className="w-4 h-4 text-cyan-300" />
+                          <span className="text-sm text-white font-medium">
+                            {t('queue.dragGhost.multiCount', { count: selectedItems.length })}
+                          </span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                 </DragOverlay>
               </DndContext>
             </div>

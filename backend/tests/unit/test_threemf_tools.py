@@ -14,6 +14,7 @@ from backend.app.utils.threemf_tools import (
     extract_embedded_presets_from_3mf,
     extract_filament_usage_from_3mf,
     extract_plate_extruder_set_from_3mf,
+    extract_print_time_from_3mf,
     extract_project_filaments_from_3mf,
     get_cumulative_usage_at_layer,
     mm_to_grams,
@@ -841,3 +842,102 @@ class TestExtractBedTypeFrom3mf:
         file_path.write_bytes(create_mock_3mf(xml_content).read())
 
         assert extract_bed_type_from_3mf(file_path) == "Textured PEI Plate"
+
+
+class TestExtractPrintTimeFrom3mf:
+    """Tests for extract_print_time_from_3mf — the per-plate `prediction` reader
+    used by the completion notification path to scope the archive-level (summed)
+    total down to the actually-printed plate (#1785)."""
+
+    def test_returns_plate_prediction_when_plate_id_matches(self, tmp_path):
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="index" value="1"/>
+                <metadata key="prediction" value="3600"/>
+            </plate>
+            <plate>
+                <metadata key="index" value="2"/>
+                <metadata key="prediction" value="7200"/>
+            </plate>
+            <plate>
+                <metadata key="index" value="3"/>
+                <metadata key="prediction" value="10800"/>
+            </plate>
+        </config>
+        """
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(create_mock_3mf(xml_content).read())
+
+        assert extract_print_time_from_3mf(file_path, plate_id=2) == 7200
+
+    def test_returns_first_plate_when_no_plate_id(self, tmp_path):
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="index" value="1"/>
+                <metadata key="prediction" value="900"/>
+            </plate>
+            <plate>
+                <metadata key="index" value="2"/>
+                <metadata key="prediction" value="1800"/>
+            </plate>
+        </config>
+        """
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(create_mock_3mf(xml_content).read())
+
+        assert extract_print_time_from_3mf(file_path) == 900
+
+    def test_returns_none_when_plate_id_missing(self, tmp_path):
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="index" value="1"/>
+                <metadata key="prediction" value="3600"/>
+            </plate>
+        </config>
+        """
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(create_mock_3mf(xml_content).read())
+
+        assert extract_print_time_from_3mf(file_path, plate_id=5) is None
+
+    def test_returns_none_when_prediction_unparseable(self, tmp_path):
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="index" value="1"/>
+                <metadata key="prediction" value="not-a-number"/>
+            </plate>
+        </config>
+        """
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(create_mock_3mf(xml_content).read())
+
+        assert extract_print_time_from_3mf(file_path, plate_id=1) is None
+
+    def test_returns_none_when_slice_info_missing(self, tmp_path):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as zf:
+            zf.writestr("other_file.txt", "content")
+        buffer.seek(0)
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(buffer.read())
+
+        assert extract_print_time_from_3mf(file_path) is None
+        assert extract_print_time_from_3mf(file_path, plate_id=1) is None
+
+    def test_returns_none_when_file_invalid(self, tmp_path):
+        file_path = tmp_path / "invalid.3mf"
+        file_path.write_text("not a zip file")
+
+        assert extract_print_time_from_3mf(file_path) is None
+        assert extract_print_time_from_3mf(file_path, plate_id=1) is None
+
+    def test_returns_none_when_file_missing(self, tmp_path):
+        file_path = tmp_path / "nonexistent.3mf"
+
+        assert extract_print_time_from_3mf(file_path) is None
+        assert extract_print_time_from_3mf(file_path, plate_id=2) is None

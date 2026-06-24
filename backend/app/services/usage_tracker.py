@@ -1127,14 +1127,27 @@ async def _track_from_3mf(
                     mm_at_end = get_cumulative_usage_at_layer(split_layer_usage, seg_end_layer).get(filament_id, 0)
                     segment_grams = mm_to_grams(mm_at_end - mm_at_start, diameter, density)
                 else:
-                    # No per-layer data: linear fallback by layer ratio
+                    # No per-layer data: linear fallback by layer ratio (#1771).
+                    # Cascade denominators because firmware on some models (P1S
+                    # observed) resets `total_layer_num` to 0 at print end —
+                    # `last_layer_num` is the print's last-valid layer captured
+                    # mid-print and survives that reset (same shape as the
+                    # `last_progress` fallback at line 1040). Equal-split is the
+                    # last-resort fence: still wrong, but bounded — never dumps
+                    # the entire print onto the last segment, which was the
+                    # original #1771 symptom for the reporter (P1S, AMS Backup
+                    # fed from spool 1 then spool 2, all 260 g credited to
+                    # spool 2 even though spool 1 had given up its 180 g).
                     seg_end_layer = tray_changes[seg_idx + 1][1]
-                    total_layers = state.total_layers if state else 0
-                    if total_layers > 0:
-                        segment_grams = total_weight * (seg_end_layer - seg_start_layer) / total_layers
+                    denom = (state.total_layers if state else 0) or last_layer_num
+                    if denom > 0:
+                        segment_grams = total_weight * (seg_end_layer - seg_start_layer) / denom
                     else:
-                        # Can't compute ratio — assign all to last segment
-                        segment_grams = 0.0
+                        # No layer information available from any source —
+                        # spread evenly across segments. The last segment will
+                        # get the rounding remainder via the `is_last` branch
+                        # above on its own iteration.
+                        segment_grams = total_weight / len(tray_changes)
 
                 sum_previous += segment_grams
                 if segment_grams <= 0:

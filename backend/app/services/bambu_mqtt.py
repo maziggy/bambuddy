@@ -31,6 +31,23 @@ logger = logging.getLogger(__name__)
 _AMS_MODULE_PREFIXES = ("ams/", "n3f/", "n3s/")
 
 
+def parse_ams_filament_backup_from_cfg(cfg_raw: object) -> bool | None:
+    """Extract AMS Filament Backup state from a Bambu push_status ``print.cfg`` value.
+
+    OrcaSlicer reads bit 18 of the hex string via
+    ``get_flag_bits(cfg, 18)`` (DeviceManager.cpp:4961). Old-protocol families
+    (A1 / A1 Mini) omit ``cfg`` entirely; this returns ``None`` for any input
+    that doesn't yield a clean integer so downstream consumers preserve today's
+    behaviour rather than treating "absent" as "OFF".
+    """
+    if not isinstance(cfg_raw, str) or not cfg_raw:
+        return None
+    try:
+        return bool((int(cfg_raw, 16) >> 18) & 1)
+    except ValueError:
+        return None
+
+
 def apply_tray_exist_bits(
     units: list,
     tray_exist_bits_str: str | int | None,
@@ -330,6 +347,11 @@ class PrinterState:
     # Developer LAN mode: parsed from MQTT "fun" field bit 0x20000000
     # True = dev mode ON (no encryption), False = dev mode OFF (encryption required), None = unknown
     developer_mode: bool | None = None
+    # AMS Filament Backup: bit 18 of top-level print.cfg hex on new-protocol Bambu
+    # printers (H/X/P/H2 families). True=ON, False=OFF, None=unknown (e.g. A1 family
+    # which uses the old protocol path; field not yet found). Consumers must treat
+    # None as "no opinion" — preserving today's behaviour, NOT as "disabled".
+    ams_filament_backup: bool | None = None
 
 
 # Stage name mapping from BambuStudio DeviceManager.cpp
@@ -1017,6 +1039,33 @@ class BambuMQTTClient:
                     f"[{self.serial_number}] Received gcode_state: {print_data.get('gcode_state')}, "
                     f"gcode_file: {print_data.get('gcode_file')}, subtask_name: {print_data.get('subtask_name')}"
                 )
+
+            # AMS Filament Backup state lives in bit 18 of top-level print.cfg on
+            # new-protocol printers. Verified against OrcaSlicer's
+            # DeviceManager.cpp:4961 SetAutoRefillEnabled(get_flag_bits(cfg, 18))
+            # and live H2D ON/OFF capture 2026-06-20.
+            #
+            # Hold-timer guard: when the user just toggled via the badge, the
+            # next 1-2 push_status frames may still carry the printer's OLD cfg
+            # for ~3 s before the firmware reflects the change. Without this
+            # gate the UI would flicker ON→OFF→ON. Same pattern xcam uses.
+            new_backup = parse_ams_filament_backup_from_cfg(print_data.get("cfg"))
+            if new_backup is not None and new_backup != self.state.ams_filament_backup:
+                hold_start = self._xcam_hold_start.get("print_option_auto_switch_filament")
+                if hold_start is not None and (time.time() - hold_start) <= self._xcam_hold_time:
+                    logger.debug(
+                        "[%s] AMS Filament Backup push ignored (hold active for %.1fs)",
+                        self.serial_number,
+                        time.time() - hold_start,
+                    )
+                else:
+                    logger.info(
+                        "[%s] AMS Filament Backup: %s",
+                        self.serial_number,
+                        "ON" if new_backup else "OFF",
+                    )
+                    self.state.ams_filament_backup = new_backup
+                    self._xcam_hold_start.pop("print_option_auto_switch_filament", None)
 
             # Detect dual-nozzle BEFORE processing AMS data (tray_now disambiguation needs it)
             # device.extruder.info with >= 2 entries only exists on dual-nozzle printers (H2D, H2D Pro)
@@ -2084,7 +2133,14 @@ class BambuMQTTClient:
             if new_layer > old_layer and self.on_layer_change:
                 self.on_layer_change(new_layer)
         if "total_layer_num" in data:
-            self.state.total_layers = int(data["total_layer_num"])
+            # Some firmware (P1S observed) resets `total_layer_num` to 0 at
+            # print end — same shape as the `layer_num` reset guarded above.
+            # Preserve the last known good value so the usage-tracker split
+            # path (#1771) has a denominator that survives the reset frame.
+            # Explicit reset to 0 happens on print start (`_handle_print_start`).
+            new_total = int(data["total_layer_num"])
+            if new_total > 0:
+                self.state.total_layers = new_total
 
         # Fan speeds (MQTT sends as string "0"-"15" representing speed levels, or percentage)
         # Convert to 0-100 percentage for display
@@ -3071,6 +3127,12 @@ class BambuMQTTClient:
             self.state.hms_errors = []
             # Reset layer tracking for new print (needed for layer-based timelapse)
             self.state.layer_num = 0
+            # Reset total_layers so the previous print's value can't bleed into
+            # this print's usage-tracker split before the new push_status arrives
+            # with the slicer's total (#1771 follow-on to the preservation guard
+            # above at line ~2135 — the guard now ignores firmware-reset 0s, so
+            # the explicit reset has to happen here instead).
+            self.state.total_layers = 0
             # Reset completion tracking for new print
             self._was_running = True
             self._completion_triggered = False
@@ -3439,6 +3501,7 @@ class BambuMQTTClient:
         timelapse: bool = False,
         use_ams: bool = True,
         nozzle_offset_cali: bool = False,
+        nozzle_mapping: str | None = None,
     ):
         """Start a print job on the printer.
 
@@ -3457,6 +3520,13 @@ class BambuMQTTClient:
             use_ams: Use AMS for automatic filament changes
             nozzle_offset_cali: Run nozzle offset calibration before print
                 (dual-nozzle printers only — silently ignored on single-nozzle).
+            nozzle_mapping: Opaque JSON string captured from BambuStudio's
+                project_file for H2C rack-swap (O1C2) (#1780). When non-null
+                AND the printer is dual-nozzle, parsed and injected as the
+                `nozzle_mapping` array on the dispatched project_file so the
+                firmware honours the user's slicer pick instead of falling
+                back to "last matching nozzle" auto-pick. Silently ignored
+                on single-nozzle printers.
         """
         if self._client and self.state.connected:
             # Bambu print command format — matches Bambu Studio's format.
@@ -3613,6 +3683,27 @@ class BambuMQTTClient:
             if ams_mapping is not None:
                 command["print"]["ams_mapping"] = flat_ams_mapping
                 command["print"]["ams_mapping2"] = ams_mapping2
+
+            # H2C dual-nozzle-rack slicer-pick preservation (#1780).
+            # `nozzle_mapping` carries per-filament physical nozzle position
+            # IDs (`list[int]`), JSON-string-encoded when it leaves the queue
+            # item; parse here so the wire ships an array, matching
+            # BambuStudio's project_file shape. Gate by `is_dual_nozzle`
+            # defensively — single-nozzle firmwares would ignore the field
+            # but we err on the side of not emitting unrecognised fields. A
+            # parse failure is logged but never blocks the dispatch — the
+            # firmware will fall back to its auto-pick path, which is the
+            # pre-fix behaviour.
+            if is_dual_nozzle and nozzle_mapping:
+                try:
+                    command["print"]["nozzle_mapping"] = json.loads(nozzle_mapping)
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "[%s] Invalid nozzle_mapping JSON on dispatch, omitting from "
+                        "project_file (firmware will auto-pick): %r",
+                        self.serial_number,
+                        nozzle_mapping,
+                    )
 
             logger.info("[%s] Sending print command: %s", self.serial_number, json.dumps(command))
             self._client.publish(self.topic_publish, json.dumps(command), qos=1)
@@ -3781,8 +3872,18 @@ class BambuMQTTClient:
         # Update local state immediately
         if option_name == "auto_recovery":
             self.state.print_options.auto_recovery_step_loss = enabled
+        elif option_name == "auto_switch_filament":
+            self.state.ams_filament_backup = enabled
 
         return True
+
+    def set_ams_filament_backup(self, enabled: bool) -> bool:
+        """Toggle AMS Filament Backup (a.k.a. auto-switch / auto-refill).
+
+        Mirrors BambuStudio's "AMS Filament Backup" checkbox. Verified payload
+        shape from H2D capture 2026-06-20.
+        """
+        return self._set_print_option("auto_switch_filament", enabled)
 
     def start_calibration(
         self,

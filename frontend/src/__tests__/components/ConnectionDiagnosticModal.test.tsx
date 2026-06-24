@@ -98,4 +98,28 @@ describe('ConnectionDiagnosticModal', () => {
 
     spy.mockRestore();
   });
+
+  it('renders model-specific camera port diagnostics', async () => {
+    const spy = vi.spyOn(api, 'diagnosePrinter').mockResolvedValue({
+      ...PROBLEM_RESULT,
+      overall: 'warnings',
+      checks: [
+        { id: 'port_mqtt', status: 'pass', params: {} },
+        { id: 'port_ftps', status: 'pass', params: {} },
+        {
+          id: 'port_rtsps',
+          status: 'warn',
+          params: { protocol: 'Chamber Image', port: 6000 },
+        },
+      ],
+    });
+
+    renderModal({ printerId: 1, printerName: 'Test A1 Mini', onClose: vi.fn() });
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/Camera port \(Chamber Image 6000\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Port 6000 is unreachable/i)).toBeInTheDocument();
+
+    spy.mockRestore();
+  });
 });

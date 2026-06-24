@@ -12,12 +12,14 @@ import {
   Users,
 } from 'lucide-react';
 import { api, type PrinterStatus } from '../../api/client';
+import { useDispatchedPrinterIds } from '../../hooks/useDispatchedPrinterIds';
 import { getColorName } from '../../utils/colors';
 import {
   normalizeColorForCompare,
   colorsAreSimilar,
   autoMatchFilament,
   filterFilamentsByNozzle,
+  effectivePreferLowest,
 } from '../../utils/amsHelpers';
 import type { PrinterSelectorProps, AssignmentMode } from './types';
 import type { PrinterMappingResult, PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
@@ -108,7 +110,13 @@ function InlineMappingEditor({
     } else {
       const usedTrayIds = new Set<number>(Object.values(printerResult.config.manualMappings));
       const cachedSettings = queryClient.getQueryData<{ prefer_lowest_filament?: boolean }>(['settings']);
-      loaded = autoMatchFilament(req, printerResult.loadedFilaments, usedTrayIds, cachedSettings?.prefer_lowest_filament) as LoadedFilament | undefined;
+      loaded = autoMatchFilament(
+        req,
+        printerResult.loadedFilaments,
+        usedTrayIds,
+        effectivePreferLowest(cachedSettings?.prefer_lowest_filament, printerResult.status?.ams_filament_backup),
+        printerResult.inventoryByTrayId,
+      ) as LoadedFilament | undefined;
     }
 
     // Determine status
@@ -248,7 +256,14 @@ export function PrinterSelector({
     return map;
   }, [activePrinters, statusQueries]);
 
+  // Printers with a queued/active background dispatch — accepted by Bambuddy
+  // but not yet reflected in PrinterStatus.state (which only flips on
+  // PRINT_START from the printer itself). Backend rejects double-sends with
+  // 409 anyway; this just stops the operator from picking them in the modal.
+  const dispatchedPrinterIds = useDispatchedPrinterIds();
+
   const isPrinterBusy = (printerId: number): boolean => {
+    if (dispatchedPrinterIds.has(printerId)) return true;
     const status = printerStatusMap.get(printerId);
     if (!status) return false; // Unknown state — don't block
     if (!status.connected) return true;
@@ -256,6 +271,7 @@ export function PrinterSelector({
   };
 
   const getPrinterStateLabel = (printerId: number): string | null => {
+    if (dispatchedPrinterIds.has(printerId)) return 'Dispatching...';
     const status = printerStatusMap.get(printerId);
     if (!status) return null;
     if (!status.connected) return 'Offline';

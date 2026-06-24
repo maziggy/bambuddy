@@ -29,7 +29,6 @@ class PrinterBase(BaseModel):
         max_length=253,
         pattern=r"^(\d{1,3}(\.\d{1,3}){3}|[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*)$",
     )
-    access_code: str = Field(..., min_length=1, max_length=20)
     model: str | None = None
     location: str | None = None  # Group/location name
     auto_archive: bool = True
@@ -41,7 +40,10 @@ class PrinterBase(BaseModel):
 
 
 class PrinterCreate(PrinterBase):
-    pass
+    # access_code lives on the input shapes only — never on the default
+    # PrinterResponse. Direct exposure on PRINTERS_READ would let a Viewer
+    # connect to the printer's MQTT and bypass Bambuddy's RBAC.
+    access_code: str = Field(..., min_length=1, max_length=20)
 
 
 class PlateDetectionROI(BaseModel):
@@ -101,7 +103,6 @@ class PrinterResponse(PrinterBase):
             "name": printer.name,
             "serial_number": printer.serial_number,
             "ip_address": printer.ip_address,
-            "access_code": printer.access_code,
             "model": printer.model,
             "location": printer.location,
             "auto_archive": printer.auto_archive,
@@ -133,6 +134,18 @@ class PrinterResponse(PrinterBase):
                 h=printer.plate_detection_roi_h or 0.55,
             )
         return cls(**data)
+
+
+class PrinterResponseWithSecret(PrinterResponse):
+    """PrinterResponse + access_code. Returned ONLY to callers with
+    PRINTERS_UPDATE (Admin / Operator JWTs, or single-trust auth-disabled mode).
+
+    Viewers and API keys never receive this shape — they get the bare
+    PrinterResponse without access_code, since holding the access_code lets
+    the caller talk to the printer's MQTT directly and bypass Bambuddy's RBAC.
+    """
+
+    access_code: str
 
 
 class HMSErrorResponse(BaseModel):
@@ -311,11 +324,17 @@ class PrinterStatus(BaseModel):
     firmware_version: str | None = None
     # Developer LAN mode: True = enabled, False = disabled (MQTT encryption), None = unknown
     developer_mode: bool | None = None
+    # AMS Filament Backup ("auto-switch" to a second spool when one runs out).
+    # True = ON, False = OFF, None = unknown / unsupported (A1 family — protocol field
+    # not yet identified). UI treats None as "status unavailable", not as a hard disable.
+    ams_filament_backup: bool | None = None
     # Queue: printer is awaiting the user to acknowledge the build plate is cleared
     # after a finished/failed print. Persisted across restarts (#961).
     awaiting_plate_clear: bool = False
     # AMS drying support
     supports_drying: bool = False
+    # Active chamber heater (responds to M141). True only for H2C/H2D/H2DPro/H2S/X2D.
+    supports_chamber_heater: bool = False
     # Linked archive for the active print (resolved via subtask_id). Frontend uses
     # this to fetch plate metadata and show the plate name when the source 3MF is
     # multi-plate (#881 follow-up).

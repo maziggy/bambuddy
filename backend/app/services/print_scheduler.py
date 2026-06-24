@@ -2353,7 +2353,15 @@ class PrintScheduler:
                     cleanup_path.unlink()
             except OSError as cleanup_err:
                 logger.warning(
-                    "Queue item %s: Failed to delete transient library file %s: %s", item.id, cleanup_path, cleanup_err
+                    "TRANSIENT_LIBRARY_FILE_ORPHAN %s",
+                    json.dumps(
+                        {
+                            "queue_item_id": item.id,
+                            "path": str(cleanup_path),
+                            "error": str(cleanup_err),
+                        },
+                        sort_keys=True,
+                    ),
                 )
 
         # Clear the awaiting-plate-clear flag now that we're starting a new print

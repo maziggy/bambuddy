@@ -251,7 +251,7 @@ async def test_archive_copy_survives_library_cleanup(queue_factory):
 
 
 @pytest.mark.asyncio
-async def test_oserror_during_unlink_does_not_crash_dispatch(queue_factory):
+async def test_oserror_during_unlink_logs_orphan_path_and_does_not_crash_dispatch(queue_factory, caplog):
     ctx = await queue_factory(cleanup=True, thumbnail_path="relative")
     original_unlink = type(ctx.source_path).unlink
 
@@ -260,7 +260,8 @@ async def test_oserror_during_unlink_does_not_crash_dispatch(queue_factory):
             raise OSError("permission denied")
         return original_unlink(path, *args, **kwargs)
 
-    await _dispatch_library_item(ctx, unlink_side_effect=unlink_with_source_failure)
+    with caplog.at_level("WARNING", logger="backend.app.services.print_scheduler"):
+        await _dispatch_library_item(ctx, unlink_side_effect=unlink_with_source_failure)
 
     item, library_file, archive = await _queue_snapshot(ctx)
     assert item.status == "printing"
@@ -270,3 +271,6 @@ async def test_oserror_during_unlink_does_not_crash_dispatch(queue_factory):
     assert ctx.source_path.exists()
     assert not ctx.thumbnail_path.exists()
     assert ctx.archive_path.exists()
+    assert "TRANSIENT_LIBRARY_FILE_ORPHAN" in caplog.text
+    assert str(ctx.source_path) in caplog.text
+    assert "permission denied" in caplog.text

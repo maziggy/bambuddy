@@ -153,6 +153,13 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         except json.JSONDecodeError:
             nozzle_mapping_parsed = None
 
+    nozzles_info_parsed = None
+    if item.nozzles_info:
+        try:
+            nozzles_info_parsed = json.loads(item.nozzles_info)
+        except json.JSONDecodeError:
+            nozzles_info_parsed = None
+
     # Create response with parsed ams_mapping
     item_dict = {
         "id": item.id,

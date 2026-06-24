@@ -72,7 +72,9 @@ i18n
  */
 function applyApplianceLocale() {
   if (typeof window === 'undefined' || !window.localStorage) return;
-  if (window.localStorage.getItem(APPLIANCE_CONSUMED_KEY)) return;
+  const storage = window.localStorage;
+  if (typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') return;
+  if (storage.getItem(APPLIANCE_CONSUMED_KEY)) return;
 
   fetch('/api/v1/system/appliance')
     .then((r) => (r.ok ? r.json() : null))
@@ -80,7 +82,7 @@ function applyApplianceLocale() {
       if (!data || typeof data.locale !== 'string') return;
       if (!SUPPORTED_LNGS.includes(data.locale)) return;
       i18n.changeLanguage(data.locale);
-      window.localStorage.setItem(APPLIANCE_CONSUMED_KEY, '1');
+      storage.setItem(APPLIANCE_CONSUMED_KEY, '1');
     })
     .catch(() => {
       // Endpoint absent or unreachable — non-appliance install or dev environment.

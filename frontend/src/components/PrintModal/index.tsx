@@ -2,7 +2,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { AlertCircle, AlertTriangle, Calendar, Code, Layers, Loader2, Pencil, Printer, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { PrintQueueItemCreate, PrintQueueItemUpdate, SpoolAssignment } from '../../api/client';
+import type { PrinterStatus, PrintQueueItemCreate, PrintQueueItemUpdate, SpoolAssignment } from '../../api/client';
 import { api } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, CardContent } from '../Card';
@@ -375,6 +375,33 @@ export function PrintModal({
     settings?.prefer_lowest_filament,
     printerStatus?.ams_filament_backup,
   );
+
+  const isPrinterCurrentlyDispatchable = (status: PrinterStatus | undefined): boolean => {
+    if (!status?.connected) return false;
+    if (status.awaiting_plate_clear) return false;
+    if (status.ams?.some((ams) => ams.dry_time > 0)) return false;
+    return ['IDLE', 'FINISH', 'FAILED'].includes(status.state ?? '');
+  };
+
+  const asapToastShouldPromiseLaterStart = async (): Promise<boolean> => {
+    if (scheduleOptions.scheduleType !== 'asap' || assignmentMode !== 'printer') return false;
+    if (selectedPrinters.length === 0) return false;
+
+    try {
+      const statuses = await Promise.all(
+        selectedPrinters.map((printerId) =>
+          queryClient.fetchQuery({
+            queryKey: ['printer-status', printerId],
+            queryFn: () => api.getPrinterStatus(printerId),
+            staleTime: 0,
+          }),
+        ),
+      );
+      return statuses.some((status) => !isPrinterCurrentlyDispatchable(status));
+    } catch {
+      return true;
+    }
+  };
 
   // Get AMS mapping from hook (only when single printer selected)
   const { amsMapping } = useFilamentMapping(
@@ -865,9 +892,21 @@ export function PrintModal({
           showToast('Queue item updated');
         }
       } else if (results.success === 1) {
-        showToast(assignmentMode === 'model' ? `Queued for any ${targetModel}` : t('queue.printQueued'));
+        const waitForIdleToast = await asapToastShouldPromiseLaterStart();
+        showToast(
+          waitForIdleToast
+            ? t('queue.printQueuedWillStartWhenIdle', { defaultValue: 'Will start when printer is idle' })
+            : assignmentMode === 'model'
+              ? `Queued for any ${targetModel}`
+              : t('queue.printQueued'),
+        );
       } else {
-        showToast(t('queue.itemsQueued', { count: results.success }));
+        const waitForIdleToast = await asapToastShouldPromiseLaterStart();
+        showToast(
+          waitForIdleToast
+            ? t('queue.printQueuedWillStartWhenIdle', { defaultValue: 'Will start when printer is idle' })
+            : t('queue.itemsQueued', { count: results.success }),
+        );
       }
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       onSuccess?.();

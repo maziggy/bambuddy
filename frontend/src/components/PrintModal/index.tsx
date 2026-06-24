@@ -32,10 +32,9 @@ import type {
 import { DEFAULT_PRINT_OPTIONS, DEFAULT_SCHEDULE_OPTIONS } from './types';
 
 /**
- * Unified PrintModal component that handles three modes:
- * - 'reprint': Legacy alias for creating a print queue item
- * - 'add-to-queue': Legacy alias for creating a print queue item
- * - 'edit-queue-item': Edit existing queue item (supports multi-printer)
+ * Unified PrintModal component that handles queue item creation and editing.
+ * - 'create': Create a print queue item from an archive or library file
+ * - 'edit-queue-item': Edit existing queue item
  *
  * Both archiveId and libraryFileId are supported. Library files are archived at
  * print start time by the scheduler, not when queued.
@@ -80,7 +79,7 @@ export function PrintModal({
     return [];
   });
 
-  // Multi-select plates: in add-to-queue mode users can pick a subset of plates
+  // Multi-select plates: create mode users can pick a subset of plates
   const [selectedPlates, setSelectedPlates] = useState<Set<number>>(() => {
     if (mode === 'edit-queue-item' && queueItem?.plate_id != null) {
       return new Set([queueItem.plate_id]);
@@ -703,12 +702,12 @@ export function PrintModal({
     const filamentOverridesArray = buildFilamentOverridesArray();
 
     // Multi-plate auto-batch: when the user adds 2+ plates from one source in
-    // a single add-to-queue submission, pre-create a PrintBatch and pass its
+    // a single create submission, pre-create a PrintBatch and pass its
     // id to each subsequent addToQueue call so the queue UI groups them as a
     // collapsible batch. Only triggered for single-target submissions —
     // multi-printer fan-out keeps the old per-item shape.
     const shouldAutoBatch =
-      mode === 'add-to-queue'
+      mode === 'create'
       && platesToQueue.length > 1
       && (assignmentMode === 'model' || selectedPrinters.length === 1);
     let autoBatchId: number | null = null;
@@ -743,7 +742,7 @@ export function PrintModal({
       asapInsertionCounts.set(scopeKey, insertPosition + itemCount - 1);
     };
 
-    // Common queue data for add-to-queue and edit modes
+    // Common queue data for create and edit modes
     const getQueueData = (printerId: number | null, plateOverride?: number | null): PrintQueueItemCreate => ({
       printer_id: assignmentMode === 'printer' ? printerId : null,
       target_model: assignmentMode === 'model' ? targetModel : null,
@@ -938,13 +937,12 @@ export function PrintModal({
   const effectiveQuantity = (assignmentMode === 'printer' && selectedPrinters.length > 1) ? 1 : quantity;
 
   // Keep scheduleOptions.gcodeInjection in sync with the checkbox's render
-  // condition. The checkbox only renders for reprint + snippets configured +
+  // condition. The checkbox only renders for create + snippets configured +
   // quantity > 1, so if the user ticks it at quantity 2 then drops back to 1
-  // the box hides but the state stays true — and the immediate-reprint path
-  // would then silently bypass injection.
+  // the box hides but the state stays true.
   useEffect(() => {
     if (
-      mode === 'reprint' &&
+      mode === 'create' &&
       scheduleOptions.gcodeInjection &&
       (effectiveQuantity <= 1 || !settings?.gcode_snippets)
     ) {
@@ -1164,7 +1162,7 @@ export function PrintModal({
             )}
 
             {/* Print options */}
-            {(mode === 'reprint' || effectivePrinterCount > 0 || (assignmentMode === 'model' && targetModel)) && (
+            {(mode === 'create' || effectivePrinterCount > 0 || (assignmentMode === 'model' && targetModel)) && (
               <PrintOptionsPanel
                 options={printOptions}
                 onChange={setPrintOptions}

@@ -8,8 +8,8 @@ import { getBedTypeInfo } from '../../utils/bedType';
 /**
  * Plate selection grid for multi-plate 3MF files.
  * Shows thumbnails, names, objects, and print times for each plate.
- * In multi-select mode (add-to-queue), plates have checkboxes for selecting a subset.
- * In single-select mode (reprint/edit), only one plate can be selected at a time.
+ * In multi-select mode, plates have checkboxes for selecting a subset.
+ * In single-select mode, only one plate can be selected at a time.
  */
 export function PlateSelector({
   plates,

@@ -2627,7 +2627,7 @@ export function FileManagerPage() {
 
       {printFile && (
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           libraryFileId={printFile.id}
           archiveName={printFile.print_name || printFile.filename}
           onClose={() => setPrintFile(null)}

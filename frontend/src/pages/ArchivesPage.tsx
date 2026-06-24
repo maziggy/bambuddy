@@ -1262,7 +1262,7 @@ function ArchiveCard({
       {/* Reprint Modal */}
       {showReprint && (
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={archive.id}
           archiveName={archive.print_name || archive.filename}
           onClose={() => setShowReprint(false)}
@@ -2265,7 +2265,7 @@ function ArchiveListRow({
       {/* Reprint Modal */}
       {showReprint && (
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={archive.id}
           archiveName={archive.print_name || archive.filename}
           onClose={() => setShowReprint(false)}

@@ -2,11 +2,10 @@ import type { PrintQueueItem, Printer } from '../../api/client';
 
 /**
  * Mode of operation for the PrintModal.
- * - 'reprint': Legacy alias for creating a print queue item
- * - 'add-to-queue': Legacy alias for creating a print queue item
+ * - 'create': Create a print queue item from an archive or library file
  * - 'edit-queue-item': Edit existing queue item (all options + existing values)
  */
-export type PrintModalMode = 'reprint' | 'add-to-queue' | 'edit-queue-item';
+export type PrintModalMode = 'create' | 'edit-queue-item';
 
 /**
  * Props for the unified PrintModal component.
@@ -142,7 +141,7 @@ export interface PrinterSelectorProps {
   allowMultiple?: boolean;
   /** Show inactive printers (for edit mode where original assignment may be inactive) */
   showInactive?: boolean;
-  /** Disable selection of busy printers (used in reprint mode) */
+  /** Disable selection of busy printers */
   disableBusy?: boolean;
   /** Current assignment mode */
   assignmentMode?: AssignmentMode;
@@ -170,7 +169,7 @@ export interface PlateSelectorProps {
   onToggle: (plateIndex: number) => void;
   onSelectAll?: () => void;
   onDeselectAll?: () => void;
-  /** Whether multi-select (checkboxes) is enabled — true in add-to-queue mode */
+  /** Whether multi-select (checkboxes) is enabled */
   multiSelect?: boolean;
 }
 

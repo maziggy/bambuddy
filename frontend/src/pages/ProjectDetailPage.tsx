@@ -1418,7 +1418,7 @@ export function ProjectDetailPage() {
       {/* Print from project */}
       {printFile && (
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           libraryFileId={printFile.id}
           archiveName={printFile.print_name || printFile.filename}
           projectId={projectId}

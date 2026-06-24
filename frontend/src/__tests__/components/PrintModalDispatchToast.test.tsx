@@ -1,5 +1,5 @@
 /**
- * Test that legacy reprint mode now goes through the queue-backed print path.
+ * Test that create mode now goes through the queue-backed create path.
  *
  * Separate file because vi.mock(ToastContext) must be module-scoped
  * and would interfere with the main PrintModal test suite.
@@ -53,11 +53,11 @@ describe('PrintModal dispatch toast', () => {
     );
   });
 
-  it('shows queued toast in legacy reprint mode', async () => {
+  it('shows queued toast in create mode', async () => {
     const user = userEvent.setup();
     render(
       <PrintModal
-        mode="reprint"
+        mode="create"
         archiveId={1}
         archiveName="Benchy"
         onClose={mockOnClose}
@@ -94,7 +94,7 @@ describe('PrintModal dispatch toast', () => {
     const user = userEvent.setup();
     render(
       <PrintModal
-        mode="reprint"
+        mode="create"
         archiveId={1}
         archiveName="Benchy"
         initialSelectedPrinterIds={[1]}
@@ -133,7 +133,7 @@ describe('PrintModal dispatch toast', () => {
     const user = userEvent.setup();
     render(
       <PrintModal
-        mode="reprint"
+        mode="create"
         archiveId={1}
         archiveName="Benchy"
         initialSelectedPrinterIds={[1]}
@@ -171,7 +171,7 @@ describe('PrintModal dispatch toast', () => {
     const user = userEvent.setup();
     render(
       <PrintModal
-        mode="reprint"
+        mode="create"
         archiveId={1}
         archiveName="Benchy"
         initialSelectedPrinterIds={[1]}

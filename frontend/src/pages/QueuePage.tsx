@@ -2300,7 +2300,7 @@ export function QueuePage() {
       {/* Re-queue Modal */}
       {requeueItem && (
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={requeueItem.archive_id ?? undefined}
           libraryFileId={requeueItem.library_file_id ?? undefined}
           archiveName={requeueItem.archive_name || requeueItem.library_file_name || `File #${requeueItem.archive_id || requeueItem.library_file_id}`}

@@ -82,25 +82,39 @@ function formatDateShort(date: Date): string {
  * Compute a time-weighted daily consumption rate and standard deviation.
  *
  * Algorithm:
- *   1. Sort all usage events by timestamp (oldest → newest).
- *   2. Convert each event into a g/day intensity = weight_used / elapsed_days,
- *      where elapsed_days is the gap to the previous event (floor: 0.5d to
- *      avoid inflated rates from same-day prints).
+ *   1. Aggregate all usage events by calendar day (UTC date string), summing
+ *      weight_used across all spools in the group that printed on that day.
+ *      Day-bucketing fixes two problems: (a) concurrent prints from multiple
+ *      spools in the same group no longer produce near-zero inter-event gaps
+ *      that inflate per-interval rates; (b) the oldest event's weight is no
+ *      longer silently dropped — it contributes to its day bucket.
+ *   2. Sort day buckets oldest → newest and compute inter-day g/day rates.
+ *      The gap is in whole days (minimum 1) so same-day reprints don't
+ *      create a zero-duration interval.
  *   3. Apply exponential age-decay: each observation is weighted by
  *      exp(-λ * age_days) so recent prints dominate. λ = ln(2)/30 gives a
  *      30-day half-life — prints from a month ago count half as much.
  *   4. Compute the weighted mean and weighted variance → std dev.
  *
- * Returns null when there is only one event (no gap to measure) — the
- * delta-rate fallback handles that case.
+ * Returns null when there are fewer than 2 distinct days (no gap to measure)
+ * — the delta-rate fallback handles that case.
  */
 function computeHistoryRate(records: SpoolUsageRecord[]): { rate: number; stdDev: number } | null {
   if (records.length < 2) return null;
 
-  // Sort ascending by time
-  const sorted = [...records].sort(
-    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-  );
+  // Aggregate by UTC calendar day so concurrent multi-spool prints on the
+  // same day are summed before rate computation.
+  const byDay = new Map<string, number>();
+  for (const r of records) {
+    const day = r.created_at.slice(0, 10); // "YYYY-MM-DD"
+    byDay.set(day, (byDay.get(day) ?? 0) + r.weight_used);
+  }
+
+  if (byDay.size < 2) return null;
+
+  const days = [...byDay.entries()]
+    .map(([day, totalG]) => ({ ms: new Date(day).getTime(), totalG }))
+    .sort((a, b) => a.ms - b.ms);
 
   const now = Date.now();
   // λ for 30-day half-life: ln(2)/30
@@ -108,15 +122,12 @@ function computeHistoryRate(records: SpoolUsageRecord[]): { rate: number; stdDev
 
   const observations: { rate: number; weight: number }[] = [];
 
-  for (let i = 1; i < sorted.length; i++) {
-    const prev = new Date(sorted[i - 1].created_at).getTime();
-    const curr = new Date(sorted[i].created_at).getTime();
-    const elapsedDays = Math.max((curr - prev) / 86400000, 0.5); // floor at 0.5d
-    const ageDays = (now - curr) / 86400000;
+  for (let i = 1; i < days.length; i++) {
+    const elapsedDays = Math.max((days[i].ms - days[i - 1].ms) / 86400000, 1);
+    const ageDays = (now - days[i].ms) / 86400000;
 
-    // g/day for this interval
-    const intervalRate = sorted[i].weight_used / elapsedDays;
-    // Exponential age-decay weight
+    // g/day for this inter-day interval: weight printed on day[i] / gap to previous day
+    const intervalRate = days[i].totalG / elapsedDays;
     const w = Math.exp(-lambda * ageDays);
 
     observations.push({ rate: intervalRate, weight: w });
@@ -241,11 +252,17 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
       const groupHistory: SpoolUsageRecord[] = [];
       for (const s of group.spools) groupHistory.push(...(usageBySpoolId.get(s.id) ?? []));
 
+      // If any spool in the group has been reset (weight_used_baseline > 0), the
+      // usage history contains pre-reset events that would inflate the rate. We
+      // have no reset timestamp to filter by, so skip history entirely and fall
+      // through to computeDeltaRate, which correctly subtracts the baseline.
+      const groupHasReset = group.spools.some((sp) => (sp.weight_used_baseline ?? 0) > 0);
+
       let dailyRateG: number | null = null;
       let dailyRateStdDev: number | null = null;
       let rateTier: SkuForecast['rateTier'] = 'none';
 
-      const histResult = computeHistoryRate(groupHistory);
+      const histResult = !groupHasReset ? computeHistoryRate(groupHistory) : null;
       if (histResult !== null) {
         dailyRateG = histResult.rate;
         dailyRateStdDev = histResult.stdDev;

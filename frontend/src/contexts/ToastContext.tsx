@@ -6,13 +6,25 @@ import { formatFileSize } from '../utils/file';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading';
 
-type ShowPersistentToast = (id: string, message: string, type?: ToastType) => void;
+interface ToastAction {
+  label: string;
+  href: string;
+  onClick?: () => void;
+}
+
+type ShowPersistentToast = (
+  id: string,
+  message: string,
+  type?: ToastType,
+  options?: { action?: ToastAction },
+) => void;
 
 interface Toast {
   id: string;
   message: string;
   type: ToastType;
   persistent?: boolean;
+  action?: ToastAction;
   dispatchData?: DispatchToastData;
 }
 
@@ -120,17 +132,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     timeoutRefs.current.set(id, timeout);
   }, []);
 
-  const showPersistentToast = useCallback((id: string, message: string, type: ToastType = 'info') => {
-    if (!isMountedRef.current) return;
-    setToasts((prev) => {
-      // Update existing toast if same id, otherwise add new one
-      const exists = prev.find((t) => t.id === id);
-      if (exists) {
-        return prev.map((t) => (t.id === id ? { ...t, message, type, persistent: true } : t));
-      }
-      return [...prev, { id, message, type, persistent: true }];
-    });
-  }, []);
+  const showPersistentToast = useCallback(
+    (id: string, message: string, type: ToastType = 'info', options?: { action?: ToastAction }) => {
+      if (!isMountedRef.current) return;
+      setToasts((prev) => {
+        // Update existing toast if same id, otherwise add new one
+        const exists = prev.find((t) => t.id === id);
+        if (exists) {
+          return prev.map((t) =>
+            t.id === id ? { ...t, message, type, persistent: true, action: options?.action } : t,
+          );
+        }
+        return [...prev, { id, message, type, persistent: true, action: options?.action }];
+      });
+    },
+    [],
+  );
 
   const dismissToast = useCallback((id: string) => {
     if (!isMountedRef.current) return;
@@ -632,6 +649,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               <>
                 {icons[toast.type]}
                 <span className="text-white text-sm">{toast.message}</span>
+                {toast.action && (
+                  <a
+                    href={toast.action.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => {
+                      toast.action?.onClick?.();
+                      dismissToast(toast.id);
+                    }}
+                    className="ml-2 px-2 py-1 rounded text-xs font-medium bg-bambu-green/20 text-bambu-green hover:bg-bambu-green/30 whitespace-nowrap"
+                  >
+                    {toast.action.label}
+                  </a>
+                )}
                 <button
                   onClick={() => dismissToast(toast.id)}
                   className="ml-2 text-bambu-gray hover:text-white transition-colors"

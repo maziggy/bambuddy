@@ -106,6 +106,13 @@ class LibraryFile(Base):
     folder: Mapped["LibraryFolder | None"] = relationship(back_populates="files")
     project: Mapped["Project | None"] = relationship()
     created_by: Mapped["User | None"] = relationship()
+    # Tags (#1268). M2M via library_file_tags. Loaded explicitly via
+    # ``selectinload`` in list_files so each row in the listing carries its
+    # chip set without N+1 fetches.
+    tags: Mapped[list["LibraryTag"]] = relationship(
+        secondary="library_file_tags",
+        back_populates="files",
+    )
 
     @classmethod
     def active(cls) -> "Select[tuple[LibraryFile]]":
@@ -117,6 +124,47 @@ class LibraryFile(Base):
         must use ``select(LibraryFile)`` directly.
         """
         return select(cls).where(cls.deleted_at.is_(None))
+
+
+class LibraryTag(Base):
+    """User-authored cross-cutting label for library files (#1268).
+
+    Folders express hierarchy; tags express orthogonal attributes ("toy",
+    "kid-safe", "petg-only"). Catalog is global (one tag set per install)
+    — the multi-user "private tags" case is not in v1 scope. ``name_key``
+    is ``LOWER(TRIM(name))`` so "Toys" / "toys" / "  TOYS  " all collide
+    on the UNIQUE index and the route returns 409 instead of silently
+    creating a duplicate.
+    """
+
+    __tablename__ = "library_tags"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    name_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    files: Mapped[list["LibraryFile"]] = relationship(
+        secondary="library_file_tags",
+        back_populates="tags",
+    )
+
+
+class LibraryFileTag(Base):
+    """Association between library files and tags (#1268).
+
+    Composite PK so the same (file, tag) pair can't be inserted twice. Both
+    sides ON DELETE CASCADE: deleting a tag drops every association row,
+    deleting a file drops its tag links, and the catalog row survives so
+    other files keep their chip.
+    """
+
+    __tablename__ = "library_file_tags"
+
+    file_id: Mapped[int] = mapped_column(ForeignKey("library_files.id", ondelete="CASCADE"), primary_key=True)
+    tag_id: Mapped[int] = mapped_column(ForeignKey("library_tags.id", ondelete="CASCADE"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 from backend.app.models.archive import PrintArchive  # noqa: E402, F811

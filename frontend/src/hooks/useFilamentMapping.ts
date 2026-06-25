@@ -6,6 +6,8 @@ import {
   colorsAreSimilar,
   formatSlotLabel,
   getGlobalTrayId,
+  preferLowestSortKey,
+  compareSortKeys,
 } from '../utils/amsHelpers';
 import type { PrinterStatus } from '../api/client';
 
@@ -102,6 +104,7 @@ export function computeAmsMapping(
   filamentReqs: { filaments: FilamentRequirement[] } | undefined,
   printerStatus: PrinterStatus | undefined,
   preferLowest?: boolean,
+  inventoryByTrayId?: Map<number, number>,
 ): number[] | undefined {
   if (!filamentReqs?.filaments || filamentReqs.filaments.length === 0) return undefined;
 
@@ -129,13 +132,15 @@ export function computeAmsMapping(
       available = available.filter((f) => f.extruderId === req.nozzle_id);
     }
 
-    // Sort by remaining filament (ascending) so .find() picks the lowest-remain spool first
+    // Sort lowest-first when the preference is on. Inventory-tracked spools
+    // sort before MQTT-only ones; see preferLowestSortKey for the rationale.
     if (preferLowest) {
-      available = [...available].sort((a, b) => {
-        const ra = a.remain >= 0 ? a.remain : 101;
-        const rb = b.remain >= 0 ? b.remain : 101;
-        return ra - rb;
-      });
+      available = [...available].sort((a, b) =>
+        compareSortKeys(
+          preferLowestSortKey(a, inventoryByTrayId),
+          preferLowestSortKey(b, inventoryByTrayId),
+        ),
+      );
     }
 
     let idxMatch: LoadedFilament | undefined;
@@ -152,11 +157,12 @@ export function computeAmsMapping(
       } else if (idxMatches.length > 1) {
         // Multiple trays with same tray_info_idx - use color matching among them
         if (preferLowest) {
-          idxMatches.sort((a, b) => {
-            const ra = a.remain >= 0 ? a.remain : 101;
-            const rb = b.remain >= 0 ? b.remain : 101;
-            return ra - rb;
-          });
+          idxMatches.sort((a, b) =>
+            compareSortKeys(
+              preferLowestSortKey(a, inventoryByTrayId),
+              preferLowestSortKey(b, inventoryByTrayId),
+            ),
+          );
         }
         exactMatch = idxMatches.find(
           (f) =>
@@ -325,6 +331,7 @@ export function useFilamentMapping(
   printerStatus: PrinterStatus | undefined,
   manualMappings: Record<number, number>,
   preferLowest?: boolean,
+  inventoryByTrayId?: Map<number, number>,
 ): UseFilamentMappingResult {
   const loadedFilaments = useLoadedFilaments(printerStatus);
 
@@ -389,13 +396,15 @@ export function useFilamentMapping(
         available = available.filter((f) => f.extruderId === req.nozzle_id);
       }
 
-      // Sort by remaining filament (ascending) so .find() picks the lowest-remain spool first
+      // Sort lowest-first when the preference is on. Inventory-tracked spools
+      // sort before MQTT-only ones; see preferLowestSortKey for the rationale.
       if (preferLowest) {
-        available = [...available].sort((a, b) => {
-          const ra = a.remain >= 0 ? a.remain : 101;
-          const rb = b.remain >= 0 ? b.remain : 101;
-          return ra - rb;
-        });
+        available = [...available].sort((a, b) =>
+          compareSortKeys(
+            preferLowestSortKey(a, inventoryByTrayId),
+            preferLowestSortKey(b, inventoryByTrayId),
+          ),
+        );
       }
 
       let idxMatch: LoadedFilament | undefined;
@@ -412,11 +421,12 @@ export function useFilamentMapping(
         } else if (idxMatches.length > 1) {
           // Multiple trays with same tray_info_idx - use color matching among them
           if (preferLowest) {
-            idxMatches.sort((a, b) => {
-              const ra = a.remain >= 0 ? a.remain : 101;
-              const rb = b.remain >= 0 ? b.remain : 101;
-              return ra - rb;
-            });
+            idxMatches.sort((a, b) =>
+              compareSortKeys(
+                preferLowestSortKey(a, inventoryByTrayId),
+                preferLowestSortKey(b, inventoryByTrayId),
+              ),
+            );
           }
           exactMatch = idxMatches.find(
             (f) =>
@@ -491,7 +501,7 @@ export function useFilamentMapping(
         isManual: false,
       };
     });
-  }, [filamentReqs, loadedFilaments, manualMappings, preferLowest, ftsActive]);
+  }, [filamentReqs, loadedFilaments, manualMappings, preferLowest, ftsActive, inventoryByTrayId]);
 
   // Build AMS mapping from matched filaments
   // Format: array matching 3MF filament slot structure

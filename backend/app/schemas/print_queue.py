@@ -82,6 +82,10 @@ class PrintQueueItemUpdate(BaseModel):
     nozzle_offset_cali: bool | None = None
     # Auto-print G-code injection
     gcode_injection: bool | None = None
+    # H2C dual-nozzle-rack slicer pick (#1780). list[int] per-filament
+    # physical nozzle position IDs from BambuStudio's project_file MQTT
+    # body; sent back to the printer verbatim on dispatch.
+    nozzle_mapping: list[int] | None = None
 
 
 class PrintQueueItemResponse(BaseModel):
@@ -162,6 +166,11 @@ class PrintQueueItemResponse(BaseModel):
 
     # Auto-print G-code injection
     gcode_injection: bool = False
+
+    # H2C dual-nozzle-rack slicer pick (#1780). Surface for any future
+    # "edit print → choose nozzle" UI; null on every model except O1C2
+    # uploads from BambuStudio.
+    nozzle_mapping: list[int] | None = None
 
     class Config:
         from_attributes = True

@@ -11,9 +11,10 @@ interface PrinterQueueWidgetProps {
   printerModel?: string | null;
   loadedFilamentTypes?: Set<string>;
   loadedFilaments?: Set<string>;  // "TYPE:rrggbb" pairs for filament override color matching
+  variant?: 'card' | 'panelExtension';
 }
 
-export function PrinterQueueWidget({ printerId, printerModel, loadedFilamentTypes, loadedFilaments }: PrinterQueueWidgetProps) {
+export function PrinterQueueWidget({ printerId, printerModel, loadedFilamentTypes, loadedFilaments, variant = 'card' }: PrinterQueueWidgetProps) {
   const { t } = useTranslation();
   const { data: queue } = useQuery({
     queryKey: ['queue', printerId, 'pending', printerModel],
@@ -36,10 +37,14 @@ export function PrinterQueueWidget({ printerId, printerModel, loadedFilamentType
   // second button in this widget caused the two controls to overlap whenever
   // the plate-clear gate was up with auto-dispatch items queued — both POSTed
   // to the same /clear-plate endpoint, so the widget button was pure noise.
+  const linkClassName = variant === 'panelExtension'
+    ? 'block mt-2 border-t border-bambu-dark-tertiary pt-2 pl-1 hover:opacity-90 transition-opacity'
+    : 'block mb-3 p-3 bg-bambu-dark rounded-lg hover:bg-bambu-dark-tertiary transition-colors';
+
   return (
     <Link
       to="/queue"
-      className="block mb-3 p-3 bg-bambu-dark rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
+      className={linkClassName}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0 flex-1">

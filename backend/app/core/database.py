@@ -193,6 +193,7 @@ async def init_db():
         print_log,
         print_queue,
         printer,
+        printer_sensor_history,
         project,
         project_bom,
         settings,
@@ -958,6 +959,26 @@ async def run_migrations(conn):
         await _safe_execute(
             conn, "ALTER TABLE virtual_printers ADD COLUMN queue_force_color_match BOOLEAN DEFAULT FALSE"
         )
+
+    # Per-VP opt-in for auto-print G-code injection (#1516). Default false so
+    # existing gcode_snippets users don't silently start injecting on VP/Studio
+    # Send jobs after upgrading.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN gcode_injection BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN gcode_injection BOOLEAN DEFAULT FALSE")
+
+    # Migration: nozzle_mapping + nozzles_info on print_queue for H2C rack-swap
+    # slicer-pick preservation (#1780). Opaque JSON-string column carrying
+    # BambuStudio's per-filament physical nozzle position IDs, forwarded
+    # straight from the VP intake to the dispatcher's project_file MQTT
+    # command. NULL on every other model. Nullable TEXT — no Postgres / SQLite
+    # divergence here. `nozzles_info` shipped in the original #1780 attempt
+    # but BambuStudio never actually sends it (verified via wire capture on
+    # H2C, see CHANGELOG 0.2.5b1) — the column stays nullable so old rows
+    # still load; nothing reads or writes to it anymore.
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN nozzle_mapping TEXT")
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN nozzles_info TEXT")
 
     # Migration: Add target_parts_count column to projects for tracking total parts needed
     await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN target_parts_count INTEGER")
@@ -3116,6 +3137,64 @@ async def run_migrations(conn):
             "names manually.",
             orphan_count,
         )
+
+    # Migration: Add on_ai_failure_detection column to notification_providers (#1794).
+    # Splits Obico AI failure detection out of the multiplexed on_printer_error
+    # event so users can subscribe to spaghetti alerts independently of HMS
+    # hardware-error alerts. Postgres rejects `DEFAULT 0` for BOOLEAN columns.
+    if is_sqlite():
+        await _safe_execute(
+            conn,
+            "ALTER TABLE notification_providers ADD COLUMN on_ai_failure_detection BOOLEAN DEFAULT 0",
+        )
+    else:
+        await _safe_execute(
+            conn,
+            "ALTER TABLE notification_providers ADD COLUMN on_ai_failure_detection BOOLEAN DEFAULT false",
+        )
+
+    # Migration: Add gate_acknowledged column to print_queue (#1818). Cleared
+    # by the per-printer "Resume after failure" action so the scheduler's
+    # `_check_previous_success` lookback skips this row. Postgres rejects
+    # `DEFAULT 0` for BOOLEAN columns.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN gate_acknowledged BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN gate_acknowledged BOOLEAN DEFAULT false")
+
+    # Migration: Disambiguate the four ``user_print_*`` notification template
+    # names by appending " Email" (#1792). See ``_migrate_rename_user_print_template_names``.
+    await _migrate_rename_user_print_template_names(conn)
+
+
+_USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (
+    ("user_print_start", "User Print Started", "User Print Started Email"),
+    ("user_print_complete", "User Print Completed", "User Print Completed Email"),
+    ("user_print_failed", "User Print Failed", "User Print Failed Email"),
+    ("user_print_stopped", "User Print Stopped", "User Print Stopped Email"),
+)
+
+
+async def _migrate_rename_user_print_template_names(conn) -> None:
+    """Append " Email" to the four ``user_print_*`` notification template names (#1792).
+
+    The provider-level "Print Completed" and the per-user "User Print Completed"
+    rows were visually indistinguishable in the Message Templates list because
+    the seed name lacked the suffix that the EVENT_NAMES display map in
+    routes/notification_templates.py already uses ("User Print Completed Email").
+
+    Renames only rows where ``name`` is still the old default — admins who
+    renamed the template themselves keep their custom name. Standard SQL
+    UPDATE works on both SQLite and Postgres.
+    """
+    from sqlalchemy import text
+
+    async with conn.begin_nested():
+        for event_type, old_name, new_name in _USER_PRINT_TEMPLATE_RENAMES:
+            await conn.execute(
+                text("UPDATE notification_templates SET name = :new WHERE event_type = :et AND name = :old"),
+                {"new": new_name, "et": event_type, "old": old_name},
+            )
 
 
 async def seed_notification_templates():

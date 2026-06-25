@@ -143,6 +143,8 @@ const DE_COGNATES = [
   'Name', 'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Modus',
   'Stop', 'Reset', 'Test', 'Code', 'Token', 'Server', 'Port', 'Bug', 'Job',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
+  'AMS Filament Backup',  // Bambu Lab product/firmware feature name
+
   'Pause', 'Power', 'System', 'Problem', 'Designer', 'Extruder', 'Firmware',
   'Material', 'Original', 'Position', 'Webhook', 'Workflow', 'Slicer',
   'Region', 'Normal', 'Orange', 'Branch', 'Budget', 'Commit', 'Global',
@@ -171,6 +173,7 @@ const DE_COGNATES = [
 // French cognates — many UI labels overlap with English exactly.
 const FR_COGNATES = [
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
+  'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Filament',
   'Filaments', 'Software', 'Hardware', 'Stop', 'Reset', 'Test', 'Code',
   'Token', 'Server', 'Port', 'Plate', 'Layer', 'Active', 'Total', 'Avatar',
@@ -194,6 +197,7 @@ const FR_COGNATES = [
   '{{count}} filament', '{{count}} filaments', '{{count}} permissions',
   '{{count}} downloads', '{{count}} item', '{{count}} selected',
   '({{count}} item)', 'Provisioning...', 'Pressure Advance',
+  '{{name}} ({{count}} copies)',  // FR plural of "copie" is also "copies"
   'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
@@ -208,6 +212,7 @@ const FR_COGNATES = [
 // Italian cognates.
 const IT_COGNATES = [
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
+  'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Email',  // common loanword in Italian, used verbatim in UI labels
   'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Filament',
   'Filaments', 'Software', 'Hardware', 'Stop', 'Reset', 'Test', 'Code',
@@ -248,6 +253,7 @@ const JA_COGNATES = [
 // Portuguese (BR) cognates.
 const PT_BR_COGNATES = [
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
+  'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Filament',
   'Software', 'Hardware', 'Stop', 'Reset', 'Test', 'Code', 'Token', 'Server',
   'Port', 'Plate', 'Layer', 'Modal', 'Pin', 'Pro', 'Mini', 'Studio', 'Cache',
@@ -315,6 +321,7 @@ const KO_COGNATES = [
 // Spanish cognates — words/phrases that are genuinely identical in Spanish.
 const ES_COGNATES = [
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
+  'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Error', 'Firmware', 'General', 'Control', 'Total', 'total', 'Material',
   'Material:', 'Color', 'Hex', 'Local', 'Global', 'China', 'Editable',
   'Normal', 'Metal', 'Multicolor', 'Proxy', 'Host', 'Factor', 'Original',
@@ -334,6 +341,7 @@ const ES_COGNATES = [
 const TR_COGNATES = [
   'Filament', 'Firmware', 'Disk', 'Hex', 'Test', 'Port', 'Model', 'Metal',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
+  'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Min', 'Normal', 'Platform', 'Net', 'Trend', 'Commit', 'Global', 'Proxy',
   'N/A', 'email',
   'STARTTLS (Port 587)', 'SSL/TLS (Port 465)',

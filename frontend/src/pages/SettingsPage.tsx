@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatDateOnly } from '../utils/date';
 import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
 import { checkPasswordComplexity } from '../utils/password';
+import { PRESET_CATEGORIES, parsePresetTriple } from '../utils/temperatureFanPresets';
 import type { APIKey, AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
 import { SlicerBundlesPanel } from '../components/SlicerBundlesPanel';
@@ -20,6 +21,7 @@ import { AddNotificationModal } from '../components/AddNotificationModal';
 import { NotificationTemplateEditor } from '../components/NotificationTemplateEditor';
 import { NotificationLogViewer } from '../components/NotificationLogViewer';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { ApiKeyQRCodeModal } from '../components/ApiKeyQRCodeModal';
 import { CreateUserAdvancedAuthModal } from '../components/CreateUserAdvancedAuthModal';
 import { LdapUserPicker } from '../components/LdapUserPicker';
 import { SpoolmanSettings } from '../components/SpoolmanSettings';
@@ -36,7 +38,6 @@ import { TwoFactorSettings } from '../components/TwoFactorSettings';
 import { OIDCProviderSettings } from '../components/OIDCProviderSettings';
 import { SecurityStatusCard } from '../components/SecurityStatusCard';
 import { APIBrowser } from '../components/APIBrowser';
-import { Toggle } from '../components/Toggle';
 import { virtualPrinterApi, spoolbuddyApi } from '../api/client';
 import { defaultNavItems, getDefaultView, setDefaultView } from '../components/Layout';
 import { availableLanguages } from '../i18n';
@@ -65,6 +66,7 @@ registerSettingsSearch({ labelKey: 'settings.smartPlugs', tab: 'plugs', keywords
 registerSettingsSearch({ labelKey: 'settings.providers', tab: 'notifications', keywords: 'telegram discord email notification providers webhook', anchor: 'card-providers' });
 registerSettingsSearch({ labelKey: 'settings.messageTemplates', tab: 'notifications', keywords: 'message templates notification text edit', anchor: 'card-templates' });
 registerSettingsSearch({ labelKey: 'settings.defaultPrintOptions', labelFallback: 'Default Print Options', tab: 'queue', keywords: 'print bed leveling flow calibration vibration first layer timelapse', anchor: 'card-print-options' });
+registerSettingsSearch({ labelKey: 'settings.tempFanPresetsTitle', labelFallback: 'Temperature & Fan Presets', tab: 'queue', keywords: 'temperature fan presets nozzle bed chamber quick buttons popover', anchor: 'card-temp-fan-presets' });
 registerSettingsSearch({ labelKey: 'settings.staggeredStart', labelFallback: 'Staggered Start', tab: 'queue', keywords: 'staggered batch delay start queue group', anchor: 'card-staggered' });
 registerSettingsSearch({ labelKey: 'settings.plateClear', labelFallback: 'Plate-Clear Confirmation', tab: 'queue', keywords: 'plate clear confirm auto queue', anchor: 'card-plate' });
 registerSettingsSearch({ labelKey: 'settings.gcodeInjection', labelFallback: 'G-code Injection', tab: 'queue', keywords: 'gcode injection start end autoprint farmloop swapmod autoclear printflow', anchor: 'card-gcode' });
@@ -91,8 +93,8 @@ registerSettingsSearch({ labelKey: 'settings.sessionPolicy.title', labelFallback
 registerSettingsSearch({ labelKey: 'settings.email.smtpSettings', labelFallback: 'SMTP Configuration', tab: 'users', subTab: 'email', keywords: 'smtp email send server port password auth starttls ssl', anchor: 'card-smtp' });
 registerSettingsSearch({ labelKey: 'settings.ldap.title', labelFallback: 'LDAP Authentication', tab: 'users', subTab: 'ldap', keywords: 'ldap active directory ad authentication bind dn search base group mapping', anchor: 'card-ldap' });
 registerSettingsSearch({ labelKey: 'settings.tabs.backup', tab: 'backup', keywords: 'backup github restore download cloud sync profiles archives', anchor: 'card-backup' });
-// Sidebar Links (external links settings is rendered in the General tab)
-registerSettingsSearch({ labelKey: 'externalLinks.title', labelFallback: 'Sidebar Links', tab: 'general', keywords: 'sidebar links external custom navigation url add', anchor: 'card-sidebar-links' });
+// Sidebar (system pages and external links settings is rendered in the General tab)
+registerSettingsSearch({ labelKey: 'externalLinks.sidebarLayout', labelFallback: 'Sidebar', tab: 'general', keywords: 'sidebar layout links pages hide show external custom navigation url add', anchor: 'card-sidebar-links' });
 // Filament tab — integrations
 registerSettingsSearch({ labelKey: 'settings.filamentTracking', tab: 'filament', keywords: 'spoolman filament tracking inventory sync remote integration', anchor: 'card-spoolman' });
 registerSettingsSearch({ labelKey: 'settings.catalog.spoolCatalog', labelFallback: 'Spool Catalog', tab: 'filament', keywords: 'spool catalog entries brand material reset import export', anchor: 'card-spool-catalog' });
@@ -167,6 +169,11 @@ export function SettingsPage() {
     setLightStyle, setLightBackground, setLightAccent,
   } = useTheme();
   const [localSettings, setLocalSettings] = useState<AppSettings | null>(null);
+  // Transient typed strings for the per-filament humidity threshold inputs
+  // (#1605). Committed back to localSettings.ams_humidity_thresholds on blur
+  // so intermediate values ("", "3", "5") are not eaten by the [5, 95] clamp
+  // while the user is mid-typing.
+  const [humidityDrafts, setHumidityDrafts] = useState<Record<string, string>>({});
   const [showPlugModal, setShowPlugModal] = useState(false);
   const [editingPlug, setEditingPlug] = useState<SmartPlug | null>(null);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
@@ -209,6 +216,7 @@ export function SettingsPage() {
     can_update_energy_cost: false,
   });
   const [createdAPIKey, setCreatedAPIKey] = useState<string | null>(null);
+  const [showApiKeyQR, setShowApiKeyQR] = useState(false);
   const [showDeleteAPIKeyConfirm, setShowDeleteAPIKeyConfirm] = useState<number | null>(null);
   const [testApiKey, setTestApiKey] = useState('');
 
@@ -263,42 +271,6 @@ export function SettingsPage() {
     setDefaultViewState(path);
     setDefaultView(path);
     showToast(t('settings.toast.settingsSaved'), 'success');
-  };
-
-  const handleResetSidebarOrder = () => {
-    localStorage.removeItem('sidebarOrder');
-    window.location.reload();
-  };
-
-  const isDefaultSidebarEnabled = !!localSettings?.default_sidebar_order;
-
-  const handleToggleDefaultSidebarOrder = async (enabled: boolean) => {
-    try {
-      if (enabled) {
-        let orderArr: string[];
-        const stored = localStorage.getItem('sidebarOrder');
-        try {
-          orderArr = stored ? JSON.parse(stored) : defaultNavItems.map(i => i.id);
-        } catch {
-          orderArr = defaultNavItems.map(i => i.id);
-        }
-        if (!Array.isArray(orderArr) || orderArr.length === 0) {
-          orderArr = defaultNavItems.map(i => i.id);
-        }
-        const payload = JSON.stringify({ order: orderArr });
-        await api.updateSettings({ default_sidebar_order: payload });
-        setLocalSettings(prev => prev ? { ...prev, default_sidebar_order: payload } : prev);
-        showToast(t('settings.sidebarDefaultSet'), 'success');
-      } else {
-        await api.updateSettings({ default_sidebar_order: '' });
-        setLocalSettings(prev => prev ? { ...prev, default_sidebar_order: '' } : prev);
-        showToast(t('settings.sidebarDefaultCleared'), 'success');
-      }
-      queryClient.invalidateQueries({ queryKey: ['settings'] });
-      queryClient.invalidateQueries({ queryKey: ['default-sidebar-order'] });
-    } catch {
-      showToast(t('settings.sidebarDefaultFailed'), 'error');
-    }
   };
 
   const { data: settings, isLoading } = useQuery({
@@ -801,7 +773,7 @@ export function SettingsPage() {
   const applyUpdateMutation = useMutation({
     mutationFn: api.applyUpdate,
     onSuccess: (data) => {
-      if (data.is_ha_addon || data.is_docker) {
+      if (data.is_ha_addon || data.is_docker || data.is_windows_installer) {
         showToast(data.message, 'error');
       } else {
         refetchUpdateStatus();
@@ -975,6 +947,7 @@ export function SettingsPage() {
       (settings.queue_drying_block ?? false) !== (localSettings.queue_drying_block ?? false) ||
       (settings.ambient_drying_enabled ?? false) !== (localSettings.ambient_drying_enabled ?? false) ||
       (settings.drying_presets ?? '') !== (localSettings.drying_presets ?? '') ||
+      (settings.ams_humidity_thresholds ?? '') !== (localSettings.ams_humidity_thresholds ?? '') ||
       settings.per_printer_mapping_expanded !== localSettings.per_printer_mapping_expanded ||
       settings.date_format !== localSettings.date_format ||
       settings.time_format !== localSettings.time_format ||
@@ -1014,6 +987,10 @@ export function SettingsPage() {
       (settings.stagger_group_size ?? 2) !== (localSettings.stagger_group_size ?? 2) ||
       (settings.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
       (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
+      (settings.nozzle_temp_presets ?? '') !== (localSettings.nozzle_temp_presets ?? '') ||
+      (settings.bed_temp_presets ?? '') !== (localSettings.bed_temp_presets ?? '') ||
+      (settings.chamber_temp_presets ?? '') !== (localSettings.chamber_temp_presets ?? '') ||
+      (settings.fan_speed_presets ?? '') !== (localSettings.fan_speed_presets ?? '') ||
       (settings.session_max_hours ?? 24) !== (localSettings.session_max_hours ?? 24);
 
     if (!hasChanges) {
@@ -1062,6 +1039,7 @@ export function SettingsPage() {
         queue_drying_block: localSettings.queue_drying_block,
         ambient_drying_enabled: localSettings.ambient_drying_enabled,
         drying_presets: localSettings.drying_presets,
+        ams_humidity_thresholds: localSettings.ams_humidity_thresholds,
         per_printer_mapping_expanded: localSettings.per_printer_mapping_expanded,
         date_format: localSettings.date_format,
         time_format: localSettings.time_format,
@@ -1101,6 +1079,10 @@ export function SettingsPage() {
         stagger_group_size: localSettings.stagger_group_size,
         stagger_interval_minutes: localSettings.stagger_interval_minutes,
         require_plate_clear: localSettings.require_plate_clear,
+        nozzle_temp_presets: localSettings.nozzle_temp_presets,
+        bed_temp_presets: localSettings.bed_temp_presets,
+        chamber_temp_presets: localSettings.chamber_temp_presets,
+        fan_speed_presets: localSettings.fan_speed_presets,
         session_max_hours: localSettings.session_max_hours,
       };
       updateMutation.mutate(settingsToSave);
@@ -1484,6 +1466,36 @@ export function SettingsPage() {
       </nav>
       <div className="flex-1 min-w-0">
       {activeTab === 'general' && (
+      <>
+      {/* Sponsor banner — prominent independence callout */}
+      <a
+        href="https://bambuddy.cool/sponsors.html?from=app-settings"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group block mb-4 lg:mb-6 rounded-xl border border-bambu-green/30 bg-gradient-to-br from-bambu-green/15 via-bambu-green/5 to-transparent hover:border-bambu-green/50 hover:from-bambu-green/20 transition-colors"
+      >
+        <div className="flex flex-col md:flex-row items-start md:items-center gap-4 p-4 md:p-5">
+          <div className="p-3 rounded-lg bg-bambu-green/20 text-bambu-green flex-shrink-0">
+            <Heart className="w-6 h-6" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-base font-semibold text-white">
+              {t('sponsors.sectionTitle', 'Independent & community-funded')}
+            </p>
+            <p className="text-sm text-bambu-gray mt-0.5">
+              {t(
+                'sponsors.tagline',
+                'Bambuddy is free and stays that way because people choose to support it. No VC, no cloud lock-in.'
+              )}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-bambu-green/20 text-bambu-green group-hover:bg-bambu-green/30 text-sm font-medium whitespace-nowrap self-start md:self-auto">
+            {t('sponsors.viewSupporters', 'View supporters')}
+            <ExternalLink className="w-4 h-4" />
+          </div>
+        </div>
+      </a>
+
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
         {/* Left Column - General Settings */}
         <div className="space-y-3 flex-1 lg:max-w-xl">
@@ -1607,35 +1619,6 @@ export function SettingsPage() {
                 <p className="text-xs text-bambu-gray mt-1">
                   {t('settings.defaultPrinterDescription')}
                 </p>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white">{t('settings.sidebarOrder')}</p>
-                  <p className="text-sm text-bambu-gray">
-                    {t('settings.sidebarOrderDescription')}
-                    {authEnabled && hasPermission('settings:update') && ` ${t('settings.sidebarOrderSetDefaultHint')}`}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleResetSidebarOrder}
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    {t('settings.reset')}
-                  </Button>
-                  {authEnabled && hasPermission('settings:update') && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-bambu-gray whitespace-nowrap">{t('settings.setDefault')}</span>
-                      <Toggle
-                        checked={isDefaultSidebarEnabled}
-                        onChange={handleToggleDefaultSidebarOrder}
-                        disabled={isLoading}
-                      />
-                    </div>
-                  )}
-                </div>
               </div>
             </CardContent>
           </Card>
@@ -2259,192 +2242,6 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
-        </div>
-
-        {/* Third Column - Sidebar Links & Updates */}
-        <div className="space-y-3 flex-1 lg:max-w-sm">
-          {/* Sidebar Links */}
-          <ExternalLinksSettings />
-
-          <Card id="card-updates">
-            <CardHeader>
-              <h2 className="text-lg font-semibold text-white">{t('settings.updates')}</h2>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider">{t('settings.printerFirmware')}</p>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white">{t('settings.checkPrinterFirmware')}</p>
-                  <p className="text-sm text-bambu-gray">
-                    {t('settings.checkFirmwareDescription')}
-                  </p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={localSettings.check_printer_firmware ?? true}
-                    onChange={(e) => updateSetting('check_printer_firmware', e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
-                </label>
-              </div>
-              <div className="border-t border-bambu-dark-tertiary pt-4">
-                <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider mb-4">{t('settings.bambuddySoftware')}</p>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white">{t('settings.checkForUpdatesLabel')}</p>
-                  <p className="text-sm text-bambu-gray">
-                    {t('settings.autoCheckDescription')}
-                  </p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={localSettings.check_updates}
-                    onChange={(e) => updateSetting('check_updates', e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
-                </label>
-              </div>
-              <div className={`flex items-center justify-between ${!localSettings.check_updates ? 'opacity-50' : ''}`}>
-                <div>
-                  <p className="text-white">{t('settings.includeBetaUpdates')}</p>
-                  <p className="text-sm text-bambu-gray">
-                    {t('settings.includeBetaUpdatesDesc')}
-                  </p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={localSettings.include_beta_updates ?? false}
-                    onChange={(e) => updateSetting('include_beta_updates', e.target.checked)}
-                    disabled={!localSettings.check_updates}
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
-                </label>
-              </div>
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <p className="text-white">{t('settings.currentVersion')}</p>
-                    <p className="text-sm text-bambu-gray">v{versionInfo?.version || '...'}</p>
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => refetchUpdateCheck()}
-                    disabled={isCheckingUpdate}
-                  >
-                    {isCheckingUpdate ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="w-4 h-4" />
-                    )}
-                    {t('settings.checkNow')}
-                  </Button>
-                </div>
-
-                {updateCheck?.update_available ? (
-                  <div className="mt-4 p-3 bg-bambu-green/10 border border-bambu-green/30 rounded-lg">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="text-bambu-green font-medium">
-                          Update available: v{updateCheck.latest_version}
-                        </p>
-                        {updateCheck.release_name && updateCheck.release_name !== updateCheck.latest_version && (
-                          <p className="text-sm text-bambu-gray mt-1">{updateCheck.release_name}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {updateCheck.release_notes && (
-                          <button
-                            onClick={() => setShowReleaseNotes(true)}
-                            className="text-bambu-gray hover:text-white transition-colors text-sm underline"
-                          >
-                            {t('settings.releaseNotes')}
-                          </button>
-                        )}
-                        {updateCheck.release_url && (
-                          <a
-                            href={updateCheck.release_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-bambu-gray hover:text-white transition-colors"
-                            title={t('settings.viewReleaseOnGitHub')}
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </a>
-                        )}
-                      </div>
-                    </div>
-
-                    {updateStatus?.status === 'downloading' || updateStatus?.status === 'installing' ? (
-                      <div className="mt-3">
-                        <div className="flex items-center gap-2 text-sm text-bambu-gray">
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>{updateStatus.message}</span>
-                        </div>
-                        <div className="mt-2 w-full bg-bambu-dark-tertiary rounded-full h-2">
-                          <div
-                            className="bg-bambu-green h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${updateStatus.progress}%` }}
-                          />
-                        </div>
-                      </div>
-                    ) : updateStatus?.status === 'complete' ? (
-                      <div className="mt-3 p-2 bg-bambu-green/20 rounded text-sm text-bambu-green">
-                        {updateStatus.message}
-                      </div>
-                    ) : updateStatus?.status === 'error' ? (
-                      <div className="mt-3 p-2 bg-red-500/20 rounded text-sm text-red-400">
-                        {updateStatus.error || updateStatus.message}
-                      </div>
-                    ) : updateCheck?.is_ha_addon ? (
-                      <div className="mt-3 p-3 bg-bambu-dark-tertiary rounded-lg">
-                        <p className="text-sm text-bambu-gray">
-                          {t('settings.updateViaHomeAssistant')}
-                        </p>
-                      </div>
-                    ) : updateCheck?.is_docker ? (
-                      <div className="mt-3 p-3 bg-bambu-dark-tertiary rounded-lg">
-                        <p className="text-sm text-bambu-gray mb-2">
-                          {t('settings.updateViaDocker')}
-                        </p>
-                        <code className="block text-xs bg-bambu-dark p-2 rounded text-bambu-green font-mono">
-                          docker compose pull && docker compose up -d
-                        </code>
-                      </div>
-                    ) : (
-                      <Button
-                        className="mt-3"
-                        onClick={() => applyUpdateMutation.mutate()}
-                        disabled={applyUpdateMutation.isPending}
-                      >
-                        {applyUpdateMutation.isPending ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Download className="w-4 h-4" />
-                        )}
-                        {t('settings.installUpdate')}
-                      </Button>
-                    )}
-                  </div>
-                ) : updateCheck?.error ? (
-                  <div className="mt-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-sm text-red-400">
-                    {t('settings.failedToCheckUpdates', { error: updateCheck.error })}
-                  </div>
-                ) : updateCheck && !updateCheck.update_available ? (
-                  <p className="mt-2 text-sm text-bambu-gray">
-                    {t('settings.latestVersionRunning')}
-                  </p>
-                ) : null}
-              </div>
-            </CardContent>
-          </Card>
 
           {/* Data Management */}
           <Card id="card-data">
@@ -2604,7 +2401,209 @@ export function SettingsPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Third Column - Updates & Sidebar Links */}
+        <div className="space-y-3 flex-1 lg:max-w-sm">
+          <Card id="card-updates">
+            <CardHeader>
+              <h2 className="text-lg font-semibold text-white">{t('settings.updates')}</h2>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider">{t('settings.printerFirmware')}</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white">{t('settings.checkPrinterFirmware')}</p>
+                  <p className="text-sm text-bambu-gray">
+                    {t('settings.checkFirmwareDescription')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.check_printer_firmware ?? true}
+                    onChange={(e) => updateSetting('check_printer_firmware', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+              <div className="border-t border-bambu-dark-tertiary pt-4">
+                <p className="text-xs font-medium text-bambu-gray uppercase tracking-wider mb-4">{t('settings.bambuddySoftware')}</p>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white">{t('settings.checkForUpdatesLabel')}</p>
+                  <p className="text-sm text-bambu-gray">
+                    {t('settings.autoCheckDescription')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.check_updates}
+                    onChange={(e) => updateSetting('check_updates', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+              <div className={`flex items-center justify-between ${!localSettings.check_updates ? 'opacity-50' : ''}`}>
+                <div>
+                  <p className="text-white">{t('settings.includeBetaUpdates')}</p>
+                  <p className="text-sm text-bambu-gray">
+                    {t('settings.includeBetaUpdatesDesc')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.include_beta_updates ?? false}
+                    onChange={(e) => updateSetting('include_beta_updates', e.target.checked)}
+                    disabled={!localSettings.check_updates}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <p className="text-white">{t('settings.currentVersion')}</p>
+                    <p className="text-sm text-bambu-gray">v{versionInfo?.version || '...'}</p>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => refetchUpdateCheck()}
+                    disabled={isCheckingUpdate}
+                  >
+                    {isCheckingUpdate ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4" />
+                    )}
+                    {t('settings.checkNow')}
+                  </Button>
+                </div>
+
+                {updateCheck?.update_available ? (
+                  <div className="mt-4 p-3 bg-bambu-green/10 border border-bambu-green/30 rounded-lg">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="text-bambu-green font-medium">
+                          Update available: v{updateCheck.latest_version}
+                        </p>
+                        {updateCheck.release_name && updateCheck.release_name !== updateCheck.latest_version && (
+                          <p className="text-sm text-bambu-gray mt-1">{updateCheck.release_name}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {updateCheck.release_notes && (
+                          <button
+                            onClick={() => setShowReleaseNotes(true)}
+                            className="text-bambu-gray hover:text-white transition-colors text-sm underline"
+                          >
+                            {t('settings.releaseNotes')}
+                          </button>
+                        )}
+                        {updateCheck.release_url && (
+                          <a
+                            href={updateCheck.release_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-bambu-gray hover:text-white transition-colors"
+                            title={t('settings.viewReleaseOnGitHub')}
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    {updateStatus?.status === 'downloading' || updateStatus?.status === 'installing' ? (
+                      <div className="mt-3">
+                        <div className="flex items-center gap-2 text-sm text-bambu-gray">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>{updateStatus.message}</span>
+                        </div>
+                        <div className="mt-2 w-full bg-bambu-dark-tertiary rounded-full h-2">
+                          <div
+                            className="bg-bambu-green h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${updateStatus.progress}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : updateStatus?.status === 'complete' ? (
+                      <div className="mt-3 p-2 bg-bambu-green/20 rounded text-sm text-bambu-green">
+                        {updateStatus.message}
+                      </div>
+                    ) : updateStatus?.status === 'error' ? (
+                      <div className="mt-3 p-2 bg-red-500/20 rounded text-sm text-red-400">
+                        {updateStatus.error || updateStatus.message}
+                      </div>
+                    ) : updateCheck?.is_ha_addon ? (
+                      <div className="mt-3 p-3 bg-bambu-dark-tertiary rounded-lg">
+                        <p className="text-sm text-bambu-gray">
+                          {t('settings.updateViaHomeAssistant')}
+                        </p>
+                      </div>
+                    ) : updateCheck?.is_docker ? (
+                      <div className="mt-3 p-3 bg-bambu-dark-tertiary rounded-lg">
+                        <p className="text-sm text-bambu-gray mb-2">
+                          {t('settings.updateViaDocker')}
+                        </p>
+                        <code className="block text-xs bg-bambu-dark p-2 rounded text-bambu-green font-mono">
+                          docker compose pull && docker compose up -d
+                        </code>
+                      </div>
+                    ) : updateCheck?.update_method === 'windows_installer' ? (
+                      <div className="mt-3 p-3 bg-bambu-dark-tertiary rounded-lg">
+                        <p className="text-sm text-bambu-gray mb-3">
+                          {t('settings.updateViaWindowsInstaller')}
+                        </p>
+                        <a
+                          href={updateCheck.installer_download_url || updateCheck.release_url || `https://github.com/maziggy/bambuddy/releases/tag/v${updateCheck.latest_version}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-bambu-dark disabled:opacity-50 bg-bambu-green hover:bg-bambu-green-light text-white focus:ring-bambu-green px-4 py-2 text-sm gap-2 min-h-[44px] md:min-h-0"
+                        >
+                          <Download className="w-4 h-4" />
+                          {t('settings.downloadWindowsInstaller', { version: updateCheck.latest_version })}
+                        </a>
+                      </div>
+                    ) : (
+                      <Button
+                        className="mt-3"
+                        onClick={() => applyUpdateMutation.mutate()}
+                        disabled={applyUpdateMutation.isPending}
+                      >
+                        {applyUpdateMutation.isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Download className="w-4 h-4" />
+                        )}
+                        {t('settings.installUpdate')}
+                      </Button>
+                    )}
+                  </div>
+                ) : updateCheck?.error ? (
+                  <div className="mt-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-sm text-red-400">
+                    {t('settings.failedToCheckUpdates', { error: updateCheck.error })}
+                  </div>
+                ) : updateCheck && !updateCheck.update_available ? (
+                  <p className="mt-2 text-sm text-bambu-gray">
+                    {t('settings.latestVersionRunning')}
+                  </p>
+                ) : null}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Sidebar Links */}
+          <ExternalLinksSettings />
+        </div>
       </div>
+      </>
       )}
 
       {/* Network Tab */}
@@ -3713,7 +3712,18 @@ export function SettingsPage() {
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => setCreatedAPIKey(null)}
+                          onClick={() => setShowApiKeyQR(true)}
+                        >
+                          <QrCode className="w-4 h-4" />
+                          {t('settings.apiKeyQrButton')}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setShowApiKeyQR(false);
+                            setCreatedAPIKey(null);
+                          }}
                         >
                           {t('common.dismiss')}
                         </Button>
@@ -3722,6 +3732,16 @@ export function SettingsPage() {
                   </div>
                 </CardContent>
               </Card>
+            )}
+
+            {/* QR code with base URL + key for mobile clients. Prefer the
+                configured External URL; fall back to the current origin. */}
+            {showApiKeyQR && createdAPIKey && (
+              <ApiKeyQRCodeModal
+                apiKey={createdAPIKey}
+                baseUrl={localSettings?.external_url || undefined}
+                onClose={() => setShowApiKeyQR(false)}
+              />
             )}
 
             {/* Create Key Form */}
@@ -4089,6 +4109,75 @@ export function SettingsPage() {
                   </label>
                 </div>
               ))}
+            </CardContent>
+          </Card>
+
+          {/* Temperature & Fan Presets */}
+          <Card id="card-temp-fan-presets">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Thermometer className="w-4 h-4 text-bambu-green" />
+                {t('settings.tempFanPresetsTitle', 'Temperature & Fan Presets')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-bambu-gray">
+                {t('settings.tempFanPresetsDescription', 'Customize the quick-select values shown in printer-card temperature and fan-speed popovers. The Off button is always shown.')}
+              </p>
+              {PRESET_CATEGORIES.map(category => {
+                const raw = localSettings?.[category.key] ?? '';
+                const triple = parsePresetTriple(raw, category.defaults, category.lo, category.hi);
+                const unitLabel = category.unit === 'C' ? '°C' : '%';
+                const labelKeyMap = {
+                  nozzle_temp_presets: 'tempFanPresetsNozzle',
+                  bed_temp_presets: 'tempFanPresetsBed',
+                  chamber_temp_presets: 'tempFanPresetsChamber',
+                  fan_speed_presets: 'tempFanPresetsFan',
+                } as const;
+                const fallbackLabels = {
+                  nozzle_temp_presets: 'Nozzle temperature',
+                  bed_temp_presets: 'Bed temperature',
+                  chamber_temp_presets: 'Chamber temperature',
+                  fan_speed_presets: 'Fan speed',
+                } as const;
+                const rowLabel = t(`settings.${labelKeyMap[category.key]}`, fallbackLabels[category.key]);
+                return (
+                  <div key={category.key}>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-sm text-white">
+                        {rowLabel} <span className="text-bambu-gray text-xs">({unitLabel} · {category.lo}–{category.hi})</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => updateSetting(category.key, '')}
+                        title={t('settings.tempFanPresetsReset', 'Reset to defaults')}
+                        className="text-bambu-gray hover:text-white transition-colors p-1 rounded hover:bg-bambu-dark-tertiary"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      {[0, 1, 2].map(idx => (
+                        <input
+                          key={idx}
+                          type="number"
+                          min={category.lo}
+                          max={category.hi}
+                          value={triple[idx]}
+                          onChange={(e) => {
+                            const next: [number, number, number] = [triple[0], triple[1], triple[2]];
+                            const parsedValue = parseInt(e.target.value, 10);
+                            const clamped = Math.max(category.lo, Math.min(category.hi, Number.isFinite(parsedValue) ? parsedValue : category.lo));
+                            next[idx] = clamped;
+                            updateSetting(category.key, JSON.stringify(next));
+                          }}
+                          className="flex-1 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </CardContent>
           </Card>
 
@@ -4580,6 +4669,108 @@ export function SettingsPage() {
                   </table>
                 </div>
               </div>
+              {/* Per-Filament Humidity Thresholds (#1605) */}
+              <div className="space-y-2">
+                <p className="text-sm text-white font-medium">{t('settings.humidityThresholds')}</p>
+                <p className="text-xs text-bambu-gray">{t('settings.humidityThresholdsDescription')}</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-bambu-gray border-b border-bambu-dark-tertiary">
+                        <th className="text-left py-1.5">{t('settings.dryingFilament')}</th>
+                        <th className="text-right py-1.5 pr-2">{t('settings.humidityThresholdCol')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        const defaultFair = localSettings.ams_humidity_fair ?? 60;
+                        const filamentTypes = ['PLA', 'PETG', 'TPU', 'ABS', 'ASA', 'PA', 'PC', 'PVA'];
+                        let thresholds: Record<string, number> = {};
+                        try {
+                          if (localSettings.ams_humidity_thresholds) {
+                            const parsed = JSON.parse(localSettings.ams_humidity_thresholds);
+                            if (typeof parsed === 'object' && parsed !== null) {
+                              thresholds = parsed;
+                            }
+                          }
+                        } catch { /* invalid → empty */ }
+
+                        const rows: Array<{ key: string; label: string; value: number; isDefault: boolean }> = [
+                          {
+                            key: 'default',
+                            label: t('settings.humidityThresholdDefault'),
+                            value: Number(thresholds.default ?? defaultFair),
+                            isDefault: true,
+                          },
+                          ...filamentTypes.map((fil) => ({
+                            key: fil,
+                            label: fil,
+                            value: Number(thresholds[fil] ?? thresholds.default ?? defaultFair),
+                            isDefault: false,
+                          })),
+                        ];
+
+                        const commitThreshold = (key: string, raw: string) => {
+                          // Empty / blank → drop the override, falling back to
+                          // the default (or to ams_humidity_fair for the
+                          // default row itself).
+                          if (raw.trim() === '') {
+                            const next = { ...thresholds };
+                            delete next[key];
+                            updateSetting('ams_humidity_thresholds', JSON.stringify(next));
+                            return;
+                          }
+                          const parsed = parseInt(raw, 10);
+                          if (Number.isNaN(parsed)) {
+                            return;
+                          }
+                          const clamped = Math.max(5, Math.min(95, parsed));
+                          const next = { ...thresholds, [key]: clamped };
+                          updateSetting('ams_humidity_thresholds', JSON.stringify(next));
+                        };
+
+                        return rows.map((row) => {
+                          // Show the draft string if the user is mid-edit;
+                          // otherwise fall through to the resolved row value.
+                          const draft = humidityDrafts[row.key];
+                          const displayValue = draft !== undefined ? draft : String(row.value);
+                          return (
+                            <tr key={row.key} className="border-b border-bambu-dark-tertiary/50">
+                              <td className={`py-1.5 pr-2 font-medium ${row.isDefault ? 'text-bambu-gray italic' : 'text-white'}`}>{row.label}</td>
+                              <td className="py-1 pr-2">
+                                <div className="flex items-center justify-end gap-1">
+                                  <input
+                                    type="number"
+                                    min={5}
+                                    max={95}
+                                    value={displayValue}
+                                    onChange={(e) => setHumidityDrafts((prev) => ({ ...prev, [row.key]: e.target.value }))}
+                                    onBlur={(e) => {
+                                      commitThreshold(row.key, e.target.value);
+                                      setHumidityDrafts((prev) => {
+                                        const next = { ...prev };
+                                        delete next[row.key];
+                                        return next;
+                                      });
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        (e.currentTarget as HTMLInputElement).blur();
+                                      }
+                                    }}
+                                    className="w-14 px-1.5 py-1 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-center text-xs focus:border-amber-500/50 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  />
+                                  <span className="text-bambu-gray">%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </CardContent>
           </Card>
           </div>
@@ -4620,6 +4811,9 @@ export function SettingsPage() {
                     <p className="text-white">{t('settings.preferLowestFilament')}</p>
                     <p className="text-sm text-bambu-gray">
                       {t('settings.preferLowestFilamentDesc')}
+                    </p>
+                    <p className="text-xs text-bambu-gray/70 mt-1">
+                      {t('settings.preferLowestFilamentBackupNote')}
                     </p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">

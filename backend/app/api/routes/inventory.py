@@ -1181,6 +1181,49 @@ async def import_spools_csv(
     )
 
 
+@router.get("/spools/by-tag", response_model=SpoolResponse)
+async def get_spool_by_tag(
+    tray_uuid: str | None = None,
+    tag_uid: str | None = None,
+    include_archived: bool = False,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequireAnyPermissionIfAuthEnabled(Permission.INVENTORY_READ, Permission.INVENTORY_UPDATE),
+):
+    """Find a single spool by its NFC ``tray_uuid`` and/or ``tag_uid``.
+
+    Lets NFC inventory integrations dedupe a scan without listing the whole
+    inventory. ``tray_uuid`` is the primary identifier (it matches the value the
+    AMS reports over MQTT), so it is tried first; ``tag_uid`` is the fallback.
+    At least one identifier must be supplied. Returns 404 when nothing matches.
+
+    Accepts ``inventory:read`` OR ``inventory:update`` so a Manage-Inventory API
+    key (which has ``inventory:update`` via ``can_manage_inventory``) can read a
+    spool back without widening the global ``INVENTORY_READ`` scope mapping (#1663).
+    """
+    normalized_tray_uuid = normalize_tray_uuid(tray_uuid) or None
+    normalized_tag_uid = normalize_tag_uid(tag_uid) or None
+
+    if not normalized_tray_uuid and not normalized_tag_uid:
+        raise HTTPException(400, "Provide tray_uuid and/or tag_uid")
+
+    base_query = select(Spool).options(selectinload(Spool.k_profiles))
+    if not include_archived:
+        base_query = base_query.where(Spool.archived_at.is_(None))
+
+    for column, value in (
+        (Spool.tray_uuid, normalized_tray_uuid),
+        (Spool.tag_uid, normalized_tag_uid),
+    ):
+        if not value:
+            continue
+        result = await db.execute(base_query.where(func.upper(column) == value).order_by(Spool.id))
+        spool = result.scalars().first()
+        if spool:
+            return spool
+
+    raise HTTPException(404, "Spool not found")
+
+
 @router.get("/spools/{spool_id}", response_model=SpoolResponse)
 async def get_spool(
     spool_id: int,
@@ -1386,6 +1429,126 @@ async def bulk_reset_spool_consumed_counter(
     await db.commit()
     await ws_manager.broadcast({"type": "inventory_changed"})
     return {"reset": len(spools)}
+
+
+class BulkUpdateRequest(BaseModel):
+    ids: list[int] = Field(..., min_length=1, max_length=500)
+    update: SpoolUpdate
+
+
+class BulkIdsRequest(BaseModel):
+    ids: list[int] = Field(..., min_length=1, max_length=500)
+
+
+@router.post("/spools/bulk-update")
+async def bulk_update_spools(
+    payload: BulkUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Apply the same partial update to every listed spool.
+
+    Per-spool errors are collected and returned alongside the success count so
+    a single bad ID doesn't abort the whole batch. Unknown IDs are reported
+    in the ``not_found`` list.
+    """
+    update_data = payload.update.model_dump(exclude_unset=True)
+    fields_set = set(payload.update.model_fields_set)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="update must include at least one field")
+    try:
+        prepared = await prepare_internal_spool_payload(db, update_data, fields_set)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # Auto-lock weight when the user explicitly sets weight_used — mirrors the
+    # per-spool PATCH behaviour so bulk edits don't desync the lock state.
+    if "weight_used" in prepared and "weight_locked" not in prepared:
+        prepared["weight_locked"] = True
+
+    result = await db.execute(select(Spool).where(Spool.id.in_(payload.ids)))
+    spools = {s.id: s for s in result.scalars().all()}
+    not_found = [sid for sid in payload.ids if sid not in spools]
+    updated_ids: list[int] = []
+    for sid, spool in spools.items():
+        for field, value in prepared.items():
+            setattr(spool, field, value)
+        updated_ids.append(sid)
+    await db.commit()
+    if updated_ids:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+    return {"updated": len(updated_ids), "not_found": not_found}
+
+
+@router.post("/spools/bulk-delete")
+async def bulk_delete_spools(
+    payload: BulkIdsRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Hard-delete every listed spool. Unknown IDs are returned in not_found."""
+    result = await db.execute(select(Spool).where(Spool.id.in_(payload.ids)))
+    spools = list(result.scalars().all())
+    found_ids = {s.id for s in spools}
+    not_found = [sid for sid in payload.ids if sid not in found_ids]
+    for spool in spools:
+        await db.delete(spool)
+    await db.commit()
+    if spools:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+    return {"deleted": len(spools), "not_found": not_found}
+
+
+@router.post("/spools/bulk-archive")
+async def bulk_archive_spools(
+    payload: BulkIdsRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Soft-archive every listed spool (sets archived_at). Already-archived spools are left alone and counted in already_archived."""
+    from datetime import datetime, timezone
+
+    result = await db.execute(select(Spool).where(Spool.id.in_(payload.ids)))
+    spools = list(result.scalars().all())
+    found_ids = {s.id for s in spools}
+    not_found = [sid for sid in payload.ids if sid not in found_ids]
+    archived: list[int] = []
+    already: list[int] = []
+    now = datetime.now(timezone.utc)
+    for spool in spools:
+        if spool.archived_at is not None:
+            already.append(spool.id)
+            continue
+        spool.archived_at = now
+        archived.append(spool.id)
+    await db.commit()
+    if archived:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+    return {"archived": len(archived), "already_archived": already, "not_found": not_found}
+
+
+@router.post("/spools/bulk-restore")
+async def bulk_restore_spools(
+    payload: BulkIdsRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Restore every listed archived spool. Non-archived rows are no-ops counted in already_active."""
+    result = await db.execute(select(Spool).where(Spool.id.in_(payload.ids)))
+    spools = list(result.scalars().all())
+    found_ids = {s.id for s in spools}
+    not_found = [sid for sid in payload.ids if sid not in found_ids]
+    restored: list[int] = []
+    already: list[int] = []
+    for spool in spools:
+        if spool.archived_at is None:
+            already.append(spool.id)
+            continue
+        spool.archived_at = None
+        restored.append(spool.id)
+    await db.commit()
+    if restored:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+    return {"restored": len(restored), "already_active": already, "not_found": not_found}
 
 
 # ── K-Profiles ───────────────────────────────────────────────────────────────
@@ -2251,3 +2414,79 @@ async def clear_shopping_list(
     deleted = len(result.fetchall())
     await db.commit()
     return {"deleted": deleted}
+
+
+class CreateSpoolFromSlotRequest(BaseModel):
+    printer_id: int
+    ams_id: int
+    tray_id: int
+
+
+@router.post("/spools/from-slot", response_model=SpoolResponse)
+async def create_spool_from_slot(
+    req: CreateSpoolFromSlotRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Explicit user action: create an inventory spool from an AMS slot's current tray data.
+
+    Used by the "+ Add to inventory" affordance when auto_add_unknown_rfid is disabled —
+    the user looked at the slot and chose to register it. Also assigns the new spool
+    to the slot in the same call.
+    """
+    from backend.app.services.printer_manager import printer_manager
+    from backend.app.services.spool_tag_matcher import auto_assign_spool, create_spool_from_tray
+
+    state = printer_manager.get_status(req.printer_id)
+    if not state or not state.raw_data:
+        raise HTTPException(status_code=404, detail="Printer not connected or no state available")
+
+    ams_data = state.raw_data.get("ams")
+    ams_units: list[dict] = []
+    if isinstance(ams_data, list):
+        ams_units = ams_data
+    elif isinstance(ams_data, dict):
+        if "ams" in ams_data and isinstance(ams_data["ams"], list):
+            ams_units = ams_data["ams"]
+        elif "tray" in ams_data:
+            ams_units = [{"id": 0, "tray": ams_data.get("tray", [])}]
+
+    tray: dict | None = None
+    for unit in ams_units:
+        if not isinstance(unit, dict):
+            continue
+        if int(unit.get("id", -1)) != req.ams_id:
+            continue
+        for t in unit.get("tray", []):
+            if isinstance(t, dict) and int(t.get("id", -1)) == req.tray_id:
+                tray = t
+                break
+        if tray:
+            break
+
+    if not tray or not tray.get("tray_type"):
+        raise HTTPException(status_code=400, detail="Slot is empty or has no readable tray data")
+
+    spool = await create_spool_from_tray(db, tray)
+    await auto_assign_spool(
+        req.printer_id,
+        req.ams_id,
+        req.tray_id,
+        spool,
+        printer_manager,
+        db,
+        tray_info_idx=tray.get("tray_info_idx", ""),
+    )
+    await db.commit()
+    await ws_manager.broadcast({"type": "inventory_changed"})
+    await ws_manager.broadcast(
+        {
+            "type": "spool_auto_assigned",
+            "printer_id": req.printer_id,
+            "ams_id": req.ams_id,
+            "tray_id": req.tray_id,
+            "spool_id": spool.id,
+        }
+    )
+    result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool.id))
+    return result.scalar_one()

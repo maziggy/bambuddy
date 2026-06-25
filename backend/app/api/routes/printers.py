@@ -8,7 +8,11 @@ from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import RequireCameraStreamTokenIfAuthEnabled, RequirePermissionIfAuthEnabled
+from backend.app.core.auth import (
+    RequireCameraStreamTokenIfAuthEnabled,
+    RequirePermissionIfAuthEnabled,
+    is_auth_enabled,
+)
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -16,6 +20,7 @@ from backend.app.core.tasks import spawn_background_task
 from backend.app.models.ams_label import AmsLabel
 from backend.app.models.printer import Printer
 from backend.app.models.slot_preset import SlotPresetMapping
+from backend.app.models.user import User
 from backend.app.schemas.printer import (
     AmsLabelBody,
     AMSTray,
@@ -28,6 +33,7 @@ from backend.app.schemas.printer import (
     PrinterCreate,
     PrinterDiagnosticResult,
     PrinterResponse,
+    PrinterResponseWithSecret,
     PrinterStatus,
     PrinterUpdate,
     PrintOptionsResponse,
@@ -46,6 +52,7 @@ from backend.app.services.printer_manager import (
     get_derived_status_name,
     printer_manager,
     resolve_plate_id,
+    supports_chamber_heater,
     supports_chamber_temp,
     supports_drying,
 )
@@ -55,14 +62,50 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["printers"])
 
 
-@router.get("/", response_model=list[PrinterResponse])
+async def _caller_can_view_printer_secrets(user: User | None, db: AsyncSession) -> bool:
+    """Whether the caller is trusted enough to see ``access_code`` on a printer
+    response. Fail-CLOSED: anything that isn't an authenticated user holding
+    PRINTERS_UPDATE returns False.
+
+    - Auth disabled  → True (single trust domain — same as today's local UI).
+    - JWT user with PRINTERS_UPDATE → True (Admin or Operator; the same roles
+      that already manage printers and the Virtual Printer card UX that
+      surfaces a target's code for slicer configuration).
+    - JWT Viewer → False (the bug fix: Viewers must not be able to read
+      access_code via PRINTERS_READ and then go around Bambuddy to MQTT).
+    - API-key principal (``user is None`` because the dep returns None for
+      API keys) → False. PRINTERS_UPDATE is admin-only and absent from
+      ``_APIKEY_SCOPE_BY_PERMISSION``, so no API key can hold it.
+    """
+    if not await is_auth_enabled(db):
+        return True
+    if user is None:
+        return False
+    return user.has_permission(Permission.PRINTERS_UPDATE.value)
+
+
+def _serialize_printer(printer: Printer, *, include_secret: bool):
+    """Build the response shape that matches the caller's authority."""
+    if include_secret:
+        return PrinterResponseWithSecret.model_validate(printer)
+    return PrinterResponse.model_validate(printer)
+
+
+@router.get("/")
 async def list_printers(
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all configured printers."""
+    """List all configured printers.
+
+    ``access_code`` is included in each item only when the caller is trusted
+    to see it (Admin / Operator JWT, or auth-disabled mode). Viewers and
+    API keys never receive it.
+    """
     result = await db.execute(select(Printer).order_by(Printer.name))
-    return list(result.scalars().all())
+    printers = list(result.scalars().all())
+    include_secret = await _caller_can_view_printer_secrets(user, db)
+    return [_serialize_printer(p, include_secret=include_secret) for p in printers]
 
 
 @router.post("/", response_model=PrinterResponse)
@@ -262,18 +305,24 @@ async def get_developer_mode_warnings(
     return warnings
 
 
-@router.get("/{printer_id}", response_model=PrinterResponse)
+@router.get("/{printer_id}")
 async def get_printer(
     printer_id: int,
-    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get a specific printer."""
+    """Get a specific printer.
+
+    ``access_code`` is included only when the caller is trusted to see it
+    (Admin / Operator JWT, or auth-disabled mode). Viewers and API keys
+    never receive it.
+    """
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()
     if not printer:
         raise HTTPException(404, "Printer not found")
-    return printer
+    include_secret = await _caller_can_view_printer_secrets(user, db)
+    return _serialize_printer(printer, include_secret=include_secret)
 
 
 @router.patch("/{printer_id}", response_model=PrinterResponse)
@@ -675,8 +724,10 @@ async def get_printer_status(
         heatbreak_fan_speed=state.heatbreak_fan_speed,
         firmware_version=state.firmware_version,
         developer_mode=state.developer_mode if state else None,
+        ams_filament_backup=state.ams_filament_backup if state else None,
         awaiting_plate_clear=printer_manager.is_awaiting_plate_clear(printer_id),
         supports_drying=supports_drying(printer.model, state.firmware_version),
+        supports_chamber_heater=supports_chamber_heater(printer.model),
         current_archive_id=current_archive_id,
         current_plate_id=current_plate_id,
         fila_switch=(
@@ -1824,6 +1875,56 @@ async def set_print_option(
     }
 
 
+@router.post("/{printer_id}/ams-backup")
+async def set_ams_backup(
+    printer_id: int,
+    enabled: bool,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Toggle AMS Filament Backup (auto-switch to a backup spool when one runs out)."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client or not client.state.connected:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.set_ams_filament_backup(enabled)
+    if not success:
+        raise HTTPException(500, "Failed to send command to printer")
+
+    return {"success": True, "ams_filament_backup": enabled}
+
+
+@router.get("/{printer_id}/inventory-remain")
+async def get_inventory_remain(
+    printer_id: int,
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Per-globalTrayId remaining grams for slots bound to an inventory spool.
+
+    Mirrors `_build_inventory_remain_overrides` server-side so the PrintModal
+    client can apply the same two-tier "Prefer Lowest Remaining Filament" sort
+    the dispatcher uses (#1766). Works for both internal inventory and
+    Spoolman; unbound slots are absent from the map (client falls back to the
+    printer's MQTT `remain` for those).
+    """
+    from backend.app.services.print_scheduler import PrintScheduler
+
+    state = printer_manager.get_status(printer_id)
+    if not state:
+        return {"inventory_remain_g": {}}
+
+    scheduler = PrintScheduler()
+    loaded = scheduler._build_loaded_filaments(state)
+    overrides = await scheduler._build_inventory_remain_overrides(db, printer_id, loaded)
+    return {"inventory_remain_g": {str(k): v for k, v in overrides.items()}}
+
+
 # ============================================
 # Calibration
 # ============================================
@@ -2758,6 +2859,144 @@ async def set_print_speed(
     return {"success": True, "message": f"Print speed set to {speed_names.get(mode, 'Unknown')}"}
 
 
+@router.post("/{printer_id}/temperature/nozzle")
+async def set_nozzle_temperature(
+    printer_id: int,
+    target: int = Query(..., ge=0, le=320, description="Target nozzle temperature in Celsius; 0 turns heating off"),
+    nozzle: int = Query(0, ge=0, le=1, description="Nozzle/extruder index (0=right/default, 1=left)"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set a nozzle target temperature."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.set_nozzle_temperature(target, nozzle)
+    if not success:
+        raise HTTPException(500, "Failed to set nozzle temperature")
+
+    return {"success": True, "message": f"Nozzle temperature set to {target}°C"}
+
+
+@router.post("/{printer_id}/temperature/bed")
+async def set_bed_temperature(
+    printer_id: int,
+    target: int = Query(..., ge=0, le=140, description="Target bed temperature in Celsius; 0 turns heating off"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set the bed target temperature."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.set_bed_temperature(target)
+    if not success:
+        raise HTTPException(500, "Failed to set bed temperature")
+
+    return {"success": True, "message": f"Bed temperature set to {target}°C"}
+
+
+@router.post("/{printer_id}/temperature/chamber")
+async def set_chamber_temperature(
+    printer_id: int,
+    target: int = Query(..., ge=0, le=60, description="Target chamber temperature in Celsius; 0 turns heating off"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set the chamber target temperature.
+
+    Gated on `supports_chamber_heater(model)`: only H2C, H2D, H2D Pro, H2S,
+    and X2D have an active chamber heater. Sensor-only models (X1C, X1E,
+    P2S) report chamber temp but silently swallow M141, so we 400 here
+    rather than send a no-op.
+    """
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    if not supports_chamber_heater(printer.model):
+        raise HTTPException(400, f"Model {printer.model or 'unknown'} does not have an active chamber heater")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.set_chamber_temperature(target)
+    if not success:
+        raise HTTPException(500, "Failed to set chamber temperature")
+
+    return {"success": True, "message": f"Chamber temperature set to {target}°C"}
+
+
+@router.post("/{printer_id}/fan-speed")
+async def set_fan_speed(
+    printer_id: int,
+    fan: str = Query(..., description="Fan to control: part, aux, or chamber"),
+    speed: int = Query(..., ge=0, le=100, description="Fan speed percentage"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set a fan speed by percentage."""
+    fan_ids = {"part": 1, "aux": 2, "chamber": 3}
+    fan_id = fan_ids.get(fan)
+    if fan_id is None:
+        raise HTTPException(400, "fan must be 'part', 'aux', or 'chamber'")
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    pwm_speed = round(speed * 255 / 100)
+    success = client.set_fan_speed(fan_id, pwm_speed)
+    if not success:
+        raise HTTPException(500, "Failed to set fan speed")
+
+    fan_names = {"part": "Part cooling fan", "aux": "Auxiliary fan", "chamber": "Chamber fan"}
+    return {"success": True, "message": f"{fan_names[fan]} set to {speed}%"}
+
+
+@router.post("/{printer_id}/select-extruder")
+async def select_extruder(
+    printer_id: int,
+    extruder: int = Query(..., ge=0, le=1, description="Extruder index (0=right, 1=left)"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Select the active extruder/nozzle on dual-nozzle printers."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    success = client.select_extruder(extruder)
+    if not success:
+        raise HTTPException(500, "Failed to select nozzle")
+
+    return {"success": True, "message": f"{'Left' if extruder == 1 else 'Right'} nozzle selected"}
+
+
 @router.post("/{printer_id}/airduct-mode")
 async def set_airduct_mode(
     printer_id: int,
@@ -2868,6 +3107,72 @@ async def bed_jog(
         raise HTTPException(500, "Failed to send bed-jog command")
 
     return {"success": True, "message": f"Bed jog {distance:+.1f} mm sent"}
+
+
+@router.post("/{printer_id}/xy-jog")
+async def xy_jog(
+    printer_id: int,
+    x: float = Query(0, description="Signed relative X movement in mm"),
+    y: float = Query(0, description="Signed relative Y movement in mm"),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Move the toolhead by a relative X/Y distance."""
+    if (x == 0 and y == 0) or abs(x) > 200 or abs(y) > 200:
+        raise HTTPException(400, "X/Y movement must be non-zero and ≤ 200 mm per axis")
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    axes = []
+    if x:
+        axes.append(f"X{x:.2f}")
+    if y:
+        axes.append(f"Y{y:.2f}")
+
+    if not client.send_gcode("\n".join(["G91", f"G1 {' '.join(axes)} F6000", "G90"])):
+        raise HTTPException(500, "Failed to send XY jog command")
+
+    return {"success": True, "message": f"XY jog X{x:+.1f} Y{y:+.1f} mm sent"}
+
+
+@router.post("/{printer_id}/extruder-jog")
+async def extruder_jog(
+    printer_id: int,
+    distance: float = Query(
+        ..., description="Signed relative extrusion distance in mm. Positive extrudes, negative retracts."
+    ),
+    _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
+    db: AsyncSession = Depends(get_db),
+):
+    """Extrude or retract filament by a relative distance.
+
+    No client-side cold-extrude guard: Bambu firmware refuses extrusion
+    below its min-extrude temperature, so a cold call is rejected at the
+    printer, not silently damaging the extruder gear.
+    """
+    if distance == 0 or abs(distance) > 100:
+        raise HTTPException(400, "Extruder movement must be non-zero and ≤ 100 mm")
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    client = printer_manager.get_client(printer_id)
+    if not client:
+        raise HTTPException(400, "Printer not connected")
+
+    if not client.send_gcode("\n".join(["M83", f"G1 E{distance:.2f} F300", "M82"])):
+        raise HTTPException(500, "Failed to send extruder jog command")
+
+    return {"success": True, "message": f"Extruder jog {distance:+.1f} mm sent"}
 
 
 @router.post("/{printer_id}/home-axes")

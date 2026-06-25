@@ -956,6 +956,123 @@ async def reset_spool_consumed_counter(
     return mapped
 
 
+class SpoolmanBulkUpdateRequest(BaseModel):
+    ids: list[int] = Field(..., min_length=1, max_length=500)
+    update: SpoolmanInventoryUpdate
+
+
+class SpoolmanBulkIdsRequest(BaseModel):
+    ids: list[int] = Field(..., min_length=1, max_length=500)
+
+
+@router.post("/spools/bulk-update")
+async def bulk_update_spools(
+    payload: SpoolmanBulkUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> dict:
+    """Apply the same partial update to every listed Spoolman spool.
+
+    Loops the per-spool ``update_spool`` route so the filament re-linking +
+    extra-dict + location-resolution rules stay in sync with the single-spool
+    PATCH path. Per-spool errors are collected; one bad ID doesn't abort the
+    batch.
+    """
+    update_fields = payload.update.model_dump(exclude_unset=True)
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="update must include at least one field")
+
+    updated = 0
+    errors: list[dict] = []
+    for sid in payload.ids:
+        try:
+            await update_spool(spool_id=sid, data=payload.update, db=db, _=None)
+            updated += 1
+        except HTTPException as exc:
+            errors.append({"id": sid, "status": exc.status_code, "detail": exc.detail})
+        except Exception as exc:  # noqa: BLE001 — surface unexpected failures per-row
+            logger.exception("Spoolman bulk-update failed for spool %s", sid)
+            errors.append({"id": sid, "status": 500, "detail": str(exc)})
+    if updated:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+    return {"updated": updated, "errors": errors}
+
+
+@router.post("/spools/bulk-delete")
+async def bulk_delete_spools(
+    payload: SpoolmanBulkIdsRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> dict:
+    """Hard-delete every listed Spoolman spool. Per-spool failures are collected."""
+    client = await _get_client(db)
+    deleted = 0
+    errors: list[dict] = []
+    for sid in payload.ids:
+        try:
+            async with _translate_spoolman_errors():
+                await client.delete_spool(sid)
+            deleted += 1
+        except HTTPException as exc:
+            errors.append({"id": sid, "status": exc.status_code, "detail": exc.detail})
+        except Exception as exc:  # noqa: BLE001 — surface unexpected failures per-row
+            logger.exception("Spoolman bulk-delete failed for spool %s", sid)
+            errors.append({"id": sid, "status": 500, "detail": str(exc)})
+    if deleted:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+    return {"deleted": deleted, "errors": errors}
+
+
+@router.post("/spools/bulk-archive")
+async def bulk_archive_spools(
+    payload: SpoolmanBulkIdsRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> dict:
+    """Archive every listed Spoolman spool. Per-spool failures are collected."""
+    client = await _get_client(db)
+    archived = 0
+    errors: list[dict] = []
+    for sid in payload.ids:
+        try:
+            async with _translate_spoolman_errors():
+                await client.set_spool_archived(sid, archived=True)
+            archived += 1
+        except HTTPException as exc:
+            errors.append({"id": sid, "status": exc.status_code, "detail": exc.detail})
+        except Exception as exc:  # noqa: BLE001 — surface unexpected failures per-row
+            logger.exception("Spoolman bulk-archive failed for spool %s", sid)
+            errors.append({"id": sid, "status": 500, "detail": str(exc)})
+    if archived:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+    return {"archived": archived, "errors": errors}
+
+
+@router.post("/spools/bulk-restore")
+async def bulk_restore_spools(
+    payload: SpoolmanBulkIdsRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+) -> dict:
+    """Restore every listed archived Spoolman spool. Per-spool failures are collected."""
+    client = await _get_client(db)
+    restored = 0
+    errors: list[dict] = []
+    for sid in payload.ids:
+        try:
+            async with _translate_spoolman_errors():
+                await client.set_spool_archived(sid, archived=False)
+            restored += 1
+        except HTTPException as exc:
+            errors.append({"id": sid, "status": exc.status_code, "detail": exc.detail})
+        except Exception as exc:  # noqa: BLE001 — surface unexpected failures per-row
+            logger.exception("Spoolman bulk-restore failed for spool %s", sid)
+            errors.append({"id": sid, "status": 500, "detail": str(exc)})
+    if restored:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+    return {"restored": restored, "errors": errors}
+
+
 @router.post("/spools/reset-consumed-counter-bulk")
 async def bulk_reset_spool_consumed_counter(
     payload: dict = Body(...),

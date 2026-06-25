@@ -15,7 +15,6 @@ import {
 import { api, type AMSHistoryResponse } from '../api/client';
 import { parseUTCDate, applyTimeFormat, type TimeFormat } from '../utils/date';
 import { useTranslation } from 'react-i18next';
-import { useTheme } from '../contexts/ThemeContext';
 
 interface AMSHistoryModalProps {
   isOpen: boolean;
@@ -53,10 +52,8 @@ export function AMSHistoryModal({
   thresholds,
 }: AMSHistoryModalProps) {
   const { t } = useTranslation();
-  const { mode: themeMode } = useTheme();
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
   const [mode, setMode] = useState<'humidity' | 'temperature'>(initialMode);
-  const isDark = themeMode === 'dark';
 
   const { data: settings } = useQuery({
     queryKey: ['settings'],
@@ -159,12 +156,15 @@ export function AMSHistoryModal({
     return '#c62828';
   };
 
-  // Theme-aware styles (using isDark since dark: prefix doesn't work in portals)
-  const modalBg = isDark ? '#2d2d2d' : '#ffffff';
-  const cardBg = isDark ? '#1d1d1d' : '#f3f4f6';
-  const borderColor = isDark ? '#3d3d3d' : '#e5e7eb';
-  const textPrimary = isDark ? '#ffffff' : '#111827';
-  const textSecondary = isDark ? '#9ca3af' : '#4b5563';
+  // Theme-aware styles via CSS variables so the modal follows the active
+  // background variant (neutral / warm / cool / oled / slate / forest), not
+  // just light vs dark. See src/index.css for the variable definitions.
+  const modalBg = 'var(--bg-secondary)';
+  const cardBg = 'var(--bg-primary)';
+  const borderColor = 'var(--border-color)';
+  const textPrimary = 'var(--text-primary)';
+  const textSecondary = 'var(--text-secondary)';
+  const axisColor = 'var(--text-muted)';
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
@@ -318,7 +318,7 @@ export function AMSHistoryModal({
             ) : (
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#3d3d3d' : '#e5e7eb'} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={borderColor} />
                   <XAxis
                     dataKey="time"
                     type="number"
@@ -330,21 +330,21 @@ export function AMSHistoryModal({
                       }
                       return date.toLocaleTimeString([], applyTimeFormat({ hour: '2-digit', minute: '2-digit' }, timeFormat));
                     }}
-                    stroke={isDark ? '#9ca3af' : '#6b7280'}
+                    stroke={axisColor}
                     tick={{ fontSize: 12 }}
                   />
                   <YAxis
-                    stroke={isDark ? '#9ca3af' : '#6b7280'}
+                    stroke={axisColor}
                     tick={{ fontSize: 12 }}
                     domain={mode === 'humidity' ? [0, 100] : ['auto', 'auto']}
                     tickFormatter={(value) => mode === 'humidity' ? `${value}%` : `${value}°C`}
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: isDark ? '#2d2d2d' : '#ffffff',
-                      border: `1px solid ${isDark ? '#3d3d3d' : '#e5e7eb'}`,
+                      backgroundColor: modalBg,
+                      border: `1px solid ${borderColor}`,
                       borderRadius: '8px',
-                      color: isDark ? '#fff' : '#000',
+                      color: textPrimary,
                     }}
                     labelFormatter={(ts) => new Date(ts).toLocaleString(undefined, applyTimeFormat({
                       year: 'numeric',

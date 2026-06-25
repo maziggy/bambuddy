@@ -247,3 +247,40 @@ describe('autoMatchFilament preferLowest', () => {
     expect(result!.globalTrayId).toBe(1); // Only tray on correct nozzle
   });
 });
+
+// #1766: identical-material spools that only differ in inventory grams used to
+// tie at the printer's `remain%` and the first one always won. The map lets
+// the sort see the bound spool's `label_weight - weight_used` instead.
+describe('autoMatchFilament preferLowest with inventory map (#1766)', () => {
+  it('picks lower inventory grams when remain% ties', () => {
+    const filaments = [
+      makeFilament({ globalTrayId: 0, type: 'PLA', color: '#FF0000', colorName: 'Red', remain: 100 }),
+      makeFilament({ globalTrayId: 1, type: 'PLA', color: '#FF0000', colorName: 'Red', remain: 100 }),
+    ];
+    const req = makeReq({ type: 'PLA', color: '#FF0000' });
+    const inventory = new Map<number, number>([[0, 900], [1, 60]]);
+    const result = autoMatchFilament(req, filaments, new Set(), true, inventory);
+    expect(result!.globalTrayId).toBe(1); // 60 g < 900 g
+  });
+
+  it('inventory-bound spool beats MQTT-only one even when remain% would order them differently', () => {
+    const filaments = [
+      makeFilament({ globalTrayId: 0, type: 'PLA', color: '#FF0000', colorName: 'Red', remain: 10 }),
+      makeFilament({ globalTrayId: 1, type: 'PLA', color: '#FF0000', colorName: 'Red', remain: 90 }),
+    ];
+    const req = makeReq({ type: 'PLA', color: '#FF0000' });
+    const inventory = new Map<number, number>([[1, 200]]); // Only tray 1 bound.
+    const result = autoMatchFilament(req, filaments, new Set(), true, inventory);
+    expect(result!.globalTrayId).toBe(1); // Tier 0 always beats tier 1.
+  });
+
+  it('falls back to remain% sort when map is undefined', () => {
+    const filaments = [
+      makeFilament({ globalTrayId: 0, type: 'PLA', color: '#FF0000', colorName: 'Red', remain: 80 }),
+      makeFilament({ globalTrayId: 1, type: 'PLA', color: '#FF0000', colorName: 'Red', remain: 30 }),
+    ];
+    const req = makeReq({ type: 'PLA', color: '#FF0000' });
+    const result = autoMatchFilament(req, filaments, new Set(), true, undefined);
+    expect(result!.globalTrayId).toBe(1); // Same as the pre-#1766 path.
+  });
+});

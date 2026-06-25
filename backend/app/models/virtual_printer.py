@@ -49,6 +49,11 @@ class VirtualPrinter(Base):
     )  # queue mode: pin per-slot type+color from the 3MF onto the queue
     # item so the scheduler refuses to dispatch onto a printer with the wrong
     # filament loaded (#1188).
+    gcode_injection: Mapped[bool] = mapped_column(
+        Boolean, server_default="false"
+    )  # queue mode: opt this VP's Send/Print jobs into per-model G-code snippet
+    # injection (#1516). Default off so existing gcode_snippets users don't
+    # silently start injecting; no-op when no snippets exist for the model.
     model: Mapped[str | None] = mapped_column(String(50), nullable=True)  # SSDP model code (server mode)
     access_code: Mapped[str | None] = mapped_column(String(8), nullable=True)  # 8 chars (server mode)
     target_printer_id: Mapped[int | None] = mapped_column(

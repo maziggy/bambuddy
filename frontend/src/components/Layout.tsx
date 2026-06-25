@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Archive, ListOrdered, BarChart3, Cloud, Settings, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Bell, Globe, type LucideIcon } from 'lucide-react';
+import { Printer, Archive, ListOrdered, BarChart3, Cloud, Settings, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Keyboard, Github, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Globe, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -11,12 +11,23 @@ import { api, supportApi, pendingUploadsApi, type Permission } from '../api/clie
 import { getIconByName } from './IconPicker';
 import { useIsSidebarCompact } from '../hooks/useIsSidebarCompact';
 import { useColorCatalogVersion } from '../hooks/useColorCatalogVersion';
+import { useSponsorPrompt } from '../hooks/useSponsorPrompt';
+import { useUnknownTagPrompt } from '../hooks/useUnknownTagPrompt';
+import { UnknownSpoolModal } from './UnknownSpoolModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Card, CardHeader, CardContent } from './Card';
 import { parseUTCDate } from '../utils/date';
 import { Button } from './Button';
 import { BugReportBubble } from './BugReportBubble';
+import {
+  getHiddenSidebarSystemItemIds,
+  getSidebarOrder,
+  isExternalSidebarItemId,
+  saveHiddenSidebarSystemItemIds,
+  saveSidebarOrder,
+  SIDEBAR_LAYOUT_CHANGED_EVENT,
+} from '../utils/sidebarLayout';
 
 
 interface NavItem {
@@ -37,33 +48,8 @@ export const defaultNavItems: NavItem[] = [
   { id: 'profiles', to: '/profiles', icon: Cloud, labelKey: 'nav.profiles' },
   { id: 'maintenance', to: '/maintenance', icon: Wrench, labelKey: 'nav.maintenance' },
   { id: 'stats', to: '/stats', icon: BarChart3, labelKey: 'nav.stats' },
-  // User-account features: kept adjacent to Settings intentionally
-  { id: 'notifications', to: '/notifications', icon: Bell, labelKey: 'nav.notifications' },
   { id: 'settings', to: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ];
-
-// Get unified sidebar order from localStorage
-function getSidebarOrder(): string[] {
-  const stored = localStorage.getItem('sidebarOrder');
-  if (stored) {
-    try {
-      return JSON.parse(stored);
-    } catch {
-      return defaultNavItems.map(i => i.id);
-    }
-  }
-  return defaultNavItems.map(i => i.id);
-}
-
-// Save unified sidebar order to localStorage
-function saveSidebarOrder(order: string[]) {
-  localStorage.setItem('sidebarOrder', JSON.stringify(order));
-}
-
-// Check if an ID is an external link
-function isExternalLinkId(id: string): boolean {
-  return id.startsWith('ext-');
-}
 
 // Get default view from localStorage
 export function getDefaultView(): string {
@@ -103,9 +89,9 @@ export function Layout() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showSwitchbar, setShowSwitchbar] = useState(false);
-  const [sidebarOrder, setSidebarOrder] = useState<string[]>(getSidebarOrder);
-  const [draggedId, setDraggedId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const defaultSidebarOrder = useMemo(() => defaultNavItems.map(i => i.id), []);
+  const [sidebarOrder, setSidebarOrder] = useState<string[]>(() => getSidebarOrder(defaultNavItems.map(i => i.id)));
+  const [hiddenSystemItemIds, setHiddenSystemItemIds] = useState<string[]>(getHiddenSidebarSystemItemIds);
   const hasRedirected = useRef(false);
   const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(() =>
     sessionStorage.getItem('dismissedUpdateVersion')
@@ -129,6 +115,13 @@ export function Layout() {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
+  // Sponsor-prompt toast — fires once per session post-auth if a milestone is eligible.
+  useSponsorPrompt(settings?.currency ?? 'EUR');
+
+  // Unknown-spool prompt — surfaces a confirmation modal when the AMS reports a
+  // tag with no inventory match (only when `auto_add_unknown_rfid` is off).
+  const unknownSpool = useUnknownTagPrompt();
+
   // Fetch default sidebar order via a public endpoint (no settings:read needed)
   const { data: defaultSidebarData } = useQuery({
     queryKey: ['default-sidebar-order'],
@@ -151,10 +144,16 @@ export function Layout() {
       if (!Array.isArray(orderArr) || orderArr.length === 0) return;
       // Filter to valid sidebar item IDs only
       const validIds = new Set(defaultNavItems.map(i => i.id));
-      const filtered = orderArr.filter((id: string) => typeof id === 'string' && (validIds.has(id) || isExternalLinkId(id)));
+      const filtered = orderArr.filter((id: string) => typeof id === 'string' && (validIds.has(id) || isExternalSidebarItemId(id)));
       if (filtered.length > 0) {
         setSidebarOrder(filtered);
         saveSidebarOrder(filtered);
+        const hiddenIds = Array.isArray(parsed) ? [] : parsed.hiddenSystemItemIds;
+        if (Array.isArray(hiddenIds)) {
+          const filteredHiddenIds = hiddenIds.filter((id: string) => typeof id === 'string' && validIds.has(id) && id !== 'settings');
+          setHiddenSystemItemIds(filteredHiddenIds);
+          saveHiddenSidebarSystemItemIds(filteredHiddenIds);
+        }
         localStorage.setItem(appliedKey, '1');
       }
     } catch (e) {
@@ -162,7 +161,8 @@ export function Layout() {
     }
   }, [defaultSidebarData?.default_sidebar_order, setSidebarOrder, user, authEnabled]);
 
-  // Check advanced auth status for conditional nav items
+  // Check advanced auth status — the notifications nav item is gated on it
+  // (rendered only when authEnabled && advanced_auth_enabled && user_notifications_enabled).
   const { data: advancedAuthStatus } = useQuery({
     queryKey: ['advancedAuthStatus'],
     queryFn: api.getAdvancedAuthStatus,
@@ -296,10 +296,14 @@ export function Layout() {
       files: ['library:read', 'library:read_own', 'library:read_all'],
       makerworld: 'makerworld:view',
       settings: 'settings:read',
-      notifications: 'notifications:user_email',
     };
 
     const isHidden = (id: string) => {
+      // User-toggled hide (#1673) wins first — cheapest check, explicit intent.
+      if (hiddenSystemItemIds.includes(id)) return true;
+      // Permission gate accepts Permission | Permission[] so resources with
+      // granular `*:read_own` / `*:read_all` tiers (default Operators group)
+      // don't get hidden from users who only hold the granular variant (#1755).
       if (authEnabled && id in navPermissions) {
         const required = navPermissions[id];
         const granted = Array.isArray(required)
@@ -342,58 +346,6 @@ export function Layout() {
     return result;
   })();
 
-  // Unified drag handlers
-  const handleDragStart = (e: React.DragEvent, id: string) => {
-    setDraggedId(id);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', id);
-  };
-
-  const handleDragOver = (e: React.DragEvent, id: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverId(id);
-  };
-
-  const handleDragLeave = () => {
-    setDragOverId(null);
-  };
-
-  const handleDrop = (e: React.DragEvent, targetId: string) => {
-    e.preventDefault();
-    if (draggedId === null || draggedId === targetId) {
-      setDraggedId(null);
-      setDragOverId(null);
-      return;
-    }
-
-    const currentOrder = [...orderedSidebarIds];
-    const draggedIndex = currentOrder.indexOf(draggedId);
-    const targetIndex = currentOrder.indexOf(targetId);
-
-    if (draggedIndex === -1 || targetIndex === -1) {
-      setDraggedId(null);
-      setDragOverId(null);
-      return;
-    }
-
-    // Reorder
-    currentOrder.splice(draggedIndex, 1);
-    currentOrder.splice(targetIndex, 0, draggedId);
-
-    // Save to localStorage and update state
-    setSidebarOrder(currentOrder);
-    saveSidebarOrder(currentOrder);
-
-    setDraggedId(null);
-    setDragOverId(null);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedId(null);
-    setDragOverId(null);
-  };
-
   // Show update banner if update available and not dismissed for this version.
   // Suppressed when running as a Home Assistant addon — HA Supervisor surfaces
   // its own update notification in the HA UI, so the in-app banner is duplicate
@@ -424,6 +376,19 @@ export function Layout() {
   useEffect(() => {
     localStorage.setItem('sidebarExpanded', String(sidebarExpanded));
   }, [sidebarExpanded]);
+
+  useEffect(() => {
+    const refreshSidebarLayout = () => {
+      setSidebarOrder(getSidebarOrder(defaultSidebarOrder));
+      setHiddenSystemItemIds(getHiddenSidebarSystemItemIds());
+    };
+    window.addEventListener(SIDEBAR_LAYOUT_CHANGED_EVENT, refreshSidebarLayout);
+    window.addEventListener('storage', refreshSidebarLayout);
+    return () => {
+      window.removeEventListener(SIDEBAR_LAYOUT_CHANGED_EVENT, refreshSidebarLayout);
+      window.removeEventListener('storage', refreshSidebarLayout);
+    };
+  }, [defaultSidebarOrder]);
 
   // Close compact drawer on navigation
   useEffect(() => {
@@ -466,7 +431,7 @@ export function Layout() {
         const id = orderedSidebarIds[keyNum - 1];
         e.preventDefault();
 
-        if (isExternalLinkId(id)) {
+        if (isExternalSidebarItemId(id)) {
           // External link
           const extLink = extLinksMap.get(id);
           if (extLink?.open_in_new_tab) {
@@ -551,7 +516,7 @@ export function Layout() {
         <nav className="flex-1 p-2 overflow-y-auto">
           <ul className="space-y-2">
             {orderedSidebarIds.map((id) => {
-              const isExternal = isExternalLinkId(id);
+              const isExternal = isExternalSidebarItemId(id);
 
               if (isExternal) {
                 // Render external link
@@ -560,22 +525,7 @@ export function Layout() {
 
                 const LinkIcon = link.custom_icon ? null : getIconByName(link.icon);
                 return (
-                  <li
-                    key={id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, id)}
-                    onDragOver={(e) => handleDragOver(e, id)}
-                    onDragLeave={handleDragLeave}
-                    onDrop={(e) => handleDrop(e, id)}
-                    onDragEnd={handleDragEnd}
-                    className={`relative ${
-                      draggedId === id ? 'opacity-50' : ''
-                    } ${
-                      dragOverId === id && draggedId !== id
-                        ? 'before:absolute before:left-0 before:right-0 before:top-0 before:h-0.5 before:bg-bambu-green'
-                        : ''
-                    }`}
-                  >
+                  <li key={id}>
                     {link.open_in_new_tab ? (
                       <a
                         href={link.url}
@@ -584,9 +534,6 @@ export function Layout() {
                         className={`flex items-center ${isSidebarCompact || sidebarExpanded ? 'gap-3 px-4' : 'justify-center px-2'} py-3 rounded-lg transition-colors group text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white`}
                         title={!isSidebarCompact && !sidebarExpanded ? link.name : undefined}
                       >
-                        {sidebarExpanded && !isSidebarCompact && (
-                          <GripVertical className="w-4 h-4 flex-shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
-                        )}
                         {link.custom_icon ? (
                           <img
                             src={api.getExternalLinkIconUrl(link.id)}
@@ -610,9 +557,6 @@ export function Layout() {
                         }
                         title={!isSidebarCompact && !sidebarExpanded ? link.name : undefined}
                       >
-                        {sidebarExpanded && !isSidebarCompact && (
-                          <GripVertical className="w-4 h-4 flex-shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
-                        )}
                         {link.custom_icon ? (
                           <img
                             src={api.getExternalLinkIconUrl(link.id)}
@@ -640,22 +584,7 @@ export function Layout() {
                 const showClearPlateDot = id === 'printers' && needsClearPlate;
 
                 return (
-                  <li
-                    key={id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, id)}
-                    onDragOver={(e) => handleDragOver(e, id)}
-                    onDragLeave={handleDragLeave}
-                    onDrop={(e) => handleDrop(e, id)}
-                    onDragEnd={handleDragEnd}
-                    className={`relative ${
-                      draggedId === id ? 'opacity-50' : ''
-                    } ${
-                      dragOverId === id && draggedId !== id
-                        ? 'before:absolute before:left-0 before:right-0 before:top-0 before:h-0.5 before:bg-bambu-green'
-                        : ''
-                    }`}
-                  >
+                  <li key={id}>
                     <NavLink
                       to={to}
                       className={({ isActive }) =>
@@ -667,9 +596,6 @@ export function Layout() {
                       }
                       title={!isSidebarCompact && !sidebarExpanded ? t(labelKey) : undefined}
                     >
-                      {sidebarExpanded && !isSidebarCompact && (
-                        <GripVertical className="w-4 h-4 flex-shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
-                      )}
                       <div className="relative">
                         <Icon className="w-5 h-5 flex-shrink-0" />
                         {showClearPlateDot && (
@@ -975,12 +901,19 @@ export function Layout() {
         <Outlet />
       </main>
 
+      <UnknownSpoolModal
+        prompt={unknownSpool.prompt}
+        isPending={unknownSpool.isPending}
+        onConfirm={unknownSpool.confirm}
+        onCancel={unknownSpool.cancel}
+      />
+
       {/* Keyboard Shortcuts Modal */}
       {showShortcuts && (
         <KeyboardShortcutsModal
           onClose={() => setShowShortcuts(false)}
           sidebarItems={orderedSidebarIds.map(id => {
-            if (isExternalLinkId(id)) {
+            if (isExternalSidebarItemId(id)) {
               const extLink = extLinksMap.get(id);
               return extLink ? { type: 'external' as const, label: extLink.name } : null;
             } else {

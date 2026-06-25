@@ -860,6 +860,15 @@ class PrintScheduler:
         # Check if user prefers lowest remaining filament when multiple spools match
         prefer_lowest = await self._get_bool_setting(db, "prefer_lowest_filament")
 
+        # Gate prefer_lowest on the printer's AMS Filament Backup state (#1766).
+        # Without backup, the printer will not switch to a second spool when the
+        # picked one runs out — so sorting toward the lowest leaves the print
+        # at risk of running dry mid-job. None (unknown / A1 family) preserves
+        # today's behaviour intentionally.
+        if prefer_lowest and status.ams_filament_backup is False:
+            logger.info("[prefer-lowest] skipped (AMS Backup OFF on printer %s)", printer_id)
+            prefer_lowest = False
+
         # When the preference is on, surface Bambuddy's inventory-side
         # remaining for each slot that's bound to a tracked spool, so the
         # sort beats the MQTT-only blind spot (#1508). Skip the lookup
@@ -1232,6 +1241,35 @@ class PrintScheduler:
             # _prefer_lowest_sort_key for the full rationale.
             if prefer_lowest:
                 available.sort(key=lambda f: self._prefer_lowest_sort_key(f, inventory_remain_overrides))
+                # INFO-level decision trace for "Prefer Lowest Filament" #1766.
+                # One line per filament req so a bug report can be diagnosed
+                # without enabling debug logging: shows what the matcher saw
+                # (req shape + sorted candidate trays with their remain values
+                # and any inventory override that was applied). Mirrored by
+                # the picked-match log at the bottom of the loop.
+                logger.info(
+                    "[prefer-lowest] req slot=%s type=%r color=%r tii=%r nozzle=%s; available (sorted lowest-first): %s",
+                    req.get("slot_id"),
+                    req_type,
+                    req_color,
+                    req_tray_info_idx,
+                    req_nozzle_id,
+                    [
+                        {
+                            "gtid": f.get("global_tray_id"),
+                            "type": f.get("type"),
+                            "color": f.get("color"),
+                            "tii": f.get("tray_info_idx"),
+                            "remain": f.get("remain"),
+                            "inv_g": (
+                                inventory_remain_overrides.get(f.get("global_tray_id"))
+                                if inventory_remain_overrides
+                                else None
+                            ),
+                        }
+                        for f in available
+                    ],
+                )
 
             # Check if tray_info_idx is unique among available trays
             if req_tray_info_idx:
@@ -1287,6 +1325,35 @@ class PrintScheduler:
                 comparisons.append({"slot_id": req.get("slot_id", 0), "global_tray_id": match["global_tray_id"]})
             else:
                 comparisons.append({"slot_id": req.get("slot_id", 0), "global_tray_id": -1})
+            if prefer_lowest:
+                # Pair with the "available (sorted)" log above so the reporter
+                # bundle shows BOTH what the matcher saw AND which match bucket
+                # won — fast triage when "Prefer Lowest Filament" picks the
+                # wrong slot (#1766).
+                if match:
+                    bucket = (
+                        "idx"
+                        if idx_match is not None
+                        else "exact_color"
+                        if exact_match is not None
+                        else "similar_color"
+                        if similar_match is not None
+                        else "type_only"
+                    )
+                    logger.info(
+                        "[prefer-lowest] picked gtid=%s via %s for req slot=%s",
+                        match["global_tray_id"],
+                        bucket,
+                        req.get("slot_id"),
+                    )
+                else:
+                    logger.info(
+                        "[prefer-lowest] NO MATCH for req slot=%s (type=%r color=%r tii=%r)",
+                        req.get("slot_id"),
+                        req_type,
+                        req_color,
+                        req_tray_info_idx,
+                    )
 
         # Build mapping array
         if not comparisons:
@@ -1424,6 +1491,57 @@ class PrintScheduler:
                 pass
         return self.DEFAULT_DRYING_PRESETS
 
+    async def _get_humidity_thresholds(self, db: AsyncSession) -> dict[str, int]:
+        """Per-filament humidity thresholds (#1605).
+
+        Returns the user-configured overrides map keyed by normalized filament
+        type (uppercase base, e.g. ``PLA``, ``ASA``) plus a ``default`` key for
+        unknown / unmapped types. Empty / unset → empty dict, in which case
+        callers fall back to ``ams_humidity_fair``.
+        """
+        result = await db.execute(select(Settings).where(Settings.key == "ams_humidity_thresholds"))
+        setting = result.scalar_one_or_none()
+        if not setting or not setting.value:
+            return {}
+        try:
+            data = json.loads(setting.value)
+        except json.JSONDecodeError:
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        out: dict[str, int] = {}
+        for key, value in data.items():
+            try:
+                out[str(key).upper() if key != "default" else "default"] = int(value)
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    @staticmethod
+    def resolve_humidity_threshold(trays: list[dict], thresholds: dict[str, int], fallback: int) -> int:
+        """Resolve the effective humidity threshold for an AMS unit (#1605).
+
+        For mixed filament types loaded into one AMS, returns the most
+        restrictive (lowest) threshold across all loaded tray types — matches
+        the conservative-params strategy already used for drying temp/hours.
+        Empty / unloaded trays contribute no constraint. Unknown types use the
+        ``default`` key, falling through to ``fallback`` (= ``ams_humidity_fair``)
+        when no per-type map is configured at all.
+        """
+        default = thresholds.get("default", fallback)
+        if not thresholds:
+            return fallback
+        candidates: list[int] = []
+        for tray in trays:
+            tray_type = str(tray.get("tray_type") or "").strip()
+            if not tray_type:
+                continue
+            base_type = tray_type.split()[0].upper()
+            candidates.append(thresholds.get(base_type, default))
+        if not candidates:
+            return default
+        return min(candidates)
+
     def _get_conservative_drying_params(
         self, trays: list[dict], module_type: str, presets: dict[str, dict[str, int]]
     ) -> tuple[int, int, str] | None:
@@ -1506,10 +1624,14 @@ class PrintScheduler:
                 await self._stop_drying(pid)
             return
 
-        # Get humidity threshold
+        # Get humidity threshold (global fallback)
         result = await db.execute(select(Settings).where(Settings.key == "ams_humidity_fair"))
         setting = result.scalar_one_or_none()
-        humidity_threshold = int(setting.value) if setting else 60
+        global_humidity_threshold = int(setting.value) if setting else 60
+
+        # Per-filament humidity threshold overrides (#1605). Empty → fall back
+        # to the global threshold for every AMS unit.
+        per_type_thresholds = await self._get_humidity_thresholds(db)
 
         # Get drying presets
         presets = await self._get_drying_presets(db)
@@ -1564,6 +1686,14 @@ class PrintScheduler:
                 if module_type not in ("n3f", "n3s"):
                     logger.debug("Auto-drying: printer %d AMS %d skipped — module_type=%s", pid, ams_id, module_type)
                     continue
+
+                # Resolve per-filament humidity threshold for this AMS unit (#1605).
+                # Most-restrictive of all loaded tray types; falls back to the
+                # global threshold when no overrides are configured.
+                trays = ams_data.get("tray", []) or []
+                humidity_threshold = self.resolve_humidity_threshold(
+                    trays, per_type_thresholds, global_humidity_threshold
+                )
 
                 dry_time = int(ams_data.get("dry_time") or 0)
 
@@ -1634,7 +1764,6 @@ class PrintScheduler:
                     continue
 
                 # Get conservative drying params for mixed filaments
-                trays = ams_data.get("tray", [])
                 params = self._get_conservative_drying_params(trays, module_type, presets)
                 if not params:
                     logger.debug(
@@ -1772,12 +1901,18 @@ class PrintScheduler:
         items — counting it as a failed predecessor was the cascade bug that
         let a single cancellation block 18 items over 3 days for the reporter.
         Only `failed` and `aborted` — real print-attempt failures — block.
+
+        Failures with `gate_acknowledged=True` (set by the per-printer Resume
+        action — #1818) are also excluded from the lookback so the user can
+        clear the gate after fixing the physical issue without having to
+        re-queue every downstream job.
         """
         result = await db.execute(
             select(PrintQueueItem)
             .where(PrintQueueItem.printer_id == item.printer_id)
             .where(PrintQueueItem.id != item.id)
             .where(PrintQueueItem.status.in_(["completed", "failed", "cancelled", "aborted"]))
+            .where(PrintQueueItem.gate_acknowledged == False)  # noqa: E712
             .order_by(PrintQueueItem.completed_at.desc())
             .limit(1)
         )
@@ -1852,6 +1987,14 @@ class PrintScheduler:
         # manual_start) and "scheduler re-blocked" (this method re-flags it
         # on identical spool state) (#1698-followup).
         if item.skip_filament_check:
+            # #1762 diagnostic: surface the short-circuit at INFO so a
+            # future "Print Anyway didn't work" report (e.g. issue #1762
+            # comment 3) has actionable evidence in the support bundle
+            # without needing DEBUG enabled.
+            logger.info(
+                "Queue item %s honouring user's Print Anyway acknowledgement — skipping deficit check",
+                item.id,
+            )
             return False
 
         try:
@@ -2195,7 +2338,11 @@ class PrintScheduler:
         # FINISH-state fallback — no need to force a video.
         effective_timelapse = bool(item.timelapse)
 
-        # Start the print with AMS mapping, plate_id and print options
+        # Start the print with AMS mapping, plate_id and print options.
+        # nozzle_mapping rides through verbatim — JSON string captured from
+        # Bambu Studio's project_file on VP intake (#1780); the MQTT layer
+        # parses + injects it only for dual-nozzle models so a null on every
+        # other model is a transparent pass-through.
         started = printer_manager.start_print(
             item.printer_id,
             remote_filename,
@@ -2208,6 +2355,7 @@ class PrintScheduler:
             timelapse=effective_timelapse,
             use_ams=item.use_ams,
             nozzle_offset_cali=item.nozzle_offset_cali,
+            nozzle_mapping=item.nozzle_mapping,
         )
 
         if started:

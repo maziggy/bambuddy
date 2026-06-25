@@ -5883,3 +5883,87 @@ class TestAmsFilamentBackupHoldTimer:
         assert mqtt_client.state.ams_filament_backup is True
         # Hold timer still armed — sub-second push didn't reset it.
         assert mqtt_client._xcam_hold_start["print_option_auto_switch_filament"] == before_hold
+
+
+# ---------------------------------------------------------------------------
+# 2c. Single-nozzle H2S — external-spool tray_now override (#1822)
+# ---------------------------------------------------------------------------
+
+
+class TestTrayNowH2SExternalSpoolOverride:
+    """H2S firmware reports tray_now as the AMS's idle slot (typically 0)
+    instead of 254 when the active feed is the external spool.
+
+    Bambuddy detects the all-external case via the slicer-captured
+    ams_mapping (every entry == -1) and promotes tray_now to 254 so the
+    UI active-tray highlight matches the real feed.
+
+    The override is intentionally narrow:
+      * only fires when ams_mapping is captured AND every entry is -1
+      * does not touch mixed prints ([5, -1]) or AMS-only prints ([5])
+      * does not fire when no ams_mapping is captured (printer-screen start)
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST_H2S",
+            access_code="12345678",
+        )
+
+    def test_all_external_mapping_promotes_tray_now_to_254(self, mqtt_client):
+        """Reporter's scenario: H2S, single nozzle, captured ams_mapping=[-1],
+        firmware sends tray_now=0 -> Bambuddy promotes to 254."""
+        mqtt_client._captured_ams_mapping = [-1]
+        mqtt_client._process_message(_ams_payload(0))
+        assert mqtt_client.state.tray_now == 254
+
+    def test_multi_external_mapping_also_promotes(self, mqtt_client):
+        """Multi-filament print, every filament mapped to external. Still
+        all-external -> still promotes."""
+        mqtt_client._captured_ams_mapping = [-1, -1, -1]
+        mqtt_client._process_message(_ams_payload(0))
+        assert mqtt_client.state.tray_now == 254
+
+    def test_ams_only_mapping_does_not_override(self, mqtt_client):
+        """ams_mapping=[5] (AMS slot 5 only) -> firmware value trusted as-is.
+        Without the all-external guard, this would falsely override real
+        AMS-slot prints."""
+        mqtt_client._captured_ams_mapping = [5]
+        mqtt_client._process_message(_ams_payload(0))
+        assert mqtt_client.state.tray_now == 0
+
+    def test_mixed_mapping_does_not_override(self, mqtt_client):
+        """Mixed mapping (AMS slot 5 + external): we have no evidence the
+        firmware misreports mid-print swaps, so leave tray_now alone."""
+        mqtt_client._captured_ams_mapping = [5, -1]
+        mqtt_client._process_message(_ams_payload(0))
+        assert mqtt_client.state.tray_now == 0
+
+    def test_no_captured_mapping_does_not_override(self, mqtt_client):
+        """Prints started from the printer screen (or before Bambuddy
+        connected) have no captured ams_mapping. Behaviour unchanged from
+        pre-#1822 — we accept the wrong value rather than guess."""
+        mqtt_client._captured_ams_mapping = None
+        mqtt_client._process_message(_ams_payload(0))
+        assert mqtt_client.state.tray_now == 0
+
+    def test_empty_captured_mapping_does_not_override(self, mqtt_client):
+        """Empty list (defensive — should not happen in practice but
+        all([]) returns True). Treat as no signal, not as all-external."""
+        mqtt_client._captured_ams_mapping = []
+        mqtt_client._process_message(_ams_payload(0))
+        assert mqtt_client.state.tray_now == 0
+
+    def test_unloaded_after_print_still_resolves_correctly(self, mqtt_client):
+        """When the firmware unloads (tray_now=255), the override is skipped
+        because the branch only fires for tray_now in 0-3."""
+        mqtt_client._captured_ams_mapping = [-1]
+        mqtt_client._process_message(_ams_payload(0))
+        assert mqtt_client.state.tray_now == 254
+
+        mqtt_client._process_message(_ams_payload(255))
+        assert mqtt_client.state.tray_now == 255

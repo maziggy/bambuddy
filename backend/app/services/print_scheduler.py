@@ -1901,12 +1901,18 @@ class PrintScheduler:
         items — counting it as a failed predecessor was the cascade bug that
         let a single cancellation block 18 items over 3 days for the reporter.
         Only `failed` and `aborted` — real print-attempt failures — block.
+
+        Failures with `gate_acknowledged=True` (set by the per-printer Resume
+        action — #1818) are also excluded from the lookback so the user can
+        clear the gate after fixing the physical issue without having to
+        re-queue every downstream job.
         """
         result = await db.execute(
             select(PrintQueueItem)
             .where(PrintQueueItem.printer_id == item.printer_id)
             .where(PrintQueueItem.id != item.id)
             .where(PrintQueueItem.status.in_(["completed", "failed", "cancelled", "aborted"]))
+            .where(PrintQueueItem.gate_acknowledged == False)  # noqa: E712
             .order_by(PrintQueueItem.completed_at.desc())
             .limit(1)
         )

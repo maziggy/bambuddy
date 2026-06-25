@@ -47,7 +47,11 @@ def queue_factory(db_session, printer_factory):
             printer_holder["p"] = await printer_factory()
         return printer_holder["p"]
 
-    async def _add(status: str, error_message: str | None = None) -> PrintQueueItem:
+    async def _add(
+        status: str,
+        error_message: str | None = None,
+        gate_acknowledged: bool = False,
+    ) -> PrintQueueItem:
         printer = await _make_printer()
         counter["n"] += 1
         item = PrintQueueItem(
@@ -56,6 +60,7 @@ def queue_factory(db_session, printer_factory):
             error_message=error_message,
             completed_at=base_time + timedelta(minutes=counter["n"]),
             require_previous_success=True,
+            gate_acknowledged=gate_acknowledged,
         )
         db_session.add(item)
         await db_session.commit()
@@ -170,3 +175,44 @@ async def test_completed_then_failed_blocks(scheduler, db_session, queue_factory
     await queue_factory["add"]("failed")
     pending = await queue_factory["add_pending"]()
     assert await scheduler._check_previous_success(db_session, pending) is False
+
+
+# ---- #1818: per-printer Resume-after-failure gate acknowledgement ----
+
+
+@pytest.mark.asyncio
+async def test_acknowledged_failure_is_excluded(scheduler, db_session, queue_factory):
+    """The reporter scenario: failure with gate_acknowledged=True must NOT
+    block. Without the acknowledge filter, a single failure poisons every
+    later require_previous_success item forever."""
+    await queue_factory["add"]("failed", gate_acknowledged=True)
+    pending = await queue_factory["add_pending"]()
+    assert await scheduler._check_previous_success(db_session, pending) is True
+
+
+@pytest.mark.asyncio
+async def test_acknowledged_aborted_is_excluded(scheduler, db_session, queue_factory):
+    await queue_factory["add"]("aborted", gate_acknowledged=True)
+    pending = await queue_factory["add_pending"]()
+    assert await scheduler._check_previous_success(db_session, pending) is True
+
+
+@pytest.mark.asyncio
+async def test_fresh_failure_after_ack_still_blocks(scheduler, db_session, queue_factory):
+    """Per-item acknowledgement is independent — a NEW failure after the
+    user resumed the queue must re-gate downstream items so they don't
+    silently steamroll past a real problem."""
+    await queue_factory["add"]("failed", gate_acknowledged=True)  # the old one
+    await queue_factory["add"]("failed", gate_acknowledged=False)  # fresh post-resume
+    pending = await queue_factory["add_pending"]()
+    assert await scheduler._check_previous_success(db_session, pending) is False
+
+
+@pytest.mark.asyncio
+async def test_acknowledged_failure_walks_back_to_completed(scheduler, db_session, queue_factory):
+    """After acknowledging the failure, the next real predecessor (a
+    completed print prior to the failure) governs the gate."""
+    await queue_factory["add"]("completed")
+    await queue_factory["add"]("failed", gate_acknowledged=True)
+    pending = await queue_factory["add_pending"]()
+    assert await scheduler._check_previous_success(db_session, pending) is True

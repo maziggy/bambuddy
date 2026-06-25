@@ -1217,6 +1217,15 @@ export default {
       batchCreateFailed: 'Yığın oluşturma başarısız',
       batchUngrouped: '{{count}} öğe gruptan çıkarıldı',
       batchUngroupFailed: 'Yığını gruptan çıkarma başarısız',
+      resumedAfterFailure: 'Kuyruk devam ettirildi — {{restored}} iş bekleyene geri alındı',
+      resumeAfterFailureFailed: 'Kuyruk devam ettirilemedi',
+    },
+    resumeAfterFailure: {
+      banner: '{{printer}} önceki bir baskı hatası nedeniyle engellendi — {{count}} iş atlandı',
+      bannerHint: 'Yazıcı sorununu çözün, ardından atlanan işleri geri yüklemek ve engellemeyi kaldırmak için devam ettirin.',
+      button: 'Hatadan sonra devam et',
+      confirmTitle: 'Hatadan sonra kuyruğa devam edilsin mi?',
+      confirmMessage: '{{printer}} üzerindeki {{count}} atlanan işi bekleyene geri yükleyin ve önceki baskı engelini kaldırın. Devam etmeden önce yazıcının hazır olduğundan emin olun.',
     },
     // Zaman çizelgesi görünümü
     timeline: {

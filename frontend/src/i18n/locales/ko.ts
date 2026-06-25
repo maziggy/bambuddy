@@ -1149,6 +1149,15 @@ export default {
       batchCreateFailed: '배치 만들기에 실패했습니다',
       batchUngrouped: '{{count}}개 항목의 그룹을 해제했습니다',
       batchUngroupFailed: '배치 그룹 해제에 실패했습니다',
+      resumedAfterFailure: '큐를 재개했습니다 — {{restored}}개 작업을 대기 상태로 복원했습니다',
+      resumeAfterFailureFailed: '큐 재개에 실패했습니다',
+    },
+    resumeAfterFailure: {
+      banner: '{{printer}}이(가) 이전 인쇄 실패로 인해 차단되었습니다 — {{count}}개 작업이 건너뛰어졌습니다',
+      bannerHint: '프린터 문제를 해결한 후 재개하여 건너뛴 작업을 복원하고 차단을 해제하세요.',
+      button: '실패 후 재개',
+      confirmTitle: '실패 후 큐를 재개하시겠습니까?',
+      confirmMessage: '{{printer}}에서 건너뛴 {{count}}개 작업을 대기 상태로 복원하고 이전 인쇄 차단을 해제합니다. 계속하기 전에 프린터가 준비되었는지 확인하세요.',
     },
     timeline: {
       listView: '목록',

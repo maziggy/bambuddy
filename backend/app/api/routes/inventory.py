@@ -2457,6 +2457,14 @@ async def create_spool_from_slot(
     if not tray or not tray.get("tray_type"):
         raise HTTPException(status_code=400, detail="Slot is empty or has no readable tray data")
 
+    # Guard against ghost-spool creation: a slot without any RFID tag has no
+    # stable identity, so creating an inventory row would just duplicate on
+    # every confirm and never re-link to the physical spool.
+    from backend.app.services.spool_tag_matcher import is_valid_tag
+
+    if not is_valid_tag(tray.get("tag_uid", ""), tray.get("tray_uuid", "")):
+        raise HTTPException(status_code=400, detail="Slot has no RFID tag")
+
     spool = await create_spool_from_tray(db, tray)
     await auto_assign_spool(
         req.printer_id,

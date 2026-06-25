@@ -58,6 +58,7 @@ import {
   PackageOpen,
   Ungroup,
   Ban,
+  PlayCircle,
 } from 'lucide-react';
 import { api, ApiError } from '../api/client';
 import { type TimeFormat, formatETA, formatDuration, formatRelativeTime, parseUTCDate } from '../utils/date';
@@ -1208,6 +1209,13 @@ export function QueuePage() {
   } | null>(null);
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
+  // #1818: per-printer Resume-after-failure confirm modal. Tracks which
+  // printer's gate the user is about to clear; null when no modal is open.
+  const [resumeConfirm, setResumeConfirm] = useState<{
+    printerId: number;
+    printerName: string;
+    skippedCount: number;
+  } | null>(null);
   const [historySortBy, setHistorySortBy] = useState<'date' | 'name' | 'printer'>(() => {
     const saved = localStorage.getItem('queue.historySortBy');
     return (saved as 'date' | 'name' | 'printer') || 'date';
@@ -1429,6 +1437,21 @@ export function QueuePage() {
       showToast(t('queue.toast.bulkCancelled', { count }));
     },
     onError: () => showToast(t('queue.toast.bulkCancelFailed'), 'error'),
+  });
+
+  const resumeAfterFailureMutation = useMutation({
+    mutationFn: (printerId: number) => api.resumeQueueAfterFailure(printerId),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      setResumeConfirm(null);
+      showToast(
+        t('queue.toast.resumedAfterFailure', {
+          restored: result.restored,
+          acknowledged: result.acknowledged,
+        }),
+      );
+    },
+    onError: () => showToast(t('queue.toast.resumeAfterFailureFailed'), 'error'),
   });
 
   const createBatchMutation = useMutation({
@@ -1823,6 +1846,42 @@ export function QueuePage() {
     });
   }, [groupedRows, t]);
 
+  // #1818: printers whose queue is gated by a prior failure that's poisoning
+  // downstream `require_previous_success` items. We surface a per-printer
+  // Resume banner above the active queue so the user can clear the gate +
+  // restore the skipped jobs in one click, without re-queuing each one.
+  // Detection key: skipped + the scheduler's exact gate string. Other skip
+  // reasons (filament deficit, etc.) get their own UX and stay untouched.
+  const gateBlockedPrinters = useMemo<
+    Array<{ printerId: number; printerName: string; skippedCount: number }>
+  >(() => {
+    const counts = new Map<number, { name: string; count: number }>();
+    queue?.forEach((item) => {
+      if (
+        item.status === 'skipped' &&
+        item.error_message === 'Previous print failed or was aborted' &&
+        item.printer_id
+      ) {
+        const existing = counts.get(item.printer_id);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          counts.set(item.printer_id, {
+            name: item.printer_name || `Printer #${item.printer_id}`,
+            count: 1,
+          });
+        }
+      }
+    });
+    return Array.from(counts.entries())
+      .map(([printerId, { name, count }]) => ({
+        printerId,
+        printerName: name,
+        skippedCount: count,
+      }))
+      .sort((a, b) => a.printerName.localeCompare(b.printerName));
+  }, [queue]);
+
   const aggregateForRows = (rows: QueueRow[]) => {
     let count = 0;
     let time = 0;
@@ -1890,6 +1949,43 @@ export function QueuePage() {
         historyCount={historyItems.length}
         t={t}
       />
+
+      {/* #1818: Resume-after-failure banner. One row per printer whose queue
+          is gated by a prior failed/aborted print. Visible regardless of
+          tab/layout so the user can clear the gate without hunting for
+          skipped items. Hidden entirely when no gates are active. */}
+      {activeTab === 'queue' && gateBlockedPrinters.length > 0 && hasPermission('queue:update_all' as Permission) && (
+        <div className="mb-4 space-y-2">
+          {gateBlockedPrinters.map(({ printerId, printerName, skippedCount }) => (
+            <div
+              key={printerId}
+              className="flex items-center gap-3 px-4 py-3 bg-orange-500/10 border border-orange-500/30 rounded-lg"
+            >
+              <AlertCircle className="w-5 h-5 text-orange-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-orange-200">
+                  {t('queue.resumeAfterFailure.banner', {
+                    printer: printerName,
+                    count: skippedCount,
+                  })}
+                </div>
+                <div className="text-xs text-orange-200/70 mt-0.5">
+                  {t('queue.resumeAfterFailure.bannerHint')}
+                </div>
+              </div>
+              <button
+                onClick={() =>
+                  setResumeConfirm({ printerId, printerName, skippedCount })
+                }
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 text-orange-100 text-sm rounded-md border border-orange-500/40 transition-colors flex-shrink-0"
+              >
+                <PlayCircle className="w-4 h-4" />
+                {t('queue.resumeAfterFailure.button')}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-6">
@@ -2367,6 +2463,21 @@ export function QueuePage() {
             setConfirmAction(null);
           }}
           onCancel={() => setConfirmAction(null)}
+        />
+      )}
+
+      {/* #1818: Resume-after-failure confirm */}
+      {resumeConfirm && (
+        <ConfirmModal
+          title={t('queue.resumeAfterFailure.confirmTitle')}
+          message={t('queue.resumeAfterFailure.confirmMessage', {
+            printer: resumeConfirm.printerName,
+            count: resumeConfirm.skippedCount,
+          })}
+          confirmText={t('queue.resumeAfterFailure.button')}
+          variant="warning"
+          onConfirm={() => resumeAfterFailureMutation.mutate(resumeConfirm.printerId)}
+          onCancel={() => setResumeConfirm(null)}
         />
       )}
 

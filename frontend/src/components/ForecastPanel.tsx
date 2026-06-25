@@ -238,7 +238,12 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
     const today = new Date(); today.setHours(0, 0, 0, 0);
 
     return groups.map((group): SkuForecast => {
-      const skuSettings = settingsMap.get(group.key) ?? null;
+      // Fall back to the NULL-colour row that pre-upgrade users have so their
+      // lead-time / safety-margin overrides survive the first load after the
+      // color_name column is added (#forecast-color-grouping migration).
+      const skuSettings =
+        settingsMap.get(group.key) ??
+        (group.colorName !== null ? settingsMap.get(skuKey(group.material, group.subtype, group.brand, null)) ?? null : null);
       const skuLeadTime = skuSettings?.lead_time_days ?? 0;
       const effectiveLeadTimeDays = Math.max(globalLeadTime, skuLeadTime);
       const marginValue = skuSettings?.safety_margin_value ?? 14;

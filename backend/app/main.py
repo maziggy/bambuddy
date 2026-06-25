@@ -2561,7 +2561,16 @@ async def on_print_start(printer_id: int, data: dict):
                     _dispatched = getattr(_client, "last_dispatch_subtask_id", None) if _client else None
                     if _dispatched:
                         effective_subtask_id = str(_dispatched).strip() or None
-                if effective_subtask_id and not archive.subtask_id:
+                # Update on first-set OR on reprint (the queue dispatcher mints
+                # a fresh subtask_id per dispatch in bambu_mqtt:3647). Skipping
+                # the rewrite for reprints leaves the archive holding the FIRST
+                # run's id; if MQTT then reconnects mid-print, the reconciler
+                # (#1542) compares the stale stored id against the printer's
+                # live id, sees a mismatch, and synthesises a bogus PRINT
+                # COMPLETE — exactly the false-positive "Print Stopped" reported
+                # in #1807. Inequality check preserves the noop-on-stable-push
+                # behaviour the earlier `not archive.subtask_id` guard provided.
+                if effective_subtask_id and archive.subtask_id != effective_subtask_id:
                     archive.subtask_id = effective_subtask_id
                 # #1403 follow-up: VP-queue archives are created with
                 # printer_id=None at queue-add time (we don't know which
@@ -2769,8 +2778,11 @@ async def on_print_start(printer_id: int, data: dict):
                 )
                 # Track this as the active print
                 _active_prints[(printer_id, existing_archive.filename)] = existing_archive.id
-                # Attach subtask_id retroactively so future restarts can resume
-                if subtask_id and not existing_archive.subtask_id:
+                # Attach subtask_id retroactively so future restarts can resume.
+                # Compare for inequality (not "is empty") to also pick up reprint
+                # dispatches that mint a fresh id — see #1807 for the bogus
+                # "Print Stopped" the strict-empty guard caused on reconnect.
+                if subtask_id and existing_archive.subtask_id != subtask_id:
                     existing_archive.subtask_id = subtask_id
                     await db.commit()
                 # Also set up energy tracking if not already tracked (#941: persisted column)

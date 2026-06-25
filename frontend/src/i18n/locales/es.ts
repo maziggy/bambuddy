@@ -1229,6 +1229,15 @@ export default {
       batchCreateFailed: 'Error al crear el lote',
       batchUngrouped: '{{count}} elemento(s) desagrupado(s)',
       batchUngroupFailed: 'Error al desagrupar el lote',
+      resumedAfterFailure: 'Cola reanudada — {{restored}} trabajo(s) restaurado(s) a pendientes',
+      resumeAfterFailureFailed: 'Error al reanudar la cola',
+    },
+    resumeAfterFailure: {
+      banner: '{{printer}} está bloqueado por un fallo de impresión previo — {{count}} trabajo(s) omitido(s)',
+      bannerHint: 'Soluciona el problema de la impresora y reanuda para restaurar los trabajos omitidos y limpiar el bloqueo.',
+      button: 'Reanudar tras fallo',
+      confirmTitle: '¿Reanudar la cola tras el fallo?',
+      confirmMessage: 'Restaurar {{count}} trabajo(s) omitido(s) en {{printer}} a pendientes y limpiar el bloqueo del trabajo anterior. Asegúrate de que la impresora esté lista antes de continuar.',
     },
     // Timeline view
     timeline: {

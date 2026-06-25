@@ -2810,20 +2810,29 @@ async def run_migrations(conn):
         # forecasts distinguish colours within a SKU (#forecast-color-grouping).
         await _safe_execute(conn, "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS color_name VARCHAR(100)")
         await _safe_execute(conn, "ALTER TABLE filament_shopping_list ADD COLUMN IF NOT EXISTS color_name VARCHAR(100)")
-        # The original UNIQUE (material, subtype, brand) constraint was created
-        # with name="uq_filament_sku" in the model, so that is the actual
-        # constraint name on Postgres (not the auto-generated key name).
-        # Drop it by its real name and recreate under the same name so the
-        # model declaration stays in sync.
-        await _safe_execute(
-            conn,
-            "ALTER TABLE filament_sku_settings DROP CONSTRAINT IF EXISTS uq_filament_sku",
+        # Widen UNIQUE (material, subtype, brand) → (material, subtype, brand, color_name).
+        # The original constraint was declared with name="uq_filament_sku" in the
+        # model, so we drop/re-add by that name. Gated on a pg_constraint lookup so
+        # the rebuild only runs when color_name is missing from the key — without
+        # the gate, every startup would take an ACCESS EXCLUSIVE lock on the table
+        # and churn the constraint.
+        uq_check = await conn.execute(
+            text(
+                "SELECT 1 FROM pg_constraint c "
+                "JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey) "
+                "WHERE c.conname = 'uq_filament_sku' AND a.attname = 'color_name' LIMIT 1"
+            )
         )
-        await _safe_execute(
-            conn,
-            "ALTER TABLE filament_sku_settings ADD CONSTRAINT uq_filament_sku "
-            "UNIQUE (material, subtype, brand, color_name)",
-        )
+        if uq_check.scalar_one_or_none() is None:
+            await _safe_execute(
+                conn,
+                "ALTER TABLE filament_sku_settings DROP CONSTRAINT IF EXISTS uq_filament_sku",
+            )
+            await _safe_execute(
+                conn,
+                "ALTER TABLE filament_sku_settings ADD CONSTRAINT uq_filament_sku "
+                "UNIQUE (material, subtype, brand, color_name)",
+            )
         # Only backfill from safety_margin_days if that column still exists (PostgreSQL).
         col_check = await conn.execute(
             text(

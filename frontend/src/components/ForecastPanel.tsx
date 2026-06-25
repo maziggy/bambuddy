@@ -1318,7 +1318,7 @@ function ShoppingListPanel({
   );
 
   function downloadCsv() {
-    const headers = [t('forecast.qty'), t('forecast.material'), 'Brand', 'Subtype', 'Color', `${t('forecast.weight')} (g)`, `${t('forecast.leadTime')} (d)`, t('forecast.expectedRestock'), t('forecast.status'), t('forecast.note')];
+    const headers = [t('forecast.qty'), t('forecast.material'), t('inventory.brand'), t('inventory.subtype'), t('inventory.color'), `${t('forecast.weight')} (g)`, `${t('forecast.leadTime')} (d)`, t('forecast.expectedRestock'), t('forecast.status'), t('forecast.note')];
     const rows = items.map((i) => {
       const f = forecastMap.get(skuKey(i.material, i.subtype, i.brand, i.color_name)) ?? null;
       const avgSpoolG = f && f.totalSpools > 0 ? f.totalLabelG / f.totalSpools : 1000;

@@ -254,20 +254,21 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
       // Consumed since baseline (post-reset); see InventoryPage stats calc (#1390).
       const totalUsedG = group.spools.reduce((s, sp) => s + Math.max(0, sp.weight_used - (sp.weight_used_baseline ?? 0)), 0);
 
+      // Only include history from spools that haven't been reset — pre-reset
+      // events on a reset spool have no anchor timestamp so they'd inflate the
+      // rate. Spools without a baseline are clean and keep their records.
       const groupHistory: SpoolUsageRecord[] = [];
-      for (const s of group.spools) groupHistory.push(...(usageBySpoolId.get(s.id) ?? []));
-
-      // If any spool in the group has been reset (weight_used_baseline > 0), the
-      // usage history contains pre-reset events that would inflate the rate. We
-      // have no reset timestamp to filter by, so skip history entirely and fall
-      // through to computeDeltaRate, which correctly subtracts the baseline.
-      const groupHasReset = group.spools.some((sp) => (sp.weight_used_baseline ?? 0) > 0);
+      for (const s of group.spools) {
+        if ((s.weight_used_baseline ?? 0) === 0) {
+          groupHistory.push(...(usageBySpoolId.get(s.id) ?? []));
+        }
+      }
 
       let dailyRateG: number | null = null;
       let dailyRateStdDev: number | null = null;
       let rateTier: SkuForecast['rateTier'] = 'none';
 
-      const histResult = !groupHasReset ? computeHistoryRate(groupHistory) : null;
+      const histResult = computeHistoryRate(groupHistory);
       if (histResult !== null) {
         dailyRateG = histResult.rate;
         dailyRateStdDev = histResult.stdDev;

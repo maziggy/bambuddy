@@ -1318,6 +1318,15 @@ export default {
       batchCreateFailed: 'Échec de la création du lot',
       batchUngrouped: '{{count}} élément(s) dégroupé(s)',
       batchUngroupFailed: 'Échec du dégroupement du lot',
+      resumedAfterFailure: 'File reprise — {{restored}} tâche(s) restaurée(s) en attente',
+      resumeAfterFailureFailed: 'Échec de la reprise de la file',
+    },
+    resumeAfterFailure: {
+      banner: '{{printer}} est bloquée par un échec d\'impression précédent — {{count}} tâche(s) ignorée(s)',
+      bannerHint: 'Résolvez le problème de l\'imprimante, puis reprenez la file pour restaurer les tâches ignorées et lever le blocage.',
+      button: 'Reprendre après échec',
+      confirmTitle: 'Reprendre la file après l\'échec ?',
+      confirmMessage: 'Restaurer {{count}} tâche(s) ignorée(s) sur {{printer}} en attente et lever le blocage de l\'impression précédente. Assurez-vous que l\'imprimante est prête avant de continuer.',
     },
     // Timeline view
     timeline: {

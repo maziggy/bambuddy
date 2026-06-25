@@ -2544,3 +2544,247 @@ class TestAbortedStatusNormalisation:
         assert row["archive_deleted"] is False
         assert row["archive_name"] == "Live Archive"
         assert row["archive_thumbnail"] == "archives/test/live/thumbnail.png"
+
+
+class TestResumeQueueAfterFailure:
+    """Integration tests for POST /api/v1/queue/printer/{id}/resume (#1818)."""
+
+    @pytest.fixture
+    async def printer_factory(self, db_session):
+        _counter = [0]
+
+        async def _create_printer(**kwargs):
+            from backend.app.models.printer import Printer
+
+            _counter[0] += 1
+            counter = _counter[0]
+            defaults = {
+                "name": f"Resume Printer {counter}",
+                "ip_address": f"192.168.42.{100 + counter}",
+                "serial_number": f"RESUMESERIAL{counter:04d}",
+                "access_code": "12345678",
+                "model": "P1S",
+            }
+            defaults.update(kwargs)
+            printer = Printer(**defaults)
+            db_session.add(printer)
+            await db_session.commit()
+            await db_session.refresh(printer)
+            return printer
+
+        return _create_printer
+
+    @pytest.fixture
+    async def archive_factory(self, db_session):
+        _counter = [0]
+
+        async def _create_archive(**kwargs):
+            from backend.app.models.archive import PrintArchive
+
+            _counter[0] += 1
+            counter = _counter[0]
+            defaults = {
+                "filename": f"resume_print_{counter}.3mf",
+                "print_name": f"Resume Print {counter}",
+                "file_path": f"/tmp/resume_print_{counter}.3mf",
+                "file_size": 1024,
+                "content_hash": f"resumehash{counter:08d}",
+                "status": "completed",
+            }
+            defaults.update(kwargs)
+            archive = PrintArchive(**defaults)
+            db_session.add(archive)
+            await db_session.commit()
+            await db_session.refresh(archive)
+            return archive
+
+        return _create_archive
+
+    async def _add_item(self, db_session, printer, archive_factory, **kwargs):
+        from backend.app.models.print_queue import PrintQueueItem
+
+        archive = await archive_factory()
+        defaults = {
+            "printer_id": printer.id,
+            "archive_id": archive.id,
+            "status": "pending",
+            "require_previous_success": True,
+        }
+        defaults.update(kwargs)
+        item = PrintQueueItem(**defaults)
+        db_session.add(item)
+        await db_session.commit()
+        await db_session.refresh(item)
+        return item
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_resume_unknown_printer_returns_404(self, async_client: AsyncClient):
+        resp = await async_client.post("/api/v1/queue/printer/999999/resume")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_resume_no_op_on_clean_queue(self, async_client: AsyncClient, printer_factory):
+        """Calling resume on a printer with no failures and no skipped items
+        returns zero counts — endpoint is idempotent and safe to spam."""
+        printer = await printer_factory()
+        resp = await async_client.post(f"/api/v1/queue/printer/{printer.id}/resume")
+        assert resp.status_code == 200
+        assert resp.json() == {"acknowledged": 0, "restored": 0}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_resume_acknowledges_failed_and_restores_skipped(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Reporter's scenario: failed predecessor + N skipped downstream items.
+        Resume sets gate_acknowledged on the failure and flips skipped → pending."""
+        from sqlalchemy import select
+
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        failed = await self._add_item(db_session, printer, archive_factory, status="failed")
+        skipped_1 = await self._add_item(
+            db_session,
+            printer,
+            archive_factory,
+            status="skipped",
+            error_message="Previous print failed or was aborted",
+        )
+        skipped_2 = await self._add_item(
+            db_session,
+            printer,
+            archive_factory,
+            status="skipped",
+            error_message="Previous print failed or was aborted",
+        )
+
+        resp = await async_client.post(f"/api/v1/queue/printer/{printer.id}/resume")
+        assert resp.status_code == 200
+        assert resp.json() == {"acknowledged": 1, "restored": 2}
+
+        failed_id = failed.id
+        skipped_ids = [skipped_1.id, skipped_2.id]
+        db_session.expire_all()
+
+        result = await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id == failed_id))
+        assert result.scalar_one().gate_acknowledged is True
+
+        for sid in skipped_ids:
+            result = await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id == sid))
+            row = result.scalar_one()
+            assert row.status == "pending"
+            assert row.error_message is None
+            assert row.completed_at is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_resume_preserves_skipped_items_with_other_reasons(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Skipped items whose error_message is something OTHER than the
+        gate string (e.g. filament-deficit promotion, future skip reasons)
+        must not be touched — they encode different user intent."""
+        from sqlalchemy import select
+
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        gate_skip = await self._add_item(
+            db_session,
+            printer,
+            archive_factory,
+            status="skipped",
+            error_message="Previous print failed or was aborted",
+        )
+        other_skip = await self._add_item(
+            db_session,
+            printer,
+            archive_factory,
+            status="skipped",
+            error_message="User skipped via UI",
+        )
+
+        gate_id = gate_skip.id
+        other_id = other_skip.id
+        resp = await async_client.post(f"/api/v1/queue/printer/{printer.id}/resume")
+        assert resp.json() == {"acknowledged": 0, "restored": 1}
+
+        db_session.expire_all()
+        result = await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id == gate_id))
+        assert result.scalar_one().status == "pending"
+        result = await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id == other_id))
+        assert result.scalar_one().status == "skipped"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_resume_scoped_to_printer(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """A resume on printer A must not clear printer B's gate — farms run
+        each printer's queue independently."""
+        from sqlalchemy import select
+
+        from backend.app.models.print_queue import PrintQueueItem
+
+        p1 = await printer_factory()
+        p2 = await printer_factory()
+        failed_p1 = await self._add_item(db_session, p1, archive_factory, status="failed")
+        failed_p2 = await self._add_item(db_session, p2, archive_factory, status="failed")
+
+        failed_p1_id = failed_p1.id
+        failed_p2_id = failed_p2.id
+        resp = await async_client.post(f"/api/v1/queue/printer/{p1.id}/resume")
+        assert resp.json() == {"acknowledged": 1, "restored": 0}
+
+        db_session.expire_all()
+        result = await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id == failed_p1_id))
+        assert result.scalar_one().gate_acknowledged is True
+        result = await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id == failed_p2_id))
+        assert result.scalar_one().gate_acknowledged is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_resume_handles_aborted_status(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Aborted prints (printer-detected mid-print failure) gate the same
+        way failed prints do and must also be acknowledgeable."""
+        from sqlalchemy import select
+
+        from backend.app.models.print_queue import PrintQueueItem
+
+        printer = await printer_factory()
+        aborted = await self._add_item(db_session, printer, archive_factory, status="aborted")
+        aborted_id = aborted.id
+        resp = await async_client.post(f"/api/v1/queue/printer/{printer.id}/resume")
+        assert resp.json() == {"acknowledged": 1, "restored": 0}
+
+        db_session.expire_all()
+        result = await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id == aborted_id))
+        assert result.scalar_one().gate_acknowledged is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_resume_idempotent_second_call_is_no_op(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Calling resume twice on the same printer doesn't re-acknowledge
+        the same failure — the second call sees acknowledged=0, restored=0."""
+        printer = await printer_factory()
+        await self._add_item(db_session, printer, archive_factory, status="failed")
+        await self._add_item(
+            db_session,
+            printer,
+            archive_factory,
+            status="skipped",
+            error_message="Previous print failed or was aborted",
+        )
+
+        first = await async_client.post(f"/api/v1/queue/printer/{printer.id}/resume")
+        assert first.json() == {"acknowledged": 1, "restored": 1}
+
+        second = await async_client.post(f"/api/v1/queue/printer/{printer.id}/resume")
+        assert second.json() == {"acknowledged": 0, "restored": 0}

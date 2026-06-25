@@ -1319,6 +1319,15 @@ export default {
       batchCreateFailed: '建立批次失敗',
       batchUngrouped: '已取消分組 {{count}} 項',
       batchUngroupFailed: '取消批次分組失敗',
+      resumedAfterFailure: '已恢復佇列 — {{restored}} 個工作已恢復為待處理',
+      resumeAfterFailureFailed: '恢復佇列失敗',
+    },
+    resumeAfterFailure: {
+      banner: '{{printer}} 因先前的列印失敗而被阻擋 — 已跳過 {{count}} 個工作',
+      bannerHint: '解決印表機問題後恢復佇列，以還原跳過的工作並清除阻擋。',
+      button: '失敗後恢復',
+      confirmTitle: '失敗後恢復佇列？',
+      confirmMessage: '將 {{printer}} 上的 {{count}} 個跳過的工作恢復為待處理，並清除上一個列印的阻擋。繼續前請確認印表機已就緒。',
     },
     // Timeline view
     timeline: {

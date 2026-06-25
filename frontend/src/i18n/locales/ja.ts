@@ -1317,6 +1317,15 @@ export default {
       batchCreateFailed: 'バッチの作成に失敗しました',
       batchUngrouped: '{{count}}件のグループを解除しました',
       batchUngroupFailed: 'バッチのグループ解除に失敗しました',
+      resumedAfterFailure: 'キューを再開しました — {{restored}}件のジョブを保留状態に戻しました',
+      resumeAfterFailureFailed: 'キューの再開に失敗しました',
+    },
+    resumeAfterFailure: {
+      banner: '{{printer}} は前回の印刷失敗によりブロックされています — {{count}}件のジョブをスキップしました',
+      bannerHint: 'プリンターの問題を解決してから再開すると、スキップされたジョブを復元してブロックを解除できます。',
+      button: '失敗後に再開',
+      confirmTitle: '失敗後にキューを再開しますか？',
+      confirmMessage: '{{printer}} のスキップされた {{count}} 件のジョブを保留状態に戻し、前回の印刷ブロックを解除します。続行する前にプリンターが準備完了していることを確認してください。',
     },
     // Timeline view
     timeline: {

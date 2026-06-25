@@ -1320,6 +1320,15 @@ export default {
       batchCreateFailed: '创建批次失败',
       batchUngrouped: '已取消分组 {{count}} 项',
       batchUngroupFailed: '取消批次分组失败',
+      resumedAfterFailure: '已恢复队列 — {{restored}} 个任务已恢复为待处理',
+      resumeAfterFailureFailed: '恢复队列失败',
+    },
+    resumeAfterFailure: {
+      banner: '{{printer}} 因之前的打印失败而被阻塞 — 已跳过 {{count}} 个任务',
+      bannerHint: '解决打印机问题后恢复队列，以还原跳过的任务并清除阻塞。',
+      button: '失败后恢复',
+      confirmTitle: '失败后恢复队列？',
+      confirmMessage: '将 {{printer}} 上的 {{count}} 个跳过的任务恢复为待处理，并清除上一个打印的阻塞。继续之前请确保打印机已就绪。',
     },
     // Timeline view
     timeline: {

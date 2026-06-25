@@ -94,6 +94,15 @@ class PrintQueueItem(Base):
     # Status: pending, printing, completed, failed, skipped, cancelled
     status: Mapped[str] = mapped_column(String(20), default="pending")
 
+    # Cleared by the per-printer "Resume after failure" action (#1818) so the
+    # scheduler's `_check_previous_success` lookback skips this row. Without
+    # this, a single `failed` or `aborted` print poisoned every later
+    # `require_previous_success` item on the same printer forever — the
+    # lookback excluded `skipped` but had no way to dismiss the originating
+    # failure. The flag is per-item, not per-printer, so a fresh failure
+    # after a resume re-gates downstream items independently.
+    gate_acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
+
     # Set by the dispatch scheduler when the assigned spool can't satisfy
     # this print's per-slot filament weight (#1496). Display-only flag — the
     # actual deficit is recomputed live every time the user clicks ▶, so

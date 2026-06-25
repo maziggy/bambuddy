@@ -1207,6 +1207,13 @@ async def create_spool_from_slot(
     if not tray:
         raise HTTPException(status_code=400, detail="Slot is empty or has no readable tray data")
 
+    # Same ghost-spool guard as the inventory route: no tag → no stable
+    # identity → confirm would just create a fresh Spoolman row per push.
+    from backend.app.services.spool_tag_matcher import is_valid_tag
+
+    if not is_valid_tag(tray.tag_uid or "", tray.tray_uuid or ""):
+        raise HTTPException(status_code=400, detail="Slot has no RFID tag")
+
     sync_result = await client.sync_ams_tray(
         tray,
         printer.name,

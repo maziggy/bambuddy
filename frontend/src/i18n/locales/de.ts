@@ -1320,6 +1320,15 @@ export default {
       batchCreateFailed: 'Stapel konnte nicht erstellt werden',
       batchUngrouped: '{{count}} Eintrag/Einträge aus Stapel gelöst',
       batchUngroupFailed: 'Stapel konnte nicht aufgelöst werden',
+      resumedAfterFailure: 'Warteschlange fortgesetzt — {{restored}} Auftrag/Aufträge wieder eingereiht',
+      resumeAfterFailureFailed: 'Warteschlange konnte nicht fortgesetzt werden',
+    },
+    resumeAfterFailure: {
+      banner: '{{printer}} ist durch einen vorherigen Druckfehler blockiert — {{count}} Auftrag/Aufträge übersprungen',
+      bannerHint: 'Behebe das Druckerproblem und setze die Warteschlange dann fort, um die übersprungenen Aufträge wiederherzustellen und die Sperre aufzuheben.',
+      button: 'Nach Fehler fortsetzen',
+      confirmTitle: 'Warteschlange nach Fehler fortsetzen?',
+      confirmMessage: 'Setze {{count}} übersprungenen Auftrag/Aufträge auf {{printer}} wieder auf „Ausstehend“ und hebe die Vorgängersperre auf. Stelle vorher sicher, dass der Drucker bereit ist.',
     },
     // Timeline view
     timeline: {

@@ -1271,6 +1271,8 @@ export function PrintModal({
                 defaultExpanded={!!initialSelectedPrinterIds?.length}
                 showDualNozzleOptions={showDualNozzleOptions}
               />
+            )}
+
             {billingEnabled && printableCostCenters.length > 0 && (
               <CostCenterSelect
                 costCenters={printableCostCenters}

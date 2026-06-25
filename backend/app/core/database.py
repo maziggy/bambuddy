@@ -2750,15 +2750,18 @@ async def run_migrations(conn):
         # forecasts distinguish colours within a SKU (#forecast-color-grouping).
         await _safe_execute(conn, "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS color_name VARCHAR(100)")
         await _safe_execute(conn, "ALTER TABLE filament_shopping_list ADD COLUMN IF NOT EXISTS color_name VARCHAR(100)")
-        # The original UNIQUE (material, subtype, brand) constraint is named by
-        # Postgres automatically; drop it and recreate over the wider key.
+        # The original UNIQUE (material, subtype, brand) constraint was created
+        # with name="uq_filament_sku" in the model, so that is the actual
+        # constraint name on Postgres (not the auto-generated key name).
+        # Drop it by its real name and recreate under the same name so the
+        # model declaration stays in sync.
         await _safe_execute(
             conn,
-            "ALTER TABLE filament_sku_settings DROP CONSTRAINT IF EXISTS filament_sku_settings_material_subtype_brand_key",
+            "ALTER TABLE filament_sku_settings DROP CONSTRAINT IF EXISTS uq_filament_sku",
         )
         await _safe_execute(
             conn,
-            "ALTER TABLE filament_sku_settings ADD CONSTRAINT filament_sku_settings_material_subtype_brand_color_name_key "
+            "ALTER TABLE filament_sku_settings ADD CONSTRAINT uq_filament_sku "
             "UNIQUE (material, subtype, brand, color_name)",
         )
         # Only backfill from safety_margin_days if that column still exists (PostgreSQL).

@@ -1819,19 +1819,9 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                 tray_sub_brands=tray.get("tray_sub_brands"),
                                 tray_count=len(ams_unit.get("tray", [])),
                             )
-                        else:
-                            # No tag at all — let user choose from inventory
-                            await _broadcast_unknown_tag(
-                                printer_id=printer_id,
-                                ams_id=ams_id,
-                                tray_id=tray_id,
-                                tag_uid="",
-                                tray_uuid="",
-                                tray_type=tray.get("tray_type"),
-                                tray_color=tray.get("tray_color"),
-                                tray_sub_brands=tray.get("tray_sub_brands"),
-                                tray_count=len(ams_unit.get("tray", [])),
-                            )
+                        # No-tag slots (generic non-RFID filament) are left alone:
+                        # nothing to identify, prompting "+ Add" would just create
+                        # ghost spools with empty tags on every confirm.
     except Exception as e:
         logger.warning("RFID spool auto-assign failed: %s", e, exc_info=True)
 

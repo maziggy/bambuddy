@@ -1239,6 +1239,15 @@ export default {
       batchCreateFailed: 'Failed to create batch',
       batchUngrouped: 'Ungrouped {{count}} item(s)',
       batchUngroupFailed: 'Failed to ungroup batch',
+      resumedAfterFailure: 'Resumed queue — {{restored}} job(s) restored to pending',
+      resumeAfterFailureFailed: 'Failed to resume queue',
+    },
+    resumeAfterFailure: {
+      banner: '{{printer}} is blocked by a previous-print failure — {{count}} job(s) skipped',
+      bannerHint: 'Fix the printer issue, then resume to restore the skipped jobs and clear the gate.',
+      button: 'Resume after failure',
+      confirmTitle: 'Resume queue after failure?',
+      confirmMessage: 'Restore {{count}} skipped job(s) on {{printer}} to pending and clear the previous-print gate. Make sure the printer is ready before continuing.',
     },
     // Timeline view
     timeline: {

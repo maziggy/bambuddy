@@ -1229,6 +1229,15 @@ export default {
       batchCreateFailed: 'Falha ao criar o lote',
       batchUngrouped: '{{count}} item(ns) desagrupado(s)',
       batchUngroupFailed: 'Falha ao desagrupar o lote',
+      resumedAfterFailure: 'Fila retomada — {{restored}} trabalho(s) restaurado(s) para pendente',
+      resumeAfterFailureFailed: 'Falha ao retomar a fila',
+    },
+    resumeAfterFailure: {
+      banner: '{{printer}} está bloqueada por uma falha de impressão anterior — {{count}} trabalho(s) ignorado(s)',
+      bannerHint: 'Resolva o problema da impressora e retome para restaurar os trabalhos ignorados e remover o bloqueio.',
+      button: 'Retomar após falha',
+      confirmTitle: 'Retomar a fila após a falha?',
+      confirmMessage: 'Restaurar {{count}} trabalho(s) ignorado(s) em {{printer}} para pendente e remover o bloqueio da impressão anterior. Verifique se a impressora está pronta antes de continuar.',
     },
     // Timeline view
     timeline: {

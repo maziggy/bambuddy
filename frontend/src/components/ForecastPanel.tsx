@@ -106,7 +106,7 @@ function computeHistoryRate(records: SpoolUsageRecord[]): { rate: number; stdDev
   // same day are summed before rate computation.
   const byDay = new Map<string, number>();
   for (const r of records) {
-    const day = r.created_at.slice(0, 10); // "YYYY-MM-DD"
+    const day = r.created_at.slice(0, 10); // "YYYY-MM-DD" UTC — consistent with server timestamps
     byDay.set(day, (byDay.get(day) ?? 0) + r.weight_used);
   }
 

@@ -2651,7 +2651,7 @@ async def run_migrations(conn):
         idx_rows = await conn.execute(text("PRAGMA index_list(filament_sku_settings)"))
         needs_uq_rebuild = False
         for idx in idx_rows.fetchall():
-            if idx[3] != "u":  # origin: only auto-created UNIQUE-constraint indexes
+            if idx[3] != "u":  # origin col: 'u' = UNIQUE constraint, 'c' = CREATE INDEX, 'pk' = primary key
                 continue
             info = await conn.execute(text(f"PRAGMA index_info({idx[1]})"))
             cols = {row[2] for row in info.fetchall()}

@@ -24,7 +24,11 @@ class ActivePrintSpoolman(Base):
     archive_id: Mapped[int] = mapped_column(ForeignKey("print_archives.id", ondelete="CASCADE"))
 
     # Per-filament usage from 3MF: [{"slot_id": 1, "used_g": 50.5, "type": "PLA"}, ...]
-    filament_usage: Mapped[list] = mapped_column(JSON)
+    # Nullable for the no-3MF case ("Untitled" prints where Bambu didn't keep a
+    # .gcode.3mf on the printer): the row still gets created so the completion
+    # path can use ``tray_remain_start`` for an AMS remain%-delta write,
+    # mirroring the internal-inventory Path 2 fallback in usage_tracker (#1820).
+    filament_usage: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     # AMS tray state at print start: {0: {"tray_uuid": "...", "tag_uid": "..."}, ...}
     ams_trays: Mapped[dict] = mapped_column(JSON)
@@ -40,3 +44,10 @@ class ActivePrintSpoolman(Base):
     # Filament properties (density, diameter per filament slot)
     # Format: {1: {"density": 1.24, "diameter": 1.75, "type": "PLA"}, ...}
     filament_properties: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # AMS tray remain% per slot at print start, captured so the completion
+    # path can compute a remain-delta when the 3MF didn't cover a slot (or
+    # there was no 3MF at all — #1820). Matches the internal-inventory
+    # ``tray_remain_start`` snapshot at usage_tracker.py:301.
+    # Format: {"<ams_id>-<tray_id>": {"remain": int, "tray_uuid": str}, ...}
+    tray_remain_start: Mapped[dict | None] = mapped_column(JSON, nullable=True)

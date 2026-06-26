@@ -1,13 +1,37 @@
+"""HMS action lookup.
+
+Bambu printers report HMS errors with a fixed catalog of remediation actions
+(resume / stop / check assistant / etc.). The catalog is bundled as JSON, keyed
+by the 3-letter SN prefix (printer model code: 03W = A1, 31B = X1C, etc.) and
+the short error code with no separator.
+
+The action IDs and their string names are derived from BambuStudio's source via
+`scripts/update_hms_actions.py`. The data file itself is fetched from Bambu's
+public `e.bambulab.com/hms/GetActionImage.php` endpoint.
+"""
+
 import json
+from enum import StrEnum
+from pathlib import Path
 
-actions: dict[str, dict[str, list[str]]] = {}
+_DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "hms_actions.json"
 
-# load from backend/app/data/hms_actions.json
-with open("backend/app/data/hms_actions.json") as f:
-    actions = json.load(f)
+# Loaded eagerly at import — the file is ~150KB and only read once. Using an
+# absolute path keeps the load independent of CWD (systemd unit, Docker
+# entrypoint, pytest run from `backend/`).
+with _DATA_FILE.open("r", encoding="utf-8") as _f:
+    _actions: dict[str, dict[str, list[str]]] = json.load(_f)
 
 
-class HMSAction:
+class HMSAction(StrEnum):
+    """Remediation actions a Bambu printer can offer for an HMS error.
+
+    Values intentionally match the constants used in BambuStudio's source so the
+    HMS-data fetcher can map Bambu's integer action IDs straight to these
+    strings. The CANCLE typo is preserved verbatim — it's how BambuStudio spells
+    it, and changing it would break the action lookup against the catalog.
+    """
+
     RESUME_PRINTING = "RESUME_PRINTING"
     RESUME_PRINTING_DEFECTS = "RESUME_PRINTING_DEFECTS"
     RESUME_PRINTING_PROBELM_SOLVED = "RESUME_PRINTING_PROBELM_SOLVED"
@@ -28,7 +52,7 @@ class HMSAction:
     TURN_OFF_FIRE_ALARM = "TURN_OFF_FIRE_ALARM"
     RETRY_PROBLEM_SOLVED = "RETRY_PROBLEM_SOLVED"
     STOP_DRYING = "STOP_DRYING"
-    CANCLE = "CANCLE"  # Note: "CANCLE" is intentionally misspelled in the BambuStudio source code
+    CANCLE = "CANCLE"  # sic — verbatim from BambuStudio
     REMOVE_CLOSE_BTN = "REMOVE_CLOSE_BTN"
     PROCEED = "PROCEED"
     OK_JUMP_RACK = "OK_JUMP_RACK"
@@ -42,47 +66,10 @@ class HMSAction:
     DBL_CHECK_OK = "DBL_CHECK_OK"
 
 
-HMS_ID_TO_ACTION_NAME_MAP: dict[int, str] = {
-    2: HMSAction.RESUME_PRINTING,
-    3: HMSAction.RESUME_PRINTING_DEFECTS,
-    4: HMSAction.RESUME_PRINTING_PROBELM_SOLVED,
-    5: HMSAction.STOP_PRINTING,
-    6: HMSAction.CHECK_ASSISTANT,
-    7: HMSAction.FILAMENT_EXTRUDED,
-    8: HMSAction.RETRY_FILAMENT_EXTRUDED,
-    9: HMSAction.CONTINUE,
-    10: HMSAction.LOAD_VIRTUAL_TRAY,
-    11: HMSAction.OK_BUTTON,
-    12: HMSAction.FILAMENT_LOAD_RESUME,
-    13: HMSAction.JUMP_TO_LIVEVIEW,
-    23: HMSAction.NO_REMINDER_NEXT_TIME,
-    24: HMSAction.REFRESH_NOZZLE,
-    25: HMSAction.IGNORE_NO_REMINDER_NEXT_TIME,
-    27: HMSAction.IGNORE_RESUME,
-    28: HMSAction.PROBLEM_SOLVED_RESUME,
-    29: HMSAction.TURN_OFF_FIRE_ALARM,
-    34: HMSAction.RETRY_PROBLEM_SOLVED,
-    35: HMSAction.STOP_DRYING,
-    37: HMSAction.CANCLE,  # Note: "CANCLE" is misspelled in the BambuStudio source code
-    39: HMSAction.REMOVE_CLOSE_BTN,
-    41: HMSAction.PROCEED,
-    49: HMSAction.OK_JUMP_RACK,
-    51: HMSAction.ABORT,
-    54: HMSAction.DISABLE_PURIFICATION,
-    57: HMSAction.DONT_REMIND_NEXT_TIME,
-    10000: HMSAction.DBL_CHECK_CANCEL,
-    10001: HMSAction.DBL_CHECK_DONE,
-    10002: HMSAction.DBL_CHECK_RETRY,
-    10003: HMSAction.DBL_CHECK_RESUME,
-    10004: HMSAction.DBL_CHECK_OK,
-}
-
-REVERSED_HMS_ACTION_NAME_TO_ID_MAP: dict[str, int] = {v: k for k, v in HMS_ID_TO_ACTION_NAME_MAP.items()}
-
-
-def get_action_name_from_id(action_id: int) -> str:
-    return HMS_ID_TO_ACTION_NAME_MAP.get(action_id, f"UNKNOWN_ACTION_{action_id}")
-
-
 def get_actions_for_error_code(device: str, error_code: str) -> list[str]:
-    return actions.get(device, {}).get(error_code, [])
+    """Look up the action list for a printer SN prefix + short error code.
+
+    Returns the empty list if the printer model or the error code is unknown —
+    the modal renders no buttons in that case, which is the correct fallback.
+    """
+    return _actions.get(device, {}).get(error_code, [])

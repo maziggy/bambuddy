@@ -2601,6 +2601,8 @@ export default {
     clearErrors: 'Clear Errors',
     clearSuccess: 'HMS errors cleared',
     clearFailed: 'Failed to clear HMS errors',
+    actionSuccess: 'Action sent to printer',
+    actionFailed: 'Failed to send action',
     actions: {
       RESUME_PRINTING: "Resume Printing",
       RESUME_PRINTING_DEFECTS: "Resume (defects acceptable)",
@@ -2633,6 +2635,7 @@ export default {
       DBL_CHECK_RETRY: "Retry",
       DBL_CHECK_RESUME: "Resume",
       DBL_CHECK_OK: "Confirm",
+      REMOVE_CLOSE_BTN: "Close",
     }
   },
 

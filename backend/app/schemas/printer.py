@@ -219,9 +219,15 @@ class AmsLabelBody(BaseModel):
 
 
 class HmsActionBody(BaseModel):
-    print_error: str  # HMS error code (e.g. "05000070")
-    action: str  # "HMS action to execute (e.g. 'resume_after_error')"
-    job_id: str | None = None  # Optional job ID for context (if applicable)
+    # 8-char hex short code without separator (e.g. "05000070") — frontend strips
+    # the underscore from the displayed `MMMM_EEEE` before sending.
+    print_error: str = Field(..., min_length=8, max_length=8, pattern=r"^[0-9A-Fa-f]{8}$")
+    # One of the HMSAction enum values. Length-capped to keep stray input from
+    # reaching the dispatcher's `match` statement.
+    action: str = Field(..., min_length=1, max_length=64)
+    # The `subtask_id` snapshot from the HMSError that surfaced this dialog.
+    # Bambu echoes it back in HMS-aware commands. Optional for idle errors.
+    job_id: str | None = Field(default=None, max_length=64)
 
 
 class FilaSwitchResponse(BaseModel):

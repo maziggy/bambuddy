@@ -953,14 +953,15 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
       job_id: data.job_id,
     }),
     onSuccess: () => {
-      // TODO: Update toast string
       queryClient.invalidateQueries({ queryKey: ['printerStatus'] });
-      showToast(t('inventory.assignSuccess'), 'success');
+      showToast(t('hmsErrors.actionSuccess', 'Action sent to printer'), 'success');
       onClose();
     },
     onError: (error: Error) => {
-      // TODO: Update toast string
-      showToast(`${t('inventory.assignFailed')}: ${error.message}`, 'error');
+      showToast(
+        `${t('hmsErrors.actionFailed', 'Failed to send action')}: ${error.message}`,
+        'error',
+      );
     },
   });
 
@@ -1027,7 +1028,7 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
                                 }}
                                 className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg ${bgColor} ${color} hover:${buttonHoverColor} transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
                               >
-                                {t(`hmsErrors.actions.${action}`, action)} {error.job_id}
+                                {t(`hmsErrors.actions.${action}`, action)}
                               </button>
                             ))}
                           </div>

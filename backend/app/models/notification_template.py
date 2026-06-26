@@ -74,6 +74,12 @@ DEFAULT_TEMPLATES = [
         "body_template": "{printer}\n{error_detail}",
     },
     {
+        "event_type": "ai_failure_detection",
+        "name": "AI Failure Detection",
+        "title_template": "Possible Print Failure Detected",
+        "body_template": "{printer}: {task_name}\nConfidence: {confidence}\nAction taken: {action}",
+    },
+    {
         "event_type": "plate_not_empty",
         "name": "Plate Not Empty",
         "title_template": "Plate Not Empty - Print Paused",
@@ -189,28 +195,32 @@ DEFAULT_TEMPLATES = [
         "title_template": "Stock Break Risk: {material}",
         "body_template": "{material} ({brand}) will run out before replenishment arrives.\nStock: {stock_g}g | Rate: {rate_g_day}g/day | Lead time: {lead_time_days}d\nOnly {days_left}d of stock remaining — order immediately.",
     },
-    # User email notification templates (sent to the print job owner)
+    # User email notification templates (sent to the print job owner).
+    # Names include " Email" so they aren't confused with the provider-level
+    # `print_*` templates above, which share the same body shape but are
+    # broadcast to admin-configured providers (ntfy/pushover/telegram/discord/
+    # etc.) rather than mailed to a specific user.
     {
         "event_type": "user_print_start",
-        "name": "User Print Started",
+        "name": "User Print Started Email",
         "title_template": "Your Print Has Started",
         "body_template": "Hello {username},\n\nYour print job has started on {printer}.\n\nFile: {filename}\n\nYou will be notified when it completes.",
     },
     {
         "event_type": "user_print_complete",
-        "name": "User Print Completed",
+        "name": "User Print Completed Email",
         "title_template": "Your Print Is Complete",
         "body_template": "Hello {username},\n\nYour print job has completed on {printer}.\n\nFile: {filename}",
     },
     {
         "event_type": "user_print_failed",
-        "name": "User Print Failed",
+        "name": "User Print Failed Email",
         "title_template": "Your Print Has Failed",
         "body_template": "Hello {username},\n\nYour print job has failed on {printer}.\n\nFile: {filename}",
     },
     {
         "event_type": "user_print_stopped",
-        "name": "User Print Stopped",
+        "name": "User Print Stopped Email",
         "title_template": "Your Print Has Been Stopped",
         "body_template": "Hello {username},\n\nYour print job was stopped on {printer}.\n\nFile: {filename}",
     },

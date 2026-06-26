@@ -121,6 +121,13 @@ class OIDCProvider(Base):
     # SHA-256 hex of icon_data, served as the ETag header so clients can
     # revalidate via If-None-Match and receive 304 Not Modified.
     icon_etag: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+    # When True, the LoginPage redirects unauthenticated visitors straight to
+    # this provider's authorize URL on mount (#1589). At most one provider can
+    # carry this flag at a time; setting it on a new provider clears it on the
+    # previous one. The frontend always falls back to the local form if the
+    # authorize-URL fetch fails or times out, and ``/login?fallback=local``
+    # plus ``BAMBUDDY_LOCAL_LOGIN=true`` provide a documented recovery path.
+    is_autologin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
     @property
     def has_icon(self) -> bool:

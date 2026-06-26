@@ -64,6 +64,7 @@ import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDu
 import { getCurrencySymbol } from '../utils/currency';
 import { getBedTypeInfo } from '../utils/bedType';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import type { Archive, PrintLogEntry, ProjectListItem } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
@@ -203,7 +204,6 @@ function ArchiveCard({
   const [showQRCode, setShowQRCode] = useState(false);
   const [showPhotos, setShowPhotos] = useState(false);
   const [showProjectPage, setShowProjectPage] = useState(false);
-  const [showSchedule, setShowSchedule] = useState(false);
   const [showDeleteSource3mfConfirm, setShowDeleteSource3mfConfirm] = useState(false);
   const [showDeleteF3dConfirm, setShowDeleteF3dConfirm] = useState(false);
   const [showDeleteTimelapseConfirm, setShowDeleteTimelapseConfirm] = useState(false);
@@ -403,18 +403,17 @@ function ArchiveCard({
     // For source files: show Slice as the primary action
     ...(isGcodeFile ? [
       {
-        label: t('archives.menu.print'),
+        label: t('common.print'),
         icon: <Printer className="w-4 h-4" />,
         onClick: () => setShowReprint(true),
-        disabled: !archive.file_path || !canModify('archives', 'reprint', archive.created_by_id),
-        title: !archive.file_path ? t('archives.card.noFileForReprint') : !canModify('archives', 'reprint', archive.created_by_id) ? t('archives.permission.noReprint') : undefined,
-      },
-      {
-        label: t('archives.menu.schedule'),
-        icon: <Calendar className="w-4 h-4" />,
-        onClick: () => setShowSchedule(true),
-        disabled: !archive.file_path || !hasPermission('queue:create'),
-        title: !archive.file_path ? t('archives.card.noFileForReprint') : !hasPermission('queue:create') ? t('archives.permission.noAddToQueue') : undefined,
+        disabled: !archive.file_path || !hasPermission('queue:create') || !canModify('archives', 'reprint', archive.created_by_id),
+        title: !archive.file_path
+          ? t('archives.card.noFileForReprint')
+          : !hasPermission('queue:create')
+            ? t('archives.permission.noAddToQueue')
+            : !canModify('archives', 'reprint', archive.created_by_id)
+              ? t('archives.permission.noReprint')
+              : undefined,
       },
       {
         label: t('archives.menu.openInBambuStudio'),
@@ -1143,22 +1142,11 @@ function ArchiveCard({
                 size="sm"
                 className="flex-1 min-w-0 overflow-hidden"
                 onClick={() => setShowReprint(true)}
-                disabled={!archive.file_path || !canModify('archives', 'reprint', archive.created_by_id)}
-                title={!archive.file_path ? t('archives.card.noFileForReprint') : !canModify('archives', 'reprint', archive.created_by_id) ? t('archives.card.noPermissionReprint') : undefined}
+                disabled={!archive.file_path || !hasPermission('queue:create') || !canModify('archives', 'reprint', archive.created_by_id)}
+                title={!archive.file_path ? t('archives.card.noFileForReprint') : !hasPermission('queue:create') ? t('archives.permission.noAddToQueue') : !canModify('archives', 'reprint', archive.created_by_id) ? t('archives.card.noPermissionReprint') : undefined}
               >
                 <Printer className="w-3 h-3 flex-shrink-0" />
-                <span className="hidden xl:inline truncate">{t('archives.card.reprint')}</span>
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="flex-1 min-w-0 overflow-hidden"
-                onClick={() => setShowSchedule(true)}
-                disabled={!archive.file_path || !hasPermission('queue:create')}
-                title={!archive.file_path ? t('archives.card.noFileForReprint') : !hasPermission('queue:create') ? t('archives.permission.noAddToQueue') : t('archives.card.schedulePrint')}
-              >
-                <Calendar className="w-3 h-3 flex-shrink-0" />
-                <span className="hidden xl:inline truncate">{t('archives.card.schedule')}</span>
+                <span className="hidden xl:inline truncate">{t('common.print')}</span>
               </Button>
               <Button
                 variant="secondary"
@@ -1274,7 +1262,7 @@ function ArchiveCard({
       {/* Reprint Modal */}
       {showReprint && (
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={archive.id}
           archiveName={archive.print_name || archive.filename}
           onClose={() => setShowReprint(false)}
@@ -1503,15 +1491,6 @@ function ArchiveCard({
         />
       )}
 
-      {showSchedule && (
-        <PrintModal
-          mode="add-to-queue"
-          archiveId={archive.id}
-          archiveName={archive.print_name || archive.filename}
-          onClose={() => setShowSchedule(false)}
-        />
-      )}
-
       {/* Hidden file input for source 3MF upload */}
       <input
         ref={source3mfInputRef}
@@ -1603,7 +1582,6 @@ function ArchiveListRow({
   const navigate = useNavigate();
   const [showReprint, setShowReprint] = useState(false);
   const [showSliceModal, setShowSliceModal] = useState(false);
-  const [showSchedule, setShowSchedule] = useState(false);
   const [showTimelapse, setShowTimelapse] = useState(false);
   const [showTimelapseSelect, setShowTimelapseSelect] = useState(false);
   const [availableTimelapses, setAvailableTimelapses] = useState<Array<{ name: string; path: string; size: number; mtime: string | null }>>([]);
@@ -1784,18 +1762,17 @@ function ArchiveListRow({
   const contextMenuItems: ContextMenuItem[] = [
     ...(isGcodeFile ? [
       {
-        label: t('archives.menu.print'),
+        label: t('common.print'),
         icon: <Printer className="w-4 h-4" />,
         onClick: () => setShowReprint(true),
-        disabled: !archive.file_path || !canModify('archives', 'reprint', archive.created_by_id),
-        title: !archive.file_path ? t('archives.card.noFileForReprint') : !canModify('archives', 'reprint', archive.created_by_id) ? t('archives.permission.noReprint') : undefined,
-      },
-      {
-        label: t('archives.menu.schedule'),
-        icon: <Calendar className="w-4 h-4" />,
-        onClick: () => setShowSchedule(true),
-        disabled: !archive.file_path || !hasPermission('queue:create'),
-        title: !archive.file_path ? t('archives.card.noFileForReprint') : !hasPermission('queue:create') ? t('archives.permission.noAddToQueue') : undefined,
+        disabled: !archive.file_path || !hasPermission('queue:create') || !canModify('archives', 'reprint', archive.created_by_id),
+        title: !archive.file_path
+          ? t('archives.card.noFileForReprint')
+          : !hasPermission('queue:create')
+            ? t('archives.permission.noAddToQueue')
+            : !canModify('archives', 'reprint', archive.created_by_id)
+              ? t('archives.permission.noReprint')
+              : undefined,
       },
       {
         label: t('archives.menu.openInBambuStudio'),
@@ -2184,8 +2161,8 @@ function ArchiveListRow({
               variant="ghost"
               size="sm"
               onClick={() => setShowReprint(true)}
-              disabled={!canModify('archives', 'reprint', archive.created_by_id)}
-              title={!canModify('archives', 'reprint', archive.created_by_id) ? t('archives.card.noPermissionReprint') : t('archives.card.reprint')}
+              disabled={!archive.file_path || !hasPermission('queue:create') || !canModify('archives', 'reprint', archive.created_by_id)}
+              title={!archive.file_path ? t('archives.card.noFileForReprint') : !hasPermission('queue:create') ? t('archives.permission.noAddToQueue') : !canModify('archives', 'reprint', archive.created_by_id) ? t('archives.card.noPermissionReprint') : t('common.print')}
               className="text-bambu-green hover:text-bambu-green-light hover:bg-bambu-green/10"
             >
               <Play className="w-4 h-4" />
@@ -2288,7 +2265,7 @@ function ArchiveListRow({
       {/* Reprint Modal */}
       {showReprint && (
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={archive.id}
           archiveName={archive.print_name || archive.filename}
           onClose={() => setShowReprint(false)}
@@ -2504,16 +2481,6 @@ function ArchiveListRow({
         />
       )}
 
-      {/* Schedule Modal */}
-      {showSchedule && (
-        <PrintModal
-          mode="add-to-queue"
-          archiveId={archive.id}
-          archiveName={archive.print_name || archive.filename}
-          onClose={() => setShowSchedule(false)}
-        />
-      )}
-
       {/* Hidden file input for source 3MF upload */}
       <input
         ref={source3mfInputRef}
@@ -2618,7 +2585,6 @@ export function ArchivesPage() {
   );
   const [showUpload, setShowUpload] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
-  const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   // Install-step-4 nudge — covers the slicer-side variant of "Store sent files
   // on external storage" that the connection diagnostic can't detect (printer
@@ -3122,34 +3088,20 @@ export function ArchivesPage() {
 
   const hasTopFilters = search || filterPrinter || filterMaterial || filterFavorites || hideFailed || hideDuplicates || filterTag || filterFileType !== 'all';
 
-  // Drag & drop handlers for page-wide upload
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    if (e.dataTransfer.types.includes('Files')) {
-      setIsDraggingOver(true);
-    }
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    // Only hide if leaving the page (not entering a child)
-    if (e.currentTarget === e.target) {
-      setIsDraggingOver(false);
-    }
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDraggingOver(false);
-
-    const droppedFiles = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.3mf'));
-    if (droppedFiles.length > 0) {
-      setUploadFiles(droppedFiles);
+  // Page-wide drag-and-drop upload (#1510). The hook covers the three cancel
+  // paths the previous inline implementation missed (drag-out-of-window, Escape,
+  // dragend outside any drop target). Disabled while the upload modal is open
+  // so drags into the modal's own drop zone don't bubble up and flash the page
+  // overlay behind it.
+  const { isDraggingOver, dragHandlers } = usePageFileDrop({
+    disabled: showUpload,
+    extensions: ['.3mf'],
+    onFiles: (files) => {
+      setUploadFiles(files);
       setShowUpload(true);
-    } else if (e.dataTransfer.files.length > 0) {
-      showToast(t('archives.page.only3mfSupported'), 'warning');
-    }
-  }, [showToast, t]);
+    },
+    onRejected: () => showToast(t('archives.page.only3mfSupported'), 'warning'),
+  });
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -3190,16 +3142,14 @@ export function ArchivesPage() {
   return (
     <div
       className="p-4 md:p-8 relative"
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      {...dragHandlers}
     >
       {/* Drag & Drop Overlay */}
       {isDraggingOver && (
         <div className="fixed inset-0 z-50 bg-bambu-dark/90 flex items-center justify-center pointer-events-none">
           <div className="border-4 border-dashed border-bambu-green rounded-xl p-12 text-center">
             <Upload className="w-16 h-16 mx-auto mb-4 text-bambu-green" />
-            <p className="text-2xl font-semibold text-white mb-2">Drop .3mf files here</p>
+            <p className="text-2xl font-semibold text-white mb-2">{t('archives.page.dropFilesHere')}</p>
             <p className="text-bambu-gray">{t('archives.releaseToUpload')}</p>
           </div>
         </div>
@@ -3284,7 +3234,7 @@ export function ArchivesPage() {
             <div className="text-xs text-amber-200/80 mt-1">
               {t('archives.no3mfBanner.body')}{' '}
               <a
-                href="https://bambuddy.cool/wiki/getting-started/#step-4-enable-store-sent-files-on-external-storage"
+                href="https://wiki.bambuddy.cool/getting-started/#step-4-enable-store-sent-files-on-external-storage"
                 target="_blank"
                 rel="noreferrer"
                 className="underline hover:text-amber-100 inline-flex items-center gap-1"

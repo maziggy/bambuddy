@@ -101,7 +101,7 @@ describe('ProjectDetailPage', () => {
       render(<ProjectDetailPage />);
 
       await waitFor(() => {
-        expect(screen.getByTitle('Print Now')).toBeInTheDocument();
+        expect(screen.getByTitle('Print')).toBeInTheDocument();
       });
     });
 
@@ -115,7 +115,7 @@ describe('ProjectDetailPage', () => {
       render(<ProjectDetailPage />);
 
       await waitFor(() => {
-        expect(screen.getByTitle('Print Now')).toBeInTheDocument();
+        expect(screen.getByTitle('Print')).toBeInTheDocument();
       });
     });
 
@@ -132,7 +132,7 @@ describe('ProjectDetailPage', () => {
         expect(screen.getByText('benchy.gcode.bak')).toBeInTheDocument();
       });
 
-      expect(screen.queryByTitle('Print Now')).not.toBeInTheDocument();
+      expect(screen.queryByTitle('Print')).not.toBeInTheDocument();
     });
 
     it('does NOT show print button for .stl files', async () => {
@@ -148,7 +148,7 @@ describe('ProjectDetailPage', () => {
         expect(screen.getByText('model.stl')).toBeInTheDocument();
       });
 
-      expect(screen.queryByTitle('Print Now')).not.toBeInTheDocument();
+      expect(screen.queryByTitle('Print')).not.toBeInTheDocument();
     });
   });
 
@@ -211,10 +211,10 @@ describe('ProjectDetailPage', () => {
       render(<ProjectDetailPage />);
 
       await waitFor(() => {
-        expect(screen.getByTitle('Print Now')).toBeInTheDocument();
+        expect(screen.getByTitle('Print')).toBeInTheDocument();
       });
 
-      await user.click(screen.getByTitle('Print Now'));
+      await user.click(screen.getByTitle('Print'));
 
       // PrintModal should open — look for the modal heading "Print"
       await waitFor(() => {

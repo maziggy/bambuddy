@@ -174,6 +174,8 @@ export function AdditionalSection({
   spoolCatalog,
   currencySymbol,
   availableCategories,
+  availableLocations = [],
+  onCreateLocation,
   globalLowStockThreshold,
   spoolmanMode = false,
 }: AdditionalSectionProps) {
@@ -183,6 +185,8 @@ export function AdditionalSection({
   const [isMeasuredFocused, setIsMeasuredFocused] = useState(false);
   const [remainingInput, setRemainingInput] = useState('');
   const [isRemainingFocused, setIsRemainingFocused] = useState(false);
+  const [newLocationName, setNewLocationName] = useState('');
+  const [creatingLocation, setCreatingLocation] = useState(false);
 
   const remainingWeight = Math.max(0, formData.label_weight - formData.weight_used);
   const measuredDefault = formData.core_weight + remainingWeight;
@@ -381,15 +385,61 @@ export function AdditionalSection({
 
       {/* Storage Location */}
       <div>
-        <label className="block text-sm font-medium text-bambu-gray mb-1">{t('inventory.storageLocation')}</label>
-        <input
-          type="text"
-          maxLength={255}
-          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
-          placeholder={t('inventory.storageLocationPlaceholder')}
-          value={formData.storage_location}
-          onChange={(e) => updateField('storage_location', e.target.value)}
-        />
+        <label className="block text-sm font-medium text-bambu-gray mb-1" htmlFor="spool-storage-location">
+          {t('inventory.storageLocation')}
+        </label>
+        <select
+          id="spool-storage-location"
+          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+          value={formData.location_id ?? ''}
+          onChange={(e) => {
+            const raw = e.target.value;
+            if (!raw) {
+              updateField('location_id', null);
+              return;
+            }
+            const id = Number(raw);
+            updateField('location_id', id);
+          }}
+        >
+          <option value="">{t('inventory.storageLocationNone')}</option>
+          {availableLocations.map((loc) => (
+            <option key={loc.id} value={loc.id}>{loc.name}</option>
+          ))}
+        </select>
+        {onCreateLocation && (
+          <div className="mt-2 flex gap-2">
+            <input
+              type="text"
+              maxLength={255}
+              className="flex-1 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+              placeholder={t('locations.createPlaceholder')}
+              value={newLocationName}
+              onChange={(e) => setNewLocationName(e.target.value)}
+            />
+            <button
+              type="button"
+              className="px-3 py-2 text-sm rounded-lg bg-bambu-dark-tertiary text-white hover:bg-bambu-gray-dark disabled:opacity-50"
+              disabled={!newLocationName.trim() || creatingLocation}
+              onClick={async () => {
+                const trimmed = newLocationName.trim();
+                if (!trimmed || !onCreateLocation) return;
+                setCreatingLocation(true);
+                try {
+                  const created = await onCreateLocation(trimmed);
+                  if (created) {
+                    updateField('location_id', created.id);
+                    setNewLocationName('');
+                  }
+                } finally {
+                  setCreatingLocation(false);
+                }
+              }}
+            >
+              {t('locations.addShort')}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

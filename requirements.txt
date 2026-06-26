@@ -21,7 +21,10 @@ greenlet>=3.0.0
 
 # Pydantic
 pydantic>=2.0.0
-pydantic-settings>=2.0.0
+# 2.14.2 patches GHSA-4xgf-cpjx-pc3j (NestedSecretsSettingsSource follows
+# symlinks out of secrets_dir). Bambuddy does not use that source — pin
+# is precautionary so the audit stays clean.
+pydantic-settings>=2.14.2
 # Transitive of pydantic-settings, floor-pinned to patch CVE-2026-28684 (dotenv 1.2.1)
 python-dotenv>=1.2.2
 
@@ -31,7 +34,14 @@ aioftp>=0.22.0
 
 # Virtual Printer (emulates Bambu printer for slicer uploads)
 pyftpdlib>=2.0.0
-cryptography>=46.0.7
+# 46.x line has GHSA-537c-gmf6-5ccf; 48.0.1 is the fix release. Upstream's
+# X.509 / PKCS#7 surface is in our trust path via asyncssh, pyOpenSSL,
+# py-vapid, http_ece, pywebpush.
+cryptography>=48.0.1
+# Transitive of asyncssh / pywebpush. pyopenssl<26.3.0 caps `cryptography<47`
+# so without this floor the resolver either downgrades cryptography below
+# the GHSA-537c-gmf6-5ccf fix line or installs an inconsistent pair.
+pyopenssl>=26.3.0
 
 # SpoolBuddy remote SSH updates (pure-Python SSH client; avoids the
 # OpenSSH `ssh` binary which calls getpwuid() and fails in Docker when
@@ -48,7 +58,9 @@ openpyxl>=3.1.0
 pywebpush>=2.0.0
 
 # Utilities
-python-multipart>=0.0.27
+# 0.0.27 → 0.0.31 clears three CVEs in the parser surface that FastAPI
+# uses for multipart form bodies (CVE-2026-53538/53539/53540).
+python-multipart>=0.0.31
 aiofiles>=23.0.0
 
 # QR Code generation
@@ -61,6 +73,14 @@ reportlab>=4.0.0
 trimesh>=4.0.0
 matplotlib>=3.8.0
 fast-simplification>=0.1.0
+# trimesh's 3MF loader uses networkx for scene-graph traversal and lxml
+# for the model.xml parse. Required by plate_thumbnail.py to render the
+# model out of a sliced .gcode.3mf when the BS/Orca CLI didn't embed
+# Metadata/plate_N.png. Not strictly transitive — trimesh imports both
+# lazily inside the 3MF code path, so the load call fails at runtime
+# ("No module named 'networkx'" / "No module named 'lxml'") if absent.
+networkx>=3.0
+lxml>=5.0
 
 # System monitoring
 psutil>=6.0.0
@@ -104,10 +124,11 @@ curl_cffi>=0.7.0
 # would silently keep installing the vulnerable 2.6.x line.
 urllib3>=2.7.0
 
-# Transitive of fastapi. starlette 1.0.0 has PYSEC-2026-161; 1.0.1 is the
-# fixed release. fastapi's range still admits 1.0.0 so we pin the floor
-# directly to stop the resolver from picking the vulnerable build.
-starlette>=1.0.1
+# Transitive of fastapi. starlette 1.0.0 has PYSEC-2026-161; 1.1.x has
+# CVE-2026-54282/54283; 1.3.1 is the fixed release. fastapi's range still
+# admits the vulnerable builds, so we pin the floor directly to stop the
+# resolver from picking them.
+starlette>=1.3.1
 
 # Transitive of pywebpush (unpinned `aiohttp` requirement). aiohttp 3.13.5
 # has CVE-2026-34993 and CVE-2026-47265, both fixed in 3.14.0. pywebpush

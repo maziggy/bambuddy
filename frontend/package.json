@@ -29,18 +29,21 @@
     "@tiptap/react": "^3.11.1",
     "@tiptap/starter-kit": "^3.11.1",
     "@types/three": "^0.181.0",
-    "dompurify": "^3.4.0",
+    "dompurify": "^3.4.10",
     "gcode-preview": "^2.18.0",
     "i18next": "25.6.3",
     "i18next-browser-languagedetector": "^8.2.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.555.0",
+    "qrcode.react": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-i18next": "^16.3.5",
+    "react-markdown": "^9.1.0",
     "react-router-dom": "^7.16.0",
     "react-simple-keyboard": "^3.8.164",
     "recharts": "^3.5.1",
+    "remark-gfm": "^4.0.1",
     "three": "^0.181.2"
   },
   "overrides": {
@@ -55,7 +58,7 @@
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.1",
+    "@vitejs/plugin-react": "^5.2.0",
     "@vitest/coverage-v8": "^4.1.8",
     "autoprefixer": "^10.4.22",
     "baseline-browser-mapping": "^2.9.19",
@@ -69,7 +72,7 @@
     "tailwindcss": "^4.1.17",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.3.2",
+    "vite": "^8.0.16",
     "vitest": "^4.1.8"
   }
 }

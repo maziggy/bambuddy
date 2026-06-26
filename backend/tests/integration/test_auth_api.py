@@ -856,6 +856,25 @@ class TestAuthMiddlewarePublicRoutes:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_system_appliance_is_public(self, async_client: AsyncClient, enabled_auth):
+        """Verify /api/v1/system/appliance is reachable without a JWT.
+
+        The SPA's i18n bootstrap fetches this BEFORE login to seed locale,
+        hostname, timezone, and NTP-gate state. The route handler has no
+        auth dependency, but the global auth_middleware blocks every
+        /api/ path not in PUBLIC_API_ROUTES — so without an explicit
+        allowlist entry the user sees a 401 in the browser console on
+        every page load.
+        """
+        response = await async_client.get("/api/v1/system/appliance")
+        assert response.status_code == 200, response.text
+        body = response.json()
+        # Shape contract (no-auth surface):
+        for key in ("hostname", "timezone", "locale", "time_synced"):
+            assert key in body
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_auth_login_is_public(self, async_client: AsyncClient, enabled_auth):
         """Verify /api/v1/auth/login is accessible without auth."""
         response = await async_client.post(

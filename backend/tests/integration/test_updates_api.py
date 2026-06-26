@@ -637,3 +637,144 @@ class TestUpdatesAPI:
         assert all(s == f"safe.directory={app_dir}" for s in safe_dir_configs), (
             f"safe.directory must point at app_dir ({app_dir}); got {safe_dir_configs}"
         )
+
+    # --- Windows installer update_method ---
+    # The Inno-Setup installer stages backend source via ``copytree`` (no
+    # ``.git``) and does not bundle ``git.exe``. The git-fetch update path
+    # therefore can't run on those installs — surface a distinct
+    # ``update_method`` and a release-asset download link instead.
+
+    def test_is_windows_installer_install_true_when_no_dot_git(self, tmp_path: Path):
+        from backend.app.api.routes import updates as updates_module
+
+        with (
+            patch.object(updates_module.sys, "platform", "win32"),
+            patch.object(updates_module.settings, "app_dir", tmp_path),
+        ):
+            assert updates_module._is_windows_installer_install() is True
+
+    def test_is_windows_installer_install_false_on_dev_checkout(self, tmp_path: Path):
+        """A Windows developer with a real ``git clone`` keeps the git path."""
+        from backend.app.api.routes import updates as updates_module
+
+        (tmp_path / ".git").mkdir()
+        with (
+            patch.object(updates_module.sys, "platform", "win32"),
+            patch.object(updates_module.settings, "app_dir", tmp_path),
+        ):
+            assert updates_module._is_windows_installer_install() is False
+
+    def test_is_windows_installer_install_false_off_windows(self, tmp_path: Path):
+        from backend.app.api.routes import updates as updates_module
+
+        with (
+            patch.object(updates_module.sys, "platform", "linux"),
+            patch.object(updates_module.settings, "app_dir", tmp_path),
+        ):
+            assert updates_module._is_windows_installer_install() is False
+
+    def test_find_windows_installer_asset_prefers_versioned(self):
+        from backend.app.api.routes.updates import _find_windows_installer_asset
+
+        release = {
+            "assets": [
+                {"name": "bambuddy-0.2.5b1-windows-x64-setup.exe", "browser_download_url": "https://x/v.exe"},
+                {"name": "bambuddy-windows-x64-setup.exe", "browser_download_url": "https://x/alias.exe"},
+                {"name": "checksums.txt", "browser_download_url": "https://x/c.txt"},
+            ],
+        }
+        assert _find_windows_installer_asset(release) == "https://x/v.exe"
+
+    def test_find_windows_installer_asset_falls_back_to_alias(self):
+        from backend.app.api.routes.updates import _find_windows_installer_asset
+
+        release = {
+            "assets": [
+                {"name": "bambuddy-windows-x64-setup.exe", "browser_download_url": "https://x/alias.exe"},
+            ],
+        }
+        assert _find_windows_installer_asset(release) == "https://x/alias.exe"
+
+    def test_find_windows_installer_asset_none_when_missing(self):
+        from backend.app.api.routes.updates import _find_windows_installer_asset
+
+        assert _find_windows_installer_asset({"assets": []}) is None
+        assert _find_windows_installer_asset({}) is None
+
+    @pytest.mark.asyncio
+    async def test_apply_update_windows_installer_rejection(self, async_client: AsyncClient):
+        """Direct POST /apply on a Windows-installer install must be rejected
+        with a friendly message — the git path would error out with "git not
+        found" (or worse, "not a git repository") if it ran."""
+        with (
+            patch("backend.app.api.routes.updates._is_ha_addon", return_value=False),
+            patch("backend.app.api.routes.updates._is_docker_environment", return_value=False),
+            patch(
+                "backend.app.api.routes.updates._is_windows_installer_install",
+                return_value=True,
+            ),
+        ):
+            response = await async_client.post("/api/v1/updates/apply")
+        result = response.json()
+        assert result["success"] is False
+        assert result["is_windows_installer"] is True
+        assert "installer" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_check_windows_installer_returns_method_and_url(self, async_client: AsyncClient):
+        """/updates/check must surface update_method=windows_installer plus
+        the installer .exe URL so the frontend can render a Download button
+        instead of the in-app Install button."""
+        import httpx as _httpx
+
+        fake_release = {
+            # Non-prerelease tag — beta-channel filter defaults to off, so a
+            # `b1` suffix would be skipped and the route would return
+            # "No releases found" before reaching update_method.
+            "tag_name": "v999.9.9",
+            "name": "v999.9.9",
+            "body": "",
+            "html_url": "https://github.com/maziggy/bambuddy/releases/tag/v999.9.9",
+            "published_at": "2099-01-01T00:00:00Z",
+            "assets": [
+                {
+                    "name": "bambuddy-999.9.9-windows-x64-setup.exe",
+                    "browser_download_url": "https://github.com/maziggy/bambuddy/releases/download/v999.9.9/bambuddy-999.9.9-windows-x64-setup.exe",
+                },
+            ],
+        }
+
+        class _Resp:
+            status_code = 200
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return [fake_release]
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return None
+
+            async def get(self, *_, **__):
+                return _Resp()
+
+        with (
+            patch.object(_httpx, "AsyncClient", _FakeClient),
+            patch("backend.app.api.routes.updates._is_ha_addon", return_value=False),
+            patch("backend.app.api.routes.updates._is_docker_environment", return_value=False),
+            patch(
+                "backend.app.api.routes.updates._is_windows_installer_install",
+                return_value=True,
+            ),
+        ):
+            response = await async_client.get("/api/v1/updates/check")
+        body = response.json()
+        assert "update_method" in body, f"unexpected response shape: {body}"
+        assert body["update_method"] == "windows_installer"
+        assert body["is_windows_installer"] is True
+        assert body["installer_download_url"].endswith("bambuddy-999.9.9-windows-x64-setup.exe")

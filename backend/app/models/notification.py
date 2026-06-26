@@ -70,6 +70,7 @@ class NotificationProvider(Base):
     # Event triggers - printer status
     on_printer_offline = Column(Boolean, default=False)
     on_printer_error = Column(Boolean, default=False)  # AMS issues, etc.
+    on_ai_failure_detection = Column(Boolean, default=False)  # Obico spaghetti / failure detection (#1794)
     on_filament_low = Column(Boolean, default=False)
     on_maintenance_due = Column(Boolean, default=False)  # Maintenance reminder
 

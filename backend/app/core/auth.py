@@ -88,6 +88,7 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     Permission.EXTERNAL_LINKS_READ: "can_read_status",
     Permission.FIRMWARE_READ: "can_read_status",
     Permission.AMS_HISTORY_READ: "can_read_status",
+    Permission.PRINTER_SENSOR_HISTORY_READ: "can_read_status",
     Permission.STATS_READ: "can_read_status",
     Permission.STATS_FILTER_BY_USER: "can_read_status",
     Permission.SYSTEM_READ: "can_read_status",
@@ -421,9 +422,41 @@ def _get_jwt_secret() -> str:
 SECRET_KEY = _get_jwt_secret()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours (M-2: reduced from 7 days)
+# Hard ceiling for the admin-configurable session policy (#1706). 30 days
+# matches the Pydantic le=720 on AppSettings.session_max_hours; defense in
+# depth so a tampered settings row can't request an absurd lifetime.
+SESSION_MAX_HOURS_HARD_CEILING = 720
 
 # HTTP Bearer token
 security = HTTPBearer(auto_error=False)
+
+
+async def resolve_session_max_minutes(db: AsyncSession) -> int:
+    """Return the session-lifetime ceiling (minutes) honoured by login routes.
+
+    Reads ``session_max_hours`` from the settings table (#1706), clamps to
+    [1h, 720h], and falls back to the audit-default 24h if the row is
+    missing, blank, or unparseable.
+
+    DB errors are NOT caught here — login is already in a DB transaction and
+    a broken DB must abort the login rather than silently extend or shrink
+    the session lifetime.
+    """
+    default_minutes = ACCESS_TOKEN_EXPIRE_MINUTES
+    result = await db.execute(select(Settings).where(Settings.key == "session_max_hours"))
+    row = result.scalar_one_or_none()
+    if row is None or not row.value:
+        return default_minutes
+    try:
+        hours = int(row.value)
+    except (TypeError, ValueError):
+        return default_minutes
+    if hours < 1:
+        return default_minutes
+    if hours > SESSION_MAX_HOURS_HARD_CEILING:
+        hours = SESSION_MAX_HOURS_HARD_CEILING
+    return hours * 60
+
 
 # --- Slicer download tokens ---
 # Short-lived, single-use tokens for slicer protocol handlers that can't send
@@ -649,7 +682,9 @@ def _is_token_fresh(iat: int | float | None, user: User) -> bool:
     Used to invalidate all sessions after a password reset/change (M-R7-B).
     All tokens without an iat claim are unconditionally rejected — every token
     issued by this server carries iat, so absence means the token is forged or
-    from a pre-iat code path whose max TTL (24 h) has long since expired.
+    from a pre-iat code path whose max TTL at the time (24 h) has long since
+    expired. The post-#1706 admin-set ceiling does not relax this — an iat-less
+    token still cannot have been issued by current code.
     """
     if iat is None:
         return False

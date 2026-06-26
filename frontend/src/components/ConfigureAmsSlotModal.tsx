@@ -7,6 +7,7 @@ import type { KProfile } from '../api/client';
 import { matchesPrinterModelSuffix, presetCompatibility, buildCompatibilityIndex } from '../utils/slicerPrinterMatch';
 import { toFilamentId, isGenericFilamentId } from './spool-form/utils';
 import { Button } from './Button';
+import { getAmsLabel } from '../utils/amsHelpers';
 
 interface SlotInfo {
   amsId: number;
@@ -19,35 +20,6 @@ interface SlotInfo {
   extruderId?: number;
   caliIdx?: number | null;
   savedPresetId?: string;
-}
-
-// Get proper AMS label (handles HT AMS with ID 128+)
-function getAmsLabel(amsId: number, trayCount: number): string {
-  // External spool
-  if (amsId === 255) return 'External';
-
-  let normalizedId: number;
-  let isHt = false;
-
-  if (amsId >= 128 && amsId <= 135) {
-    // HT AMS range: 128-135 → A-H
-    normalizedId = amsId - 128;
-    isHt = true;
-  } else if (amsId >= 0 && amsId <= 3) {
-    // Regular AMS range: 0-3 → A-D
-    normalizedId = amsId;
-    // Check tray count as secondary indicator
-    isHt = trayCount === 1;
-  } else {
-    // Unknown range - fallback to A
-    normalizedId = 0;
-  }
-
-  // Cap to valid letter range (A-H)
-  normalizedId = Math.max(0, Math.min(normalizedId, 7));
-  const letter = String.fromCharCode(65 + normalizedId);
-
-  return isHt ? `HT-${letter}` : `AMS-${letter}`;
 }
 
 // Convert setting_id to tray_info_idx (filament_id format)

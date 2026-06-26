@@ -200,6 +200,19 @@ async def resolve_slicer_filament(
         or tray_info_idx.startswith("PFCN")
     ):
         tray_info_idx = ""
-        setting_id = ""
+        # Preserve setting_id when it's still a valid slicer reference
+        # (PFUS / PFCN cloud user/shared preset, or GFS Bambu official
+        # preset). The slicer accepts these as setting_id even though
+        # they're rejected as tray_info_idx; without preservation the
+        # slicer falls back to whatever generic filament the caller's
+        # tray_info_idx fallback produces and shows "Generic <Material>"
+        # instead of the user's actual custom preset (#1815). Material-name
+        # leaks (e.g. setting_id="PETG") are still cleared — those are
+        # never valid slicer references.
+        if not (
+            setting_id
+            and (setting_id.startswith("PFUS") or setting_id.startswith("PFCN") or setting_id.startswith("GFS"))
+        ):
+            setting_id = ""
 
     return (tray_info_idx, setting_id, sub_brand_override)

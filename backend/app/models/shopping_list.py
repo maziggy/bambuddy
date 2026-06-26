@@ -15,6 +15,7 @@ class ShoppingListItem(Base):
     material: Mapped[str] = mapped_column(String(50))
     subtype: Mapped[str | None] = mapped_column(String(50))
     brand: Mapped[str | None] = mapped_column(String(100))
+    color_name: Mapped[str | None] = mapped_column(String(100))
     quantity_spools: Mapped[int] = mapped_column(Integer, default=1)
     note: Mapped[str | None] = mapped_column(String(500))
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | purchased | received

@@ -295,7 +295,11 @@ Permissions follow the `resource:action` pattern (e.g., `filaments:read`, `print
 | `update` | Modify existing resources |
 | `delete` | Remove resources |
 
-Some resources have additional actions (e.g., `printers:control` for start/stop, `printers:files` for file transfer).
+Some resources have additional actions. Examples: `printers:control` for live printer controls
+such as stop/pause/resume, `printers:files` for printer storage access, `queue:create` for
+creating queue items that may dispatch immediately when scheduled ASAP, `library:upload` for
+File Manager uploads/imports, and `archives:reprint_own` / `archives:reprint_all` for archive
+reprint eligibility. Archive reprint still needs `queue:create` before it can enqueue a job.
 
 ### Adding New Permissions
 

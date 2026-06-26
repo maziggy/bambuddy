@@ -287,15 +287,15 @@ class TestArchiveOwnershipPermissions(TestOwnershipPermissionsSetup):
         assert response.status_code == 403
 
     # ========================================================================
-    # REPRINT permissions
+    # Legacy reprint endpoint
     # ========================================================================
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_operator_cannot_reprint_others_archive(
+    async def test_reprint_endpoint_is_gone_for_all_callers(
         self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
     ):
-        """Operator cannot reprint another user's archive."""
+        """Direct archive reprint no longer exists; callers must use the queue."""
         printer = await printer_factory()
         archive = await archive_factory(
             printer.id,
@@ -307,7 +307,122 @@ class TestArchiveOwnershipPermissions(TestOwnershipPermissionsSetup):
             headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
         )
 
+        assert response.status_code == 410
+
+    # ========================================================================
+    # Queue route — archives:reprint_* gate (#1625)
+    # ========================================================================
+    # The unified /queue/ route replaced the legacy /reprint endpoint; the
+    # reprint permission gate must move with it. Without these checks a
+    # caller with QUEUE_CREATE + ARCHIVES_READ_OWN could reprint their own
+    # archives even if explicitly denied ARCHIVES_REPRINT_OWN.
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_route_operator_can_reprint_own_archive(
+        self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        """Operator with REPRINT_OWN can queue their own archive."""
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            created_by_id=auth_setup["operator_user"]["id"],
+        )
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json={"printer_id": printer.id, "archive_id": archive.id},
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_route_user_without_reprint_gets_403(
+        self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        """User with QUEUE_CREATE + ARCHIVES_READ_OWN but no reprint perm → 403.
+
+        Custom group mirrors a real operator policy where someone is allowed
+        to enqueue freshly-uploaded library files but explicitly NOT allowed
+        to re-run completed archives.
+        """
+        # Create custom group with queue:create + archives:read_own but no reprint perm.
+        admin_headers = {"Authorization": f"Bearer {auth_setup['admin_token']}"}
+        group_resp = await async_client.post(
+            "/api/v1/groups/",
+            headers=admin_headers,
+            json={
+                "name": "QueueOnlyNoReprint",
+                "description": "Test group: can queue library files but not reprint",
+                "permissions": [
+                    "queue:create",
+                    "queue:read_own",
+                    "archives:read_own",
+                    "library:read_own",
+                    "library:upload",
+                    "printers:read",
+                ],
+            },
+        )
+        assert group_resp.status_code in (200, 201)
+        group_id = group_resp.json()["id"]
+
+        await async_client.post(
+            "/api/v1/users/",
+            headers=admin_headers,
+            json={
+                "username": "noreprint_user",
+                "password": "NoreprintPass1!",
+                "group_ids": [group_id],
+            },
+        )
+        login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "noreprint_user", "password": "NoreprintPass1!"},
+        )
+        token = login.json()["access_token"]
+        user_id = login.json()["user"]["id"]
+
+        # Archive owned by the no-reprint user.
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, created_by_id=user_id)
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"printer_id": printer.id, "archive_id": archive.id},
+        )
+
         assert response.status_code == 403
+        assert "reprint" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_route_ownerless_archive_requires_reprint_all(
+        self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        """Ownerless archive (created_by_id=null) requires REPRINT_ALL.
+
+        Pre-IDOR-fix legacy data has no creator; an operator with
+        REPRINT_OWN can't fall back to "I own this" — fail-closed.
+        The existing IDOR check returns 404 first (operator lacks
+        READ_ALL and doesn't own the row), so this is also a regression
+        guard against accidentally surfacing 403-instead-of-404 if the
+        IDOR check is ever loosened.
+        """
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, created_by_id=None)
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json={"printer_id": printer.id, "archive_id": archive.id},
+        )
+
+        # IDOR returns 404 before the new gate fires for this operator.
+        assert response.status_code == 404
 
 
 class TestQueueOwnershipPermissions(TestOwnershipPermissionsSetup):
@@ -425,6 +540,139 @@ class TestQueueOwnershipPermissions(TestOwnershipPermissionsSetup):
         )
 
         assert response.status_code == 403
+
+    # ========================================================================
+    # Start / Stop ownership gates (#1625-followup)
+    # ========================================================================
+    # Pre-fix /stop required QUEUE_UPDATE_ALL (admin-only) — operators saw the
+    # Stop button in the queue UI but got 403 on click. /start required
+    # QUEUE_UPDATE_OWN with no ownership check — operators could start anyone's
+    # queue items via direct API. Both now use require_ownership_permission.
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_can_start_own_queue_item(self, async_client: AsyncClient, auth_setup, queue_item_factory):
+        """Operator can start their own staged queue item."""
+        item = await queue_item_factory(
+            created_by_id=auth_setup["operator_user"]["id"],
+            manual_start=True,
+        )
+
+        response = await async_client.post(
+            f"/api/v1/queue/{item.id}/start?skip_filament_check=true",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_start_others_queue_item(
+        self, async_client: AsyncClient, auth_setup, queue_item_factory
+    ):
+        """Operator cannot start another user's queue item."""
+        item = await queue_item_factory(
+            created_by_id=auth_setup["operator2_user"]["id"],
+            manual_start=True,
+        )
+
+        response = await async_client.post(
+            f"/api/v1/queue/{item.id}/start?skip_filament_check=true",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_can_start_unowned_queue_item(
+        self, async_client: AsyncClient, auth_setup, queue_item_factory, db_session
+    ):
+        """Operator can start a NULL-owner queue item (VP-uploaded, #1670)
+        and claims ownership in the process.
+
+        Stop and Cancel reject unowned items for _OWN holders (destructive,
+        no "I own it" claim available), but Start is the entry point for the
+        VP-import flow where attribution happens at click-time.
+        """
+        from backend.app.models.print_queue import PrintQueueItem
+
+        item = await queue_item_factory(created_by_id=None, manual_start=True)
+
+        response = await async_client.post(
+            f"/api/v1/queue/{item.id}/start?skip_filament_check=true",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 200
+        # Ownership claimed: operator is now the item's owner.
+        await db_session.refresh(item)
+        refetch = await db_session.get(PrintQueueItem, item.id)
+        assert refetch.created_by_id == auth_setup["operator_user"]["id"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_can_stop_own_queue_item(self, async_client: AsyncClient, auth_setup, queue_item_factory):
+        """Operator can stop their own currently-printing queue item."""
+        item = await queue_item_factory(
+            created_by_id=auth_setup["operator_user"]["id"],
+            status="printing",
+        )
+
+        response = await async_client.post(
+            f"/api/v1/queue/{item.id}/stop",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_stop_others_queue_item(
+        self, async_client: AsyncClient, auth_setup, queue_item_factory
+    ):
+        """Operator cannot stop another user's printing queue item."""
+        item = await queue_item_factory(
+            created_by_id=auth_setup["operator2_user"]["id"],
+            status="printing",
+        )
+
+        response = await async_client.post(
+            f"/api/v1/queue/{item.id}/stop",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_stop_unowned_queue_item(
+        self, async_client: AsyncClient, auth_setup, queue_item_factory
+    ):
+        """Operator cannot stop a NULL-owner printing queue item — stop mirrors
+        cancel (destructive, no claim semantics). Admins with _ALL can still stop it.
+        """
+        item = await queue_item_factory(created_by_id=None, status="printing")
+
+        response = await async_client.post(
+            f"/api/v1/queue/{item.id}/stop",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_can_stop_any_queue_item(self, async_client: AsyncClient, auth_setup, queue_item_factory):
+        """Admin with _ALL can stop any printing queue item including unowned."""
+        item = await queue_item_factory(created_by_id=None, status="printing")
+
+        response = await async_client.post(
+            f"/api/v1/queue/{item.id}/stop",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+        )
+
+        assert response.status_code == 200
 
     @pytest.mark.asyncio
     @pytest.mark.integration

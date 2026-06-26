@@ -309,6 +309,121 @@ class TestArchiveOwnershipPermissions(TestOwnershipPermissionsSetup):
 
         assert response.status_code == 410
 
+    # ========================================================================
+    # Queue route — archives:reprint_* gate (#1625)
+    # ========================================================================
+    # The unified /queue/ route replaced the legacy /reprint endpoint; the
+    # reprint permission gate must move with it. Without these checks a
+    # caller with QUEUE_CREATE + ARCHIVES_READ_OWN could reprint their own
+    # archives even if explicitly denied ARCHIVES_REPRINT_OWN.
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_route_operator_can_reprint_own_archive(
+        self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        """Operator with REPRINT_OWN can queue their own archive."""
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            created_by_id=auth_setup["operator_user"]["id"],
+        )
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json={"printer_id": printer.id, "archive_id": archive.id},
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_route_user_without_reprint_gets_403(
+        self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        """User with QUEUE_CREATE + ARCHIVES_READ_OWN but no reprint perm → 403.
+
+        Custom group mirrors a real operator policy where someone is allowed
+        to enqueue freshly-uploaded library files but explicitly NOT allowed
+        to re-run completed archives.
+        """
+        # Create custom group with queue:create + archives:read_own but no reprint perm.
+        admin_headers = {"Authorization": f"Bearer {auth_setup['admin_token']}"}
+        group_resp = await async_client.post(
+            "/api/v1/groups/",
+            headers=admin_headers,
+            json={
+                "name": "QueueOnlyNoReprint",
+                "description": "Test group: can queue library files but not reprint",
+                "permissions": [
+                    "queue:create",
+                    "queue:read_own",
+                    "archives:read_own",
+                    "library:read_own",
+                    "library:upload",
+                    "printers:read",
+                ],
+            },
+        )
+        assert group_resp.status_code in (200, 201)
+        group_id = group_resp.json()["id"]
+
+        await async_client.post(
+            "/api/v1/users/",
+            headers=admin_headers,
+            json={
+                "username": "noreprint_user",
+                "password": "NoreprintPass1!",
+                "group_ids": [group_id],
+            },
+        )
+        login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "noreprint_user", "password": "NoreprintPass1!"},
+        )
+        token = login.json()["access_token"]
+        user_id = login.json()["user"]["id"]
+
+        # Archive owned by the no-reprint user.
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, created_by_id=user_id)
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"printer_id": printer.id, "archive_id": archive.id},
+        )
+
+        assert response.status_code == 403
+        assert "reprint" in response.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_queue_route_ownerless_archive_requires_reprint_all(
+        self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        """Ownerless archive (created_by_id=null) requires REPRINT_ALL.
+
+        Pre-IDOR-fix legacy data has no creator; an operator with
+        REPRINT_OWN can't fall back to "I own this" — fail-closed.
+        The existing IDOR check returns 404 first (operator lacks
+        READ_ALL and doesn't own the row), so this is also a regression
+        guard against accidentally surfacing 403-instead-of-404 if the
+        IDOR check is ever loosened.
+        """
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, created_by_id=None)
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json={"printer_id": printer.id, "archive_id": archive.id},
+        )
+
+        # IDOR returns 404 before the new gate fires for this operator.
+        assert response.status_code == 404
+
 
 class TestQueueOwnershipPermissions(TestOwnershipPermissionsSetup):
     """Tests for print queue ownership-based permissions."""

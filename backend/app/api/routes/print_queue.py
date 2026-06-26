@@ -406,6 +406,23 @@ async def add_to_queue(
             and archive.created_by_id != current_user.id
         ):
             raise HTTPException(404, "Archive not found")
+        # Reprint perm gate (#1625): the legacy /archives/{id}/reprint endpoint
+        # required ARCHIVES_REPRINT_OWN/ALL; the unified queue route must keep
+        # that gate or an operator with QUEUE_CREATE could reprint via direct
+        # API call even if explicitly denied reprint perm. Mirrors the
+        # frontend `canModify('archives', 'reprint', ...)` helper:
+        # REPRINT_ALL allows any archive, REPRINT_OWN allows own only,
+        # ownerless archives require REPRINT_ALL (fail-closed).
+        if current_user is not None:
+            owns_archive = archive.created_by_id is not None and archive.created_by_id == current_user.id
+            has_reprint = current_user.has_permission(Permission.ARCHIVES_REPRINT_ALL.value) or (
+                owns_archive and current_user.has_permission(Permission.ARCHIVES_REPRINT_OWN.value)
+            )
+            if not has_reprint:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Permission archives:reprint_own or archives:reprint_all required",
+                )
 
     # Validate library file exists (if provided) and get it for filament extraction
     library_file = None

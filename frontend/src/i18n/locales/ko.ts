@@ -1109,6 +1109,7 @@ export default {
       inHours: '{{count}}시간 후'
     },
     actions: {
+      startPrint: '인쇄 시작',
       stopPrint: '인쇄 정지',
       requeue: '재대기'
     },

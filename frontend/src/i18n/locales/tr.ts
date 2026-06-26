@@ -1174,6 +1174,7 @@ export default {
     },
     // İşlemler
     actions: {
+      startPrint: 'Baskıyı Başlat',
       stopPrint: 'Baskıyı Durdur',
       requeue: 'Yeniden Kuyrukla',
     },

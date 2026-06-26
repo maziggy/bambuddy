@@ -1174,6 +1174,7 @@ export default {
     },
     // Actions
     actions: {
+      startPrint: 'Druck starten',
       stopPrint: 'Druck stoppen',
       requeue: 'Erneut einreihen',
     },

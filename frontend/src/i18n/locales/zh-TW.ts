@@ -1174,6 +1174,7 @@ export default {
     },
     // Actions
     actions: {
+      startPrint: '開始列印',
       stopPrint: '停止列印',
       requeue: '重新佇列',
     },

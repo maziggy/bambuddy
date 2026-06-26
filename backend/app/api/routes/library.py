@@ -4116,6 +4116,12 @@ async def slice_library_file(
 async def print_library_file(
     file_id: int,
     printer_id: int,
+    # SECURITY.md SEC-AUTH-1: every route either has an explicit auth dep or
+    # is in the route-auth-coverage allowlist. Gating the deprecation stub on
+    # QUEUE_CREATE matches the replacement route (POST /queue/) and means
+    # anonymous callers bounce at auth instead of seeing the deprecation
+    # message.
+    _: User | None = Depends(require_permission_if_auth_enabled(Permission.QUEUE_CREATE)),
 ):
     """Legacy direct library print endpoint. Use POST /queue/ instead."""
     logger.warning(

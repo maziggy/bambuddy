@@ -1184,6 +1184,7 @@ export default {
     },
     // Actions
     actions: {
+      startPrint: 'Start Print',
       stopPrint: 'Stop Print',
       requeue: 'Re-queue',
     },

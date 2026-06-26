@@ -1173,6 +1173,7 @@ export default {
     },
     // Actions
     actions: {
+      startPrint: '印刷を開始',
       stopPrint: '印刷を停止',
       requeue: '再キュー',
     },

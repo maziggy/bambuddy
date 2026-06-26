@@ -4025,6 +4025,13 @@ async def slice_archive(
 async def reprint_archive(
     archive_id: int,
     printer_id: int,
+    # SECURITY.md SEC-AUTH-1: every route either has an explicit auth dep or
+    # is in the route-auth-coverage allowlist. Gating the deprecation stub on
+    # QUEUE_CREATE matches the replacement route (POST /queue/) and means
+    # anonymous callers bounce at auth instead of seeing the deprecation
+    # message — leaking "this route exists" to unauthenticated callers is
+    # exactly the shape the backstop guards against.
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
 ):
     """Legacy direct reprint endpoint. Use POST /queue/ instead."""
     logger.warning(

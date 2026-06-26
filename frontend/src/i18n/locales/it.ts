@@ -1174,6 +1174,7 @@ export default {
     },
     // Actions
     actions: {
+      startPrint: 'Avvia Stampa',
       stopPrint: 'Ferma Stampa',
       requeue: 'Rimetti in coda',
     },

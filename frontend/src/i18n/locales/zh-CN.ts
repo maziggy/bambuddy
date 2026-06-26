@@ -1174,6 +1174,7 @@ export default {
     },
     // Actions
     actions: {
+      startPrint: '开始打印',
       stopPrint: '停止打印',
       requeue: '重新排队',
     },

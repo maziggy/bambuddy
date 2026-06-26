@@ -1174,6 +1174,7 @@ export default {
     },
     // Actions
     actions: {
+      startPrint: 'Démarrer',
       stopPrint: 'Arrêter',
       requeue: 'Remettre en file',
     },

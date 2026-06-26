@@ -1174,6 +1174,7 @@ export default {
     },
     // Actions
     actions: {
+      startPrint: 'Iniciar impresión',
       stopPrint: 'Detener impresión',
       requeue: 'Volver a encolar',
     },

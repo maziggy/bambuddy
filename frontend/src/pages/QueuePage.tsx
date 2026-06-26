@@ -687,7 +687,7 @@ function SortableQueueItem({
                     size="sm"
                     onClick={onStart}
                     disabled={!hasPermission('printers:control')}
-                    title={!hasPermission('printers:control') ? t('queue.permissions.noStartPrint') : t('common.print')}
+                    title={!hasPermission('printers:control') ? t('queue.permissions.noStartPrint') : t('queue.actions.startPrint')}
                     className="text-bambu-green hover:text-bambu-green-light hover:bg-bambu-green/10 p-1.5 sm:p-2"
                   >
                     <Play className="w-4 h-4" />

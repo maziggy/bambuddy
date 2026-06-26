@@ -168,7 +168,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - Configurable drying presets per filament type (temperature & duration for AMS 2 Pro and AMS-HT)
 - **Per-filament humidity threshold** — Set a different humidity trigger per filament type (e.g. Nylon at 20%, PLA at 60%, ASA at 30%) instead of one global value. Mixed-material AMS units use the most-restrictive threshold across the loaded spools so a single PLA + Nylon unit triggers at Nylon's level. Drives both the auto-drying scheduler and the hourly humidity alarm so the two can never disagree on whether a unit is "too humid"
 - Dual external spool support for H2D (Ext-L / Ext-R)
-- HMS error monitoring with history and clear errors
+- **HMS error monitoring with one-click actions** — Live HMS error log with history and the same Resume / Stop / Continue / Retry / Check Assistant / Don't Remind Me action buttons BambuStudio shows. Click and the matching MQTT command goes back to the printer — no more walking to the device just to dismiss a paused-print dialog. Catalog covers every Bambu model (X1 / P1 / A1 / H2 series); buttons are translated in all 11 supported locales
 - **Heater history charts** — Bambuddy logs nozzle, bed, and chamber readings every minute and surfaces them via a tiny chart icon on each heater tile in the printer card. Click for a per-heater modal with current / average / min / max stats, target overlay, and a 6h / 24h / 48h / 7d time range — works on read-only chamber sensors (X1C / P2S) too. AMS humidity and temperature get the same treatment (already shipped).
 - Print success rates & trends
 - Filament usage tracking
@@ -178,7 +178,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - CSV/Excel export
 
 ### ⏰ Scheduling & Automation
-- **Background print dispatch** — FTP uploads and print-start commands run in the background with real-time WebSocket progress toasts (per-job upload bars, status badges, cancel button)
+- **Unified dispatch through the queue** — Every print Bambuddy starts (File Manager, archive reprint, printer-card upload-and-print, scheduled queue items) flows through the same queue scheduler, so each print is visible on the queue page, attributable to the user that started it, deficit-checked, and cancellable from one place. FTP uploads and print-start commands run in the background with real-time WebSocket progress toasts (per-job upload bars, status badges, cancel button). Installations with custom groups or API keys: the immediate-print actions now require the `queue:create` permission alongside the existing `printers:control` — see [the permissions guide](https://wiki.bambuddy.cool/admin/permissions/) if you've granted control without queue-create
 - Print queue with three tabs (Queue / History / Timeline), multi-select drag-and-drop, batch grouping, and a Gantt-style timeline
 - Multi-printer selection (send to multiple printers at once)
 - Batch grouping — multi-plate prints auto-group into a collapsible row; any 2+ selected items can be grouped manually via "Group as batch", with ungroup on the batch parent

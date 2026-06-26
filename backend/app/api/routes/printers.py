@@ -88,6 +88,7 @@ async def create_printer(
         ip_address=printer_data.ip_address,
         serial_number=printer_data.serial_number,
         access_code=printer_data.access_code,
+        model=printer_data.model,
     )
     if not test_result.get("success"):
         # The frontend renders the user-facing message via i18n on `code`;

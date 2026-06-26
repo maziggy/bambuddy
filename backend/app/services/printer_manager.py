@@ -9,6 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.printer import Printer
 from backend.app.services.bambu_mqtt import BambuMQTTClient, MQTTLogEntry, PrinterState, get_stage_name
+from backend.app.services.flashforge_local import (
+    FlashForgeLocalClient,
+    is_flashforge_model,
+    probe_flashforge_connection,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +29,8 @@ CHAMBER_TEMP_SUPPORTED_MODELS = frozenset(
         "X1E",  # X1 series
         "X2D",  # X2 series
         "P2S",  # P2 series
+        "CREATOR 5 PRO",
+        "FLASHFORGE CREATOR 5 PRO",
         "H2C",
         "H2D",
         "H2DPRO",
@@ -133,7 +140,19 @@ _DRYING_MIN_FIRMWARE: dict[str, str] = {
     "N7": "01.02.00.00",  # P2S internal model code
 }
 # Models that definitely don't support AMS drying (no AMS 2 Pro / AMS-HT compatibility)
-_DRYING_UNSUPPORTED_MODELS = frozenset({"A1", "A1MINI", "A1-MINI", "A1 MINI", "O1S", "N1", "N2S"})
+_DRYING_UNSUPPORTED_MODELS = frozenset(
+    {
+        "A1",
+        "A1MINI",
+        "A1-MINI",
+        "A1 MINI",
+        "O1S",
+        "N1",
+        "N2S",
+        "CREATOR 5 PRO",
+        "FLASHFORGE CREATOR 5 PRO",
+    }
+)
 
 
 def supports_drying(model: str | None, firmware: str | None) -> bool:
@@ -423,21 +442,32 @@ class PrinterManager:
             if self._on_drying_complete:
                 self._schedule_async(self._on_drying_complete(printer_id, ams_id))
 
-        client = BambuMQTTClient(
-            ip_address=printer.ip_address,
-            serial_number=printer.serial_number,
-            access_code=printer.access_code,
-            model=printer.model,
-            on_state_change=on_state_change,
-            on_print_start=on_print_start,
-            on_print_complete=on_print_complete,
-            on_ams_change=on_ams_change,
-            on_layer_change=on_layer_change,
-            on_bed_temp_update=on_bed_temp_update,
-            on_drying_complete=on_drying_complete,
-            on_print_running_observed=on_print_running_observed,
-            on_finish_photo_moment=on_finish_photo_moment,
-        )
+        if is_flashforge_model(printer.model):
+            client = FlashForgeLocalClient(
+                ip_address=printer.ip_address,
+                serial_number=printer.serial_number,
+                access_code=printer.access_code,
+                model=printer.model,
+                on_state_change=on_state_change,
+                on_print_start=on_print_start,
+                on_print_complete=on_print_complete,
+            )
+        else:
+            client = BambuMQTTClient(
+                ip_address=printer.ip_address,
+                serial_number=printer.serial_number,
+                access_code=printer.access_code,
+                model=printer.model,
+                on_state_change=on_state_change,
+                on_print_start=on_print_start,
+                on_print_complete=on_print_complete,
+                on_ams_change=on_ams_change,
+                on_layer_change=on_layer_change,
+                on_bed_temp_update=on_bed_temp_update,
+                on_drying_complete=on_drying_complete,
+                on_print_running_observed=on_print_running_observed,
+                on_finish_photo_moment=on_finish_photo_moment,
+            )
 
         client.connect()
         self._clients[printer_id] = client
@@ -669,6 +699,7 @@ class PrinterManager:
         ip_address: str,
         serial_number: str,
         access_code: str,
+        model: str | None = None,
     ) -> dict:
         """Test connection to a printer without persisting.
 
@@ -680,6 +711,9 @@ class PrinterManager:
         original synchronous teardown produced the #1445 "Docker container
         hangs" symptom on P1S when called from POST /printers/.
         """
+        if is_flashforge_model(model):
+            return await probe_flashforge_connection(ip_address, serial_number, access_code)
+
         client = BambuMQTTClient(
             ip_address=ip_address,
             serial_number=serial_number,
@@ -818,6 +852,7 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
     ams_units = []
     vt_tray = []
     raw_data = state.raw_data or {}
+    is_flashforge = raw_data.get("vendor") == "flashforge"
 
     # Build K-profile lookup map: cali_idx -> k_value
     kprofile_map: dict[int, float] = {}
@@ -1048,7 +1083,9 @@ def printer_state_to_dict(state: PrinterState, printer_id: int | None = None, mo
     }
     # Add cover URL if there's an active print and printer_id is provided
     # Include PAUSE state so skip objects modal can show cover
-    if printer_id and state.state in ("RUNNING", "PAUSE") and state.gcode_file:
+    if is_flashforge:
+        result["cover_url"] = None
+    elif printer_id and state.state in ("RUNNING", "PAUSE") and state.gcode_file:
         result["cover_url"] = f"/api/v1/printers/{printer_id}/cover"
     else:
         result["cover_url"] = None

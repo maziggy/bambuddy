@@ -39,6 +39,7 @@ from backend.app.services.camera_fanout import (
     shutdown_broadcaster,
 )
 from backend.app.services.camera_profiles import get_camera_profile
+from backend.app.services.flashforge_local import is_flashforge_model
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["camera"])
@@ -629,6 +630,35 @@ async def camera_stream(
     """
     printer = await get_printer_or_404(printer_id, db)
 
+    if is_flashforge_model(printer.model):
+        import time
+
+        from backend.app.services.external_camera import generate_mjpeg_stream
+
+        fps = min(max(fps, 1), 15)
+        stream_url = f"http://{printer.ip_address}:8080/?action=stream"
+        _stream_start_times[printer_id] = time.time()
+        _active_external_streams.add(printer_id)
+
+        async def flashforge_stream_wrapper():
+            try:
+                async for frame in generate_mjpeg_stream(stream_url, "mjpeg", fps):
+                    _last_frame_times[printer_id] = time.time()
+                    yield frame
+            finally:
+                _active_external_streams.discard(printer_id)
+                logger.info("FlashForge camera stream ended for printer %s", printer_id)
+
+        return StreamingResponse(
+            flashforge_stream_wrapper(),
+            media_type="multipart/x-mixed-replace; boundary=frame",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+
     # Check for external camera first
     if printer.external_camera_enabled and printer.external_camera_url:
         import time
@@ -856,6 +886,25 @@ async def camera_snapshot(
     from pathlib import Path
 
     printer = await get_printer_or_404(printer_id, db)
+
+    if is_flashforge_model(printer.model):
+        from backend.app.services.external_camera import capture_frame
+
+        stream_url = f"http://{printer.ip_address}:8080/?action=stream"
+        frame_data = await capture_frame(stream_url, "mjpeg", timeout=15)
+        if not frame_data:
+            raise HTTPException(
+                status_code=503,
+                detail="Failed to capture frame from FlashForge camera.",
+            )
+        return Response(
+            content=frame_data,
+            media_type="image/jpeg",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Content-Disposition": f'inline; filename="snapshot_{printer_id}.jpg"',
+            },
+        )
 
     # Check for external camera first
     if printer.external_camera_enabled and printer.external_camera_url:

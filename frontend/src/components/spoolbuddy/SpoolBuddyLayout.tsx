@@ -25,9 +25,8 @@ export function SpoolBuddyLayout() {
   const location = useLocation();
   const sbState = useSpoolBuddyState();
 
-  // Hide the global toast viewport (background-dispatch progress, etc.) on the
-  // kiosk display. Restore on unmount so navigating back to the main app sees
-  // its toasts again.
+  // Hide the global toast viewport on the kiosk display. Restore on unmount so
+  // navigating back to the main app sees its toasts again.
   const { setViewportSuppressed } = useToast();
   useEffect(() => {
     setViewportSuppressed(true);

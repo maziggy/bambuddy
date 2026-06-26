@@ -255,6 +255,69 @@ class TestArchiveThumbnails:
         assert parsed.get("_thumbnail_data") == b"PLATE1"
 
 
+class TestThreeMFMetadataHTMLUnescape:
+    """3MF `<metadata name="Title">…</metadata>` values are XML-encoded.
+    BambuStudio sometimes writes triple-encoded payloads (the
+    ProjectPageParser comment documents this). Without an unescape loop,
+    a Title like ``Foo & Bar`` lands in the DB as raw ``Foo &amp; Bar`` and
+    React then escapes the `&` on render to ``Foo &amp;amp; Bar`` — the
+    user-visible symptom reported on #1658."""
+
+    def test_title_with_ampersand_is_unescaped(self, tmp_path):
+        import zipfile
+
+        from backend.app.services.archive import ThreeMFParser
+
+        threemf_path = tmp_path / "ampersand.3mf"
+        with zipfile.ZipFile(threemf_path, "w") as zf:
+            zf.writestr(
+                "3D/3dmodel.model",
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<model><metadata name="Title">PCB Vise &amp; Solder Station</metadata>'
+                '<metadata name="Designer">Chefkoch</metadata></model>',
+            )
+
+        parsed = ThreeMFParser(str(threemf_path)).parse()
+        assert parsed.get("print_name") == "PCB Vise & Solder Station"
+        assert parsed.get("designer") == "Chefkoch"
+
+    def test_title_with_triple_encoded_ampersand_is_fully_unescaped(self, tmp_path):
+        """BambuStudio has been observed writing triple-encoded payloads
+        (`&amp;amp;amp;`). The decoder loops until the string stops changing
+        so all layers get peeled in one pass."""
+        import zipfile
+
+        from backend.app.services.archive import ThreeMFParser
+
+        threemf_path = tmp_path / "triple.3mf"
+        with zipfile.ZipFile(threemf_path, "w") as zf:
+            zf.writestr(
+                "3D/3dmodel.model",
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<model><metadata name="Title">Foo &amp;amp;amp; Bar</metadata></model>',
+            )
+
+        parsed = ThreeMFParser(str(threemf_path)).parse()
+        assert parsed.get("print_name") == "Foo & Bar"
+
+    def test_title_without_entities_passes_through_unchanged(self, tmp_path):
+        """The unescape loop must be a no-op when there's nothing to unescape —
+        regression guard against accidentally munging plain ASCII titles."""
+        import zipfile
+
+        from backend.app.services.archive import ThreeMFParser
+
+        threemf_path = tmp_path / "plain.3mf"
+        with zipfile.ZipFile(threemf_path, "w") as zf:
+            zf.writestr(
+                "3D/3dmodel.model",
+                '<?xml version="1.0" encoding="UTF-8"?>\n<model><metadata name="Title">Benchy</metadata></model>',
+            )
+
+        parsed = ThreeMFParser(str(threemf_path)).parse()
+        assert parsed.get("print_name") == "Benchy"
+
+
 class TestPrintableObjectsExtraction:
     """Tests for extracting printable objects count from 3MF files."""
 

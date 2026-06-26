@@ -74,6 +74,10 @@ def mock_spoolman_client():
     # branch override this on the fly.
     mock_client.is_filament_shared = AsyncMock(return_value=False)
     mock_client.ensure_extra_field = AsyncMock(return_value=True)
+    # list_spools calls maybe_sync_spoolman_locations which invokes
+    # get_distinct_locations on the route-resolved client. Empty list keeps the
+    # mock honest without staging phantom catalog rows.
+    mock_client.get_distinct_locations = AsyncMock(return_value=[])
 
     with (
         patch(

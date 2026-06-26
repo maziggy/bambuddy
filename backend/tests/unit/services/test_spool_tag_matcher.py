@@ -1365,3 +1365,185 @@ async def test_auto_assign_kprofile_takes_priority_over_live_cali_idx(db_session
     mqtt_mock.extrusion_cali_sel.assert_called_once()
     call_kwargs = mqtt_mock.extrusion_cali_sel.call_args[1]
     assert call_kwargs["cali_idx"] == 7  # stored profile, not 99
+
+
+# -- slot_preset_mappings reconciliation on RFID auto-assign ----------------
+#
+# The slot card on PrintersPage shows slot_preset_mappings.preset_name first
+# in its fallback chain (it's the user-configured override for a slot). When a
+# new spool gets auto-assigned via RFID the manual-assign path used to be the
+# only one that kept this row in sync, so the slot card kept showing the
+# previous spool's preset name until the user opened Configure Slot manually.
+
+
+@pytest.mark.asyncio
+async def test_auto_assign_overwrites_stale_slot_preset_mapping(db_session, printer_factory):
+    """Pre-seed a slot_preset_mappings row from a previous spool, run RFID
+    auto-assign with a different filament, and verify the row reflects the
+    NEW spool's preset (not the stale one). The bug being pinned: the user's
+    AMS-B3 (PLA-CF) kept showing 'Bambu PLA Silk+' because the row was last
+    written when the PLA Silk+ spool was loaded back in March.
+    """
+    from unittest.mock import MagicMock
+
+    from sqlalchemy import select as sa_select
+
+    from backend.app.models.slot_preset import SlotPresetMapping
+
+    printer = await printer_factory()
+    db_session.add(
+        SlotPresetMapping(
+            printer_id=printer.id,
+            ams_id=1,
+            tray_id=2,
+            preset_id="GFSA06_09",
+            preset_name="Bambu PLA Silk+",
+            preset_source="cloud",
+        )
+    )
+    await db_session.commit()
+
+    spool = Spool(
+        material="PLA-CF",
+        subtype="CF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+        slicer_filament="GFA50",
+        slicer_filament_name="Bambu PLA-CF",
+        rgba="951E23FF",
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.flush()
+
+    mock_pm = MagicMock()
+    mock_pm.get_status.return_value = None
+    mock_pm.get_client.return_value = None
+
+    await auto_assign_spool(
+        printer_id=printer.id,
+        ams_id=1,
+        tray_id=2,
+        spool=spool,
+        printer_manager=mock_pm,
+        db=db_session,
+        tray_info_idx="GFA50",
+    )
+    await db_session.commit()
+
+    result = await db_session.execute(
+        sa_select(SlotPresetMapping).where(
+            SlotPresetMapping.printer_id == printer.id,
+            SlotPresetMapping.ams_id == 1,
+            SlotPresetMapping.tray_id == 2,
+        )
+    )
+    mapping = result.scalar_one()
+    assert mapping.preset_name == "Bambu PLA-CF"
+    assert mapping.preset_id == "GFSA50"
+    assert mapping.preset_source == "cloud"
+
+
+@pytest.mark.asyncio
+async def test_auto_assign_inserts_slot_preset_when_absent(db_session, printer_factory):
+    """No pre-existing row → auto-assign inserts one. Pairs with the upsert
+    case to keep both branches of the helper covered from this path."""
+    from unittest.mock import MagicMock
+
+    from sqlalchemy import select as sa_select
+
+    from backend.app.models.slot_preset import SlotPresetMapping
+
+    printer = await printer_factory()
+    spool = Spool(
+        material="PLA-CF",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+        slicer_filament="GFA50",
+        slicer_filament_name="Bambu PLA-CF",
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.flush()
+
+    mock_pm = MagicMock()
+    mock_pm.get_status.return_value = None
+    mock_pm.get_client.return_value = None
+
+    await auto_assign_spool(
+        printer_id=printer.id,
+        ams_id=0,
+        tray_id=3,
+        spool=spool,
+        printer_manager=mock_pm,
+        db=db_session,
+        tray_info_idx="GFA50",
+    )
+    await db_session.commit()
+
+    result = await db_session.execute(
+        sa_select(SlotPresetMapping).where(
+            SlotPresetMapping.printer_id == printer.id,
+            SlotPresetMapping.ams_id == 0,
+            SlotPresetMapping.tray_id == 3,
+        )
+    )
+    mapping = result.scalar_one()
+    assert mapping.preset_id == "GFSA50"
+    assert mapping.preset_name == "Bambu PLA-CF"
+
+
+@pytest.mark.asyncio
+async def test_auto_assign_local_preset_uses_local_prefix(db_session, printer_factory):
+    """Spools whose slicer_filament is a numeric local-preset id get saved
+    with a `local_{n}` preset_id (matches the manual-assign path's shape).
+    """
+    from unittest.mock import MagicMock
+
+    from sqlalchemy import select as sa_select
+
+    from backend.app.models.slot_preset import SlotPresetMapping
+
+    printer = await printer_factory()
+    spool = Spool(
+        material="PLA",
+        brand="Bambu Lab",
+        label_weight=1000,
+        core_weight=250,
+        slicer_filament="50",  # numeric → local preset
+        slicer_filament_name="My Custom PLA",
+    )
+    spool.k_profiles = []
+    spool.assignments = []
+    db_session.add(spool)
+    await db_session.flush()
+
+    mock_pm = MagicMock()
+    mock_pm.get_status.return_value = None
+    mock_pm.get_client.return_value = None
+
+    await auto_assign_spool(
+        printer_id=printer.id,
+        ams_id=0,
+        tray_id=0,
+        spool=spool,
+        printer_manager=mock_pm,
+        db=db_session,
+    )
+    await db_session.commit()
+
+    result = await db_session.execute(
+        sa_select(SlotPresetMapping).where(
+            SlotPresetMapping.printer_id == printer.id,
+            SlotPresetMapping.ams_id == 0,
+            SlotPresetMapping.tray_id == 0,
+        )
+    )
+    mapping = result.scalar_one()
+    assert mapping.preset_id == "local_50"
+    assert mapping.preset_source == "local"
+    assert mapping.preset_name == "My Custom PLA"

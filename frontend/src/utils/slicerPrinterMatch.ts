@@ -6,20 +6,10 @@
 //
 //   1. Imported (local-tier) presets carry the slicer's own
 //      `compatible_printers` list — an exact list of printer-preset names.
-//   2. Uploaded Slicer Bundles (.bbscfg). A bundle is scoped to one printer
-//      and lists the process / filament presets shipped with it, so a preset
-//      a bundle covers is compatible with exactly that bundle's printer. A
-//      newly released Bambu model is covered the moment its bundle is
-//      uploaded — no code change required.
-//   3. BambuStudio's own `@BBL <model>` naming convention on shipped cloud
-//      / standard presets. This used to be the only signal, was removed in
-//      the first cut of #1325 in favour of (2) — which works for the author
-//      and anyone who uploaded their bundles, but silently no-ops for users
-//      who hadn't (the reporter's case). Restored as a fallback below the
-//      bundle path so the table is only consulted when bundles can't decide.
-//      The token → printer-fragment table is derived from the backend's
-//      canonical PRINTER_MODEL_MAP (fetched via /slicer/printer-models),
-//      not duplicated here.
+//   2. BambuStudio's own `@BBL <model>` naming convention on shipped cloud
+//      / standard presets. The token → printer-fragment table is derived
+//      from the backend's canonical PRINTER_MODEL_MAP (fetched via
+//      /slicer/printer-models), not duplicated here.
 //
 // The result drives grouping, not hard hiding: a preset no rule covers
 // stays in the main list, and only a preset that resolves to a *different*
@@ -27,40 +17,19 @@
 
 export type PrinterCompatibility = 'match' | 'mismatch' | 'unknown';
 
-// Minimal shape of a Slicer Bundle needed for matching (see SlicerBundle in
-// api/client.ts). `printer_preset_name` scopes the bundle to one printer;
-// `process` / `filament` are the preset names that bundle ships.
-export interface CompatibilityBundle {
-  printer_preset_name: string;
-  process: string[];
-  filament: string[];
-}
-
-// Lookup tables consumed by `presetCompatibility`. `process` / `filament` are
-// preset-name → set-of-compatible-printer-names built from uploaded bundles.
-// `bambuModelByShortCode` is the @BBL token → printer-preset fragment map
-// derived from the backend's PRINTER_MODEL_MAP — e.g. `X1C` → `X1 Carbon`.
-// All three are empty by default; an empty `bambuModelByShortCode` means the
-// @BBL fallback still works when token and printer-name fragment match
-// directly (raw-token comparison), and gracefully degrades otherwise.
+// Lookup tables consumed by `presetCompatibility`. `bambuModelByShortCode`
+// is the @BBL token → printer-preset fragment map derived from the backend's
+// PRINTER_MODEL_MAP — e.g. `X1C` → `X1 Carbon`. An empty map means the @BBL
+// fallback still works when token and printer-name fragment match directly
+// (raw-token comparison), and gracefully degrades otherwise.
 export interface PrinterCompatibilityIndex {
-  process: Map<string, Set<string>>;
-  filament: Map<string, Set<string>>;
   bambuModelByShortCode: Record<string, string>;
 }
 
-/** An empty index — used when no bundles / models are loaded yet. */
+/** An empty index — used when the model map hasn't loaded yet. */
 export const EMPTY_COMPATIBILITY_INDEX: PrinterCompatibilityIndex = {
-  process: new Map(),
-  filament: new Map(),
   bambuModelByShortCode: {},
 };
-
-// Bundle preset names occasionally carry BambuStudio's "# " user-clone
-// prefix; strip it so a bundle entry and a tier-listed preset compare equal.
-function normalizePresetName(name: string): string {
-  return name.replace(/^#\s*/, '').trim();
-}
 
 // Bambu cloud started shipping terse model codes in `@BBL <code>` suffixes
 // mid-2026 — the most visible one is "A1 Mini" → "A1M" (#1649, reported by
@@ -115,33 +84,12 @@ function buildShortCodeMap(
 }
 
 /**
- * Build the compatibility index from the user's uploaded Slicer Bundles and
- * the backend printer-model registry. Each bundle contributes its printer
- * to every process / filament name it ships; a name shipped by several
- * bundles accumulates every printer.
+ * Build the compatibility index from the backend printer-model registry.
  */
 export function buildCompatibilityIndex(
-  bundles: readonly CompatibilityBundle[],
   printerModels: Record<string, string> = {},
 ): PrinterCompatibilityIndex {
-  const process = new Map<string, Set<string>>();
-  const filament = new Map<string, Set<string>>();
-  const add = (map: Map<string, Set<string>>, name: string, printer: string) => {
-    const key = normalizePresetName(name);
-    if (!key) return;
-    const set = map.get(key) ?? new Set<string>();
-    set.add(printer);
-    map.set(key, set);
-  };
-  for (const bundle of bundles) {
-    const printer = bundle.printer_preset_name?.trim();
-    if (!printer) continue;
-    for (const name of bundle.process) add(process, name, printer);
-    for (const name of bundle.filament) add(filament, name, printer);
-  }
   return {
-    process,
-    filament,
     bambuModelByShortCode: buildShortCodeMap(printerModels),
   };
 }
@@ -190,8 +138,8 @@ function extractPrinterPresetModel(printerPresetName: string): { model: string; 
 
 /**
  * Name-based fallback for presets BambuStudio ships with a `@BBL <model>`
- * tag (#1325 follow-up). Used only after `compatible_printers` and the
- * uploaded-bundle index have already returned `'unknown'`.
+ * tag (#1325 follow-up). Used only after `compatible_printers` has returned
+ * `'unknown'`.
  *
  * Compares BOTH model AND nozzle. The nozzle filter is required because
  * Bambu ships per-nozzle process / filament variants (0.2 / 0.4 / 0.6 /
@@ -243,12 +191,12 @@ function classifyByBambuName(
  * - 'match'    — the preset is compatible with the selected printer.
  * - 'mismatch' — the preset resolves to a *different* printer.
  * - 'unknown'  — compatibility can't be determined (no `compatible_printers`,
- *                no uploaded bundle, no recognizable `@BBL` tag, or no
- *                printer is selected); the caller must not hide it.
+ *                no recognizable `@BBL` tag, or no printer is selected);
+ *                the caller must not hide it.
  */
 export function presetCompatibility(
   preset: { name: string; compatible_printers?: string[] | null },
-  slot: 'process' | 'filament',
+  _slot: 'process' | 'filament',
   selectedPrinterName: string | null,
   index: PrinterCompatibilityIndex,
 ): PrinterCompatibility {
@@ -259,13 +207,7 @@ export function presetCompatibility(
   if (compat && compat.length > 0) {
     return compat.includes(selectedPrinterName) ? 'match' : 'mismatch';
   }
-  // (2) Consult the uploaded Slicer Bundles.
-  const printers = index[slot].get(normalizePresetName(preset.name));
-  if (printers && printers.size > 0) {
-    return printers.has(selectedPrinterName) ? 'match' : 'mismatch';
-  }
-  // (3) BambuStudio's `@BBL <model>` name convention — covers cloud /
-  // standard presets for users who haven't uploaded bundles for every
-  // printer their cloud catalogue includes.
+  // (2) BambuStudio's `@BBL <model>` name convention — covers cloud /
+  // standard presets that don't carry compatible_printers.
   return classifyByBambuName(preset.name, selectedPrinterName, index.bambuModelByShortCode);
 }

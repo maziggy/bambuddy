@@ -353,6 +353,53 @@ class TestVirtualPrinterAutoDispatchAPI:
         assert get_resp.json()["auto_dispatch"] is False
 
 
+class TestVirtualPrinterGcodeInjectionAPI:
+    """Integration tests for gcode_injection (#1516) on /api/v1/virtual-printers endpoints."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_virtual_printer_gcode_injection_default_off(self, async_client: AsyncClient):
+        """Verify creating a VP without gcode_injection defaults to false (opt-in)."""
+        response = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "TestDefaultInjection",
+                "mode": "queue",
+                "access_code": "12345678",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["gcode_injection"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_virtual_printer_gcode_injection(self, async_client: AsyncClient):
+        """Verify gcode_injection can be toggled via PUT and persists."""
+        create_resp = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "TestToggleInjection",
+                "mode": "queue",
+                "access_code": "12345678",
+            },
+        )
+        assert create_resp.status_code == 200
+        vp_id = create_resp.json()["id"]
+        assert create_resp.json()["gcode_injection"] is False
+
+        update_resp = await async_client.put(
+            f"/api/v1/virtual-printers/{vp_id}",
+            json={"gcode_injection": True},
+        )
+        assert update_resp.status_code == 200
+        assert update_resp.json()["gcode_injection"] is True
+
+        get_resp = await async_client.get(f"/api/v1/virtual-printers/{vp_id}")
+        assert get_resp.status_code == 200
+        assert get_resp.json()["gcode_injection"] is True
+
+
 class TestVirtualPrinterTailscaleToggleAPI:
     """The Tailscale toggle is informational — toggling either way always succeeds.
 
@@ -599,3 +646,83 @@ class TestVirtualPrinterAccessCodeInheritance:
 
         vp = (await db_session.execute(select(VirtualPrinter).where(VirtualPrinter.id == vp_id))).scalar_one()
         assert vp.access_code == "REALCODE"
+
+
+class TestVirtualPrinterSerialSurface:
+    """Proxy-mode VPs must surface the target printer's serial in API responses.
+
+    The bridge advertises the target's serial over SSDP and forwards the
+    target's identity to the slicer; the VP-settings card should show the
+    same serial so the user sees one consistent identity per VP. Archive /
+    queue / review VPs keep the self-generated suffix-based serial since
+    those modes never speak the target's identity.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_proxy_vp_response_uses_target_printer_serial(self, async_client: AsyncClient, printer_factory):
+        target = await printer_factory(name="Real X1C", access_code="REALCODE", serial_number="00M09A123456789")
+
+        create_resp = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "ProxyVP",
+                "mode": "proxy",
+                "target_printer_id": target.id,
+            },
+        )
+        assert create_resp.status_code == 200
+        vp_id = create_resp.json()["id"]
+        assert create_resp.json()["serial"] == "00M09A123456789"
+
+        get_resp = await async_client.get(f"/api/v1/virtual-printers/{vp_id}")
+        assert get_resp.status_code == 200
+        assert get_resp.json()["serial"] == "00M09A123456789"
+
+        list_resp = await async_client.get("/api/v1/virtual-printers")
+        assert list_resp.status_code == 200
+        listed = next(p for p in list_resp.json()["printers"] if p["id"] == vp_id)
+        assert listed["serial"] == "00M09A123456789"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_non_proxy_vp_keeps_self_generated_serial(self, async_client: AsyncClient, printer_factory):
+        # Even with a target printer set (#1429 access-code inheritance flow),
+        # archive / queue / review VPs are NOT bridging the target's identity
+        # to the slicer — they synthesise their own. Self-generated serial.
+        target = await printer_factory(name="Real X1C", access_code="REALCODE", serial_number="00M09A123456789")
+
+        create_resp = await async_client.post(
+            "/api/v1/virtual-printers",
+            json={
+                "name": "QueueVP",
+                "mode": "queue",
+                "target_printer_id": target.id,
+            },
+        )
+        assert create_resp.status_code == 200
+        assert create_resp.json()["serial"] != "00M09A123456789"
+        # The synthesised serial follows _get_serial_for_model's `<prefix><suffix>`
+        # shape — model-specific prefix + 8-char hex suffix from `vp.serial_suffix`.
+        assert len(create_resp.json()["serial"]) >= 8
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_proxy_vp_falls_back_to_self_generated_when_target_missing(
+        self, async_client: AsyncClient, db_session
+    ):
+        # Defensive fallback: a proxy VP whose target_printer_id points at a
+        # row that no longer exists (printer deleted mid-config, manual SQL
+        # tweak, race) must not 500 — it returns the self-generated serial
+        # so the card still renders and the user can fix the target.
+        from backend.app.models.virtual_printer import VirtualPrinter
+
+        vp = VirtualPrinter(name="OrphanProxy", mode="proxy", target_printer_id=99999, enabled=False)
+        db_session.add(vp)
+        await db_session.commit()
+
+        get_resp = await async_client.get(f"/api/v1/virtual-printers/{vp.id}")
+        assert get_resp.status_code == 200
+        body = get_resp.json()
+        assert body["serial"]  # non-empty
+        assert len(body["serial"]) >= 8

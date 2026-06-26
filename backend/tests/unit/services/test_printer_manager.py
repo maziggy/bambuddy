@@ -17,6 +17,7 @@ from backend.app.services.printer_manager import (
     printer_state_to_dict,
     supports_chamber_temp,
     supports_drying,
+    supports_drying_while_printing,
 )
 
 
@@ -377,6 +378,8 @@ class TestPrinterManager:
             vibration_cali=True,
             layer_inspect=False,
             use_ams=True,
+            nozzle_offset_cali=False,
+            nozzle_mapping=None,
         )
         assert result is True
 
@@ -1242,6 +1245,94 @@ class TestStatusKeyDryingDedup:
         assert result1["ams"] != result2["ams"]
 
 
+class TestDryingTargetExposure:
+    """Tests for dry_target_temp / dry_filament surfacing on AMS state dict.
+
+    Bambu does not echo the active cycle's chosen filament + target
+    temperature on the per-tick AMS push, only the dry_time countdown.
+    The badge needs the cached target so it can render "PETG @ 65°C".
+    """
+
+    def _state_with_ams(self, ams_data: dict) -> object:
+        state = MagicMock()
+        state.connected = True
+        state.state = "IDLE"
+        state.current_print = None
+        state.subtask_name = None
+        state.gcode_file = None
+        state.progress = 0
+        state.remaining_time = 0
+        state.layer_num = 0
+        state.total_layers = 0
+        state.temperatures = {"nozzle": 25, "bed": 25}
+        state.hms_errors = []
+        state.ams_status_main = 0
+        state.ams_status_sub = 0
+        state.tray_now = None
+        state.wifi_signal = -50
+        state.stg_cur = -1
+        state.raw_data = {"ams": [ams_data]}
+        return state
+
+    def test_cached_target_wins_over_tray_fallback(self):
+        """When the cache has a target for this AMS, use it verbatim — even
+        if the loaded tray's filament/recommended-drying-temp differ."""
+        state = self._state_with_ams(
+            {
+                "id": 0,
+                "dry_time": 600,
+                "tray": [
+                    {"id": 0, "tray_type": "PLA", "drying_temp": 50, "state": 11},
+                ],
+            }
+        )
+        result = printer_state_to_dict(state, drying_targets={0: {"filament": "PETG", "temp": 65}})
+        assert result["ams"][0]["dry_filament"] == "PETG"
+        assert result["ams"][0]["dry_target_temp"] == 65
+
+    def test_falls_back_to_loaded_tray_when_no_cache(self):
+        """No cached target → derive from first loaded tray's tray_type +
+        RFID-recommended drying_temp (popover seed heuristic)."""
+        state = self._state_with_ams(
+            {
+                "id": 0,
+                "dry_time": 600,
+                "tray": [
+                    {"id": 0, "tray_type": "ABS", "drying_temp": 70, "state": 11},
+                ],
+            }
+        )
+        result = printer_state_to_dict(state, drying_targets=None)
+        assert result["ams"][0]["dry_filament"] == "ABS"
+        assert result["ams"][0]["dry_target_temp"] == 70
+
+    def test_returns_none_when_no_cache_and_empty_trays(self):
+        """No cache + no loaded tray with tray_type → both fields are None."""
+        state = self._state_with_ams(
+            {
+                "id": 0,
+                "dry_time": 600,
+                "tray": [{"id": 0}],
+            }
+        )
+        result = printer_state_to_dict(state, drying_targets={})
+        assert result["ams"][0]["dry_filament"] is None
+        assert result["ams"][0]["dry_target_temp"] is None
+
+    def test_targets_for_other_ams_id_dont_leak(self):
+        """A cached target for AMS 1 must not surface on AMS 0."""
+        state = self._state_with_ams(
+            {
+                "id": 0,
+                "dry_time": 600,
+                "tray": [{"id": 0}],
+            }
+        )
+        result = printer_state_to_dict(state, drying_targets={1: {"filament": "PETG", "temp": 65}})
+        assert result["ams"][0]["dry_filament"] is None
+        assert result["ams"][0]["dry_target_temp"] is None
+
+
 class TestSupportsChamberTemp:
     """Tests for supports_chamber_temp helper function."""
 
@@ -1412,6 +1503,91 @@ class TestSupportsDrying:
         assert supports_drying("x1c", "01.09.00.00") is True
         assert supports_drying("p2s", "01.02.00.00") is True
         assert supports_drying("a1", "99.99.99.99") is False
+
+
+class TestSupportsDryingWhilePrinting:
+    """Tests for the supports_drying_while_printing gate (concurrent drying during print).
+
+    Stricter than supports_drying — only models explicitly confirmed by Bambu wiki
+    release notes are allowed (verified phrase: "printing while filament is drying"
+    / "Print While Drying").
+    """
+
+    def test_known_supported_with_firmware(self):
+        """Matrix-confirmed models with min firmware return True."""
+        assert supports_drying_while_printing("H2D", "01.03.00.00") is True
+        assert supports_drying_while_printing("H2D Pro", "01.02.00.00") is True
+        assert supports_drying_while_printing("O1E", "01.02.00.00") is True
+        assert supports_drying_while_printing("O2D", "01.02.00.00") is True
+        assert supports_drying_while_printing("H2C", "01.02.00.00") is True
+        assert supports_drying_while_printing("O1C", "01.02.00.00") is True
+        assert supports_drying_while_printing("O1C2", "01.02.00.00") is True
+        assert supports_drying_while_printing("H2S", "01.02.00.00") is True
+        assert supports_drying_while_printing("X2D", "01.01.00.00") is True
+        assert supports_drying_while_printing("N6", "01.01.00.00") is True
+        assert supports_drying_while_printing("X1C", "01.11.02.00") is True
+        assert supports_drying_while_printing("BL-P001", "01.11.02.00") is True
+        assert supports_drying_while_printing("P2S", "01.02.00.00") is True
+        assert supports_drying_while_printing("N7", "01.02.00.00") is True
+        assert supports_drying_while_printing("A2L", "01.01.00.00") is True
+        assert supports_drying_while_printing("N9", "01.01.00.00") is True
+
+    def test_known_supported_below_min_firmware(self):
+        """Matrix-confirmed models on too-old firmware return False."""
+        assert supports_drying_while_printing("H2D", "01.02.30.00") is False
+        assert supports_drying_while_printing("X1C", "01.11.01.00") is False
+        assert supports_drying_while_printing("P2S", "01.01.99.99") is False
+        assert supports_drying_while_printing("H2S", "01.01.99.99") is False
+        assert supports_drying_while_printing("A2L", "01.00.99.99") is False
+
+    def test_not_in_matrix_excluded(self):
+        """Models absent from the matrix return False regardless of firmware.
+
+        P1*, A1, A1 Mini, X1 (non-C), X1E are intentionally excluded — their wiki
+        release notes never mention "Print While Drying" / "printing while filament
+        is drying".
+        """
+        for model in [
+            "P1P",
+            "P1S",
+            "C11",
+            "C12",
+            "A1",
+            "A1 MINI",
+            "A1MINI",
+            "N1",
+            "N2S",
+            "X1",
+            "X1E",
+            "BL-P002",
+            "C13",
+        ]:
+            assert supports_drying_while_printing(model, "99.99.99.99") is False, f"Expected False for {model}"
+
+    def test_no_firmware_returns_false(self):
+        """Missing firmware version returns False even for supported models."""
+        assert supports_drying_while_printing("H2D", None) is False
+        assert supports_drying_while_printing("P2S", None) is False
+
+    def test_none_model_returns_false(self):
+        """None model returns False."""
+        assert supports_drying_while_printing(None, "01.03.00.00") is False
+
+    def test_case_insensitive(self):
+        """Model matching is case-insensitive."""
+        assert supports_drying_while_printing("h2d", "01.03.00.00") is True
+        assert supports_drying_while_printing("p2s", "01.02.00.00") is True
+        assert supports_drying_while_printing("a1", "99.99.99.99") is False
+
+    def test_unknown_model_returns_false(self):
+        """Unknown models default to FALSE (strict gate — not the lenient default-allow).
+
+        This contrasts with supports_drying which defaults to True for unknown
+        models. For while-printing the cost of being wrong is real (firmware
+        rejection mid-print is annoying; melted spool is worse), so we err
+        toward conservative.
+        """
+        assert supports_drying_while_printing("FUTURE_MODEL", "99.99.99.99") is False
 
 
 class TestGetDerivedStatusName:

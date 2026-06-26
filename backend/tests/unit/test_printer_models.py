@@ -5,9 +5,11 @@ import pytest
 from backend.app.services.camera import get_camera_port, supports_rtsp
 from backend.app.utils.printer_models import (
     CARBON_ROD_MODELS,
+    LINEAR_RAIL_MODELS,
     STEEL_ROD_MODELS,
     get_rod_type,
     has_ethernet,
+    has_external_storage,
     is_dual_nozzle_model,
     normalize_printer_model,
     normalize_printer_model_id,
@@ -107,6 +109,84 @@ class TestX2DModel:
         assert "N6" in STEEL_ROD_MODELS
 
 
+class TestA2LModel:
+    """A2L printer support (#1684).
+
+    The A2L is a hybrid 3D printer + cutter/plotter announced June 2026. It
+    uses linear rails like the A1 family, has NO Ethernet (Wi-Fi 2.4 GHz only),
+    a low-rate chamber-image camera on port 6000 (no RTSP), and a single FDM
+    extruder (the second "tool head" in BambuStudio's profile is the cutter,
+    not a second extruder — must NOT be classified as dual-nozzle). Internal
+    SSDP/MQTT model code is "N9"; serial numbers begin with "26A19".
+    """
+
+    def test_a2l_is_linear_rail_display_name(self):
+        assert get_rod_type("A2L") == "linear_rail"
+
+    def test_a2l_is_linear_rail_internal_code(self):
+        assert get_rod_type("N9") == "linear_rail"
+
+    def test_a2l_model_id_map(self):
+        assert normalize_printer_model_id("N9") == "A2L"
+
+    def test_a2l_model_map(self):
+        assert normalize_printer_model("Bambu Lab A2L") == "A2L"
+
+    def test_a2l_has_no_ethernet_display_name(self):
+        """A2L specs (bambulab.com/de-de/a2l/specs) list Ethernet 'Nicht verfügbar'."""
+        assert has_ethernet("A2L") is False
+
+    def test_a2l_has_no_ethernet_internal_code(self):
+        assert has_ethernet("N9") is False
+
+    def test_a2l_does_not_support_rtsp_display_name(self):
+        """A2L uses the low-rate chamber-image protocol on port 6000, not RTSP."""
+        assert supports_rtsp("A2L") is False
+
+    def test_a2l_does_not_support_rtsp_internal_code(self):
+        assert supports_rtsp("N9") is False
+
+    def test_a2l_camera_port_is_chamber_image(self):
+        assert get_camera_port("A2L") == 6000
+        assert get_camera_port("N9") == 6000
+
+    def test_a2l_is_not_dual_nozzle(self):
+        """A2L has a single FDM extruder + a cutter/plotter head. The
+        BambuStudio profile flag ``use_double_extruder_default_texture`` flags
+        the dual TOOL HEADS, not dual filament extrusion — A2L must not land
+        in the dual-nozzle group or AMS routing will target the deputy slot
+        and the firmware will reject the print with 07FF_8012.
+        """
+        assert is_dual_nozzle_model("A2L") is False
+        assert is_dual_nozzle_model("N9") is False
+
+    def test_a2l_in_linear_rail_set(self):
+        assert "A2L" in LINEAR_RAIL_MODELS
+        assert "N9" in LINEAR_RAIL_MODELS
+
+    def test_a2l_not_in_carbon_or_steel_rod_sets(self):
+        assert "A2L" not in CARBON_ROD_MODELS
+        assert "N9" not in CARBON_ROD_MODELS
+        assert "A2L" not in STEEL_ROD_MODELS
+        assert "N9" not in STEEL_ROD_MODELS
+
+
+class TestA1SeriesModelIds:
+    """Regression guard for the A1-family internal-code → display-name map.
+
+    The serial-prefix and firmware-API key tables across the codebase agree
+    that N2S is the A1 (serial prefix 039) and N1 is the A1 Mini (serial
+    prefix 030). PRINTER_MODEL_ID_MAP had these swapped, which silently
+    misclassified A1 as A1 Mini in any path that resolved by internal code.
+    """
+
+    def test_n2s_is_a1(self):
+        assert normalize_printer_model_id("N2S") == "A1"
+
+    def test_n1_is_a1_mini(self):
+        assert normalize_printer_model_id("N1") == "A1 Mini"
+
+
 class TestDualNozzleModel:
     """is_dual_nozzle_model — the single source of truth for nozzle class,
     consumed by start_print, the K-profile routes, and the re-slice guard."""
@@ -130,3 +210,35 @@ class TestDualNozzleModel:
     def test_none_and_empty_are_not_dual(self):
         assert is_dual_nozzle_model(None) is False
         assert is_dual_nozzle_model("") is False
+
+
+class TestHasExternalStorage:
+    """Pins which Bambu models have a MicroSD slot. The connection
+    diagnostic flips its ``external_storage`` check from ``fail`` to
+    ``skip`` based on this — a false add (X1C marked as no-storage) would
+    silently disable a genuine fail signal for X1/P1/P2S/H2 users."""
+
+    @pytest.mark.parametrize("model", ["A1", "A1 Mini", "A1MINI", "A1-Mini", "a1"])
+    def test_a1_series_has_no_external_storage(self, model: str):
+        assert has_external_storage(model) is False
+
+    @pytest.mark.parametrize("model", ["N1", "N2S", "A04", "A11", "A12"])
+    def test_a1_internal_codes_have_no_external_storage(self, model: str):
+        assert has_external_storage(model) is False
+
+    @pytest.mark.parametrize(
+        "model",
+        ["X1C", "X1E", "X1", "P1S", "P1P", "P2S", "H2D", "H2D Pro", "H2C", "H2S", "X2D"],
+    )
+    def test_other_models_have_external_storage(self, model: str):
+        assert has_external_storage(model) is True
+
+    def test_unknown_model_defaults_to_true(self):
+        # Default-true keeps the diagnostic active for new Bambu models;
+        # add them to NO_EXTERNAL_STORAGE_MODELS explicitly when they ship
+        # without a slot.
+        assert has_external_storage("BrandNewModel2027") is True
+
+    def test_none_and_empty_default_to_true(self):
+        assert has_external_storage(None) is True
+        assert has_external_storage("") is True

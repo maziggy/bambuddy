@@ -575,26 +575,32 @@ class TestDelete:
 
     def test_delete_success(self, ftp_client_factory, ftp_server):
         """Successful file deletion."""
+        from backend.app.services.bambu_ftp import DeleteResult
+
         ftp_server.add_file("cache/to_delete.bin", b"delete me")
         client = ftp_client_factory()
         client.connect()
         result = client.delete_file("/cache/to_delete.bin")
-        assert result is True
+        assert result == DeleteResult.DELETED
         assert not ftp_server.file_exists("cache/to_delete.bin")
         client.disconnect()
 
     def test_delete_not_found(self, ftp_client_factory):
-        """Deleting a nonexistent file returns False."""
+        """Deleting a nonexistent file returns NOT_FOUND (550, #1721)."""
+        from backend.app.services.bambu_ftp import DeleteResult
+
         client = ftp_client_factory()
         client.connect()
         result = client.delete_file("/cache/no_such_file.bin")
-        assert result is False
+        assert result == DeleteResult.NOT_FOUND
         client.disconnect()
 
     def test_delete_not_connected(self):
-        """Delete when not connected returns False."""
+        """Delete when not connected returns FAILED."""
+        from backend.app.services.bambu_ftp import DeleteResult
+
         client = BambuFTPClient("127.0.0.1", "12345678")
-        assert client.delete_file("/cache/test.bin") is False
+        assert client.delete_file("/cache/test.bin") == DeleteResult.FAILED
 
 
 # ---------------------------------------------------------------------------
@@ -1053,6 +1059,8 @@ class TestAsyncWrappers:
     @pytest.mark.asyncio
     async def test_delete_file_async_success(self, patch_ftp_port):
         """delete_file_async deletes a file."""
+        from backend.app.services.bambu_ftp import DeleteResult
+
         server = patch_ftp_port
         server.add_file("cache/to_async_del.bin", b"delete me")
         result = await delete_file_async(
@@ -1061,8 +1069,21 @@ class TestAsyncWrappers:
             "/cache/to_async_del.bin",
             printer_model="X1C",
         )
-        assert result is True
+        assert result == DeleteResult.DELETED
         assert not server.file_exists("cache/to_async_del.bin")
+
+    @pytest.mark.asyncio
+    async def test_delete_file_async_not_found(self, patch_ftp_port):
+        """delete_file_async distinguishes 550 from real failure (#1721)."""
+        from backend.app.services.bambu_ftp import DeleteResult
+
+        result = await delete_file_async(
+            "127.0.0.1",
+            "12345678",
+            "/cache/never_existed.bin",
+            printer_model="X1C",
+        )
+        assert result == DeleteResult.NOT_FOUND
 
 
 # ---------------------------------------------------------------------------

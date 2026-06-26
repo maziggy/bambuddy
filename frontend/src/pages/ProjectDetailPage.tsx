@@ -31,8 +31,6 @@ import {
   FolderOpen,
   Download,
   Pencil,
-  Play,
-  CalendarPlus,
   FileBox,
 } from 'lucide-react';
 import { api } from '../api/client';
@@ -212,7 +210,6 @@ export function ProjectDetailPage() {
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesContent, setNotesContent] = useState('');
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
-  const [scheduleFile, setScheduleFile] = useState<LibraryFileListItem | null>(null);
 
   const projectId = parseInt(id || '0', 10);
 
@@ -949,7 +946,7 @@ export function ProjectDetailPage() {
                                 </p>
                                 <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
                                   file.file_type === '3mf' ? 'bg-bambu-green/20 text-bambu-green'
-                                  : file.file_type === 'gcode' ? 'bg-blue-500/20 text-blue-400'
+                                  : (file.file_type === 'gcode' || file.file_type === 'gcode.3mf') ? 'bg-blue-500/20 text-blue-400'
                                   : 'bg-bambu-gray/20 text-bambu-gray'
                                 }`}>
                                   {file.file_type.toUpperCase()}
@@ -961,17 +958,10 @@ export function ProjectDetailPage() {
                                 <div className="flex items-center gap-1 shrink-0">
                                   <button
                                     onClick={() => setPrintFile(file)}
-                                    title={t('projectDetail.files.print')}
+                                    title={t('common.print')}
                                     className="p-1.5 rounded hover:bg-bambu-green/20 text-bambu-green transition-colors"
                                   >
-                                    <Play className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => setScheduleFile(file)}
-                                    title={t('projectDetail.files.addToQueue')}
-                                    className="p-1.5 rounded hover:bg-blue-500/20 text-blue-400 transition-colors"
-                                  >
-                                    <CalendarPlus className="w-4 h-4" />
+                                    <Printer className="w-4 h-4" />
                                   </button>
                                 </div>
                               )}
@@ -1425,10 +1415,10 @@ export function ProjectDetailPage() {
         />
       )}
 
-      {/* Print directly from project — reprint mode */}
+      {/* Print from project */}
       {printFile && (
         <PrintModal
-          mode="reprint"
+          mode="create"
           libraryFileId={printFile.id}
           archiveName={printFile.print_name || printFile.filename}
           projectId={projectId}
@@ -1436,20 +1426,6 @@ export function ProjectDetailPage() {
           onSuccess={() => {
             setPrintFile(null);
             queryClient.invalidateQueries({ queryKey: ['archives'] });
-          }}
-        />
-      )}
-
-      {/* Add to queue from project */}
-      {scheduleFile && (
-        <PrintModal
-          mode="add-to-queue"
-          libraryFileId={scheduleFile.id}
-          archiveName={scheduleFile.print_name || scheduleFile.filename}
-          projectId={projectId}
-          onClose={() => setScheduleFile(null)}
-          onSuccess={() => {
-            setScheduleFile(null);
             queryClient.invalidateQueries({ queryKey: ['queue'] });
           }}
         />

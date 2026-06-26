@@ -12,6 +12,7 @@ export function getPrinterImage(model: string | null | undefined): string {
   if (m.includes('p2s')) return '/img/printers/p1s.png';
   if (m.includes('p1s')) return '/img/printers/p1s.png';
   if (m.includes('p1p')) return '/img/printers/p1p.png';
+  if (m.includes('a2l') || m === 'n9') return '/img/printers/a2l.png';
   if (m.includes('a1mini')) return '/img/printers/a1mini.png';
   if (m.includes('a1')) return '/img/printers/a1.png';
   return '/img/printers/default.png';

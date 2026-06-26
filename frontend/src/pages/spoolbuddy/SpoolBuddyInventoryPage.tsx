@@ -7,7 +7,7 @@ import { api } from '../../api/client';
 import type { InventorySpool } from '../../api/client';
 import { resolveSpoolColorName, getSwatchStyle, spoolColorString } from '../../utils/colors';
 import { formatSlotLabel } from '../../utils/amsHelpers';
-import { distinctStorageLocations } from '../../utils/inventorySearch';
+import { distinctStorageLocations, filterSpoolsByQuery } from '../../utils/inventorySearch';
 import { InventorySpoolInfoCard } from '../../components/spoolbuddy/InventorySpoolInfoCard';
 import { AssignToAmsModal } from '../../components/spoolbuddy/AssignToAmsModal';
 import { QrAssignTargetModal } from '../../components/QrAssignTargetModal';
@@ -147,16 +147,7 @@ export function SpoolBuddyInventoryPage() {
       list = list.filter(s => s.material === filterMode);
     }
 
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      list = list.filter(s =>
-        s.material.toLowerCase().includes(q) ||
-        (s.subtype && s.subtype.toLowerCase().includes(q)) ||
-        (s.brand && s.brand.toLowerCase().includes(q)) ||
-        (s.color_name && s.color_name.toLowerCase().includes(q)) ||
-        (s.note && s.note.toLowerCase().includes(q))
-      );
-    }
+    list = filterSpoolsByQuery(list, searchQuery.trim());
 
     // Sort: assigned spools first (by slot label), then by most recently updated
     return [...list].sort((a, b) => {

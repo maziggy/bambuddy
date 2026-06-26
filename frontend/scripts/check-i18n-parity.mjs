@@ -143,6 +143,8 @@ const DE_COGNATES = [
   'Name', 'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Modus',
   'Stop', 'Reset', 'Test', 'Code', 'Token', 'Server', 'Port', 'Bug', 'Job',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
+  'AMS Filament Backup',  // Bambu Lab product/firmware feature name
+
   'Pause', 'Power', 'System', 'Problem', 'Designer', 'Extruder', 'Firmware',
   'Material', 'Original', 'Position', 'Webhook', 'Workflow', 'Slicer',
   'Region', 'Normal', 'Orange', 'Branch', 'Budget', 'Commit', 'Global',
@@ -166,11 +168,13 @@ const DE_COGNATES = [
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'China', 'Proxy', 'Start',
   'Diagnose',  // DE: same spelling/meaning as EN — camera diagnostic button label
+  '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
 ];
 
 // French cognates — many UI labels overlap with English exactly.
 const FR_COGNATES = [
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
+  'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Filament',
   'Filaments', 'Software', 'Hardware', 'Stop', 'Reset', 'Test', 'Code',
   'Token', 'Server', 'Port', 'Plate', 'Layer', 'Active', 'Total', 'Avatar',
@@ -194,6 +198,7 @@ const FR_COGNATES = [
   '{{count}} filament', '{{count}} filaments', '{{count}} permissions',
   '{{count}} downloads', '{{count}} item', '{{count}} selected',
   '({{count}} item)', 'Provisioning...', 'Pressure Advance',
+  '{{name}} ({{count}} copies)',  // FR plural of "copie" is also "copies"
   'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
@@ -203,11 +208,13 @@ const FR_COGNATES = [
   'EC984C,#6CD4BC,A66EB9,D87694',
   'Proxy', 'Navigation', 'Budget', 'Commit', 'Designer',
   'ntfy, Pushover, Discord, etc.',
+  '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
 ];
 
 // Italian cognates.
 const IT_COGNATES = [
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
+  'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Email',  // common loanword in Italian, used verbatim in UI labels
   'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Filament',
   'Filaments', 'Software', 'Hardware', 'Stop', 'Reset', 'Test', 'Code',
@@ -230,6 +237,7 @@ const IT_COGNATES = [
   'Hex: #{{hex}}',
   'EC984C,#6CD4BC,A66EB9,D87694',
   'Proxy', 'Designer',
+  '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
 ];
 
 // Japanese: very few cognates because of script difference. Almost
@@ -243,11 +251,13 @@ const JA_COGNATES = [
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'EC984C,#6CD4BC,A66EB9,D87694',
+  '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
 ];
 
 // Portuguese (BR) cognates.
 const PT_BR_COGNATES = [
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
+  'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Filament',
   'Software', 'Hardware', 'Stop', 'Reset', 'Test', 'Code', 'Token', 'Server',
   'Port', 'Plate', 'Layer', 'Modal', 'Pin', 'Pro', 'Mini', 'Studio', 'Cache',
@@ -270,6 +280,7 @@ const PT_BR_COGNATES = [
   'Expand dispatch details', 'Collapse dispatch details',
   'e.g., Home Assistant, OctoPrint', 'ntfy, Pushover, Discord, etc.',
   'Proxy', 'total: {{minutes}} min',
+  '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
 ];
 
 // Chinese (Simplified): very few cognates beyond brand names.
@@ -281,6 +292,7 @@ const ZH_CN_COGNATES = [
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'EC984C,#6CD4BC,A66EB9,D87694',
+  '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
 ];
 
 const ZH_TW_COGNATES = [
@@ -291,6 +303,7 @@ const ZH_TW_COGNATES = [
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
   'EC984C,#6CD4BC,A66EB9,D87694',
+  '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
 ];
 
 // Korean: script difference means almost nothing is identical.
@@ -310,11 +323,13 @@ const KO_COGNATES = [
   '{{printer}}: {{error}}',                           // pure placeholders
   '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}', // pure placeholders
   'Obico ML API URL',                                 // product name (Obico)
+  '{{filament}} @ {{temp}}°C',                        // drying badge format
 ];
 
 // Spanish cognates — words/phrases that are genuinely identical in Spanish.
 const ES_COGNATES = [
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
+  'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Error', 'Firmware', 'General', 'Control', 'Total', 'total', 'Material',
   'Material:', 'Color', 'Hex', 'Local', 'Global', 'China', 'Editable',
   'Normal', 'Metal', 'Multicolor', 'Proxy', 'Host', 'Factor', 'Original',
@@ -327,6 +342,7 @@ const ES_COGNATES = [
   'Box label (62 × 29 mm)',
   'Avery L7160 — A4 sheet (38.1 × 63.5 mm × 21)',
   'Avery 5160 — US Letter sheet (25.4 × 66.7 mm × 30)',
+  '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
 ];
 
 // Turkish cognates — technical UI labels that Turkish speakers use verbatim
@@ -334,6 +350,7 @@ const ES_COGNATES = [
 const TR_COGNATES = [
   'Filament', 'Firmware', 'Disk', 'Hex', 'Test', 'Port', 'Model', 'Metal',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
+  'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Min', 'Normal', 'Platform', 'Net', 'Trend', 'Commit', 'Global', 'Proxy',
   'N/A', 'email',
   'STARTTLS (Port 587)', 'SSL/TLS (Port 465)',
@@ -341,6 +358,7 @@ const TR_COGNATES = [
   '{{count}} filament', '{{printer}}: {{error}}', '{{weight}}g',
   'Filament {{index}} ({{type}})',
   'EC984C,#6CD4BC,A66EB9,D87694',
+  '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
 ];
 
 const IDENTICAL_TO_EN_ALLOWED = {

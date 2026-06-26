@@ -222,6 +222,11 @@ async def sync_printer_ams(
     skipped: list[SkippedSpool] = []
     errors = []
 
+    from backend.app.api.routes.settings import get_setting
+
+    _auto_add_raw = await get_setting(db, "auto_add_unknown_rfid")
+    auto_add_unknown_rfid = _auto_add_raw is None or _auto_add_raw.lower() == "true"
+
     # Handle different AMS data structures
     # Traditional AMS: list of {"id": N, "tray": [...]} dicts
     # H2D/newer printers: dict with different structure
@@ -326,6 +331,7 @@ async def sync_printer_ams(
                     cached_spools=cached_spools,
                     inventory_remaining=inv_remaining,
                     spoolman_spool_id_hint=hint,
+                    auto_add_unknown_rfid=auto_add_unknown_rfid,
                 )
                 if sync_result:
                     synced += 1
@@ -337,6 +343,15 @@ async def sync_printer_ams(
                             logger.debug("Added newly created spool %s to cache", sync_result["id"])
                     logger.info(
                         "Synced %s from %s AMS %s tray %s", tray.tray_sub_brands, printer.name, ams_id, tray.tray_id
+                    )
+                elif spool_tag and not auto_add_unknown_rfid:
+                    skipped.append(
+                        SkippedSpool(
+                            location=f"AMS {ams_id} T{tray.tray_id}",
+                            reason="Auto-add disabled; add to inventory manually",
+                            filament_type=tray.tray_type or None,
+                            color=tray.tray_color[:6] if tray.tray_color else None,
+                        )
                     )
                 elif spool_tag:
                     errors.append(f"Spool not found in Spoolman: AMS {ams_id}:{tray.tray_id}")
@@ -421,6 +436,11 @@ async def sync_all_printers(
     total_synced = 0
     all_skipped: list[SkippedSpool] = []
     all_errors = []
+
+    from backend.app.api.routes.settings import get_setting
+
+    _auto_add_raw = await get_setting(db, "auto_add_unknown_rfid")
+    auto_add_unknown_rfid = _auto_add_raw is None or _auto_add_raw.lower() == "true"
 
     # OPTIMIZATION: Fetch all spools once before processing ALL printers/trays
     # This eliminates redundant API calls across all printers
@@ -528,6 +548,7 @@ async def sync_all_printers(
                         cached_spools=cached_spools,
                         inventory_remaining=inv_remaining,
                         spoolman_spool_id_hint=hint,
+                        auto_add_unknown_rfid=auto_add_unknown_rfid,
                     )
                     if sync_result:
                         total_synced += 1
@@ -537,6 +558,15 @@ async def sync_all_printers(
                             if not spool_exists:
                                 cached_spools.append(sync_result)
                                 logger.debug("Added newly created spool %s to cache", sync_result["id"])
+                    elif spool_tag and not auto_add_unknown_rfid:
+                        all_skipped.append(
+                            SkippedSpool(
+                                location=f"{printer.name} AMS {ams_id} T{tray.tray_id}",
+                                reason="Auto-add disabled; add to inventory manually",
+                                filament_type=tray.tray_type or None,
+                                color=tray.tray_color[:6] if tray.tray_color else None,
+                            )
+                        )
                     elif spool_tag:
                         all_errors.append(f"Spool not found in Spoolman: {printer.name} AMS {ams_id}:{tray.tray_id}")
                     elif not hint:
@@ -1108,3 +1138,119 @@ async def unlink_spool(
 
     logger.info("Unlinked Spoolman spool %s", spool_id)
     return {"success": True, "message": f"Spool {spool_id} unlinked from AMS"}
+
+
+class CreateSpoolFromSlotRequest(BaseModel):
+    printer_id: int
+    ams_id: int
+    tray_id: int
+
+
+@router.post("/spools/from-slot")
+async def create_spool_from_slot(
+    req: CreateSpoolFromSlotRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.FILAMENTS_UPDATE),
+):
+    """Explicit user action: create a Spoolman spool from an AMS slot's current tray data.
+
+    Used by the "+ Add to inventory" affordance when auto_add_unknown_rfid is disabled —
+    the user looked at the slot and chose to register it. Calls sync_ams_tray with the
+    auto-add override on so the spool is created even when the global setting is off.
+    """
+    sm = await get_spoolman_settings(db)
+    if not sm["enabled"]:
+        raise HTTPException(status_code=400, detail="Spoolman integration is not enabled")
+
+    client = await get_spoolman_client()
+    if not client:
+        if sm["url"]:
+            client = await init_spoolman_client(sm["url"])
+        else:
+            raise HTTPException(status_code=400, detail="Spoolman URL is not configured")
+
+    if not await client.health_check():
+        raise HTTPException(status_code=503, detail="Spoolman is not reachable")
+
+    result = await db.execute(select(Printer).where(Printer.id == req.printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(status_code=404, detail="Printer not found")
+
+    state = printer_manager.get_status(req.printer_id)
+    if not state or not state.raw_data:
+        raise HTTPException(status_code=404, detail="Printer not connected or no state available")
+
+    ams_data = state.raw_data.get("ams")
+    ams_units: list[dict] = []
+    if isinstance(ams_data, list):
+        ams_units = ams_data
+    elif isinstance(ams_data, dict):
+        if "ams" in ams_data and isinstance(ams_data["ams"], list):
+            ams_units = ams_data["ams"]
+        elif "tray" in ams_data:
+            ams_units = [{"id": 0, "tray": ams_data.get("tray", [])}]
+
+    tray = None
+    for unit in ams_units:
+        if not isinstance(unit, dict):
+            continue
+        if int(unit.get("id", -1)) != req.ams_id:
+            continue
+        for t in unit.get("tray", []):
+            if isinstance(t, dict) and int(t.get("id", -1)) == req.tray_id:
+                tray = client.parse_ams_tray(req.ams_id, t)
+                break
+        if tray:
+            break
+
+    if not tray:
+        raise HTTPException(status_code=400, detail="Slot is empty or has no readable tray data")
+
+    # Same ghost-spool guard as the inventory route: no tag → no stable
+    # identity → confirm would just create a fresh Spoolman row per push.
+    from backend.app.services.spool_tag_matcher import is_valid_tag
+
+    if not is_valid_tag(tray.tag_uid or "", tray.tray_uuid or ""):
+        raise HTTPException(status_code=400, detail="Slot has no RFID tag")
+
+    sync_result = await client.sync_ams_tray(
+        tray,
+        printer.name,
+        disable_weight_sync=True,
+        auto_add_unknown_rfid=True,
+    )
+    if not sync_result:
+        raise HTTPException(status_code=500, detail="Spoolman did not create a spool from the slot")
+
+    # Persist the slot assignment so the new spool shows on the slot tile.
+    # If this fails, surface a 500 — silently returning success while the
+    # binding rolled back leaves the user thinking the spool was added,
+    # then watching the modal re-fire on the next MQTT push.
+    if sync_result.get("id"):
+        try:
+            await db.execute(
+                text(
+                    "INSERT INTO spoolman_slot_assignments"
+                    " (printer_id, ams_id, tray_id, spoolman_spool_id)"
+                    " VALUES (:printer_id, :ams_id, :tray_id, :spool_id)"
+                    " ON CONFLICT(printer_id, ams_id, tray_id)"
+                    " DO UPDATE SET spoolman_spool_id = excluded.spoolman_spool_id"
+                ),
+                {
+                    "printer_id": req.printer_id,
+                    "ams_id": req.ams_id,
+                    "tray_id": req.tray_id,
+                    "spool_id": sync_result["id"],
+                },
+            )
+            await db.commit()
+        except Exception as exc:
+            await db.rollback()
+            logger.exception("Failed to persist Spoolman slot assignment")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Spool created in Spoolman but slot assignment failed: {exc}",
+            ) from exc
+
+    return {"success": True, "spool_id": sync_result.get("id")}

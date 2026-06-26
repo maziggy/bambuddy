@@ -293,6 +293,49 @@ describe('StatsPage', () => {
       });
     });
 
+    it('translates camelCase failure-reason keys instead of rendering them raw (#1687 follow-up)', async () => {
+      // The widget groups by the raw PrintLogEntry.failure_reason column.
+      // The new editor stores camelCase keys (`filamentRunout`), so the widget
+      // must translate them — otherwise users see the literal key text.
+      server.use(
+        http.get('/api/v1/archives/analysis/failures', () => {
+          return HttpResponse.json({
+            ...mockFailureAnalysis,
+            failures_by_reason: { filamentRunout: 2, cloggedNozzle: 1 },
+          });
+        }),
+      );
+
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Filament runout')).toBeInTheDocument();
+        expect(screen.getByText('Clogged nozzle')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('filamentRunout')).not.toBeInTheDocument();
+      expect(screen.queryByText('cloggedNozzle')).not.toBeInTheDocument();
+    });
+
+    it('renders legacy translated-text failure reasons unchanged (#1687 follow-up)', async () => {
+      // Old rows from before the key/value migration stored the translated
+      // text. The defaultValue fallback in the t() call must surface them
+      // as-is rather than turning them into the literal key string.
+      server.use(
+        http.get('/api/v1/archives/analysis/failures', () => {
+          return HttpResponse.json({
+            ...mockFailureAnalysis,
+            failures_by_reason: { 'Custom legacy reason': 4 },
+          });
+        }),
+      );
+
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Custom legacy reason')).toBeInTheDocument();
+      });
+    });
+
     it('shows printer stats widget', async () => {
       render(<StatsPage />);
 

@@ -18,5 +18,9 @@ pyOpenSSL>=26.0.0
 # Security scanning
 bandit[sarif]>=1.7.0
 pip-audit>=2.7.0
+# Transitive of pip-audit→CacheControl. 1.2.1 patches GHSA-6v7p-g79w-8964
+# (Unpacker SEGV/DoS on reuse after caught error). Not a runtime dep of
+# Bambuddy — pinned here so the audit stays clean.
+msgpack>=1.2.1
 # Secrets scan: gitleaks (Go binary, not a Python package).
 # Install: go install github.com/zricethezav/gitleaks/v8@latest

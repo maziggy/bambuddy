@@ -13,13 +13,16 @@ class FilamentSkuSettings(Base):
     __table_args__ = (
         # sqlite_where ensures NULL columns participate in uniqueness (NULLS NOT DISTINCT).
         # On PostgreSQL the partial index is not needed — standard UNIQUE handles it.
-        UniqueConstraint("material", "subtype", "brand", name="uq_filament_sku"),
+        # color_name is part of the key so forecasts distinguish e.g. White vs Black
+        # PLA Matte (#forecast-color-grouping).
+        UniqueConstraint("material", "subtype", "brand", "color_name", name="uq_filament_sku"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     material: Mapped[str] = mapped_column(String(50))
     subtype: Mapped[str | None] = mapped_column(String(50))
     brand: Mapped[str | None] = mapped_column(String(100))
+    color_name: Mapped[str | None] = mapped_column(String(100))
     lead_time_days: Mapped[int] = mapped_column(Integer, default=0)
     safety_margin_value: Mapped[int] = mapped_column(Integer, default=14)
     safety_margin_unit: Mapped[str] = mapped_column(String(10), default="days")

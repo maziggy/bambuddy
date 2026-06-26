@@ -433,6 +433,42 @@ describe('useWebSocket hook', () => {
       vi.unstubAllGlobals();
     });
 
+    it('invalidates inventory queries on inventory_changed message', async () => {
+      vi.useFakeTimers();
+      vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      const ws = await waitForWs();
+
+      act(() => {
+        ws.open();
+      });
+
+      act(() => {
+        ws.simulateMessage({ type: 'inventory_changed' });
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inventory-spools'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['spoolman-inventory-spools'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['inventory-locations'] });
+
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
     it('handles missing_spool_assignment message without error', async () => {
       vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
         cb(0);

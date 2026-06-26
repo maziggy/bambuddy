@@ -120,6 +120,50 @@ def _is_ha_addon() -> bool:
     return bool(os.environ.get("SUPERVISOR_TOKEN"))
 
 
+def _is_windows_installer_install() -> bool:
+    """Detect a Windows install that came from the Inno Setup installer.
+
+    The installer stages backend source via ``shutil.copytree`` (no ``.git``
+    directory) and does not bundle ``git.exe`` — so the git-fetch-and-reset
+    update path used everywhere else is structurally inoperable here. We
+    surface this as a distinct ``update_method`` and direct the user at the
+    release asset instead.
+
+    A Windows developer running from a real ``git clone`` keeps the git
+    path (``.git`` present), so this only catches installer users.
+    """
+    if sys.platform != "win32":
+        return False
+    return not (settings.app_dir / ".git").exists()
+
+
+def _find_windows_installer_asset(release_data: dict) -> str | None:
+    """Pick the Windows installer .exe out of a GitHub release's assets list.
+
+    Both filenames the workflow uploads end in ``windows-x64-setup.exe``
+    (versioned ``bambuddy-<version>-windows-x64-setup.exe`` and the
+    unversioned alias ``bambuddy-windows-x64-setup.exe`` on non-daily tags
+    only). Either works as a download URL; we prefer the versioned form
+    because it's the one guaranteed to exist on every release including
+    dailies.
+    """
+    assets = release_data.get("assets") or []
+    versioned: str | None = None
+    unversioned: str | None = None
+    for asset in assets:
+        name = asset.get("name") or ""
+        url = asset.get("browser_download_url")
+        if not isinstance(name, str) or not isinstance(url, str):
+            continue
+        if not name.endswith("windows-x64-setup.exe"):
+            continue
+        if name == "bambuddy-windows-x64-setup.exe":
+            unversioned = url
+        else:
+            versioned = url
+    return versioned or unversioned
+
+
 def _find_executable(name: str) -> str | None:
     """Find an executable in PATH or common locations."""
     # Try standard PATH first
@@ -181,12 +225,16 @@ def _parse_github_remote(url: str) -> tuple[str, str] | None:
     return (parts[0], parts[1])
 
 
-async def _origin_points_at_repo(git_path: str, git_config: list[str], base_dir, expected_repo: str) -> bool:
+async def _origin_points_at_repo(git_path: str, git_config: list[str], app_dir, expected_repo: str) -> bool:
     """Return True iff the working tree's `origin` already resolves to
     `<owner>/<repo>` matching `expected_repo` (e.g. "maziggy/bambuddy"),
     regardless of whether it's the SSH or HTTPS form. Used to skip the
     `git remote set-url origin https://...` rewrite when the developer's
-    SSH origin is already correct — see `_perform_update` for context."""
+    SSH origin is already correct — see `_perform_update` for context.
+
+    ``app_dir`` is the working tree (where ``.git`` lives), not the data
+    dir — see #1715 for the separate-mount layout that proved why this
+    must NOT be ``base_dir``."""
     try:
         process = await asyncio.create_subprocess_exec(
             git_path,
@@ -194,7 +242,7 @@ async def _origin_points_at_repo(git_path: str, git_config: list[str], base_dir,
             "remote",
             "get-url",
             "origin",
-            cwd=str(base_dir),
+            cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -455,10 +503,15 @@ async def check_for_updates(
 
             is_docker = _is_docker_environment()
             is_ha_addon = _is_ha_addon()
+            is_windows_installer = _is_windows_installer_install()
+            installer_download_url: str | None = None
             if is_ha_addon:
                 update_method = "ha_addon"
             elif is_docker:
                 update_method = "docker"
+            elif is_windows_installer:
+                update_method = "windows_installer"
+                installer_download_url = _find_windows_installer_asset(release_data)
             else:
                 update_method = "git"
             return {
@@ -471,7 +524,9 @@ async def check_for_updates(
                 "published_at": published_at,
                 "is_docker": is_docker,
                 "is_ha_addon": is_ha_addon,
+                "is_windows_installer": is_windows_installer,
                 "update_method": update_method,
+                "installer_download_url": installer_download_url,
             }
 
     except httpx.HTTPError as e:
@@ -555,7 +610,16 @@ async def _perform_update(target_ref: str):
     global _update_status
 
     try:
-        base_dir = settings.base_dir
+        # Every git step runs against the working tree (app_dir), NOT base_dir.
+        # On a standard install with DATA_DIR=INSTALL_PATH/data, git happens
+        # to walk up from a subdirectory of the repo to find .git so cwd=base_dir
+        # used to silently work — but only by accident. On a native install with
+        # DATA_DIR mounted at an unrelated path (e.g. /srv/bambuddy/data while
+        # the install is /opt/bambuddy — see #1715), git can't walk up and every
+        # operation fails with "not a git repository". safe.directory has the
+        # same requirement: it must equal the repo root git discovers, not the
+        # data dir, or every call returns "fatal: detected dubious ownership."
+        app_dir = settings.app_dir
 
         # Find git executable (may not be in PATH when running as systemd service)
         git_path = _find_executable("git")
@@ -570,8 +634,9 @@ async def _perform_update(target_ref: str):
 
         logger.info("Using git at: %s", git_path)
 
-        # Git config to avoid safe.directory issues
-        git_config = ["-c", f"safe.directory={base_dir}"]
+        # Git config to avoid safe.directory issues — must point at the working
+        # tree (where .git lives), see app_dir comment above.
+        git_config = ["-c", f"safe.directory={app_dir}"]
 
         _update_status = {
             "status": "downloading",
@@ -593,7 +658,7 @@ async def _perform_update(target_ref: str):
         # correct repo are preserved; only missing / wrong / corrupted
         # origins get reset to HTTPS.
         https_url = f"https://github.com/{GITHUB_REPO}.git"
-        if not await _origin_points_at_repo(git_path, git_config, base_dir, GITHUB_REPO):
+        if not await _origin_points_at_repo(git_path, git_config, app_dir, GITHUB_REPO):
             process = await asyncio.create_subprocess_exec(
                 git_path,
                 *git_config,
@@ -601,7 +666,7 @@ async def _perform_update(target_ref: str):
                 "set-url",
                 "origin",
                 https_url,
-                cwd=str(base_dir),
+                cwd=str(app_dir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -635,7 +700,7 @@ async def _perform_update(target_ref: str):
             "--tags",
             "--force",
             "origin",
-            cwd=str(base_dir),
+            cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -671,7 +736,7 @@ async def _perform_update(target_ref: str):
             "reset",
             "--hard",
             target_ref,
-            cwd=str(base_dir),
+            cwd=str(app_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -696,12 +761,9 @@ async def _perform_update(target_ref: str):
         }
 
         # Install Python dependencies — must run from the source-code directory
-        # (where requirements.txt lives), not the data dir. On native installs
-        # systemd sets DATA_DIR=INSTALL_PATH/data, so `base_dir` is the data dir,
-        # not the working tree. `git reset` above worked from base_dir because
-        # git walks up looking for .git, but `pip install -r requirements.txt`
-        # needs the file in cwd literally.
-        app_dir = settings.app_dir
+        # (where requirements.txt lives). app_dir is already resolved at the top
+        # of this function; see the comment there for why every step uses it
+        # instead of base_dir.
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-m",
@@ -814,6 +876,19 @@ async def apply_update(
                 "Docker installations cannot be updated in-app. "
                 "Please update via Docker Compose: "
                 "git pull && docker compose build --pull && docker compose up -d"
+            ),
+        }
+    if _is_windows_installer_install():
+        # The installer layout has no ``.git`` and no bundled ``git.exe`` —
+        # the git-fetch path would fail. Frontend swaps the "Update now"
+        # button for a Download Installer link via update_method, so this
+        # branch is only reached if /apply is hit directly.
+        return {
+            "success": False,
+            "is_windows_installer": True,
+            "message": (
+                "Windows installations are updated by re-running the installer. "
+                "Download the latest installer from the Bambuddy releases page."
             ),
         }
 

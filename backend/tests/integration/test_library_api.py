@@ -46,6 +46,61 @@ class TestLibraryFoldersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_folder_tree_exposes_latest_activity_at_from_files(
+        self, async_client: AsyncClient, folder_factory, db_session
+    ):
+        """#1770: folder list returns latest_activity_at = MAX(folder.updated_at,
+        MAX(immediate-child file.updated_at)) so the frontend can sort by
+        recent activity. Adding a file with a later updated_at must bubble it.
+        """
+        from datetime import datetime, timedelta
+
+        from backend.app.models.library import LibraryFile
+
+        folder = await folder_factory(name="Active Folder")
+        # File whose updated_at is well after the folder's. Activity should
+        # surface this timestamp, not the folder's stale one.
+        future = datetime.utcnow() + timedelta(hours=24)
+        db_session.add(
+            LibraryFile(
+                folder_id=folder.id,
+                filename="model.3mf",
+                file_path="library/model.3mf",
+                file_type="3mf",
+                file_size=123,
+                updated_at=future,
+            )
+        )
+        await db_session.commit()
+
+        response = await async_client.get("/api/v1/library/folders")
+        assert response.status_code == 200
+        items = response.json()
+        assert len(items) == 1
+        item = items[0]
+        assert item["id"] == folder.id
+        assert item["latest_activity_at"] is not None
+        # latest_activity_at should be at least the future stamp we set.
+        assert item["latest_activity_at"] >= future.isoformat()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_folder_tree_latest_activity_at_falls_back_to_folder_updated_at(
+        self, async_client: AsyncClient, folder_factory, db_session
+    ):
+        """#1770: a folder with no files reports its own updated_at, not null —
+        otherwise the activity sort would dump every empty folder to one end."""
+        await folder_factory(name="Empty Folder")
+        response = await async_client.get("/api/v1/library/folders")
+        assert response.status_code == 200
+        items = response.json()
+        assert len(items) == 1
+        item = items[0]
+        # latest_activity_at == folder.updated_at when there are no files
+        assert item["latest_activity_at"] is not None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_create_folder(self, async_client: AsyncClient, db_session):
         """Verify folder can be created."""
         data = {"name": "New Folder"}
@@ -431,6 +486,139 @@ class TestLibraryFilesAPI:
         assert test_file is not None
         assert test_file["created_by_id"] == user.id
         assert test_file["created_by_username"] == "testuploader"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_files_recursive_includes_subfolders(
+        self, async_client: AsyncClient, folder_factory, file_factory
+    ):
+        """#1268: ?recursive=true with folder_id must include every descendant.
+
+        Tree:
+            toys/             ← f_toys, direct file "robot_top.3mf"
+              cars/           ← child of toys, file "robot_car.3mf"
+                race/         ← grandchild, file "robot_race.3mf"
+            other/            ← unrelated, file "robot_other.3mf" (must NOT appear)
+        """
+        toys = await folder_factory(name="toys")
+        cars = await folder_factory(name="cars", parent_id=toys.id)
+        race = await folder_factory(name="race", parent_id=cars.id)
+        other = await folder_factory(name="other")
+
+        top = await file_factory(folder_id=toys.id, filename="robot_top.3mf")
+        mid = await file_factory(folder_id=cars.id, filename="robot_car.3mf")
+        deep = await file_factory(folder_id=race.id, filename="robot_race.3mf")
+        await file_factory(folder_id=other.id, filename="robot_other.3mf")
+
+        # Non-recursive: only the file directly under toys.
+        r = await async_client.get(f"/api/v1/library/files?folder_id={toys.id}")
+        assert r.status_code == 200
+        assert {f["id"] for f in r.json()} == {top.id}
+
+        # Recursive: toys + cars + race files, but NOT other/.
+        r = await async_client.get(f"/api/v1/library/files?folder_id={toys.id}&recursive=true")
+        assert r.status_code == 200
+        assert {f["id"] for f in r.json()} == {top.id, mid.id, deep.id}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_files_recursive_without_folder_id_is_noop(
+        self, async_client: AsyncClient, folder_factory, file_factory
+    ):
+        """recursive=true is meaningful only with folder_id — without it the
+        existing include_root branch handles scoping. Just confirming the new
+        param doesn't shadow that path."""
+        folder = await folder_factory()
+        f_in = await file_factory(folder_id=folder.id)
+        f_root = await file_factory()
+
+        r = await async_client.get("/api/v1/library/files?include_root=false&recursive=true")
+        assert r.status_code == 200
+        assert {f["id"] for f in r.json()} == {f_in.id, f_root.id}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_folder_readme_returns_first_markdown(
+        self, async_client: AsyncClient, folder_factory, file_factory
+    ):
+        """#1268: /folders/{id}/readme reads on-disk content of the first .md."""
+        folder = await folder_factory()
+        with tempfile.NamedTemporaryFile(suffix=".md", delete=False, mode="w", encoding="utf-8") as f:
+            f.write("# Robot\n\nA cute little robot.")
+            md_path = f.name
+        try:
+            await file_factory(
+                folder_id=folder.id,
+                filename="README.md",
+                file_path=md_path,
+                file_type="md",
+                file_size=Path(md_path).stat().st_size,
+            )
+            r = await async_client.get(f"/api/v1/library/folders/{folder.id}/readme")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["filename"] == "README.md"
+            assert body["content"] == "# Robot\n\nA cute little robot."
+            assert body["truncated"] is False
+        finally:
+            import os
+
+            os.unlink(md_path)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_folder_readme_prefers_readme_over_other_md(
+        self, async_client: AsyncClient, folder_factory, file_factory
+    ):
+        """When the folder has multiple .md files, README.md / description.md
+        wins regardless of insertion order or filename case."""
+        folder = await folder_factory()
+        with tempfile.NamedTemporaryFile(suffix=".md", delete=False, mode="w", encoding="utf-8") as f:
+            f.write("notes notes notes")
+            notes_path = f.name
+        with tempfile.NamedTemporaryFile(suffix=".md", delete=False, mode="w", encoding="utf-8") as f:
+            f.write("the real one")
+            readme_path = f.name
+        try:
+            # notes.md inserted FIRST — naive ordering would pick this one.
+            await file_factory(
+                folder_id=folder.id,
+                filename="notes.md",
+                file_path=notes_path,
+                file_type="md",
+            )
+            await file_factory(
+                folder_id=folder.id,
+                filename="readme.md",  # lowercase to confirm case-insensitive match
+                file_path=readme_path,
+                file_type="md",
+            )
+            r = await async_client.get(f"/api/v1/library/folders/{folder.id}/readme")
+            assert r.status_code == 200
+            assert r.json()["filename"] == "readme.md"
+            assert r.json()["content"] == "the real one"
+        finally:
+            import os
+
+            os.unlink(notes_path)
+            os.unlink(readme_path)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_folder_readme_404_when_no_markdown(
+        self, async_client: AsyncClient, folder_factory, file_factory
+    ):
+        """No .md in the folder → 404 so the FE can hide the side panel."""
+        folder = await folder_factory()
+        await file_factory(folder_id=folder.id, filename="model.3mf", file_type="3mf")
+        r = await async_client.get(f"/api/v1/library/folders/{folder.id}/readme")
+        assert r.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_get_folder_readme_404_when_folder_missing(self, async_client: AsyncClient):
+        r = await async_client.get("/api/v1/library/folders/999999/readme")
+        assert r.status_code == 404
 
 
 class TestLibraryAddToQueueAPI:
@@ -1273,6 +1461,40 @@ class TestPrintFileUploadValidation:
         response = await async_client.get(f"/api/v1/library/files/{lib_file.id}/gcode")
         assert response.status_code == 200
         assert b"G28" in response.content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_library_get_gcode_recovers_legacy_gcode_type_for_3mf(self, async_client: AsyncClient, db_session):
+        """#1709 regression guard. Before the fix, ``slice_and_persist``
+        wrote a `.gcode.3mf` ZIP container to disk but stored the row with
+        ``file_type='gcode'`` — the preview endpoint then streamed the
+        ZIP body as ``text/plain`` and the embedded G-code viewer saw
+        ``PK\\x03\\x04...`` instead of the toolpath. New sliced rows now
+        store ``file_type='gcode.3mf'``; rows already written under the
+        bug self-heal because the endpoint also detects the ZIP via the
+        ``.gcode.3mf`` filename suffix when the column is still legacy."""
+        from backend.app.models.library import LibraryFile
+
+        with tempfile.NamedTemporaryFile(suffix=".gcode.3mf", delete=False) as tmp:
+            tmp.write(self._valid_3mf_bytes(name="Metadata/plate_1.gcode"))
+            tmp_path = tmp.name
+
+        lib_file = LibraryFile(
+            filename="legacy-sliced.gcode.3mf",
+            file_path=tmp_path,
+            file_type="gcode",
+            file_size=Path(tmp_path).stat().st_size,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+
+        response = await async_client.get(f"/api/v1/library/files/{lib_file.id}/gcode")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        assert b"G28" in response.content
+        # The whole point of #1709: must NOT be ZIP bytes shoved at the viewer.
+        assert not response.content.startswith(b"PK")
 
     @pytest.mark.asyncio
     @pytest.mark.integration

@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [bambuddy, bambuddy-beta]
+        package: [bambuddy]
     steps:
       - name: Cleanup ${{ matrix.package }}
         env:

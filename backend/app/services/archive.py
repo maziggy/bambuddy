@@ -1,4 +1,5 @@
 import hashlib
+import html
 import json
 import logging
 import os
@@ -506,9 +507,20 @@ class ThreeMFParser:
             metadata_pattern = r'<metadata\s+name="([^"]+)"[^>]*>([^<]*)</metadata>'
             matches = re.findall(metadata_pattern, content)
 
+            # 3MF metadata values are XML-encoded — `&` becomes `&amp;`, etc.
+            # ProjectPageParser learned this the hard way: BambuStudio sometimes
+            # writes triple-encoded payloads (`&amp;amp;amp;`), so we unescape
+            # in a loop until the string stabilises. Without this, a Title like
+            # "Foo & Bar" lands in the DB as raw "Foo &amp; Bar" and React then
+            # double-escapes it on render to "Foo &amp;amp; Bar" (#1658).
             makerworld_fields = {}
             for name, value in matches:
-                makerworld_fields[name] = value.strip()
+                decoded = value.strip()
+                prev = None
+                while prev != decoded:
+                    prev = decoded
+                    decoded = html.unescape(decoded)
+                makerworld_fields[name] = decoded
 
             # Check for direct MakerWorld URL in content
             url_pattern = r'https?://makerworld\.com/[^\s<>"\']+/models/(\d+)'
@@ -902,28 +914,64 @@ async def _null_print_log_thumbnail_paths(db: AsyncSession, archive_id: int) -> 
     await db.execute(sa_update(PrintLogEntry).where(PrintLogEntry.archive_id == archive_id).values(thumbnail_path=None))
 
 
-async def _cancel_pending_queue_items(db: AsyncSession, archive_id: int) -> None:
-    """Cancel pending queue items pointing at *archive_id* (#1348 follow-up).
+async def _delete_related_queue_items(db: AsyncSession, archive_id: int) -> int:
+    """Delete every queue item pointing at *archive_id* (#1734).
 
-    Called from ``soft_delete_archive`` only — hard-delete is covered by the
-    ``ON DELETE CASCADE`` on ``print_queue.archive_id``.  A queue item
-    pointing at an archive whose 3MF has been removed from disk can never
-    actually dispatch, so cancelling at delete time both (a) tells the user
-    why the item disappeared from the pending list, and (b) stops the queue
-    page from 404-storming the archive thumbnail / plates / plate-thumbnail
-    endpoints when the row is rendered. Only ``pending`` items are touched;
-    ``printing`` is a rare race the printer-side fail-path catches, and
-    completed / failed / cancelled rows are historical and untouched.
+    Called from ``soft_delete_archive``. Hard-delete is covered by the
+    ``ON DELETE CASCADE`` on ``print_queue.archive_id`` — same end state
+    via the FK. Pre-#1734 this helper merely flipped pending rows to
+    ``status='cancelled'`` while leaving every other status alone and
+    leaving the rows in the DB, which surprised users who expected the
+    queue lines to disappear when their backing archive went away. Worse,
+    a Send-All archive backed N queue items (one per plate, #1733) — soft-
+    deleting that archive left N "cancelled" rows behind, none of which
+    could ever dispatch.
+
+    Now we delete unconditionally regardless of status. ``printing`` rows
+    are blocked one layer up at the route (``delete_archive`` returns 409
+    when a related row is mid-print) so we never delete an actively-
+    running queue row out from under the dispatcher. Completed / failed
+    / cancelled rows go too — they're queue history, not print history.
+    PrintLogEntry rows are the authoritative print history and are
+    untouched (FK ``ON DELETE SET NULL``).
+
+    Returns the number of rows removed so the caller can report it.
     """
-    from sqlalchemy import update as sa_update
+    from sqlalchemy import delete as sa_delete
 
     from backend.app.models.print_queue import PrintQueueItem
 
-    await db.execute(
-        sa_update(PrintQueueItem)
-        .where(PrintQueueItem.archive_id == archive_id, PrintQueueItem.status == "pending")
-        .values(status="cancelled", waiting_reason="Source archive deleted")
-    )
+    result = await db.execute(sa_delete(PrintQueueItem).where(PrintQueueItem.archive_id == archive_id))
+    return result.rowcount or 0
+
+
+async def _count_related_queue_items(db: AsyncSession, archive_id: int) -> tuple[int, int]:
+    """Return ``(total, printing)`` queue items linked to *archive_id*.
+
+    Used by the archive GET response so the frontend delete-confirm modal
+    can surface how much the deletion will wipe out, and by the delete
+    route so it can 409 when a related row is currently printing (#1734).
+    """
+    from sqlalchemy import func as sa_func, select as sa_select
+
+    from backend.app.models.print_queue import PrintQueueItem
+
+    total = (
+        await db.execute(
+            sa_select(sa_func.count()).select_from(PrintQueueItem).where(PrintQueueItem.archive_id == archive_id)
+        )
+    ).scalar_one()
+    printing = (
+        await db.execute(
+            sa_select(sa_func.count())
+            .select_from(PrintQueueItem)
+            .where(
+                PrintQueueItem.archive_id == archive_id,
+                PrintQueueItem.status == "printing",
+            )
+        )
+    ).scalar_one()
+    return int(total or 0), int(printing or 0)
 
 
 class ArchiveService:
@@ -1301,8 +1349,14 @@ class ArchiveService:
         date_to: date | None = None,
         limit: int = 50,
         offset: int = 0,
+        visible_to_user_id: int | None = None,
     ) -> list[PrintArchive]:
-        """List archives with optional filtering."""
+        """List archives with optional filtering.
+
+        ``visible_to_user_id`` scopes results to archives that user owns. Used
+        when the caller has ARCHIVES_READ_OWN but not ARCHIVES_READ_ALL — pass
+        ``None`` to skip the filter (caller has read-all or auth is disabled).
+        """
         from sqlalchemy.orm import selectinload
 
         query = (
@@ -1329,6 +1383,9 @@ class ArchiveService:
             dt_to = datetime.combine(date_to, time.max, tzinfo=timezone.utc)
             query = query.where(PrintArchive.created_at <= dt_to)
 
+        if visible_to_user_id is not None:
+            query = query.where(PrintArchive.created_by_id == visible_to_user_id)
+
         query = query.limit(limit).offset(offset)
         result = await self.db.execute(query)
         return list(result.scalars().all())
@@ -1354,7 +1411,7 @@ class ArchiveService:
         dir_to_delete = self._resolve_archive_dir_for_delete(archive)
 
         await _null_print_log_thumbnail_paths(self.db, archive_id)
-        await _cancel_pending_queue_items(self.db, archive_id)
+        await _delete_related_queue_items(self.db, archive_id)
         archive.deleted_at = datetime.now(timezone.utc)
         await self.db.commit()
 

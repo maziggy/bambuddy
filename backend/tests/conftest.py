@@ -81,6 +81,20 @@ def mfa_encryption_isolation(monkeypatch, tmp_path):
     enc_mod._key_source = None
 
 
+@pytest.fixture(autouse=True)
+def reset_spoolman_location_sync_cache():
+    """Drop the per-URL Spoolman location-sync TTL cache between tests.
+
+    Without this, a test that runs the sync against `http://localhost:7912`
+    will skip the sync in any later test that uses the same URL within 60
+    real seconds — test ordering would then leak assertions across runs."""
+    from backend.app.services.location_service import _spoolman_location_sync_cache_clear
+
+    _spoolman_location_sync_cache_clear()
+    yield
+    _spoolman_location_sync_cache_clear()
+
+
 @pytest.fixture(scope="session")
 def event_loop():
     """Create an instance of the default event loop for each test session."""
@@ -125,6 +139,7 @@ async def test_engine():
         slot_preset,
         smart_plug,
         smart_plug_energy_snapshot,  # noqa: F401
+        sponsor_toast_state,  # noqa: F401
         spool,
         spool_assignment,
         spool_catalog,

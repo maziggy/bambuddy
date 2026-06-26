@@ -5,7 +5,7 @@ import os
 import platform
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import psutil
@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.config import APP_VERSION, settings
 from backend.app.core.database import get_db
+from backend.app.core.local_config import read_local_toml, read_ntp_gate
 from backend.app.core.permissions import Permission
 from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
@@ -385,7 +386,7 @@ async def _get_storage_usage_cached(refresh: bool, max_age_seconds: int) -> dict
         snapshot = await asyncio.to_thread(_scan_storage_usage)
         _storage_usage_cache = {
             **snapshot,
-            "generated_at": datetime.now().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
         _storage_usage_cache_ts = time.time()
         return {
@@ -498,8 +499,16 @@ async def get_system_info(
 
     # System info
     memory = psutil.virtual_memory()
-    boot_time = datetime.fromtimestamp(psutil.boot_time())
-    uptime_seconds = (datetime.now() - boot_time).total_seconds()
+    # PID 1's create_time is the right uptime anchor in containerised installs
+    # (Docker, LXC) — psutil.boot_time() reads /proc/stat:btime which on a
+    # shared-kernel container is the host's boot time, not the container's
+    # (#1690). On bare metal / VMs PID 1 is the host init, which starts at
+    # boot, so the value matches psutil.boot_time() within a sub-second.
+    try:
+        boot_time = datetime.fromtimestamp(psutil.Process(1).create_time(), tz=timezone.utc)
+    except (psutil.Error, OSError):
+        boot_time = datetime.fromtimestamp(psutil.boot_time(), tz=timezone.utc)
+    uptime_seconds = (datetime.now(timezone.utc) - boot_time).total_seconds()
 
     # Python and system info
     import sys
@@ -595,3 +604,30 @@ async def get_system_health(
     """
     sensitive_strings = await collect_sensitive_strings(db)
     return await asyncio.to_thread(scan_logs, sensitive_strings=sensitive_strings)
+
+
+@router.get("/appliance")
+async def get_appliance_defaults():
+    """Expose appliance-set state for the SPA's bootstrap surface.
+
+    Two file sources, both optional and silently degraded when absent:
+
+    - ``/etc/bambuddy/local.toml`` — hostname / timezone / locale the
+      firstboot wizard collected.
+    - ``/run/bambuddy/time-synced`` — chrony NTP gate state. The RPi 5 has
+      no battery-backed RTC, so on a fresh boot the clock is wrong until
+      ntp-gate.sh writes "ok" (or "warning" if 3-minute timeout elapsed).
+      A warning state means JWT expiries and TLS validity windows may be
+      misaligned; the UI should surface this.
+
+    No auth required — the frontend bootstrap reads this BEFORE auth might
+    be set up, and the contents are user-set defaults plus a public sync
+    flag (no secrets).
+    """
+    config = read_local_toml()
+    return {
+        "hostname": config.get("hostname"),
+        "timezone": config.get("timezone"),
+        "locale": config.get("locale"),
+        "time_synced": read_ntp_gate(),
+    }

@@ -157,7 +157,16 @@ async def test_cloud_unwraps_setting_envelope():
     ):
         out = await preset_resolver._resolve_cloud(db, user, PresetRef(source="cloud", id="PFU123"), slot="printer")
     payload = json.loads(out)
-    assert payload == {"name": "X1C Custom", "nozzle_diameter": [0.4]}
+    # Resolver rewrites the `type` field to the CLI-expected value AND pins
+    # `from: "system"` (#1712 follow-up: Bambu Cloud labels printers as
+    # "printer" and filaments routinely ship with empty `from`; the CLI
+    # rejects either with the same -5 "input preset invalid" surface).
+    assert payload == {
+        "name": "X1C Custom",
+        "nozzle_diameter": [0.4],
+        "type": "machine",
+        "from": "system",
+    }
     cloud_mock.close.assert_awaited_once()
 
 
@@ -184,6 +193,115 @@ async def test_cloud_falls_back_to_top_level_when_no_envelope():
         out = await preset_resolver._resolve_cloud(db, user, PresetRef(source="cloud", id="PFU123"), slot="printer")
     payload = json.loads(out)
     assert "name" in payload
+
+
+@pytest.mark.parametrize(
+    "slot, source_type, expected_type",
+    [
+        # Bambu Cloud's wire shape: `printer` / `print` / `filament`. The CLI
+        # only accepts `machine` / `process` / `filament`. Without rewrite
+        # the CLI exits -5 with `operator(): unknown config type` and the
+        # sidecar surfaces "The input preset file is invalid and can not be
+        # parsed" (#1712 follow-up, reported by maziggy on Mecha Mewtwo).
+        ("printer", "printer", "machine"),
+        ("process", "print", "process"),
+        ("filament", "filament", "filament"),
+        # Cloud-side already CLI-shaped: still gets overwritten to the
+        # canonical value — idempotent, no harm.
+        ("printer", "machine", "machine"),
+        ("process", "process", "process"),
+        # Missing type field on the source payload: synthesise it.
+        ("printer", None, "machine"),
+        ("process", None, "process"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_cloud_rewrites_type_field_for_cli(slot, source_type, expected_type):
+    db = MagicMock()
+    user = MagicMock()
+    user.has_permission = MagicMock(return_value=True)
+    setting: dict = {"name": "P"}
+    if source_type is not None:
+        setting["type"] = source_type
+    cloud_mock = MagicMock()
+    cloud_mock.set_token = MagicMock()
+    cloud_mock.get_setting_detail = AsyncMock(return_value={"setting": setting})
+    cloud_mock.close = AsyncMock()
+    with (
+        patch.object(
+            preset_resolver,
+            "get_stored_token",
+            AsyncMock(return_value=("tok", None, "global")),
+        ),
+        patch.object(preset_resolver, "BambuCloudService", return_value=cloud_mock),
+    ):
+        out = await preset_resolver._resolve_cloud(db, user, PresetRef(source="cloud", id="X"), slot=slot)
+    assert json.loads(out)["type"] == expected_type
+
+
+@pytest.mark.parametrize(
+    "source_from",
+    [
+        # The actual failing case (#1712 follow-up): Bambu Cloud's filament
+        # detail endpoint routinely returns presets with no `from` field or
+        # `from: ""`. The CLI rejects either with
+        # `operator(): ... from  unsupported` (note the double space — that's
+        # the literal stderr from the sidecar log on the Mecha Mewtwo slice).
+        "",
+        # Cloud-side already CLI-friendly: still gets pinned to "system" —
+        # idempotent, no harm, matches the standard-tier convention.
+        "system",
+        # GUI-exported values that the sidecar's normalizeFromField also
+        # maps to "system" for the same reason — we beat it to the punch.
+        "User",
+        "System",
+    ],
+)
+@pytest.mark.asyncio
+async def test_cloud_pins_from_field_to_system(source_from):
+    db = MagicMock()
+    user = MagicMock()
+    user.has_permission = MagicMock(return_value=True)
+    setting: dict = {"name": "F", "type": "filament", "from": source_from}
+    cloud_mock = MagicMock()
+    cloud_mock.set_token = MagicMock()
+    cloud_mock.get_setting_detail = AsyncMock(return_value={"setting": setting})
+    cloud_mock.close = AsyncMock()
+    with (
+        patch.object(
+            preset_resolver,
+            "get_stored_token",
+            AsyncMock(return_value=("tok", None, "global")),
+        ),
+        patch.object(preset_resolver, "BambuCloudService", return_value=cloud_mock),
+    ):
+        out = await preset_resolver._resolve_cloud(db, user, PresetRef(source="cloud", id="X"), slot="filament")
+    assert json.loads(out)["from"] == "system"
+
+
+@pytest.mark.asyncio
+async def test_cloud_synthesises_from_field_when_missing():
+    """The original failing payload had no `from` field at all (sidecar
+    error: `from  unsupported` — double space = empty value). The resolver
+    must still emit a usable `from` instead of forwarding the gap."""
+    db = MagicMock()
+    user = MagicMock()
+    user.has_permission = MagicMock(return_value=True)
+    setting = {"name": "F", "type": "filament"}  # NB: no `from`
+    cloud_mock = MagicMock()
+    cloud_mock.set_token = MagicMock()
+    cloud_mock.get_setting_detail = AsyncMock(return_value={"setting": setting})
+    cloud_mock.close = AsyncMock()
+    with (
+        patch.object(
+            preset_resolver,
+            "get_stored_token",
+            AsyncMock(return_value=("tok", None, "global")),
+        ),
+        patch.object(preset_resolver, "BambuCloudService", return_value=cloud_mock),
+    ):
+        out = await preset_resolver._resolve_cloud(db, user, PresetRef(source="cloud", id="X"), slot="filament")
+    assert json.loads(out)["from"] == "system"
 
 
 @pytest.mark.asyncio
@@ -246,7 +364,15 @@ async def test_orca_cloud_unwraps_content():
             db, user, PresetRef(source="orca_cloud", id="abc"), slot="printer"
         )
     payload = json.loads(out)
-    assert payload == {"name": "X1C Custom", "nozzle_diameter": [0.4]}
+    # Resolver rewrites `type` to the CLI-expected value AND pins
+    # `from: "system"` (#1712 follow-up). Orca natively uses "machine" but
+    # Bambu-sourced syncs can carry "printer" and either empty/missing `from`.
+    assert payload == {
+        "name": "X1C Custom",
+        "nozzle_diameter": [0.4],
+        "type": "machine",
+        "from": "system",
+    }
     svc_mock.close.assert_awaited_once()
 
 

@@ -196,6 +196,55 @@ describe('API Client Auth Header', () => {
     // Token should NOT be cleared for generic auth errors (might be timing issue)
     expect(getAuthToken()).toBe('valid-token');
   });
+
+  it("dispatches 'auth:expired' event on 401 with invalid token message (#1698)", async () => {
+    server.use(
+      http.get('/api/v1/settings/spoolman', () => {
+        return HttpResponse.json(
+          { detail: 'Token has expired' },
+          { status: 401 }
+        );
+      })
+    );
+
+    setAuthToken('expired-token');
+    const listener = vi.fn();
+    window.addEventListener('auth:expired', listener);
+
+    try {
+      await api.getSpoolmanSettings();
+    } catch {
+      // Expected to throw
+    }
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    window.removeEventListener('auth:expired', listener);
+  });
+
+  it("does not dispatch 'auth:expired' on 401 with generic auth error (#1698)", async () => {
+    server.use(
+      http.get('/api/v1/settings/spoolman', () => {
+        return HttpResponse.json(
+          { detail: 'Authentication required' },
+          { status: 401 }
+        );
+      })
+    );
+
+    setAuthToken('valid-token');
+    const listener = vi.fn();
+    window.addEventListener('auth:expired', listener);
+
+    try {
+      await api.getSpoolmanSettings();
+    } catch {
+      // Expected to throw
+    }
+
+    // Generic 401s might be timing issues, not real expiries — must NOT redirect.
+    expect(listener).not.toHaveBeenCalled();
+    window.removeEventListener('auth:expired', listener);
+  });
 });
 
 describe('Slicer download URLs', () => {

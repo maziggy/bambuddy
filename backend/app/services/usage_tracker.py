@@ -214,6 +214,10 @@ class PrintSession:
     spool_assignments: dict[tuple[int, int], int] = field(default_factory=dict)
     # AMS mapping from print command (captured at start, needed when auto-archive is off)
     ams_mapping: list[int] | None = None
+    # Queue item's plate_id when this print is a multi-plate 3MF dispatched for a
+    # single plate (#1697). None for non-queue prints — the file's first/only plate
+    # is the default and the 3MF parser already returns the full file in that case.
+    plate_id: int | None = None
 
 
 # Module-level storage, keyed by printer_id
@@ -380,6 +384,21 @@ async def on_print_start(printer_id: int, data: dict, printer_manager, db: Async
                 {f"{k[0]}-{k[1]}": v for k, v in spool_assignments.items()},
             )
 
+    # Capture the queue item's plate_id so 3MF parsing at completion is scoped to
+    # the plate that actually ran, not the whole multi-plate file (#1697).
+    plate_id: int | None = None
+    if db:
+        from backend.app.models.print_queue import PrintQueueItem
+
+        queue_result = await db.execute(
+            select(PrintQueueItem)
+            .where(PrintQueueItem.printer_id == printer_id)
+            .where(PrintQueueItem.status == "printing")
+        )
+        queue_item = queue_result.scalars().first()
+        if queue_item is not None:
+            plate_id = queue_item.plate_id
+
     # Always create session (even without valid remain data) so print_name
     # is available at completion for 3MF-based tracking
     session = PrintSession(
@@ -390,6 +409,7 @@ async def on_print_start(printer_id: int, data: dict, printer_manager, db: Async
         tray_now_at_start=tray_now_at_start,
         spool_assignments=spool_assignments,
         ams_mapping=data.get("ams_mapping"),
+        plate_id=plate_id,
     )
     _active_sessions[printer_id] = session
 
@@ -490,6 +510,7 @@ async def on_print_complete(
             spool_assignments=session.spool_assignments if session else None,
             print_started_at=session.started_at if session else None,
             threemf_path=threemf_path,
+            plate_id=session.plate_id if session else None,
         )
         results.extend(threemf_results)
 
@@ -855,6 +876,7 @@ async def _track_from_3mf(
     spool_assignments: dict[tuple[int, int], int] | None = None,
     print_started_at: datetime | None = None,
     threemf_path=None,
+    plate_id: int | None = None,
 ) -> list[dict]:
     """Track usage from 3MF per-filament slicer data (primary path).
 
@@ -864,6 +886,11 @@ async def _track_from_3mf(
 
     When archive_id is None (auto-archive disabled), a pre-resolved threemf_path
     can be provided to still track filament usage from slicer data.
+
+    When ``plate_id`` is set (queue prints of a single plate from a multi-plate
+    3MF), only that plate's filaments contribute. Without it the 3MF parser sums
+    every plate, which is correct for direct/library Print flows that always
+    target the first or only plate (#1697).
 
     Slot-to-tray mapping priority:
     1. Stored ams_mapping from print command (reprints/direct prints)
@@ -904,12 +931,12 @@ async def _track_from_3mf(
         logger.info("[UsageTracker] 3MF: no file available for archive %s, skipping", archive_id)
         return []
 
-    filament_usage = extract_filament_usage_from_3mf(file_path)
+    filament_usage = extract_filament_usage_from_3mf(file_path, plate_id)
     if not filament_usage:
         logger.info("[UsageTracker] 3MF: no filament usage data in %s", file_path)
         return []
 
-    logger.info("[UsageTracker] 3MF: archive %s, filament_usage=%s", archive_id, filament_usage)
+    logger.info("[UsageTracker] 3MF: archive %s, plate_id=%s, filament_usage=%s", archive_id, plate_id, filament_usage)
 
     # --- Resolve slot-to-tray mapping ---
     mapping_source = None
@@ -1100,14 +1127,27 @@ async def _track_from_3mf(
                     mm_at_end = get_cumulative_usage_at_layer(split_layer_usage, seg_end_layer).get(filament_id, 0)
                     segment_grams = mm_to_grams(mm_at_end - mm_at_start, diameter, density)
                 else:
-                    # No per-layer data: linear fallback by layer ratio
+                    # No per-layer data: linear fallback by layer ratio (#1771).
+                    # Cascade denominators because firmware on some models (P1S
+                    # observed) resets `total_layer_num` to 0 at print end —
+                    # `last_layer_num` is the print's last-valid layer captured
+                    # mid-print and survives that reset (same shape as the
+                    # `last_progress` fallback at line 1040). Equal-split is the
+                    # last-resort fence: still wrong, but bounded — never dumps
+                    # the entire print onto the last segment, which was the
+                    # original #1771 symptom for the reporter (P1S, AMS Backup
+                    # fed from spool 1 then spool 2, all 260 g credited to
+                    # spool 2 even though spool 1 had given up its 180 g).
                     seg_end_layer = tray_changes[seg_idx + 1][1]
-                    total_layers = state.total_layers if state else 0
-                    if total_layers > 0:
-                        segment_grams = total_weight * (seg_end_layer - seg_start_layer) / total_layers
+                    denom = (state.total_layers if state else 0) or last_layer_num
+                    if denom > 0:
+                        segment_grams = total_weight * (seg_end_layer - seg_start_layer) / denom
                     else:
-                        # Can't compute ratio — assign all to last segment
-                        segment_grams = 0.0
+                        # No layer information available from any source —
+                        # spread evenly across segments. The last segment will
+                        # get the rounding remainder via the `is_last` branch
+                        # above on its own iteration.
+                        segment_grams = total_weight / len(tray_changes)
 
                 sum_previous += segment_grams
                 if segment_grams <= 0:

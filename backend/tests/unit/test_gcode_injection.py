@@ -1,5 +1,6 @@
 """Unit tests for G-code injection into 3MF files (#422)."""
 
+import hashlib
 import tempfile
 import zipfile
 from pathlib import Path
@@ -234,6 +235,92 @@ M104 S0
 """
 
 
+class TestMd5SidecarRecompute:
+    """The plate `.gcode.md5` sidecar must match the injected gcode (P1S rejects
+    a stale hash with HMS 0500-4003)."""
+
+    def _make_3mf_with_md5(self, gcode: str, plate_id: int = 1) -> Path:
+        """A 3MF that carries a (deliberately wrong) md5 sidecar, like a real
+        sliced .gcode.3mf does."""
+        tmp_path = _make_temp_path()
+        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(f"Metadata/plate_{plate_id}.gcode", gcode)
+            zf.writestr(f"Metadata/plate_{plate_id}.gcode.md5", "STALEHASHVALUE")
+            zf.writestr("Metadata/slice_info.config", "<config></config>")
+        return tmp_path
+
+    def test_md5_recomputed_to_match_injected_gcode(self):
+        source = self._make_3mf_with_md5("G28\nM400\n")
+        result = None
+        try:
+            result = inject_gcode_into_3mf(source, 1, None, "M104 S0")
+            assert result is not None
+            with zipfile.ZipFile(result, "r") as zf:
+                gcode = zf.read("Metadata/plate_1.gcode")
+                sidecar = zf.read("Metadata/plate_1.gcode.md5")
+            expected = hashlib.md5(gcode, usedforsecurity=False).hexdigest().upper().encode("ascii")
+            assert sidecar == expected
+            assert sidecar != b"STALEHASHVALUE"
+        finally:
+            source.unlink(missing_ok=True)
+            if result:
+                result.unlink(missing_ok=True)
+
+    def test_sidecar_is_uppercase_hex_no_newline(self):
+        """Match Bambu's on-disk format exactly: uppercase, no trailing newline."""
+        source = self._make_3mf_with_md5("G28\n")
+        result = None
+        try:
+            result = inject_gcode_into_3mf(source, 1, "; START", None)
+            assert result is not None
+            with zipfile.ZipFile(result, "r") as zf:
+                sidecar = zf.read("Metadata/plate_1.gcode.md5")
+            assert sidecar == sidecar.upper()
+            assert not sidecar.endswith(b"\n")
+            assert len(sidecar) == 32
+        finally:
+            source.unlink(missing_ok=True)
+            if result:
+                result.unlink(missing_ok=True)
+
+    def test_no_md5_member_is_not_created(self):
+        """A 3MF without an md5 sidecar shouldn't gain one (firmware isn't
+        validating it, and inventing a member could surprise older files)."""
+        source = _make_test_3mf("G28\n")  # no .md5 member
+        result = None
+        try:
+            result = inject_gcode_into_3mf(source, 1, "; START", None)
+            assert result is not None
+            with zipfile.ZipFile(result, "r") as zf:
+                names = zf.namelist()
+            assert "Metadata/plate_1.gcode.md5" not in names
+        finally:
+            source.unlink(missing_ok=True)
+            if result:
+                result.unlink(missing_ok=True)
+
+    def test_other_member_compression_preserved(self):
+        """Non-target members keep their original compression (P1S preview
+        parser chokes on re-DEFLATEd STORE'd PNGs)."""
+        tmp_path = _make_temp_path()
+        with zipfile.ZipFile(tmp_path, "w") as zf:
+            zf.writestr(zipfile.ZipInfo("Metadata/plate_1.gcode"), "G28\n")
+            # A STORE'd member (compress_type=0), like an embedded preview PNG.
+            stored = zipfile.ZipInfo("Metadata/plate_1.png")
+            stored.compress_type = zipfile.ZIP_STORED
+            zf.writestr(stored, b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)
+        result = None
+        try:
+            result = inject_gcode_into_3mf(tmp_path, 1, None, "; END")
+            assert result is not None
+            with zipfile.ZipFile(result, "r") as zf:
+                assert zf.getinfo("Metadata/plate_1.png").compress_type == zipfile.ZIP_STORED
+        finally:
+            tmp_path.unlink(missing_ok=True)
+            if result:
+                result.unlink(missing_ok=True)
+
+
 class TestStartAnchoredInjection:
     """Tests for #422 follow-up: start g-code injected at MACHINE_START_GCODE_END."""
 
@@ -281,9 +368,10 @@ class TestStartAnchoredInjection:
             if result:
                 result.unlink(missing_ok=True)
 
-    def test_end_still_appended_at_eof(self):
-        """End g-code keeps the existing append-to-EOF behaviour even with marker present."""
-        source = _make_test_3mf(_BAMBU_GCODE_TEMPLATE)
+    def test_end_falls_back_to_eof_without_block_marker(self):
+        """Files without ; EXECUTABLE_BLOCK_END (older / non-Bambu slicers) keep the
+        append-to-EOF fallback for end snippets."""
+        source = _make_test_3mf(_BAMBU_GCODE_TEMPLATE)  # template has no EXECUTABLE_BLOCK_END
         try:
             result = inject_gcode_into_3mf(source, 1, None, "; SWAPMOD-END")
             assert result is not None
@@ -292,8 +380,39 @@ class TestStartAnchoredInjection:
                 gcode = zf.read("Metadata/plate_1.gcode").decode("utf-8")
 
             assert gcode.endswith("; SWAPMOD-END\n")
-            # Marker anchor is irrelevant for end snippets.
-            assert gcode.index("; SWAPMOD-END") > gcode.index("; MACHINE_START_GCODE_END")
+        finally:
+            source.unlink(missing_ok=True)
+            if result:
+                result.unlink(missing_ok=True)
+
+    def test_end_lands_before_executable_block_end(self):
+        """With ; EXECUTABLE_BLOCK_END present, the end snippet sits INSIDE the
+        executable block (just before the marker). Bambu firmware (P1S) does not
+        run g-code placed after that marker, so appending to EOF would silently
+        drop auto-eject / plate-clear moves."""
+        gcode_src = (
+            "; HEADER_BLOCK_START\n; max_z_height: 16.00\n; HEADER_BLOCK_END\n"
+            "; MACHINE_START_GCODE_END\n"
+            "G1 X10 Y10 Z0.2\n"
+            "M104 S0 ; printer machine-end\n"
+            "; EXECUTABLE_BLOCK_END\n"
+        )
+        source = _make_test_3mf(gcode_src)
+        try:
+            result = inject_gcode_into_3mf(source, 1, None, "; EJECT-SWEEP")
+            assert result is not None
+
+            with zipfile.ZipFile(result, "r") as zf:
+                gcode = zf.read("Metadata/plate_1.gcode").decode("utf-8")
+
+            snippet_idx = gcode.index("; EJECT-SWEEP")
+            marker_idx = gcode.index("; EXECUTABLE_BLOCK_END")
+            # Snippet is inside the block, before the end marker.
+            assert snippet_idx < marker_idx
+            # The printer's own machine-end still precedes our snippet.
+            assert gcode.index("M104 S0 ; printer machine-end") < snippet_idx
+            # Nothing executable remains after the marker.
+            assert gcode[marker_idx:].strip() == "; EXECUTABLE_BLOCK_END"
         finally:
             source.unlink(missing_ok=True)
             if result:

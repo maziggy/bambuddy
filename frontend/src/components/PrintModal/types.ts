@@ -2,11 +2,10 @@ import type { PrintQueueItem, Printer } from '../../api/client';
 
 /**
  * Mode of operation for the PrintModal.
- * - 'reprint': Immediate print from archive (no schedule options)
- * - 'add-to-queue': Schedule print to queue (includes schedule options)
+ * - 'create': Create a print queue item from an archive or library file
  * - 'edit-queue-item': Edit existing queue item (all options + existing values)
  */
-export type PrintModalMode = 'reprint' | 'add-to-queue' | 'edit-queue-item';
+export type PrintModalMode = 'create' | 'edit-queue-item';
 
 /**
  * Props for the unified PrintModal component.
@@ -48,6 +47,7 @@ export interface PrintOptions {
   vibration_cali: boolean;
   layer_inspect: boolean;
   timelapse: boolean;
+  nozzle_offset_cali: boolean;
 }
 
 /**
@@ -59,12 +59,13 @@ export const DEFAULT_PRINT_OPTIONS: PrintOptions = {
   vibration_cali: true,
   layer_inspect: false,
   timelapse: false,
+  nozzle_offset_cali: true,
 };
 
 /**
  * Schedule type for queue items.
  */
-export type ScheduleType = 'asap' | 'scheduled' | 'manual';
+export type ScheduleType = 'asap' | 'queue' | 'scheduled';
 
 /**
  * Schedule options for queue items.
@@ -72,6 +73,7 @@ export type ScheduleType = 'asap' | 'scheduled' | 'manual';
 export interface ScheduleOptions {
   scheduleType: ScheduleType;
   scheduledTime: string;
+  requireManualStart: boolean;
   requirePreviousSuccess: boolean;
   autoOffAfter: boolean;
   gcodeInjection: boolean;
@@ -86,6 +88,7 @@ export interface ScheduleOptions {
 export const DEFAULT_SCHEDULE_OPTIONS: ScheduleOptions = {
   scheduleType: 'asap',
   scheduledTime: '',
+  requireManualStart: false,
   requirePreviousSuccess: false,
   autoOffAfter: false,
   gcodeInjection: false,
@@ -109,6 +112,7 @@ export interface PlateInfo {
   }>;
   print_time_seconds: number | null;
   filament_used_grams: number | null;
+  bed_type?: string | null;  // Build plate type for this plate, e.g. "Textured PEI Plate" (#1281)
 }
 
 /**
@@ -137,7 +141,7 @@ export interface PrinterSelectorProps {
   allowMultiple?: boolean;
   /** Show inactive printers (for edit mode where original assignment may be inactive) */
   showInactive?: boolean;
-  /** Disable selection of busy printers (used in reprint mode) */
+  /** Disable selection of busy printers */
   disableBusy?: boolean;
   /** Current assignment mode */
   assignmentMode?: AssignmentMode;
@@ -165,7 +169,7 @@ export interface PlateSelectorProps {
   onToggle: (plateIndex: number) => void;
   onSelectAll?: () => void;
   onDeselectAll?: () => void;
-  /** Whether multi-select (checkboxes) is enabled — true in add-to-queue mode */
+  /** Whether multi-select (checkboxes) is enabled */
   multiSelect?: boolean;
 }
 
@@ -180,6 +184,10 @@ export interface FilamentReqsData {
     used_grams: number;
     used_meters: number;
     nozzle_id?: number;
+    /** Bambu SKU code from the 3MF (e.g. `GFA01` = Bambu PLA Matte, `P4d64437`
+     *  = user custom). Used to resolve the "original" filament label in
+     *  FilamentOverride against the builtin + cloud user-preset maps. #1718. */
+    tray_info_idx?: string;
   }>;
 }
 
@@ -194,6 +202,12 @@ export interface FilamentMappingProps {
   onManualMappingChange: (mappings: Record<number, number>) => void;
   currencySymbol: string;
   defaultCostPerKg: number;
+  /** Per-slot force-color-match flags. The scheduler honors this flag in both
+   *  model-mode and printer-mode dispatch, but the checkbox was previously only
+   *  surfaced in FilamentOverride (model mode). #1717. */
+  forceColorMatch?: Record<number, boolean>;
+  /** Called when a slot's force-color-match checkbox is toggled. */
+  onForceColorMatchChange?: (slotId: number, value: boolean) => void;
 }
 
 /**
@@ -203,6 +217,9 @@ export interface PrintOptionsProps {
   options: PrintOptions;
   onChange: (options: PrintOptions) => void;
   defaultExpanded?: boolean;
+  /** Show the dual-nozzle-only options (nozzle offset calibration). Default false.
+   *  Pass true when at least one selected printer is dual-nozzle. */
+  showDualNozzleOptions?: boolean;
 }
 
 /**

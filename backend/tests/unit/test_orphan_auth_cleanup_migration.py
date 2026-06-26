@@ -52,6 +52,7 @@ def _register_all_models():
     # not re-exported from __init__.py.
     from backend.app.models import (  # noqa: F401
         external_link,
+        print_log,
         print_queue,
         project_bom,
         slot_preset,

@@ -61,9 +61,19 @@ logger = logging.getLogger(__name__)
 _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     # can_read_status — read-only access to status, history, and configuration
     Permission.PRINTERS_READ: "can_read_status",
+    # Legacy flat permissions retained for back-compat with custom API keys —
+    # the role bootstraps no longer use these, but custom keys may still
+    # carry can_read_status scope mapping. New endpoints gate on the
+    # ARCHIVES_READ_OWN / _ALL split (maziggy/bambuddy-security #2).
     Permission.ARCHIVES_READ: "can_read_status",
+    Permission.ARCHIVES_READ_OWN: "can_read_status",
+    Permission.ARCHIVES_READ_ALL: "can_read_status",
     Permission.QUEUE_READ: "can_read_status",
+    Permission.QUEUE_READ_OWN: "can_read_status",
+    Permission.QUEUE_READ_ALL: "can_read_status",
     Permission.LIBRARY_READ: "can_read_status",
+    Permission.LIBRARY_READ_OWN: "can_read_status",
+    Permission.LIBRARY_READ_ALL: "can_read_status",
     Permission.PROJECTS_READ: "can_read_status",
     Permission.FILAMENTS_READ: "can_read_status",
     Permission.INVENTORY_READ: "can_read_status",
@@ -78,6 +88,7 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     Permission.EXTERNAL_LINKS_READ: "can_read_status",
     Permission.FIRMWARE_READ: "can_read_status",
     Permission.AMS_HISTORY_READ: "can_read_status",
+    Permission.PRINTER_SENSOR_HISTORY_READ: "can_read_status",
     Permission.STATS_READ: "can_read_status",
     Permission.STATS_FILTER_BY_USER: "can_read_status",
     Permission.SYSTEM_READ: "can_read_status",
@@ -411,9 +422,41 @@ def _get_jwt_secret() -> str:
 SECRET_KEY = _get_jwt_secret()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours (M-2: reduced from 7 days)
+# Hard ceiling for the admin-configurable session policy (#1706). 30 days
+# matches the Pydantic le=720 on AppSettings.session_max_hours; defense in
+# depth so a tampered settings row can't request an absurd lifetime.
+SESSION_MAX_HOURS_HARD_CEILING = 720
 
 # HTTP Bearer token
 security = HTTPBearer(auto_error=False)
+
+
+async def resolve_session_max_minutes(db: AsyncSession) -> int:
+    """Return the session-lifetime ceiling (minutes) honoured by login routes.
+
+    Reads ``session_max_hours`` from the settings table (#1706), clamps to
+    [1h, 720h], and falls back to the audit-default 24h if the row is
+    missing, blank, or unparseable.
+
+    DB errors are NOT caught here — login is already in a DB transaction and
+    a broken DB must abort the login rather than silently extend or shrink
+    the session lifetime.
+    """
+    default_minutes = ACCESS_TOKEN_EXPIRE_MINUTES
+    result = await db.execute(select(Settings).where(Settings.key == "session_max_hours"))
+    row = result.scalar_one_or_none()
+    if row is None or not row.value:
+        return default_minutes
+    try:
+        hours = int(row.value)
+    except (TypeError, ValueError):
+        return default_minutes
+    if hours < 1:
+        return default_minutes
+    if hours > SESSION_MAX_HOURS_HARD_CEILING:
+        hours = SESSION_MAX_HOURS_HARD_CEILING
+    return hours * 60
+
 
 # --- Slicer download tokens ---
 # Short-lived, single-use tokens for slicer protocol handlers that can't send
@@ -639,7 +682,9 @@ def _is_token_fresh(iat: int | float | None, user: User) -> bool:
     Used to invalidate all sessions after a password reset/change (M-R7-B).
     All tokens without an iat claim are unconditionally rejected — every token
     issued by this server carries iat, so absence means the token is forged or
-    from a pre-iat code path whose max TTL (24 h) has long since expired.
+    from a pre-iat code path whose max TTL at the time (24 h) has long since
+    expired. The post-#1706 admin-set ceiling does not relax this — an iat-less
+    token still cannot have been issued by current code.
     """
     if iat is None:
         return False
@@ -1019,13 +1064,17 @@ def require_admin_if_auth_enabled():
     key" — the inner ``admin_checker`` then treated ``None`` as auth-
     disabled and admitted the caller. If any route had ever adopted this
     dep, any API key with no scope flags set would have satisfied an
-    admin requirement.
+    admin requirement. The dep distinguishes the two cases by consulting
+    ``is_auth_enabled`` directly and rejecting API-keyed requests with
+    403. "Admin" requires a user-identity role, which API keys do not
+    carry.
 
-    Today no route uses this dep, but rather than leave the footgun
-    armed, the dep is rewritten to distinguish the two cases by
-    consulting ``is_auth_enabled`` directly and rejecting API-keyed
-    requests with 403. "Admin" requires a user-identity role, which API
-    keys do not carry.
+    Admin semantics: uses ``User.is_admin`` (``role == "admin"`` OR
+    Administrators-group membership) so a default-install operator who
+    was made admin by being added to Administrators rather than by
+    flipping the legacy role column passes. Earlier this check looked
+    only at ``role`` and would have locked group-only admins out of the
+    user-management routes once those routes started requiring it.
     """
 
     async def admin_checker(
@@ -1091,7 +1140,7 @@ def require_admin_if_auth_enabled():
                     detail="Could not validate credentials",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
-            if user.role != "admin":
+            if not user.is_admin:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Requires admin role",

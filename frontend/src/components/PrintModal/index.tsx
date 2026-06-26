@@ -1,8 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, AlertTriangle, Calendar, Code, Layers, Loader2, Pencil, Printer, X } from 'lucide-react';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertCircle, AlertTriangle, Loader2, Pencil, Printer, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { PrintQueueItemCreate, PrintQueueItemUpdate, SpoolAssignment } from '../../api/client';
+import type { PrinterStatus, PrintQueueItemCreate, PrintQueueItemUpdate, SpoolAssignment } from '../../api/client';
 import { api } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, CardContent } from '../Card';
@@ -13,8 +13,9 @@ import { buildLoadedFilaments, useFilamentMapping } from '../../hooks/useFilamen
 import { useMultiPrinterFilamentMapping, type PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
 import { getColorName } from '../../utils/colors';
 import { getCurrencySymbol } from '../../utils/currency';
+import { getBedTypeInfo } from '../../utils/bedType';
 import { toDateTimeLocalValue, parseUTCDate } from '../../utils/date';
-import { getGlobalTrayId, isPlaceholderDate } from '../../utils/amsHelpers';
+import { getGlobalTrayId, isPlaceholderDate, effectivePreferLowest } from '../../utils/amsHelpers';
 import { FilamentMapping } from './FilamentMapping';
 import { FilamentOverride } from './FilamentOverride';
 import { PlateSelector } from './PlateSelector';
@@ -31,13 +32,12 @@ import type {
 import { DEFAULT_PRINT_OPTIONS, DEFAULT_SCHEDULE_OPTIONS } from './types';
 
 /**
- * Unified PrintModal component that handles three modes:
- * - 'reprint': Immediate print from archive or library file (supports multi-printer)
- * - 'add-to-queue': Schedule print to queue from archive or library file (supports multi-printer)
- * - 'edit-queue-item': Edit existing queue item (supports multi-printer)
+ * Unified PrintModal component that handles queue item creation and editing.
+ * - 'create': Create a print queue item from an archive or library file
+ * - 'edit-queue-item': Edit existing queue item
  *
- * Both archiveId and libraryFileId are supported. Library files can be printed immediately
- * or added to queue (archive is created at print start time, not when queued).
+ * Both archiveId and libraryFileId are supported. Library files are archived at
+ * print start time by the scheduler, not when queued.
  */
 export function PrintModal({
   mode,
@@ -58,6 +58,7 @@ export function PrintModal({
 
   // Determine if we're printing a library file
   const isLibraryFile = !!libraryFileId && !archiveId;
+  const isEditing = mode === 'edit-queue-item';
 
   type FilamentWarningItem = {
     printerName: string;
@@ -78,7 +79,7 @@ export function PrintModal({
     return [];
   });
 
-  // Multi-select plates: in add-to-queue mode users can pick a subset of plates
+  // Multi-select plates: create mode users can pick a subset of plates
   const [selectedPlates, setSelectedPlates] = useState<Set<number>>(() => {
     if (mode === 'edit-queue-item' && queueItem?.plate_id != null) {
       return new Set([queueItem.plate_id]);
@@ -100,6 +101,7 @@ export function PrintModal({
         vibration_cali: queueItem.vibration_cali ?? DEFAULT_PRINT_OPTIONS.vibration_cali,
         layer_inspect: queueItem.layer_inspect ?? DEFAULT_PRINT_OPTIONS.layer_inspect,
         timelapse: queueItem.timelapse ?? DEFAULT_PRINT_OPTIONS.timelapse,
+        nozzle_offset_cali: queueItem.nozzle_offset_cali ?? DEFAULT_PRINT_OPTIONS.nozzle_offset_cali,
       };
     }
     return DEFAULT_PRINT_OPTIONS;
@@ -107,10 +109,8 @@ export function PrintModal({
 
   const [scheduleOptions, setScheduleOptions] = useState<ScheduleOptions>(() => {
     if (mode === 'edit-queue-item' && queueItem) {
-      let scheduleType: ScheduleType = 'asap';
-      if (queueItem.manual_start) {
-        scheduleType = 'manual';
-      } else if (queueItem.scheduled_time && !isPlaceholderDate(queueItem.scheduled_time)) {
+      let scheduleType: ScheduleType = 'queue';
+      if (queueItem.scheduled_time && !isPlaceholderDate(queueItem.scheduled_time)) {
         scheduleType = 'scheduled';
       }
 
@@ -124,6 +124,7 @@ export function PrintModal({
       return {
         scheduleType,
         scheduledTime,
+        requireManualStart: queueItem.manual_start,
         requirePreviousSuccess: queueItem.require_previous_success,
         autoOffAfter: queueItem.auto_off_after,
         gcodeInjection: queueItem.gcode_injection ?? false,
@@ -237,6 +238,7 @@ export function PrintModal({
       vibration_cali: settings.default_vibration_cali ?? DEFAULT_PRINT_OPTIONS.vibration_cali,
       layer_inspect: settings.default_layer_inspect ?? DEFAULT_PRINT_OPTIONS.layer_inspect,
       timelapse: settings.default_timelapse ?? DEFAULT_PRINT_OPTIONS.timelapse,
+      nozzle_offset_cali: settings.default_nozzle_offset_cali ?? DEFAULT_PRINT_OPTIONS.nozzle_offset_cali,
     });
   }, [settings, mode]);
 
@@ -264,8 +266,36 @@ export function PrintModal({
     queryKey: ['spool-assignments'],
     queryFn: () => api.getAssignments(),
     staleTime: 30 * 1000,
-    enabled: ((mode === 'reprint' || mode === 'add-to-queue') && assignmentMode === 'printer') || (isLibraryFile && mode === 'reprint'),
+    enabled: !isEditing && assignmentMode === 'printer',
   });
+
+  // Fetch per-printer Map<globalTrayId, gramsRemaining> via the dedicated
+  // backend endpoint (#1766). Server-side mirrors `_build_inventory_remain_overrides`
+  // so internal and Spoolman modes both work uniformly, VT/external slots are
+  // excluded, and negative grams are clamped — single source of truth between
+  // the client-side preview and dispatch-time picks.
+  const inventoryRemainQueries = useQueries({
+    queries: selectedPrinters.map((printerId) => ({
+      queryKey: ['printer-inventory-remain', printerId],
+      queryFn: () => api.getInventoryRemain(printerId),
+      staleTime: 30 * 1000,
+      enabled: selectedPrinters.length > 0,
+    })),
+  });
+  const inventoryByTrayIdPerPrinter = useMemo(() => {
+    const result = new Map<number, Map<number, number>>();
+    selectedPrinters.forEach((printerId, idx) => {
+      const data = inventoryRemainQueries[idx]?.data?.inventory_remain_g;
+      if (!data) return;
+      const printerMap = new Map<number, number>();
+      Object.entries(data).forEach(([key, grams]) => {
+        const gtid = Number(key);
+        if (!Number.isNaN(gtid)) printerMap.set(gtid, grams);
+      });
+      result.set(printerId, printerMap);
+    });
+    return result;
+  }, [selectedPrinters, inventoryRemainQueries]);
 
   // Fetch archive details to get sliced_for_model
   const { data: archiveDetails } = useQuery({
@@ -322,12 +352,6 @@ export function PrintModal({
 
   // Combine filament requirements from either source
   const effectiveFilamentReqs = isLibraryFile ? libraryFilamentReqs : archiveFilamentReqs;
-  const selectedPlateName = useMemo(() => {
-    if (selectedPlate === null || !platesData?.plates?.length) {
-      return undefined;
-    }
-    return platesData.plates.find((plate) => plate.index === selectedPlate)?.name || undefined;
-  }, [platesData, selectedPlate]);
 
   // Fetch available filaments for model-based assignment (for filament override UI)
   const { data: availableFilaments } = useQuery({
@@ -343,8 +367,49 @@ export function PrintModal({
     enabled: !!effectivePrinterId,
   });
 
+  // Single-printer flow: gate prefer_lowest on this printer's backup state.
+  // Multi-printer flow gates per-printer inside the hook (different printers
+  // may have different backup states), so we pass the raw setting down.
+  const singlePrinterPreferLowest = effectivePreferLowest(
+    settings?.prefer_lowest_filament,
+    printerStatus?.ams_filament_backup,
+  );
+
+  const isPrinterCurrentlyDispatchable = (status: PrinterStatus | undefined): boolean => {
+    if (!status?.connected) return false;
+    if (status.awaiting_plate_clear) return false;
+    if (status.ams?.some((ams) => ams.dry_time > 0)) return false;
+    return ['IDLE', 'FINISH', 'FAILED'].includes(status.state ?? '');
+  };
+
+  const asapToastShouldPromiseLaterStart = async (): Promise<boolean> => {
+    if (scheduleOptions.scheduleType !== 'asap' || assignmentMode !== 'printer') return false;
+    if (selectedPrinters.length === 0) return false;
+
+    try {
+      const statuses = await Promise.all(
+        selectedPrinters.map((printerId) =>
+          queryClient.fetchQuery({
+            queryKey: ['printer-status', printerId],
+            queryFn: () => api.getPrinterStatus(printerId),
+            staleTime: 0,
+          }),
+        ),
+      );
+      return statuses.some((status) => !isPrinterCurrentlyDispatchable(status));
+    } catch {
+      return true;
+    }
+  };
+
   // Get AMS mapping from hook (only when single printer selected)
-  const { amsMapping } = useFilamentMapping(effectiveFilamentReqs, printerStatus, manualMappings, settings?.prefer_lowest_filament);
+  const { amsMapping } = useFilamentMapping(
+    effectiveFilamentReqs,
+    printerStatus,
+    manualMappings,
+    singlePrinterPreferLowest,
+    effectivePrinterId ? inventoryByTrayIdPerPrinter.get(effectivePrinterId) : undefined,
+  );
 
   // Multi-printer filament mapping (for per-printer configuration)
   const multiPrinterMapping = useMultiPrinterFilamentMapping(
@@ -355,6 +420,7 @@ export function PrintModal({
     perPrinterConfigs,
     setPerPrinterConfigs,
     settings?.prefer_lowest_filament,
+    inventoryByTrayIdPerPrinter,
   );
 
   // Auto-select first plate when plates load (single or multi-plate)
@@ -499,15 +565,13 @@ export function PrintModal({
     },
   });
 
-  const willUseStagger = scheduleOptions.staggerEnabled && selectedPrinters.length > 1;
-
   const handleSubmit = async (e?: React.FormEvent, options?: { skipFilamentCheck?: boolean }) => {
     e?.preventDefault();
 
     if (
       !options?.skipFilamentCheck &&
       !settings?.disable_filament_warnings &&
-      (mode === 'reprint' || mode === 'add-to-queue') &&
+      !isEditing &&
       assignmentMode === 'printer'
     ) {
       const warningItems: FilamentWarningItem[] = [];
@@ -637,7 +701,48 @@ export function PrintModal({
 
     const filamentOverridesArray = buildFilamentOverridesArray();
 
-    // Common queue data for add-to-queue and edit modes
+    // Multi-plate auto-batch: when the user adds 2+ plates from one source in
+    // a single create submission, pre-create a PrintBatch and pass its
+    // id to each subsequent addToQueue call so the queue UI groups them as a
+    // collapsible batch. Only triggered for single-target submissions —
+    // multi-printer fan-out keeps the old per-item shape.
+    const shouldAutoBatch =
+      mode === 'create'
+      && platesToQueue.length > 1
+      && (assignmentMode === 'model' || selectedPrinters.length === 1);
+    let autoBatchId: number | null = null;
+    if (shouldAutoBatch) {
+      try {
+        const baseName = (archiveName || '').replace(/\.gcode\.3mf$/i, '').replace(/\.3mf$/i, '');
+        const batchName = `${baseName || 'Batch'} · ${platesToQueue.length} plates`;
+        const batch = await api.createBatch({
+          name: batchName,
+          archive_id: isLibraryFile ? undefined : archiveId,
+          library_file_id: isLibraryFile ? libraryFileId : undefined,
+        });
+        autoBatchId = batch.id;
+      } catch {
+        // Non-fatal: fall back to ungrouped items so the queue still works.
+        autoBatchId = null;
+      }
+    }
+
+    const asapInsertionCounts = new Map<string, number>();
+
+    const applyAsapInsertion = (
+      queueData: PrintQueueItemCreate,
+      printerId: number | null,
+      itemCount = 1,
+    ) => {
+      if (scheduleOptions.scheduleType !== 'asap') return;
+      const scopeKey = printerId !== null ? `printer:${printerId}` : 'unassigned';
+      const insertPosition = (asapInsertionCounts.get(scopeKey) ?? 0) + 1;
+      queueData.insert_at_top = true;
+      queueData.insert_position = insertPosition;
+      asapInsertionCounts.set(scopeKey, insertPosition + itemCount - 1);
+    };
+
+    // Common queue data for create and edit modes
     const getQueueData = (printerId: number | null, plateOverride?: number | null): PrintQueueItemCreate => ({
       printer_id: assignmentMode === 'printer' ? printerId : null,
       target_model: assignmentMode === 'model' ? targetModel : null,
@@ -649,7 +754,11 @@ export function PrintModal({
       require_previous_success: scheduleOptions.requirePreviousSuccess,
       auto_off_after: scheduleOptions.autoOffAfter,
       gcode_injection: scheduleOptions.gcodeInjection,
-      manual_start: scheduleOptions.scheduleType === 'manual',
+      manual_start: scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart,
+      // When the user clicks "Print Anyway" on the frontend deficit warning,
+      // persist that acknowledgement so the scheduler doesn't immediately
+      // re-flag the item on its first dispatch tick (#1698-followup).
+      skip_filament_check: options?.skipFilamentCheck === true ? true : undefined,
       ams_mapping: printerId ? getMappingForPrinter(printerId) : undefined,
       plate_id: plateOverride !== undefined ? plateOverride : selectedPlate,
       scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
@@ -657,16 +766,12 @@ export function PrintModal({
         : undefined,
       ...printOptions,
       project_id: projectId ?? undefined,
+      batch_id: autoBatchId ?? undefined,
+      cleanup_library_after_dispatch: cleanupLibraryAfterDispatch,
     });
 
     // Model-based assignment
     if (assignmentMode === 'model') {
-      if (mode === 'reprint') {
-        showToast('Model-based assignment only works with queue mode', 'error');
-        setIsSubmitting(false);
-        return;
-      }
-
       let progressCounter = 0;
       for (const plate of platesToQueue) {
         progressCounter++;
@@ -684,7 +789,7 @@ export function PrintModal({
               require_previous_success: scheduleOptions.requirePreviousSuccess,
               auto_off_after: scheduleOptions.autoOffAfter,
               gcode_injection: scheduleOptions.gcodeInjection,
-              manual_start: scheduleOptions.scheduleType === 'manual',
+              manual_start: scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart,
               ams_mapping: undefined,
               plate_id: plateId,
               scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
@@ -697,6 +802,7 @@ export function PrintModal({
             // Add-to-queue mode with model-based assignment
             const queueData = getQueueData(null, plateId);
             if (effectiveQuantity > 1) queueData.quantity = effectiveQuantity;
+            applyAsapInsertion(queueData, null, effectiveQuantity);
             await addToQueueMutation.mutateAsync(queueData);
           }
           results.success++;
@@ -710,7 +816,7 @@ export function PrintModal({
       // Printer-based assignment: loop through plates × printers
       // Compute stagger base time once before the loop
       const useStagger = scheduleOptions.staggerEnabled
-        && (mode === 'add-to-queue' || mode === 'reprint')
+        && !isEditing
         && selectedPrinters.length > 1;
       const staggerBaseTime = useStagger
         ? (scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
@@ -728,35 +834,7 @@ export function PrintModal({
           setSubmitProgress({ current: progressCounter, total: totalCount });
 
           try {
-            if (mode === 'reprint' && !useStagger) {
-              // Reprint mode - start print immediately (single plate only, multi-select not available)
-              const printerMapping = getMappingForPrinter(printerId);
-              if (isLibraryFile) {
-                await api.printLibraryFile(libraryFileId!, printerId, {
-                  plate_id: selectedPlate ?? undefined,
-                  plate_name: selectedPlateName,
-                  ams_mapping: printerMapping,
-                  ...printOptions,
-                  project_id: projectId,
-                  cleanup_library_after_dispatch: cleanupLibraryAfterDispatch,
-                });
-              } else {
-                // project_id is intentionally omitted here: reprintArchive targets an existing
-                // archive that already carries its own project association from the original print.
-                await api.reprintArchive(archiveId!, printerId, {
-                  plate_id: selectedPlate ?? undefined,
-                  plate_name: selectedPlateName,
-                  ams_mapping: printerMapping,
-                  ...printOptions,
-                });
-              }
-              // Queue remaining copies if quantity > 1
-              if (effectiveQuantity > 1) {
-                const queueData = getQueueData(printerId, plateId);
-                queueData.quantity = effectiveQuantity - 1;
-                await addToQueueMutation.mutateAsync(queueData);
-              }
-            } else if (mode === 'edit-queue-item' && progressCounter === 1) {
+            if (isEditing && progressCounter === 1) {
               // Edit mode - update the original queue item for the first entry
               const printerMapping = getMappingForPrinter(printerId);
               const updateData: PrintQueueItemUpdate = {
@@ -766,7 +844,7 @@ export function PrintModal({
                 require_previous_success: scheduleOptions.requirePreviousSuccess,
                 auto_off_after: scheduleOptions.autoOffAfter,
                 gcode_injection: scheduleOptions.gcodeInjection,
-                manual_start: scheduleOptions.scheduleType === 'manual',
+                manual_start: scheduleOptions.scheduleType === 'queue' && scheduleOptions.requireManualStart,
                 ams_mapping: printerMapping,
                 plate_id: plateId,
                 scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
@@ -776,9 +854,10 @@ export function PrintModal({
               };
               await updateQueueMutation.mutateAsync(updateData);
             } else {
-              // Add-to-queue mode, stagger-reprint mode, or edit mode with additional entries
+              // New print mode, staggered print, or edit mode with additional entries
               const queueData = getQueueData(printerId, plateId);
               if (effectiveQuantity > 1) queueData.quantity = effectiveQuantity;
+              applyAsapInsertion(queueData, printerId, effectiveQuantity);
               // Apply stagger offset for groups after the first
               if (useStagger) {
                 const groupIndex = Math.floor(i / scheduleOptions.staggerGroupSize);
@@ -805,19 +884,28 @@ export function PrintModal({
 
     setIsSubmitting(false);
 
-    // Show result toast (skip for direct reprint — the dispatch toast handles it)
+    // Show result toast
     if (results.failed === 0) {
-      if (mode === 'reprint' && willUseStagger) {
-        // Stagger-reprint routed through queue
-        showToast(t('queue.itemsQueued', { count: results.success }));
-      } else if (mode !== 'reprint') {
+      if (isEditing) {
         if (mode === 'edit-queue-item') {
           showToast('Queue item updated');
-        } else if (results.success === 1) {
-          showToast(assignmentMode === 'model' ? `Queued for any ${targetModel}` : t('queue.printQueued'));
-        } else {
-          showToast(t('queue.itemsQueued', { count: results.success }));
         }
+      } else if (results.success === 1) {
+        const waitForIdleToast = await asapToastShouldPromiseLaterStart();
+        showToast(
+          waitForIdleToast
+            ? t('queue.printQueuedWillStartWhenIdle')
+            : assignmentMode === 'model'
+              ? `Queued for any ${targetModel}`
+              : t('queue.printQueued'),
+        );
+      } else {
+        const waitForIdleToast = await asapToastShouldPromiseLaterStart();
+        showToast(
+          waitForIdleToast
+            ? t('queue.printQueuedWillStartWhenIdle')
+            : t('queue.itemsQueued', { count: results.success }),
+        );
       }
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       onSuccess?.();
@@ -839,55 +927,37 @@ export function PrintModal({
     if (assignmentMode === 'printer' && selectedPrinters.length === 0) return false;
     if (assignmentMode === 'model' && !targetModel) return false;
 
-    // Model-based assignment only works in queue modes (not immediate reprint)
-    if (assignmentMode === 'model' && mode === 'reprint') return false;
-
     // For multi-plate files, need at least one plate selected
     if (isMultiPlate && selectedPlates.size === 0) return false;
 
     return true;
-  }, [selectedPrinters.length, assignmentMode, targetModel, mode, isMultiPlate, selectedPlates.size, isPending]);
+  }, [selectedPrinters.length, assignmentMode, targetModel, isMultiPlate, selectedPlates.size, isPending]);
 
   // Quantity only applies for single-printer or model-based assignment (not multi-printer)
   const effectiveQuantity = (assignmentMode === 'printer' && selectedPrinters.length > 1) ? 1 : quantity;
 
+  // Keep scheduleOptions.gcodeInjection in sync with the checkbox's render
+  // condition. The checkbox only renders for create + snippets configured +
+  // quantity > 1, so if the user ticks it at quantity 2 then drops back to 1
+  // the box hides but the state stays true.
+  useEffect(() => {
+    if (
+      mode === 'create' &&
+      scheduleOptions.gcodeInjection &&
+      (effectiveQuantity <= 1 || !settings?.gcode_snippets)
+    ) {
+      setScheduleOptions((opts) => ({ ...opts, gcodeInjection: false }));
+    }
+  }, [mode, effectiveQuantity, settings?.gcode_snippets, scheduleOptions.gcodeInjection]);
+
   // Modal title and action button text based on mode
   const getModalConfig = () => {
-    const printerCount = selectedPrinters.length;
-
-    if (mode === 'reprint') {
-      const staggerReprint = willUseStagger && printerCount > 1;
-      let submitText = staggerReprint
-        ? t('printModal.staggerToPrinters', { count: printerCount, defaultValue: 'Stagger to {{count}} printers' })
-        : printerCount > 1 ? t('queue.printToPrinters', { count: printerCount }) : t('queue.print');
-      if (effectiveQuantity > 1) {
-        submitText = `${submitText} ×${effectiveQuantity}`;
-      }
+    if (!isEditing) {
       return {
-        title: isLibraryFile ? t('queue.print') : t('queue.reprint'),
+        title: t('common.print'),
         icon: Printer,
-        submitText,
-        submitIcon: staggerReprint ? Calendar : Printer,
-        loadingText: submitProgress.total > 1
-          ? t('queue.sendingProgress', { current: submitProgress.current, total: submitProgress.total })
-          : t('queue.sending'),
-      };
-    }
-    if (mode === 'add-to-queue') {
-      let submitText = t('queue.addToQueue');
-      if (selectedPlates.size > 1) {
-        submitText = t('queue.queueSelectedPlates', { count: selectedPlates.size });
-      } else if (printerCount > 1) {
-        submitText = t('queue.queueToPrinters', { count: printerCount });
-      }
-      if (effectiveQuantity > 1) {
-        submitText = `${submitText} ×${effectiveQuantity}`;
-      }
-      return {
-        title: t('queue.schedulePrint'),
-        icon: Calendar,
-        submitText,
-        submitIcon: Calendar,
+        submitText: t('common.print'),
+        submitIcon: Printer,
         loadingText: submitProgress.total > 1
           ? t('queue.addingProgress', { current: submitProgress.current, total: submitProgress.total })
           : t('queue.adding'),
@@ -917,6 +987,23 @@ export function PrintModal({
     isLibraryFile || (isMultiPlate ? selectedPlate !== null : true)
   );
 
+  // Dual-nozzle gate for the Nozzle Offset Calibration toggle (#1682).
+  // Mirrors backend `DUAL_NOZZLE_MODELS` so model-based assignment can show
+  // the toggle without a specific printer selected. For printer-mode we rely
+  // on the canonical `nozzle_count` field auto-detected from MQTT.
+  const DUAL_NOZZLE_MODELS = useMemo(
+    () => new Set(['H2D', 'H2DPRO', 'H2C', 'X2D']),
+    [],
+  );
+  const showDualNozzleOptions = useMemo(() => {
+    if (assignmentMode === 'model') {
+      if (!targetModel) return false;
+      return DUAL_NOZZLE_MODELS.has(targetModel.toUpperCase().replace(/[\s-]/g, ''));
+    }
+    if (!printers || selectedPrinters.length === 0) return false;
+    return selectedPrinters.some(id => printers.find(p => p.id === id)?.nozzle_count === 2);
+  }, [assignmentMode, targetModel, printers, selectedPrinters, DUAL_NOZZLE_MODELS]);
+
   return (
     <div
       className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
@@ -926,13 +1013,9 @@ export function PrintModal({
         className="w-full max-w-2xl max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <CardContent className={mode === 'reprint' ? '' : 'p-0'}>
+        <CardContent className="p-0">
           {/* Header */}
-          <div
-            className={`flex items-center justify-between ${
-              mode === 'reprint' ? 'mb-4' : 'p-4 border-b border-bambu-dark-tertiary'
-            }`}
-          >
+          <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
             <div className="flex items-center gap-2">
               <TitleIcon className="w-5 h-5 text-bambu-green" />
               <h2 className="text-lg font-semibold text-white">{modalConfig.title}</h2>
@@ -942,23 +1025,32 @@ export function PrintModal({
             </Button>
           </div>
 
-          <form onSubmit={handleSubmit} className={mode === 'reprint' ? '' : 'p-4 space-y-4'}>
+          <form onSubmit={handleSubmit} className="p-4 space-y-4">
             {/* Archive name */}
-            <p className={`text-sm text-bambu-gray ${mode === 'reprint' ? 'mb-4' : ''}`}>
-              {mode === 'reprint' ? (
-                <>
-                  Send <span className="text-white">{archiveName}</span> to{' '}
-                  {initialSelectedPrinterIds?.length === 1 && printers
-                    ? <span className="text-white">{printers.find(p => p.id === initialSelectedPrinterIds[0])?.name ?? 'printer(s)'}</span>
-                    : 'printer(s)'}
-                </>
-              ) : (
-                <>
-                  <span className="block text-bambu-gray mb-1">Print Job</span>
-                  <span className="text-white font-medium truncate block">{archiveName}</span>
-                </>
-              )}
+            <p className="text-sm text-bambu-gray">
+              <span className="block text-bambu-gray mb-1">Print Job</span>
+              <span className="text-white font-medium truncate block">{archiveName}</span>
             </p>
+
+            {/* Build-plate badge for the selected (or sole) plate — surfaced
+                early so the user knows which plate to mount before scheduling
+                (#1281). PlateSelector renders its own per-plate badges for
+                multi-plate files; this badge covers the single-plate case and
+                the multi-plate case where exactly one plate is selected. */}
+            {(() => {
+              if (!plates.length) return null;
+              const target = selectedPlate != null
+                ? plates.find(p => p.index === selectedPlate)
+                : plates[0];
+              const bed = getBedTypeInfo(target?.bed_type);
+              if (!bed) return null;
+              return (
+                <p className="flex items-center gap-1.5 text-xs text-bambu-gray -mt-2" title={bed.label}>
+                  <img src={bed.icon} alt="" className="w-4 h-4 object-contain flex-shrink-0" />
+                  <span className="truncate">{bed.label}</span>
+                </p>
+              );
+            })()}
 
             {/* Plate selection - first so users know filament requirements before selecting printers */}
             <PlateSelector
@@ -968,7 +1060,7 @@ export function PrintModal({
               onToggle={(plateIndex) => {
                 setSelectedPlates(prev => {
                   const next = new Set(prev);
-                  if (mode === 'add-to-queue') {
+                  if (!isEditing) {
                     // Multi-select: toggle the plate
                     if (next.has(plateIndex)) {
                       next.delete(plateIndex);
@@ -983,9 +1075,9 @@ export function PrintModal({
                   return next;
                 });
               }}
-              onSelectAll={mode === 'add-to-queue' ? () => setSelectedPlates(new Set(plates.map(p => p.index))) : undefined}
-              onDeselectAll={mode === 'add-to-queue' ? () => setSelectedPlates(new Set()) : undefined}
-              multiSelect={mode === 'add-to-queue'}
+              onSelectAll={!isEditing ? () => setSelectedPlates(new Set(plates.map(p => p.index))) : undefined}
+              onDeselectAll={!isEditing ? () => setSelectedPlates(new Set()) : undefined}
+              multiSelect={!isEditing}
             />
 
             {/* Printer selection with per-printer mapping — hidden when printer is pre-selected via props */}
@@ -997,17 +1089,17 @@ export function PrintModal({
                 isLoading={loadingPrinters}
                 allowMultiple={true}
                 showInactive={mode === 'edit-queue-item'}
-                disableBusy={mode === 'reprint'}
+                disableBusy={false}
                 printerMappingResults={multiPrinterMapping.printerResults}
                 filamentReqs={effectiveFilamentReqs}
                 onAutoConfigurePrinter={multiPrinterMapping.autoConfigurePrinter}
                 onUpdatePrinterConfig={multiPrinterMapping.updatePrinterConfig}
-                assignmentMode={mode === 'reprint' ? 'printer' : assignmentMode}
-                onAssignmentModeChange={mode !== 'reprint' ? setAssignmentMode : undefined}
+                assignmentMode={assignmentMode}
+                onAssignmentModeChange={!isEditing ? setAssignmentMode : undefined}
                 targetModel={targetModel}
-                onTargetModelChange={mode !== 'reprint' ? setTargetModel : undefined}
+                onTargetModelChange={!isEditing ? setTargetModel : undefined}
                 targetLocation={targetLocation}
-                onTargetLocationChange={mode !== 'reprint' ? setTargetLocation : undefined}
+                onTargetLocationChange={!isEditing ? setTargetLocation : undefined}
                 slicedForModel={slicedForModel}
               />
             )}
@@ -1062,12 +1154,21 @@ export function PrintModal({
                 defaultExpanded={!!initialSelectedPrinterIds?.length || (settings?.per_printer_mapping_expanded ?? false)}
                 currencySymbol={currencySymbol}
                 defaultCostPerKg={defaultCostPerKg}
+                forceColorMatch={forceColorMatch}
+                onForceColorMatchChange={(slotId, value) =>
+                  setForceColorMatch((prev) => ({ ...prev, [slotId]: value }))
+                }
               />
             )}
 
             {/* Print options */}
-            {(mode === 'reprint' || effectivePrinterCount > 0 || (assignmentMode === 'model' && targetModel)) && (
-              <PrintOptionsPanel options={printOptions} onChange={setPrintOptions} defaultExpanded={!!initialSelectedPrinterIds?.length} />
+            {(mode === 'create' || effectivePrinterCount > 0 || (assignmentMode === 'model' && targetModel)) && (
+              <PrintOptionsPanel
+                options={printOptions}
+                onChange={setPrintOptions}
+                defaultExpanded={!!initialSelectedPrinterIds?.length}
+                showDualNozzleOptions={showDualNozzleOptions}
+              />
             )}
 
             {/* Quantity — create multiple copies (batch). Hidden for multi-printer selection. */}
@@ -1093,74 +1194,17 @@ export function PrintModal({
               </div>
             )}
 
-            {/* Stagger option for reprint mode with multiple printers */}
-            {mode === 'reprint' && assignmentMode === 'printer' && selectedPrinters.length > 1 && (
-              <div className="space-y-2 pb-2">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="staggerEnabledReprint"
-                    checked={scheduleOptions.staggerEnabled}
-                    onChange={(e) => setScheduleOptions({ ...scheduleOptions, staggerEnabled: e.target.checked })}
-                    className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
-                  />
-                  <label htmlFor="staggerEnabledReprint" className="text-sm flex items-center gap-1 text-bambu-gray">
-                    <Layers className="w-3.5 h-3.5" />
-                    {t('printModal.staggerPrinterStarts', 'Stagger printer starts')}
-                  </label>
-                </div>
-                {scheduleOptions.staggerEnabled && (() => {
-                  const groupSize = scheduleOptions.staggerGroupSize;
-                  const interval = scheduleOptions.staggerIntervalMinutes;
-                  const groupCount = Math.ceil(selectedPrinters.length / groupSize);
-                  const totalMinutes = (groupCount - 1) * interval;
-                  return (
-                    <p className="ml-6 text-xs text-bambu-gray">
-                      {t('printModal.staggerPreview', '{{printers}} printers → {{groups}} groups of {{size}}, starting every {{interval}} min', {
-                        printers: selectedPrinters.length,
-                        groups: groupCount,
-                        size: groupSize,
-                        interval,
-                      })}
-                      {groupCount > 1
-                        ? ` (${t('printModal.staggerTotal', 'total: {{minutes}} min', { minutes: totalMinutes })})`
-                        : ''}
-                    </p>
-                  );
-                })()}
-              </div>
-            )}
-
-            {/* Schedule options - only for queue modes */}
-            {mode !== 'reprint' && (
-              <ScheduleOptionsPanel
-                options={scheduleOptions}
-                onChange={setScheduleOptions}
-                dateFormat={settings?.date_format || 'system'}
-                timeFormat={settings?.time_format || 'system'}
-                canControlPrinter={hasPermission('printers:control')}
-                showStagger={mode === 'add-to-queue' && assignmentMode === 'printer' && selectedPrinters.length > 1}
-                printerCount={selectedPrinters.length}
-                hasGcodeSnippets={!!settings?.gcode_snippets}
-              />
-            )}
-
-            {/* G-code injection for reprint mode (only shown when quantity > 1 — applies to queued copies) */}
-            {mode === 'reprint' && !!settings?.gcode_snippets && effectiveQuantity > 1 && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="gcodeInjectionReprint"
-                  checked={scheduleOptions.gcodeInjection}
-                  onChange={(e) => setScheduleOptions({ ...scheduleOptions, gcodeInjection: e.target.checked })}
-                  className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
-                />
-                <label htmlFor="gcodeInjectionReprint" className="text-sm flex items-center gap-1 text-bambu-gray">
-                  <Code className="w-3.5 h-3.5" />
-                  {t('printModal.gcodeInjection', 'Inject auto-print G-code')}
-                </label>
-              </div>
-            )}
+            {/* Schedule options */}
+            <ScheduleOptionsPanel
+              options={scheduleOptions}
+              onChange={setScheduleOptions}
+              dateFormat={settings?.date_format || 'system'}
+              timeFormat={settings?.time_format || 'system'}
+              canControlPrinter={hasPermission('printers:control')}
+              showStagger={!isEditing && assignmentMode === 'printer' && selectedPrinters.length > 1}
+              printerCount={selectedPrinters.length}
+              hasGcodeSnippets={!!settings?.gcode_snippets}
+            />
 
             {/* Error message */}
             {updateQueueMutation.isError && (
@@ -1170,7 +1214,7 @@ export function PrintModal({
             )}
 
             {/* Actions */}
-            <div className={`flex gap-3 ${mode === 'reprint' ? '' : 'pt-2'}`}>
+            <div className="flex gap-3 pt-2">
               <Button type="button" variant="secondary" onClick={onClose} className="flex-1" disabled={isSubmitting}>
                 Cancel
               </Button>

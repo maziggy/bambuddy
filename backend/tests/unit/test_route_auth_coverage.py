@@ -93,6 +93,10 @@ _PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         # UI bootstrap — defaults for sidebar order and ui-preferences are public defaults that ship with the app.
         ("GET", "/api/v1/settings/default-sidebar-order"),
         ("GET", "/api/v1/settings/ui-preferences"),
+        # Appliance locale defaults — read by the i18n bootstrap BEFORE auth might be set up.
+        # Contents are user-set hostname/timezone/locale from the firstboot wizard (no secrets);
+        # the file is absent on non-appliance installs, in which case every field is null.
+        ("GET", "/api/v1/system/appliance"),
         # Slicer printer-models — static catalog, no user data.
         ("GET", "/api/v1/slicer/printer-models"),
         # Current Bambuddy version — public info (already visible in HTTP response headers + Docker tags).

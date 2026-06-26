@@ -276,16 +276,24 @@ class TestHandleConnectKeepalive:
         assert result == (False, 0)
 
 
-class TestHandleClientHonoursKeepalive:
-    """`_handle_client` must use the client-negotiated keepalive for its
-    read-loop timeout, not the hardcoded 60 s default (#1548)."""
+class TestHandleClientIdleConnection:
+    """`_handle_client` must NOT close idle authenticated clients on a
+    keepalive boundary (#1548 round 2).
+
+    Round 1 shipped the keepalive parser + 1.5× read timeout per MQTT spec
+    §4.4. The reporter then confirmed that the same OrcaSlicer install which
+    stays connected to a real Bambu P1S indefinitely was being disconnected
+    by Bambuddy at exactly ``keep_alive × 1.5`` — pcap showed Orca sends
+    zero MQTT packets after the initial burst (no PINGREQ at all). Real
+    Bambu firmware does not enforce §4.4; we now match that and rely on
+    TCP keepalive (SO_KEEPALIVE) for dead-connection detection.
+    """
 
     @pytest.mark.asyncio
     async def test_idle_client_kept_alive_beyond_60s_when_keepalive_is_long(self):
-        """The literal #1548 repro: a client negotiates keepalive=180 and
-        then sits idle. Pre-fix the read loop closed the connection after
-        60 s (hardcoded). Post-fix the timeout is 1.5×180=270 s — so the
-        connection is still open after the original 60 s boundary."""
+        """A client negotiates keepalive=180 and then sits idle. Pre-round-1
+        the read loop closed the connection after a hardcoded 60 s. Now the
+        connection stays open indefinitely."""
         server = _make_server()
         server._running = True
 
@@ -303,7 +311,7 @@ class TestHandleClientHonoursKeepalive:
         writer.drain = AsyncMock()
         writer.close = MagicMock()
         writer.wait_closed = AsyncMock()
-        writer.get_extra_info = MagicMock(return_value=("1.2.3.4", 12345))
+        writer.get_extra_info = MagicMock(side_effect=lambda name: ("1.2.3.4", 12345) if name == "peername" else None)
 
         # Patch the post-auth status-report send so the handler doesn't
         # depend on a real serial/payload path.
@@ -331,9 +339,12 @@ class TestHandleClientHonoursKeepalive:
             pass
 
     @pytest.mark.asyncio
-    async def test_idle_client_closed_after_one_and_a_half_times_keepalive(self):
-        """Tight verification: keepalive=2 must close the connection in
-        ~3 s (1.5×) of idle, well above the noise floor for an async test."""
+    async def test_idle_client_stays_open_past_one_and_a_half_times_keepalive(self):
+        """Round-2 regression guard: a client negotiates keepalive=2 and
+        then sits idle. Round 1 would have closed at ~3 s (1.5×). Now the
+        handler must still be running well past that boundary — the only
+        thing that ends the loop is a DISCONNECT, peer close, or server
+        shutdown."""
         server = _make_server()
         server._running = True
 
@@ -348,22 +359,74 @@ class TestHandleClientHonoursKeepalive:
         writer.drain = AsyncMock()
         writer.close = MagicMock()
         writer.wait_closed = AsyncMock()
-        writer.get_extra_info = MagicMock(return_value=("1.2.3.4", 12345))
+        writer.get_extra_info = MagicMock(side_effect=lambda name: ("1.2.3.4", 12345) if name == "peername" else None)
         server._send_status_report = AsyncMock()
 
-        start = asyncio.get_event_loop().time()
-        await server._handle_client(reader, writer)
-        elapsed = asyncio.get_event_loop().time() - start
+        task = asyncio.create_task(server._handle_client(reader, writer))
 
-        # 1.5×2s = 3s expected. Allow ±1s slop for the read of CONNECT
-        # itself + scheduler jitter on a loaded CI box.
-        assert 2.0 < elapsed < 4.5, f"expected ~3s timeout, got {elapsed:.2f}s"
+        # Give the loop time to process CONNECT and settle into the idle
+        # read. 4 s is well past round-1's 3 s timeout and any conceivable
+        # async-scheduler drift.
+        await asyncio.sleep(4.0)
+
+        assert not task.done(), "handler must still be waiting on idle reader"
+        assert not writer.close.called, "connection must not be closed by keepalive timeout"
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
     @pytest.mark.asyncio
-    async def test_pingreq_resets_idle_timeout(self):
-        """A PINGREQ within the keepalive window must keep the connection
-        open — the per-packet read timeout is restarted on every byte
-        delivered, so the next idle window is measured from the PINGREQ."""
+    async def test_so_keepalive_set_on_socket_after_connect(self):
+        """The application-level read timeout was removed; TCP keepalive
+        replaces it for dead-connection detection. Verify the handler sets
+        SO_KEEPALIVE on the underlying socket the moment auth succeeds."""
+        import socket
+
+        server = _make_server()
+        server._running = True
+
+        reader = asyncio.StreamReader()
+        connect_payload = _build_connect_payload(keep_alive=60)
+        rl = len(connect_payload)
+        assert rl < 128
+        reader.feed_data(bytes([0x10, rl]) + connect_payload)
+
+        sock = MagicMock()
+        writer = MagicMock()
+        writer.write = MagicMock()
+        writer.drain = AsyncMock()
+        writer.close = MagicMock()
+        writer.wait_closed = AsyncMock()
+
+        def _get_extra_info(name):
+            if name == "socket":
+                return sock
+            if name == "peername":
+                return ("1.2.3.4", 12345)
+            return None
+
+        writer.get_extra_info = MagicMock(side_effect=_get_extra_info)
+        server._send_status_report = AsyncMock()
+
+        task = asyncio.create_task(server._handle_client(reader, writer))
+        await asyncio.sleep(0.2)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+        sock.setsockopt.assert_any_call(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+
+    @pytest.mark.asyncio
+    async def test_pingreq_is_processed_and_does_not_close_connection(self):
+        """PINGREQ from a still-active client must be honoured (PINGRESP
+        sent, connection kept open). After round 2 there is no idle timeout
+        for PINGREQ to "reset" — the relevant invariant is that the packet
+        is parsed and routed without disconnecting."""
         server = _make_server()
         server._running = True
 
@@ -378,7 +441,7 @@ class TestHandleClientHonoursKeepalive:
         writer.drain = AsyncMock()
         writer.close = MagicMock()
         writer.wait_closed = AsyncMock()
-        writer.get_extra_info = MagicMock(return_value=("1.2.3.4", 12345))
+        writer.get_extra_info = MagicMock(side_effect=lambda name: ("1.2.3.4", 12345) if name == "peername" else None)
         server._send_status_report = AsyncMock()
 
         async def _drive():

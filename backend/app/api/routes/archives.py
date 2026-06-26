@@ -25,7 +25,7 @@ from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
-from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate, ReprintRequest
+from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate
 from backend.app.schemas.print_log import PrintLogResponse
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.archive import ArchiveService
@@ -117,6 +117,43 @@ def _match_timelapse_by_timestamp(
             return None, None
 
     return best_video, best_diff
+
+
+def _ensure_archive_visible(
+    archive: PrintArchive | None,
+    user: User | None,
+    can_read_all: bool,
+) -> PrintArchive:
+    """Per-archive visibility gate for ownership-scoped reads (#1726-adjacent).
+
+    Returns ``archive`` if the caller is allowed to see it; raises 404 otherwise.
+    Single enforcement point used by every detail / download / sub-resource
+    route so we can't accidentally leak a row through a less-guarded sibling.
+
+    Rules:
+      - Missing archive or soft-deleted (``deleted_at != None``) → 404.
+      - Caller with ARCHIVES_READ_ALL or auth disabled (``can_read_all=True``,
+        ``user`` may be None) → archive returned.
+      - Caller without ARCHIVES_READ_ALL and ``archive.created_by_id != user.id``
+        → 404, deliberately NOT 403. 403 leaks "this id exists but you can't
+        see it" — enumeration-friendly. 404 is indistinguishable from a
+        nonexistent id. Pre-GHSA fix the caller saw 200 here (the PoC vector).
+      - Ownerless rows (``created_by_id is None``) require ALL — fail-closed
+        per ``feedback_no_fail_open_in_auth``.
+    """
+    if not archive or archive.deleted_at is not None:
+        raise HTTPException(404, "Archive not found")
+    if can_read_all:
+        return archive
+    # Auth enabled, caller has _OWN only.
+    if user is None:
+        # Defensive: should be unreachable (RequirePermissionIfAuthEnabled
+        # would have 401'd already), but never trust user identity to be
+        # non-None when can_read_all is False.
+        raise HTTPException(404, "Archive not found")
+    if archive.created_by_id is None or archive.created_by_id != user.id:
+        raise HTTPException(404, "Archive not found")
+    return archive
 
 
 def _validate_user_filter_permission(current_user: User | None, created_by_id: int | None):
@@ -315,9 +352,16 @@ async def list_archives(
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """List archived prints."""
+    user, can_read_all = auth_result
+    visible_to_user_id = user.id if (user is not None and not can_read_all) else None
     service = ArchiveService(db)
     archives = await service.list_archives(
         printer_id=printer_id,
@@ -326,6 +370,7 @@ async def list_archives(
         date_to=date_to,
         limit=limit,
         offset=offset,
+        visible_to_user_id=visible_to_user_id,
     )
 
     # Get sets of duplicate hashes and duplicate (name, hash) pairs (efficient single queries)
@@ -427,6 +472,46 @@ async def list_archives(
     return result
 
 
+@router.get("/no-3mf-warning")
+async def no_3mf_warning(
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
+):
+    """Whether to nudge the user about install step 4 ("Store sent files on
+    external storage"). True iff any archive in the last 30 days was created
+    via the no-3MF fallback path — that's the deterministic symptom of the
+    slicer-side variant of the setting being off.
+
+    Complements the connection-diagnostic ``external_storage`` check, which
+    only catches the printer-side variant of the setting. On older slicers
+    where the toggle lives only in BambuStudio, the printer never reports it
+    and the diagnostic passes — this endpoint surfaces the symptom instead.
+
+    Dismissal is handled client-side via localStorage (one-shot): once the
+    user has been told, no further nudge until they clear browser storage.
+    The backend stays stateless.
+    """
+    user, can_read_all = auth_result
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    conditions = [
+        PrintArchive.created_at >= cutoff,
+        PrintArchive.deleted_at.is_(None),
+        PrintArchive.extra_data.isnot(None),
+    ]
+    if user is not None and not can_read_all:
+        conditions.append(PrintArchive.created_by_id == user.id)
+    result = await db.execute(select(PrintArchive.extra_data).where(*conditions))
+    for (extra_data,) in result.all():
+        if extra_data and extra_data.get("no_3mf_available"):
+            return {"has_fallback": True}
+    return {"has_fallback": False}
+
+
 @router.get("/slim", response_model=list[ArchiveSlim])
 async def list_archives_slim(
     date_from: date | None = Query(None),
@@ -435,7 +520,12 @@ async def list_archives_slim(
     limit: int = Query(default=10000, le=50000),
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Per-event listing for stats/dashboard widgets.
 
@@ -448,7 +538,16 @@ async def list_archives_slim(
     """
     from backend.app.models.print_log import PrintLogEntry
 
+    current_user, can_read_all = auth_result
     _validate_user_filter_permission(current_user, created_by_id)
+    # Callers without ARCHIVES_READ_ALL can only see their own runs — pin
+    # the filter unconditionally so a caller-supplied ?created_by_id=
+    # can't widen the listing past their own scope. The existing
+    # _validate_user_filter_permission rejects ?created_by_id= without
+    # STATS_FILTER_BY_USER, so the only way to reach this is owner-self
+    # filtering anyway, but pinning here is the fail-closed default.
+    if current_user is not None and not can_read_all:
+        created_by_id = current_user.id
     filters = []
     if date_from:
         dt_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
@@ -525,7 +624,12 @@ async def search_archives(
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Full-text search across archives.
 
@@ -537,6 +641,8 @@ async def search_archives(
 
     from backend.app.core.db_dialect import is_sqlite
 
+    user, can_read_all = auth_result
+    own_only = user is not None and not can_read_all
     search_term = q.strip()
 
     # Build dialect-specific full-text search query
@@ -597,6 +703,8 @@ async def search_archives(
             query = query.where(PrintArchive.project_id == project_id)
         if status:
             query = query.where(PrintArchive.status == status)
+        if own_only:
+            query = query.where(PrintArchive.created_by_id == user.id)
 
         query = query.limit(limit).offset(offset)
         result = await db.execute(query)
@@ -615,6 +723,8 @@ async def search_archives(
         .options(selectinload(PrintArchive.project))
         .where(PrintArchive.id.in_(matched_ids), PrintArchive.deleted_at.is_(None))
     )
+    if own_only:
+        query = query.where(PrintArchive.created_by_id == user.id)
 
     # Apply additional filters
     if printer_id:
@@ -688,7 +798,12 @@ async def analyze_failures(
     project_id: int | None = None,
     created_by_id: int | None = Query(None, description="Filter by user who created the print (-1 for no user)"),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Analyze failure patterns across prints.
 
@@ -699,7 +814,11 @@ async def analyze_failures(
     - Recent failures
     - Weekly trend
     """
+    current_user, can_read_all = auth_result
     _validate_user_filter_permission(current_user, created_by_id)
+    # Callers without ARCHIVES_READ_ALL are scoped to their own runs (#2).
+    if current_user is not None and not can_read_all:
+        created_by_id = current_user.id
 
     from backend.app.services.failure_analysis import FailureAnalysisService
 
@@ -718,7 +837,12 @@ async def analyze_failures(
 async def compare_archives(
     archive_ids: str = Query(..., description="Comma-separated archive IDs (2-5)"),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Compare multiple archives side by side.
 
@@ -730,6 +854,8 @@ async def compare_archives(
     """
     from backend.app.services.archive_comparison import ArchiveComparisonService
 
+    user, can_read_all = auth_result
+
     # Parse and validate archive IDs
     try:
         ids = [int(id.strip()) for id in archive_ids.split(",")]
@@ -740,6 +866,20 @@ async def compare_archives(
         raise HTTPException(400, "At least 2 archives required for comparison")
     if len(ids) > 5:
         raise HTTPException(400, "Maximum 5 archives can be compared at once")
+
+    # Verify the caller is allowed to see every archive in the comparison —
+    # one not-owned id in the list would otherwise leak its full detail block.
+    # _ensure_archive_visible raises 404 on the first miss (same 404 the
+    # single-archive endpoint would return).
+    if user is not None and not can_read_all:
+        existing = await db.execute(
+            select(PrintArchive.id, PrintArchive.created_by_id, PrintArchive.deleted_at).where(PrintArchive.id.in_(ids))
+        )
+        owners_by_id = {row.id: row for row in existing.all()}
+        for archive_id in ids:
+            row = owners_by_id.get(archive_id)
+            if row is None or row.deleted_at is not None or row.created_by_id != user.id:
+                raise HTTPException(404, "Archive not found")
 
     service = ArchiveComparisonService(db)
     try:
@@ -759,7 +899,12 @@ async def export_archives(
     date_to: str | None = Query(None, description="End date (ISO format)"),
     search: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Export archives to CSV or Excel format.
 
@@ -770,6 +915,9 @@ async def export_archives(
     from fastapi.responses import StreamingResponse
 
     from backend.app.services.export import ExportService
+
+    user, can_read_all = auth_result
+    visible_to_user_id = user.id if (user is not None and not can_read_all) else None
 
     if format not in ("csv", "xlsx"):
         raise HTTPException(400, "Format must be 'csv' or 'xlsx'")
@@ -804,6 +952,7 @@ async def export_archives(
             date_from=date_from_dt,
             date_to=date_to_dt,
             search=search,
+            visible_to_user_id=visible_to_user_id,
         )
     except ImportError as e:
         raise HTTPException(500, str(e))
@@ -1187,16 +1336,23 @@ async def _sum_snapshot_deltas(
 @router.get("/tags")
 async def get_all_tags(
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """List all unique tags with usage counts.
 
     Returns a list of tags sorted by count (descending), then by name.
     """
+    user, can_read_all = auth_result
     # Query all archives with non-null tags
-    result = await db.execute(
-        select(PrintArchive.tags).where(PrintArchive.tags.isnot(None), PrintArchive.deleted_at.is_(None))
-    )
+    tag_conditions = [PrintArchive.tags.isnot(None), PrintArchive.deleted_at.is_(None)]
+    if user is not None and not can_read_all:
+        tag_conditions.append(PrintArchive.created_by_id == user.id)
+    result = await db.execute(select(PrintArchive.tags).where(*tag_conditions))
     all_tags_rows = result.all()
 
     # Count occurrences of each tag
@@ -1299,17 +1455,17 @@ async def delete_tag(
 async def get_archive(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Get a specific archive."""
+    user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    # Soft-deleted archives are hidden from the UI (#1343) — surface them as
-    # 404 here too so a stale bookmark / direct URL doesn't expose a row the
-    # user has already removed. The hard-delete (?purge_stats=true) path
-    # bypasses this check by querying PrintArchive directly.
-    if not archive or archive.deleted_at is not None:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
 
     # Find duplicates
     makerworld_id = archive.extra_data.get("makerworld_model_id") if archive.extra_data else None
@@ -1323,11 +1479,45 @@ async def get_archive(
     return archive_to_response(archive, duplicates, run_aggregate=run_aggregates.get(archive.id))
 
 
+@router.get("/{archive_id}/delete-impact")
+async def get_archive_delete_impact(
+    archive_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
+):
+    """Pre-flight for the delete-confirm modal (#1734).
+
+    Returns the number of related queue items the user is about to remove
+    AND whether any of them are currently printing (which would block the
+    delete with a 409 — surfaced to the modal so it can disable the
+    confirm button instead of failing on submit). Cheap, single endpoint —
+    not folded into the archive GET response so the much larger list
+    endpoint isn't forced to run the same query per row.
+    """
+    user, can_read_all = auth_result
+    service = ArchiveService(db)
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
+    from backend.app.services.archive import _count_related_queue_items
+
+    total, printing = await _count_related_queue_items(db, archive.id)
+    return {"related_queue_items": total, "currently_printing": printing}
+
+
 @router.get("/{archive_id}/runs", response_model=PrintLogResponse)
 async def list_archive_runs(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """List PrintLogEntry rows for this archive — one per print event.
 
@@ -1336,9 +1526,8 @@ async def list_archive_runs(
     from backend.app.models.print_log import PrintLogEntry
     from backend.app.schemas.print_log import PrintLogEntrySchema
 
-    archive = await db.get(PrintArchive, archive_id)
-    if not archive or archive.deleted_at is not None:
-        raise HTTPException(404, "Archive not found")
+    user, can_read_all = auth_result
+    _ensure_archive_visible(await db.get(PrintArchive, archive_id), user, can_read_all)
 
     rows = await db.execute(
         select(PrintLogEntry)
@@ -1355,7 +1544,12 @@ async def find_similar_archives(
     archive_id: int,
     limit: int = 10,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Find archives with similar settings for comparison.
 
@@ -1365,6 +1559,9 @@ async def find_similar_archives(
     - Same filament type
     """
     from backend.app.services.archive_comparison import ArchiveComparisonService
+
+    user, can_read_all = auth_result
+    _ensure_archive_visible(await db.get(PrintArchive, archive_id), user, can_read_all)
 
     service = ArchiveComparisonService(db)
     try:
@@ -1687,13 +1884,17 @@ async def rescan_all_archives(
 async def get_archive_duplicates(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Get duplicates for a specific archive."""
+    user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
 
     makerworld_id = archive.extra_data.get("makerworld_model_id") if archive.extra_data else None
     duplicates = await service.find_duplicates(
@@ -1754,7 +1955,14 @@ async def delete_archive(
         )
     ),
 ):
-    """Delete an archive (soft by default; ``?purge_stats=true`` to hard-delete)."""
+    """Delete an archive (soft by default; ``?purge_stats=true`` to hard-delete).
+
+    Both delete paths now cascade to related ``print_queue`` rows (#1734) —
+    hard delete via the ``ON DELETE CASCADE`` FK, soft delete via the
+    ``_delete_related_queue_items`` helper. A 409 guard blocks the delete
+    when any related queue item is currently mid-print so the dispatcher
+    doesn't lose its metadata trail under the running print.
+    """
     user, can_modify_all = auth_result
 
     # Get archive first to check ownership
@@ -1767,6 +1975,20 @@ async def delete_archive(
     if not can_modify_all:
         if archive.created_by_id != user.id:
             raise HTTPException(403, "You can only delete your own archives")
+
+    # #1734: block delete when any related queue item is currently printing.
+    # Both soft and hard delete are gated — an in-flight print needs its
+    # backing archive to stay around for the metadata trail (filament,
+    # plate, ams_mapping). The user can stop the print first, then retry.
+    from backend.app.services.archive import _count_related_queue_items
+
+    _related_total, related_printing = await _count_related_queue_items(db, archive_id)
+    if related_printing > 0:
+        raise HTTPException(
+            409,
+            f"Cannot delete archive — {related_printing} related queue item(s) are "
+            f"currently printing. Stop the print first, then retry.",
+        )
 
     service = ArchiveService(db)
     if purge_stats:
@@ -1795,13 +2017,17 @@ async def download_archive(
     archive_id: int,
     inline: bool = False,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Download the 3MF file."""
+    user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
 
     file_path = settings.base_dir / archive.file_path
     if not file_path.is_file():
@@ -1823,13 +2049,17 @@ async def download_archive_with_filename(
     archive_id: int,
     filename: str,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Download the 3MF file with filename in URL."""
+    user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
 
     file_path = settings.base_dir / archive.file_path
     if not file_path.is_file():
@@ -1846,7 +2076,12 @@ async def download_archive_with_filename(
 async def create_archive_slicer_token(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Create a short-lived download token for opening files in slicer applications.
 
@@ -1855,10 +2090,9 @@ async def create_archive_slicer_token(
     """
     from backend.app.core.auth import create_slicer_download_token
 
+    user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
 
     token = await create_slicer_download_token("archive", archive_id)
     return {"token": token}
@@ -2294,15 +2528,21 @@ async def upload_timelapse(
 async def get_timelapse_info(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Get timelapse video metadata for editor."""
     from backend.app.schemas.timelapse import TimelapseInfoResponse
     from backend.app.services.timelapse_processor import TimelapseProcessor
 
+    user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive or not archive.timelapse_path:
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
+    if not archive.timelapse_path:
         raise HTTPException(404, "Timelapse not found")
 
     timelapse_path = settings.base_dir / archive.timelapse_path
@@ -2324,7 +2564,12 @@ async def get_timelapse_thumbnails(
     count: int = Query(10, ge=1, le=30),
     width: int = Query(160, ge=80, le=320),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Generate timeline thumbnail frames for visual scrubbing."""
     import base64
@@ -2332,9 +2577,10 @@ async def get_timelapse_thumbnails(
     from backend.app.schemas.timelapse import ThumbnailResponse
     from backend.app.services.timelapse_processor import TimelapseProcessor
 
+    user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive or not archive.timelapse_path:
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
+    if not archive.timelapse_path:
         raise HTTPException(404, "Timelapse not found")
 
     timelapse_path = settings.base_dir / archive.timelapse_path
@@ -2659,15 +2905,19 @@ async def get_qrcode(
 async def get_archive_capabilities(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Check what viewing capabilities are available for this 3MF file."""
     import defusedxml.ElementTree as ET
 
+    user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
 
     file_path = settings.base_dir / archive.file_path
     if not file_path.is_file():
@@ -2880,7 +3130,12 @@ async def get_gcode(
     archive_id: int,
     plate: int | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Extract and return G-code from the 3MF file.
 
@@ -2889,10 +3144,9 @@ async def get_gcode(
     back to the first plate found in the archive (preserving the original
     behaviour for callers that predate the multi-plate viewer).
     """
+    user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
 
     file_path = settings.base_dir / archive.file_path
     if not file_path.is_file():
@@ -3128,7 +3382,12 @@ async def upload_archives_bulk(
 async def get_archive_plates(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Get available plates from a multi-plate 3MF archive.
 
@@ -3139,10 +3398,9 @@ async def get_archive_plates(
 
     import defusedxml.ElementTree as ET
 
+    user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
 
     file_path = settings.base_dir / archive.file_path
     if not file_path.is_file():
@@ -3268,7 +3526,14 @@ async def get_archive_plates(
                 root = ET.fromstring(content)
 
                 for plate_elem in root.findall(".//plate"):
-                    plate_info = {"filaments": [], "prediction": None, "weight": None, "name": None, "objects": []}
+                    plate_info = {
+                        "filaments": [],
+                        "prediction": None,
+                        "weight": None,
+                        "name": None,
+                        "objects": [],
+                        "bed_type": None,
+                    }
 
                     # Get plate index from metadata
                     plate_index = None
@@ -3290,6 +3555,10 @@ async def get_archive_plates(
                                 plate_info["weight"] = float(value)
                             except ValueError:
                                 pass  # Skip non-numeric filament weight
+                        elif key == "curr_bed_type" and value:
+                            # Per-plate bed type so the PrintModal can show the
+                            # right plate alongside each option (#1281).
+                            plate_info["bed_type"] = value.strip()
 
                     # Get filaments used in this plate
                     for filament_elem in plate_elem.findall("filament"):
@@ -3391,6 +3660,7 @@ async def get_archive_plates(
                         "print_time_seconds": meta.get("prediction"),
                         "filament_used_grams": meta.get("weight"),
                         "filaments": meta.get("filaments", []),
+                        "bed_type": meta.get("bed_type"),
                     }
                 )
 
@@ -3453,20 +3723,12 @@ async def _try_preview_slice_filaments(
     plate_id: int,
     file_path: Path,
     request_id: str | None = None,
-    bundle_id: str | None = None,
-    printer_name: str | None = None,
-    process_name: str | None = None,
-    filament_names: list[str] | None = None,
 ) -> list[dict] | None:
     """Run a preview slice via the user's configured sidecar so the filament
     list endpoint can return real per-plate filaments for unsliced project
     files. Returns ``None`` on any failure — the caller falls back to the
     painted-face heuristic. ``request_id`` flows through to the sidecar
     for live progress on the SliceModal's inline spinner + toast.
-
-    Bundle context (id + preset names) is forwarded to the preview helper
-    so the preview can mirror the real-print profile triplet when supplied
-    — see ``slice_preview.get_preview_filaments`` for the full contract.
     """
     from backend.app.api.routes.settings import get_setting
     from backend.app.services.slice_preview import get_preview_filaments
@@ -3495,10 +3757,6 @@ async def _try_preview_slice_filaments(
         file_name=file_path.name,
         api_url=api_url,
         request_id=request_id,
-        bundle_id=bundle_id,
-        printer_name=printer_name,
-        process_name=process_name,
-        filament_names=filament_names,
     )
 
 
@@ -3507,12 +3765,13 @@ async def get_filament_requirements(
     archive_id: int,
     plate_id: int | None = None,
     request_id: str | None = None,
-    bundle_id: str | None = None,
-    printer_name: str | None = None,
-    process_name: str | None = None,
-    filament_names: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Get filament requirements from the archived 3MF file.
 
@@ -3522,19 +3781,12 @@ async def get_filament_requirements(
     Args:
         archive_id: The archive ID
         plate_id: Optional plate index to filter filaments for (for multi-plate files)
-        bundle_id / printer_name / process_name / filament_names: Optional
-            bundle context. When all four are supplied, the preview slice
-            (run for unsliced project files) uses ``slice_with_bundle``
-            against the named preset triplet instead of the embedded-
-            settings fallback. ``filament_names`` is comma- or semicolon-
-            separated.
     """
     import defusedxml.ElementTree as ET
 
+    user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
 
     file_path = settings.base_dir / archive.file_path
     if not file_path.is_file():
@@ -3631,11 +3883,6 @@ async def get_filament_requirements(
                 project_filaments = extract_project_filaments_from_3mf(zf)
                 used_slot_ids: set[int] = set()
                 if project_filaments and plate_id is not None:
-                    parsed_filament_names: list[str] | None = None
-                    if filament_names:
-                        parsed_filament_names = [
-                            n.strip() for n in filament_names.replace(";", ",").split(",") if n.strip()
-                        ] or None
                     preview = await _try_preview_slice_filaments(
                         db,
                         kind="archive",
@@ -3643,10 +3890,6 @@ async def get_filament_requirements(
                         plate_id=plate_id,
                         file_path=file_path,
                         request_id=request_id,
-                        bundle_id=bundle_id,
-                        printer_name=printer_name,
-                        process_name=process_name,
-                        filament_names=parsed_filament_names,
                     )
                     if preview is not None:
                         used_slot_ids = {f["slot_id"] for f in preview}
@@ -3782,96 +4025,24 @@ async def slice_archive(
 async def reprint_archive(
     archive_id: int,
     printer_id: int,
-    body: ReprintRequest | None = None,
-    db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
-        require_ownership_permission(
-            Permission.ARCHIVES_REPRINT_ALL,
-            Permission.ARCHIVES_REPRINT_OWN,
-        )
-    ),
+    # SECURITY.md SEC-AUTH-1: every route either has an explicit auth dep or
+    # is in the route-auth-coverage allowlist. Gating the deprecation stub on
+    # QUEUE_CREATE matches the replacement route (POST /queue/) and means
+    # anonymous callers bounce at auth instead of seeing the deprecation
+    # message — leaking "this route exists" to unauthenticated callers is
+    # exactly the shape the backstop guards against.
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
 ):
-    """Dispatch an archived 3MF file for send/start on a printer."""
-    from backend.app.models.printer import Printer
-    from backend.app.services.background_dispatch import DispatchEnqueueRejected, background_dispatch
-    from backend.app.services.printer_manager import printer_manager
-
-    user, can_modify_all = auth_result
-
-    # Use defaults if no body provided
-    if body is None:
-        body = ReprintRequest()
-
-    # Get archive
-    service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
-
-    # Ownership check
-    if not can_modify_all:
-        if archive.created_by_id != user.id:
-            raise HTTPException(403, "You can only reprint your own archives")
-
-    # Get printer
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
-
-    # Check printer is connected
-    if not printer_manager.is_connected(printer_id):
-        raise HTTPException(400, "Printer is not connected")
-
-    if not archive.file_path:
-        raise HTTPException(
-            404,
-            "No 3MF file available for this archive. "
-            "The file could not be downloaded from the printer when the print was recorded.",
-        )
-
-    # Validate archive file exists
-    file_path = settings.base_dir / archive.file_path
-    if not file_path.is_file():
-        raise HTTPException(404, "Archive file not found")
-
-    plate_name = body.plate_name
-    if not plate_name and body.plate_id is not None:
-        plate_name = f"Plate {body.plate_id}"
-
-    dispatch_source_name = archive.filename
-    if plate_name:
-        dispatch_source_name = f"{archive.filename} • {plate_name}"
-
-    try:
-        dispatch_result = await background_dispatch.dispatch_reprint_archive(
-            archive_id=archive_id,
-            archive_name=dispatch_source_name,
-            printer_id=printer_id,
-            printer_name=printer.name,
-            options=body.model_dump(exclude_none=True),
-            requested_by_user_id=user.id if user else None,
-            requested_by_username=user.username if user else None,
-        )
-    except DispatchEnqueueRejected as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
-
-    logger.info(
-        "Dispatched reprint archive %s for printer %s (dispatch_job_id=%s, dispatch_position=%s)",
+    """Legacy direct reprint endpoint. Use POST /queue/ instead."""
+    logger.warning(
+        "Gone API used: POST /archives/%s/reprint?printer_id=%s; use POST /queue/ instead",
         archive_id,
         printer_id,
-        dispatch_result["dispatch_job_id"],
-        dispatch_result["dispatch_position"],
     )
-
-    return {
-        "status": "dispatched",
-        "printer_id": printer_id,
-        "archive_id": archive_id,
-        "filename": archive.filename,
-        "dispatch_job_id": dispatch_result["dispatch_job_id"],
-        "dispatch_position": dispatch_result["dispatch_position"],
-    }
+    raise HTTPException(
+        status_code=410,
+        detail="Direct archive reprint has been removed. Create a print queue item with POST /queue/.",
+    )
 
 
 # =============================================================================
@@ -3883,16 +4054,20 @@ async def reprint_archive(
 async def get_project_page(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Get the project page data from the 3MF file."""
     from backend.app.schemas.archive import ProjectPageResponse
     from backend.app.services.archive import ProjectPageParser
 
+    user, can_read_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_read_all)
 
     file_path = settings.base_dir / archive.file_path
     if not file_path.is_file():
@@ -4074,13 +4249,17 @@ async def upload_source_3mf(
 async def download_source_3mf(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Download the source 3MF project file."""
+    user, can_read_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_read_all)
 
     if not archive.source_3mf_path:
         raise HTTPException(404, "No source 3MF attached to this archive")
@@ -4104,13 +4283,17 @@ async def download_source_3mf_for_slicer(
     archive_id: int,
     filename: str,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Download source 3MF with filename in URL."""
+    user, can_read_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_read_all)
 
     if not archive.source_3mf_path:
         raise HTTPException(404, "No source 3MF attached to this archive")
@@ -4130,15 +4313,19 @@ async def download_source_3mf_for_slicer(
 async def create_source_slicer_token(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Create a short-lived download token for opening source 3MF in slicer."""
     from backend.app.core.auth import create_slicer_download_token
 
+    user, can_read_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_read_all)
     if not archive.source_3mf_path:
         raise HTTPException(404, "No source 3MF attached to this archive")
 
@@ -4356,13 +4543,17 @@ async def upload_f3d(
 async def download_f3d(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_READ_ALL,
+            Permission.ARCHIVES_READ_OWN,
+        )
+    ),
 ):
     """Download the Fusion 360 design file."""
+    user, can_read_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_read_all)
 
     if not archive.f3d_path:
         raise HTTPException(404, "No F3D file attached to this archive")

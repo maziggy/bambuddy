@@ -67,6 +67,7 @@ from backend.app.services.email_service import (
     save_smtp_settings,
     send_email,
 )
+from backend.app.services.finance_defaults import ensure_user_finance_defaults
 
 _logger = logging.getLogger(__name__)
 
@@ -429,6 +430,9 @@ async def login(raw_request: Request, request: LoginRequest, response: Response,
                     if user and ldap_user:
                         # Update email and group mappings on each login
                         await _sync_ldap_user(db, user, ldap_user, ldap_config)
+                        # Keep finance defaults idempotently in sync for LDAP users
+                        # (wallet + private cost center + self-membership).
+                        await ensure_user_finance_defaults(db, user)
         except Exception as e:  # SEC-AUTH-EXC: LDAP failure sets ldap_user=None, downstream local-auth path runs with its own credential check (no implicit grant)
             import logging
 
@@ -1290,6 +1294,8 @@ async def _provision_ldap_user(db: AsyncSession, ldap_user, ldap_config) -> User
         new_user.groups = list(groups_result.scalars().all())
 
     db.add(new_user)
+    await db.flush()
+    await ensure_user_finance_defaults(db, new_user)
     await db.commit()
     await db.refresh(new_user)
     logger.info("Auto-provisioned LDAP user: %s (groups: %s)", new_user.username, mapped_group_names)

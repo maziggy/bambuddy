@@ -139,6 +139,12 @@ class Permission(StrEnum):
     STATS_READ = "stats:read"
     STATS_FILTER_BY_USER = "stats:filter_by_user"
 
+    # Cost Centers
+    COST_CENTERS_READ_OWN = "cost_centers:read_own"
+    COST_CENTERS_READ_ALL = "cost_centers:read_all"
+    COST_CENTERS_MODIFY = "cost_centers:modify"
+    COST_CENTERS_CREATE = "cost_centers:create"
+
     # System Info
     SYSTEM_READ = "system:read"
 
@@ -300,6 +306,12 @@ PERMISSION_CATEGORIES = {
         Permission.STATS_READ,
         Permission.STATS_FILTER_BY_USER,
     ],
+    "Finance": [
+        Permission.COST_CENTERS_READ_OWN,
+        Permission.COST_CENTERS_READ_ALL,
+        Permission.COST_CENTERS_MODIFY,
+        Permission.COST_CENTERS_CREATE,
+    ],
     "System": [
         Permission.SYSTEM_READ,
     ],
@@ -450,6 +462,8 @@ DEFAULT_GROUPS = {
             Permission.PRINTER_SENSOR_HISTORY_READ.value,
             Permission.STATS_READ.value,
             Permission.SYSTEM_READ.value,
+            # Finance - own visibility
+            Permission.COST_CENTERS_READ_OWN.value,
             # Settings - read only
             Permission.SETTINGS_READ.value,
             # WebSocket

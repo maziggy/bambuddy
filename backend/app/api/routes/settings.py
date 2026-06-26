@@ -136,6 +136,8 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "default_vibration_cali",
             "default_layer_inspect",
             "default_timelapse",
+            "billing_enabled",
+            "printer_kill_switch_enabled",
             "default_nozzle_offset_cali",
             "ldap_enabled",
             "ldap_auto_provision",
@@ -163,6 +165,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "stagger_group_size",
             "stagger_interval_minutes",
             "forecast_global_lead_time_days",
+            "finance_budget_reset_day",
             "session_max_hours",
         ]:
             settings_dict[setting.key] = int(setting.value)

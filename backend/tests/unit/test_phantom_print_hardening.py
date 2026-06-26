@@ -9,6 +9,7 @@ NOT by calling the full on_print_start/on_print_complete callbacks
 """
 
 import logging
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import or_, select
@@ -344,5 +345,127 @@ class TestBusyPrinterSeedingFromPrintingItems:
             rows = (await db.execute(select(PrintQueueItem).order_by(PrintQueueItem.position))).scalars().all()
             statuses = [r.status for r in rows]
         assert statuses == ["printing", "pending"]
+
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_scheduler_budget_check_uses_queue_creator_membership(self):
+        """Scheduler must not bypass cost-center membership when auto-starting a queued job."""
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+        import backend.app.models  # noqa: F401
+        from backend.app.core.database import Base
+        from backend.app.models.archive import PrintArchive
+        from backend.app.models.finance import CostCenter
+        from backend.app.models.print_queue import PrintQueueItem
+        from backend.app.models.printer import Printer
+        from backend.app.models.settings import Settings
+        from backend.app.models.user import User
+        from backend.app.services.print_scheduler import PrintScheduler
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+        async with session_maker() as db:
+            user = User(username="queue-user", email="queue-user@example.com", password_hash="x", role="user")
+            cost_center = CostCenter(name="Lab", is_active=True, is_private=False, monthly_budget=10.0)
+            printer = Printer(id=1, name="P1", serial_number="S1", ip_address="1.1.1.1", access_code="x")
+            billing_enabled = Settings(key="billing_enabled", value="true")
+            archive = PrintArchive(
+                id=1,
+                printer_id=1,
+                filename="test.3mf",
+                print_name="test",
+                file_path="missing.3mf",
+                file_size=1,
+                content_hash="hash",
+                status="completed",
+            )
+            db.add_all([user, cost_center, printer, archive, billing_enabled])
+            await db.flush()
+            item = PrintQueueItem(
+                printer_id=1,
+                archive_id=archive.id,
+                status="pending",
+                position=1,
+                created_by_id=user.id,
+                cost_center_id=cost_center.id,
+                estimated_cost=1.0,
+            )
+            db.add(item)
+            await db.commit()
+            item_id = item.id
+
+        scheduler = PrintScheduler()
+        async with session_maker() as db:
+            item = await db.get(PrintQueueItem, item_id)
+            with patch("backend.app.services.print_scheduler.printer_manager") as mock_pm:
+                await scheduler._start_print(db, item)
+                mock_pm.is_connected.assert_not_called()
+            await db.refresh(item)
+            assert item.status == "failed"
+            assert "cannot print with this cost center" in item.error_message
+
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_scheduler_budget_check_does_not_depend_on_billing_setting(self):
+        """Scheduler must still reject unauthorized cost centers when billing is disabled."""
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+        import backend.app.models  # noqa: F401
+        from backend.app.core.database import Base
+        from backend.app.models.archive import PrintArchive
+        from backend.app.models.finance import CostCenter
+        from backend.app.models.print_queue import PrintQueueItem
+        from backend.app.models.printer import Printer
+        from backend.app.models.user import User
+        from backend.app.services.print_scheduler import PrintScheduler
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+        async with session_maker() as db:
+            user = User(username="queue-user", email="queue-user@example.com", password_hash="x", role="user")
+            cost_center = CostCenter(name="Lab", is_active=True, is_private=False, monthly_budget=10.0)
+            printer = Printer(id=1, name="P1", serial_number="S1", ip_address="1.1.1.1", access_code="x")
+            archive = PrintArchive(
+                id=1,
+                printer_id=1,
+                filename="test.3mf",
+                print_name="test",
+                file_path="missing.3mf",
+                file_size=1,
+                content_hash="hash",
+                status="completed",
+            )
+            db.add_all([user, cost_center, printer, archive])
+            await db.flush()
+            item = PrintQueueItem(
+                printer_id=1,
+                archive_id=archive.id,
+                status="pending",
+                position=1,
+                created_by_id=user.id,
+                cost_center_id=cost_center.id,
+                estimated_cost=1.0,
+            )
+            db.add(item)
+            await db.commit()
+            item_id = item.id
+
+        scheduler = PrintScheduler()
+        async with session_maker() as db:
+            item = await db.get(PrintQueueItem, item_id)
+            with patch("backend.app.services.print_scheduler.printer_manager") as mock_pm:
+                await scheduler._start_print(db, item)
+                mock_pm.is_connected.assert_not_called()
+            await db.refresh(item)
+            assert item.status == "failed"
+            assert "cannot print with this cost center" in item.error_message
 
         await engine.dispose()

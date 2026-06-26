@@ -294,6 +294,8 @@ class FilePrintRequest(BaseModel):
     layer_inspect: bool = False
     timelapse: bool = False
     use_ams: bool = True
+    cost_center_id: int | None = None
+    estimated_cost: float | None = None
     nozzle_offset_cali: bool = True  # Dual-nozzle printers only — MQTT-gated (#1682)
     # Project to associate the resulting archive with
     project_id: int | None = None

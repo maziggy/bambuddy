@@ -20,8 +20,10 @@ from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.models.finance import CostCenter, CostCenterMember, UserWallet
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.services.ldap_service import LDAPSearchResult, LDAPUserInfo
@@ -367,3 +369,95 @@ class TestLdapProvisionRoute:
         body = response.json()
         group_names = {g["name"] for g in body["groups"]}
         assert "Operators" in group_names
+
+
+class TestLdapLoginFinanceDefaults:
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_successful_ldap_login_backfills_finance_defaults(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """LDAP login should ensure wallet + private cost center defaults exist.
+
+        Regression: LDAP users created before finance defaults were introduced can
+        exist without wallet/private center. A successful LDAP login must backfill
+        these defaults so billing-enabled flows have a valid personal cost center.
+        """
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "ldapadmin",
+                "admin_password": "AdminPass1!",
+            },
+        )
+        await _seed_ldap_settings(db_session, ldap_auto_provision="false")
+
+        legacy_user = User(
+            username="legacyldap",
+            email="legacyldap@test.com",
+            password_hash=None,
+            role="user",
+            auth_source="ldap",
+            is_active=True,
+        )
+        db_session.add(legacy_user)
+        await db_session.commit()
+        await db_session.refresh(legacy_user)
+
+        # Precondition: legacy LDAP row has no finance defaults yet.
+        wallet_before = (
+            await db_session.execute(select(UserWallet).where(UserWallet.user_id == legacy_user.id))
+        ).scalar_one_or_none()
+        private_cc_before = (
+            await db_session.execute(
+                select(CostCenter).where(
+                    CostCenter.owner_user_id == legacy_user.id,
+                    CostCenter.is_private.is_(True),
+                )
+            )
+        ).scalar_one_or_none()
+        assert wallet_before is None
+        assert private_cc_before is None
+
+        fake_ldap = LDAPUserInfo(
+            username="legacyldap",
+            email="legacyldap@test.com",
+            display_name="Legacy LDAP",
+            groups=[],
+        )
+        with patch("backend.app.services.ldap_service.authenticate_ldap_user", return_value=fake_ldap):
+            response = await async_client.post(
+                "/api/v1/auth/login",
+                json={"username": "legacyldap", "password": "irrelevant"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["user"]["auth_source"] == "ldap"
+
+        wallet_after = (
+            await db_session.execute(select(UserWallet).where(UserWallet.user_id == legacy_user.id))
+        ).scalar_one_or_none()
+        assert wallet_after is not None
+
+        private_cc_after = (
+            await db_session.execute(
+                select(CostCenter).where(
+                    CostCenter.owner_user_id == legacy_user.id,
+                    CostCenter.is_private.is_(True),
+                )
+            )
+        ).scalar_one_or_none()
+        assert private_cc_after is not None
+        assert private_cc_after.name == "legacyldap"
+
+        membership = (
+            await db_session.execute(
+                select(CostCenterMember).where(
+                    CostCenterMember.cost_center_id == private_cc_after.id,
+                    CostCenterMember.user_id == legacy_user.id,
+                )
+            )
+        ).scalar_one_or_none()
+        assert membership is not None
+        assert membership.can_print is True

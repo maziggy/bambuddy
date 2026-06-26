@@ -176,6 +176,7 @@ async def init_db():
         external_link,
         filament,
         filament_sku_settings,
+        finance,
         github_backup,
         group,
         kprofile_note,
@@ -671,6 +672,12 @@ async def run_migrations(conn):
     # Migration: Add is_favorite column to print_archives
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN is_favorite BOOLEAN DEFAULT 0")
 
+    # Migration: Add wallet_charge_skipped column to print_archives so deleted print charges stay deleted
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN wallet_charge_skipped BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN wallet_charge_skipped BOOLEAN DEFAULT FALSE")
+
     # Migration: Add content_hash column to print_archives for duplicate detection
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN content_hash VARCHAR(64)")
 
@@ -698,6 +705,31 @@ async def run_migrations(conn):
     # Migration: Add is_deleted column to maintenance_types for soft-deletes
     await _safe_execute(conn, "ALTER TABLE maintenance_types ADD COLUMN is_deleted BOOLEAN DEFAULT 0")
 
+    # Migration: Add cost_center columns expected by current finance model
+    await _safe_execute(conn, "ALTER TABLE cost_centers ADD COLUMN code VARCHAR(32)")
+    await _safe_execute(conn, "ALTER TABLE cost_centers ADD COLUMN is_private BOOLEAN DEFAULT 0")
+    await _safe_execute(
+        conn,
+        "ALTER TABLE cost_centers ADD COLUMN owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL",
+    )
+    await _safe_execute(conn, "ALTER TABLE cost_centers ADD COLUMN total_budget FLOAT")
+    await _safe_execute(conn, "ALTER TABLE cost_centers ADD COLUMN monthly_budget FLOAT")
+    await _safe_execute(conn, "ALTER TABLE cost_centers ADD COLUMN created_at DATETIME")
+    await _safe_execute(conn, "ALTER TABLE cost_centers ADD COLUMN updated_at DATETIME")
+
+    # Backfill empty cost center codes on upgraded databases.
+    if is_sqlite():
+        await _safe_execute(
+            conn,
+            "UPDATE cost_centers SET code = lower(hex(randomblob(6))) WHERE code IS NULL OR trim(code) = ''",
+        )
+    else:
+        await _safe_execute(
+            conn,
+            "UPDATE cost_centers SET code = substr(md5(random()::text || clock_timestamp()::text), 1, 12) "
+            "WHERE code IS NULL OR btrim(code) = ''",
+        )
+
     # Migration: Add custom_interval_type column to printer_maintenance
     await _safe_execute(conn, "ALTER TABLE printer_maintenance ADD COLUMN custom_interval_type VARCHAR(20)")
 
@@ -715,6 +747,10 @@ async def run_migrations(conn):
     # Migration: Add daily digest columns to notification_providers
     await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN daily_digest_enabled BOOLEAN DEFAULT 0")
     await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN daily_digest_time VARCHAR(5)")
+
+    # Migration: Add print_run_id to wallet_transactions so repeated prints of the same archive
+    # can be billed independently without mutating archive history.
+    await _safe_execute(conn, "ALTER TABLE wallet_transactions ADD COLUMN print_run_id VARCHAR(100)")
 
     # Migration: Add missing-spool-assignment print-start notification toggle
     try:
@@ -758,6 +794,16 @@ async def run_migrations(conn):
     await _safe_execute(
         conn,
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_oidc_link_user_provider ON user_oidc_links (user_id, provider_id)",
+    )
+
+    # Migration: Add unique indexes to prevent duplicate print-charge transactions
+    await _safe_execute(
+        conn,
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_wallet_transactions_print_run ON wallet_transactions (transaction_type, print_run_id)",
+    )
+    await _safe_execute(
+        conn,
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_wallet_transactions_archive ON wallet_transactions (transaction_type, print_archive_id)",
     )
 
     # Migration: Create FTS5 virtual table for archive full-text search (SQLite only)
@@ -914,6 +960,17 @@ async def run_migrations(conn):
     # Migration: Add manual_start column to print_queue for staged prints
     await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN manual_start BOOLEAN DEFAULT 0")
 
+    # Migration: Add cost_center_id column to print_queue for billing metadata
+    try:
+        async with conn.begin_nested():
+            await conn.execute(
+                text(
+                    "ALTER TABLE print_queue ADD COLUMN cost_center_id INTEGER REFERENCES cost_centers(id) ON DELETE SET NULL"
+                )
+            )
+    except (OperationalError, ProgrammingError):
+        pass  # Already applied
+
     # Migration: Add wiki_url column to maintenance_types for documentation links
     await _safe_execute(conn, "ALTER TABLE maintenance_types ADD COLUMN wiki_url VARCHAR(500)")
 
@@ -1007,12 +1064,15 @@ async def run_migrations(conn):
             result = await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='print_queue'"))
             row = result.fetchone()
             if row and "printer_id INTEGER NOT NULL" in (row[0] or ""):
+                cols_result = await conn.execute(text("PRAGMA table_info(print_queue)"))
+                col_names = {col[1] for col in cols_result.fetchall()}
                 await conn.execute(
                     text("""
                     CREATE TABLE print_queue_new (
                         id INTEGER PRIMARY KEY,
                         printer_id INTEGER REFERENCES printers(id) ON DELETE CASCADE,
                         archive_id INTEGER NOT NULL REFERENCES print_archives(id) ON DELETE CASCADE,
+                        cost_center_id INTEGER REFERENCES cost_centers(id) ON DELETE SET NULL,
                         project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
                         position INTEGER DEFAULT 0,
                         scheduled_time DATETIME,
@@ -1028,15 +1088,26 @@ async def run_migrations(conn):
                     )
                 """)
                 )
-                await conn.execute(
-                    text("""
+                if "cost_center_id" in col_names:
+                    await conn.execute(
+                        text("""
                     INSERT INTO print_queue_new
-                    SELECT id, printer_id, archive_id, project_id, position, scheduled_time,
+                    SELECT id, printer_id, archive_id, cost_center_id, project_id, position, scheduled_time,
                            manual_start, require_previous_success, auto_off_after, ams_mapping,
                            status, started_at, completed_at, error_message, created_at
                     FROM print_queue
                 """)
-                )
+                    )
+                else:
+                    await conn.execute(
+                        text("""
+                    INSERT INTO print_queue_new
+                    SELECT id, printer_id, archive_id, NULL, project_id, position, scheduled_time,
+                           manual_start, require_previous_success, auto_off_after, ams_mapping,
+                           status, started_at, completed_at, error_message, created_at
+                    FROM print_queue
+                """)
+                    )
                 await conn.execute(text("DROP TABLE print_queue"))
                 await conn.execute(text("ALTER TABLE print_queue_new RENAME TO print_queue"))
         except (OperationalError, ProgrammingError):
@@ -1168,6 +1239,8 @@ async def run_migrations(conn):
             result = await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='print_queue'"))
             row = result.fetchone()
             if row and "archive_id INTEGER NOT NULL" in (row[0] or ""):
+                cols_result = await conn.execute(text("PRAGMA table_info(print_queue)"))
+                col_names = {col[1] for col in cols_result.fetchall()}
                 await conn.execute(
                     text("""
                     CREATE TABLE print_queue_new2 (
@@ -1175,6 +1248,7 @@ async def run_migrations(conn):
                         printer_id INTEGER REFERENCES printers(id) ON DELETE CASCADE,
                         archive_id INTEGER REFERENCES print_archives(id) ON DELETE CASCADE,
                         library_file_id INTEGER REFERENCES library_files(id) ON DELETE CASCADE,
+                        cost_center_id INTEGER REFERENCES cost_centers(id) ON DELETE SET NULL,
                         project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
                         position INTEGER DEFAULT 0,
                         scheduled_time DATETIME,
@@ -1197,17 +1271,30 @@ async def run_migrations(conn):
                     )
                 """)
                 )
-                await conn.execute(
-                    text("""
+                if "cost_center_id" in col_names:
+                    await conn.execute(
+                        text("""
                     INSERT INTO print_queue_new2
-                    SELECT id, printer_id, archive_id, NULL, project_id, position, scheduled_time,
+                    SELECT id, printer_id, archive_id, NULL, cost_center_id, project_id, position, scheduled_time,
                            manual_start, require_previous_success, auto_off_after, ams_mapping, plate_id,
                            COALESCE(bed_levelling, 1), COALESCE(flow_cali, 0), COALESCE(vibration_cali, 1),
                            COALESCE(layer_inspect, 0), COALESCE(timelapse, 0), COALESCE(use_ams, 1),
                            status, started_at, completed_at, error_message, created_at
                     FROM print_queue
                 """)
-                )
+                    )
+                else:
+                    await conn.execute(
+                        text("""
+                    INSERT INTO print_queue_new2
+                    SELECT id, printer_id, archive_id, NULL, NULL, project_id, position, scheduled_time,
+                           manual_start, require_previous_success, auto_off_after, ams_mapping, plate_id,
+                           COALESCE(bed_levelling, 1), COALESCE(flow_cali, 0), COALESCE(vibration_cali, 1),
+                           COALESCE(layer_inspect, 0), COALESCE(timelapse, 0), COALESCE(use_ams, 1),
+                           status, started_at, completed_at, error_message, created_at
+                    FROM print_queue
+                """)
+                    )
                 await conn.execute(text("DROP TABLE print_queue"))
                 await conn.execute(text("ALTER TABLE print_queue_new2 RENAME TO print_queue"))
         except (OperationalError, ProgrammingError):
@@ -2116,6 +2203,61 @@ async def run_migrations(conn):
 
     # Migration: Auto-print G-code injection (#422)
     await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN gcode_injection BOOLEAN DEFAULT FALSE NOT NULL")
+
+    # Migration: Store estimated print cost for budget checks before queued jobs start
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN estimated_cost FLOAT")
+
+    # Migration: Persist active budget reservations for accepted background dispatch jobs.
+    if is_sqlite():
+        await _safe_execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS budget_reservations (
+                id INTEGER PRIMARY KEY,
+                cost_center_id INTEGER NOT NULL REFERENCES cost_centers(id) ON DELETE CASCADE,
+                amount FLOAT NOT NULL,
+                status VARCHAR(20),
+                source_type VARCHAR(50),
+                source_id INTEGER,
+                print_archive_id INTEGER REFERENCES print_archives(id) ON DELETE SET NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                released_at DATETIME
+            )
+            """,
+        )
+    else:
+        await _safe_execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS budget_reservations (
+                id SERIAL PRIMARY KEY,
+                cost_center_id INTEGER NOT NULL REFERENCES cost_centers(id) ON DELETE CASCADE,
+                amount FLOAT NOT NULL,
+                status VARCHAR(20),
+                source_type VARCHAR(50),
+                source_id INTEGER,
+                print_archive_id INTEGER REFERENCES print_archives(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                released_at TIMESTAMP
+            )
+            """,
+        )
+    await _safe_execute(
+        conn, "CREATE INDEX IF NOT EXISTS ix_budget_reservations_cost_center_id ON budget_reservations (cost_center_id)"
+    )
+    await _safe_execute(
+        conn, "CREATE INDEX IF NOT EXISTS ix_budget_reservations_status ON budget_reservations (status)"
+    )
+    await _safe_execute(
+        conn, "CREATE INDEX IF NOT EXISTS ix_budget_reservations_source_type ON budget_reservations (source_type)"
+    )
+    await _safe_execute(
+        conn, "CREATE INDEX IF NOT EXISTS ix_budget_reservations_source_id ON budget_reservations (source_id)"
+    )
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_budget_reservations_print_archive_id ON budget_reservations (print_archive_id)",
+    )
 
     # Migration: Add backup_spools and backup_archives columns to github_backup_config
     await _safe_execute(conn, "ALTER TABLE github_backup_config ADD COLUMN backup_spools BOOLEAN DEFAULT 0")
@@ -3366,6 +3508,18 @@ async def seed_default_groups():
         "library:read": "library:read_own",
     }
 
+    FINANCE_PERMISSION_MIGRATION = {
+        "finance:read_own": "cost_centers:read_own",
+        "finance:read_all": "cost_centers:read_all",
+        "finance:transactions:create": "cost_centers:modify",
+        "finance:create_transactions": "cost_centers:modify",
+        "finance:createTransactions:create": "cost_centers:modify",
+        "finance:cost_centers:create": "cost_centers:create",
+        "finance:cost_centers:update": "cost_centers:modify",
+        "finance:cost_centers:assign_users": "cost_centers:modify",
+        "finance:budgets:update": "cost_centers:modify",
+    }
+
     async with async_session() as session:
         # Get existing groups
         result = await session.execute(select(Group))
@@ -3397,6 +3551,16 @@ async def seed_default_groups():
                     )
 
                     for old_perm, new_perm in migration_map.items():
+                        if old_perm in new_permissions:
+                            new_permissions.remove(old_perm)
+                            if new_perm not in new_permissions:
+                                new_permissions.append(new_perm)
+                            updated = True
+                            logger.info(
+                                "Migrated permission '%s' to '%s' in group '%s'", old_perm, new_perm, group_name
+                            )
+
+                    for old_perm, new_perm in FINANCE_PERMISSION_MIGRATION.items():
                         if old_perm in new_permissions:
                             new_permissions.remove(old_perm)
                             if new_perm not in new_permissions:
@@ -3664,3 +3828,89 @@ async def seed_color_catalog():
             )
         await session.commit()
         logger.info("Seeded %d default color catalog entries", len(DEFAULT_COLOR_CATALOG))
+
+
+async def repair_wallet_ledger():
+    """Repair wallet ledger balance_after values.
+
+    This is called during database initialization to ensure all balance_after
+    values are correct after code changes. Fixes old balance_after values to:
+    - Personal transactions: per-user running balance
+    - Cost-center transactions: global running balance for the entire cost center
+    Also updates UserWallet.balance to match final personal transaction balance.
+    """
+    from sqlalchemy import select
+
+    from backend.app.models.finance import WalletTransaction
+
+    async with async_session() as session:
+        # Check if there are any transactions first
+        result = await session.execute(select(WalletTransaction).limit(1))
+        if not result.scalar_one_or_none():
+            logger.info("No wallet transactions found, skipping ledger rebuild")
+            return
+
+        updated_count = await repair_wallet_ledger_internal(session)
+        await session.commit()
+
+        if updated_count > 0:
+            logger.info("Repaired wallet ledger: updated %d transactions/wallets", updated_count)
+
+
+async def repair_wallet_ledger_internal(session: AsyncSession):
+    """Internal helper that repairs wallet ledger using an existing session.
+
+    Used by API endpoints that need to rebuild the ledger within their own transaction.
+    """
+    from sqlalchemy import select
+
+    from backend.app.models.finance import UserWallet, WalletTransaction
+
+    # Get ALL transactions sorted by timestamp
+    result = await session.execute(
+        select(WalletTransaction).order_by(WalletTransaction.created_at.asc(), WalletTransaction.id.asc())
+    )
+    all_transactions = result.scalars().all()
+
+    if not all_transactions:
+        return 0
+
+    # Build running balances per (user, cost_center_id) pair
+    cc_running_balances: dict[int, float] = {}  # cost_center_id -> running balance
+    user_personal_balances: dict[int, float] = {}  # user_id -> personal running balance
+
+    tx_updates: list[tuple[WalletTransaction, float]] = []
+
+    for tx in all_transactions:
+        if tx.cost_center_id is None:
+            # Personal transaction: per-user running balance
+            current = user_personal_balances.get(tx.user_id, 0.0)
+            new_balance = current + float(tx.amount)
+            user_personal_balances[tx.user_id] = new_balance
+            tx_updates.append((tx, new_balance))
+        else:
+            # Cost-center transaction: global running balance for this cost center
+            current = cc_running_balances.get(tx.cost_center_id, 0.0)
+            new_balance = current + float(tx.amount)
+            cc_running_balances[tx.cost_center_id] = new_balance
+            tx_updates.append((tx, new_balance))
+
+    # Update all transactions with the new balance_after values
+    updated_count = 0
+    for tx, new_balance in tx_updates:
+        if tx.balance_after != new_balance:
+            tx.balance_after = new_balance
+            session.add(tx)
+            updated_count += 1
+
+    # Update UserWallet balances to match final personal balances
+    for user_id, balance in user_personal_balances.items():
+        wallet_result = await session.execute(select(UserWallet).where(UserWallet.user_id == user_id))
+        wallet = wallet_result.scalar_one_or_none()
+        if wallet and wallet.balance != balance:
+            wallet.balance = balance
+            session.add(wallet)
+            updated_count += 1
+
+    await session.flush()
+    return updated_count

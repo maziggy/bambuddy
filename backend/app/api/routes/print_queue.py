@@ -36,6 +36,7 @@ from backend.app.schemas.print_queue import (
     PrintQueueReorder,
 )
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
+from backend.app.services.finance_budget import validate_print_budget
 from backend.app.services.notification_service import notification_service
 from backend.app.utils.printer_models import normalize_printer_model, normalize_printer_model_id
 from backend.app.utils.threemf_tools import (
@@ -164,6 +165,8 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "waiting_reason": item.waiting_reason,
         "archive_id": item.archive_id,
         "library_file_id": item.library_file_id,
+        "cost_center_id": item.cost_center_id,
+        "estimated_cost": item.estimated_cost,
         "position": item.position,
         "scheduled_time": item.scheduled_time,
         "require_previous_success": item.require_previous_success,
@@ -545,6 +548,14 @@ async def add_to_queue(
         if not project_result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Project not found")
 
+    await validate_print_budget(
+        db,
+        cost_center_id=data.cost_center_id,
+        estimated_cost=data.estimated_cost,
+        current_user=current_user,
+        quantity=quantity,
+    )
+
     ams_mapping_json = json.dumps(data.ams_mapping) if data.ams_mapping else None
     items = []
     for i in range(quantity):
@@ -556,6 +567,8 @@ async def add_to_queue(
             filament_overrides=filament_overrides_json,
             archive_id=data.archive_id,
             library_file_id=data.library_file_id,
+            cost_center_id=data.cost_center_id,
+            estimated_cost=data.estimated_cost,
             scheduled_time=data.scheduled_time,
             require_previous_success=data.require_previous_success,
             auto_off_after=data.auto_off_after,
@@ -672,6 +685,7 @@ async def bulk_update_queue_items(
 
     updated_count = 0
     skipped_count = 0
+    validates_billing_fields = "cost_center_id" in update_data or "estimated_cost" in update_data
 
     for item in items:
         if item.status != "pending":
@@ -682,6 +696,15 @@ async def bulk_update_queue_items(
         if not can_modify_all and item.created_by_id != user.id:
             skipped_count += 1
             continue
+
+        if validates_billing_fields:
+            await validate_print_budget(
+                db,
+                cost_center_id=update_data.get("cost_center_id", item.cost_center_id),
+                estimated_cost=update_data.get("estimated_cost", item.estimated_cost),
+                current_user=user,
+                exclude_queue_item_id=item.id,
+            )
 
         for field, value in update_data.items():
             setattr(item, field, value)
@@ -1022,12 +1045,13 @@ async def update_queue_item(
             json.dumps(update_data["filament_overrides"]) if update_data["filament_overrides"] else None
         )
 
-    # Serialize H2C rack-swap nozzle pick (#1780) to JSON for TEXT column
-    # storage; same Text-as-opaque-blob convention as ams_mapping above.
-    if "nozzle_mapping" in update_data:
-        update_data["nozzle_mapping"] = (
-            json.dumps(update_data["nozzle_mapping"]) if update_data["nozzle_mapping"] else None
-        )
+    await validate_print_budget(
+        db,
+        cost_center_id=update_data.get("cost_center_id", item.cost_center_id),
+        estimated_cost=update_data.get("estimated_cost", item.estimated_cost),
+        current_user=user,
+        exclude_queue_item_id=item.id,
+    )
 
     for field, value in update_data.items():
         setattr(item, field, value)
@@ -1270,7 +1294,7 @@ async def start_queue_item(
     item_id: int,
     skip_filament_check: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
-    user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_OWN),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_OWN),
 ):
     """Manually start a staged (manual_start) queue item.
 
@@ -1297,6 +1321,14 @@ async def start_queue_item(
 
     if item.status != "pending":
         raise HTTPException(400, f"Can only start pending items, current status: '{item.status}'")
+
+    await validate_print_budget(
+        db,
+        cost_center_id=item.cost_center_id,
+        estimated_cost=item.estimated_cost,
+        current_user=current_user,
+        exclude_queue_item_id=item.id,
+    )
 
     # Live deficit check — re-evaluated against current spool state, so a
     # spool swap between scheduler flagging and the user clicking ▶ clears
@@ -1327,8 +1359,8 @@ async def start_queue_item(
     # (#1670). An item that already has a creator (UI-added queue items)
     # keeps that attribution; the dispatcher is not promoted over the
     # original uploader.
-    if user is not None and item.created_by_id is None:
-        item.created_by_id = user.id
+    if current_user is not None and item.created_by_id is None:
+        item.created_by_id = current_user.id
     await db.commit()
     await db.refresh(item, ["archive", "printer", "library_file", "created_by", "batch"])
 

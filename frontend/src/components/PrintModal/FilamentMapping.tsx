@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Circle, Check, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Palette } from 'lucide-react';
@@ -18,6 +18,9 @@ export function FilamentMapping({
   filamentReqs,
   manualMappings,
   onManualMappingChange,
+  onEstimatedCostChange,
+  budgetAvailable,
+  quantity = 1,
   currencySymbol,
   defaultCostPerKg,
   defaultExpanded = false,
@@ -118,10 +121,16 @@ export function FilamentMapping({
     return total;
   }, [filamentComparison, trayCostMap, defaultCostPerKg]);
 
+  useEffect(() => {
+    onEstimatedCostChange?.(totalCost > 0 ? totalCost : null);
+  }, [onEstimatedCostChange, totalCost]);
+
   const hasAnyCost = useMemo(
     () => Array.from(trayCostMap.values()).some((v) => v != null && v > 0),
     [trayCostMap]
   );
+  const budgetCheckCost = totalCost * Math.max(1, quantity);
+  const isBudgetInsufficient = budgetAvailable != null && budgetCheckCost > budgetAvailable;
   const hasFilamentReqs = filamentReqs?.filaments && filamentReqs.filaments.length > 0;
   const isDualNozzle = filamentReqs?.filaments?.some((f) => f.nozzle_id != null) ?? false;
 
@@ -344,7 +353,19 @@ export function FilamentMapping({
             <span className="text-white">
               {totalCost > 0 || hasAnyCost ? `${currencySymbol}${totalCost.toFixed(2)}` : 'N/A'}
             </span>
+            {quantity > 1 && totalCost > 0 && (
+              <span className="ml-2">
+                {t('printModal.totalCostForQuantity', 'total: {{cost}}', {
+                  cost: `${currencySymbol}${budgetCheckCost.toFixed(2)}`,
+                })}
+              </span>
+            )}
           </div>
+          {isBudgetInsufficient && (
+            <p className="text-xs text-red-400 mt-2">
+              {t('printModal.insufficientBudget', 'Insufficient budget for this cost center.')}
+            </p>
+          )}
           {hasTypeMismatch && (
             <p className="text-xs text-orange-400 mt-2">Required filament type not found in printer.</p>
           )}

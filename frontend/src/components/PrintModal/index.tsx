@@ -2,7 +2,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { AlertCircle, AlertTriangle, Calendar, Code, Layers, Loader2, Pencil, Printer, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { PrintQueueItemCreate, PrintQueueItemUpdate, SpoolAssignment } from '../../api/client';
+import type { PrintQueueItemCreate, PrintQueueItemUpdate, SpoolAssignment, CostCenterSummary } from '../../api/client';
 import { api } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, CardContent } from '../Card';
@@ -22,6 +22,7 @@ import { PlateSelector } from './PlateSelector';
 import { PrinterSelector } from './PrinterSelector';
 import { PrintOptionsPanel } from './PrintOptions';
 import { ScheduleOptionsPanel } from './ScheduleOptions';
+import { CostCenterSelect } from './CostCenterSelect';
 import type {
   AssignmentMode,
   PrintModalProps,
@@ -55,7 +56,7 @@ export function PrintModal({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
 
   // Determine if we're printing a library file
   const isLibraryFile = !!libraryFileId && !archiveId;
@@ -179,6 +180,15 @@ export function PrintModal({
     return null;
   });
 
+  // Cost center selection (defaults to queue item's value in edit mode)
+  const [selectedCostCenterId, setSelectedCostCenterId] = useState<number | null>(() => {
+    if (mode === 'edit-queue-item' && queueItem?.cost_center_id != null) {
+      return queueItem.cost_center_id;
+    }
+    return null;
+  });
+  const [estimatedCost, setEstimatedCost] = useState<number | null>(queueItem?.estimated_cost ?? null);
+
   // Filament overrides for model-based assignment: slot_id -> {type, color}
   const [filamentOverrides, setFilamentOverrides] = useState<Record<number, { type: string; color: string }>>(() => {
     if (mode === 'edit-queue-item' && queueItem?.filament_overrides) {
@@ -257,11 +267,36 @@ export function PrintModal({
 
   const currencySymbol = getCurrencySymbol(settings?.currency || 'USD');
   const defaultCostPerKg = settings?.default_filament_cost ?? 0;
+  const billingEnabled = settings?.billing_enabled === true;
 
   const { data: printers, isLoading: loadingPrinters } = useQuery({
     queryKey: ['printers'],
     queryFn: api.getPrinters,
   });
+
+  const { data: myCostCenters } = useQuery({
+    queryKey: ['finance', 'cost-centers', 'mine'],
+    queryFn: api.getMyCostCenters,
+    enabled: !!user && billingEnabled,
+  });
+
+  const printableCostCenters = useMemo(
+    () => (myCostCenters || []).filter((center: CostCenterSummary) => center.can_print && center.is_active),
+    [myCostCenters]
+  );
+  const selectedCostCenter = useMemo(
+    () => printableCostCenters.find((center) => center.id === selectedCostCenterId) ?? null,
+    [printableCostCenters, selectedCostCenterId]
+  );
+
+  // Select default cost center once loaded (prefer private/personal)
+  useEffect(() => {
+    if (printableCostCenters.length === 0) return;
+    if (selectedCostCenterId != null && printableCostCenters.some((c) => c.id === selectedCostCenterId)) return;
+
+    const preferredPrivate = printableCostCenters.find((c) => c.is_private);
+    setSelectedCostCenterId(preferredPrivate ? preferredPrivate.id : printableCostCenters[0].id);
+  }, [printableCostCenters, selectedCostCenterId]);
 
   const { data: spoolAssignments } = useQuery({
     queryKey: ['spool-assignments'],
@@ -733,6 +768,8 @@ export function PrintModal({
         : undefined,
       ...printOptions,
       project_id: projectId ?? undefined,
+      cost_center_id: billingEnabled ? selectedCostCenterId : undefined,
+      estimated_cost: billingEnabled && selectedCostCenterId != null ? estimatedCost : undefined,
       batch_id: autoBatchId ?? undefined,
     });
 
@@ -768,6 +805,8 @@ export function PrintModal({
                 ? new Date(scheduleOptions.scheduledTime).toISOString()
                 : null,
               ...printOptions,
+              cost_center_id: billingEnabled ? selectedCostCenterId : undefined,
+              estimated_cost: billingEnabled && selectedCostCenterId != null ? estimatedCost : undefined,
             };
             await updateQueueMutation.mutateAsync(updateData);
           } else {
@@ -826,7 +865,9 @@ export function PrintModal({
                     ...printOptions,
                     project_id: projectId,
                     cleanup_library_after_dispatch: cleanupLibraryAfterDispatch,
-                  });
+                    cost_center_id: billingEnabled ? selectedCostCenterId ?? undefined : undefined,
+                    estimated_cost: billingEnabled && selectedCostCenterId != null ? estimatedCost ?? undefined : undefined,
+                });
                 } else {
                   // project_id is intentionally omitted here: reprintArchive targets an existing
                   // archive that already carries its own project association from the original print.
@@ -835,7 +876,9 @@ export function PrintModal({
                     plate_name: selectedPlateName,
                     ams_mapping: printerMapping,
                     ...printOptions,
-                  });
+                    cost_center_id: billingEnabled ? selectedCostCenterId ?? undefined : undefined,
+                    estimated_cost: billingEnabled && selectedCostCenterId != null ? estimatedCost ?? undefined : undefined,
+                });
                 }
                 // Queue remaining copies if quantity > 1
                 if (effectiveQuantity > 1) {
@@ -861,6 +904,8 @@ export function PrintModal({
                   ? new Date(scheduleOptions.scheduledTime).toISOString()
                   : null,
                 ...printOptions,
+                cost_center_id: billingEnabled ? selectedCostCenterId : undefined,
+                estimated_cost: billingEnabled && selectedCostCenterId != null ? estimatedCost : undefined,
               };
               await updateQueueMutation.mutateAsync(updateData);
             } else {
@@ -1019,6 +1064,12 @@ export function PrintModal({
   const showFilamentMapping = effectivePrinterId && selectedPlates.size <= 1 && (
     isLibraryFile || (isMultiPlate ? selectedPlate !== null : true)
   );
+
+  useEffect(() => {
+    if (!showFilamentMapping || archiveDataMissing || selectedPrinters.length !== 1) {
+      setEstimatedCost(null);
+    }
+  }, [archiveDataMissing, selectedPrinters.length, showFilamentMapping]);
 
   // Dual-nozzle gate for the Nozzle Offset Calibration toggle (#1682).
   // Mirrors backend `DUAL_NOZZLE_MODELS` so model-based assignment can show
@@ -1199,6 +1250,9 @@ export function PrintModal({
                 filamentReqs={effectiveFilamentReqs}
                 manualMappings={manualMappings}
                 onManualMappingChange={setManualMappings}
+                onEstimatedCostChange={setEstimatedCost}
+                budgetAvailable={billingEnabled ? selectedCostCenter?.budget_available ?? null : null}
+                quantity={effectiveQuantity}
                 defaultExpanded={!!initialSelectedPrinterIds?.length || (settings?.per_printer_mapping_expanded ?? false)}
                 currencySymbol={currencySymbol}
                 defaultCostPerKg={defaultCostPerKg}
@@ -1216,6 +1270,14 @@ export function PrintModal({
                 onChange={setPrintOptions}
                 defaultExpanded={!!initialSelectedPrinterIds?.length}
                 showDualNozzleOptions={showDualNozzleOptions}
+              />
+            )}
+
+            {billingEnabled && printableCostCenters.length > 0 && (
+              <CostCenterSelect
+                costCenters={printableCostCenters}
+                selectedCostCenterId={selectedCostCenterId}
+                onChange={setSelectedCostCenterId}
               />
             )}
 
@@ -1311,6 +1373,13 @@ export function PrintModal({
               </div>
             )}
 
+            {/* Print options */}
+            {(mode === 'reprint' || effectivePrinterCount > 0 || (assignmentMode === 'model' && targetModel)) && (
+              <div className="pt-3">
+                <PrintOptionsPanel options={printOptions} onChange={setPrintOptions} defaultExpanded={!!initialSelectedPrinterIds?.length} />
+              </div>
+            )}
+
             {/* Error message */}
             {updateQueueMutation.isError && (
               <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-sm text-red-400">
@@ -1319,7 +1388,7 @@ export function PrintModal({
             )}
 
             {/* Actions */}
-            <div className={`flex gap-3 ${mode === 'reprint' ? '' : 'pt-2'}`}>
+            <div className="flex gap-3 pt-4 mt-2 border-t border-bambu-dark-tertiary">
               <Button type="button" variant="secondary" onClick={onClose} className="flex-1" disabled={isSubmitting}>
                 Cancel
               </Button>

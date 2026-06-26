@@ -12,9 +12,12 @@ import shutil
 import ssl
 import struct
 import subprocess
+import urllib.request
 import uuid
 from datetime import datetime
 from pathlib import Path
+
+from backend.app.services.flashforge_local import is_flashforge_model
 
 logger = logging.getLogger(__name__)
 
@@ -304,6 +307,35 @@ def is_chamber_image_model(model: str | None) -> bool:
     return not supports_rtsp(model)
 
 
+def _read_flashforge_mjpeg_frame_sync(ip_address: str, timeout: float) -> bytes | None:
+    """Read a single JPEG frame from FlashForge's local MJPEG endpoint."""
+    url = f"http://{ip_address}:8080/?action=stream"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            buffer = b""
+            while True:
+                chunk = response.read(8192)
+                if not chunk:
+                    return None
+                buffer += chunk
+
+                start = buffer.find(JPEG_START)
+                end = buffer.find(JPEG_END, start + 2) if start != -1 else -1
+                if start != -1 and end != -1:
+                    return buffer[start : end + 2]
+
+                if len(buffer) > 2_000_000:
+                    buffer = buffer[-1_000_000:]
+    except Exception as exc:
+        logger.warning("FlashForge MJPEG frame capture failed from %s: %s", url, exc)
+        return None
+
+
+async def read_flashforge_mjpeg_frame(ip_address: str, timeout: float = 15.0) -> bytes | None:
+    """Read a single JPEG frame from FlashForge's local MJPEG endpoint."""
+    return await asyncio.to_thread(_read_flashforge_mjpeg_frame_sync, ip_address, timeout)
+
+
 def build_camera_url(ip_address: str, access_code: str, model: str | None) -> str:
     """Build the RTSPS URL for the printer camera (RTSP models only)."""
     port = get_camera_port(model)
@@ -547,6 +579,10 @@ async def capture_camera_frame_bytes(
     Returns:
         JPEG bytes if capture was successful, None otherwise
     """
+    if is_flashforge_model(model):
+        logger.info("Capturing camera frame bytes from %s using FlashForge MJPEG (model: %s)", ip_address, model)
+        return await read_flashforge_mjpeg_frame(ip_address, timeout=float(timeout))
+
     # Chamber image models: A1/P1 - returns bytes directly
     if is_chamber_image_model(model):
         logger.info("Capturing camera frame bytes from %s using chamber image protocol (model: %s)", ip_address, model)

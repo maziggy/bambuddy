@@ -41,6 +41,7 @@ from backend.app.services.bambu_ftp import (
     get_storage_info_async,
     list_files_async,
 )
+from backend.app.services.flashforge_local import is_flashforge_model
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
 from backend.app.services.printer_manager import (
     get_derived_status_name,
@@ -402,7 +403,7 @@ async def get_printer_status(
 
     # Determine cover URL if there's an active print (including paused)
     cover_url = None
-    if state.state in ("RUNNING", "PAUSE") and state.gcode_file:
+    if state.state in ("RUNNING", "PAUSE") and state.gcode_file and not is_flashforge_model(printer.model):
         cover_url = f"/api/v1/printers/{printer_id}/cover"
 
     # Convert HMS errors to response format

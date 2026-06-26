@@ -19,7 +19,7 @@ class Permission(StrEnum):
     PRINTERS_CREATE = "printers:create"
     PRINTERS_UPDATE = "printers:update"
     PRINTERS_DELETE = "printers:delete"
-    PRINTERS_CONTROL = "printers:control"  # Start/stop/pause/resume prints
+    PRINTERS_CONTROL = "printers:control"  # Printer controls: stop/pause/resume, lights, motors, drying, etc.
     PRINTERS_FILES = "printers:files"  # Send files to printer
     PRINTERS_AMS_RFID = "printers:ams_rfid"  # Re-read AMS RFID tags
     PRINTERS_CLEAR_PLATE = "printers:clear_plate"  # Confirm plate cleared for next print
@@ -36,15 +36,15 @@ class Permission(StrEnum):
     ARCHIVES_UPDATE_ALL = "archives:update_all"
     ARCHIVES_DELETE_OWN = "archives:delete_own"
     ARCHIVES_DELETE_ALL = "archives:delete_all"
-    ARCHIVES_REPRINT_OWN = "archives:reprint_own"
-    ARCHIVES_REPRINT_ALL = "archives:reprint_all"
+    ARCHIVES_REPRINT_OWN = "archives:reprint_own"  # Reprint own archives; queue:create is also required to enqueue
+    ARCHIVES_REPRINT_ALL = "archives:reprint_all"  # Reprint any archive; queue:create is also required to enqueue
     ARCHIVES_PURGE = "archives:purge"
 
     # Queue
     QUEUE_READ = "queue:read"
     QUEUE_READ_OWN = "queue:read_own"
     QUEUE_READ_ALL = "queue:read_all"
-    QUEUE_CREATE = "queue:create"
+    QUEUE_CREATE = "queue:create"  # Create queue items, including ASAP items eligible for immediate dispatch
     QUEUE_UPDATE_OWN = "queue:update_own"
     QUEUE_UPDATE_ALL = "queue:update_all"
     QUEUE_DELETE_OWN = "queue:delete_own"
@@ -55,7 +55,7 @@ class Permission(StrEnum):
     LIBRARY_READ = "library:read"
     LIBRARY_READ_OWN = "library:read_own"
     LIBRARY_READ_ALL = "library:read_all"
-    LIBRARY_UPLOAD = "library:upload"
+    LIBRARY_UPLOAD = "library:upload"  # Upload/import/slice library files; queue:create is also required to print
     LIBRARY_UPDATE_OWN = "library:update_own"
     LIBRARY_UPDATE_ALL = "library:update_all"
     LIBRARY_DELETE_OWN = "library:delete_own"
@@ -133,6 +133,7 @@ class Permission(StrEnum):
 
     # AMS History
     AMS_HISTORY_READ = "ams_history:read"
+    PRINTER_SENSOR_HISTORY_READ = "printer_sensor_history:read"
 
     # Stats/Metrics
     STATS_READ = "stats:read"
@@ -295,6 +296,7 @@ PERMISSION_CATEGORIES = {
     ],
     "Stats & History": [
         Permission.AMS_HISTORY_READ,
+        Permission.PRINTER_SENSOR_HISTORY_READ,
         Permission.STATS_READ,
         Permission.STATS_FILTER_BY_USER,
     ],
@@ -445,6 +447,7 @@ DEFAULT_GROUPS = {
             Permission.FIRMWARE_READ.value,
             # Stats & History
             Permission.AMS_HISTORY_READ.value,
+            Permission.PRINTER_SENSOR_HISTORY_READ.value,
             Permission.STATS_READ.value,
             Permission.SYSTEM_READ.value,
             # Settings - read only
@@ -476,6 +479,7 @@ DEFAULT_GROUPS = {
             Permission.EXTERNAL_LINKS_READ.value,
             Permission.FIRMWARE_READ.value,
             Permission.AMS_HISTORY_READ.value,
+            Permission.PRINTER_SENSOR_HISTORY_READ.value,
             Permission.STATS_READ.value,
             Permission.SYSTEM_READ.value,
             Permission.SETTINGS_READ.value,

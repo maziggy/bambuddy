@@ -11,6 +11,9 @@ import { api, supportApi, pendingUploadsApi, type Permission } from '../api/clie
 import { getIconByName } from './IconPicker';
 import { useIsSidebarCompact } from '../hooks/useIsSidebarCompact';
 import { useColorCatalogVersion } from '../hooks/useColorCatalogVersion';
+import { useSponsorPrompt } from '../hooks/useSponsorPrompt';
+import { useUnknownTagPrompt } from '../hooks/useUnknownTagPrompt';
+import { UnknownSpoolModal } from './UnknownSpoolModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Card, CardHeader, CardContent } from './Card';
@@ -111,6 +114,13 @@ export function Layout() {
     queryFn: api.getSettings,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
+
+  // Sponsor-prompt toast — fires once per session post-auth if a milestone is eligible.
+  useSponsorPrompt(settings?.currency ?? 'EUR');
+
+  // Unknown-spool prompt — surfaces a confirmation modal when the AMS reports a
+  // tag with no inventory match (only when `auto_add_unknown_rfid` is off).
+  const unknownSpool = useUnknownTagPrompt();
 
   // Fetch default sidebar order via a public endpoint (no settings:read needed)
   const { data: defaultSidebarData } = useQuery({
@@ -890,6 +900,13 @@ export function Layout() {
         )}
         <Outlet />
       </main>
+
+      <UnknownSpoolModal
+        prompt={unknownSpool.prompt}
+        isPending={unknownSpool.isPending}
+        onConfirm={unknownSpool.confirm}
+        onCancel={unknownSpool.cancel}
+      />
 
       {/* Keyboard Shortcuts Modal */}
       {showShortcuts && (

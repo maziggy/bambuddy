@@ -58,6 +58,7 @@ import {
   PackageOpen,
   Ungroup,
   Ban,
+  PlayCircle,
 } from 'lucide-react';
 import { api, ApiError } from '../api/client';
 import { type TimeFormat, formatETA, formatDuration, formatRelativeTime, parseUTCDate } from '../utils/date';
@@ -671,8 +672,8 @@ function SortableQueueItem({
                 variant="ghost"
                 size="sm"
                 onClick={onStop}
-                disabled={!hasPermission('printers:control')}
-                title={!hasPermission('printers:control') ? t('queue.permissions.noStopPrint') : t('queue.actions.stopPrint')}
+                disabled={!canModify('queue', 'update', item.created_by_id)}
+                title={!canModify('queue', 'update', item.created_by_id) ? t('queue.permissions.noStopPrint') : t('queue.actions.stopPrint')}
                 className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-1.5 sm:p-2"
               >
                 <StopCircle className="w-4 h-4" />
@@ -685,8 +686,8 @@ function SortableQueueItem({
                     variant="ghost"
                     size="sm"
                     onClick={onStart}
-                    disabled={!hasPermission('printers:control')}
-                    title={!hasPermission('printers:control') ? t('queue.permissions.noStartPrint') : t('queue.actions.startPrint')}
+                    disabled={!canModify('queue', 'update', item.created_by_id)}
+                    title={!canModify('queue', 'update', item.created_by_id) ? t('queue.permissions.noStartPrint') : t('queue.actions.startPrint')}
                     className="text-bambu-green hover:text-bambu-green-light hover:bg-bambu-green/10 p-1.5 sm:p-2"
                   >
                     <Play className="w-4 h-4" />
@@ -771,22 +772,20 @@ interface QueueRowRenderProps {
 /** Renders either a single item or a collapsible batch group containing N
  *  sibling items. The batch parent shows aggregate stats; children render
  *  with the existing SortableQueueItem (only draggable inside the batch). */
-function QueueRowRender({
-  row,
-  collapsed,
-  onToggleBatch,
-  onUngroup,
-  setEditItem,
-  setConfirmAction,
-  startMutation,
-  selectedItems,
-  handleToggleSelect,
-  timeFormat,
-  hasPermission,
-  canModify,
-  t,
-  aggregateForRows,
-}: QueueRowRenderProps) {
+function QueueRowRender(props: QueueRowRenderProps) {
+  const {
+    row,
+    setEditItem,
+    setConfirmAction,
+    startMutation,
+    selectedItems,
+    handleToggleSelect,
+    timeFormat,
+    hasPermission,
+    canModify,
+    t,
+  } = props;
+
   if (row.kind === 'item') {
     return (
       <SortableQueueItem
@@ -807,22 +806,67 @@ function QueueRowRender({
     );
   }
 
-  // Batch group
-  const agg = aggregateForRows([row]);
-  const allChildIds = row.items.map((i) => i.id);
+  return <SortableBatchRow {...props} />;
+}
+
+/** Batch parent header registered with dnd-kit so the whole group can be
+ *  reordered as one unit. Drag handle lives in the header itself; children
+ *  remain individually draggable while expanded for within-batch reorder. */
+function SortableBatchRow({
+  row,
+  collapsed,
+  onToggleBatch,
+  onUngroup,
+  setEditItem,
+  setConfirmAction,
+  startMutation,
+  selectedItems,
+  handleToggleSelect,
+  timeFormat,
+  hasPermission,
+  canModify,
+  t,
+  aggregateForRows,
+}: QueueRowRenderProps) {
+  // Dispatcher (QueueRowRender) only mounts this with row.kind === 'batch';
+  // narrow up-front so the hook below can reference batchId unconditionally.
+  const batchRow = row as Extract<QueueRow, { kind: 'batch' }>;
+  const canReorder = hasPermission('queue:reorder');
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: `batch-${batchRow.batchId}`, disabled: !canReorder });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  const agg = aggregateForRows([batchRow]);
+  const allChildIds = batchRow.items.map((i) => i.id);
   const allSelected = allChildIds.length > 0 && allChildIds.every((id) => selectedItems.includes(id));
   // Status rollup: worst-of-children (failed > printing > pending).
-  const childStatuses = new Set(row.items.map((i) => i.status));
+  const childStatuses = new Set(batchRow.items.map((i) => i.status));
   // We never put non-pending into a batch grouping but render defensively.
   const rollupStatus: PrintQueueItem['status'] = childStatuses.has('failed')
     ? 'failed'
     : childStatuses.has('printing')
       ? 'printing'
       : 'pending';
-  const pendingChildren = row.items.filter((i) => i.status === 'pending').length;
+  const pendingChildren = batchRow.items.filter((i) => i.status === 'pending').length;
 
   return (
-    <div className="bg-bambu-dark-secondary rounded-xl border border-l-[3px] border-l-cyan-400 border-bambu-dark-tertiary overflow-hidden">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`bg-bambu-dark-secondary rounded-xl border border-l-[3px] border-l-cyan-400 border-bambu-dark-tertiary overflow-hidden ${
+        isDragging ? 'opacity-50 scale-[1.01] shadow-xl z-50' : ''
+      }`}
+    >
       {/* Parent header */}
       <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4">
         <button
@@ -845,6 +889,16 @@ function QueueRowRender({
         >
           {allSelected && <Check className="w-4 h-4" />}
         </button>
+        {canReorder && (
+          <div
+            {...attributes}
+            {...listeners}
+            className="hidden sm:flex items-center justify-center w-8 h-8 rounded-lg bg-bambu-dark cursor-grab active:cursor-grabbing hover:bg-bambu-dark-tertiary transition-colors touch-manipulation shrink-0"
+            title={t('queue.batch.dragGroup', { defaultValue: 'Drag group' })}
+          >
+            <GripVertical className="w-4 h-4 text-bambu-gray" />
+          </div>
+        )}
         <button
           onClick={onToggleBatch}
           className="flex items-center justify-center w-8 h-8 rounded-lg bg-bambu-dark hover:bg-bambu-dark-tertiary transition-colors shrink-0"
@@ -865,7 +919,7 @@ function QueueRowRender({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-sm sm:text-base text-white font-medium truncate">{row.batchName}</p>
+            <p className="text-sm sm:text-base text-white font-medium truncate">{batchRow.batchName}</p>
             <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] sm:text-xs bg-cyan-500/15 text-cyan-300 rounded border border-cyan-500/30">
               {t('queue.batch.label', { count: agg.count })}
             </span>
@@ -909,7 +963,7 @@ function QueueRowRender({
       {/* Children (only when expanded) */}
       {!collapsed && (
         <div className="border-t border-bambu-dark-tertiary bg-black/20 p-2 sm:p-3 space-y-2">
-          {row.items.map((child) => (
+          {batchRow.items.map((child) => (
             <SortableQueueItem
               key={child.id}
               item={child}
@@ -1155,6 +1209,13 @@ export function QueuePage() {
   } | null>(null);
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
+  // #1818: per-printer Resume-after-failure confirm modal. Tracks which
+  // printer's gate the user is about to clear; null when no modal is open.
+  const [resumeConfirm, setResumeConfirm] = useState<{
+    printerId: number;
+    printerName: string;
+    skippedCount: number;
+  } | null>(null);
   const [historySortBy, setHistorySortBy] = useState<'date' | 'name' | 'printer'>(() => {
     const saved = localStorage.getItem('queue.historySortBy');
     return (saved as 'date' | 'name' | 'printer') || 'date';
@@ -1196,8 +1257,9 @@ export function QueuePage() {
       return {};
     }
   });
-  // Multi-drag bookkeeping for DragOverlay.
-  const [activeDragId, setActiveDragId] = useState<number | null>(null);
+  // Multi-drag bookkeeping for DragOverlay. Numeric for single items, string
+  // `batch-<id>` when a whole group is being dragged.
+  const [activeDragId, setActiveDragId] = useState<number | string | null>(null);
   // "Group as batch" modal.
   const [groupBatchModal, setGroupBatchModal] = useState(false);
   // Ungroup confirm.
@@ -1375,6 +1437,21 @@ export function QueuePage() {
       showToast(t('queue.toast.bulkCancelled', { count }));
     },
     onError: () => showToast(t('queue.toast.bulkCancelFailed'), 'error'),
+  });
+
+  const resumeAfterFailureMutation = useMutation({
+    mutationFn: (printerId: number) => api.resumeQueueAfterFailure(printerId),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      setResumeConfirm(null);
+      showToast(
+        t('queue.toast.resumedAfterFailure', {
+          restored: result.restored,
+          acknowledged: result.acknowledged,
+        }),
+      );
+    },
+    onError: () => showToast(t('queue.toast.resumeAfterFailureFailed'), 'error'),
   });
 
   const createBatchMutation = useMutation({
@@ -1582,7 +1659,8 @@ export function QueuePage() {
   }, [pendingItems]);
 
   const handleDragStart = (event: DragStartEvent) => {
-    setActiveDragId(typeof event.active.id === 'number' ? event.active.id : null);
+    const id = event.active.id;
+    setActiveDragId(typeof id === 'number' || typeof id === 'string' ? id : null);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -1590,29 +1668,49 @@ export function QueuePage() {
     setActiveDragId(null);
     if (!over || active.id === over.id) return;
 
-    // Multi-drag: when the dragged row is part of a multi-selection, move
-    // all selected items as a contiguous block, preserving their original
-    // relative order. Otherwise, single-row drag (today's behavior).
-    const draggedId = active.id as number;
-    const movingIds = selectedItems.includes(draggedId) && selectedItems.length > 1
-      ? selectedItems.slice().sort((a, b) => {
-          const ai = pendingItems.findIndex((i) => i.id === a);
-          const bi = pendingItems.findIndex((i) => i.id === b);
-          return ai - bi;
-        })
-      : [draggedId];
+    // Resolve dragged source → movingIds (preserving order from pendingItems).
+    //   - `batch-<id>`: every child of that batch, in their current order
+    //   - selected + dragged is one of them: contiguous multi-drag block
+    //   - otherwise: single row
+    let movingIds: number[];
+    const activeId = active.id;
+    if (typeof activeId === 'string' && activeId.startsWith('batch-')) {
+      const batchId = Number(activeId.slice('batch-'.length));
+      movingIds = pendingItems.filter((i) => i.batch_id === batchId).map((i) => i.id);
+    } else {
+      const draggedId = activeId as number;
+      movingIds = selectedItems.includes(draggedId) && selectedItems.length > 1
+        ? selectedItems.slice().sort((a, b) => {
+            const ai = pendingItems.findIndex((i) => i.id === a);
+            const bi = pendingItems.findIndex((i) => i.id === b);
+            return ai - bi;
+          })
+        : [draggedId];
+    }
+    if (movingIds.length === 0) return;
 
-    const overIndex = pendingItems.findIndex(i => i.id === over.id);
+    // Resolve drop target → index inside pendingItems. A `batch-<id>` drop
+    // target anchors at the batch's first child, so dropping above another
+    // batch lands the moving block immediately before it.
+    let overIndex: number;
+    const overId = over.id;
+    if (typeof overId === 'string' && overId.startsWith('batch-')) {
+      const overBatchId = Number(overId.slice('batch-'.length));
+      overIndex = pendingItems.findIndex((i) => i.batch_id === overBatchId);
+    } else {
+      overIndex = pendingItems.findIndex((i) => i.id === overId);
+    }
     if (overIndex === -1) return;
 
     // Remove the moving items, then re-insert at overIndex (adjusted).
+    const overAnchor = pendingItems[overIndex];
     const remaining = pendingItems.filter((i) => !movingIds.includes(i.id));
-    let insertAt = remaining.findIndex((i) => i.id === over.id);
+    let insertAt = remaining.findIndex((i) => i.id === overAnchor.id);
     if (insertAt === -1) insertAt = overIndex;
     // If dragging downward across the drop target, insert AFTER it; upward
     // = before. dnd-kit's `over` is the row under the pointer, not the gap.
-    const draggedOriginalIndex = pendingItems.findIndex((i) => i.id === draggedId);
-    if (draggedOriginalIndex < overIndex) insertAt += 1;
+    const firstMovingIndex = pendingItems.findIndex((i) => i.id === movingIds[0]);
+    if (firstMovingIndex < overIndex) insertAt += 1;
     const reordered = [
       ...remaining.slice(0, insertAt),
       ...movingIds
@@ -1653,18 +1751,21 @@ export function QueuePage() {
     return rows;
   }, [pendingItems, t]);
 
-  // SortableContext ID list. Only include IDs whose DOM node actually
-  // renders — collapsed batch children are detached from the DOM, so
-  // registering them with dnd-kit confuses the collision resolver when
-  // dragging past a collapsed batch row. v1 batch parent isn't itself
-  // draggable (within-batch reorder only); collapsed batches just act as
-  // unmovable obstacles.
-  const sortableIds = useMemo<number[]>(() => {
-    const ids: number[] = [];
+  // SortableContext ID list.
+  // - Standalone pending items: their numeric id.
+  // - Batch parents: the synthetic `batch-<id>` string, always present so the
+  //   group itself is draggable and acts as a drop target whether collapsed
+  //   or expanded.
+  // - Expanded batch children: their numeric id, so within-batch reorder
+  //   keeps working. Collapsed children are detached from the DOM and
+  //   intentionally omitted to keep dnd-kit's collision resolver clean.
+  const sortableIds = useMemo<(number | string)[]>(() => {
+    const ids: (number | string)[] = [];
     for (const row of groupedRows) {
       if (row.kind === 'item') {
         ids.push(row.item.id);
       } else {
+        ids.push(`batch-${row.batchId}`);
         const collapsed = batchCollapsed[row.batchId] ?? true;
         if (!collapsed) {
           for (const child of row.items) ids.push(child.id);
@@ -1745,6 +1846,42 @@ export function QueuePage() {
     });
   }, [groupedRows, t]);
 
+  // #1818: printers whose queue is gated by a prior failure that's poisoning
+  // downstream `require_previous_success` items. We surface a per-printer
+  // Resume banner above the active queue so the user can clear the gate +
+  // restore the skipped jobs in one click, without re-queuing each one.
+  // Detection key: skipped + the scheduler's exact gate string. Other skip
+  // reasons (filament deficit, etc.) get their own UX and stay untouched.
+  const gateBlockedPrinters = useMemo<
+    Array<{ printerId: number; printerName: string; skippedCount: number }>
+  >(() => {
+    const counts = new Map<number, { name: string; count: number }>();
+    queue?.forEach((item) => {
+      if (
+        item.status === 'skipped' &&
+        item.error_message === 'Previous print failed or was aborted' &&
+        item.printer_id
+      ) {
+        const existing = counts.get(item.printer_id);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          counts.set(item.printer_id, {
+            name: item.printer_name || `Printer #${item.printer_id}`,
+            count: 1,
+          });
+        }
+      }
+    });
+    return Array.from(counts.entries())
+      .map(([printerId, { name, count }]) => ({
+        printerId,
+        printerName: name,
+        skippedCount: count,
+      }))
+      .sort((a, b) => a.printerName.localeCompare(b.printerName));
+  }, [queue]);
+
   const aggregateForRows = (rows: QueueRow[]) => {
     let count = 0;
     let time = 0;
@@ -1812,6 +1949,43 @@ export function QueuePage() {
         historyCount={historyItems.length}
         t={t}
       />
+
+      {/* #1818: Resume-after-failure banner. One row per printer whose queue
+          is gated by a prior failed/aborted print. Visible regardless of
+          tab/layout so the user can clear the gate without hunting for
+          skipped items. Hidden entirely when no gates are active. */}
+      {activeTab === 'queue' && gateBlockedPrinters.length > 0 && hasPermission('queue:update_all' as Permission) && (
+        <div className="mb-4 space-y-2">
+          {gateBlockedPrinters.map(({ printerId, printerName, skippedCount }) => (
+            <div
+              key={printerId}
+              className="flex items-center gap-3 px-4 py-3 bg-orange-500/10 border border-orange-500/30 rounded-lg"
+            >
+              <AlertCircle className="w-5 h-5 text-orange-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-orange-200">
+                  {t('queue.resumeAfterFailure.banner', {
+                    printer: printerName,
+                    count: skippedCount,
+                  })}
+                </div>
+                <div className="text-xs text-orange-200/70 mt-0.5">
+                  {t('queue.resumeAfterFailure.bannerHint')}
+                </div>
+              </div>
+              <button
+                onClick={() =>
+                  setResumeConfirm({ printerId, printerName, skippedCount })
+                }
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 text-orange-100 text-sm rounded-md border border-orange-500/40 transition-colors flex-shrink-0"
+              >
+                <PlayCircle className="w-4 h-4" />
+                {t('queue.resumeAfterFailure.button')}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-6">
@@ -2166,14 +2340,40 @@ export function QueuePage() {
                   )}
                 </SortableContext>
                 <DragOverlay>
-                  {activeDragId !== null && selectedItems.includes(activeDragId) && selectedItems.length > 1 ? (
-                    <div className="flex items-center gap-3 px-3 py-2 bg-bambu-dark-secondary border-2 border-cyan-400 rounded-lg shadow-2xl">
-                      <Package className="w-4 h-4 text-cyan-300" />
-                      <span className="text-sm text-white font-medium">
-                        {t('queue.dragGhost.multiCount', { count: selectedItems.length })}
-                      </span>
-                    </div>
-                  ) : null}
+                  {(() => {
+                    if (activeDragId === null) return null;
+                    // Batch drag — show the group ghost with copy count.
+                    if (typeof activeDragId === 'string' && activeDragId.startsWith('batch-')) {
+                      const batchId = Number(activeDragId.slice('batch-'.length));
+                      const siblings = pendingItems.filter((i) => i.batch_id === batchId);
+                      if (siblings.length === 0) return null;
+                      const name = siblings[0].batch_name || t('queue.batch.defaultName');
+                      return (
+                        <div className="flex items-center gap-3 px-3 py-2 bg-bambu-dark-secondary border-2 border-cyan-400 rounded-lg shadow-2xl">
+                          <Package className="w-4 h-4 text-cyan-300" />
+                          <span className="text-sm text-white font-medium">
+                            {t('queue.dragGhost.batch', {
+                              defaultValue: '{{name}} ({{count}} copies)',
+                              name,
+                              count: siblings.length,
+                            })}
+                          </span>
+                        </div>
+                      );
+                    }
+                    // Multi-row drag — show the N-item ghost.
+                    if (typeof activeDragId === 'number' && selectedItems.includes(activeDragId) && selectedItems.length > 1) {
+                      return (
+                        <div className="flex items-center gap-3 px-3 py-2 bg-bambu-dark-secondary border-2 border-cyan-400 rounded-lg shadow-2xl">
+                          <Package className="w-4 h-4 text-cyan-300" />
+                          <span className="text-sm text-white font-medium">
+                            {t('queue.dragGhost.multiCount', { count: selectedItems.length })}
+                          </span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                 </DragOverlay>
               </DndContext>
             </div>
@@ -2196,7 +2396,7 @@ export function QueuePage() {
       {/* Re-queue Modal */}
       {requeueItem && (
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={requeueItem.archive_id ?? undefined}
           libraryFileId={requeueItem.library_file_id ?? undefined}
           archiveName={requeueItem.archive_name || requeueItem.library_file_name || `File #${requeueItem.archive_id || requeueItem.library_file_id}`}
@@ -2263,6 +2463,21 @@ export function QueuePage() {
             setConfirmAction(null);
           }}
           onCancel={() => setConfirmAction(null)}
+        />
+      )}
+
+      {/* #1818: Resume-after-failure confirm */}
+      {resumeConfirm && (
+        <ConfirmModal
+          title={t('queue.resumeAfterFailure.confirmTitle')}
+          message={t('queue.resumeAfterFailure.confirmMessage', {
+            printer: resumeConfirm.printerName,
+            count: resumeConfirm.skippedCount,
+          })}
+          confirmText={t('queue.resumeAfterFailure.button')}
+          variant="warning"
+          onConfirm={() => resumeAfterFailureMutation.mutate(resumeConfirm.printerId)}
+          onCancel={() => setResumeConfirm(null)}
         />
       )}
 

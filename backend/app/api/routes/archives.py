@@ -25,7 +25,7 @@ from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
 from backend.app.models.spool_usage_history import SpoolUsageHistory
 from backend.app.models.user import User
-from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate, ReprintRequest
+from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveStats, ArchiveUpdate
 from backend.app.schemas.print_log import PrintLogResponse
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.archive import ArchiveService
@@ -4025,96 +4025,24 @@ async def slice_archive(
 async def reprint_archive(
     archive_id: int,
     printer_id: int,
-    body: ReprintRequest | None = None,
-    db: AsyncSession = Depends(get_db),
-    auth_result: tuple[User | None, bool] = Depends(
-        require_ownership_permission(
-            Permission.ARCHIVES_REPRINT_ALL,
-            Permission.ARCHIVES_REPRINT_OWN,
-        )
-    ),
+    # SECURITY.md SEC-AUTH-1: every route either has an explicit auth dep or
+    # is in the route-auth-coverage allowlist. Gating the deprecation stub on
+    # QUEUE_CREATE matches the replacement route (POST /queue/) and means
+    # anonymous callers bounce at auth instead of seeing the deprecation
+    # message — leaking "this route exists" to unauthenticated callers is
+    # exactly the shape the backstop guards against.
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
 ):
-    """Dispatch an archived 3MF file for send/start on a printer."""
-    from backend.app.models.printer import Printer
-    from backend.app.services.background_dispatch import DispatchEnqueueRejected, background_dispatch
-    from backend.app.services.printer_manager import printer_manager
-
-    user, can_modify_all = auth_result
-
-    # Use defaults if no body provided
-    if body is None:
-        body = ReprintRequest()
-
-    # Get archive
-    service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
-
-    # Ownership check
-    if not can_modify_all:
-        if archive.created_by_id != user.id:
-            raise HTTPException(403, "You can only reprint your own archives")
-
-    # Get printer
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
-
-    # Check printer is connected
-    if not printer_manager.is_connected(printer_id):
-        raise HTTPException(400, "Printer is not connected")
-
-    if not archive.file_path:
-        raise HTTPException(
-            404,
-            "No 3MF file available for this archive. "
-            "The file could not be downloaded from the printer when the print was recorded.",
-        )
-
-    # Validate archive file exists
-    file_path = settings.base_dir / archive.file_path
-    if not file_path.is_file():
-        raise HTTPException(404, "Archive file not found")
-
-    plate_name = body.plate_name
-    if not plate_name and body.plate_id is not None:
-        plate_name = f"Plate {body.plate_id}"
-
-    dispatch_source_name = archive.filename
-    if plate_name:
-        dispatch_source_name = f"{archive.filename} • {plate_name}"
-
-    try:
-        dispatch_result = await background_dispatch.dispatch_reprint_archive(
-            archive_id=archive_id,
-            archive_name=dispatch_source_name,
-            printer_id=printer_id,
-            printer_name=printer.name,
-            options=body.model_dump(exclude_none=True),
-            requested_by_user_id=user.id if user else None,
-            requested_by_username=user.username if user else None,
-        )
-    except DispatchEnqueueRejected as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
-
-    logger.info(
-        "Dispatched reprint archive %s for printer %s (dispatch_job_id=%s, dispatch_position=%s)",
+    """Legacy direct reprint endpoint. Use POST /queue/ instead."""
+    logger.warning(
+        "Gone API used: POST /archives/%s/reprint?printer_id=%s; use POST /queue/ instead",
         archive_id,
         printer_id,
-        dispatch_result["dispatch_job_id"],
-        dispatch_result["dispatch_position"],
     )
-
-    return {
-        "status": "dispatched",
-        "printer_id": printer_id,
-        "archive_id": archive_id,
-        "filename": archive.filename,
-        "dispatch_job_id": dispatch_result["dispatch_job_id"],
-        "dispatch_position": dispatch_result["dispatch_position"],
-    }
+    raise HTTPException(
+        status_code=410,
+        detail="Direct archive reprint has been removed. Create a print queue item with POST /queue/.",
+    )
 
 
 # =============================================================================

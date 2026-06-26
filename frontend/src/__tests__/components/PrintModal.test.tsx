@@ -1,9 +1,8 @@
 /**
  * Tests for the unified PrintModal component.
  *
- * The PrintModal supports three modes:
- * - 'reprint': Immediate print from archive (multi-printer support)
- * - 'add-to-queue': Schedule print to queue (multi-printer support)
+ * The PrintModal supports two modes:
+ * - 'create': Create a print queue item
  * - 'edit-queue-item': Edit existing queue item (single printer)
  */
 
@@ -73,9 +72,6 @@ describe('PrintModal', () => {
       http.get('/api/v1/printers/:id/status', () => {
         return HttpResponse.json({ connected: true, state: 'IDLE', ams: [], vt_tray: [] });
       }),
-      http.post('/api/v1/archives/:id/reprint', () => {
-        return HttpResponse.json({ success: true });
-      }),
       http.post('/api/v1/queue/', () => {
         return HttpResponse.json({ id: 1, status: 'pending' });
       }),
@@ -85,25 +81,26 @@ describe('PrintModal', () => {
     );
   });
 
-  describe('reprint mode', () => {
+  describe('create mode', () => {
     it('renders the modal title', () => {
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
+          initialSelectedPrinterIds={[1]}
           onClose={mockOnClose}
           onSuccess={mockOnSuccess}
         />
       );
 
-      expect(screen.getByText('Re-print')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Print' })).toBeInTheDocument();
     });
 
     it('shows archive name', () => {
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -117,7 +114,7 @@ describe('PrintModal', () => {
     it('shows printer selection with checkboxes for multi-select', async () => {
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -134,7 +131,7 @@ describe('PrintModal', () => {
     it('has print button', () => {
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -150,7 +147,7 @@ describe('PrintModal', () => {
     it('has cancel button', () => {
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -165,7 +162,7 @@ describe('PrintModal', () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -181,7 +178,7 @@ describe('PrintModal', () => {
     it('print button is disabled until printer is selected', () => {
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -203,7 +200,7 @@ describe('PrintModal', () => {
 
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -216,39 +213,42 @@ describe('PrintModal', () => {
       });
     });
 
-    it('shows print options toggle', () => {
+    it('shows print options toggle', async () => {
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
+          initialSelectedPrinterIds={[1]}
           onClose={mockOnClose}
           onSuccess={mockOnSuccess}
         />
       );
 
-      expect(screen.getByText('Print Options')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText('Print Options')).toBeInTheDocument();
+      });
     });
   });
 
-  describe('add-to-queue mode', () => {
+  describe('create mode', () => {
     it('renders the modal title', () => {
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="Test Print"
           onClose={mockOnClose}
         />
       );
 
-      expect(screen.getByText('Schedule Print')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Print' })).toBeInTheDocument();
     });
 
     it('shows archive name', () => {
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="Test Print"
           onClose={mockOnClose}
@@ -261,20 +261,20 @@ describe('PrintModal', () => {
     it('shows add button', () => {
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="Test Print"
           onClose={mockOnClose}
         />
       );
 
-      expect(screen.getByRole('button', { name: /add to queue/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^print$/i })).toBeInTheDocument();
     });
 
     it('shows cancel button', () => {
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="Test Print"
           onClose={mockOnClose}
@@ -284,23 +284,23 @@ describe('PrintModal', () => {
       expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
     });
 
-    it('shows Queue Only option', () => {
+    it('shows Queue option', () => {
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="Test Print"
           onClose={mockOnClose}
         />
       );
 
-      expect(screen.getByText('Queue Only')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /queue/i })).toBeInTheDocument();
     });
 
     it('shows power off option', () => {
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="Test Print"
           onClose={mockOnClose}
@@ -313,22 +313,37 @@ describe('PrintModal', () => {
     it('shows schedule options', () => {
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="Test Print"
           onClose={mockOnClose}
         />
       );
 
-      expect(screen.getByText('ASAP')).toBeInTheDocument();
-      expect(screen.getByText('Scheduled')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /asap/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /queue/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /schedule/i })).toBeInTheDocument();
+    });
+
+    it('orders schedule options by time', () => {
+      render(
+        <PrintModal
+          mode="create"
+          archiveId={1}
+          archiveName="Test Print"
+          onClose={mockOnClose}
+        />
+      );
+
+      const options = screen.getAllByRole('button', { name: /^(asap|queue|schedule)$/i });
+      expect(options.map(button => button.textContent?.trim())).toEqual(['ASAP', 'Queue', 'Schedule']);
     });
 
     it('calls onClose when cancel is clicked', async () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="Test Print"
           onClose={mockOnClose}
@@ -406,7 +421,7 @@ describe('PrintModal', () => {
       expect(screen.getByText('Print Options')).toBeInTheDocument();
     });
 
-    it('shows Queue Only option', () => {
+    it('shows Queue option', () => {
       const item = createMockQueueItem();
 
       render(
@@ -419,7 +434,7 @@ describe('PrintModal', () => {
         />
       );
 
-      expect(screen.getByText('Queue Only')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /queue/i })).toBeInTheDocument();
     });
 
     it('shows power off option', () => {
@@ -482,7 +497,7 @@ describe('PrintModal', () => {
     it('shows select all button when multiple printers available', async () => {
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -498,7 +513,7 @@ describe('PrintModal', () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -520,7 +535,7 @@ describe('PrintModal', () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -534,7 +549,7 @@ describe('PrintModal', () => {
       await user.click(screen.getByText('Select all'));
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /print to 3 printers/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^print$/i })).toBeInTheDocument();
       });
     });
   });
@@ -566,10 +581,10 @@ describe('PrintModal', () => {
       );
     });
 
-    it('shows state badges on printers in reprint mode', async () => {
+    it('shows state badges on printers in create mode', async () => {
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -583,11 +598,11 @@ describe('PrintModal', () => {
       });
     });
 
-    it('prevents selecting a busy printer in reprint mode', async () => {
+    it('allows selecting a busy printer in create mode', async () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -598,28 +613,20 @@ describe('PrintModal', () => {
         expect(screen.getByText('Printing')).toBeInTheDocument();
       });
 
-      // The busy printer button should be disabled
       const busyButton = screen.getByText('X1 Carbon').closest('button');
-      expect(busyButton).toBeDisabled();
-
-      // Click the busy printer — selection should not change
+      expect(busyButton).not.toBeDisabled();
       await user.click(busyButton!);
-
-      // Idle printer should still be selectable
-      const idleButton = screen.getByText('P1S').closest('button');
-      expect(idleButton).not.toBeDisabled();
-      await user.click(idleButton!);
 
       await waitFor(() => {
         expect(screen.getByText('1 printer selected')).toBeInTheDocument();
       });
     });
 
-    it('select all skips busy printers in reprint mode', async () => {
+    it('select all includes busy printers in create mode', async () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -634,16 +641,15 @@ describe('PrintModal', () => {
       await user.click(screen.getByText('Select all'));
 
       await waitFor(() => {
-        // Only 2 available printers selected (IDLE + FINISH), not the RUNNING one
-        expect(screen.getByText(/2 printers selected/)).toBeInTheDocument();
+        expect(screen.getByText(/3 printers selected/)).toBeInTheDocument();
       });
     });
 
-    it('allows selecting busy printers in add-to-queue mode', async () => {
+    it('allows selecting busy printers in create mode', async () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -677,7 +683,7 @@ describe('PrintModal', () => {
 
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -702,7 +708,7 @@ describe('PrintModal', () => {
 
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -721,7 +727,7 @@ describe('PrintModal', () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="Test Print"
           onClose={mockOnClose}
@@ -742,7 +748,7 @@ describe('PrintModal', () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="Test Print"
           onClose={mockOnClose}
@@ -760,11 +766,11 @@ describe('PrintModal', () => {
       });
     });
 
-    it('shows stagger option in reprint mode with multiple printers', async () => {
+    it('shows stagger option in create mode with multiple printers', async () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Test Print"
           onClose={mockOnClose}
@@ -784,11 +790,11 @@ describe('PrintModal', () => {
       expect(screen.getByText('Stagger printer starts')).toBeInTheDocument();
     });
 
-    it('shows stagger preview in reprint mode when enabled', async () => {
+    it('shows stagger preview in create mode when enabled', async () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Test Print"
           onClose={mockOnClose}
@@ -813,11 +819,11 @@ describe('PrintModal', () => {
       });
     });
 
-    it('does not show stagger option in reprint mode with single printer', async () => {
+    it('does not show stagger option in create mode with single printer', async () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Test Print"
           onClose={mockOnClose}
@@ -838,7 +844,7 @@ describe('PrintModal', () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="Test Print"
           onClose={mockOnClose}
@@ -867,7 +873,7 @@ describe('PrintModal', () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="Test Print"
           onClose={mockOnClose}
@@ -911,10 +917,10 @@ describe('PrintModal', () => {
       );
     });
 
-    it('shows "Select All" button only in add-to-queue mode', async () => {
+    it('shows "Select All" button only in create mode', async () => {
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="MultiPlate.3mf"
           onClose={mockOnClose}
@@ -926,10 +932,10 @@ describe('PrintModal', () => {
       });
     });
 
-    it('does not show "Select All" button in reprint mode', async () => {
+    it('shows "Select All" button in create mode', async () => {
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="MultiPlate.3mf"
           initialSelectedPrinterIds={[1]}
@@ -940,14 +946,14 @@ describe('PrintModal', () => {
       await waitFor(() => {
         expect(screen.getByText('Plate 1')).toBeInTheDocument();
       });
-      expect(screen.queryByText('Select All 3 Plates')).not.toBeInTheDocument();
+      expect(screen.getByText('Select All 3 Plates')).toBeInTheDocument();
     });
 
     it('selects all plates when "Select All" is clicked', async () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="MultiPlate.3mf"
           onClose={mockOnClose}
@@ -981,7 +987,7 @@ describe('PrintModal', () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="MultiPlate.3mf"
           onClose={mockOnClose}
@@ -998,7 +1004,7 @@ describe('PrintModal', () => {
       // Select printer
       await user.click(screen.getByText('X1 Carbon'));
 
-      // Plate 1 is auto-selected. Click Plate 3 to add it (multi-select in add-to-queue mode)
+      // Plate 1 is auto-selected. Click Plate 3 to add it (multi-select in create mode)
       await user.click(screen.getByText('Plate 3'));
 
       // Submit — should queue plates 1 and 3
@@ -1026,7 +1032,7 @@ describe('PrintModal', () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="MultiPlate.3mf"
           onClose={mockOnClose}
@@ -1062,10 +1068,10 @@ describe('PrintModal', () => {
   });
 
   describe('batch quantity', () => {
-    it('shows quantity input in reprint mode', () => {
+    it('shows quantity input in create mode', () => {
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -1076,10 +1082,10 @@ describe('PrintModal', () => {
       expect(screen.getByLabelText('Quantity')).toBeInTheDocument();
     });
 
-    it('shows quantity input in add-to-queue mode', () => {
+    it('shows quantity input in create mode', () => {
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -1108,7 +1114,7 @@ describe('PrintModal', () => {
     it('defaults quantity to 1', () => {
       render(
         <PrintModal
-          mode="add-to-queue"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           onClose={mockOnClose}
@@ -1124,7 +1130,7 @@ describe('PrintModal', () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           initialSelectedPrinterIds={[1]}
@@ -1143,10 +1149,10 @@ describe('PrintModal', () => {
   });
 
   describe('reprint G-code injection dispatch (#422 / auto-eject)', () => {
-    // Guards the fix: when "Inject auto-print G-code" is ticked on a reprint with
+    // Guards the fix: when "Inject auto-print G-code" is ticked on a create with
     // quantity > 1, ALL copies must go through the queue so every one is injected by
     // the scheduler. The first copy must NOT be dispatched immediately via the direct
-    // reprint path — that path bypasses injection and would leave the first copy stuck
+    // create path — that path bypasses injection and would leave the first copy stuck
     // on the plate for auto-eject setups.
     const withSnippets = () =>
       http.get('/api/v1/settings/', () =>
@@ -1154,14 +1160,9 @@ describe('PrintModal', () => {
       );
 
     it('injection ON queues all copies and dispatches none immediately', async () => {
-      const reprintCalls: unknown[] = [];
       const queueCalls: Record<string, unknown>[] = [];
       server.use(
         withSnippets(),
-        http.post('/api/v1/archives/:id/reprint', async ({ request }) => {
-          reprintCalls.push(await request.json().catch(() => ({})));
-          return HttpResponse.json({ status: 'dispatched' });
-        }),
         http.post('/api/v1/queue/', async ({ request }) => {
           queueCalls.push((await request.json()) as Record<string, unknown>);
           return HttpResponse.json({ id: queueCalls.length, status: 'pending' });
@@ -1171,7 +1172,7 @@ describe('PrintModal', () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           initialSelectedPrinterIds={[1]}
@@ -1194,18 +1195,12 @@ describe('PrintModal', () => {
       await waitFor(() => expect(queueCalls.length).toBe(1));
       // One queue item carrying all copies, and zero immediate reprint dispatches
       expect(queueCalls[0].quantity).toBe(3);
-      expect(reprintCalls.length).toBe(0);
     });
 
-    it('injection OFF keeps the immediate first copy and queues the rest', async () => {
-      const reprintCalls: unknown[] = [];
+    it('injection OFF queues all copies through the scheduler path', async () => {
       const queueCalls: Record<string, unknown>[] = [];
       server.use(
         withSnippets(),
-        http.post('/api/v1/archives/:id/reprint', async ({ request }) => {
-          reprintCalls.push(await request.json().catch(() => ({})));
-          return HttpResponse.json({ status: 'dispatched' });
-        }),
         http.post('/api/v1/queue/', async ({ request }) => {
           queueCalls.push((await request.json()) as Record<string, unknown>);
           return HttpResponse.json({ id: queueCalls.length, status: 'pending' });
@@ -1215,7 +1210,7 @@ describe('PrintModal', () => {
       const user = userEvent.setup();
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           initialSelectedPrinterIds={[1]}
@@ -1229,12 +1224,11 @@ describe('PrintModal', () => {
       await user.keyboard('3');
       expect(qty.value).toBe('3');
 
-      // Leave injection unticked → first copy prints immediately, rest queue
+      // Leave injection unticked: unified dispatch still queues all copies.
       await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
 
-      await waitFor(() => expect(reprintCalls.length).toBe(1));
-      expect(queueCalls.length).toBe(1);
-      expect(queueCalls[0].quantity).toBe(2);
+      await waitFor(() => expect(queueCalls.length).toBe(1));
+      expect(queueCalls[0].quantity).toBe(3);
     });
   });
 
@@ -1269,19 +1263,19 @@ describe('PrintModal', () => {
       );
     });
 
-    it('includes project_id in printLibraryFile call when projectId prop is set', async () => {
+    it('includes project_id in queue item when printing a library file with projectId set', async () => {
       let capturedBody: Record<string, unknown> | null = null;
       server.use(
-        http.post('/api/v1/library/files/:id/print', async ({ request }) => {
+        http.post('/api/v1/queue/', async ({ request }) => {
           capturedBody = await request.json() as Record<string, unknown>;
-          return HttpResponse.json({ status: 'dispatched', dispatch_job_id: 'abc', dispatch_position: 0 });
+          return HttpResponse.json({ id: 1, status: 'pending' });
         })
       );
       const user = userEvent.setup();
 
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           libraryFileId={5}
           archiveName="Benchy"
           projectId={42}
@@ -1300,25 +1294,24 @@ describe('PrintModal', () => {
 
       await waitFor(() => {
         expect(capturedBody).not.toBeNull();
+        expect(capturedBody?.library_file_id).toBe(5);
         expect(capturedBody?.project_id).toBe(42);
       });
     });
 
-    it('does NOT include project_id in reprintArchive call (archives carry their own project association)', async () => {
-      // The reprintArchive branch omits project_id by design — archives already carry
-      // their project association from the original print. This test guards that intent.
+    it('queues archive prints through the scheduler path', async () => {
       let capturedBody: Record<string, unknown> | null = null;
       server.use(
-        http.post('/api/v1/archives/:id/reprint', async ({ request }) => {
+        http.post('/api/v1/queue/', async ({ request }) => {
           capturedBody = await request.json() as Record<string, unknown>;
-          return HttpResponse.json({ status: 'dispatched' });
+          return HttpResponse.json({ id: 1, status: 'pending' });
         })
       );
       const user = userEvent.setup();
 
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           archiveId={1}
           archiveName="Benchy"
           projectId={42}
@@ -1336,7 +1329,78 @@ describe('PrintModal', () => {
 
       await waitFor(() => {
         expect(capturedBody).not.toBeNull();
-        expect(capturedBody).not.toHaveProperty('project_id');
+        expect(capturedBody?.archive_id).toBe(1);
+        expect(capturedBody?.project_id).toBe(42);
+      });
+    });
+
+    it('adds ASAP prints to the top of the queue', async () => {
+      let capturedBody: Record<string, unknown> | null = null;
+      server.use(
+        http.post('/api/v1/queue/', async ({ request }) => {
+          capturedBody = await request.json() as Record<string, unknown>;
+          return HttpResponse.json({ id: 1, status: 'pending' });
+        })
+      );
+      const user = userEvent.setup();
+
+      render(
+        <PrintModal
+          mode="create"
+          archiveId={1}
+          archiveName="Benchy"
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /^print$/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /^print$/i }));
+
+      await waitFor(() => {
+        expect(capturedBody).not.toBeNull();
+        expect(capturedBody?.insert_at_top).toBe(true);
+        expect(capturedBody?.insert_position).toBe(1);
+        expect(capturedBody?.manual_start).toBe(false);
+        expect(capturedBody?.scheduled_time).toBeUndefined();
+      });
+    });
+
+    it('adds Queue prints to the back unless manual start is required', async () => {
+      let capturedBody: Record<string, unknown> | null = null;
+      server.use(
+        http.post('/api/v1/queue/', async ({ request }) => {
+          capturedBody = await request.json() as Record<string, unknown>;
+          return HttpResponse.json({ id: 1, status: 'pending' });
+        })
+      );
+      const user = userEvent.setup();
+
+      render(
+        <PrintModal
+          mode="create"
+          archiveId={1}
+          archiveName="Benchy"
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: /^queue$/i }));
+      expect(screen.getByLabelText(/require manual start/i)).toBeInTheDocument();
+      await user.click(screen.getByLabelText(/require manual start/i));
+      await user.click(screen.getByRole('button', { name: /^print$/i }));
+
+      await waitFor(() => {
+        expect(capturedBody).not.toBeNull();
+        expect(capturedBody?.insert_at_top).toBeUndefined();
+        expect(capturedBody?.insert_position).toBeUndefined();
+        expect(capturedBody?.manual_start).toBe(true);
       });
     });
   });
@@ -1377,16 +1441,16 @@ describe('PrintModal', () => {
     it('forwards cleanup_library_after_dispatch=true when the Direct-Print prop is set', async () => {
       let capturedBody: Record<string, unknown> | null = null;
       server.use(
-        http.post('/api/v1/library/files/:id/print', async ({ request }) => {
+        http.post('/api/v1/queue/', async ({ request }) => {
           capturedBody = (await request.json()) as Record<string, unknown>;
-          return HttpResponse.json({ status: 'dispatched', dispatch_job_id: 'abc', dispatch_position: 0 });
+          return HttpResponse.json({ id: 1, status: 'pending' });
         })
       );
       const user = userEvent.setup();
 
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           libraryFileId={5}
           archiveName="Benchy"
           cleanupLibraryAfterDispatch
@@ -1411,16 +1475,16 @@ describe('PrintModal', () => {
     it('defaults to omitting cleanup_library_after_dispatch (File Manager / Project flows survive)', async () => {
       let capturedBody: Record<string, unknown> | null = null;
       server.use(
-        http.post('/api/v1/library/files/:id/print', async ({ request }) => {
+        http.post('/api/v1/queue/', async ({ request }) => {
           capturedBody = (await request.json()) as Record<string, unknown>;
-          return HttpResponse.json({ status: 'dispatched', dispatch_job_id: 'abc', dispatch_position: 0 });
+          return HttpResponse.json({ id: 1, status: 'pending' });
         })
       );
       const user = userEvent.setup();
 
       render(
         <PrintModal
-          mode="reprint"
+          mode="create"
           libraryFileId={5}
           archiveName="Benchy"
           initialSelectedPrinterIds={[1]}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Calendar, Clock, Hand, Power, Layers, Code } from 'lucide-react';
+import { Calendar, Clock, Hand, Power, Layers, Code, ListOrdered } from 'lucide-react';
 import type { ScheduleOptionsProps, ScheduleType } from './types';
 import {
   formatDateInput,
@@ -16,7 +16,7 @@ import {
 
 /**
  * Schedule options component for queue items.
- * Includes schedule type (ASAP/Scheduled/Queue Only), datetime picker,
+ * Includes schedule type (ASAP/Queue/Schedule), datetime picker,
  * and options for require previous success and auto power off.
  */
 export function ScheduleOptionsPanel({
@@ -70,7 +70,11 @@ export function ScheduleOptionsPanel({
   }, [options.scheduleType, options.scheduledTime, dateFormat, timeFormat, onChange, options]);
 
   const handleScheduleTypeChange = (scheduleType: ScheduleType) => {
-    onChange({ ...options, scheduleType });
+    onChange({
+      ...options,
+      scheduleType,
+      requireManualStart: scheduleType === 'queue' ? options.requireManualStart : false,
+    });
   };
 
   const updateScheduledTime = (newDateValue: string, newTimeValue: string) => {
@@ -122,7 +126,7 @@ export function ScheduleOptionsPanel({
     <div className="space-y-4">
       {/* Schedule type */}
       <div>
-        <label className="block text-sm text-bambu-gray mb-2">When to print</label>
+        <label className="block text-sm text-bambu-gray mb-2">{t('printModal.whenToPrint')}</label>
         <div className="flex gap-2">
           <button
             type="button"
@@ -134,7 +138,19 @@ export function ScheduleOptionsPanel({
             onClick={() => handleScheduleTypeChange('asap')}
           >
             <Clock className="w-4 h-4" />
-            ASAP
+            {t('printModal.asap')}
+          </button>
+          <button
+            type="button"
+            className={`flex-1 px-2 py-2 rounded-lg border text-sm flex items-center justify-center gap-1.5 transition-colors ${
+              options.scheduleType === 'queue'
+                ? 'bg-bambu-green border-bambu-green text-white'
+                : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
+            }`}
+            onClick={() => handleScheduleTypeChange('queue')}
+          >
+            <ListOrdered className="w-4 h-4" />
+            {t('printModal.queue')}
           </button>
           <button
             type="button"
@@ -146,19 +162,7 @@ export function ScheduleOptionsPanel({
             onClick={() => handleScheduleTypeChange('scheduled')}
           >
             <Calendar className="w-4 h-4" />
-            Scheduled
-          </button>
-          <button
-            type="button"
-            className={`flex-1 px-2 py-2 rounded-lg border text-sm flex items-center justify-center gap-1.5 transition-colors ${
-              options.scheduleType === 'manual'
-                ? 'bg-bambu-green border-bambu-green text-white'
-                : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
-            }`}
-            onClick={() => handleScheduleTypeChange('manual')}
-          >
-            <Hand className="w-4 h-4" />
-            Queue Only
+            {t('printModal.schedule')}
           </button>
         </div>
       </div>
@@ -166,7 +170,7 @@ export function ScheduleOptionsPanel({
       {/* Scheduled time input */}
       {options.scheduleType === 'scheduled' && (
         <div>
-          <label className="block text-sm text-bambu-gray mb-1">Date & Time</label>
+          <label className="block text-sm text-bambu-gray mb-1">{t('printModal.dateTime')}</label>
           <div className="flex gap-2">
             {/* Date input */}
             <div className="flex-1 relative">
@@ -185,7 +189,7 @@ export function ScheduleOptionsPanel({
                 type="button"
                 onClick={openCalendar}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-bambu-gray hover:text-white"
-                title="Open calendar"
+                title={t('printModal.openCalendar')}
               >
                 <Calendar className="w-4 h-4" />
               </button>
@@ -216,9 +220,26 @@ export function ScheduleOptionsPanel({
           </div>
           {(!isDateValid || !isTimeValid) && (
             <p className="mt-1 text-xs text-red-400">
-              Please enter a valid date and time
+              {t('printModal.invalidDateTime')}
             </p>
           )}
+        </div>
+      )}
+
+      {/* Manual start */}
+      {options.scheduleType === 'queue' && (
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="requireManualStart"
+            checked={options.requireManualStart}
+            onChange={(e) => onChange({ ...options, requireManualStart: e.target.checked })}
+            className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
+          />
+          <label htmlFor="requireManualStart" className="text-sm flex items-center gap-1 text-bambu-gray">
+            <Hand className="w-3.5 h-3.5" />
+            {t('printModal.requireManualStart')}
+          </label>
         </div>
       )}
 
@@ -232,7 +253,7 @@ export function ScheduleOptionsPanel({
           className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
         />
         <label htmlFor="requirePrevious" className="text-sm text-bambu-gray">
-          Only start if previous print succeeded
+          {t('printModal.requirePreviousSuccess')}
         </label>
       </div>
 
@@ -248,7 +269,7 @@ export function ScheduleOptionsPanel({
         />
         <label htmlFor="autoOffAfter" className={`text-sm flex items-center gap-1 ${canControlPrinter ? 'text-bambu-gray' : 'text-bambu-gray/50'}`}>
           <Power className="w-3.5 h-3.5" />
-          Power off printer when done
+          {t('printModal.autoOffAfter')}
         </label>
       </div>
 
@@ -270,7 +291,7 @@ export function ScheduleOptionsPanel({
       )}
 
       {/* Stagger start */}
-      {showStagger && options.scheduleType !== 'manual' && (
+      {showStagger && options.scheduleType !== 'queue' && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <input
@@ -341,10 +362,10 @@ export function ScheduleOptionsPanel({
       {/* Help text */}
       <p className="text-xs text-bambu-gray">
         {options.scheduleType === 'asap'
-          ? 'Print will start as soon as the printer is idle.'
+          ? t('printModal.helpAsap')
           : options.scheduleType === 'scheduled'
-          ? 'Print will start at the scheduled time if the printer is idle. If busy, it will wait until the printer becomes available.'
-          : "Print will be staged but won't start automatically. Use the Start button to release it to the queue."}
+          ? t('printModal.helpSchedule')
+          : t('printModal.helpQueue')}
       </p>
     </div>
   );

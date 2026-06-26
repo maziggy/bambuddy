@@ -1080,6 +1080,7 @@ class SpoolmanClient:
         cached_spools: list[dict] | None = None,
         inventory_remaining: float | None = None,
         spoolman_spool_id_hint: int | None = None,
+        auto_add_unknown_rfid: bool = True,
     ) -> dict | None:
         """Sync one AMS tray to Spoolman; creates the spool on first sight, updates weight otherwise."""
         logger.debug(
@@ -1126,7 +1127,18 @@ class SpoolmanClient:
                     remaining_weight=None if disable_weight_sync else remaining,
                 )
 
-            # Spool not found by tag - auto-create it
+            # Spool not found by tag - auto-create it, unless the user has
+            # opted out of auto-adding unknown RFIDs (settings.auto_add_unknown_rfid).
+            # Caller broadcasts unknown_tag on the resulting None so the UI can
+            # surface a "+ Add to inventory" affordance on the slot.
+            if not auto_add_unknown_rfid:
+                logger.info(
+                    "Auto-add disabled; skipping Spoolman spool create for %s (tag: %s...)",
+                    tray.tray_sub_brands,
+                    spool_tag[:16],
+                )
+                return None
+
             logger.info("Creating new spool in Spoolman for %s (tag: %s...)", tray.tray_sub_brands, spool_tag[:16])
             if self.is_bambu_lab_spool(tray.tray_uuid, tray.tag_uid, tray.tray_info_idx):
                 filament = await self._find_or_create_filament(tray)

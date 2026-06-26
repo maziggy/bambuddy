@@ -11,6 +11,9 @@ import {
 import {
   normalizeColorForCompare,
   colorsAreSimilar,
+  preferLowestSortKey,
+  compareSortKeys,
+  effectivePreferLowest,
 } from '../utils/amsHelpers';
 
 /**
@@ -58,6 +61,8 @@ export interface PrinterMappingResult {
   totalSlots: number;
   /** Per-printer config */
   config: PerPrinterConfig;
+  /** Per-globalTrayId inventory grams remaining, for the lowest-remain sort (#1766) */
+  inventoryByTrayId?: Map<number, number>;
 }
 
 /**
@@ -90,6 +95,7 @@ function computeMatchDetails(
   loadedFilaments: LoadedFilament[],
   manualMappings: Record<number, number>,
   preferLowest?: boolean,
+  inventoryByTrayId?: Map<number, number>,
 ): { exactMatches: number; typeOnlyMatches: number; missingTypes: number; totalSlots: number; status: PrinterMatchStatus } {
   if (!filamentReqs || filamentReqs.length === 0) {
     return { exactMatches: 0, typeOnlyMatches: 0, missingTypes: 0, totalSlots: 0, status: 'full' };
@@ -135,11 +141,12 @@ function computeMatchDetails(
     }
 
     if (preferLowest) {
-      candidates = [...candidates].sort((a, b) => {
-        const ra = a.remain >= 0 ? a.remain : 101;
-        const rb = b.remain >= 0 ? b.remain : 101;
-        return ra - rb;
-      });
+      candidates = [...candidates].sort((a, b) =>
+        compareSortKeys(
+          preferLowestSortKey(a, inventoryByTrayId),
+          preferLowestSortKey(b, inventoryByTrayId),
+        ),
+      );
     }
 
     const exactMatch = candidates.find(
@@ -194,6 +201,7 @@ function computeMappingWithOverrides(
   printerStatus: PrinterStatus | undefined,
   manualMappings: Record<number, number>,
   preferLowest?: boolean,
+  inventoryByTrayId?: Map<number, number>,
 ): number[] | undefined {
   if (!filamentReqs?.filaments || filamentReqs.filaments.length === 0) return undefined;
 
@@ -222,11 +230,12 @@ function computeMappingWithOverrides(
     }
 
     if (preferLowest) {
-      candidates = [...candidates].sort((a, b) => {
-        const ra = a.remain >= 0 ? a.remain : 101;
-        const rb = b.remain >= 0 ? b.remain : 101;
-        return ra - rb;
-      });
+      candidates = [...candidates].sort((a, b) =>
+        compareSortKeys(
+          preferLowestSortKey(a, inventoryByTrayId),
+          preferLowestSortKey(b, inventoryByTrayId),
+        ),
+      );
     }
 
     const exactMatch = candidates.find(
@@ -290,6 +299,7 @@ export function useMultiPrinterFilamentMapping(
   perPrinterConfigs: Record<number, PerPrinterConfig>,
   setPerPrinterConfigs: React.Dispatch<React.SetStateAction<Record<number, PerPrinterConfig>>>,
   preferLowest?: boolean,
+  inventoryByTrayIdPerPrinter?: Map<number, Map<number, number>>,
 ): UseMultiPrinterFilamentMappingResult {
   // Fetch printer status for all selected printers in parallel
   const statusQueries = useQueries({
@@ -311,9 +321,14 @@ export function useMultiPrinterFilamentMapping(
 
       const loadedFilaments = buildLoadedFilaments(printerStatus);
       const config = perPrinterConfigs[printerId] || DEFAULT_PRINTER_CONFIG;
+      const inventoryByTrayId = inventoryByTrayIdPerPrinter?.get(printerId);
+      // Per-printer gate (#1766): two printers in the same dispatch can have
+      // different AMS Backup states; the sort must be skipped on the OFF ones
+      // and kept on the ON ones. Computing inside the loop captures both.
+      const printerPreferLowest = effectivePreferLowest(preferLowest, printerStatus?.ams_filament_backup);
 
       // Compute auto mapping for this printer
-      const autoMapping = computeAmsMapping(filamentReqs, printerStatus, preferLowest);
+      const autoMapping = computeAmsMapping(filamentReqs, printerStatus, printerPreferLowest, inventoryByTrayId);
 
       // Determine which mappings to use:
       // If printer has override (useDefault=false), use its custom mappings
@@ -323,14 +338,15 @@ export function useMultiPrinterFilamentMapping(
         : defaultMappings;
 
       // Compute final mapping with overrides
-      const finalMapping = computeMappingWithOverrides(filamentReqs, printerStatus, effectiveMappings, preferLowest);
+      const finalMapping = computeMappingWithOverrides(filamentReqs, printerStatus, effectiveMappings, printerPreferLowest, inventoryByTrayId);
 
       // Compute match details
       const matchDetails = computeMatchDetails(
         filamentReqs?.filaments,
         loadedFilaments,
         effectiveMappings,
-        preferLowest,
+        printerPreferLowest,
+        inventoryByTrayId,
       );
 
       return {
@@ -347,9 +363,10 @@ export function useMultiPrinterFilamentMapping(
         missingTypes: matchDetails.missingTypes,
         totalSlots: matchDetails.totalSlots,
         config,
+        inventoryByTrayId,
       };
     });
-  }, [selectedPrinterIds, statusQueries, printers, filamentReqs, perPrinterConfigs, defaultMappings, preferLowest]);
+  }, [selectedPrinterIds, statusQueries, printers, filamentReqs, perPrinterConfigs, defaultMappings, preferLowest, inventoryByTrayIdPerPrinter]);
 
   const isLoading = statusQueries.some((q) => q.isLoading);
 
@@ -370,7 +387,12 @@ export function useMultiPrinterFilamentMapping(
     if (!result || !result.status || !filamentReqs?.filaments) return;
 
     // Compute optimal mapping for this printer
-    const autoMapping = computeAmsMapping(filamentReqs, result.status, preferLowest);
+    const autoMapping = computeAmsMapping(
+      filamentReqs,
+      result.status,
+      effectivePreferLowest(preferLowest, result.status?.ams_filament_backup),
+      inventoryByTrayIdPerPrinter?.get(printerId),
+    );
     if (!autoMapping) return;
 
     // Convert autoMapping array to manualMappings record

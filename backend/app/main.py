@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import mimetypes as _mimetypes
 import os
@@ -22,7 +23,6 @@ from backend.app.api.routes import (
     archive_purge,
     archives,
     auth,
-    background_dispatch as background_dispatch_routes,
     bug_report,
     camera,
     cloud,
@@ -36,6 +36,7 @@ from backend.app.api.routes import (
     kprofiles,
     labels,
     library,
+    library_tags,
     library_trash,
     local_backup,
     local_presets,
@@ -50,12 +51,14 @@ from backend.app.api.routes import (
     pending_uploads,
     print_log,
     print_queue,
+    printer_sensor_history,
     printers,
     projects,
     settings as settings_routes,
     slice_jobs,
     slicer_presets,
     smart_plugs,
+    sponsor_prompt,
     spoolbuddy,
     spoolman,
     spoolman_inventory,
@@ -77,7 +80,6 @@ from backend.app.core.websocket import ws_manager
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.services.archive import ArchiveService, peek_plate_index_in_3mf, swap_plate_suffix
 from backend.app.services.archive_purge import archive_purge_service
-from backend.app.services.background_dispatch import background_dispatch
 from backend.app.services.bambu_ftp import (
     FileNotOnPrinterError,
     cache_3mf_download,
@@ -343,6 +345,15 @@ _active_prints: dict[tuple[int, str], int] = {}
 # nozzle parking on slicer profiles with Timelapse Type = Smooth).
 _stage22_finish_frames: dict[int, bytes] = {}
 
+# #1790: per-printer producer-done event. Set by `on_finish_photo_moment` in its
+# `finally` block (whether it captured a frame or not). The consumer in
+# `_background_finish_photo` waits on it before reading `_stage22_finish_frames`
+# so the FINISH-state fallback path — where moment and completion are dispatched
+# back-to-back — doesn't race past the producer with an empty pop, and the
+# consumer's RTSP fallback can't collide with the producer's still-in-flight RTSP
+# grab (Bambu printers allow only one RTSP client at a time).
+_stage22_finish_in_flight: dict[int, asyncio.Event] = {}
+
 # Per-printer "connected" edge tracker. Used by `on_printer_status_change`
 # to fire `reconcile_stale_active_prints` exactly once per (re)connection
 # (#1542 follow-up — power-cycle ghost prints). The value is True after
@@ -514,6 +525,76 @@ def _get_ams_assignment_lock(printer_id: int) -> asyncio.Lock:
         lock = asyncio.Lock()
         _ams_assignment_locks[printer_id] = lock
     return lock
+
+
+# Per-printer dedup for unknown_tag WS broadcasts. Keyed by
+# (ams_id, tray_id) -> (tag_uid, tray_uuid); we only re-broadcast when the
+# tag tuple changes for the slot. Cleared when the slot is reported empty
+# so remove + reinsert reliably re-prompts the UI.
+_unknown_tag_last_broadcast: dict[int, dict[tuple[int, int], tuple[str, str]]] = {}
+
+
+async def _broadcast_unknown_tag(
+    *,
+    printer_id: int,
+    ams_id: int,
+    tray_id: int,
+    tag_uid: str,
+    tray_uuid: str,
+    tray_type: str | None = None,
+    tray_color: str | None = None,
+    tray_sub_brands: str | None = None,
+    tray_count: int | None = None,
+) -> None:
+    """Broadcast unknown_tag, deduped so repeated MQTT pushes for the same slot+tag don't spam the UI."""
+    _logger = logging.getLogger(__name__)
+    slot_key = (ams_id, tray_id)
+    tag_key = (tag_uid or "", tray_uuid or "")
+    per_printer = _unknown_tag_last_broadcast.setdefault(printer_id, {})
+    if per_printer.get(slot_key) == tag_key:
+        _logger.debug(
+            "unknown_tag deduped for printer=%d AMS=%d slot=%d tag=%s",
+            printer_id,
+            ams_id,
+            tray_id,
+            tag_key[0][:8] or tag_key[1][:8] or "(none)",
+        )
+        return
+    _logger.info(
+        "unknown_tag broadcast: printer=%d AMS=%d slot=%d type=%r color=%r tag=%s",
+        printer_id,
+        ams_id,
+        tray_id,
+        tray_type,
+        tray_color,
+        tag_key[0][:8] or tag_key[1][:8] or "(none)",
+    )
+    # Broadcast first; only commit the dedup if the WS write succeeds.
+    # If broadcast raises, the next MQTT push retries instead of being
+    # permanently silenced by a poisoned dedup entry.
+    await ws_manager.broadcast(
+        {
+            "type": "unknown_tag",
+            "printer_id": printer_id,
+            "ams_id": ams_id,
+            "tray_id": tray_id,
+            "tag_uid": tag_uid,
+            "tray_uuid": tray_uuid,
+            "tray_type": tray_type,
+            "tray_color": tray_color,
+            "tray_sub_brands": tray_sub_brands,
+            "tray_count": tray_count,
+        }
+    )
+    per_printer[slot_key] = tag_key
+
+
+def _clear_unknown_tag_dedup(printer_id: int, ams_id: int, tray_id: int) -> None:
+    """Drop the cached last-broadcast tag for a slot (called when slot reports empty or gets matched)."""
+    per_printer = _unknown_tag_last_broadcast.get(printer_id)
+    if per_printer is None:
+        return
+    per_printer.pop((ams_id, tray_id), None)
 
 
 # TTL for expected-print entries: evict registrations older than this to prevent
@@ -689,6 +770,82 @@ def _get_start_plate_id(archive_id: int | None) -> int | None:
     if archive_id is None:
         return None
     return _print_plate_ids.get(archive_id)
+
+
+def _partial_progress_scale(progress: int | float | None) -> float:
+    """Clamp ``progress / 100`` into [0.0, 1.0] for partial-print scaling.
+
+    Used by every site that multiplies a "would-have-used" slicer estimate
+    down to "actually-used" for failed / cancelled / stopped prints. Centralised
+    so the three sites in ``_background_notifications`` (and the per-plate
+    override helper) can't drift apart on the coercion shape.
+    """
+    return max(0.0, min((progress or 0) / 100.0, 1.0))
+
+
+def _scope_notification_archive_data_to_plate(
+    archive_data: dict,
+    archive_file_path: str | None,
+    plate_id: int | None,
+    print_status: str,
+    progress: int | float | None,
+    base_dir: Path,
+) -> dict:
+    """Override summed-across-plates totals in ``archive_data`` with the values
+    for ``plate_id`` so the completion notification reports what was actually
+    printed, not the whole project (#1785).
+
+    The 3MF parser at services/archive.py:200-264 sums ``prediction`` and
+    ``weight`` across every plate of a multi-plate file (#1593) — correct for
+    the archive card's "whole project" headline, wrong for the completion
+    notification of a single-plate print. The queue UI already re-reads the
+    3MF per-plate at print_queue.py:272-285; this helper mirrors that for the
+    notification payload (filament grams, time estimate, per-slot breakdown).
+
+    No-ops when ``plate_id`` is None, the file is missing, or the 3MF carries
+    no per-plate values — in every fail case the original ``archive_data`` is
+    returned unchanged so the notification still sends.
+    """
+    if plate_id is None or not archive_file_path:
+        return archive_data
+
+    from backend.app.utils.threemf_tools import (
+        extract_filament_usage_from_3mf,
+        extract_print_time_from_3mf,
+    )
+
+    archive_path = base_dir / archive_file_path
+    if not archive_path.exists():
+        return archive_data
+
+    plate_slots = extract_filament_usage_from_3mf(archive_path, plate_id)
+    plate_grams = sum(f.get("used_g", 0) for f in plate_slots)
+    plate_time = extract_print_time_from_3mf(archive_path, plate_id)
+
+    scale = 1.0 if print_status == "completed" else _partial_progress_scale(progress)
+
+    if plate_time:
+        archive_data["print_time_seconds"] = plate_time
+
+    # Gate both the grams headline AND the per-slot breakdown on the same
+    # `plate_grams > 0` signal: if the 3MF carries per-plate filament rows but
+    # they all sum to zero (slicer bug / re-slice without estimate), drop back
+    # to the project-level grams the archive columns already provide rather
+    # than ship a project-level headline next to an all-zero per-plate
+    # breakdown.
+    if plate_grams > 0:
+        archive_data["actual_filament_grams"] = round(plate_grams * scale, 1)
+        archive_data["filament_slots"] = [
+            {
+                "slot_id": s.get("slot_id"),
+                "used_g": round((s.get("used_g") or 0) * scale, 1),
+                "type": s.get("type", ""),
+                "color": s.get("color", ""),
+            }
+            for s in plate_slots
+        ]
+
+    return archive_data
 
 
 def _extract_filament_data_from_mqtt(data: dict, ams_mapping: list[int] | None = None) -> dict[str, str]:
@@ -1022,7 +1179,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         f"{state.stg_cur}:{bed_target}:{nozzle_target}:"
         f"{state.cooling_fan_speed}:{state.big_fan1_speed}:{state.big_fan2_speed}:"
         f"{state.chamber_light}:{state.active_extruder}:{state.tray_now}:{vt_tray_key}:"
-        f"{ams_dry_key}:{ams_tray_key}:{state.door_open}"
+        f"{ams_dry_key}:{ams_tray_key}:{state.door_open}:{state.ams_filament_backup}"
     )
 
     # MQTT relay - publish status (before dedup check - always publish to MQTT)
@@ -1199,7 +1356,12 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
 
     await ws_manager.send_printer_status(
         printer_id,
-        printer_state_to_dict(state, printer_id, printer_manager.get_model(printer_id)),
+        printer_state_to_dict(
+            state,
+            printer_id,
+            printer_manager.get_model(printer_id),
+            printer_manager.get_drying_targets(printer_id),
+        ),
     )
 
 
@@ -1234,7 +1396,12 @@ async def on_ams_change(printer_id: int, ams_data: list):
             logger.info("[Printer %s] Broadcasting AMS change via WebSocket", printer_id)
             await ws_manager.send_printer_status(
                 printer_id,
-                printer_state_to_dict(state, printer_id, printer_manager.get_model(printer_id)),
+                printer_state_to_dict(
+                    state,
+                    printer_id,
+                    printer_manager.get_model(printer_id),
+                    printer_manager.get_drying_targets(printer_id),
+                ),
             )
     except Exception as e:
         logger.warning("Failed to broadcast AMS change for printer %s: %s", printer_id, e)
@@ -1443,6 +1610,8 @@ async def on_ams_change(printer_id: int, ams_data: list):
             )
 
             _spoolman_on = await get_setting(db, "spoolman_enabled")
+            _auto_add_raw = await get_setting(db, "auto_add_unknown_rfid")
+            _auto_add_unknown = _auto_add_raw is None or _auto_add_raw.lower() == "true"
             if not _spoolman_on or _spoolman_on.lower() != "true":
                 for ams_unit in ams_data:
                     if not isinstance(ams_unit, dict):
@@ -1456,6 +1625,9 @@ async def on_ams_change(printer_id: int, ams_data: list):
                         tray_uuid = tray.get("tray_uuid", "")
                         tray_info_idx = tray.get("tray_info_idx", "")
                         if not tray.get("tray_type"):
+                            # Slot reported empty — drop any cached unknown-tag
+                            # broadcast so reinserting the same spool re-prompts.
+                            _clear_unknown_tag_dedup(printer_id, ams_id, tray_id)
                             continue  # Empty slot
                         # Check if assignment already exists for this slot
                         existing = await db.execute(
@@ -1595,8 +1767,27 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                 spool = await find_matching_untagged_spool(db, tray)
                                 if spool:
                                     await link_tag_to_inventory_spool(db, spool, tray)
-                                else:
+                                elif _auto_add_unknown:
                                     spool = await create_spool_from_tray(db, tray)
+                                else:
+                                    # Auto-add disabled: surface the slot so the
+                                    # user can add it manually via the UI.
+                                    await _broadcast_unknown_tag(
+                                        printer_id=printer_id,
+                                        ams_id=ams_id,
+                                        tray_id=tray_id,
+                                        tag_uid=tag_uid,
+                                        tray_uuid=tray_uuid,
+                                        tray_type=tray.get("tray_type"),
+                                        tray_color=tray.get("tray_color"),
+                                        tray_sub_brands=tray.get("tray_sub_brands"),
+                                        tray_count=len(ams_unit.get("tray", [])),
+                                    )
+                                    continue
+                            # Slot matched (existing tag, untagged inventory
+                            # match, or freshly auto-created spool) — drop any
+                            # stale dedup so a future tag swap re-prompts.
+                            _clear_unknown_tag_dedup(printer_id, ams_id, tray_id)
                             await auto_assign_spool(
                                 printer_id,
                                 ams_id,
@@ -1625,28 +1816,20 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             )
                         elif is_valid_tag(tag_uid, tray_uuid):
                             # Non-BL spool with some tag — let user choose
-                            await ws_manager.broadcast(
-                                {
-                                    "type": "unknown_tag",
-                                    "printer_id": printer_id,
-                                    "ams_id": ams_id,
-                                    "tray_id": tray_id,
-                                    "tag_uid": tag_uid,
-                                    "tray_uuid": tray_uuid,
-                                }
+                            await _broadcast_unknown_tag(
+                                printer_id=printer_id,
+                                ams_id=ams_id,
+                                tray_id=tray_id,
+                                tag_uid=tag_uid,
+                                tray_uuid=tray_uuid,
+                                tray_type=tray.get("tray_type"),
+                                tray_color=tray.get("tray_color"),
+                                tray_sub_brands=tray.get("tray_sub_brands"),
+                                tray_count=len(ams_unit.get("tray", [])),
                             )
-                        else:
-                            # No tag at all — let user choose from inventory
-                            await ws_manager.broadcast(
-                                {
-                                    "type": "unknown_tag",
-                                    "printer_id": printer_id,
-                                    "ams_id": ams_id,
-                                    "tray_id": tray_id,
-                                    "tag_uid": "",
-                                    "tray_uuid": "",
-                                }
-                            )
+                        # No-tag slots (generic non-RFID filament) are left alone:
+                        # nothing to identify, prompting "+ Add" would just create
+                        # ghost spools with empty tags on every confirm.
     except Exception as e:
         logger.warning("RFID spool auto-assign failed: %s", e, exc_info=True)
 
@@ -1664,6 +1847,9 @@ async def on_ams_change(printer_id: int, ams_data: list):
             sync_mode = await get_setting(db, "spoolman_sync_mode")
             if sync_mode and sync_mode != "auto":
                 return  # Only sync on auto mode
+
+            _auto_add_raw_sm = await get_setting(db, "auto_add_unknown_rfid")
+            auto_add_unknown_rfid = _auto_add_raw_sm is None or _auto_add_raw_sm.lower() == "true"
 
             # `spoolman_disable_weight_sync` is deprecated (#1119) — weight is now
             # always owned by per-print tracking, never by AMS auto-sync. The
@@ -1757,7 +1943,10 @@ async def on_ams_change(printer_id: int, ams_data: list):
                     tray = client.parse_ams_tray(ams_id, tray_data)
                     if not tray:
                         # Empty tray slot — record for local assignment cleanup
+                        # and drop any cached unknown-tag broadcast so a
+                        # reinserted spool re-prompts.
                         empty_slots.append((ams_id, tray_id_raw))
+                        _clear_unknown_tag_dedup(printer_id, ams_id, tray_id_raw)
                         continue
 
                     spool_tag = (
@@ -1781,7 +1970,24 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             cached_spools=cached_spools,
                             inventory_remaining=inv_remaining,
                             spoolman_spool_id_hint=hint,
+                            auto_add_unknown_rfid=auto_add_unknown_rfid,
                         )
+                        if result is None and spool_tag and not auto_add_unknown_rfid:
+                            # Spoolman skipped auto-create per user setting — surface
+                            # the slot so the UI can offer "+ Add to inventory".
+                            await _broadcast_unknown_tag(
+                                printer_id=printer_id,
+                                ams_id=ams_id,
+                                tray_id=tray.tray_id,
+                                tag_uid=tray.tag_uid or "",
+                                tray_uuid=tray.tray_uuid or "",
+                                tray_type=tray.tray_type,
+                                tray_color=tray.tray_color,
+                                tray_sub_brands=tray.tray_sub_brands,
+                                tray_count=len(trays),
+                            )
+                        elif result:
+                            _clear_unknown_tag_dedup(printer_id, ams_id, tray.tray_id)
                         if result:
                             synced += 1
                             if result.get("id"):
@@ -2363,7 +2569,16 @@ async def on_print_start(printer_id: int, data: dict):
                     _dispatched = getattr(_client, "last_dispatch_subtask_id", None) if _client else None
                     if _dispatched:
                         effective_subtask_id = str(_dispatched).strip() or None
-                if effective_subtask_id and not archive.subtask_id:
+                # Update on first-set OR on reprint (the queue dispatcher mints
+                # a fresh subtask_id per dispatch in bambu_mqtt:3647). Skipping
+                # the rewrite for reprints leaves the archive holding the FIRST
+                # run's id; if MQTT then reconnects mid-print, the reconciler
+                # (#1542) compares the stale stored id against the printer's
+                # live id, sees a mismatch, and synthesises a bogus PRINT
+                # COMPLETE — exactly the false-positive "Print Stopped" reported
+                # in #1807. Inequality check preserves the noop-on-stable-push
+                # behaviour the earlier `not archive.subtask_id` guard provided.
+                if effective_subtask_id and archive.subtask_id != effective_subtask_id:
                     archive.subtask_id = effective_subtask_id
                 # #1403 follow-up: VP-queue archives are created with
                 # printer_id=None at queue-add time (we don't know which
@@ -2571,8 +2786,11 @@ async def on_print_start(printer_id: int, data: dict):
                 )
                 # Track this as the active print
                 _active_prints[(printer_id, existing_archive.filename)] = existing_archive.id
-                # Attach subtask_id retroactively so future restarts can resume
-                if subtask_id and not existing_archive.subtask_id:
+                # Attach subtask_id retroactively so future restarts can resume.
+                # Compare for inequality (not "is empty") to also pick up reprint
+                # dispatches that mint a fresh id — see #1807 for the bogus
+                # "Print Stopped" the strict-empty guard caused on reconnect.
+                if subtask_id and existing_archive.subtask_id != subtask_id:
                     existing_archive.subtask_id = subtask_id
                     await db.commit()
                 # Also set up energy tracking if not already tracked (#941: persisted column)
@@ -3656,6 +3874,14 @@ async def on_finish_photo_moment(printer_id: int, data: dict):
         )
         return
 
+    # #1790: register the producer-done event BEFORE the first await so the
+    # consumer in `_background_finish_photo` — which is dispatched back-to-back
+    # with us on the FINISH-state fallback path — sees it as soon as it polls.
+    # The `finally` below guarantees `set()` runs on every exit, including
+    # early returns and exceptions, so the consumer's bounded wait can't hang.
+    producer_done = asyncio.Event()
+    _stage22_finish_in_flight[printer_id] = producer_done
+
     try:
         async with async_session() as db:
             from backend.app.api.routes.settings import get_setting
@@ -3728,6 +3954,11 @@ async def on_finish_photo_moment(printer_id: int, data: dict):
             printer_id,
             e,
         )
+    finally:
+        # #1790: always unblock the consumer's bounded wait — whether we stored
+        # a frame, gave up, or hit an exception. Local ref means cleanup of the
+        # dict entry by the consumer doesn't affect signalling.
+        producer_done.set()
 
 
 async def on_print_complete(printer_id: int, data: dict):
@@ -4179,8 +4410,12 @@ async def on_print_complete(printer_id: int, data: dict):
     # Always drain the plate_id register on completion — the session already
     # consumed it at print-start injection; leaving it would leak into the next
     # print on the same archive_id (rare but possible with reprints) (#1697).
+    # Capture the popped value so the completion notification can scope the
+    # archive-level (summed-across-plates per #1593) filament + time totals
+    # down to the single plate that was actually printed (#1785).
+    notify_plate_id: int | None = None
     if archive_id:
-        _print_plate_ids.pop(archive_id, None)
+        notify_plate_id = _print_plate_ids.pop(archive_id, None)
 
     # Internal inventory: track AMS remain% deltas (skip if Spoolman handles usage)
     try:
@@ -4595,6 +4830,22 @@ async def on_print_complete(printer_id: int, data: dict):
                             # has the better framing instead of the post-bed-drop angle
                             # the live-camera fallback below would give.
                             if not photo_filename:
+                                # #1790: on the FINISH-state fallback path the producer
+                                # task is dispatched back-to-back with this consumer, so
+                                # a bare pop would race past with an empty result and
+                                # the RTSP fallback below would collide with the
+                                # producer's still-in-flight grab (single-client RTSP
+                                # on Bambu printers). Wait for the producer to finish
+                                # or give up before touching the cache.
+                                in_flight = _stage22_finish_in_flight.pop(printer_id, None)
+                                if in_flight is not None:
+                                    try:
+                                        await asyncio.wait_for(in_flight.wait(), timeout=20.0)
+                                    except asyncio.TimeoutError:
+                                        logger.warning(
+                                            "[PHOTO-BG] timed out waiting for stage-22 producer for printer %s — proceeding to fallback",
+                                            printer_id,
+                                        )
                                 cached_frame = _stage22_finish_frames.pop(printer_id, None)
                                 if cached_frame:
                                     photos_dir = archive_dir / "photos"
@@ -4733,7 +4984,7 @@ async def on_print_complete(printer_id: int, data: dict):
                         # Scale filament usage for partial prints
                         if print_status != "completed" and archive.filament_used_grams:
                             progress = data.get("progress") or 0
-                            scale = max(0.0, min(progress / 100.0, 1.0))
+                            scale = _partial_progress_scale(progress)
                             archive_data["actual_filament_grams"] = round(archive.filament_used_grams * scale, 1)
                             archive_data["progress"] = progress
 
@@ -4741,9 +4992,21 @@ async def on_print_complete(printer_id: int, data: dict):
                         if archive.extra_data and archive.extra_data.get("filament_slots"):
                             slots = archive.extra_data["filament_slots"]
                             if print_status != "completed":
-                                scale = max(0.0, min((data.get("progress") or 0) / 100.0, 1.0))
+                                scale = _partial_progress_scale(data.get("progress"))
                                 slots = [{**s, "used_g": round(s["used_g"] * scale, 1)} for s in slots]
                             archive_data["filament_slots"] = slots
+
+                        # Scope project-summed totals down to the plate that was
+                        # actually printed — see _scope_notification_archive_data_to_plate
+                        # for the why (#1785).
+                        archive_data = _scope_notification_archive_data_to_plate(
+                            archive_data,
+                            archive.file_path,
+                            notify_plate_id,
+                            print_status,
+                            data.get("progress"),
+                            app_settings.base_dir,
+                        )
 
                         # Enrich filament_grams from usage_results when archive has no 3MF data
                         if not archive_data.get("actual_filament_grams") and usage_results:
@@ -5016,6 +5279,29 @@ async def record_ams_history():
                     except (ValueError, TypeError):
                         pass  # Keep default threshold if stored value is invalid
 
+                # Per-filament humidity threshold overrides (#1605) — resolved
+                # per-AMS below from the loaded tray types. Reuses the same
+                # resolver as the auto-drying scheduler so behavior stays in
+                # lockstep across both consumers.
+                from backend.app.services.print_scheduler import PrintScheduler
+
+                per_type_humidity_thresholds: dict[str, int] = {}
+                result = await db.execute(select(Settings).where(Settings.key == "ams_humidity_thresholds"))
+                setting = result.scalar_one_or_none()
+                if setting and setting.value:
+                    try:
+                        raw = json.loads(setting.value)
+                        if isinstance(raw, dict):
+                            for k, v in raw.items():
+                                try:
+                                    per_type_humidity_thresholds[str(k).upper() if k != "default" else "default"] = int(
+                                        v
+                                    )
+                                except (TypeError, ValueError):
+                                    continue
+                    except (ValueError, TypeError):
+                        pass  # Invalid JSON → no overrides, fall through to global threshold
+
                 recorded_count = 0
                 for printer in printers:
                     # Get current state from printer manager
@@ -5087,8 +5373,18 @@ async def record_ams_history():
                         if not _ams_has_filament(ams_data):
                             continue
 
+                        # Resolve per-filament humidity threshold for this AMS
+                        # unit (#1605). Falls back to the global ams_humidity_fair
+                        # when no per-type overrides are configured.
+                        trays = ams_data.get("tray", []) or []
+                        effective_humidity_threshold = float(
+                            PrintScheduler.resolve_humidity_threshold(
+                                trays, per_type_humidity_thresholds, int(humidity_threshold)
+                            )
+                        )
+
                         # Check humidity alarm (only if above threshold)
-                        if humidity is not None and humidity > humidity_threshold:
+                        if humidity is not None and humidity > effective_humidity_threshold:
                             cooldown_key = f"{printer.id}:{ams_id}:humidity"
                             last_alarm = _ams_alarm_cooldown.get(cooldown_key)
                             now = datetime.now(timezone.utc)
@@ -5098,17 +5394,27 @@ async def record_ams_history():
                             ):
                                 _ams_alarm_cooldown[cooldown_key] = now
                                 logger.info(
-                                    f"Sending humidity alarm for {printer.name} {ams_label}: {humidity}% > {humidity_threshold}%"
+                                    f"Sending humidity alarm for {printer.name} {ams_label}: {humidity}% > {effective_humidity_threshold}%"
                                 )
                                 try:
                                     # Call different notification method based on AMS type
                                     if is_ams_ht:
                                         await notification_service.on_ams_ht_humidity_high(
-                                            printer.id, printer.name, ams_label, humidity, humidity_threshold, db
+                                            printer.id,
+                                            printer.name,
+                                            ams_label,
+                                            humidity,
+                                            effective_humidity_threshold,
+                                            db,
                                         )
                                     else:
                                         await notification_service.on_ams_humidity_high(
-                                            printer.id, printer.name, ams_label, humidity, humidity_threshold, db
+                                            printer.id,
+                                            printer.name,
+                                            ams_label,
+                                            humidity,
+                                            effective_humidity_threshold,
+                                            db,
                                         )
                                 except Exception as e:
                                     logger.warning("Failed to send humidity alarm: %s", e)
@@ -5188,6 +5494,133 @@ def stop_ams_history_recording():
         _ams_history_task.cancel()
         _ams_history_task = None
         logging.getLogger(__name__).info("AMS history recording stopped")
+
+
+# Printer sensor history recording (nozzle / bed / chamber)
+_printer_sensor_history_task: asyncio.Task | None = None
+PRINTER_SENSOR_HISTORY_INTERVAL = 60  # Record every minute — heaters move faster than AMS humidity
+PRINTER_SENSOR_HISTORY_RETENTION_DAYS = 30
+_printer_sensor_cleanup_counter = 0
+# Sensor kinds tracked in state.temperatures — these are the normalised keys the
+# MQTT parser writes, so we don't need to handle per-model field aliases here
+# (nozzle_temper / left_nozzle_temper / right_nozzle_temper / chamber_temper
+# are all collapsed by services/bambu_mqtt.py before they reach this loop).
+_SENSOR_KINDS = ("nozzle", "nozzle_2", "bed", "chamber")
+_SENSOR_TARGET_KEYS = {
+    "nozzle": "nozzle_target",
+    "nozzle_2": "nozzle_2_target",
+    "bed": "bed_target",
+    "chamber": "chamber_target",
+}
+
+
+async def record_printer_sensor_history():
+    """Background task to record nozzle / bed / chamber readings.
+
+    Pulls from `state.temperatures` (already normalised across all printer
+    models by the MQTT parser) rather than re-parsing raw_data, so we get
+    free coverage of dual-nozzle H2D, sensor-only X1C chamber, etc.
+    """
+    logger = logging.getLogger(__name__)
+
+    await asyncio.sleep(10)
+
+    while True:
+        try:
+            from backend.app.models.printer import Printer
+            from backend.app.models.printer_sensor_history import PrinterSensorHistory
+            from backend.app.models.settings import Settings
+
+            async with async_session() as db:
+                result = await db.execute(select(Printer).where(Printer.is_active.is_(True)))
+                printers = result.scalars().all()
+
+                recorded_count = 0
+                for printer in printers:
+                    state = printer_manager.get_status(printer.id)
+                    if not state or not state.connected:
+                        continue
+
+                    temps = getattr(state, "temperatures", None) or {}
+                    if not isinstance(temps, dict):
+                        continue
+
+                    for kind in _SENSOR_KINDS:
+                        if kind not in temps:
+                            continue
+                        try:
+                            value = float(temps[kind])
+                        except (ValueError, TypeError):
+                            continue
+
+                        target_raw = temps.get(_SENSOR_TARGET_KEYS[kind])
+                        target_val: float | None = None
+                        if target_raw is not None:
+                            try:
+                                target_val = float(target_raw)
+                            except (ValueError, TypeError):
+                                target_val = None
+
+                        db.add(
+                            PrinterSensorHistory(
+                                printer_id=printer.id,
+                                sensor_kind=kind,
+                                value=value,
+                                target=target_val,
+                            )
+                        )
+                        recorded_count += 1
+
+                await db.commit()
+                if recorded_count > 0:
+                    logger.debug("Recorded %s printer sensor history entries", recorded_count)
+
+                # Periodic cleanup — once every ~24h at this interval.
+                global _printer_sensor_cleanup_counter
+                _printer_sensor_cleanup_counter += 1
+                cleanup_every = max(1, (24 * 60 * 60) // PRINTER_SENSOR_HISTORY_INTERVAL)
+                if _printer_sensor_cleanup_counter >= cleanup_every:
+                    _printer_sensor_cleanup_counter = 0
+                    result = await db.execute(
+                        select(Settings).where(Settings.key == "printer_sensor_history_retention_days")
+                    )
+                    setting = result.scalar_one_or_none()
+                    retention_days = int(setting.value) if setting else PRINTER_SENSOR_HISTORY_RETENTION_DAYS
+
+                    cutoff = datetime.utcnow() - timedelta(days=retention_days)
+                    cleanup = await db.execute(
+                        delete(PrinterSensorHistory).where(PrinterSensorHistory.recorded_at < cutoff)
+                    )
+                    await db.commit()
+                    if cleanup.rowcount > 0:
+                        logger.info(
+                            "Cleaned up %s old printer sensor history entries (older than %s days)",
+                            cleanup.rowcount,
+                            retention_days,
+                        )
+
+            await asyncio.sleep(PRINTER_SENSOR_HISTORY_INTERVAL)
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.warning("Printer sensor history recording failed: %s", e)
+            await asyncio.sleep(60)
+
+
+def start_printer_sensor_history_recording():
+    global _printer_sensor_history_task
+    if _printer_sensor_history_task is None:
+        _printer_sensor_history_task = asyncio.create_task(record_printer_sensor_history())
+        logging.getLogger(__name__).info("Printer sensor history recording started")
+
+
+def stop_printer_sensor_history_recording():
+    global _printer_sensor_history_task
+    if _printer_sensor_history_task:
+        _printer_sensor_history_task.cancel()
+        _printer_sensor_history_task = None
+        logging.getLogger(__name__).info("Printer sensor history recording stopped")
 
 
 # Printer runtime tracking
@@ -5762,9 +6195,6 @@ async def lifespan(app: FastAPI):
     # Start the print scheduler
     spawn_background_task(print_scheduler.run(), name="print-scheduler")
 
-    # Start background dispatch worker for send/start operations
-    await background_dispatch.start()
-
     # Start the smart plug scheduler for time-based on/off
     smart_plug_manager.start_scheduler()
 
@@ -5789,6 +6219,9 @@ async def lifespan(app: FastAPI):
 
     # Start AMS history recording
     start_ams_history_recording()
+
+    # Start printer sensor (nozzle / bed / chamber) history recording
+    start_printer_sensor_history_recording()
 
     # Start printer runtime tracking
     start_runtime_tracking()
@@ -5827,7 +6260,6 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     print_scheduler.stop()
-    await background_dispatch.stop()
     smart_plug_manager.stop_scheduler()
     notification_service.stop_digest_scheduler()
     github_backup_service.stop_scheduler()
@@ -5836,6 +6268,7 @@ async def lifespan(app: FastAPI):
     archive_purge_service.stop_scheduler()
     obico_detection_service.stop()
     stop_ams_history_recording()
+    stop_printer_sensor_history_recording()
     stop_runtime_tracking()
     stop_spoolbuddy_watchdog()
     stop_camera_cleanup()
@@ -5912,6 +6345,14 @@ PUBLIC_API_ROUTES = {
     "/api/v1/updates/version",
     # Metrics endpoint handles its own prometheus_token authentication
     "/api/v1/metrics",
+    # Appliance bootstrap (#1589 follow-up): the SPA's i18n setup polls
+    # this BEFORE a JWT is available to pick up the firstboot wizard's
+    # hostname / timezone / locale and the chrony NTP-gate state. The
+    # response contains user-set defaults and a public sync flag — no
+    # secrets. Without this entry the global auth middleware returns 401
+    # before the route handler runs, regardless of the route's own
+    # "no auth required" intent.
+    "/api/v1/system/appliance",
 }
 
 # Route prefixes that are public (for routes with dynamic segments)
@@ -6293,7 +6734,6 @@ app.include_router(local_presets.router, prefix=app_settings.api_prefix)
 app.include_router(smart_plugs.router, prefix=app_settings.api_prefix)
 app.include_router(print_log.router, prefix=app_settings.api_prefix)
 app.include_router(print_queue.router, prefix=app_settings.api_prefix)
-app.include_router(background_dispatch_routes.router, prefix=app_settings.api_prefix)
 app.include_router(kprofiles.router, prefix=app_settings.api_prefix)
 app.include_router(notifications.router, prefix=app_settings.api_prefix)
 app.include_router(notification_templates.router, prefix=app_settings.api_prefix)
@@ -6301,11 +6741,13 @@ app.include_router(user_notifications.router, prefix=app_settings.api_prefix)
 app.include_router(spoolman.router, prefix=app_settings.api_prefix)
 app.include_router(spoolman_inventory.router, prefix=app_settings.api_prefix)
 app.include_router(updates.router, prefix=app_settings.api_prefix)
+app.include_router(sponsor_prompt.router, prefix=app_settings.api_prefix)
 app.include_router(maintenance.router, prefix=app_settings.api_prefix)
 app.include_router(camera.router, prefix=app_settings.api_prefix)
 app.include_router(external_links.router, prefix=app_settings.api_prefix)
 app.include_router(projects.router, prefix=app_settings.api_prefix)
 app.include_router(library.router, prefix=app_settings.api_prefix)
+app.include_router(library_tags.router, prefix=app_settings.api_prefix)
 app.include_router(library_trash.router, prefix=app_settings.api_prefix)
 app.include_router(slice_jobs.router, prefix=app_settings.api_prefix)
 app.include_router(slicer_presets.router, prefix=app_settings.api_prefix)
@@ -6314,6 +6756,7 @@ app.include_router(makerworld.router, prefix=app_settings.api_prefix)
 app.include_router(api_keys.router, prefix=app_settings.api_prefix)
 app.include_router(webhook.router, prefix=app_settings.api_prefix)
 app.include_router(ams_history.router, prefix=app_settings.api_prefix)
+app.include_router(printer_sensor_history.router, prefix=app_settings.api_prefix)
 app.include_router(system.router, prefix=app_settings.api_prefix)
 app.include_router(support.router, prefix=app_settings.api_prefix)
 app.include_router(websocket.router, prefix=app_settings.api_prefix)

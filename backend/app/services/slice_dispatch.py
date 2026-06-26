@@ -1,9 +1,8 @@
 """In-memory background dispatcher for slice jobs.
 
-Mirrors the shape of `background_dispatch.py` (the print-upload dispatcher)
-but tailored for slicing: jobs are independent (no printer-busy gating),
-short-lived (typically 5-60s), and the result is a `LibraryFile` or
-`PrintArchive` row rather than a printer-side dispatch.
+Slice jobs are independent (no printer-busy gating), short-lived (typically
+5-60s), and the result is a `LibraryFile` or `PrintArchive` row rather than a
+printer-side dispatch.
 
 The frontend kicks off a slice via `POST /library/files/{id}/slice` or
 `POST /archives/{id}/slice`, gets back `{job_id, status_url}`, then polls

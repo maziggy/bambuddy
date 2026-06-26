@@ -95,90 +95,10 @@ describe('ToastContext post-unmount safety', () => {
   });
 });
 
-describe('ToastContext background dispatch — upload-done UX', () => {
-  // Small fast files reach 100% upload before the printer's MQTT confirmation
-  // arrives, leaving the bar parked at 100% for what feels like "stuck". When
-  // status is still 'processing' but uploadProgressPct >= 99.9 the byte-count
-  // line should switch to "Awaiting printer..." and the bar gets a pulse.
-  function dispatchBackgroundEvent(detail: Record<string, unknown>) {
-    window.dispatchEvent(new CustomEvent('background-dispatch', { detail }));
-  }
-
-  it('shows "Awaiting printer..." once upload is complete but printer has not confirmed', () => {
-    const { container } = render(
-      <ToastProvider>
-        <div />
-      </ToastProvider>
-    );
-
-    act(() => {
-      dispatchBackgroundEvent({
-        total: 1,
-        dispatched: 0,
-        processing: 1,
-        completed: 0,
-        failed: 0,
-        active_jobs: [
-          {
-            job_id: 42,
-            printer_name: 'X1C-2',
-            source_name: 'Benchy.3mf',
-            upload_bytes: 102400,
-            upload_total_bytes: 102400,
-            upload_progress_pct: 100.0,
-          },
-        ],
-      });
-    });
-
-    // The byte-count line should be replaced with the awaiting-printer text.
-    expect(container.textContent).toContain('Awaiting printer');
-    // And the original bytes-progressed format must not be visible at the
-    // same time — that is the "stuck at 100%" symptom we are fixing.
-    expect(container.textContent).not.toContain('100.0%');
-
-    // Bar gets the pulse class when in this state.
-    const bar = container.querySelector('.animate-pulse');
-    expect(bar).not.toBeNull();
-  });
-
-  it('still shows the byte/percent counter while upload is mid-flight', () => {
-    const { container } = render(
-      <ToastProvider>
-        <div />
-      </ToastProvider>
-    );
-
-    act(() => {
-      dispatchBackgroundEvent({
-        total: 1,
-        dispatched: 0,
-        processing: 1,
-        completed: 0,
-        failed: 0,
-        active_jobs: [
-          {
-            job_id: 7,
-            printer_name: 'X1C-2',
-            source_name: 'Benchy.3mf',
-            upload_bytes: 51200,
-            upload_total_bytes: 102400,
-            upload_progress_pct: 50.0,
-          },
-        ],
-      });
-    });
-
-    expect(container.textContent).toContain('50.0%');
-    expect(container.textContent).not.toContain('Awaiting printer');
-    expect(container.querySelector('.animate-pulse')).toBeNull();
-  });
-});
-
 describe('ToastContext viewport suppression', () => {
   // The kiosk layout flips setViewportSuppressed(true) on mount so the
-  // SpoolBuddy display stays free of main-app toasts (background dispatch
-  // progress, login flows, etc.). Verify the gate hides the visible viewport
+  // SpoolBuddy display stays free of main-app toasts (login flows, etc.).
+  // Verify the gate hides the visible viewport
   // without affecting the underlying state machine.
   function ViewportProbe() {
     const { showToast, setViewportSuppressed } = useToast();

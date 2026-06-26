@@ -8,7 +8,7 @@ from pathlib import Path
 
 import defusedxml.ElementTree as ET
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -38,7 +38,11 @@ from backend.app.schemas.print_queue import (
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.notification_service import notification_service
 from backend.app.utils.printer_models import normalize_printer_model, normalize_printer_model_id
-from backend.app.utils.threemf_tools import extract_bed_type_from_3mf, extract_filament_usage_from_3mf
+from backend.app.utils.threemf_tools import (
+    extract_bed_type_from_3mf,
+    extract_filament_usage_from_3mf,
+    extract_print_time_from_3mf,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,56 +110,10 @@ def _extract_filament_types_from_3mf(file_path: Path, plate_id: int | None = Non
     return sorted(types)
 
 
-def _extract_print_time_from_3mf(file_path: Path, plate_id: int | None = None) -> int | None:
-    """Extract print time (prediction) from a 3MF file.
-
-    Args:
-        file_path: Path to the 3MF file
-        plate_id: Optional plate index to filter for (for multi-plate files)
-
-    Returns:
-        Print time in seconds, or None if not found
-    """
-    try:
-        with zipfile.ZipFile(file_path, "r") as zf:
-            if "Metadata/slice_info.config" not in zf.namelist():
-                return None
-
-            content = zf.read("Metadata/slice_info.config").decode()
-            root = ET.fromstring(content)
-
-            if plate_id is not None:
-                for plate_elem in root.findall(".//plate"):
-                    plate_index = None
-                    for meta in plate_elem.findall("metadata"):
-                        if meta.get("key") == "index":
-                            try:
-                                plate_index = int(meta.get("value", "0"))
-                            except ValueError:
-                                pass  # Skip plate with unparseable index
-                            break
-
-                    if plate_index == plate_id:
-                        for meta in plate_elem.findall("metadata"):
-                            if meta.get("key") == "prediction":
-                                try:
-                                    return int(meta.get("value", "0"))
-                                except ValueError:
-                                    return None
-                        break
-            else:
-                plate_elem = root.find(".//plate")
-                if plate_elem is not None:
-                    for meta in plate_elem.findall("metadata"):
-                        if meta.get("key") == "prediction":
-                            try:
-                                return int(meta.get("value", "0"))
-                            except ValueError:
-                                return None
-    except Exception as e:
-        logger.warning("Failed to extract print time from %s: %s", file_path, e)
-
-    return None
+# Local alias kept so existing call sites stay compact; the implementation lives
+# in utils/threemf_tools.py so the notification path (main.py) can reuse it
+# without importing from a routes module (#1785).
+_extract_print_time_from_3mf = extract_print_time_from_3mf
 
 
 def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
@@ -183,6 +141,24 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
             filament_overrides_parsed = json.loads(item.filament_overrides)
         except json.JSONDecodeError:
             filament_overrides_parsed = None
+
+    # Parse nozzle_mapping from JSON string (#1780 — H2C rack slicer-pick
+    # preservation). Nullable opaque JSON blob stored verbatim from
+    # BambuStudio's project_file; surface it parsed for the response model
+    # and any future "edit print → nozzle" UI.
+    nozzle_mapping_parsed = None
+    if item.nozzle_mapping:
+        try:
+            nozzle_mapping_parsed = json.loads(item.nozzle_mapping)
+        except json.JSONDecodeError:
+            nozzle_mapping_parsed = None
+
+    nozzles_info_parsed = None
+    if item.nozzles_info:
+        try:
+            nozzles_info_parsed = json.loads(item.nozzles_info)
+        except json.JSONDecodeError:
+            nozzles_info_parsed = None
 
     # Create response with parsed ams_mapping
     item_dict = {
@@ -226,6 +202,10 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "been_jumped": item.been_jumped,
         # Auto-print G-code injection
         "gcode_injection": item.gcode_injection,
+        # H2C rack-swap nozzle pick (#1780)
+        "nozzle_mapping": nozzle_mapping_parsed,
+        "nozzles_info": nozzles_info_parsed,
+        "cleanup_library_after_dispatch": item.cleanup_library_after_dispatch,
     }
     response = PrintQueueItemResponse(**item_dict)
     if item.archive:
@@ -426,6 +406,23 @@ async def add_to_queue(
             and archive.created_by_id != current_user.id
         ):
             raise HTTPException(404, "Archive not found")
+        # Reprint perm gate (#1625): the legacy /archives/{id}/reprint endpoint
+        # required ARCHIVES_REPRINT_OWN/ALL; the unified queue route must keep
+        # that gate or an operator with QUEUE_CREATE could reprint via direct
+        # API call even if explicitly denied reprint perm. Mirrors the
+        # frontend `canModify('archives', 'reprint', ...)` helper:
+        # REPRINT_ALL allows any archive, REPRINT_OWN allows own only,
+        # ownerless archives require REPRINT_ALL (fail-closed).
+        if current_user is not None:
+            owns_archive = archive.created_by_id is not None and archive.created_by_id == current_user.id
+            has_reprint = current_user.has_permission(Permission.ARCHIVES_REPRINT_ALL.value) or (
+                owns_archive and current_user.has_permission(Permission.ARCHIVES_REPRINT_OWN.value)
+            )
+            if not has_reprint:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Permission archives:reprint_own or archives:reprint_all required",
+                )
 
     # Validate library file exists (if provided) and get it for filament extraction
     library_file = None
@@ -531,21 +528,59 @@ async def add_to_queue(
         await db.flush()  # Get batch.id before creating items
         batch_id = batch.id
 
-    # Get next position for this printer (or for unassigned/model-based items)
+    # Get queue scope for this printer (or for unassigned/model-based items).
     if data.printer_id is not None:
-        result = await db.execute(
-            select(func.max(PrintQueueItem.position))
-            .where(PrintQueueItem.printer_id == data.printer_id)
-            .where(PrintQueueItem.status == "pending")
+        queue_scope = (
+            PrintQueueItem.printer_id == data.printer_id,
+            PrintQueueItem.status == "pending",
         )
     else:
-        # For unassigned/model-based items, get max position across all unassigned
-        result = await db.execute(
-            select(func.max(PrintQueueItem.position))
-            .where(PrintQueueItem.printer_id.is_(None))
-            .where(PrintQueueItem.status == "pending")
+        # For unassigned/model-based items, scope across all unassigned.
+        queue_scope = (
+            PrintQueueItem.printer_id.is_(None),
+            PrintQueueItem.status == "pending",
         )
-    max_pos = result.scalar() or 0
+
+    # Serialize concurrent queue inserts to the same scope (#1625-followup).
+    # The race: two concurrent ASAP inserts both compute MAX(position) before
+    # either commits; in an empty scope, both INSERT at position 1 (duplicate).
+    # In a non-empty scope, Postgres's row-level locks on the UPDATE shift
+    # serialize naturally, but the empty-scope path has no rows to lock.
+    # A transaction-scoped advisory lock keyed on the printer_id closes that
+    # window; the lock is released automatically at commit/rollback. Different
+    # printers don't contend. SQLite serializes writes implicitly so this is a
+    # no-op there.
+    #
+    # Dialect is checked against the actual session binding, NOT the
+    # `is_sqlite()` helper, because the test fixture overrides `get_db` with a
+    # SQLite engine while `settings.database_url` still points at Postgres
+    # (the helper reads settings). Inspecting the connection directly is the
+    # right shape for any code that mutates SQL based on the live dialect.
+    from sqlalchemy import text
+
+    bind = db.get_bind()
+    if bind.dialect.name == "postgresql":
+        scope_key = data.printer_id if data.printer_id is not None else 0
+        # 1625 namespaces the lock so it can't collide with other advisory
+        # locks elsewhere in the codebase.
+        await db.execute(text("SELECT pg_advisory_xact_lock(1625, :k)"), {"k": scope_key})
+
+    insert_position = max(1, data.insert_position or 1)
+    if data.insert_at_top or data.insert_position is not None:
+        result = await db.execute(select(func.max(PrintQueueItem.position)).where(*queue_scope))
+        max_pos = result.scalar() or 0
+        insert_position = min(insert_position, max_pos + 1)
+        await db.execute(
+            update(PrintQueueItem)
+            .where(*queue_scope)
+            .where(PrintQueueItem.position >= insert_position)
+            .values(position=PrintQueueItem.position + quantity)
+        )
+        start_position = insert_position
+    else:
+        result = await db.execute(select(func.max(PrintQueueItem.position)).where(*queue_scope))
+        max_pos = result.scalar() or 0
+        start_position = max_pos + 1
 
     # Resolve print_time_seconds for SJF scheduling (cache on item at creation)
     cached_print_time = None
@@ -600,8 +635,9 @@ async def add_to_queue(
             use_ams=data.use_ams,
             nozzle_offset_cali=data.nozzle_offset_cali,
             gcode_injection=data.gcode_injection,
+            cleanup_library_after_dispatch=data.cleanup_library_after_dispatch,
             project_id=data.project_id,
-            position=max_pos + 1 + i,
+            position=start_position + i,
             status="pending",
             created_by_id=current_user.id if current_user else None,
             batch_id=batch_id,
@@ -1051,6 +1087,13 @@ async def update_queue_item(
             json.dumps(update_data["filament_overrides"]) if update_data["filament_overrides"] else None
         )
 
+    # Serialize H2C rack-swap nozzle pick (#1780) to JSON for TEXT column
+    # storage; same Text-as-opaque-blob convention as ams_mapping above.
+    if "nozzle_mapping" in update_data:
+        update_data["nozzle_mapping"] = (
+            json.dumps(update_data["nozzle_mapping"]) if update_data["nozzle_mapping"] else None
+        )
+
     for field, value in update_data.items():
         setattr(item, field, value)
 
@@ -1113,6 +1156,64 @@ async def reorder_queue(
     return {"message": f"Reordered {len(data.items)} items"}
 
 
+@router.post("/printer/{printer_id}/resume")
+async def resume_queue_after_failure(
+    printer_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_ALL),
+):
+    """Clear the previous-success gate for a printer and restore skipped items.
+
+    Single atomic op (#1818):
+
+    * Sets ``gate_acknowledged=True`` on every ``failed`` / ``aborted`` queue
+      item for this printer that's still in the scheduler's lookback window,
+      so the next ``_check_previous_success`` call ignores them.
+    * Restores ``skipped`` items whose ``error_message`` matches the
+      scheduler's exact "Previous print failed or was aborted" gate string
+      back to ``pending`` (clears ``error_message`` + ``completed_at``).
+
+    Returns counts so the UI can render a precise toast. No-op endpoint
+    (zero counts) when called against a printer with no gate to clear.
+    """
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    ack_result = await db.execute(
+        select(PrintQueueItem)
+        .where(PrintQueueItem.printer_id == printer_id)
+        .where(PrintQueueItem.status.in_(["failed", "aborted"]))
+        .where(PrintQueueItem.gate_acknowledged == False)  # noqa: E712
+    )
+    to_ack = ack_result.scalars().all()
+    for failed_item in to_ack:
+        failed_item.gate_acknowledged = True
+
+    restore_result = await db.execute(
+        select(PrintQueueItem)
+        .where(PrintQueueItem.printer_id == printer_id)
+        .where(PrintQueueItem.status == "skipped")
+        .where(PrintQueueItem.error_message == "Previous print failed or was aborted")
+    )
+    to_restore = restore_result.scalars().all()
+    for skipped_item in to_restore:
+        skipped_item.status = "pending"
+        skipped_item.error_message = None
+        skipped_item.completed_at = None
+
+    await db.commit()
+
+    logger.info(
+        "Resume after failure on printer %s: acknowledged %d failure(s), restored %d skipped item(s)",
+        printer_id,
+        len(to_ack),
+        len(to_restore),
+    )
+    return {"acknowledged": len(to_ack), "restored": len(to_restore)}
+
+
 @router.post("/{item_id}/cancel")
 async def cancel_queue_item(
     item_id: int,
@@ -1152,18 +1253,38 @@ async def cancel_queue_item(
 async def stop_queue_item(
     item_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_ALL),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_UPDATE_ALL,
+            Permission.QUEUE_UPDATE_OWN,
+        )
+    ),
 ):
-    """Stop an actively printing queue item."""
+    """Stop an actively printing queue item.
+
+    Ownership-scoped (#1625-followup): callers with QUEUE_UPDATE_OWN can stop
+    their own items; callers with QUEUE_UPDATE_ALL can stop any item. Mirrors
+    the /cancel shape. Pre-fix this required QUEUE_UPDATE_ALL — Operators
+    holding only _OWN saw the Stop button in the queue UI but got 403 on click.
+    """
 
     from backend.app.models.smart_plug import SmartPlug
     from backend.app.services.printer_manager import printer_manager
     from backend.app.services.tasmota import tasmota_service
 
+    user, can_modify_all = auth_result
+
     result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(404, "Queue item not found")
+
+    # Ownership check — mirrors /cancel. Ownerless items (created_by_id IS NULL)
+    # require _ALL: stop is destructive and an _OWN holder can't claim "they
+    # own it" the way /start does (#1670).
+    if not can_modify_all and user is not None:
+        if item.created_by_id is None or item.created_by_id != user.id:
+            raise HTTPException(403, "You can only stop your own queue items")
 
     if item.status != "printing":
         raise HTTPException(400, f"Can only stop items that are printing, current status: '{item.status}'")
@@ -1234,9 +1355,20 @@ async def start_queue_item(
     item_id: int,
     skip_filament_check: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
-    user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_UPDATE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_UPDATE_ALL,
+            Permission.QUEUE_UPDATE_OWN,
+        )
+    ),
 ):
     """Manually start a staged (manual_start) queue item.
+
+    Ownership-scoped (#1625-followup): callers with QUEUE_UPDATE_OWN can
+    start their own items + claim ownership of NULL-owner items (VP-uploaded
+    items arrive unattributed per #1670). Callers with QUEUE_UPDATE_ALL can
+    start any item. Pre-fix this required QUEUE_UPDATE_OWN with no ownership
+    check, so _OWN holders could start anyone's queue items via direct API.
 
     Clears the manual_start flag so the scheduler picks it up. When
     ``skip_filament_check`` is false (the default) the live filament
@@ -1245,6 +1377,8 @@ async def start_queue_item(
     payload so the caller can show a confirm dialog and retry with
     ``skip_filament_check=true``.
     """
+    user, can_modify_all = auth_result
+
     result = await db.execute(
         select(PrintQueueItem)
         .options(
@@ -1258,6 +1392,14 @@ async def start_queue_item(
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(404, "Queue item not found")
+
+    # Ownership check — softer than /cancel because /start is the entry point
+    # for #1670's VP-import flow: an unowned item is claimable by the first
+    # _OWN holder who clicks ▶, and the route below credits them as owner.
+    # An item with a DIFFERENT owner → 403.
+    if not can_modify_all and user is not None:
+        if item.created_by_id is not None and item.created_by_id != user.id:
+            raise HTTPException(403, "You can only start your own queue items")
 
     if item.status != "pending":
         raise HTTPException(400, f"Can only start pending items, current status: '{item.status}'")

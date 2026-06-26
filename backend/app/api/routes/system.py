@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.config import APP_VERSION, settings
 from backend.app.core.database import get_db
+from backend.app.core.local_config import read_local_toml, read_ntp_gate
 from backend.app.core.permissions import Permission
 from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
@@ -603,3 +604,30 @@ async def get_system_health(
     """
     sensitive_strings = await collect_sensitive_strings(db)
     return await asyncio.to_thread(scan_logs, sensitive_strings=sensitive_strings)
+
+
+@router.get("/appliance")
+async def get_appliance_defaults():
+    """Expose appliance-set state for the SPA's bootstrap surface.
+
+    Two file sources, both optional and silently degraded when absent:
+
+    - ``/etc/bambuddy/local.toml`` — hostname / timezone / locale the
+      firstboot wizard collected.
+    - ``/run/bambuddy/time-synced`` — chrony NTP gate state. The RPi 5 has
+      no battery-backed RTC, so on a fresh boot the clock is wrong until
+      ntp-gate.sh writes "ok" (or "warning" if 3-minute timeout elapsed).
+      A warning state means JWT expiries and TLS validity windows may be
+      misaligned; the UI should surface this.
+
+    No auth required — the frontend bootstrap reads this BEFORE auth might
+    be set up, and the contents are user-set defaults plus a public sync
+    flag (no secrets).
+    """
+    config = read_local_toml()
+    return {
+        "hostname": config.get("hostname"),
+        "timezone": config.get("timezone"),
+        "locale": config.get("locale"),
+        "time_synced": read_ntp_gate(),
+    }

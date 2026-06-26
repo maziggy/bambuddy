@@ -24,6 +24,7 @@ interface SkuGroup {
   material: string;
   subtype: string | null;
   brand: string | null;
+  colorName: string | null;
   spools: InventorySpool[];
 }
 
@@ -59,8 +60,8 @@ const CHART_COLORS = ['#1DB954', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 
-function skuKey(material: string, subtype: string | null, brand: string | null) {
-  return `${material}||${subtype ?? ''}||${brand ?? ''}`;
+function skuKey(material: string, subtype: string | null, brand: string | null, colorName: string | null) {
+  return `${material}||${subtype ?? ''}||${brand ?? ''}||${colorName ?? ''}`;
 }
 
 function addDays(date: Date, days: number): Date {
@@ -81,25 +82,39 @@ function formatDateShort(date: Date): string {
  * Compute a time-weighted daily consumption rate and standard deviation.
  *
  * Algorithm:
- *   1. Sort all usage events by timestamp (oldest → newest).
- *   2. Convert each event into a g/day intensity = weight_used / elapsed_days,
- *      where elapsed_days is the gap to the previous event (floor: 0.5d to
- *      avoid inflated rates from same-day prints).
+ *   1. Aggregate all usage events by calendar day (UTC date string), summing
+ *      weight_used across all spools in the group that printed on that day.
+ *      Day-bucketing fixes two problems: (a) concurrent prints from multiple
+ *      spools in the same group no longer produce near-zero inter-event gaps
+ *      that inflate per-interval rates; (b) the oldest event's weight is no
+ *      longer silently dropped — it contributes to its day bucket.
+ *   2. Sort day buckets oldest → newest and compute inter-day g/day rates.
+ *      The gap is in whole days (minimum 1) so same-day reprints don't
+ *      create a zero-duration interval.
  *   3. Apply exponential age-decay: each observation is weighted by
  *      exp(-λ * age_days) so recent prints dominate. λ = ln(2)/30 gives a
  *      30-day half-life — prints from a month ago count half as much.
  *   4. Compute the weighted mean and weighted variance → std dev.
  *
- * Returns null when there is only one event (no gap to measure) — the
- * delta-rate fallback handles that case.
+ * Returns null when there are fewer than 2 distinct days (no gap to measure)
+ * — the delta-rate fallback handles that case.
  */
 function computeHistoryRate(records: SpoolUsageRecord[]): { rate: number; stdDev: number } | null {
   if (records.length < 2) return null;
 
-  // Sort ascending by time
-  const sorted = [...records].sort(
-    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-  );
+  // Aggregate by UTC calendar day so concurrent multi-spool prints on the
+  // same day are summed before rate computation.
+  const byDay = new Map<string, number>();
+  for (const r of records) {
+    const day = r.created_at.slice(0, 10); // "YYYY-MM-DD" UTC — consistent with server timestamps
+    byDay.set(day, (byDay.get(day) ?? 0) + r.weight_used);
+  }
+
+  if (byDay.size < 2) return null;
+
+  const days = [...byDay.entries()]
+    .map(([day, totalG]) => ({ ms: new Date(day).getTime(), totalG }))
+    .sort((a, b) => a.ms - b.ms);
 
   const now = Date.now();
   // λ for 30-day half-life: ln(2)/30
@@ -107,15 +122,12 @@ function computeHistoryRate(records: SpoolUsageRecord[]): { rate: number; stdDev
 
   const observations: { rate: number; weight: number }[] = [];
 
-  for (let i = 1; i < sorted.length; i++) {
-    const prev = new Date(sorted[i - 1].created_at).getTime();
-    const curr = new Date(sorted[i].created_at).getTime();
-    const elapsedDays = Math.max((curr - prev) / 86400000, 0.5); // floor at 0.5d
-    const ageDays = (now - curr) / 86400000;
+  for (let i = 1; i < days.length; i++) {
+    const elapsedDays = Math.max((days[i].ms - days[i - 1].ms) / 86400000, 1);
+    const ageDays = (now - days[i].ms) / 86400000;
 
-    // g/day for this interval
-    const intervalRate = sorted[i].weight_used / elapsedDays;
-    // Exponential age-decay weight
+    // g/day for this inter-day interval: weight printed on day[i] / gap to previous day
+    const intervalRate = days[i].totalG / elapsedDays;
     const w = Math.exp(-lambda * ageDays);
 
     observations.push({ rate: intervalRate, weight: w });
@@ -181,6 +193,8 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('material');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [materialFilter, setMaterialFilter] = useState('');
+  const [brandFilter, setBrandFilter] = useState('');
   const [cartModal, setCartModal] = useState<SkuForecast | null>(null);
   const [listOpen, setListOpen] = useState(false);
   const [chartDays, setChartDays] = useState<ChartDays>(30);
@@ -194,7 +208,7 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
 
   const settingsMap = useMemo(() => {
     const m = new Map<string, FilamentSkuSettings>();
-    for (const s of skuSettingsList) m.set(skuKey(s.material, s.subtype, s.brand), s);
+    for (const s of skuSettingsList) m.set(skuKey(s.material, s.subtype, s.brand, s.color_name), s);
     return m;
   }, [skuSettingsList]);
 
@@ -212,8 +226,8 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
     const map = new Map<string, SkuGroup>();
     for (const spool of spools) {
       if (spool.archived_at) continue;
-      const key = skuKey(spool.material, spool.subtype, spool.brand);
-      const g = map.get(key) ?? { key, material: spool.material, subtype: spool.subtype, brand: spool.brand, spools: [] };
+      const key = skuKey(spool.material, spool.subtype, spool.brand, spool.color_name);
+      const g = map.get(key) ?? { key, material: spool.material, subtype: spool.subtype, brand: spool.brand, colorName: spool.color_name, spools: [] };
       g.spools.push(spool);
       map.set(key, g);
     }
@@ -224,7 +238,12 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
     const today = new Date(); today.setHours(0, 0, 0, 0);
 
     return groups.map((group): SkuForecast => {
-      const skuSettings = settingsMap.get(group.key) ?? null;
+      // Fall back to the NULL-colour row that pre-upgrade users have so their
+      // lead-time / safety-margin overrides survive the first load after the
+      // color_name column is added (#forecast-color-grouping migration).
+      const skuSettings =
+        settingsMap.get(group.key) ??
+        (group.colorName !== null ? settingsMap.get(skuKey(group.material, group.subtype, group.brand, null)) ?? null : null);
       const skuLeadTime = skuSettings?.lead_time_days ?? 0;
       const effectiveLeadTimeDays = Math.max(globalLeadTime, skuLeadTime);
       const marginValue = skuSettings?.safety_margin_value ?? 14;
@@ -235,8 +254,15 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
       // Consumed since baseline (post-reset); see InventoryPage stats calc (#1390).
       const totalUsedG = group.spools.reduce((s, sp) => s + Math.max(0, sp.weight_used - (sp.weight_used_baseline ?? 0)), 0);
 
+      // Only include history from spools that haven't been reset — pre-reset
+      // events on a reset spool have no anchor timestamp so they'd inflate the
+      // rate. Spools without a baseline are clean and keep their records.
       const groupHistory: SpoolUsageRecord[] = [];
-      for (const s of group.spools) groupHistory.push(...(usageBySpoolId.get(s.id) ?? []));
+      for (const s of group.spools) {
+        if ((s.weight_used_baseline ?? 0) === 0) {
+          groupHistory.push(...(usageBySpoolId.get(s.id) ?? []));
+        }
+      }
 
       let dailyRateG: number | null = null;
       let dailyRateStdDev: number | null = null;
@@ -287,8 +313,18 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
     });
   }, [groups, settingsMap, usageBySpoolId, globalLeadTime]);
 
+  const uniqueMaterials = useMemo(() =>
+    [...new Set(groups.map((g) => g.material))].sort(),
+    [groups]);
+
+  const uniqueBrands = useMemo(() =>
+    [...new Set(groups.map((g) => g.brand).filter(Boolean))].sort() as string[],
+    [groups]);
+
   const sortedForecasts = useMemo(() => {
-    const arr = [...forecasts];
+    let arr = [...forecasts];
+    if (materialFilter) arr = arr.filter((f) => f.group.material === materialFilter);
+    if (brandFilter) arr = arr.filter((f) => f.group.brand === brandFilter);
     arr.sort((a, b) => {
       let va: number | string = 0;
       let vb: number | string = 0;
@@ -311,7 +347,7 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return arr;
-  }, [forecasts, sortKey, sortDir]);
+  }, [forecasts, sortKey, sortDir, materialFilter, brandFilter]);
 
   const alerts = useMemo(() => forecasts.filter((f) => !f.settings?.alerts_snoozed && (f.stockBreakAlert || f.reorderAlert)), [forecasts]);
 
@@ -373,6 +409,34 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
             }}
           />
         )}
+
+        {/* Material filter */}
+        <select
+          value={materialFilter}
+          onChange={(e) => setMaterialFilter(e.target.value)}
+          className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer focus:outline-none ${
+            materialFilter
+              ? 'bg-bambu-green/20 text-bambu-green border-bambu-green/30'
+              : 'bg-transparent text-bambu-gray border-bambu-dark-tertiary hover:bg-bambu-dark-tertiary'
+          }`}
+        >
+          <option value="">{t('inventory.material')}</option>
+          {uniqueMaterials.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+
+        {/* Brand filter */}
+        <select
+          value={brandFilter}
+          onChange={(e) => setBrandFilter(e.target.value)}
+          className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer focus:outline-none ${
+            brandFilter
+              ? 'bg-bambu-green/20 text-bambu-green border-bambu-green/30'
+              : 'bg-transparent text-bambu-gray border-bambu-dark-tertiary hover:bg-bambu-dark-tertiary'
+          }`}
+        >
+          <option value="">{t('inventory.brand')}</option>
+          {uniqueBrands.map((b) => <option key={b} value={b}>{b}</option>)}
+        </select>
 
         {/* Shopping list toggle */}
         <button
@@ -439,6 +503,9 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
                   <SortableTh col="material" active={sortKey} dir={sortDir} onSort={handleSort}>
                     {t('forecast.sku')}
                   </SortableTh>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">
+                    {t('locations.spools')}
+                  </th>
                   <SortableTh col="stock" active={sortKey} dir={sortDir} onSort={handleSort}>
                     {t('forecast.stock')}
                   </SortableTh>
@@ -545,7 +612,7 @@ function SortableTh({
 
 function AlertBanner({ forecast: f, onCart }: { forecast: SkuForecast; onCart: () => void }) {
   const { t } = useTranslation();
-  const label = [f.group.brand, f.group.material, f.group.subtype].filter(Boolean).join(' ');
+  const label = [f.group.brand, f.group.material, f.group.subtype, f.group.colorName].filter(Boolean).join(' ');
   const isBreak = f.stockBreakAlert;
 
   return (
@@ -593,7 +660,7 @@ function UsageChart({ forecasts, days: maxDays, onDaysChange }: {
 
   const series = forecasts.map((f, idx) => ({
     key: f.group.key,
-    label: [f.group.brand, f.group.material, f.group.subtype].filter(Boolean).join(' '),
+    label: [f.group.brand, f.group.material, f.group.subtype, f.group.colorName].filter(Boolean).join(' '),
     color: CHART_COLORS[idx % CHART_COLORS.length],
     rop: f.reorderPointG,
     points: buildProjectionSeries(f, maxDays),
@@ -666,13 +733,24 @@ function UsageChart({ forecasts, days: maxDays, onDaysChange }: {
             width={48}
           />
           <Tooltip
-            contentStyle={{ background: '#1a1a2e', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }}
-            labelStyle={{ color: '#9CA3AF' }}
-            itemStyle={{ color: '#E5E7EB' }}
-            formatter={(value, name) => {
-              if (typeof value !== 'number') return '';
-              const s = series.find((x) => x.key === String(name));
-              return `${value}g — ${s?.label ?? name}`;
+            content={({ label: dateLabel, payload }) => {
+              if (!payload?.length) return null;
+              return (
+                <div style={{ background: '#1a1a2e', border: '1px solid #374151', borderRadius: 8, fontSize: 12, padding: '8px 12px' }}>
+                  <div style={{ color: '#9CA3AF', marginBottom: 6 }}>{dateLabel}</div>
+                  {payload.map((p) => {
+                    const s = series.find((x) => x.key === String(p.dataKey));
+                    if (typeof p.value !== 'number') return null;
+                    return (
+                      <div key={String(p.dataKey)} style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#E5E7EB', marginBottom: 2 }}>
+                        <span style={{ color: s?.color ?? '#9CA3AF', fontSize: 10 }}>●</span>
+                        <span>{s?.label ?? String(p.dataKey)}</span>
+                        <span style={{ color: '#9CA3AF', marginLeft: 4 }}>{p.value}g</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
             }}
           />
           <Legend
@@ -790,7 +868,7 @@ function ForecastRow({
 
   const snoozed = f.settings?.alerts_snoozed ?? false;
 
-  const label = [f.group.brand, f.group.material, f.group.subtype].filter(Boolean).join(' ');
+  const label = [f.group.brand, f.group.material, f.group.subtype, f.group.colorName].filter(Boolean).join(' ');
   // Use getSwatchStyle so a Clear (alpha=00) lead spool renders as a
   // checkerboard rather than collapsing to solid black (#1545).
   const colorStyle = f.group.spools[0]?.rgba ? getSwatchStyle(f.group.spools[0].rgba) : { backgroundColor: '#4B5563' };
@@ -804,7 +882,7 @@ function ForecastRow({
     : 'text-green-400';
 
   function upsert(lead: number, marginVal: number, marginUnitArg: 'days' | 'g', alertsSnoozed = snoozed) {
-    upsertMutation.mutate({ material: f.group.material, subtype: f.group.subtype, brand: f.group.brand, lead_time_days: lead, safety_margin_value: marginVal, safety_margin_unit: marginUnitArg, alerts_snoozed: alertsSnoozed });
+    upsertMutation.mutate({ material: f.group.material, subtype: f.group.subtype, brand: f.group.brand, color_name: f.group.colorName, lead_time_days: lead, safety_margin_value: marginVal, safety_margin_unit: marginUnitArg, alerts_snoozed: alertsSnoozed });
   }
 
   function toggleSnooze(e: React.MouseEvent) {
@@ -823,38 +901,46 @@ function ForecastRow({
   return (
     <>
       <tr
-        className={`cursor-pointer hover:bg-bambu-dark-tertiary/40 transition-colors ${rowAlertBorder} ${snoozed ? 'opacity-50' : ''}`}
+        className={`border-b border-bambu-dark-tertiary/50 cursor-pointer hover:bg-bambu-dark-tertiary/30 transition-colors ${rowAlertBorder} ${snoozed ? 'opacity-50' : ''}`}
         onClick={() => setExpanded((e) => !e)}
       >
         {/* Color dot */}
         <td className="px-4 py-3">
           <span
-            className="block w-3 h-3 rounded-full border border-black/20"
+            className="block w-5 h-5 rounded-full border border-black/20"
             style={colorStyle}
           />
         </td>
 
         {/* SKU */}
         <td className="px-4 py-3">
-          <div className="text-sm font-medium text-white">{label}</div>
-          <div className="text-xs text-bambu-gray">{t('forecast.spoolCount', { count: f.totalSpools })}</div>
+          <span className="text-sm text-white">{label}</span>
+        </td>
+
+        {/* Spools */}
+        <td className="px-4 py-3">
+          <span className="text-sm text-bambu-gray">{f.totalSpools}</span>
         </td>
 
         {/* Stock */}
-        <td className="px-4 py-3 min-w-[120px]">
-          <div className="h-1.5 bg-bambu-dark-tertiary rounded-full overflow-hidden mb-1 w-24">
-            <div
-              className={`h-full rounded-full ${remainPct > 50 ? 'bg-bambu-green' : remainPct > 20 ? 'bg-yellow-500' : 'bg-red-500'}`}
-              style={{ width: `${Math.min(remainPct, 100)}%` }}
-            />
+        <td className="px-4 py-3 min-w-[140px]">
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-2 bg-bambu-dark-tertiary rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full ${remainPct > 50 ? 'bg-bambu-green' : remainPct > 20 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                style={{ width: `${Math.min(remainPct, 100)}%` }}
+              />
+            </div>
+            <span className="text-xs text-bambu-gray min-w-[40px] text-right">{Math.round(f.totalRemainingG)}g</span>
           </div>
-          <span className="text-xs text-bambu-gray">{Math.round(f.totalRemainingG)}g</span>
         </td>
 
         {/* Rate */}
         <td className="px-4 py-3">
-          <div className="text-sm text-white">{f.dailyRateG !== null ? `${f.dailyRateG.toFixed(1)}g/d` : '—'}</div>
-          <div className="mt-0.5">{tierBadge}</div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-sm text-white">{f.dailyRateG !== null ? `${f.dailyRateG.toFixed(1)}g/d` : '—'}</span>
+            {tierBadge}
+          </div>
         </td>
 
         {/* Days left */}
@@ -873,7 +959,7 @@ function ForecastRow({
 
         {/* Reorder by */}
         <td className="px-4 py-3">
-          <span className={`text-sm font-medium ${!snoozed && f.reorderAlert ? 'text-yellow-400' : 'text-bambu-gray'}`}>
+          <span className={`text-sm ${!snoozed && f.reorderAlert ? 'text-yellow-400' : 'text-bambu-gray'}`}>
             {f.reorderTriggerDate ? formatDate(f.reorderTriggerDate) : '—'}
           </span>
         </td>
@@ -900,7 +986,7 @@ function ForecastRow({
             {canWrite && (
               <button
                 onClick={toggleSnooze}
-                className={`p-1 rounded transition-colors ${snoozed ? 'text-bambu-gray/70 hover:text-white' : 'text-bambu-dark-tertiary hover:text-bambu-gray'}`}
+                className={`p-1 rounded transition-colors ${snoozed ? 'text-amber-400/80 hover:text-amber-300' : 'text-slate-400 hover:text-white'}`}
                 title={t(snoozed ? 'forecast.alertsEnabled' : 'forecast.alertsSnoozed')}
               >
                 <BellOff className="w-3.5 h-3.5" />
@@ -919,70 +1005,63 @@ function ForecastRow({
       {/* ── Expanded detail row ── */}
       {expanded && (
         <tr className="bg-bambu-dark-tertiary/10">
-          <td colSpan={8} className="px-6 py-4">
-            <div className="space-y-4">
+          <td colSpan={9} className="px-6 py-4">
+            <div className="space-y-3">
 
-              {/* Logistics summary */}
-              <div className="grid grid-cols-3 gap-3">
+              {/* Single compact row: read-only stats + editable settings */}
+              <div className={`grid gap-2 ${canWrite ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2'}`}>
                 <LogisticStat
                   label={t('forecast.effectiveLeadTime')}
                   value={`${f.effectiveLeadTimeDays}d`}
                   hint={t('forecast.effectiveLeadTimeHint', { global: globalLeadTime, sku: f.settings?.lead_time_days ?? 0 })}
                 />
                 <LogisticStat
-                  label={t('forecast.safetyMarginLabel')}
-                  value={`${Math.round(f.safetyStockG)}g`}
-                  hint={t('forecast.safetyMarginHint')}
-                />
-                <LogisticStat
                   label={t('forecast.reorderPoint')}
                   value={`${Math.round(f.reorderPointG)}g`}
                   hint={t('forecast.reorderPointHint')}
                 />
+                {canWrite && (
+                  <>
+                    <SettingField
+                      label={t('forecast.skuLeadTimeOverride')}
+                      hint={t('forecast.skuLeadTimeHint')}
+                      unit={t('forecast.leadTime')}
+                      editing={editingLead}
+                      value={f.settings?.lead_time_days ?? 0}
+                      inputValue={leadInput}
+                      onInputChange={setLeadInput}
+                      onEdit={() => { setLeadInput(String(f.settings?.lead_time_days ?? 0)); setEditingLead(true); }}
+                      onSave={() => {
+                        const v = parseInt(leadInput, 10);
+                        if (!isNaN(v) && v >= 0) { upsert(v, f.settings?.safety_margin_value ?? 14, marginUnit); setEditingLead(false); }
+                      }}
+                      onCancel={() => setEditingLead(false)}
+                      isPending={upsertMutation.isPending}
+                      saveLabel={t('forecast.save')}
+                      cancelLabel={t('forecast.cancel')}
+                    />
+                    <SafetyMarginField
+                      value={f.settings?.safety_margin_value ?? 14}
+                      unit={marginUnit}
+                      editing={editingMargin}
+                      inputValue={marginInput}
+                      dailyRateG={f.dailyRateG}
+                      onInputChange={setMarginInput}
+                      onUnitChange={(u) => setMarginUnit(u)}
+                      onEdit={() => { setMarginInput(String(f.settings?.safety_margin_value ?? 14)); setMarginUnit(f.settings?.safety_margin_unit ?? 'days'); setEditingMargin(true); }}
+                      onSave={() => {
+                        const v = parseInt(marginInput, 10);
+                        if (!isNaN(v) && v >= 0) { upsert(f.settings?.lead_time_days ?? 0, v, marginUnit); setEditingMargin(false); }
+                      }}
+                      onCancel={() => setEditingMargin(false)}
+                      isPending={upsertMutation.isPending}
+                      saveLabel={t('forecast.save')}
+                      cancelLabel={t('forecast.cancel')}
+                      safetyMarginLabel={t('forecast.safetyMarginLabel')}
+                    />
+                  </>
+                )}
               </div>
-
-              {/* Per-SKU settings — write-gated */}
-              {canWrite && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <SettingField
-                    label={t('forecast.skuLeadTimeOverride')}
-                    hint={t('forecast.skuLeadTimeHint')}
-                    unit={t('forecast.leadTime')}
-                    editing={editingLead}
-                    value={f.settings?.lead_time_days ?? 0}
-                    inputValue={leadInput}
-                    onInputChange={setLeadInput}
-                    onEdit={() => { setLeadInput(String(f.settings?.lead_time_days ?? 0)); setEditingLead(true); }}
-                    onSave={() => {
-                      const v = parseInt(leadInput, 10);
-                      if (!isNaN(v) && v >= 0) { upsert(v, f.settings?.safety_margin_value ?? 14, marginUnit); setEditingLead(false); }
-                    }}
-                    onCancel={() => setEditingLead(false)}
-                    isPending={upsertMutation.isPending}
-                    saveLabel={t('forecast.save')}
-                    cancelLabel={t('forecast.cancel')}
-                  />
-                  <SafetyMarginField
-                    value={f.settings?.safety_margin_value ?? 14}
-                    unit={marginUnit}
-                    editing={editingMargin}
-                    inputValue={marginInput}
-                    dailyRateG={f.dailyRateG}
-                    onInputChange={setMarginInput}
-                    onUnitChange={(u) => setMarginUnit(u)}
-                    onEdit={() => { setMarginInput(String(f.settings?.safety_margin_value ?? 14)); setMarginUnit(f.settings?.safety_margin_unit ?? 'days'); setEditingMargin(true); }}
-                    onSave={() => {
-                      const v = parseInt(marginInput, 10);
-                      if (!isNaN(v) && v >= 0) { upsert(f.settings?.lead_time_days ?? 0, v, marginUnit); setEditingMargin(false); }
-                    }}
-                    onCancel={() => setEditingMargin(false)}
-                    isPending={upsertMutation.isPending}
-                    saveLabel={t('forecast.save')}
-                    cancelLabel={t('forecast.cancel')}
-                    safetyMarginLabel={t('forecast.safetyMarginLabel')}
-                  />
-                </div>
-              )}
 
               {/* Individual spools — shown when group has >1 spool */}
               {f.group.spools.length > 1 && (
@@ -992,10 +1071,10 @@ function ForecastRow({
                     <table className="w-full">
                       <thead>
                         <tr className="border-b border-bambu-dark-tertiary bg-bambu-dark-tertiary/30">
-                          <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">#</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('inventory.remaining')}</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('inventory.used')}</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.labelWeight')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">#</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('inventory.remaining')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('inventory.used')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.labelWeight')}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-bambu-dark-tertiary">
@@ -1045,7 +1124,7 @@ function ForecastRow({
 function LogisticStat({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
     <div className="bg-bambu-dark-tertiary/40 rounded-lg p-3" title={hint}>
-      <div className="text-xs text-bambu-gray mb-1">{label}</div>
+      <div className="text-xs font-medium text-white mb-1">{label}</div>
       <div className="text-lg font-semibold text-white">{value}</div>
     </div>
   );
@@ -1143,10 +1222,10 @@ function SafetyMarginField({
           <span className="text-lg font-semibold text-white">{value}</span>
           <span className="text-xs text-bambu-gray">{unit}</span>
           {displayG !== null && unit === 'days' && (
-            <span className="text-xs text-bambu-gray/60">≈ {displayG}g</span>
+            <span className="text-lg font-semibold text-white">≈ {displayG}g</span>
           )}
           {unit === 'g' && dailyRateG !== null && (
-            <span className="text-xs text-bambu-gray/60">≈ {Math.round(value / dailyRateG)}d</span>
+            <span className="text-lg font-semibold text-white">≈ {Math.round(value / dailyRateG)}d</span>
           )}
           <button onClick={onEdit} className="p-1 text-bambu-gray hover:text-white rounded transition-colors"><Edit2 className="w-3 h-3" /></button>
         </div>
@@ -1190,7 +1269,7 @@ function ShoppingListPanel({
           label_weight: spoolWeight,
           core_weight: 0,
           core_weight_catalog_id: null,
-          color_name: null, rgba: null, extra_colors: null, effect_type: null,
+          color_name: item.color_name, rgba: null, extra_colors: null, effect_type: null,
           nozzle_temp_min: null, nozzle_temp_max: null,
           note: item.note ?? null,
           tag_uid: null, tray_uuid: null,
@@ -1224,7 +1303,7 @@ function ShoppingListPanel({
   const cartForecasts = useMemo(() =>
     items.map((item) => ({
       item,
-      forecast: forecastMap.get(skuKey(item.material, item.subtype, item.brand)) ?? null,
+      forecast: forecastMap.get(skuKey(item.material, item.subtype, item.brand, item.color_name)) ?? null,
     })),
     [items, forecastMap]
   );
@@ -1240,9 +1319,9 @@ function ShoppingListPanel({
   );
 
   function downloadCsv() {
-    const headers = [t('forecast.qty'), t('forecast.material'), 'Brand', 'Subtype', `${t('forecast.weight')} (g)`, `${t('forecast.leadTime')} (d)`, t('forecast.expectedRestock'), t('forecast.status'), t('forecast.note')];
+    const headers = [t('forecast.qty'), t('forecast.material'), t('inventory.brand'), t('inventory.subtype'), t('inventory.color'), `${t('forecast.weight')} (g)`, `${t('forecast.leadTime')} (d)`, t('forecast.expectedRestock'), t('forecast.status'), t('forecast.note')];
     const rows = items.map((i) => {
-      const f = forecastMap.get(skuKey(i.material, i.subtype, i.brand)) ?? null;
+      const f = forecastMap.get(skuKey(i.material, i.subtype, i.brand, i.color_name)) ?? null;
       const avgSpoolG = f && f.totalSpools > 0 ? f.totalLabelG / f.totalSpools : 1000;
       const totalWeightG = Math.round(i.quantity_spools * avgSpoolG);
       const lt = f?.effectiveLeadTimeDays ?? globalLeadTime ?? 0;
@@ -1252,6 +1331,7 @@ function ShoppingListPanel({
         i.material,
         i.brand ?? '',
         i.subtype ?? '',
+        i.color_name ?? '',
         totalWeightG,
         lt || '',
         restock,
@@ -1330,21 +1410,21 @@ function ShoppingListPanel({
           <table className="w-full">
             <thead>
               <tr className="border-b border-bambu-dark-tertiary bg-bambu-dark-tertiary/20">
-                <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.qty')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.material')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.weight')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.leadTime')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.expectedRestock')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.status')}</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.note')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.qty')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.material')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.weight')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.leadTime')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.expectedRestock')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.status')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.note')}</th>
                 <th className="px-4 py-2 text-right text-xs font-medium text-bambu-gray uppercase tracking-wide">{t('forecast.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-bambu-dark-tertiary">
               {items.map((item) => {
-                const lbl = [item.brand, item.material, item.subtype].filter(Boolean).join(' ');
+                const lbl = [item.brand, item.material, item.subtype, item.color_name].filter(Boolean).join(' ');
                 const hasBreak = breakAlerts.some((a) => a.item.id === item.id);
-                const f = forecastMap.get(skuKey(item.material, item.subtype, item.brand)) ?? null;
+                const f = forecastMap.get(skuKey(item.material, item.subtype, item.brand, item.color_name)) ?? null;
                 const avgSpoolG = f && f.totalSpools > 0 ? f.totalLabelG / f.totalSpools : 1000;
                 const totalWeightG = Math.round(item.quantity_spools * avgSpoolG);
                 const lt = f?.effectiveLeadTimeDays ?? globalLeadTime ?? 0;
@@ -1408,22 +1488,22 @@ function ShoppingListPanel({
                               onClick={() => statusMutation.mutate({ id: item.id, status: isPurchased ? 'pending' : 'purchased' })}
                               disabled={isMutating || isReceived}
                               title={isPurchased ? t('forecast.resetToPending') : t('forecast.markPurchased')}
-                              className={`p-1 rounded transition-colors disabled:opacity-30 ${
+                              className={`p-1.5 rounded transition-colors disabled:opacity-30 ${
                                 isPurchased
-                                  ? 'text-blue-400 hover:text-bambu-gray'
-                                  : 'text-bambu-gray hover:text-blue-400'
+                                  ? 'text-blue-400 hover:text-blue-300'
+                                  : 'text-blue-400/50 hover:text-blue-400'
                               }`}
                             >
-                              {isPurchased ? <RotateCcw className="w-3.5 h-3.5" /> : <CreditCard className="w-3.5 h-3.5" />}
+                              {isPurchased ? <RotateCcw className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />}
                             </button>
                             {/* Received icon — available only after purchasing */}
                             <button
                               onClick={() => statusMutation.mutate({ id: item.id, status: 'received', item, avgSpoolG })}
                               disabled={isMutating || !isPurchased || isReceived}
                               title={t('forecast.markReceived')}
-                              className="p-1 rounded transition-colors text-bambu-gray hover:text-bambu-green disabled:opacity-30"
+                              className="p-1.5 rounded transition-colors text-bambu-green/50 hover:text-bambu-green disabled:opacity-30"
                             >
-                              <PackageCheck className="w-3.5 h-3.5" />
+                              <PackageCheck className="w-4 h-4" />
                             </button>
                             {/* Delete */}
                             <button
@@ -1474,7 +1554,7 @@ function CartLogisticsRow({
   onRemove: () => void;
 }) {
   const { t } = useTranslation();
-  const label = [item.brand, item.material, item.subtype].filter(Boolean).join(' ');
+  const label = [item.brand, item.material, item.subtype, item.color_name].filter(Boolean).join(' ');
 
   // Build a timeline showing stock depletion, arrival bump, then post-arrival depletion.
   // Two points are inserted at day `lt` (just-before and just-after arrival) so the
@@ -1706,10 +1786,10 @@ function AddToCartModal({
 }: {
   forecast: SkuForecast;
   onClose: () => void;
-  onAdd: (item: { material: string; subtype: string | null; brand: string | null; quantity_spools: number; note: string | null }) => void;
+  onAdd: (item: { material: string; subtype: string | null; brand: string | null; color_name: string | null; quantity_spools: number; note: string | null }) => void;
 }) {
   const { t } = useTranslation();
-  const label = [f.group.brand, f.group.material, f.group.subtype].filter(Boolean).join(' ');
+  const label = [f.group.brand, f.group.material, f.group.subtype, f.group.colorName].filter(Boolean).join(' ');
   const [mode, setMode] = useState<'qty' | 'duration'>('qty');
   const [qty, setQty] = useState('1');
   const [durationDays, setDurationDays] = useState('30');
@@ -1728,7 +1808,7 @@ function AddToCartModal({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    onAdd({ material: f.group.material, subtype: f.group.subtype, brand: f.group.brand, quantity_spools: finalQty, note: note || null });
+    onAdd({ material: f.group.material, subtype: f.group.subtype, brand: f.group.brand, color_name: f.group.colorName, quantity_spools: finalQty, note: note || null });
   }
 
   return (

@@ -193,6 +193,7 @@ async def init_db():
         print_log,
         print_queue,
         printer,
+        printer_sensor_history,
         project,
         project_bom,
         settings,
@@ -947,6 +948,16 @@ async def run_migrations(conn):
     else:
         await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN skip_filament_check BOOLEAN DEFAULT false")
 
+    # Migration: cleanup flag for transient printer-card uploads routed through
+    # the scheduler. The archive copy is durable; the library row/file can be
+    # deleted after dispatch.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN cleanup_library_after_dispatch BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE print_queue ADD COLUMN cleanup_library_after_dispatch BOOLEAN DEFAULT false"
+        )
+
     # Migration: Add queue_force_color_match column to virtual_printers (#1188).
     # Opt-in flag: when true, VP queue-mode uploads pin the per-slot type+color
     # from the 3MF onto the queue item's filament_overrides so the scheduler
@@ -966,6 +977,18 @@ async def run_migrations(conn):
         await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN gcode_injection BOOLEAN DEFAULT 0")
     else:
         await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN gcode_injection BOOLEAN DEFAULT FALSE")
+
+    # Migration: nozzle_mapping + nozzles_info on print_queue for H2C rack-swap
+    # slicer-pick preservation (#1780). Opaque JSON-string column carrying
+    # BambuStudio's per-filament physical nozzle position IDs, forwarded
+    # straight from the VP intake to the dispatcher's project_file MQTT
+    # command. NULL on every other model. Nullable TEXT — no Postgres / SQLite
+    # divergence here. `nozzles_info` shipped in the original #1780 attempt
+    # but BambuStudio never actually sends it (verified via wire capture on
+    # H2C, see CHANGELOG 0.2.5b1) — the column stays nullable so old rows
+    # still load; nothing reads or writes to it anymore.
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN nozzle_mapping TEXT")
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN nozzles_info TEXT")
 
     # Migration: Add target_parts_count column to projects for tracking total parts needed
     await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN target_parts_count INTEGER")
@@ -1515,7 +1538,10 @@ async def run_migrations(conn):
     except (OperationalError, ProgrammingError):
         pass  # Already applied
 
-    # Create active_print_spoolman table for Spoolman per-filament tracking
+    # Create active_print_spoolman table for Spoolman per-filament tracking.
+    # filament_usage is nullable so the no-3MF branch can still create a row
+    # that carries only tray_remain_start for the remain%-delta fallback
+    # (#1820 — matches internal-inventory Path 2 in usage_tracker).
     await _safe_execute(
         conn,
         """
@@ -1523,11 +1549,12 @@ async def run_migrations(conn):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
             archive_id INTEGER NOT NULL REFERENCES print_archives(id) ON DELETE CASCADE,
-            filament_usage TEXT NOT NULL,
+            filament_usage TEXT,
             ams_trays TEXT NOT NULL,
             slot_to_tray TEXT,
             layer_usage TEXT,
             filament_properties TEXT,
+            tray_remain_start TEXT,
             UNIQUE(printer_id, archive_id)
         )
         """
@@ -1537,15 +1564,50 @@ async def run_migrations(conn):
             id SERIAL PRIMARY KEY,
             printer_id INTEGER NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
             archive_id INTEGER NOT NULL REFERENCES print_archives(id) ON DELETE CASCADE,
-            filament_usage TEXT NOT NULL,
+            filament_usage TEXT,
             ams_trays TEXT NOT NULL,
             slot_to_tray TEXT,
             layer_usage TEXT,
             filament_properties TEXT,
+            tray_remain_start TEXT,
             UNIQUE(printer_id, archive_id)
         )
         """,
     )
+    # Migration for installs that already created active_print_spoolman with
+    # the original schema: add tray_remain_start, and relax filament_usage's
+    # NOT NULL so the no-3MF branch can persist a remain-only tracking row.
+    await _safe_execute(conn, "ALTER TABLE active_print_spoolman ADD COLUMN tray_remain_start TEXT")
+    if is_sqlite():
+        # SQLite can't ALTER COLUMN; patch sqlite_master directly. Mirrors the
+        # users.password_hash NULL-relaxation a few hundred lines below — see
+        # the comment there for the schema_version bump rationale.
+        try:
+            result = await conn.execute(
+                text("SELECT sql FROM sqlite_master WHERE type='table' AND name='active_print_spoolman'")
+            )
+            tbl_sql = result.scalar()
+            if tbl_sql and "filament_usage TEXT NOT NULL" in tbl_sql:
+                version_result = await conn.execute(text("PRAGMA schema_version"))
+                schema_version = version_result.scalar() or 0
+                await conn.execute(text("PRAGMA writable_schema = ON"))
+                await conn.execute(
+                    text(
+                        "UPDATE sqlite_master "
+                        "SET sql = replace(sql, 'filament_usage TEXT NOT NULL', 'filament_usage TEXT') "
+                        "WHERE type='table' AND name='active_print_spoolman'"
+                    )
+                )
+                await conn.execute(text(f"PRAGMA schema_version = {schema_version + 1}"))
+                await conn.execute(text("PRAGMA writable_schema = OFF"))
+        except (OperationalError, ProgrammingError) as exc:
+            logger.warning(
+                "Could not relax active_print_spoolman.filament_usage NOT NULL via writable_schema: %s — "
+                "no-3MF Spoolman fallback will be a no-op on this install",
+                exc,
+            )
+    else:
+        await _safe_execute(conn, "ALTER TABLE active_print_spoolman ALTER COLUMN filament_usage DROP NOT NULL")
 
     # Migration: Add preset_source column to slot_preset_mappings for local preset support
     try:
@@ -2586,9 +2648,10 @@ async def run_migrations(conn):
                 lead_time_days INTEGER NOT NULL DEFAULT 0,
                 safety_margin_value INTEGER NOT NULL DEFAULT 14,
                 safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
+                color_name VARCHAR(100),
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE (material, subtype, brand)
+                UNIQUE (material, subtype, brand, color_name)
             )""",
         )
         async with conn.begin_nested():
@@ -2602,6 +2665,12 @@ async def run_migrations(conn):
         await _safe_execute(
             conn, "ALTER TABLE filament_sku_settings ADD COLUMN alerts_snoozed BOOLEAN NOT NULL DEFAULT 0"
         )
+        # Migration: add color_name to filament_sku_settings so forecasts
+        # distinguish colours within a SKU. The matching ALTER for
+        # filament_shopping_list runs AFTER that table's CREATE below — on
+        # fresh installs the table doesn't exist yet at this point and
+        # _safe_execute does not swallow "no such table".
+        await _safe_execute(conn, "ALTER TABLE filament_sku_settings ADD COLUMN color_name VARCHAR(100)")
         # Backfill and drop legacy safety_margin_days column — SQLite requires a table rebuild.
         # Only run if the stale column still exists.
         cols_result = await conn.execute(text("PRAGMA table_info(filament_sku_settings)"))
@@ -2624,28 +2693,77 @@ async def run_migrations(conn):
                         material VARCHAR(50) NOT NULL,
                         subtype VARCHAR(50),
                         brand VARCHAR(100),
+                        color_name VARCHAR(100),
                         lead_time_days INTEGER NOT NULL DEFAULT 0,
                         safety_margin_value INTEGER NOT NULL DEFAULT 14,
                         safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
                         alerts_snoozed BOOLEAN NOT NULL DEFAULT 0,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE (material, subtype, brand)
+                        UNIQUE (material, subtype, brand, color_name)
                     )"""
                     )
                 )
                 await conn.execute(
                     text(
                         """INSERT INTO filament_sku_settings_new
-                        (id, material, subtype, brand, lead_time_days, safety_margin_value,
+                        (id, material, subtype, brand, color_name, lead_time_days, safety_margin_value,
                          safety_margin_unit, alerts_snoozed, created_at, updated_at)
-                       SELECT id, material, subtype, brand, lead_time_days, safety_margin_value,
+                       SELECT id, material, subtype, brand, color_name, lead_time_days, safety_margin_value,
                               safety_margin_unit, COALESCE(alerts_snoozed, 0), created_at, updated_at
                        FROM filament_sku_settings"""
                     )
                 )
                 await conn.execute(text("DROP TABLE filament_sku_settings"))
                 await conn.execute(text("ALTER TABLE filament_sku_settings_new RENAME TO filament_sku_settings"))
+        # Widen the unique key to include color_name on pre-existing tables. The
+        # auto-created UNIQUE index still covers only (material, subtype, brand)
+        # after the ADD COLUMN above, so rebuild the table to refresh it (#forecast
+        # -color-grouping). Detected by inspecting the index columns; skipped once
+        # color_name is already part of the key.
+        idx_rows = await conn.execute(text("PRAGMA index_list(filament_sku_settings)"))
+        needs_uq_rebuild = False
+        for idx in idx_rows.fetchall():
+            if idx[3] != "u":  # origin col: 'u' = UNIQUE constraint, 'c' = CREATE INDEX, 'pk' = primary key
+                continue
+            info = await conn.execute(text(f"PRAGMA index_info({idx[1]})"))
+            cols = {row[2] for row in info.fetchall()}
+            if "material" in cols and "color_name" not in cols:
+                needs_uq_rebuild = True
+                break
+        if needs_uq_rebuild:
+            async with conn.begin_nested():
+                await conn.execute(text("DROP TABLE IF EXISTS filament_sku_settings_uqfix"))
+                await conn.execute(
+                    text(
+                        """CREATE TABLE filament_sku_settings_uqfix (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        material VARCHAR(50) NOT NULL,
+                        subtype VARCHAR(50),
+                        brand VARCHAR(100),
+                        color_name VARCHAR(100),
+                        lead_time_days INTEGER NOT NULL DEFAULT 0,
+                        safety_margin_value INTEGER NOT NULL DEFAULT 14,
+                        safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
+                        alerts_snoozed BOOLEAN NOT NULL DEFAULT 0,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE (material, subtype, brand, color_name)
+                    )"""
+                    )
+                )
+                await conn.execute(
+                    text(
+                        """INSERT INTO filament_sku_settings_uqfix
+                        (id, material, subtype, brand, color_name, lead_time_days, safety_margin_value,
+                         safety_margin_unit, alerts_snoozed, created_at, updated_at)
+                       SELECT id, material, subtype, brand, color_name, lead_time_days, safety_margin_value,
+                              safety_margin_unit, COALESCE(alerts_snoozed, 0), created_at, updated_at
+                       FROM filament_sku_settings"""
+                    )
+                )
+                await conn.execute(text("DROP TABLE filament_sku_settings"))
+                await conn.execute(text("ALTER TABLE filament_sku_settings_uqfix RENAME TO filament_sku_settings"))
         await _safe_execute(
             conn,
             """CREATE TABLE IF NOT EXISTS filament_shopping_list (
@@ -2653,6 +2771,7 @@ async def run_migrations(conn):
                 material VARCHAR(50) NOT NULL,
                 subtype VARCHAR(50),
                 brand VARCHAR(100),
+                color_name VARCHAR(100),
                 quantity_spools INTEGER NOT NULL DEFAULT 1,
                 note VARCHAR(500),
                 status VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -2660,6 +2779,10 @@ async def run_migrations(conn):
                 added_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )""",
         )
+        # Backfill color_name on pre-#1814 upgrades — the CREATE above already
+        # has it for fresh installs; the ALTER is the upgrade path. "duplicate
+        # column name" is swallowed by _safe_execute, so re-runs are no-ops.
+        await _safe_execute(conn, "ALTER TABLE filament_shopping_list ADD COLUMN color_name VARCHAR(100)")
         # SQLite has no implicit updated_at trigger — add one so the column stays current.
         await _safe_execute(
             conn,
@@ -2680,9 +2803,10 @@ async def run_migrations(conn):
                 lead_time_days INTEGER NOT NULL DEFAULT 0,
                 safety_margin_value INTEGER NOT NULL DEFAULT 14,
                 safety_margin_unit VARCHAR(10) NOT NULL DEFAULT 'days',
+                color_name VARCHAR(100),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE (material, subtype, brand)
+                UNIQUE (material, subtype, brand, color_name)
             )""",
         )
         async with conn.begin_nested():
@@ -2699,6 +2823,35 @@ async def run_migrations(conn):
             conn,
             "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS alerts_snoozed BOOLEAN NOT NULL DEFAULT FALSE",
         )
+        # Migration: add color_name to filament_sku_settings and widen the
+        # unique key to include it so forecasts distinguish colours within a
+        # SKU (#forecast-color-grouping). The matching ALTER for
+        # filament_shopping_list runs AFTER that table's CREATE below — on
+        # fresh installs the table doesn't exist yet at this point.
+        await _safe_execute(conn, "ALTER TABLE filament_sku_settings ADD COLUMN IF NOT EXISTS color_name VARCHAR(100)")
+        # Widen UNIQUE (material, subtype, brand) → (material, subtype, brand, color_name).
+        # The original constraint was declared with name="uq_filament_sku" in the
+        # model, so we drop/re-add by that name. Gated on a pg_constraint lookup so
+        # the rebuild only runs when color_name is missing from the key — without
+        # the gate, every startup would take an ACCESS EXCLUSIVE lock on the table
+        # and churn the constraint.
+        uq_check = await conn.execute(
+            text(
+                "SELECT 1 FROM pg_constraint c "
+                "JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey) "
+                "WHERE c.conname = 'uq_filament_sku' AND a.attname = 'color_name' LIMIT 1"
+            )
+        )
+        if uq_check.scalar_one_or_none() is None:
+            await _safe_execute(
+                conn,
+                "ALTER TABLE filament_sku_settings DROP CONSTRAINT IF EXISTS uq_filament_sku",
+            )
+            await _safe_execute(
+                conn,
+                "ALTER TABLE filament_sku_settings ADD CONSTRAINT uq_filament_sku "
+                "UNIQUE (material, subtype, brand, color_name)",
+            )
         # Only backfill from safety_margin_days if that column still exists (PostgreSQL).
         col_check = await conn.execute(
             text(
@@ -2721,6 +2874,7 @@ async def run_migrations(conn):
                 material VARCHAR(50) NOT NULL,
                 subtype VARCHAR(50),
                 brand VARCHAR(100),
+                color_name VARCHAR(100),
                 quantity_spools INTEGER NOT NULL DEFAULT 1,
                 note VARCHAR(500),
                 status VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -2733,6 +2887,9 @@ async def run_migrations(conn):
             "ALTER TABLE filament_shopping_list ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'pending'",
         )
         await _safe_execute(conn, "ALTER TABLE filament_shopping_list ADD COLUMN IF NOT EXISTS purchased_at TIMESTAMP")
+        # Backfill color_name on pre-#1814 upgrades — the CREATE above already
+        # has it for fresh installs; the ALTER is the upgrade path.
+        await _safe_execute(conn, "ALTER TABLE filament_shopping_list ADD COLUMN IF NOT EXISTS color_name VARCHAR(100)")
 
     # Migration: Add inventory stock alert columns to notification_providers.
     # Postgres rejects `DEFAULT 0` for BOOLEAN columns.
@@ -3050,6 +3207,71 @@ async def run_migrations(conn):
             "names manually.",
             orphan_count,
         )
+
+    # Migration: Add on_ai_failure_detection column to notification_providers (#1794).
+    # Splits Obico AI failure detection out of the multiplexed on_printer_error
+    # event so users can subscribe to spaghetti alerts independently of HMS
+    # hardware-error alerts. Postgres rejects `DEFAULT 0` for BOOLEAN columns.
+    if is_sqlite():
+        await _safe_execute(
+            conn,
+            "ALTER TABLE notification_providers ADD COLUMN on_ai_failure_detection BOOLEAN DEFAULT 0",
+        )
+    else:
+        await _safe_execute(
+            conn,
+            "ALTER TABLE notification_providers ADD COLUMN on_ai_failure_detection BOOLEAN DEFAULT false",
+        )
+
+    # Migration: Add gate_acknowledged column to print_queue (#1818). Cleared
+    # by the per-printer "Resume after failure" action so the scheduler's
+    # `_check_previous_success` lookback skips this row. Postgres rejects
+    # `DEFAULT 0` for BOOLEAN columns.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN gate_acknowledged BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN gate_acknowledged BOOLEAN DEFAULT false")
+
+    # Migration: Add is_autologin column to oidc_providers (#1589). Postgres
+    # rejects ``DEFAULT 0`` for BOOLEAN columns.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN is_autologin BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN is_autologin BOOLEAN DEFAULT false")
+
+    # Migration: Disambiguate the four ``user_print_*`` notification template
+    # names by appending " Email" (#1792). See ``_migrate_rename_user_print_template_names``.
+    await _migrate_rename_user_print_template_names(conn)
+
+
+_USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (
+    ("user_print_start", "User Print Started", "User Print Started Email"),
+    ("user_print_complete", "User Print Completed", "User Print Completed Email"),
+    ("user_print_failed", "User Print Failed", "User Print Failed Email"),
+    ("user_print_stopped", "User Print Stopped", "User Print Stopped Email"),
+)
+
+
+async def _migrate_rename_user_print_template_names(conn) -> None:
+    """Append " Email" to the four ``user_print_*`` notification template names (#1792).
+
+    The provider-level "Print Completed" and the per-user "User Print Completed"
+    rows were visually indistinguishable in the Message Templates list because
+    the seed name lacked the suffix that the EVENT_NAMES display map in
+    routes/notification_templates.py already uses ("User Print Completed Email").
+
+    Renames only rows where ``name`` is still the old default — admins who
+    renamed the template themselves keep their custom name. Standard SQL
+    UPDATE works on both SQLite and Postgres.
+    """
+    from sqlalchemy import text
+
+    async with conn.begin_nested():
+        for event_type, old_name, new_name in _USER_PRINT_TEMPLATE_RENAMES:
+            await conn.execute(
+                text("UPDATE notification_templates SET name = :new WHERE event_type = :et AND name = :old"),
+                {"new": new_name, "et": event_type, "old": old_name},
+            )
 
 
 async def seed_notification_templates():

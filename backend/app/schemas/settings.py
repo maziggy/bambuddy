@@ -39,6 +39,10 @@ class AppSettings(BaseModel):
         default=True,
         description="Report Partial Usage for Failed Prints. When a print fails or is cancelled, report the estimated filament used up to that point based on layer progress.",
     )
+    auto_add_unknown_rfid: bool = Field(
+        default=True,
+        description="Automatically add spools with unknown RFID tags to inventory. Disable if you pre-create inventory entries manually to avoid duplicates.",
+    )
     disable_filament_warnings: bool = Field(
         default=False,
         description="Disable insufficient filament warnings when printing or queueing prints",
@@ -72,6 +76,9 @@ class AppSettings(BaseModel):
         default=35.0, description="Temperature threshold for fair (orange): <= this value, > is red"
     )
     ams_history_retention_days: int = Field(default=30, description="Number of days to keep AMS sensor history data")
+    printer_sensor_history_retention_days: int = Field(
+        default=30, description="Number of days to keep printer heater history data (nozzle / bed / chamber)"
+    )
 
     # Queue auto-drying settings
     queue_drying_enabled: bool = Field(
@@ -85,9 +92,27 @@ class AppSettings(BaseModel):
         default=False,
         description="Automatically dry AMS filament on idle printers when humidity exceeds threshold, regardless of queue",
     )
+    print_drying_enabled: bool = Field(
+        default=False,
+        description=(
+            "Allow auto-drying to also fire on a printer that is currently printing, "
+            "when its model+firmware supports concurrent drying (H2D 01.03.00.00+, "
+            "H2C/H2S/P2S/H2D Pro 01.02.00.00+, X2D/A2L 01.01.00.00+, X1C 01.11.02.00+). "
+            "Drying temperature is automatically capped 5 degC below the idle preset "
+            "(floor 40 degC) to protect spools during print."
+        ),
+    )
     drying_presets: str = Field(
         default="",
         description="JSON blob of drying presets per filament type (empty = use built-in defaults)",
+    )
+    ams_humidity_thresholds: str = Field(
+        default="",
+        description=(
+            "JSON blob of per-filament-type humidity trigger thresholds for auto-drying and alarms. "
+            'Shape: {"default": int, "PLA": int, "ASA": int, ...}. '
+            "Empty = fall back to ams_humidity_fair for all types."
+        ),
     )
 
     # Auto-print G-code injection (#422)
@@ -314,6 +339,21 @@ class AppSettings(BaseModel):
         description="JSON array of 3 fan-speed preset values in % (0-100). Empty = use defaults [50, 75, 100]",
     )
 
+    # Local login (#1589) — when False, /auth/login rejects username+password
+    # credentials with HTTP 403 and the login page hides the credentials form,
+    # leaving only the OIDC SSO provider buttons. LDAP is governed by its own
+    # `ldap_enabled` toggle and is not affected. The env-var
+    # ``BAMBUDDY_LOCAL_LOGIN=true`` bypasses this gate at the route level so a
+    # server admin can recover an install whose SSO provider is unreachable
+    # without editing the DB.
+    local_login_enabled: bool = Field(
+        default=True,
+        description=(
+            "Allow username + password login on /auth/login. Disable when only SSO should be usable. "
+            "BAMBUDDY_LOCAL_LOGIN=true on the server overrides this to keep a recovery path open."
+        ),
+    )
+
     # LDAP authentication (#794)
     ldap_enabled: bool = Field(default=False, description="Enable LDAP authentication")
     ldap_server_url: str = Field(default="", description="LDAP server URL (e.g., ldap://ldap.example.com:389)")
@@ -392,11 +432,13 @@ class AppSettingsUpdate(BaseModel):
     spoolman_sync_mode: str | None = None
     spoolman_disable_weight_sync: bool | None = None
     spoolman_report_partial_usage: bool | None = None
+    auto_add_unknown_rfid: bool | None = None
     disable_filament_warnings: bool | None = None
     prefer_lowest_filament: bool | None = None
     check_updates: bool | None = None
     check_printer_firmware: bool | None = None
     include_beta_updates: bool | None = None
+    local_login_enabled: bool | None = None
     language: str | None = None
     notification_language: str | None = None
     bed_cooled_threshold: float | None = None
@@ -405,10 +447,13 @@ class AppSettingsUpdate(BaseModel):
     ams_temp_good: float | None = None
     ams_temp_fair: float | None = None
     ams_history_retention_days: int | None = None
+    printer_sensor_history_retention_days: int | None = None
     queue_drying_enabled: bool | None = None
     queue_drying_block: bool | None = None
     ambient_drying_enabled: bool | None = None
+    print_drying_enabled: bool | None = None
     drying_presets: str | None = None
+    ams_humidity_thresholds: str | None = None
     per_printer_mapping_expanded: bool | None = None
     date_format: str | None = None
     time_format: str | None = None

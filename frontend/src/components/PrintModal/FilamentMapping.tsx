@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Circle, Check, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Palette } from 'lucide-react';
 import { api } from '../../api/client';
 import { useFilamentMapping } from '../../hooks/useFilamentMapping';
-import { getGlobalTrayId } from '../../utils/amsHelpers';
+import { getGlobalTrayId, effectivePreferLowest } from '../../utils/amsHelpers';
 import { getColorName } from '../../utils/colors';
 import { useFilamentLabels } from './useFilamentLabels';
 import type { FilamentMappingProps } from './types';
@@ -42,8 +42,35 @@ export function FilamentMapping({
     enabled: !!printerId,
   });
 
+  // Settings + inventory map drive the same prefer-lowest + AMS-backup gate
+  // the dispatcher uses (#1766). Without this, the per-slot dropdown's
+  // auto-suggestion could disagree with what actually gets dispatched.
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.getSettings,
+  });
+  const { data: inventoryRemain } = useQuery({
+    queryKey: ['printer-inventory-remain', printerId],
+    queryFn: () => api.getInventoryRemain(printerId),
+    enabled: !!printerId,
+    staleTime: 30 * 1000,
+  });
+  const inventoryByTrayId = useMemo(() => {
+    if (!inventoryRemain?.inventory_remain_g) return undefined;
+    const map = new Map<number, number>();
+    Object.entries(inventoryRemain.inventory_remain_g).forEach(([key, grams]) => {
+      const gtid = Number(key);
+      if (!Number.isNaN(gtid)) map.set(gtid, grams);
+    });
+    return map;
+  }, [inventoryRemain]);
+  const gatedPreferLowest = effectivePreferLowest(
+    settings?.prefer_lowest_filament,
+    printerStatus?.ams_filament_backup,
+  );
+
   const { loadedFilaments, filamentComparison, hasTypeMismatch, hasColorMismatch } =
-    useFilamentMapping(filamentReqs, printerStatus, manualMappings);
+    useFilamentMapping(filamentReqs, printerStatus, manualMappings, gatedPreferLowest, inventoryByTrayId);
 
   // Per-slot sub-brand + material-disambiguated colour labels (#1718). Same
   // shared hook the model-mode FilamentOverride uses so both panels render

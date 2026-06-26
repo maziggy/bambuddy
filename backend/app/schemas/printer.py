@@ -186,6 +186,8 @@ class AMSUnit(BaseModel):
     dry_status: int = 0  # 0=Off, 1=Checking, 2=Drying, 3=Cooling, 4=Stopping, 5=Error
     dry_sub_status: int = 0  # 0=Off, 1=Heating, 2=Dehumidify
     dry_sf_reason: list[int] = []  # Cannot-dry reasons from firmware (see CannotDryReason)
+    dry_target_temp: int | None = None  # Active-cycle target °C (Bambu doesn't echo this)
+    dry_filament: str | None = None  # Active-cycle filament name we sent
     module_type: str = ""  # "ams", "n3f", "n3s"
 
 
@@ -324,11 +326,18 @@ class PrinterStatus(BaseModel):
     firmware_version: str | None = None
     # Developer LAN mode: True = enabled, False = disabled (MQTT encryption), None = unknown
     developer_mode: bool | None = None
+    # AMS Filament Backup ("auto-switch" to a second spool when one runs out).
+    # True = ON, False = OFF, None = unknown / unsupported (A1 family — protocol field
+    # not yet identified). UI treats None as "status unavailable", not as a hard disable.
+    ams_filament_backup: bool | None = None
     # Queue: printer is awaiting the user to acknowledge the build plate is cleared
     # after a finished/failed print. Persisted across restarts (#961).
     awaiting_plate_clear: bool = False
     # AMS drying support
     supports_drying: bool = False
+    # AMS "Print While Drying" — drying mid-print. Verified per Bambu wiki release notes;
+    # see _DRY_WHILE_PRINTING_MIN_FIRMWARE in printer_manager.py for the matrix.
+    supports_drying_while_printing: bool = False
     # Active chamber heater (responds to M141). True only for H2C/H2D/H2DPro/H2S/X2D.
     supports_chamber_heater: bool = False
     # Linked archive for the active print (resolved via subtask_id). Frontend uses

@@ -366,6 +366,8 @@ export interface AMSUnit {
   dry_status: number;     // 0=Off, 1=Checking, 2=Drying, 3=Cooling, 4=Stopping, 5=Error
   dry_sub_status: number; // 0=Off, 1=Heating, 2=Dehumidify
   dry_sf_reason: number[]; // Cannot-dry reasons (1=InsufficientPower, 8=NeedPluginPower)
+  dry_target_temp: number | null; // Active-cycle target °C (Bambu does not echo)
+  dry_filament: string | null;    // Active-cycle filament name we sent
   module_type: string;    // "ams", "n3f", "n3s"
 }
 
@@ -502,6 +504,9 @@ export interface PrinterStatus {
   firmware_version: string | null;   // Firmware version from MQTT
   // Developer LAN mode: true = enabled, false = disabled, null = unknown
   developer_mode: boolean | null;
+  // AMS Filament Backup ("auto-switch" to a backup spool when one runs out).
+  // true = ON, false = OFF, null = unknown / unsupported (A1 family).
+  ams_filament_backup: boolean | null;
   // Queue: printer is awaiting user ack that the build plate was cleared after a
   // finished/failed print. Persisted across restarts (#961).
   awaiting_plate_clear: boolean;
@@ -519,6 +524,10 @@ export interface PrinterCreate {
   model?: string;
   location?: string;
   auto_archive?: boolean;
+  // Maintenance Mode flag (#1476). Backend already gates MQTT, queue dispatch,
+  // scheduler, metrics and the print picker on this; toggling via PATCH
+  // /printers/{id} disconnects or reconnects MQTT accordingly.
+  is_active?: boolean;
   external_camera_url?: string | null;
   external_camera_type?: string | null;
   external_camera_enabled?: boolean;
@@ -1078,6 +1087,10 @@ export interface AppSettings {
   check_updates: boolean;
   check_printer_firmware: boolean;
   include_beta_updates: boolean;
+  // #1589: false hides the local username/password form on the login page;
+  // BAMBUDDY_LOCAL_LOGIN=true on the server flips the reported value back to
+  // true so the env-var recovery path is visible to the SPA.
+  local_login_enabled: boolean;
   language: string;
   notification_language: string;
   // AMS threshold settings
@@ -1090,7 +1103,9 @@ export interface AppSettings {
   queue_drying_enabled: boolean;  // Auto-dry AMS between queued prints
   queue_drying_block: boolean;  // Block queue until drying completes
   ambient_drying_enabled: boolean;  // Auto-dry idle printers based on humidity regardless of queue
+  print_drying_enabled: boolean;  // Continue drying while a print is running on capable hardware
   drying_presets: string;  // JSON blob of drying presets per filament type
+  ams_humidity_thresholds: string;  // JSON blob of per-filament humidity thresholds (#1605)
   gcode_snippets: string;  // JSON: per-model G-code injection snippets
   // Scheduled local backup
   local_backup_enabled: boolean;
@@ -1106,6 +1121,9 @@ export interface AppSettings {
   // Filament tracking
   disable_filament_warnings: boolean;  // Disable filament warnings (print insufficiency and assignment mismatch)
   prefer_lowest_filament: boolean;  // When multiple spools match, prefer lowest remaining filament
+  spoolman_enabled: boolean;  // True when the user has switched filament tracking to Spoolman; backend includes this in the /settings/ response even though earlier consumers read it from the dedicated /settings/spoolman endpoint as a string
+  auto_add_unknown_rfid: boolean;  // When false, the backend skips auto-creating inventory spools for unknown RFID tags and instead broadcasts an unknown_tag event for the confirmation modal
+  spoolman_url: string;
   // Default printer
   default_printer_id: number | null;
   // Dark mode theme settings
@@ -1940,6 +1958,7 @@ export interface PrintQueueItem {
   been_jumped?: boolean;
   // Auto-print G-code injection
   gcode_injection?: boolean;
+  cleanup_library_after_dispatch?: boolean;
 }
 
 export interface PrintBatch {
@@ -1970,6 +1989,8 @@ export interface PrintQueueItemCreate {
   require_previous_success?: boolean;
   auto_off_after?: boolean;
   manual_start?: boolean;  // Requires manual trigger to start (staged)
+  insert_at_top?: boolean;  // Insert ahead of other pending items in the same queue scope
+  insert_position?: number | null;  // 1-indexed insertion position for priority queueing
   // PrintModal "Print Anyway" on the deficit warning — persisted so the
   // scheduler doesn't immediately re-flag this item (#1698-followup).
   skip_filament_check?: boolean;
@@ -1991,6 +2012,8 @@ export interface PrintQueueItemCreate {
   batch_id?: number | null;
   // Project to associate the resulting archive with
   project_id?: number;
+  // Delete transient uploaded library file after scheduler creates the archive
+  cleanup_library_after_dispatch?: boolean;
 }
 
 export interface PrintBatchCreate {
@@ -2164,6 +2187,7 @@ export interface NotificationProvider {
   // Printer status events
   on_printer_offline: boolean;
   on_printer_error: boolean;
+  on_ai_failure_detection: boolean;
   on_filament_low: boolean;
   on_maintenance_due: boolean;
   // AMS environmental alarms (regular AMS)
@@ -2222,6 +2246,7 @@ export interface NotificationProviderCreate {
   // Printer status events
   on_printer_offline?: boolean;
   on_printer_error?: boolean;
+  on_ai_failure_detection?: boolean;
   on_filament_low?: boolean;
   on_maintenance_due?: boolean;
   // AMS environmental alarms (regular AMS)
@@ -2273,6 +2298,7 @@ export interface NotificationProviderUpdate {
   // Printer status events
   on_printer_offline?: boolean;
   on_printer_error?: boolean;
+  on_ai_failure_detection?: boolean;
   on_filament_low?: boolean;
   on_maintenance_due?: boolean;
   // AMS environmental alarms (regular AMS)
@@ -2453,15 +2479,6 @@ export interface NotificationTestRequest {
 export interface NotificationTestResponse {
   success: boolean;
   message: string;
-}
-
-export interface BackgroundDispatchResponse {
-  status: 'dispatched' | string;
-  printer_id: number;
-  archive_id?: number | null;
-  filename: string;
-  dispatch_job_id: number;
-  dispatch_position: number;
 }
 
 // Provider-specific config types for reference
@@ -2778,6 +2795,7 @@ export interface FilamentSkuSettings {
   material: string;
   subtype: string | null;
   brand: string | null;
+  color_name: string | null;
   lead_time_days: number;
   safety_margin_value: number;
   safety_margin_unit: 'days' | 'g';
@@ -2789,6 +2807,7 @@ export interface ShoppingListItem {
   material: string;
   subtype: string | null;
   brand: string | null;
+  color_name: string | null;
   quantity_spools: number;
   note: string | null;
   status: 'pending' | 'purchased' | 'received';
@@ -2800,6 +2819,7 @@ export interface ShoppingListItemCreate {
   material: string;
   subtype: string | null;
   brand: string | null;
+  color_name: string | null;
   quantity_spools: number;
   note?: string | null;
 }
@@ -2822,7 +2842,9 @@ export interface UpdateCheckResult {
   message?: string;
   is_docker?: boolean;
   is_ha_addon?: boolean;
-  update_method?: 'docker' | 'git' | 'ha_addon';
+  is_windows_installer?: boolean;
+  update_method?: 'docker' | 'git' | 'ha_addon' | 'windows_installer';
+  installer_download_url?: string | null;
 }
 
 export interface UpdateStatus {
@@ -3169,6 +3191,9 @@ export interface OIDCProvider {
   // includes this field in the response (Pydantic default-False is
   // populated unconditionally in the route handler).
   has_icon: boolean;
+  // #1589: when true, the LoginPage redirects unauthenticated visitors
+  // straight to this provider on mount. At most one provider may carry this.
+  is_autologin: boolean;
 }
 
 export interface OIDCProviderCreate {
@@ -3184,6 +3209,7 @@ export interface OIDCProviderCreate {
   require_email_verified?: boolean;
   icon_url?: string | null;
   default_group_id?: number | null;
+  is_autologin?: boolean;  // #1589
 }
 
 export interface OIDCLink {
@@ -3206,6 +3232,13 @@ export interface TestSMTPResponse {
 export interface AdvancedAuthStatus {
   advanced_auth_enabled: boolean;
   smtp_configured: boolean;
+  // #1589: false hides the username/password form on the LoginPage; the env
+  // var BAMBUDDY_LOCAL_LOGIN=true on the server flips this back to true so
+  // the recovery path remains visible.
+  local_login_enabled: boolean;
+  // #1589: when set, LoginPage redirects to this provider's authorize URL
+  // on mount unless ?fallback=local is in the URL or the redirect times out.
+  autologin_provider_id: number | null;
 }
 
 export interface LDAPStatus {
@@ -3630,6 +3663,22 @@ export const api = {
     request<{ status: string; ams_id: number }>(
       `/printers/${printerId}/drying/stop?ams_id=${amsId}`,
       { method: 'POST' }
+    ),
+
+  // AMS Filament Backup (auto-switch to a backup spool when one runs out)
+  setAmsFilamentBackup: (printerId: number, enabled: boolean) =>
+    request<{ success: boolean; ams_filament_backup: boolean }>(
+      `/printers/${printerId}/ams-backup?enabled=${enabled}`,
+      { method: 'POST' }
+    ),
+
+  // Per-globalTrayId remaining grams for this printer's inventory-bound slots
+  // (#1766). Drives the client-side "Prefer Lowest Remaining Filament" sort
+  // when computing the AMS mapping; mirrors backend `_build_inventory_remain_overrides`
+  // so internal and Spoolman modes both work uniformly.
+  getInventoryRemain: (printerId: number) =>
+    request<{ inventory_remain_g: Record<string, number> }>(
+      `/printers/${printerId}/inventory-remain`,
     ),
 
   // Skip Objects
@@ -4328,30 +4377,6 @@ export const api = {
       }>;
     }>(`/archives/${archiveId}/filament-requirements${qs.toString() ? `?${qs}` : ''}`);
   },
-  reprintArchive: (
-    archiveId: number,
-    printerId: number,
-    options?: {
-      plate_id?: number;
-      plate_name?: string;
-      ams_mapping?: number[];
-      timelapse?: boolean;
-      bed_levelling?: boolean;
-      flow_cali?: boolean;
-      vibration_cali?: boolean;
-      layer_inspect?: boolean;
-      use_ams?: boolean;
-      nozzle_offset_cali?: boolean;
-    }
-  ) =>
-    request<BackgroundDispatchResponse>(
-      `/archives/${archiveId}/reprint?printer_id=${printerId}`,
-      {
-        method: 'POST',
-        headers: options ? { 'Content-Type': 'application/json' } : undefined,
-        body: options ? JSON.stringify(options) : undefined,
-      }
-    ),
   uploadArchive: async (file: File, printerId?: number): Promise<Archive> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -4450,6 +4475,7 @@ export const api = {
       time_format?: 'system' | '12h' | '24h';
       date_format?: string;
       drying_presets?: string;
+      ams_humidity_thresholds?: string;
       ams_humidity_good?: number;
       ams_humidity_fair?: number;
       ams_temp_good?: number;
@@ -4738,6 +4764,17 @@ export const api = {
     const qs = opts?.skipFilamentCheck ? '?skip_filament_check=true' : '';
     return request<PrintQueueItem>(`/queue/${id}/start${qs}`, { method: 'POST' });
   },
+  /**
+   * Clear the `require_previous_success` gate for a printer after the user
+   * resolves the failure. Acknowledges any failed/aborted predecessors and
+   * restores skipped items whose error_message matches the gate string
+   * back to pending. Returns counts so the UI can render a precise toast.
+   */
+  resumeQueueAfterFailure: (printerId: number) =>
+    request<{ acknowledged: number; restored: number }>(
+      `/queue/printer/${printerId}/resume`,
+      { method: 'POST' },
+    ),
   bulkUpdateQueue: (data: PrintQueueBulkUpdate) =>
     request<PrintQueueBulkUpdateResponse>('/queue/bulk', {
       method: 'PATCH',
@@ -5021,10 +5058,20 @@ export const api = {
     request<{ success: boolean; message: string }>(`/spoolman/spools/${spoolId}/unlink`, {
       method: 'POST',
     }),
+  createSpoolmanSpoolFromSlot: (data: { printer_id: number; ams_id: number; tray_id: number }) =>
+    request<{ success: boolean; spool_id: number | null }>(`/spoolman/spools/from-slot`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  createSpoolFromSlot: (data: { printer_id: number; ams_id: number; tray_id: number }) =>
+    request<InventorySpool>(`/inventory/spools/from-slot`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   getSpoolmanSettings: () =>
-    request<{ spoolman_enabled: string; spoolman_url: string; spoolman_sync_mode: string; spoolman_disable_weight_sync: string; spoolman_report_partial_usage: string; }>('/settings/spoolman'),
-  updateSpoolmanSettings: (data: { spoolman_enabled?: string; spoolman_url?: string; spoolman_sync_mode?: string; spoolman_disable_weight_sync?: string; spoolman_report_partial_usage?: string; }) =>
-    request<{ spoolman_enabled: string; spoolman_url: string; spoolman_sync_mode: string; spoolman_disable_weight_sync: string; spoolman_report_partial_usage: string; }>('/settings/spoolman', {
+    request<{ spoolman_enabled: string; spoolman_url: string; spoolman_sync_mode: string; spoolman_disable_weight_sync: string; spoolman_report_partial_usage: string; auto_add_unknown_rfid: string; }>('/settings/spoolman'),
+  updateSpoolmanSettings: (data: { spoolman_enabled?: string; spoolman_url?: string; spoolman_sync_mode?: string; spoolman_disable_weight_sync?: string; spoolman_report_partial_usage?: string; auto_add_unknown_rfid?: string; }) =>
+    request<{ spoolman_enabled: string; spoolman_url: string; spoolman_sync_mode: string; spoolman_disable_weight_sync: string; spoolman_report_partial_usage: string; auto_add_unknown_rfid: string; }>('/settings/spoolman', {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
@@ -5085,6 +5132,26 @@ export const api = {
     request<{ reset: number }>(`/inventory/spools/reset-consumed-counter-bulk`, {
       method: 'POST',
       body: JSON.stringify({ spool_ids: spoolIds }),
+    }),
+  bulkUpdateSpools: (ids: number[], update: Partial<Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>>) =>
+    request<{ updated: number; not_found: number[] }>(`/inventory/spools/bulk-update`, {
+      method: 'POST',
+      body: JSON.stringify({ ids, update }),
+    }),
+  bulkDeleteSpools: (ids: number[]) =>
+    request<{ deleted: number; not_found: number[] }>(`/inventory/spools/bulk-delete`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
+  bulkArchiveSpools: (ids: number[]) =>
+    request<{ archived: number; already_archived: number[]; not_found: number[] }>(`/inventory/spools/bulk-archive`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
+  bulkRestoreSpools: (ids: number[]) =>
+    request<{ restored: number; already_active: number[]; not_found: number[] }>(`/inventory/spools/bulk-restore`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
     }),
   getSpoolKProfiles: (spoolId: number) =>
     request<SpoolKProfile[]>(`/inventory/spools/${spoolId}/k-profiles`),
@@ -5265,6 +5332,26 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ spool_ids: spoolIds }),
     }),
+  bulkUpdateSpoolmanInventorySpools: (ids: number[], update: Partial<Omit<InventorySpool, 'id' | 'archived_at' | 'created_at' | 'updated_at' | 'k_profiles'>>) =>
+    request<{ updated: number; errors: Array<{ id: number; status: number; detail: string }> }>(`/spoolman/inventory/spools/bulk-update`, {
+      method: 'POST',
+      body: JSON.stringify({ ids, update }),
+    }),
+  bulkDeleteSpoolmanInventorySpools: (ids: number[]) =>
+    request<{ deleted: number; errors: Array<{ id: number; status: number; detail: string }> }>(`/spoolman/inventory/spools/bulk-delete`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
+  bulkArchiveSpoolmanInventorySpools: (ids: number[]) =>
+    request<{ archived: number; errors: Array<{ id: number; status: number; detail: string }> }>(`/spoolman/inventory/spools/bulk-archive`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
+  bulkRestoreSpoolmanInventorySpools: (ids: number[]) =>
+    request<{ restored: number; errors: Array<{ id: number; status: number; detail: string }> }>(`/spoolman/inventory/spools/bulk-restore`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
   linkTagToSpoolmanSpool: (spoolId: number, data: { tag_uid?: string; tray_uuid?: string }) =>
     request<InventorySpool>(`/spoolman/inventory/spools/${spoolId}/tag`, {
       method: 'PATCH',
@@ -5315,7 +5402,7 @@ export const api = {
   getVersion: () => request<VersionInfo>('/updates/version'),
   checkForUpdates: () => request<UpdateCheckResult>('/updates/check'),
   applyUpdate: () =>
-    request<{ success: boolean; message: string; status?: UpdateStatus; is_docker?: boolean; is_ha_addon?: boolean }>('/updates/apply', {
+    request<{ success: boolean; message: string; status?: UpdateStatus; is_docker?: boolean; is_ha_addon?: boolean; is_windows_installer?: boolean }>('/updates/apply', {
       method: 'POST',
     }),
   getUpdateStatus: () => request<UpdateStatus>('/updates/status'),
@@ -5705,6 +5792,13 @@ export const api = {
   getAMSHistory: (printerId: number, amsId: number, hours = 24) =>
     request<AMSHistoryResponse>(`/ams-history/${printerId}/${amsId}?hours=${hours}`),
 
+  // Printer heater (nozzle / bed / chamber) sensor history
+  getPrinterSensorHistory: (printerId: number, hours = 24, kinds?: string[]) => {
+    const params = new URLSearchParams({ hours: String(hours) });
+    if (kinds && kinds.length > 0) params.set('kinds', kinds.join(','));
+    return request<PrinterSensorHistoryResponse>(`/printer-sensor-history/${printerId}?${params.toString()}`);
+  },
+
   // System Info
   getSystemInfo: () => request<SystemInfo>('/system/info'),
   getSystemHealth: () => request<SystemHealthResult>('/system/health'),
@@ -5750,6 +5844,8 @@ export const api = {
     includeRoot = true,
     projectId?: number,
     scope?: 'internal' | 'external',
+    recursive = false,
+    tagIds: number[] = [],
   ) => {
     const params = new URLSearchParams();
     if (folderId !== undefined && folderId !== null) {
@@ -5761,8 +5857,48 @@ export const api = {
     params.set('include_root', String(includeRoot));
     if (scope === 'internal') params.set('internal_only', 'true');
     else if (scope === 'external') params.set('external_only', 'true');
+    // recursive=true expands the folder_id filter to include every descendant
+    // folder (#1268). Only meaningful when folder_id is set; ignored server-side
+    // otherwise. Off by default so non-search callers keep folder-scoped behavior.
+    if (recursive) params.set('recursive', 'true');
+    // Tag filter (#1268). Repeated ?tag_ids=N&tag_ids=M form for AND semantics
+    // — backend joins the association table and HAVING COUNT(DISTINCT) matches
+    // the array length. Tag filter intentionally bypasses folder scoping
+    // server-side (cross-cutting design decision).
+    for (const tagId of tagIds) {
+      params.append('tag_ids', String(tagId));
+    }
     return request<LibraryFileListItem[]>(`/library/files?${params}`);
   },
+  getLibraryFolderReadme: (folderId: number) =>
+    request<{ filename: string; content: string; truncated: boolean }>(
+      `/library/folders/${folderId}/readme`,
+    ),
+
+  // ============ Library tag catalog (#1268) ============
+  getLibraryTags: () =>
+    request<LibraryTag[]>('/library/tags'),
+  createLibraryTag: (name: string) =>
+    request<LibraryTag>('/library/tags', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  updateLibraryTag: (id: number, name: string) =>
+    request<LibraryTag>(`/library/tags/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }),
+  deleteLibraryTag: (id: number) =>
+    request<void>(`/library/tags/${id}`, { method: 'DELETE' }),
+  bulkAssignLibraryTags: (
+    fileIds: number[],
+    tagIds: number[],
+    action: 'add' | 'remove' | 'replace',
+  ) =>
+    request<LibraryTagBulkAssignResult>('/library/tags/bulk-assign', {
+      method: 'POST',
+      body: JSON.stringify({ file_ids: fileIds, tag_ids: tagIds, action }),
+    }),
   getLibraryFile: (id: number) => request<LibraryFile>(`/library/files/${id}`),
   uploadLibraryFile: async (
     file: File,
@@ -5905,41 +6041,6 @@ export const api = {
     request<AddToQueueResponse>('/library/files/add-to-queue', {
       method: 'POST',
       body: JSON.stringify({ file_ids: fileIds }),
-    }),
-  printLibraryFile: (
-    fileId: number,
-    printerId: number,
-    options?: {
-      plate_id?: number;
-      plate_name?: string;
-      ams_mapping?: number[];
-      bed_levelling?: boolean;
-      flow_cali?: boolean;
-      vibration_cali?: boolean;
-      layer_inspect?: boolean;
-      timelapse?: boolean;
-      use_ams?: boolean;
-      nozzle_offset_cali?: boolean;
-      project_id?: number;
-      cleanup_library_after_dispatch?: boolean;
-    }
-  ) =>
-    request<BackgroundDispatchResponse>(
-      `/library/files/${fileId}/print?printer_id=${printerId}`,
-      {
-        method: 'POST',
-        body: options ? JSON.stringify(options) : undefined,
-      }
-    ),
-  cancelBackgroundDispatchJob: (jobId: number) =>
-    request<{
-      status: 'cancelled' | 'cancelling';
-      job_id: number;
-      source_name: string;
-      printer_id: number;
-      printer_name: string;
-    }>(`/background-dispatch/${jobId}`, {
-      method: 'DELETE',
     }),
   getLibraryFilePlates: (fileId: number) =>
     request<LibraryFilePlatesResponse>(`/library/files/${fileId}/plates`),
@@ -6140,6 +6241,27 @@ export interface AMSHistoryResponse {
   avg_temperature: number | null;
 }
 
+export type HeaterSensorKind = 'nozzle' | 'nozzle_2' | 'bed' | 'chamber';
+
+export interface HeaterHistoryPoint {
+  recorded_at: string;
+  value: number | null;
+  target: number | null;
+}
+
+export interface HeaterSeries {
+  sensor_kind: HeaterSensorKind;
+  data: HeaterHistoryPoint[];
+  min_value: number | null;
+  max_value: number | null;
+  avg_value: number | null;
+}
+
+export interface PrinterSensorHistoryResponse {
+  printer_id: number;
+  series: HeaterSeries[];
+}
+
 // System Info types
 export interface SystemInfo {
   app: {
@@ -6259,6 +6381,9 @@ export interface LibraryFolderTree {
   external_path: string | null;
   external_readonly: boolean;
   file_count: number;
+  // max(folder.updated_at, max(immediate-child file.updated_at)). Used by
+  // the File Manager folder tree's "sort by recent activity" mode (#1770).
+  latest_activity_at: string | null;
   children: LibraryFolderTree[];
 }
 
@@ -6275,6 +6400,7 @@ export interface LibraryFolder {
   external_readonly: boolean;
   external_show_hidden: boolean;
   file_count: number;
+  latest_activity_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -6340,6 +6466,11 @@ export interface LibraryFile {
   sliced_for_model: string | null;
 }
 
+export interface LibraryTagSummary {
+  id: number;
+  name: string;
+}
+
 export interface LibraryFileListItem {
   id: number;
   folder_id: number | null;
@@ -6358,6 +6489,26 @@ export interface LibraryFileListItem {
   print_time_seconds: number | null;
   filament_used_grams: number | null;
   sliced_for_model: string | null;
+  // Tags assigned to this file (#1268). The backend always emits an empty
+  // array when a file has no tags, but the field is typed optional so any
+  // legacy code path (or mock) that constructs a LibraryFileListItem without
+  // it doesn't crash the renderer. Read sites use `file.tags ?? []`.
+  tags?: LibraryTagSummary[];
+}
+
+// Library tag catalog (#1268)
+export interface LibraryTag {
+  id: number;
+  name: string;
+  file_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LibraryTagBulkAssignResult {
+  files_updated: number;
+  associations_added: number;
+  associations_removed: number;
 }
 
 export interface LibraryFileUpdate {
@@ -7092,5 +7243,22 @@ export const bugReportApi = {
   stopLogging: (wasDebug: boolean) =>
     request<{ logs: string }>(`/bug-report/stop-logging?was_debug=${wasDebug}`, {
       method: 'POST',
+    }),
+};
+
+export interface SponsorPromptCheckResponse {
+  show: boolean;
+  milestone?: string;
+  family?: 'prints' | 'cost' | 'archives' | 'anniversary' | 'version-update';
+  threshold?: number;
+  payload?: Record<string, unknown>;
+}
+
+export const sponsorPromptApi = {
+  check: () => request<SponsorPromptCheckResponse>('/sponsor-prompt/check'),
+  dismiss: (milestone: string) =>
+    request<void>('/sponsor-prompt/dismiss', {
+      method: 'POST',
+      body: JSON.stringify({ milestone }),
     }),
 };

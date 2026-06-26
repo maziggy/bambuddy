@@ -99,6 +99,7 @@ def _fake_state(**overrides):
         "tray_now": None,
         "wifi_signal": None,
         "wired_network": None,
+        "ams_filament_backup": None,
     }
     base.update(overrides)
     return SimpleNamespace(**base)

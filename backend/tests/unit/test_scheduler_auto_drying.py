@@ -884,3 +884,302 @@ class TestBlockForDryingBugFix(_DryingTestBase):
 
         # Should NOT start drying — block mode with pending items
         mock_pm.send_drying_command.assert_not_called()
+
+
+class TestResolveHumidityThreshold:
+    """Per-filament humidity threshold resolver (#1605).
+
+    Resolves the trigger threshold for an AMS unit from the loaded tray types.
+    Mixed loads use the lowest (most restrictive) value. Empty / unloaded trays
+    contribute no constraint; falls back to the global ``ams_humidity_fair``
+    when no per-type overrides are configured.
+    """
+
+    def test_no_overrides_falls_back_to_global(self):
+        """Empty overrides map → caller's global fallback is used verbatim."""
+        result = PrintScheduler.resolve_humidity_threshold([{"tray_type": "PLA"}], {}, 60)
+        assert result == 60
+
+    def test_single_known_type_uses_override(self):
+        """Single PLA tray with override = 50 returns 50."""
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{"tray_type": "PLA Basic"}],
+            {"default": 60, "PLA": 50},
+            60,
+        )
+        assert result == 50
+
+    def test_mixed_load_picks_lowest(self):
+        """Mixed PLA (60) + Nylon (20) → most restrictive = 20."""
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{"tray_type": "PLA Basic"}, {"tray_type": "PA Glass"}],
+            {"default": 60, "PLA": 60, "PA": 20},
+            60,
+        )
+        assert result == 20
+
+    def test_unknown_type_uses_default_key(self):
+        """Tray type not in the map falls back to the 'default' key, not the
+        caller fallback. Lets the user tune unknown-filament behavior."""
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{"tray_type": "EXOTIC_WOOD"}],
+            {"default": 40, "PLA": 60},
+            999,
+        )
+        assert result == 40
+
+    def test_empty_tray_slots_skipped(self):
+        """Empty tray_type strings (unloaded slots) contribute no constraint."""
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{"tray_type": ""}, {"tray_type": "PLA"}],
+            {"default": 30, "PLA": 50},
+            60,
+        )
+        assert result == 50
+
+    def test_all_empty_trays_uses_default_key(self):
+        """No loaded trays at all → falls back to default key (or fallback if
+        no overrides). Matches the empty-AMS behavior of the existing alarm
+        site so an empty AMS still alarms at the user's default rate."""
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{"tray_type": ""}, {}],
+            {"default": 30, "PLA": 50},
+            60,
+        )
+        assert result == 30
+
+    def test_filament_name_normalized(self):
+        """Tray types like 'PLA Basic', 'pla basic' all normalize to 'PLA'."""
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{"tray_type": "pla basic"}],
+            {"default": 60, "PLA": 25},
+            60,
+        )
+        assert result == 25
+
+    def test_no_tray_type_field_skipped(self):
+        """Missing tray_type field is treated as empty (unloaded)."""
+        result = PrintScheduler.resolve_humidity_threshold(
+            [{}, {"tray_type": "ASA"}],
+            {"default": 60, "ASA": 30},
+            60,
+        )
+        assert result == 30
+
+
+class TestGetHumidityThresholds:
+    """The DB-loading helper for ``ams_humidity_thresholds`` (#1605)."""
+
+    @pytest.fixture
+    def scheduler(self):
+        return PrintScheduler()
+
+    @pytest.mark.asyncio
+    async def test_missing_setting_returns_empty(self, scheduler):
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None)))
+        result = await scheduler._get_humidity_thresholds(db)
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_empty_value_returns_empty(self, scheduler):
+        db = AsyncMock()
+        setting = MagicMock(value="")
+        db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=setting)))
+        result = await scheduler._get_humidity_thresholds(db)
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_returns_empty(self, scheduler):
+        db = AsyncMock()
+        setting = MagicMock(value="not json{")
+        db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=setting)))
+        result = await scheduler._get_humidity_thresholds(db)
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_valid_json_normalizes_keys(self, scheduler):
+        """Filament-type keys uppercase; 'default' preserved."""
+        db = AsyncMock()
+        setting = MagicMock(value='{"default": 60, "pla": 50, "ASA": 30, "garbage": "x"}')
+        db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=setting)))
+        result = await scheduler._get_humidity_thresholds(db)
+        assert result == {"default": 60, "PLA": 50, "ASA": 30}
+
+
+class TestMidPrintDrying(_DryingTestBase):
+    """Tests for the print_drying_enabled path — drying that runs CONCURRENTLY
+    with an active print on capable hardware (H2D / H2C / H2S / P2S / X2D / X1C /
+    A2L / H2D Pro on recent firmware). Distinct from idle drying.
+
+    Verifies:
+      - With the toggle ON and capable hardware, a printer in the busy set is
+        still evaluated and drying fires at the capped temperature.
+      - The temperature cap is max(40, preset_temp - 5) — protects spools.
+      - With the toggle OFF, the existing busy-printer skip still applies.
+      - With the toggle ON but unsupported firmware, the busy-printer skip
+        still applies (gated by supports_drying_while_printing).
+    """
+
+    @pytest.fixture
+    def scheduler(self):
+        return PrintScheduler()
+
+    @staticmethod
+    def _ams_unit(humidity: str = "75"):
+        return {
+            "id": 0,
+            "module_type": "n3f",
+            "dry_time": 0,
+            "humidity_raw": humidity,
+            "dry_sf_reason": [],
+            "tray": [{"tray_type": "PLA"}],
+        }
+
+    def _state(self, firmware: str):
+        state = MagicMock()
+        state.raw_data = {"ams": [self._ams_unit()]}
+        state.firmware_version = firmware
+        return state
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    async def test_running_printer_dries_when_enabled_and_capable(self, mock_pm, scheduler):
+        """Toggle ON + capable hardware: running printer dries at capped temp."""
+        mock_pm.get_status.return_value = self._state("01.03.00.00")
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "H2D"
+        mock_pm.send_drying_command.return_value = True
+
+        scheduler._is_printer_idle = MagicMock(return_value=False)
+        db = AsyncMock()
+        settings_returns = {
+            "queue_drying_enabled": self._make_setting("true"),
+            "ambient_drying_enabled": self._make_setting("false"),
+            "print_drying_enabled": self._make_setting("true"),
+            "ams_humidity_fair": self._make_setting("60"),
+            "queue_drying_block": self._make_setting("false"),
+            "drying_presets": None,
+        }
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+
+        # Printer 1 is in busy_printers — would normally be skipped
+        await scheduler._check_auto_drying(db, [], {1})
+
+        # PLA preset is 45 degC for n3f; mid-print cap is max(40, 45-5) = 40
+        mock_pm.send_drying_command.assert_called_once_with(1, 0, 40, 12, mode=1, filament="PLA")
+        assert 1 in scheduler._drying_in_progress
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    async def test_temp_cap_applied_above_floor(self, mock_pm, scheduler):
+        """Higher-temp filament (PETG n3f=65) caps to 60, not floor."""
+        state = MagicMock()
+        state.raw_data = {
+            "ams": [
+                {
+                    "id": 0,
+                    "module_type": "n3f",
+                    "dry_time": 0,
+                    "humidity_raw": "75",
+                    "dry_sf_reason": [],
+                    "tray": [{"tray_type": "PETG"}],
+                }
+            ]
+        }
+        state.firmware_version = "01.03.00.00"
+        mock_pm.get_status.return_value = state
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "H2D"
+        mock_pm.send_drying_command.return_value = True
+
+        scheduler._is_printer_idle = MagicMock(return_value=False)
+        db = AsyncMock()
+        settings_returns = {
+            "queue_drying_enabled": self._make_setting("true"),
+            "ambient_drying_enabled": self._make_setting("false"),
+            "print_drying_enabled": self._make_setting("true"),
+            "ams_humidity_fair": self._make_setting("60"),
+            "queue_drying_block": self._make_setting("false"),
+            "drying_presets": None,
+        }
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+
+        await scheduler._check_auto_drying(db, [], {1})
+
+        # PETG preset 65 -> max(40, 65-5) = 60
+        mock_pm.send_drying_command.assert_called_once_with(1, 0, 60, 12, mode=1, filament="PETG")
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_running_printer_skipped_when_toggle_off(self, mock_sd, mock_pm, scheduler):
+        """Toggle OFF: running printer is skipped even on capable hardware."""
+        mock_pm.get_status.return_value = self._state("01.03.00.00")
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "H2D"
+
+        scheduler._is_printer_idle = MagicMock(return_value=False)
+        db = AsyncMock()
+        settings_returns = {
+            "queue_drying_enabled": self._make_setting("true"),
+            "ambient_drying_enabled": self._make_setting("false"),
+            "print_drying_enabled": self._make_setting("false"),
+            "ams_humidity_fair": self._make_setting("60"),
+            "queue_drying_block": self._make_setting("false"),
+            "drying_presets": None,
+        }
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+
+        await scheduler._check_auto_drying(db, [], {1})
+
+        mock_pm.send_drying_command.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    async def test_running_printer_skipped_when_firmware_too_old(self, mock_pm, scheduler):
+        """Toggle ON but firmware below matrix threshold: skip."""
+        # H2D matrix minimum is 01.03.00.00; this is below
+        mock_pm.get_status.return_value = self._state("01.02.30.00")
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "H2D"
+
+        scheduler._is_printer_idle = MagicMock(return_value=False)
+        db = AsyncMock()
+        settings_returns = {
+            "queue_drying_enabled": self._make_setting("true"),
+            "ambient_drying_enabled": self._make_setting("false"),
+            "print_drying_enabled": self._make_setting("true"),
+            "ams_humidity_fair": self._make_setting("60"),
+            "queue_drying_block": self._make_setting("false"),
+            "drying_presets": None,
+        }
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+
+        await scheduler._check_auto_drying(db, [], {1})
+
+        mock_pm.send_drying_command.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    async def test_running_printer_skipped_when_model_excluded(self, mock_pm, scheduler):
+        """Toggle ON, recent firmware, but excluded model (A1): skip."""
+        mock_pm.get_status.return_value = self._state("99.99.99.99")
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "A1"
+
+        scheduler._is_printer_idle = MagicMock(return_value=False)
+        db = AsyncMock()
+        settings_returns = {
+            "queue_drying_enabled": self._make_setting("true"),
+            "ambient_drying_enabled": self._make_setting("false"),
+            "print_drying_enabled": self._make_setting("true"),
+            "ams_humidity_fair": self._make_setting("60"),
+            "queue_drying_block": self._make_setting("false"),
+            "drying_presets": None,
+        }
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+
+        await scheduler._check_auto_drying(db, [], {1})
+
+        mock_pm.send_drying_command.assert_not_called()

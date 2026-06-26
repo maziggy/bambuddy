@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -21,6 +21,7 @@ import { AddNotificationModal } from '../components/AddNotificationModal';
 import { NotificationTemplateEditor } from '../components/NotificationTemplateEditor';
 import { NotificationLogViewer } from '../components/NotificationLogViewer';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { ApiKeyQRCodeModal } from '../components/ApiKeyQRCodeModal';
 import { CreateUserAdvancedAuthModal } from '../components/CreateUserAdvancedAuthModal';
 import { LdapUserPicker } from '../components/LdapUserPicker';
 import { SpoolmanSettings } from '../components/SpoolmanSettings';
@@ -168,6 +169,11 @@ export function SettingsPage() {
     setLightStyle, setLightBackground, setLightAccent,
   } = useTheme();
   const [localSettings, setLocalSettings] = useState<AppSettings | null>(null);
+  // Transient typed strings for the per-filament humidity threshold inputs
+  // (#1605). Committed back to localSettings.ams_humidity_thresholds on blur
+  // so intermediate values ("", "3", "5") are not eaten by the [5, 95] clamp
+  // while the user is mid-typing.
+  const [humidityDrafts, setHumidityDrafts] = useState<Record<string, string>>({});
   const [showPlugModal, setShowPlugModal] = useState(false);
   const [editingPlug, setEditingPlug] = useState<SmartPlug | null>(null);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
@@ -210,6 +216,7 @@ export function SettingsPage() {
     can_update_energy_cost: false,
   });
   const [createdAPIKey, setCreatedAPIKey] = useState<string | null>(null);
+  const [showApiKeyQR, setShowApiKeyQR] = useState(false);
   const [showDeleteAPIKeyConfirm, setShowDeleteAPIKeyConfirm] = useState<number | null>(null);
   const [testApiKey, setTestApiKey] = useState('');
 
@@ -547,7 +554,7 @@ export function SettingsPage() {
   });
 
   // Advanced auth status for user creation
-  const { data: advancedAuthStatus = { advanced_auth_enabled: false, smtp_configured: false } } = useQuery({
+  const { data: advancedAuthStatus = { advanced_auth_enabled: false, smtp_configured: false, local_login_enabled: true, autologin_provider_id: null } } = useQuery({
     queryKey: ['advancedAuthStatus'],
     queryFn: () => api.getAdvancedAuthStatus(),
   });
@@ -766,7 +773,7 @@ export function SettingsPage() {
   const applyUpdateMutation = useMutation({
     mutationFn: api.applyUpdate,
     onSuccess: (data) => {
-      if (data.is_ha_addon || data.is_docker) {
+      if (data.is_ha_addon || data.is_docker || data.is_windows_installer) {
         showToast(data.message, 'error');
       } else {
         refetchUpdateStatus();
@@ -927,6 +934,7 @@ export function SettingsPage() {
       settings.check_updates !== localSettings.check_updates ||
       (settings.check_printer_firmware ?? true) !== (localSettings.check_printer_firmware ?? true) ||
       (settings.include_beta_updates ?? false) !== (localSettings.include_beta_updates ?? false) ||
+      (settings.local_login_enabled ?? true) !== (localSettings.local_login_enabled ?? true) ||
       settings.notification_language !== localSettings.notification_language ||
       (settings.bed_cooled_threshold ?? 35) !== (localSettings.bed_cooled_threshold ?? 35) ||
       settings.ams_humidity_good !== localSettings.ams_humidity_good ||
@@ -939,7 +947,9 @@ export function SettingsPage() {
       (settings.queue_drying_enabled ?? false) !== (localSettings.queue_drying_enabled ?? false) ||
       (settings.queue_drying_block ?? false) !== (localSettings.queue_drying_block ?? false) ||
       (settings.ambient_drying_enabled ?? false) !== (localSettings.ambient_drying_enabled ?? false) ||
+      (settings.print_drying_enabled ?? false) !== (localSettings.print_drying_enabled ?? false) ||
       (settings.drying_presets ?? '') !== (localSettings.drying_presets ?? '') ||
+      (settings.ams_humidity_thresholds ?? '') !== (localSettings.ams_humidity_thresholds ?? '') ||
       settings.per_printer_mapping_expanded !== localSettings.per_printer_mapping_expanded ||
       settings.date_format !== localSettings.date_format ||
       settings.time_format !== localSettings.time_format ||
@@ -1018,6 +1028,7 @@ export function SettingsPage() {
         check_updates: localSettings.check_updates,
         check_printer_firmware: localSettings.check_printer_firmware,
         include_beta_updates: localSettings.include_beta_updates,
+        local_login_enabled: localSettings.local_login_enabled,
         notification_language: localSettings.notification_language,
         bed_cooled_threshold: localSettings.bed_cooled_threshold,
         ams_humidity_good: localSettings.ams_humidity_good,
@@ -1030,7 +1041,9 @@ export function SettingsPage() {
         queue_drying_enabled: localSettings.queue_drying_enabled,
         queue_drying_block: localSettings.queue_drying_block,
         ambient_drying_enabled: localSettings.ambient_drying_enabled,
+        print_drying_enabled: localSettings.print_drying_enabled,
         drying_presets: localSettings.drying_presets,
+        ams_humidity_thresholds: localSettings.ams_humidity_thresholds,
         per_printer_mapping_expanded: localSettings.per_printer_mapping_expanded,
         date_format: localSettings.date_format,
         time_format: localSettings.time_format,
@@ -1457,6 +1470,36 @@ export function SettingsPage() {
       </nav>
       <div className="flex-1 min-w-0">
       {activeTab === 'general' && (
+      <>
+      {/* Sponsor banner — prominent independence callout */}
+      <a
+        href="https://bambuddy.cool/sponsors.html?from=app-settings"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group block mb-4 lg:mb-6 rounded-xl border border-bambu-green/30 bg-gradient-to-br from-bambu-green/15 via-bambu-green/5 to-transparent hover:border-bambu-green/50 hover:from-bambu-green/20 transition-colors"
+      >
+        <div className="flex flex-col md:flex-row items-start md:items-center gap-4 p-4 md:p-5">
+          <div className="p-3 rounded-lg bg-bambu-green/20 text-bambu-green flex-shrink-0">
+            <Heart className="w-6 h-6" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-base font-semibold text-white">
+              {t('sponsors.sectionTitle', 'Independent & community-funded')}
+            </p>
+            <p className="text-sm text-bambu-gray mt-0.5">
+              {t(
+                'sponsors.tagline',
+                'Bambuddy is free and stays that way because people choose to support it. No VC, no cloud lock-in.'
+              )}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-bambu-green/20 text-bambu-green group-hover:bg-bambu-green/30 text-sm font-medium whitespace-nowrap self-start md:self-auto">
+            {t('sponsors.viewSupporters', 'View supporters')}
+            <ExternalLink className="w-4 h-4" />
+          </div>
+        </div>
+      </a>
+
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
         {/* Left Column - General Settings */}
         <div className="space-y-3 flex-1 lg:max-w-xl">
@@ -2517,6 +2560,21 @@ export function SettingsPage() {
                           docker compose pull && docker compose up -d
                         </code>
                       </div>
+                    ) : updateCheck?.update_method === 'windows_installer' ? (
+                      <div className="mt-3 p-3 bg-bambu-dark-tertiary rounded-lg">
+                        <p className="text-sm text-bambu-gray mb-3">
+                          {t('settings.updateViaWindowsInstaller')}
+                        </p>
+                        <a
+                          href={updateCheck.installer_download_url || updateCheck.release_url || `https://github.com/maziggy/bambuddy/releases/tag/v${updateCheck.latest_version}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-bambu-dark disabled:opacity-50 bg-bambu-green hover:bg-bambu-green-light text-white focus:ring-bambu-green px-4 py-2 text-sm gap-2 min-h-[44px] md:min-h-0"
+                        >
+                          <Download className="w-4 h-4" />
+                          {t('settings.downloadWindowsInstaller', { version: updateCheck.latest_version })}
+                        </a>
+                      </div>
                     ) : (
                       <Button
                         className="mt-3"
@@ -2549,6 +2607,7 @@ export function SettingsPage() {
           <ExternalLinksSettings />
         </div>
       </div>
+      </>
       )}
 
       {/* Network Tab */}
@@ -3657,7 +3716,18 @@ export function SettingsPage() {
                         <Button
                           variant="secondary"
                           size="sm"
-                          onClick={() => setCreatedAPIKey(null)}
+                          onClick={() => setShowApiKeyQR(true)}
+                        >
+                          <QrCode className="w-4 h-4" />
+                          {t('settings.apiKeyQrButton')}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setShowApiKeyQR(false);
+                            setCreatedAPIKey(null);
+                          }}
                         >
                           {t('common.dismiss')}
                         </Button>
@@ -3666,6 +3736,16 @@ export function SettingsPage() {
                   </div>
                 </CardContent>
               </Card>
+            )}
+
+            {/* QR code with base URL + key for mobile clients. Prefer the
+                configured External URL; fall back to the current origin. */}
+            {showApiKeyQR && createdAPIKey && (
+              <ApiKeyQRCodeModal
+                apiKey={createdAPIKey}
+                baseUrl={localSettings?.external_url || undefined}
+                onClose={() => setShowApiKeyQR(false)}
+              />
             )}
 
             {/* Create Key Form */}
@@ -4507,6 +4587,25 @@ export function SettingsPage() {
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
                 </label>
               </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="block text-sm text-white">
+                    {t('settings.printDryingEnabled')}
+                  </label>
+                  <p className="text-xs text-bambu-gray mt-0.5">
+                    {t('settings.printDryingEnabledDescription')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.print_drying_enabled ?? false}
+                    onChange={(e) => updateSetting('print_drying_enabled', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
               {/* Drying Presets Table */}
               <div className="space-y-2">
                 <p className="text-sm text-white font-medium">{t('settings.dryingPresets')}</p>
@@ -4593,6 +4692,108 @@ export function SettingsPage() {
                   </table>
                 </div>
               </div>
+              {/* Per-Filament Humidity Thresholds (#1605) */}
+              <div className="space-y-2">
+                <p className="text-sm text-white font-medium">{t('settings.humidityThresholds')}</p>
+                <p className="text-xs text-bambu-gray">{t('settings.humidityThresholdsDescription')}</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-bambu-gray border-b border-bambu-dark-tertiary">
+                        <th className="text-left py-1.5">{t('settings.dryingFilament')}</th>
+                        <th className="text-right py-1.5 pr-2">{t('settings.humidityThresholdCol')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        const defaultFair = localSettings.ams_humidity_fair ?? 60;
+                        const filamentTypes = ['PLA', 'PETG', 'TPU', 'ABS', 'ASA', 'PA', 'PC', 'PVA'];
+                        let thresholds: Record<string, number> = {};
+                        try {
+                          if (localSettings.ams_humidity_thresholds) {
+                            const parsed = JSON.parse(localSettings.ams_humidity_thresholds);
+                            if (typeof parsed === 'object' && parsed !== null) {
+                              thresholds = parsed;
+                            }
+                          }
+                        } catch { /* invalid → empty */ }
+
+                        const rows: Array<{ key: string; label: string; value: number; isDefault: boolean }> = [
+                          {
+                            key: 'default',
+                            label: t('settings.humidityThresholdDefault'),
+                            value: Number(thresholds.default ?? defaultFair),
+                            isDefault: true,
+                          },
+                          ...filamentTypes.map((fil) => ({
+                            key: fil,
+                            label: fil,
+                            value: Number(thresholds[fil] ?? thresholds.default ?? defaultFair),
+                            isDefault: false,
+                          })),
+                        ];
+
+                        const commitThreshold = (key: string, raw: string) => {
+                          // Empty / blank → drop the override, falling back to
+                          // the default (or to ams_humidity_fair for the
+                          // default row itself).
+                          if (raw.trim() === '') {
+                            const next = { ...thresholds };
+                            delete next[key];
+                            updateSetting('ams_humidity_thresholds', JSON.stringify(next));
+                            return;
+                          }
+                          const parsed = parseInt(raw, 10);
+                          if (Number.isNaN(parsed)) {
+                            return;
+                          }
+                          const clamped = Math.max(5, Math.min(95, parsed));
+                          const next = { ...thresholds, [key]: clamped };
+                          updateSetting('ams_humidity_thresholds', JSON.stringify(next));
+                        };
+
+                        return rows.map((row) => {
+                          // Show the draft string if the user is mid-edit;
+                          // otherwise fall through to the resolved row value.
+                          const draft = humidityDrafts[row.key];
+                          const displayValue = draft !== undefined ? draft : String(row.value);
+                          return (
+                            <tr key={row.key} className="border-b border-bambu-dark-tertiary/50">
+                              <td className={`py-1.5 pr-2 font-medium ${row.isDefault ? 'text-bambu-gray italic' : 'text-white'}`}>{row.label}</td>
+                              <td className="py-1 pr-2">
+                                <div className="flex items-center justify-end gap-1">
+                                  <input
+                                    type="number"
+                                    min={5}
+                                    max={95}
+                                    value={displayValue}
+                                    onChange={(e) => setHumidityDrafts((prev) => ({ ...prev, [row.key]: e.target.value }))}
+                                    onBlur={(e) => {
+                                      commitThreshold(row.key, e.target.value);
+                                      setHumidityDrafts((prev) => {
+                                        const next = { ...prev };
+                                        delete next[row.key];
+                                        return next;
+                                      });
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        (e.currentTarget as HTMLInputElement).blur();
+                                      }
+                                    }}
+                                    className="w-14 px-1.5 py-1 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-center text-xs focus:border-amber-500/50 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  />
+                                  <span className="text-bambu-gray">%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </CardContent>
           </Card>
           </div>
@@ -4633,6 +4834,9 @@ export function SettingsPage() {
                     <p className="text-white">{t('settings.preferLowestFilament')}</p>
                     <p className="text-sm text-bambu-gray">
                       {t('settings.preferLowestFilamentDesc')}
+                    </p>
+                    <p className="text-xs text-bambu-gray/70 mt-1">
+                      {t('settings.preferLowestFilamentBackupNote')}
                     </p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
@@ -5470,7 +5674,23 @@ export function SettingsPage() {
           )}
 
           {usersSubTab === 'oidc' && isAdmin && (
-            <div className="max-w-3xl">
+            <div className="max-w-3xl space-y-4">
+              <Card>
+                <CardContent className="space-y-3 p-4">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={localSettings.local_login_enabled === false}
+                      onChange={(e) => updateSetting('local_login_enabled', !e.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-green focus:ring-bambu-green/50 cursor-pointer"
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-white">{t('settings.localLogin.disable')}</p>
+                      <p className="text-xs text-bambu-gray mt-0.5">{t('settings.localLogin.disableHint')}</p>
+                    </div>
+                  </label>
+                </CardContent>
+              </Card>
               <OIDCProviderSettings />
             </div>
           )}

@@ -40,6 +40,7 @@ function buildProvider(overrides: Partial<NotificationProvider> = {}): Notificat
     on_print_missing_spool_assignment: false,
     on_printer_offline: false,
     on_printer_error: false,
+    on_ai_failure_detection: false,
     on_filament_low: false,
     on_maintenance_due: false,
     on_ams_humidity_high: false,
@@ -334,5 +335,54 @@ describe('AddNotificationModal — stock alert toggles', () => {
     expect(within(priorityRoot).getByText('Reorder Alert')).toBeInTheDocument();
     expect(within(priorityRoot).getByText('Stock Break Alert')).toBeInTheDocument();
     void user; // referenced to avoid unused-var lint warning
+  });
+});
+
+describe('AddNotificationModal — AI Failure Detection toggle (#1794)', () => {
+  it('renders the toggle in the Printer Status section', async () => {
+    render(<AddNotificationModal provider={buildProvider()} onClose={() => undefined} />);
+
+    expect(await screen.findByText('AI Failure Detection')).toBeInTheDocument();
+  });
+
+  it('persists on_ai_failure_detection on save (and does NOT touch on_printer_error)', async () => {
+    let captured: Record<string, unknown> | null = null;
+    server.use(
+      http.patch('*/api/v1/notifications/1', async ({ request }) => {
+        captured = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ id: 1 });
+      }),
+    );
+
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<AddNotificationModal provider={buildProvider()} onClose={onClose} />);
+
+    const label = await screen.findByText('AI Failure Detection');
+    const row = label.closest('div.flex')!;
+    const toggle = within(row).getByRole('switch');
+    await user.click(toggle);
+
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+
+    expect(captured).not.toBeNull();
+    expect(captured!.on_ai_failure_detection).toBe(true);
+    // Critical regression guard: don't accidentally flip the legacy multiplexed field.
+    expect(captured!.on_printer_error).toBe(false);
+  });
+
+  it('AI Failure Detection appears in ntfy priority section when enabled', async () => {
+    render(
+      <AddNotificationModal
+        provider={buildProvider({ on_ai_failure_detection: true })}
+        onClose={() => undefined}
+      />,
+    );
+
+    const priorityHeader = await screen.findByText(/ntfy priority/i);
+    const priorityRoot = priorityHeader.closest('div')!;
+
+    expect(within(priorityRoot).getByText('AI Failure Detection')).toBeInTheDocument();
   });
 });

@@ -310,26 +310,37 @@ export function useWebSocket() {
         debouncedInvalidate('inventory-spools');
         break;
 
-      case 'unknown_tag':
-        // Unknown RFID tag detected - dispatch event for UI
+      case 'unknown_tag': {
+        // Unknown RFID tag detected — dispatch event for UI. The backend
+        // ships the slot's current tray data alongside the event so
+        // consumers don't have to look it up from the (frequently stale)
+        // cached printerStatus query.
+        const m = message as unknown as {
+          printer_id?: number;
+          ams_id?: number;
+          tray_id?: number;
+          tag_uid?: string;
+          tray_uuid?: string;
+          tray_type?: string | null;
+          tray_color?: string | null;
+          tray_sub_brands?: string | null;
+          tray_count?: number | null;
+        };
         window.dispatchEvent(new CustomEvent('unknown-tag', {
           detail: {
-            printer_id: (message as unknown as { printer_id?: number }).printer_id,
-            ams_id: (message as unknown as { ams_id?: number }).ams_id,
-            tray_id: (message as unknown as { tray_id?: number }).tray_id,
-            tag_uid: (message as unknown as { tag_uid?: string }).tag_uid,
-            tray_uuid: (message as unknown as { tray_uuid?: string }).tray_uuid,
+            printer_id: m.printer_id,
+            ams_id: m.ams_id,
+            tray_id: m.tray_id,
+            tag_uid: m.tag_uid,
+            tray_uuid: m.tray_uuid,
+            tray_type: m.tray_type,
+            tray_color: m.tray_color,
+            tray_sub_brands: m.tray_sub_brands,
+            tray_count: m.tray_count,
           }
         }));
         break;
-
-      case 'background_dispatch':
-        window.dispatchEvent(
-          new CustomEvent('background-dispatch', {
-            detail: (message as unknown as { data?: Record<string, unknown> }).data || {},
-          })
-        );
-        break;
+      }
 
       case 'spoolbuddy_weight':
         window.dispatchEvent(new CustomEvent('spoolbuddy-weight', { detail: message }));

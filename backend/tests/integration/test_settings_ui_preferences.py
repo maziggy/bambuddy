@@ -83,6 +83,7 @@ class TestUiPreferencesEndpoint:
             "time_format",
             "date_format",
             "drying_presets",
+            "ams_humidity_thresholds",
             "ams_humidity_good",
             "ams_humidity_fair",
             "ams_temp_good",

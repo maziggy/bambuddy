@@ -488,6 +488,35 @@ describe('SettingsPage', () => {
       expect(screen.queryByText(/Home Assistant Supervisor/i)).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /install update/i })).not.toBeInTheDocument();
     });
+
+    it('shows the installer-download link for Windows installer installs', async () => {
+      const downloadUrl =
+        'https://github.com/maziggy/bambuddy/releases/download/v0.2.5/bambuddy-0.2.5-windows-x64-setup.exe';
+      await renderWithUpdateCheck({
+        update_available: true,
+        current_version: '0.2.4',
+        latest_version: '0.2.5',
+        release_name: '0.2.5',
+        release_notes: '',
+        release_url: 'https://github.com/maziggy/bambuddy/releases/tag/v0.2.5',
+        published_at: '2099-01-01T00:00:00Z',
+        is_docker: false,
+        is_ha_addon: false,
+        is_windows_installer: true,
+        update_method: 'windows_installer',
+        installer_download_url: downloadUrl,
+      });
+
+      const link = await screen.findByRole('link', { name: /download installer for v0\.2\.5/i });
+      expect(link).toHaveAttribute('href', downloadUrl);
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+      // The in-app update button must NOT render — the git-fetch path can't
+      // work from an installer payload.
+      expect(screen.queryByRole('button', { name: /install update/i })).not.toBeInTheDocument();
+      expect(screen.queryByText(/Home Assistant Supervisor/i)).not.toBeInTheDocument();
+      expect(screen.queryByText('docker compose pull && docker compose up -d')).not.toBeInTheDocument();
+    });
   });
 
   describe('tabs navigation', () => {
@@ -602,6 +631,29 @@ describe('SettingsPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Queue Auto-Drying')).toBeInTheDocument();
+      });
+    });
+
+    it('shows per-filament humidity threshold editor on Workflow tab (#1605)', async () => {
+      const user = userEvent.setup();
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Workflow')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('Workflow'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Humidity Thresholds')).toBeInTheDocument();
+        // Default row is unique to the humidity editor (drying presets has no
+        // default row), so we can pin it without disambiguating from the
+        // adjacent drying-presets table that also lists PLA/ASA/etc.
+        expect(screen.getByText('Default (unknown types)')).toBeInTheDocument();
+        // Filament rows render in both tables — assert by count instead of
+        // a single getByText. 8 default filaments × 2 tables = 16 PLAs etc.
+        expect(screen.getAllByText('PLA').length).toBeGreaterThanOrEqual(2);
+        expect(screen.getAllByText('ASA').length).toBeGreaterThanOrEqual(2);
       });
     });
 

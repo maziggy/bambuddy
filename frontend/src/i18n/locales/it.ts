@@ -193,6 +193,25 @@ export default {
       large: 'Schede grandi',
       extraLarge: 'Schede extra grandi',
     },
+    pageView: {
+      cards: 'Schede',
+      camWall: 'Muro telecamere',
+    },
+    camWall: {
+      noPrinters: 'Nessuna stampante da mostrare',
+      noSignal: 'Nessun segnale',
+      live: 'Live',
+      snap: 'Foto',
+      off: 'Spento',
+      summary: '{{live}} live, {{snap}} foto, {{total}} totali',
+      settings: {
+        title: 'Impostazioni muro telecamere',
+        maxLive: 'Max stream live',
+        maxLiveHint: 'Quante tessere trasmettono in live contemporaneamente. Le altre si aggiornano come foto.',
+        snapshotInterval: 'Intervallo foto (secondi)',
+        snapshotIntervalHint: 'Con quale frequenza le tessere non live scaricano una nuova foto.',
+      },
+    },
     // Controls
     hideOffline: 'Nascondi offline',
     nextAvailable: 'Prossima disponibile',
@@ -535,11 +554,13 @@ export default {
       hours: 'ore',
       timeRemaining: '{{time}} rimanente',
       active: 'Essiccazione',
+      targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Essiccazione non supportata',
       powerRequired: 'Collegare l\'alimentatore AMS per abilitare l\'asciugatura',
       startingDrying: 'Avvio essiccazione...',
       stoppingDrying: 'Arresto essiccazione...',
       rotateTray: 'Ruota la bobina durante l\'essiccazione',
+      rotateUnavailableReason: 'Non disponibile — uno slot di questo AMS è caricato verso la testa di stampa. La bobina è bloccata dal tubo di alimentazione e non può ruotare. Ritrai prima il filamento.',
     },
     amsBackup: {
       titleOn: 'AMS Filament Backup è ATTIVO. Clicca per disabilitare.',
@@ -1759,6 +1780,10 @@ export default {
     checkPrinterFirmware: 'Controlla firmware stampante',
     includeBetaUpdates: 'Includi versioni beta',
     includeBetaUpdatesDesc: 'Notifica versioni beta e prerelease durante il controllo aggiornamenti',
+    localLogin: {
+      disable: 'Disabilita l\'accesso locale con nome utente/password',
+      disableHint: 'Quando attivato, solo i provider SSO possono accedere. LDAP non è interessato. Imposta BAMBUDDY_LOCAL_LOGIN=true sul server per mantenere un percorso di ripristino.',
+    },
     // Queue
     enableRetry: 'Abilita retry',
     // Home Assistant
@@ -1927,6 +1952,8 @@ export default {
     queueDryingBlockDescription: 'Blocca la coda di stampa fino al completamento dell\'asciugatura. Se disattivato, le stampe hanno priorità.',
     ambientDryingEnabled: 'Asciugatura ambientale',
     ambientDryingEnabledDescription: 'Asciuga automaticamente il filamento sulle stampanti inattive quando l\'umidità supera la soglia, anche senza stampe in coda.',
+    printDryingEnabled: 'Asciugatura durante la stampa',
+    printDryingEnabledDescription: 'Consente all\'asciugatura automatica di continuare durante una stampa su hardware supportato (H2D, H2C, H2S, P2S, H2D Pro, X2D, X1C, A2L con firmware recente). La temperatura di asciugatura viene automaticamente limitata a 5°C sotto il preset di riposo per proteggere le bobine.',
     dryingPresets: 'Preset di asciugatura',
     dryingPresetsDescription: 'Temperatura e durata per tipo di filamento. AMS 2 Pro usa temperature più basse, AMS-HT supporta temperature più alte.',
     dryingFilament: 'Filamento',
@@ -2413,6 +2440,8 @@ export default {
         defaultGroup: 'Gruppo predefinito',
         defaultGroupDesc: 'Gruppo assegnato agli utenti creati automaticamente. Ritorno a Viewers se non impostato.',
         defaultGroupViewersFallback: 'Viewers (predefinito)',
+        autologin: 'Accesso automatico',
+        autologinDesc: 'Reindirizza i visitatori non autenticati direttamente a questo provider. Solo un provider può avere questo flag.',
       },
     },
 
@@ -2607,6 +2636,8 @@ export default {
     signingIn: 'Accesso in corso...',
     rememberMe: 'Ricordami',
     forgotPassword: 'Hai dimenticato la password?',
+    autologinFailed: 'Accesso SSO automatico fallito. Scegli un provider qui sotto per continuare.',
+    localDisabledNotice: 'L\'accesso locale è disabilitato. Usa uno dei provider SSO qui sotto.',
     loginSuccess: 'Accesso riuscito',
     loginFailed: 'Accesso fallito',
     enterCredentials: 'Inserisci nome utente e password',

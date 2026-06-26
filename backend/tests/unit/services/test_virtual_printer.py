@@ -2964,7 +2964,7 @@ class TestSlicerProxyManager:
         slicer and printer for all protocols except MQTT, which must be
         TLS-terminated to rewrite the printer's IP in MQTT payloads.
         """
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import patch
 
         from backend.app.services.virtual_printer.tcp_proxy import (
             SlicerProxyManager,
@@ -2984,16 +2984,22 @@ class TestSlicerProxyManager:
             bind_address="10.0.0.1",
         )
 
-        # Mock asyncio.create_task and asyncio.gather to prevent actual server start
+        # Mock asyncio.create_task and asyncio.gather to prevent actual
+        # server start. Close every coroutine handed to gather — otherwise
+        # the ~110 run_with_logging() coros built inside start() are
+        # garbage-collected unfinalized and surface later as
+        # PytestUnraisableExceptionWarning at random in other tests.
+        async def _close_pending(*coros, **_):
+            for c in coros:
+                if asyncio.iscoroutine(c):
+                    c.close()
+
         with (
             patch("asyncio.create_task") as mock_create_task,
-            patch("asyncio.gather", new_callable=AsyncMock),
+            patch("asyncio.gather", side_effect=_close_pending),
             patch.object(SlicerProxyManager, "_log_activity"),
         ):
             mock_create_task.return_value = MagicMock()
-            # start() will create proxies then try to gather tasks — we just
-            # need to verify the proxy types after creation.
-            # Trigger start but let gather return immediately.
             await mgr.start()
 
         # FTP, FileTransfer, RTSP should be TCPProxy (transparent)

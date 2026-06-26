@@ -1356,7 +1356,12 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
 
     await ws_manager.send_printer_status(
         printer_id,
-        printer_state_to_dict(state, printer_id, printer_manager.get_model(printer_id)),
+        printer_state_to_dict(
+            state,
+            printer_id,
+            printer_manager.get_model(printer_id),
+            printer_manager.get_drying_targets(printer_id),
+        ),
     )
 
 
@@ -1391,7 +1396,12 @@ async def on_ams_change(printer_id: int, ams_data: list):
             logger.info("[Printer %s] Broadcasting AMS change via WebSocket", printer_id)
             await ws_manager.send_printer_status(
                 printer_id,
-                printer_state_to_dict(state, printer_id, printer_manager.get_model(printer_id)),
+                printer_state_to_dict(
+                    state,
+                    printer_id,
+                    printer_manager.get_model(printer_id),
+                    printer_manager.get_drying_targets(printer_id),
+                ),
             )
     except Exception as e:
         logger.warning("Failed to broadcast AMS change for printer %s: %s", printer_id, e)
@@ -6335,6 +6345,14 @@ PUBLIC_API_ROUTES = {
     "/api/v1/updates/version",
     # Metrics endpoint handles its own prometheus_token authentication
     "/api/v1/metrics",
+    # Appliance bootstrap (#1589 follow-up): the SPA's i18n setup polls
+    # this BEFORE a JWT is available to pick up the firstboot wizard's
+    # hostname / timezone / locale and the chrony NTP-gate state. The
+    # response contains user-set defaults and a public sync flag — no
+    # secrets. Without this entry the global auth middleware returns 401
+    # before the route handler runs, regardless of the route's own
+    # "no auth required" intent.
+    "/api/v1/system/appliance",
 }
 
 # Route prefixes that are public (for routes with dynamic segments)

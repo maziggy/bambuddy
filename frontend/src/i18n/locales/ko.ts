@@ -180,6 +180,25 @@ export default {
       large: '큰 카드',
       extraLarge: '아주 큰 카드'
     },
+    pageView: {
+      cards: '카드',
+      camWall: '카메라 월'
+    },
+    camWall: {
+      noPrinters: '표시할 프린터가 없습니다',
+      noSignal: '신호 없음',
+      live: '라이브',
+      snap: '스냅',
+      off: '꺼짐',
+      summary: '라이브 {{live}}개, 스냅 {{snap}}개, 총 {{total}}개',
+      settings: {
+        title: '카메라 월 설정',
+        maxLive: '최대 라이브 스트림',
+        maxLiveHint: '동시에 라이브 스트리밍할 타일 수. 나머지는 스냅샷으로 갱신됩니다.',
+        snapshotInterval: '스냅샷 간격(초)',
+        snapshotIntervalHint: '비라이브 타일이 새 스냅샷을 가져오는 주기.'
+      }
+    },
     hideOffline: '오프라인 숨기기',
     nextAvailable: '다음 가용',
     powerOn: '전원 켜기',
@@ -498,11 +517,13 @@ export default {
       hours: '시간',
       timeRemaining: '{{time}} 남음',
       active: '건조 중',
+      targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: '건조 지원 안 됨',
       powerRequired: '건조를 활성화하려면 AMS 전원 어댑터를 연결하세요',
       startingDrying: '건조 시작 중...',
       stoppingDrying: '건조 정지 중...',
-      rotateTray: '건조 중 스풀 회전'
+      rotateTray: '건조 중 스풀 회전',
+      rotateUnavailableReason: '사용할 수 없음 — 이 AMS의 슬롯이 툴헤드로 로드되어 있습니다. 스풀이 공급 튜브에 의해 고정되어 회전할 수 없습니다. 먼저 필라멘트를 뺀 후 다시 시도하십시오.'
     },
     amsBackup: {
       titleOn: 'AMS 필라멘트 백업이 켜져 있습니다. 비활성화하려면 클릭하세요.',
@@ -1704,6 +1725,10 @@ export default {
     checkPrinterFirmware: '프린터 펌웨어 확인',
     includeBetaUpdates: '베타 버전 포함',
     includeBetaUpdatesDesc: '업데이트 확인 시 베타 및 사전 릴리스 버전에 대해 알림',
+    localLogin: {
+      disable: '로컬 사용자명/비밀번호 로그인 비활성화',
+      disableHint: '활성화하면 SSO 공급자로만 로그인할 수 있습니다. LDAP는 영향을 받지 않습니다. 서버에서 BAMBUDDY_LOCAL_LOGIN=true 를 설정하면 복구 경로가 유지됩니다.'
+    },
     enableRetry: '재시도 활성화',
     homeAssistantDescription: 'Home Assistant를 통해 스마트 플러그 제어',
     environmentManagedLabel: '(환경 변수 관리)',
@@ -1854,6 +1879,8 @@ export default {
     queueDryingBlockDescription: '건조가 완료될 때까지 인쇄 대기열을 차단합니다. 끄면 인쇄가 건조보다 우선합니다.',
     ambientDryingEnabled: '주변 건조',
     ambientDryingEnabledDescription: '대기 중인 인쇄가 없어도 습도가 임계값을 초과하면 유휴 프린터에서 자동으로 필라멘트 건조',
+    printDryingEnabled: '인쇄 중 건조 계속',
+    printDryingEnabledDescription: '지원되는 하드웨어(H2D, H2C, H2S, P2S, H2D Pro, X2D, X1C, A2L 최신 펌웨어)에서 인쇄 중에도 자동 건조를 계속 실행합니다. 스풀 보호를 위해 건조 온도가 유휴 프리셋보다 자동으로 5°C 낮게 제한됩니다.',
     dryingPresets: '건조 프리셋',
     dryingPresetsDescription: '필라멘트 유형별 온도 및 시간. AMS 2 Pro는 낮은 온도, AMS-HT는 높은 온도를 지원합니다.',
     dryingFilament: '필라멘트',
@@ -2321,7 +2348,9 @@ export default {
         requireEmailVerifiedAutoLink: '이 설정을 변경하려면 먼저 자동 연결을 비활성화하세요.',
         defaultGroup: '기본 그룹',
         defaultGroupDesc: '자동 생성된 사용자에게 할당되는 그룹. 설정되지 않으면 Viewers로 대체됩니다.',
-        defaultGroupViewersFallback: 'Viewers (기본값)'
+        defaultGroupViewersFallback: 'Viewers (기본값)',
+        autologin: '자동 로그인',
+        autologinDesc: '인증되지 않은 방문자를 이 공급자로 바로 리디렉션합니다. 이 플래그를 가질 수 있는 공급자는 하나뿐입니다.'
       },
       refreshIcon: '아이콘 새로고침',
       removeIcon: '아이콘 제거',
@@ -2463,6 +2492,8 @@ export default {
     signingIn: '로그인 중...',
     rememberMe: '로그인 유지',
     forgotPassword: '비밀번호를 잊으셨나요?',
+    autologinFailed: 'SSO 자동 로그인에 실패했습니다. 아래에서 계속할 공급자를 선택하세요.',
+    localDisabledNotice: '로컬 로그인이 비활성화되어 있습니다. 아래 SSO 공급자 중 하나를 사용하세요.',
     loginSuccess: '성공적으로 로그인되었습니다',
     loginFailed: '로그인 실패',
     enterCredentials: '사용자명과 비밀번호를 입력하세요',

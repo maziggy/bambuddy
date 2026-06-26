@@ -192,6 +192,25 @@ export default {
       large: '大',
       extraLarge: '特大',
     },
+    pageView: {
+      cards: 'カード',
+      camWall: 'カメラウォール',
+    },
+    camWall: {
+      noPrinters: '表示するプリンターがありません',
+      noSignal: '信号なし',
+      live: 'ライブ',
+      snap: 'スナップ',
+      off: 'オフ',
+      summary: 'ライブ {{live}}件、スナップ {{snap}}件、合計 {{total}}件',
+      settings: {
+        title: 'カメラウォール設定',
+        maxLive: '最大ライブ配信数',
+        maxLiveHint: '同時にライブ配信するタイル数。残りはスナップショットとして更新されます。',
+        snapshotInterval: 'スナップショット間隔（秒）',
+        snapshotIntervalHint: '非ライブのタイルが新しいスナップショットを取得する頻度。',
+      },
+    },
     // Controls
     hideOffline: 'オフラインを非表示',
     nextAvailable: '次に完了',
@@ -534,11 +553,13 @@ export default {
       hours: '時間',
       timeRemaining: '残り {{time}}',
       active: '乾燥中',
+      targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: '乾燥非対応',
       powerRequired: 'AMS電源アダプターを接続して乾燥を有効にしてください',
       startingDrying: '乾燥を開始しています...',
       stoppingDrying: '乾燥を停止しています...',
       rotateTray: '乾燥中にスプールを回転',
+      rotateUnavailableReason: '利用不可 — このAMSのスロットがツールヘッドにロードされています。スプールが供給チューブで固定されているため回転できません。先にフィラメントを引き戻してください。',
     },
     amsBackup: {
       titleOn: 'AMSフィラメントバックアップはONです。クリックして無効化します。',
@@ -1802,6 +1823,10 @@ export default {
     checkPrinterFirmware: 'プリンターファームウェアの確認',
     includeBetaUpdates: 'ベータ版を含める',
     includeBetaUpdatesDesc: 'アップデート確認時にベータ版およびプレリリース版を通知する',
+    localLogin: {
+      disable: 'ローカルのユーザー名／パスワードログインを無効化',
+      disableHint: '有効にすると、SSOプロバイダーのみでサインインできます。LDAPには影響しません。復旧用のパスを残すには、サーバーで BAMBUDDY_LOCAL_LOGIN=true を設定してください。',
+    },
     // Queue
     enableRetry: 'リトライを有効化',
     // Home Assistant
@@ -1970,6 +1995,8 @@ export default {
     queueDryingBlockDescription: '乾燥が完了するまで印刷キューをブロックします。オフの場合、印刷が優先されます。',
     ambientDryingEnabled: '常時乾燥',
     ambientDryingEnabledDescription: 'キューに関係なく、アイドル状態のプリンターで湿度がしきい値を超えた場合に自動的にフィラメントを乾燥。',
+    printDryingEnabled: '印刷中も乾燥を継続',
+    printDryingEnabledDescription: '対応ハードウェア（H2D、H2C、H2S、P2S、H2D Pro、X2D、X1C、A2L、最新ファームウェア）で印刷中も自動乾燥を継続します。スプール保護のため、乾燥温度はアイドル時のプリセットより自動的に5°C低く制限されます。',
     dryingPresets: '乾燥プリセット',
     dryingPresetsDescription: 'フィラメントタイプごとの温度と時間。AMS 2 Proは低温、AMS-HTは高温に対応。',
     dryingFilament: 'フィラメント',
@@ -2470,6 +2497,8 @@ export default {
         defaultGroup: 'デフォルトグループ',
         defaultGroupDesc: '自動作成ユーザーに割り当てられるグループ。未設定の場合はViewersにフォールバックします。',
         defaultGroupViewersFallback: 'Viewers（デフォルト）',
+        autologin: '自動サインイン',
+        autologinDesc: '未認証の訪問者をこのプロバイダーに直接リダイレクトします。このフラグを付けられるプロバイダーは1つだけです。',
       },
     },
 
@@ -2619,6 +2648,8 @@ export default {
     signingIn: 'ログイン中...',
     rememberMe: 'ログイン状態を保持する',
     forgotPassword: 'パスワードをお忘れですか？',
+    autologinFailed: 'SSOへの自動サインインに失敗しました。下から続行するプロバイダーを選択してください。',
+    localDisabledNotice: 'ローカルサインインは無効化されています。下のSSOプロバイダーをご利用ください。',
     loginSuccess: 'ログインしました',
     loginFailed: 'ログインに失敗しました',
     enterCredentials: 'ユーザー名とパスワードを入力してください',

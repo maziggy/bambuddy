@@ -193,6 +193,25 @@ export default {
       large: '大卡片',
       extraLarge: '超大卡片',
     },
+    pageView: {
+      cards: '卡片',
+      camWall: '摄像头墙',
+    },
+    camWall: {
+      noPrinters: '没有可显示的打印机',
+      noSignal: '无信号',
+      live: '直播',
+      snap: '快照',
+      off: '关闭',
+      summary: '直播 {{live}} 个，快照 {{snap}} 个，共 {{total}} 个',
+      settings: {
+        title: '摄像头墙设置',
+        maxLive: '最大直播数',
+        maxLiveHint: '同时直播的画面数量。其他画面以快照刷新。',
+        snapshotInterval: '快照刷新间隔（秒）',
+        snapshotIntervalHint: '非直播画面获取新快照的频率。',
+      },
+    },
     // Controls
     hideOffline: '隐藏离线',
     nextAvailable: '下一个可用',
@@ -535,11 +554,13 @@ export default {
       hours: '小时',
       timeRemaining: '剩余 {{time}}',
       active: '干燥中',
+      targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: '不支持干燥',
       powerRequired: '连接AMS电源适配器以启用干燥',
       startingDrying: '正在启动干燥...',
       stoppingDrying: '正在停止干燥...',
       rotateTray: '干燥时旋转料盘',
+      rotateUnavailableReason: '不可用 — 此 AMS 中有插槽已装入打印头。料盘被送料管固定，无法旋转。请先回退耗材。',
     },
     amsBackup: {
       titleOn: 'AMS 备用料盘已开启。点击以禁用。',
@@ -1804,6 +1825,10 @@ export default {
     checkPrinterFirmware: '检查打印机固件',
     includeBetaUpdates: '包含测试版本',
     includeBetaUpdatesDesc: '检查更新时通知测试版和预发布版本',
+    localLogin: {
+      disable: '禁用本地用户名／密码登录',
+      disableHint: '启用后，只能通过SSO提供商登录。LDAP不受影响。在服务器上设置 BAMBUDDY_LOCAL_LOGIN=true 可保留恢复通道。',
+    },
     // Queue
     enableRetry: '启用重试',
     // Home Assistant
@@ -1972,6 +1997,8 @@ export default {
     queueDryingBlockDescription: '阻止打印队列直到干燥完成。关闭时，打印优先于干燥。',
     ambientDryingEnabled: '环境干燥',
     ambientDryingEnabledDescription: '当空闲打印机的湿度超过阈值时自动干燥耗材，无需排队打印。',
+    printDryingEnabled: '打印时继续干燥',
+    printDryingEnabledDescription: '允许自动干燥在支持的硬件（H2D、H2C、H2S、P2S、H2D Pro、X2D、X1C、A2L 最新固件）打印过程中继续运行。为保护料盘，干燥温度会自动比空闲时预设低 5°C。',
     dryingPresets: '干燥预设',
     dryingPresetsDescription: '每种耗材类型的温度和时长。AMS 2 Pro使用较低温度，AMS-HT支持较高温度。',
     dryingFilament: '耗材',
@@ -2458,6 +2485,8 @@ export default {
         defaultGroup: '默认组',
         defaultGroupDesc: '自动创建用户时分配的组。未设置时回退到 Viewers。',
         defaultGroupViewersFallback: 'Viewers（默认）',
+        autologin: '自动登录',
+        autologinDesc: '将未认证的访问者直接重定向到该提供商。只有一个提供商可以携带此标志。',
       },
     },
 
@@ -2607,6 +2636,8 @@ export default {
     signingIn: '登录中...',
     rememberMe: '记住我',
     forgotPassword: '忘记密码？',
+    autologinFailed: '自动SSO登录失败。请在下方选择一个提供商以继续。',
+    localDisabledNotice: '本地登录已禁用。请使用下方的SSO提供商之一。',
     loginSuccess: '登录成功',
     loginFailed: '登录失败',
     enterCredentials: '请输入用户名和密码',

@@ -7,7 +7,7 @@ import {
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   TrendingDown, Layers, Printer, AlertTriangle, X, Clock, LayoutGrid, TableProperties, Columns,
   ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw, TrendingUp, Lock, Copy, Eraser, MapPin,
-  Upload, Download,
+  Upload, Download, QrCode,
 } from 'lucide-react';
 import { ForecastPanel } from '../components/ForecastPanel';
 import { api, spoolbuddyApi, ApiError } from '../api/client';
@@ -16,6 +16,7 @@ import { Button } from '../components/Button';
 import { FilamentSwatch } from '../components/FilamentSwatch';
 import { buildFilamentBackground } from '../components/filamentSwatchHelpers';
 import {SpoolFormModal, type SpoolFormMode} from '../components/SpoolFormModal';
+import { QrAssignTargetModal } from '../components/QrAssignTargetModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ColumnConfigModal, type ColumnConfig } from '../components/ColumnConfigModal';
 import { LabelTemplatePickerModal } from '../components/LabelTemplatePickerModal';
@@ -28,7 +29,7 @@ import { resolveSpoolColorName } from '../utils/colors';
 import { getCurrencySymbol } from '../utils/currency';
 import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
 import { formatSlotLabel } from '../utils/amsHelpers';
-import { filterSpoolsByQuery } from '../utils/inventorySearch';
+import { filterSpoolsByQuery, distinctStorageLocations } from '../utils/inventorySearch';
 import {
   inventoryLocationsQueryKey,
   invalidateSpoolAndLocationQueries,
@@ -485,6 +486,9 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   const [searchParams, setSearchParams] = useSearchParams();
   const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null; mode: SpoolFormMode } | null>(null);
   const deepLinkHandled = useRef(false);
+  // Scan-to-location (#1574): pick a target (AMS slot or storage), then scan a
+  // spool's QR with the in-page camera — handled entirely inside the modal.
+  const [qrTargetModalOpen, setQrTargetModalOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<
     | { type: 'delete' | 'archive' | 'reset-consumed-counter'; spoolId: number }
     | { type: 'reset-all-consumed-counters' }
@@ -568,6 +572,13 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
       spoolmanMode ? api.getSpoolmanInventorySpools(true) : api.getSpools(true),
     refetchInterval: 30000,
   });
+
+  // Distinct, sorted storage_location free-text values for the QR-assign
+  // autocomplete (#1574). Memoized so re-renders don't re-walk the spool
+  // list or hand the modal a fresh array reference each time. This is the
+  // legacy free-form field; the structured `location_id` filter below is
+  // surfaced as the Locations dropdown.
+  const storageSuggestions = useMemo(() => distinctStorageLocations(spools), [spools]);
 
   // CSV export (#1576) — downloads the active inventory as a CSV file.
   const handleExportCsv = useCallback(async () => {
@@ -1356,12 +1367,25 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
             <Printer className="w-4 h-4" />
             {t('inventory.labels.printLabels', 'Print labels…')}
           </Button>
+          <Button variant="secondary" onClick={() => setQrTargetModalOpen(true)}>
+            <QrCode className="w-4 h-4" />
+            {t('inventory.qrAssign.button')}
+          </Button>
           <Button onClick={() => setFormModal({ spool: null, mode: 'create' })}>
             <Plus className="w-4 h-4" />
             {t('inventory.addSpool')}
           </Button>
         </div>
       </div>
+
+      {qrTargetModalOpen && (
+        <QrAssignTargetModal
+          isOpen={qrTargetModalOpen}
+          onClose={() => setQrTargetModalOpen(false)}
+          spoolmanMode={spoolmanMode}
+          storageSuggestions={storageSuggestions}
+        />
+      )}
 
       {/* Stats Bar */}
       {stats && !isLoading && (

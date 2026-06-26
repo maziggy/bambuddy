@@ -3729,6 +3729,32 @@ class TestSendDryingCommand:
         qos = call_args.kwargs.get("qos", call_args[0][2] if len(call_args[0]) > 2 else None)
         assert qos == 1
 
+    def test_start_caches_target_for_badge(self, mqtt_client):
+        """mode=1 send populates _drying_targets so the badge can render it."""
+        mqtt_client.send_drying_command(ams_id=2, temp=65, duration=12, mode=1, filament="PETG")
+        assert mqtt_client._drying_targets[2] == {"filament": "PETG", "temp": 65}
+
+    def test_start_overwrites_prior_target_for_same_ams(self, mqtt_client):
+        """A second start on the same AMS replaces the cached target."""
+        mqtt_client.send_drying_command(ams_id=0, temp=55, duration=4, mode=1, filament="PLA")
+        mqtt_client.send_drying_command(ams_id=0, temp=70, duration=6, mode=1, filament="ABS")
+        assert mqtt_client._drying_targets[0] == {"filament": "ABS", "temp": 70}
+
+    def test_stop_clears_target(self, mqtt_client):
+        """mode=0 send drops the cache so the badge stops showing the target."""
+        mqtt_client.send_drying_command(ams_id=1, temp=55, duration=4, mode=1, filament="PLA")
+        assert 1 in mqtt_client._drying_targets
+        mqtt_client.send_drying_command(ams_id=1, temp=0, duration=0, mode=0)
+        assert 1 not in mqtt_client._drying_targets
+
+    def test_targets_isolated_per_ams_id(self, mqtt_client):
+        """Stopping one AMS doesn't affect another AMS's cached target."""
+        mqtt_client.send_drying_command(ams_id=0, temp=55, duration=4, mode=1, filament="PLA")
+        mqtt_client.send_drying_command(ams_id=128, temp=80, duration=6, mode=1, filament="PA-CF")
+        mqtt_client.send_drying_command(ams_id=0, temp=0, duration=0, mode=0)
+        assert 0 not in mqtt_client._drying_targets
+        assert mqtt_client._drying_targets[128] == {"filament": "PA-CF", "temp": 80}
+
 
 class TestStartPrintAmsMapping:
     """Tests for ams_mapping/ams_mapping2 construction in start_print().

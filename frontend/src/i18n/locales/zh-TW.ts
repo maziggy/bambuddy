@@ -283,6 +283,25 @@ export default {
       large: '大卡片',
       extraLarge: '超大卡片',
     },
+    pageView: {
+      cards: '卡片',
+      camWall: '攝影機牆',
+    },
+    camWall: {
+      noPrinters: '沒有可顯示的印表機',
+      noSignal: '無訊號',
+      live: '直播',
+      snap: '快照',
+      off: '關閉',
+      summary: '直播 {{live}} 個，快照 {{snap}} 個，共 {{total}} 個',
+      settings: {
+        title: '攝影機牆設定',
+        maxLive: '最大直播數',
+        maxLiveHint: '同時直播的畫面數量。其他畫面以快照重新整理。',
+        snapshotInterval: '快照重新整理間隔（秒）',
+        snapshotIntervalHint: '非直播畫面取得新快照的頻率。',
+      },
+    },
     // Controls
     hideOffline: '隱藏離線',
     nextAvailable: '下一個可用',
@@ -625,11 +644,13 @@ export default {
       hours: '小時',
       timeRemaining: '剩餘 {{time}}',
       active: '乾燥中',
+      targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: '不支援乾燥',
       powerRequired: '連線AMS電源介面卡以啟用乾燥',
       startingDrying: '正在啟動乾燥...',
       stoppingDrying: '正在停止乾燥...',
       rotateTray: '乾燥時旋轉料盤',
+      rotateUnavailableReason: '無法使用 — 此 AMS 中有插槽已裝入列印頭。料盤被進料管固定，無法旋轉。請先退回耗材。',
     },
     amsBackup: {
       titleOn: 'AMS 備用料盤已開啟。點擊以停用。',
@@ -1935,6 +1956,10 @@ export default {
     checkPrinterFirmware: '檢查印表機韌體',
     includeBetaUpdates: '包含測試版本',
     includeBetaUpdatesDesc: '檢查更新時通知測試版和預發布版本',
+    localLogin: {
+      disable: '停用本機使用者名稱／密碼登入',
+      disableHint: '啟用後，只能透過SSO提供者登入。LDAP不受影響。在伺服器上設定 BAMBUDDY_LOCAL_LOGIN=true 可保留復原途徑。',
+    },
     // Queue
     enableRetry: '啟用重試',
     // Home Assistant
@@ -2103,6 +2128,8 @@ export default {
     queueDryingBlockDescription: '阻止列印佇列直到乾燥完成。關閉時，列印優先於乾燥。',
     ambientDryingEnabled: '環境乾燥',
     ambientDryingEnabledDescription: '當空閒印表機的濕度超過閾值時自動乾燥耗材，無需佇列列印。',
+    printDryingEnabled: '列印時繼續乾燥',
+    printDryingEnabledDescription: '允許自動乾燥在支援的硬體（H2D、H2C、H2S、P2S、H2D Pro、X2D、X1C、A2L 最新韌體）列印過程中繼續執行。為保護料盤，乾燥溫度會自動比閒置時的預設低 5°C。',
     dryingPresets: '乾燥預設',
     dryingPresetsDescription: '每種耗材類型的溫度和時長。AMS 2 Pro使用較低溫度，AMS-HT支援較高溫度。',
     dryingFilament: '耗材',
@@ -2604,6 +2631,8 @@ export default {
         defaultGroup: '預設群組',
         defaultGroupDesc: '自動建立使用者時分配的群組。未設定時回退到 Viewers。',
         defaultGroupViewersFallback: 'Viewers（預設）',
+        autologin: '自動登入',
+        autologinDesc: '將未驗證的訪客直接重新導向至此提供者。此旗標僅能由一個提供者持有。',
       },
     },
 
@@ -2753,6 +2782,8 @@ export default {
     signingIn: '登入中...',
     rememberMe: '記住我',
     forgotPassword: '忘記密碼？',
+    autologinFailed: '自動SSO登入失敗。請在下方選擇一個提供者以繼續。',
+    localDisabledNotice: '本機登入已停用。請使用下方的SSO提供者之一。',
     loginSuccess: '登入成功',
     loginFailed: '登入失敗',
     enterCredentials: '請輸入使用者名稱和密碼',

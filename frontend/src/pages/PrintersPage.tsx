@@ -82,6 +82,8 @@ import {
   SlidersHorizontal,
   Stethoscope,
   LineChart as LineChartIcon,
+  LayoutGrid,
+  MonitorPlay,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -94,6 +96,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { BulkPrinterToolbar, type PrinterState } from '../components/BulkPrinterToolbar';
 import { FileManagerModal } from '../components/FileManagerModal';
 import { EmbeddedCameraViewer } from '../components/EmbeddedCameraViewer';
+import { CameraWall } from '../components/CameraWall';
 import { MQTTDebugModal } from '../components/MQTTDebugModal';
 import { HMSErrorModal, filterKnownHMSErrors } from '../components/HMSErrorModal';
 import { PrinterQueueWidget } from '../components/PrinterQueueWidget';
@@ -4541,6 +4544,11 @@ function PrinterCard({
                               <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 px-2 py-1 text-[9px]">
                                 <Flame className="w-3 h-3 text-amber-400 shrink-0" />
                                 <span className="text-amber-400 font-medium">{t('printers.drying.active')}</span>
+                                {ams.dry_filament && ams.dry_target_temp != null && (
+                                  <span className="text-amber-300/70">
+                                    {t('printers.drying.targetSummary', { filament: ams.dry_filament, temp: ams.dry_target_temp })}
+                                  </span>
+                                )}
                                 <span className="text-amber-300/70">
                                   {t('printers.drying.timeRemaining', {
                                     time: ams.dry_time >= 60
@@ -5018,6 +5026,11 @@ function PrinterCard({
                             {ams.dry_time > 0 && (
                               <div className="flex items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg bg-amber-500/10 px-2 py-1 text-[9px]">
                                 <Flame className="w-3 h-3 text-amber-400 shrink-0" />
+                                {ams.dry_filament && ams.dry_target_temp != null && (
+                                  <span className="text-amber-300/70 text-[8px] truncate">
+                                    {t('printers.drying.targetSummary', { filament: ams.dry_filament, temp: ams.dry_target_temp })}
+                                  </span>
+                                )}
                                 <span className="text-amber-300/70 text-[8px] truncate">
                                   {ams.dry_time >= 60
                                     ? `${Math.floor(ams.dry_time / 60)}h ${ams.dry_time % 60}m`
@@ -6371,19 +6384,41 @@ function PrinterCard({
                     <span>24h</span>
                   </div>
                 </div>
-                {/* Rotate tray */}
-                <button
-                  type="button"
-                  onClick={() => setDryingRotateTray(enabled => !enabled)}
-                  aria-pressed={dryingRotateTray}
-                  className={`h-8 w-full rounded-lg border px-2 text-sm font-medium transition-colors ${
-                    dryingRotateTray
-                      ? 'bg-bambu-green border-bambu-green text-white'
-                      : 'bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary'
-                  }`}
-                >
-                  {t('printers.drying.rotateTray')}
-                </button>
+                {/* Rotate tray — disabled when any tray in THIS AMS has its
+                    filament threaded out into the feed tube. The whole AMS
+                    rotates as one mechanism (all 4 spools turn together), so a
+                    single loaded slot locks the entire unit. Bambu per-tray
+                    `state`: 9 = empty, 10 = spool present but not loaded
+                    (rotation possible), 11 = loaded into tube (rotation impossible).
+                    Catches both mid-print (active feed) AND idle-with-threaded-
+                    filament — the H2D's post-print state leaves filament in the
+                    tube but tray_now resets to 255, which a tray_now-only check
+                    would silently miss. */}
+                {(() => {
+                  const targetAms = dryingPopoverAmsId !== null
+                    ? amsData.find(a => a.id === dryingPopoverAmsId)
+                    : undefined;
+                  const trayLoadedInThisAms = (targetAms?.tray ?? []).some(
+                    tray => tray.state === 11,
+                  );
+                  const rotateChecked = dryingRotateTray && !trayLoadedInThisAms;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setDryingRotateTray(enabled => !enabled)}
+                      aria-pressed={rotateChecked}
+                      disabled={trayLoadedInThisAms}
+                      title={trayLoadedInThisAms ? t('printers.drying.rotateUnavailableReason') : undefined}
+                      className={`h-8 w-full rounded-lg border px-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                        rotateChecked
+                          ? 'bg-bambu-green border-bambu-green text-white'
+                          : 'bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary disabled:hover:bg-bambu-dark'
+                      }`}
+                    >
+                      {t('printers.drying.rotateTray')}
+                    </button>
+                  );
+                })()}
               </div>
               <div className="shrink-0 h-px bg-bambu-dark-tertiary" />
               {/* Footer */}
@@ -6391,7 +6426,23 @@ function PrinterCard({
                 <button
                   onClick={() => {
                     if (dryingPopoverAmsId !== null) {
-                      startDryingMutation.mutate({ amsId: dryingPopoverAmsId, temp: dryingTemp, duration: dryingDuration, filament: dryingFilament, rotateTray: dryingRotateTray });
+                      // Clamp rotateTray off when any tray in this AMS is loaded into
+                      // the tube — the rotate UI is disabled there, but the state may
+                      // linger as `true` from a previous AMS, or a print may have
+                      // started while the popover was open. Without this clamp the
+                      // Start payload would carry rotate_tray=true and firmware would
+                      // reject with dry_sf_reason=[3] (ConsumableAtAmsOutlet).
+                      const targetAms = amsData.find(a => a.id === dryingPopoverAmsId);
+                      const trayLoadedInThisAms = (targetAms?.tray ?? []).some(
+                        tray => tray.state === 11,
+                      );
+                      startDryingMutation.mutate({
+                        amsId: dryingPopoverAmsId,
+                        temp: dryingTemp,
+                        duration: dryingDuration,
+                        filament: dryingFilament,
+                        rotateTray: dryingRotateTray && !trayLoadedInThisAms,
+                      });
                     }
                   }}
                   disabled={startDryingMutation.isPending}
@@ -7556,6 +7607,20 @@ export function PrintersPage() {
     const saved = localStorage.getItem('printerCardSize');
     return saved ? parseInt(saved, 10) : 2; // Default to medium
   });
+  // Page view: 'cards' = printer cards (default), 'camwall' = grid of live camera tiles
+  const [pageView, setPageView] = useState<'cards' | 'camwall'>(() => {
+    return localStorage.getItem('printerPageView') === 'camwall' ? 'camwall' : 'cards';
+  });
+  // Cam-wall settings — per-user, no backend write (a Pi 4 install caps the
+  // live count lower than a NUC; default 4 is the documented Pi 4 ceiling).
+  const [camWallMaxLive, setCamWallMaxLive] = useState<number>(() => {
+    const saved = parseInt(localStorage.getItem('camWallMaxLive') || '', 10);
+    return Number.isFinite(saved) && saved > 0 ? saved : 4;
+  });
+  const [camWallSnapshotSec, setCamWallSnapshotSec] = useState<number>(() => {
+    const saved = parseInt(localStorage.getItem('camWallSnapshotSec') || '', 10);
+    return Number.isFinite(saved) && saved > 0 ? saved : 8;
+  });
   // Derive viewMode from cardSize: S=compact, M/L/XL=expanded
   const viewMode: ViewMode = cardSize === 1 ? 'compact' : 'expanded';
   const [compactDrilldownPrinterId, setCompactDrilldownPrinterId] = useState<number | null>(null);
@@ -8285,8 +8350,43 @@ export function PrintersPage() {
         </button>
       </div>
 
-      {/* Card size selector */}
+      {/* Page view toggle: Cards / Cam Wall */}
       <div className={`flex h-8 items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary ${inMenu ? 'w-full' : ''}`}>
+        <button
+          type="button"
+          onClick={() => {
+            setPageView('cards');
+            localStorage.setItem('printerPageView', 'cards');
+          }}
+          className={`flex h-full items-center gap-1 rounded-l-lg px-2 text-xs font-medium transition-colors ${inMenu ? 'flex-1 justify-center' : ''} ${
+            pageView === 'cards' ? 'bg-bambu-green text-white' : 'text-white hover:bg-bambu-dark-tertiary'
+          }`}
+          title={t('printers.pageView.cards')}
+          aria-pressed={pageView === 'cards'}
+        >
+          <LayoutGrid className="w-3.5 h-3.5" />
+          {inMenu && <span>{t('printers.pageView.cards')}</span>}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setPageView('camwall');
+            localStorage.setItem('printerPageView', 'camwall');
+          }}
+          className={`flex h-full items-center gap-1 rounded-r-lg px-2 text-xs font-medium transition-colors ${inMenu ? 'flex-1 justify-center' : ''} ${
+            pageView === 'camwall' ? 'bg-bambu-green text-white' : 'text-white hover:bg-bambu-dark-tertiary'
+          }`}
+          title={t('printers.pageView.camWall')}
+          aria-pressed={pageView === 'camwall'}
+          disabled={!hasPermission('camera:view')}
+        >
+          <MonitorPlay className="w-3.5 h-3.5" />
+          {inMenu && <span>{t('printers.pageView.camWall')}</span>}
+        </button>
+      </div>
+
+      {/* Card size selector */}
+      <div className={`flex h-8 items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary ${pageView === 'camwall' ? 'opacity-40 pointer-events-none' : ''} ${inMenu ? 'w-full' : ''}`}>
         {cardSizeLabels.map((label, index) => {
           const size = index + 1;
           const isSelected = cardSize === size;
@@ -8490,6 +8590,37 @@ export function PrintersPage() {
             <p className="text-bambu-gray">{t('printers.noSearchResults')}</p>
           </CardContent>
         </Card>
+      ) : pageView === 'camwall' ? (
+        <CameraWall
+          printers={sortedPrinters}
+          maxLive={camWallMaxLive}
+          snapshotIntervalSec={camWallSnapshotSec}
+          onTileClick={(id, name) => {
+            const cameraMode = settings?.camera_view_mode || 'window';
+            if (cameraMode === 'embedded') {
+              setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }));
+            } else {
+              const saved = localStorage.getItem('cameraWindowState');
+              const state = saved ? JSON.parse(saved) : { width: 640, height: 400 };
+              const features = [
+                `width=${state.width}`,
+                `height=${state.height}`,
+                state.left !== undefined ? `left=${state.left}` : '',
+                state.top !== undefined ? `top=${state.top}` : '',
+                'menubar=no,toolbar=no,location=no,status=no',
+              ].filter(Boolean).join(',');
+              window.open(`/camera/${id}`, `camera-${id}`, features);
+            }
+          }}
+          onChangeMaxLive={(next) => {
+            setCamWallMaxLive(next);
+            localStorage.setItem('camWallMaxLive', String(next));
+          }}
+          onChangeSnapshotIntervalSec={(next) => {
+            setCamWallSnapshotSec(next);
+            localStorage.setItem('camWallSnapshotSec', String(next));
+          }}
+        />
       ) : groupedPrinters ? (
         /* Grouped view (location, status, or model) */
         <div className="space-y-6">

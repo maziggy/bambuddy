@@ -366,6 +366,8 @@ export interface AMSUnit {
   dry_status: number;     // 0=Off, 1=Checking, 2=Drying, 3=Cooling, 4=Stopping, 5=Error
   dry_sub_status: number; // 0=Off, 1=Heating, 2=Dehumidify
   dry_sf_reason: number[]; // Cannot-dry reasons (1=InsufficientPower, 8=NeedPluginPower)
+  dry_target_temp: number | null; // Active-cycle target °C (Bambu does not echo)
+  dry_filament: string | null;    // Active-cycle filament name we sent
   module_type: string;    // "ams", "n3f", "n3s"
 }
 
@@ -1085,6 +1087,10 @@ export interface AppSettings {
   check_updates: boolean;
   check_printer_firmware: boolean;
   include_beta_updates: boolean;
+  // #1589: false hides the local username/password form on the login page;
+  // BAMBUDDY_LOCAL_LOGIN=true on the server flips the reported value back to
+  // true so the env-var recovery path is visible to the SPA.
+  local_login_enabled: boolean;
   language: string;
   notification_language: string;
   // AMS threshold settings
@@ -1097,6 +1103,7 @@ export interface AppSettings {
   queue_drying_enabled: boolean;  // Auto-dry AMS between queued prints
   queue_drying_block: boolean;  // Block queue until drying completes
   ambient_drying_enabled: boolean;  // Auto-dry idle printers based on humidity regardless of queue
+  print_drying_enabled: boolean;  // Continue drying while a print is running on capable hardware
   drying_presets: string;  // JSON blob of drying presets per filament type
   ams_humidity_thresholds: string;  // JSON blob of per-filament humidity thresholds (#1605)
   gcode_snippets: string;  // JSON: per-model G-code injection snippets
@@ -2794,6 +2801,7 @@ export interface FilamentSkuSettings {
   material: string;
   subtype: string | null;
   brand: string | null;
+  color_name: string | null;
   lead_time_days: number;
   safety_margin_value: number;
   safety_margin_unit: 'days' | 'g';
@@ -2805,6 +2813,7 @@ export interface ShoppingListItem {
   material: string;
   subtype: string | null;
   brand: string | null;
+  color_name: string | null;
   quantity_spools: number;
   note: string | null;
   status: 'pending' | 'purchased' | 'received';
@@ -2816,6 +2825,7 @@ export interface ShoppingListItemCreate {
   material: string;
   subtype: string | null;
   brand: string | null;
+  color_name: string | null;
   quantity_spools: number;
   note?: string | null;
 }
@@ -3296,6 +3306,9 @@ export interface OIDCProvider {
   // includes this field in the response (Pydantic default-False is
   // populated unconditionally in the route handler).
   has_icon: boolean;
+  // #1589: when true, the LoginPage redirects unauthenticated visitors
+  // straight to this provider on mount. At most one provider may carry this.
+  is_autologin: boolean;
 }
 
 export interface OIDCProviderCreate {
@@ -3311,6 +3324,7 @@ export interface OIDCProviderCreate {
   require_email_verified?: boolean;
   icon_url?: string | null;
   default_group_id?: number | null;
+  is_autologin?: boolean;  // #1589
 }
 
 export interface OIDCLink {
@@ -3333,6 +3347,13 @@ export interface TestSMTPResponse {
 export interface AdvancedAuthStatus {
   advanced_auth_enabled: boolean;
   smtp_configured: boolean;
+  // #1589: false hides the username/password form on the LoginPage; the env
+  // var BAMBUDDY_LOCAL_LOGIN=true on the server flips this back to true so
+  // the recovery path remains visible.
+  local_login_enabled: boolean;
+  // #1589: when set, LoginPage redirects to this provider's authorize URL
+  // on mount unless ?fallback=local is in the URL or the redirect times out.
+  autologin_provider_id: number | null;
 }
 
 export interface LDAPStatus {

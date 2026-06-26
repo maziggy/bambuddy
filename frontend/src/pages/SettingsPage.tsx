@@ -556,7 +556,7 @@ export function SettingsPage() {
   });
 
   // Advanced auth status for user creation
-  const { data: advancedAuthStatus = { advanced_auth_enabled: false, smtp_configured: false } } = useQuery({
+  const { data: advancedAuthStatus = { advanced_auth_enabled: false, smtp_configured: false, local_login_enabled: true, autologin_provider_id: null } } = useQuery({
     queryKey: ['advancedAuthStatus'],
     queryFn: () => api.getAdvancedAuthStatus(),
   });
@@ -936,6 +936,7 @@ export function SettingsPage() {
       settings.check_updates !== localSettings.check_updates ||
       (settings.check_printer_firmware ?? true) !== (localSettings.check_printer_firmware ?? true) ||
       (settings.include_beta_updates ?? false) !== (localSettings.include_beta_updates ?? false) ||
+      (settings.local_login_enabled ?? true) !== (localSettings.local_login_enabled ?? true) ||
       settings.notification_language !== localSettings.notification_language ||
       (settings.bed_cooled_threshold ?? 35) !== (localSettings.bed_cooled_threshold ?? 35) ||
       settings.ams_humidity_good !== localSettings.ams_humidity_good ||
@@ -948,6 +949,7 @@ export function SettingsPage() {
       (settings.queue_drying_enabled ?? false) !== (localSettings.queue_drying_enabled ?? false) ||
       (settings.queue_drying_block ?? false) !== (localSettings.queue_drying_block ?? false) ||
       (settings.ambient_drying_enabled ?? false) !== (localSettings.ambient_drying_enabled ?? false) ||
+      (settings.print_drying_enabled ?? false) !== (localSettings.print_drying_enabled ?? false) ||
       (settings.drying_presets ?? '') !== (localSettings.drying_presets ?? '') ||
       (settings.ams_humidity_thresholds ?? '') !== (localSettings.ams_humidity_thresholds ?? '') ||
       settings.per_printer_mapping_expanded !== localSettings.per_printer_mapping_expanded ||
@@ -1033,6 +1035,7 @@ export function SettingsPage() {
         check_updates: localSettings.check_updates,
         check_printer_firmware: localSettings.check_printer_firmware,
         include_beta_updates: localSettings.include_beta_updates,
+        local_login_enabled: localSettings.local_login_enabled,
         notification_language: localSettings.notification_language,
         bed_cooled_threshold: localSettings.bed_cooled_threshold,
         ams_humidity_good: localSettings.ams_humidity_good,
@@ -1045,6 +1048,7 @@ export function SettingsPage() {
         queue_drying_enabled: localSettings.queue_drying_enabled,
         queue_drying_block: localSettings.queue_drying_block,
         ambient_drying_enabled: localSettings.ambient_drying_enabled,
+        print_drying_enabled: localSettings.print_drying_enabled,
         drying_presets: localSettings.drying_presets,
         ams_humidity_thresholds: localSettings.ams_humidity_thresholds,
         per_printer_mapping_expanded: localSettings.per_printer_mapping_expanded,
@@ -4739,6 +4743,25 @@ export function SettingsPage() {
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
                 </label>
               </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="block text-sm text-white">
+                    {t('settings.printDryingEnabled')}
+                  </label>
+                  <p className="text-xs text-bambu-gray mt-0.5">
+                    {t('settings.printDryingEnabledDescription')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.print_drying_enabled ?? false}
+                    onChange={(e) => updateSetting('print_drying_enabled', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
               {/* Drying Presets Table */}
               <div className="space-y-2">
                 <p className="text-sm text-white font-medium">{t('settings.dryingPresets')}</p>
@@ -5807,7 +5830,23 @@ export function SettingsPage() {
           )}
 
           {usersSubTab === 'oidc' && isAdmin && (
-            <div className="max-w-3xl">
+            <div className="max-w-3xl space-y-4">
+              <Card>
+                <CardContent className="space-y-3 p-4">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={localSettings.local_login_enabled === false}
+                      onChange={(e) => updateSetting('local_login_enabled', !e.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-green focus:ring-bambu-green/50 cursor-pointer"
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-white">{t('settings.localLogin.disable')}</p>
+                      <p className="text-xs text-bambu-gray mt-0.5">{t('settings.localLogin.disableHint')}</p>
+                    </div>
+                  </label>
+                </CardContent>
+              </Card>
               <OIDCProviderSettings />
             </div>
           )}

@@ -282,6 +282,25 @@ export default {
       large: 'Grandes cartes',
       extraLarge: 'Très grandes cartes',
     },
+    pageView: {
+      cards: 'Cartes',
+      camWall: 'Mur de caméras',
+    },
+    camWall: {
+      noPrinters: 'Aucune imprimante à afficher',
+      noSignal: 'Aucun signal',
+      live: 'En direct',
+      snap: 'Photo',
+      off: 'Arrêt',
+      summary: '{{live}} en direct, {{snap}} captures, {{total}} au total',
+      settings: {
+        title: 'Paramètres du mur de caméras',
+        maxLive: 'Flux en direct max.',
+        maxLiveHint: 'Combien de vignettes diffusent en direct à la fois. Les autres se rafraîchissent en captures.',
+        snapshotInterval: 'Intervalle de capture (secondes)',
+        snapshotIntervalHint: 'À quelle fréquence les vignettes hors direct récupèrent une nouvelle capture.',
+      },
+    },
     // Controls
     hideOffline: 'Masquer hors ligne',
     nextAvailable: 'Prochaine disponible',
@@ -624,11 +643,13 @@ export default {
       hours: 'heures',
       timeRemaining: '{{time}} restant',
       active: 'Séchage',
+      targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Séchage non pris en charge',
       powerRequired: 'Brancher l\'adaptateur secteur AMS pour activer le séchage',
       startingDrying: 'Démarrage du séchage...',
       stoppingDrying: 'Arrêt du séchage...',
       rotateTray: 'Tourner la bobine pendant le séchage',
+      rotateUnavailableReason: 'Indisponible — un emplacement de cet AMS est chargé vers la tête d\'impression. La bobine est bloquée par le tube d\'alimentation et ne peut pas tourner. Rétractez d\'abord le filament.',
     },
     amsBackup: {
       titleOn: "AMS Filament Backup est ACTIVÉ. Cliquez pour désactiver.",
@@ -1889,6 +1910,10 @@ export default {
     checkPrinterFirmware: 'Vérifier le firmware imprimante',
     includeBetaUpdates: 'Inclure les versions bêta',
     includeBetaUpdatesDesc: 'Notifier des versions bêta et préliminaires lors de la vérification des mises à jour',
+    localLogin: {
+      disable: 'Désactiver la connexion locale par nom d\'utilisateur/mot de passe',
+      disableHint: 'Quand activée, seuls les fournisseurs SSO peuvent se connecter. LDAP n\'est pas affecté. Définissez BAMBUDDY_LOCAL_LOGIN=true sur le serveur pour conserver une voie de récupération.',
+    },
     // Queue
     enableRetry: 'Activer la rétentative',
     // Home Assistant
@@ -2057,6 +2082,8 @@ export default {
     queueDryingBlockDescription: 'Bloquer la file d\'attente jusqu\'à la fin du séchage. Désactivé, les impressions sont prioritaires.',
     ambientDryingEnabled: 'Séchage ambiant',
     ambientDryingEnabledDescription: 'Sécher automatiquement le filament sur les imprimantes inactives lorsque l\'humidité dépasse le seuil, même sans impressions en file.',
+    printDryingEnabled: 'Séchage pendant l\'impression',
+    printDryingEnabledDescription: 'Autorise le séchage automatique à continuer pendant une impression sur le matériel pris en charge (H2D, H2C, H2S, P2S, H2D Pro, X2D, X1C, A2L avec firmware récent). La température de séchage est automatiquement limitée à 5°C sous le préréglage en attente pour protéger les bobines.',
     dryingPresets: 'Préréglages de séchage',
     dryingPresetsDescription: 'Température et durée par type de filament. AMS 2 Pro utilise des températures plus basses, AMS-HT supporte des températures plus élevées.',
     dryingFilament: 'Filament',
@@ -2559,6 +2586,8 @@ export default {
         defaultGroup: 'Groupe par défaut',
         defaultGroupDesc: 'Groupe attribué aux utilisateurs créés automatiquement. Repli sur Viewers si non défini.',
         defaultGroupViewersFallback: 'Viewers (par défaut)',
+        autologin: 'Connexion automatique',
+        autologinDesc: 'Rediriger les visiteurs non authentifiés directement vers ce fournisseur. Un seul fournisseur peut porter cet indicateur.',
       },
     },
 
@@ -2753,6 +2782,8 @@ export default {
     signingIn: 'Connexion...',
     rememberMe: 'Se souvenir de moi',
     forgotPassword: 'Mot de passe oublié ?',
+    autologinFailed: 'La connexion SSO automatique a échoué. Choisissez un fournisseur ci-dessous pour continuer.',
+    localDisabledNotice: 'La connexion locale est désactivée. Utilisez l\'un des fournisseurs SSO ci-dessous.',
     loginSuccess: 'Connecté avec succès',
     loginFailed: 'Échec de connexion',
     enterCredentials: 'Entrez vos identifiants',

@@ -413,6 +413,7 @@ class OIDCProviderCreate(BaseModel):
     require_email_verified: bool = True
     icon_url: str | None = None
     default_group_id: int | None = None
+    is_autologin: bool = False  # #1589 — at most one provider may carry this
 
     @field_validator("issuer_url")
     @classmethod
@@ -469,6 +470,7 @@ class OIDCProviderUpdate(BaseModel):
     require_email_verified: bool | None = None
     icon_url: str | None = None
     default_group_id: int | None = None
+    is_autologin: bool | None = None  # #1589
 
     @field_validator("scopes")
     @classmethod
@@ -515,6 +517,7 @@ class OIDCProviderResponse(BaseModel):
     require_email_verified: bool = True
     icon_url: str | None = None
     default_group_id: int | None = None
+    is_autologin: bool = False  # #1589
     # Set explicitly in the route handler from `icon_content_type is not None`
     # rather than `@computed_field` (project policy) or `icon_data is not None`
     # (would trigger an async lazy-load on the deferred BLOB column).

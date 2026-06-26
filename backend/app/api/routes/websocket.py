@@ -97,7 +97,12 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
                 {
                     "type": "printer_status",
                     "printer_id": printer_id,
-                    "data": printer_state_to_dict(state, printer_id, printer_manager.get_model(printer_id)),
+                    "data": printer_state_to_dict(
+                        state,
+                        printer_id,
+                        printer_manager.get_model(printer_id),
+                        printer_manager.get_drying_targets(printer_id),
+                    ),
                 }
             )
 
@@ -129,7 +134,12 @@ async def websocket_endpoint(websocket: WebSocket, token: str | None = Query(def
                             {
                                 "type": "printer_status",
                                 "printer_id": printer_id,
-                                "data": printer_state_to_dict(state, printer_id, printer_manager.get_model(printer_id)),
+                                "data": printer_state_to_dict(
+                                    state,
+                                    printer_id,
+                                    printer_manager.get_model(printer_id),
+                                    printer_manager.get_drying_targets(printer_id),
+                                ),
                             }
                         )
 

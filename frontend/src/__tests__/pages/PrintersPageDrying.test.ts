@@ -219,3 +219,108 @@ describe('rotate tray option', () => {
     expect(rotateTray).toBe(false);
   });
 });
+
+describe('rotate tray gate (per-AMS tray.state === 11)', () => {
+  /**
+   * Mirrors the gate from PrintersPage.tsx — rotation is physically impossible
+   * when ANY tray in the targeted AMS has its filament threaded out into the
+   * feed tube. The whole AMS rotates as one mechanism (all 4 spools turn
+   * together), so a single loaded slot locks the entire unit.
+   *
+   * Per-tray Bambu `state`:
+   *   9  = empty (no spool)
+   *   10 = spool present, NOT loaded into tube (rotation possible)
+   *   11 = loaded into tube (rotation impossible)
+   *
+   * This catches both mid-print (active feed) AND idle-with-threaded-filament
+   * — the H2D's post-print state leaves filament in the tube but tray_now
+   * resets to 255, which a tray_now-only check would silently miss.
+   */
+  type TrayLike = { state?: number };
+  type AmsLike = { id: number; tray?: TrayLike[] };
+
+  function isTrayLoadedInThisAms(
+    amsData: AmsLike[],
+    targetAmsId: number | null,
+  ): boolean {
+    if (targetAmsId === null) return false;
+    const targetAms = amsData.find(a => a.id === targetAmsId);
+    return (targetAms?.tray ?? []).some(tray => tray.state === 11);
+  }
+
+  it('returns false when AMS id is null (modal closed)', () => {
+    const ams = [{ id: 0, tray: [{ state: 11 }] }];
+    expect(isTrayLoadedInThisAms(ams, null)).toBe(false);
+  });
+
+  it('returns false when targeted AMS not found in amsData', () => {
+    const ams = [{ id: 0, tray: [{ state: 11 }] }];
+    expect(isTrayLoadedInThisAms(ams, 1)).toBe(false);
+  });
+
+  it('returns false when all trays are empty (state=9)', () => {
+    const ams = [{ id: 0, tray: [{ state: 9 }, { state: 9 }, { state: 9 }, { state: 9 }] }];
+    expect(isTrayLoadedInThisAms(ams, 0)).toBe(false);
+  });
+
+  it('returns false when all trays have spools but none loaded (state=10)', () => {
+    // The "all AMS have spools loaded" case the gate now catches correctly:
+    // spool present in the slot, NOT threaded into the tube → rotation possible.
+    const ams = [{ id: 0, tray: [{ state: 10 }, { state: 10 }, { state: 10 }, { state: 10 }] }];
+    expect(isTrayLoadedInThisAms(ams, 0)).toBe(false);
+  });
+
+  it('returns true when ANY tray is loaded into tube (state=11)', () => {
+    // H2D's typical post-print state: one tray's filament is still threaded out
+    // into the feed tube even after the print finishes. tray_now=255 but
+    // this tray's state stays at 11. The whole AMS is mechanically locked.
+    const ams = [{ id: 0, tray: [{ state: 10 }, { state: 11 }, { state: 9 }, { state: 10 }] }];
+    expect(isTrayLoadedInThisAms(ams, 0)).toBe(true);
+  });
+
+  it('returns true when targeted AMS-B has a loaded tray (per-AMS isolation)', () => {
+    // AMS-A locked, AMS-B free; targeting AMS-A → true, targeting AMS-B → false
+    const ams = [
+      { id: 0, tray: [{ state: 11 }, { state: 9 }] },
+      { id: 1, tray: [{ state: 10 }, { state: 10 }] },
+    ];
+    expect(isTrayLoadedInThisAms(ams, 0)).toBe(true);
+    expect(isTrayLoadedInThisAms(ams, 1)).toBe(false);
+  });
+
+  it('returns false when targeted AMS has no trays array', () => {
+    const ams = [{ id: 0 }];
+    expect(isTrayLoadedInThisAms(ams, 0)).toBe(false);
+  });
+
+  it('treats missing state as not-loaded (conservative default-allow)', () => {
+    // If firmware doesn't report a state field, default to allowing rotate.
+    // The firmware-side dry_sf_reason check still rejects on the route side
+    // if rotation is actually impossible, so being lenient here is safe.
+    const ams = [{ id: 0, tray: [{ state: undefined }, { state: undefined }] }];
+    expect(isTrayLoadedInThisAms(ams, 0)).toBe(false);
+  });
+
+  it('submission clamp: rotateTray collapses to false when gate is active', () => {
+    // Mirrors:  rotateTray: dryingRotateTray && !isTrayLoadedInThisAms
+    // A user enabling rotate before tray.state shifts to 11 (e.g. user loads
+    // filament from the AMS UI while popover is open) sees the toggle disable,
+    // and the submit also sends rotate_tray=false. Without the clamp, firmware
+    // would reject with dry_sf_reason=[3] (ConsumableAtAmsOutlet) post-click.
+    const userToggleState = true;
+    const ams = [{ id: 0, tray: [{ state: 11 }, { state: 10 }] }];
+    const trayLoaded = isTrayLoadedInThisAms(ams, 0);
+    const submittedValue = userToggleState && !trayLoaded;
+    expect(trayLoaded).toBe(true);
+    expect(submittedValue).toBe(false);
+  });
+
+  it('submission clamp: rotateTray passes through when gate is inactive', () => {
+    const userToggleState = true;
+    const ams = [{ id: 0, tray: [{ state: 10 }, { state: 10 }] }];
+    const trayLoaded = isTrayLoadedInThisAms(ams, 0);
+    const submittedValue = userToggleState && !trayLoaded;
+    expect(trayLoaded).toBe(false);
+    expect(submittedValue).toBe(true);
+  });
+});

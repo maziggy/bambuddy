@@ -5,10 +5,10 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import RequirePermissionIfAuthEnabled, caller_is_api_key, require_energy_cost_update
@@ -128,6 +128,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "queue_drying_enabled",
             "queue_drying_block",
             "ambient_drying_enabled",
+            "print_drying_enabled",
             "require_plate_clear",
             "queue_shortest_first",
             "default_bed_levelling",
@@ -140,6 +141,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "default_nozzle_offset_cali",
             "ldap_enabled",
             "ldap_auto_provision",
+            "local_login_enabled",
         ]:
             settings_dict[setting.key] = setting.value.lower() == "true"
         elif setting.key in [
@@ -206,10 +208,38 @@ async def get_settings(
 async def update_settings(
     settings_update: AppSettingsUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Update application settings."""
     update_data = settings_update.model_dump(exclude_unset=True)
+
+    # Safety refusals on disabling local login (#1589). Two failure modes
+    # would otherwise lock everyone out of the install:
+    #   1. No enabled OIDC provider exists — nobody could authenticate.
+    #   2. The caller has no UserOIDCLink — they would lock themselves out
+    #      even if other admins are linked.
+    # Either case returns HTTP 400 instead of silently saving. The
+    # ``BAMBUDDY_LOCAL_LOGIN=true`` env-var bypass on /auth/login is a
+    # separate recovery path; the refusals here protect the *default*
+    # configuration where the env var is absent.
+    if update_data.get("local_login_enabled") is False:
+        from backend.app.models.oidc_provider import OIDCProvider, UserOIDCLink
+
+        enabled_count = await db.scalar(select(func.count(OIDCProvider.id)).where(OIDCProvider.is_enabled.is_(True)))
+        if not enabled_count:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot disable local login: no OIDC provider is enabled.",
+            )
+        if current_user is not None:
+            caller_links = await db.scalar(
+                select(func.count(UserOIDCLink.id)).where(UserOIDCLink.user_id == current_user.id)
+            )
+            if not caller_links:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot disable local login: your account has no OIDC link, so you would lock yourself out.",
+                )
 
     # Check if any MQTT settings are being updated
     mqtt_keys = {

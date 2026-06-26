@@ -282,6 +282,25 @@ export default {
       large: 'Cartões grandes',
       extraLarge: 'Cartões extra grandes',
     },
+    pageView: {
+      cards: 'Cartões',
+      camWall: 'Mural de câmeras',
+    },
+    camWall: {
+      noPrinters: 'Nenhuma impressora para exibir',
+      noSignal: 'Sem sinal',
+      live: 'Ao vivo',
+      snap: 'Foto',
+      off: 'Desligado',
+      summary: '{{live}} ao vivo, {{snap}} fotos, {{total}} no total',
+      settings: {
+        title: 'Configurações do mural de câmeras',
+        maxLive: 'Máx. transmissões ao vivo',
+        maxLiveHint: 'Quantos blocos transmitem ao vivo simultaneamente. Os demais atualizam como fotos.',
+        snapshotInterval: 'Intervalo de foto (segundos)',
+        snapshotIntervalHint: 'Com que frequência os blocos não ao vivo buscam uma nova foto.',
+      },
+    },
     // Controls
     hideOffline: 'Ocultar offline',
     nextAvailable: 'Próximo disponível',
@@ -624,11 +643,13 @@ export default {
       hours: 'horas',
       timeRemaining: '{{time}} restante',
       active: 'Secagem',
+      targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Secagem não suportada',
       powerRequired: 'Conecte o adaptador de energia AMS para ativar a secagem',
       startingDrying: 'Iniciando secagem...',
       stoppingDrying: 'Parando secagem...',
       rotateTray: 'Girar o carretel durante a secagem',
+      rotateUnavailableReason: 'Indisponível — um slot deste AMS está carregado em direção ao cabeçote. O carretel está travado pelo tubo de alimentação e não pode girar. Retraia o filamento primeiro.',
     },
     amsBackup: {
       titleOn: 'AMS Filament Backup está LIGADO. Clique para desativar.',
@@ -1889,6 +1910,10 @@ export default {
     checkPrinterFirmware: 'Verificar firmware da impressora',
     includeBetaUpdates: 'Incluir versões beta',
     includeBetaUpdatesDesc: 'Notificar sobre versões beta e pré-lançamento ao verificar atualizações',
+    localLogin: {
+      disable: 'Desativar login local com usuário/senha',
+      disableHint: 'Quando ativado, somente provedores SSO podem fazer login. O LDAP não é afetado. Defina BAMBUDDY_LOCAL_LOGIN=true no servidor para manter um caminho de recuperação.',
+    },
     // Queue
     enableRetry: 'Habilitar tentativa',
     // Home Assistant
@@ -2057,6 +2082,8 @@ export default {
     queueDryingBlockDescription: 'Bloquear a fila de impressão até a secagem terminar. Quando desativado, impressões têm prioridade.',
     ambientDryingEnabled: 'Secagem ambiente',
     ambientDryingEnabledDescription: 'Secar automaticamente o filamento em impressoras ociosas quando a umidade exceder o limite, mesmo sem impressões na fila.',
+    printDryingEnabled: 'Continuar secagem durante a impressão',
+    printDryingEnabledDescription: 'Permite que a secagem automática continue funcionando durante uma impressão em hardware compatível (H2D, H2C, H2S, P2S, H2D Pro, X2D, X1C, A2L com firmware recente). A temperatura de secagem é limitada automaticamente 5°C abaixo do valor de inatividade para proteger as bobinas.',
     dryingPresets: 'Predefinições de secagem',
     dryingPresetsDescription: 'Temperatura e duração por tipo de filamento. AMS 2 Pro usa temperaturas mais baixas, AMS-HT suporta temperaturas mais altas.',
     dryingFilament: 'Filamento',
@@ -2558,6 +2585,8 @@ export default {
         defaultGroup: 'Grupo padrão',
         defaultGroupDesc: 'Grupo atribuído aos usuários criados automaticamente. Retorna a Viewers se não definido.',
         defaultGroupViewersFallback: 'Viewers (padrão)',
+        autologin: 'Login automático',
+        autologinDesc: 'Redirecionar visitantes não autenticados diretamente para este provedor. Apenas um provedor pode ter esta marcação.',
       },
     },
 
@@ -2752,6 +2781,8 @@ export default {
     signingIn: 'Entrando...',
     rememberMe: 'Lembrar de mim',
     forgotPassword: 'Esqueceu sua senha?',
+    autologinFailed: 'O login SSO automático falhou. Escolha um provedor abaixo para continuar.',
+    localDisabledNotice: 'O login local está desativado. Use um dos provedores SSO abaixo.',
     loginSuccess: 'Login realizado com sucesso',
     loginFailed: 'Falha no login',
     enterCredentials: 'Por favor, insira nome de usuário e senha',

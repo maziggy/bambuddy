@@ -25,6 +25,16 @@ const unknownError: HMSError = {
   severity: 1,
 };
 
+// Unknown code (not in the database) that nonetheless carries user actions —
+// e.g. H2C 0500_809C "Build plate not properly positioned". Must NOT be hidden. (#1840)
+const actionableUnknownError: HMSError = {
+  attr: 0x0500809C,
+  code: '0x809C',
+  severity: 3,
+  actions: ['IGNORE_RESUME', 'PROBLEM_SOLVED_RESUME'],
+  full_code: '0500809C',
+};
+
 describe('HMSErrorModal', () => {
   const defaultProps = {
     printerName: 'Test Printer',
@@ -58,6 +68,21 @@ describe('HMSErrorModal', () => {
     it('shows no errors message when errors array is empty', () => {
       render(<HMSErrorModal {...defaultProps} errors={[]} />);
       expect(screen.getByText('No errors')).toBeInTheDocument();
+    });
+
+    it('shows unknown errors that carry actions (never hides an actionable fault)', () => {
+      render(<HMSErrorModal {...defaultProps} errors={[actionableUnknownError]} />);
+      expect(screen.queryByText('No errors')).not.toBeInTheDocument();
+      expect(screen.getByText('[0500-809C]')).toBeInTheDocument();
+      expect(screen.getByText('Ignore this and Resume')).toBeInTheDocument();
+      expect(screen.getByText('Problem Solved and Resume')).toBeInTheDocument();
+    });
+
+    it('shows a fallback description for actionable codes missing from the catalog', () => {
+      render(<HMSErrorModal {...defaultProps} errors={[actionableUnknownError]} />);
+      expect(
+        screen.getByText('Unrecognized HMS code — open the Bambu Lab Wiki for details.'),
+      ).toBeInTheDocument();
     });
   });
 

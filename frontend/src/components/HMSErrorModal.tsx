@@ -896,13 +896,20 @@ function getShortCode(attr: number, code: number): string {
   return `${module.toString(16).padStart(4, '0').toUpperCase()}_${codeNum.toString(16).padStart(4, '0').toUpperCase()}`;
 }
 
-// Helper to filter only known HMS errors (exported for use in badge counts)
+// An HMS error is worth surfacing if we have a local description for it OR it
+// carries user actions (e.g. Ignore/Resume). Hiding an actionable fault leaves
+// the user looking at a silently paused printer with no way to respond to the
+// warning from the UI — the firmware still expects an answer. See #1840.
+function isDisplayableHMSError(error: HMSError): boolean {
+  const codeNum = parseInt(error.code.replace('0x', ''), 16) || 0;
+  const shortCode = getShortCode(error.attr, codeNum);
+  return ERROR_DESCRIPTIONS[shortCode] !== undefined || (error.actions?.length ?? 0) > 0;
+}
+
+// Filter HMS errors down to the ones we should surface (described or actionable).
+// Exported for use in badge counts / status classification.
 export function filterKnownHMSErrors(errors: HMSError[]): HMSError[] {
-  return errors.filter((error) => {
-    const codeNum = parseInt(error.code.replace('0x', ''), 16) || 0;
-    const shortCode = getShortCode(error.attr, codeNum);
-    return ERROR_DESCRIPTIONS[shortCode] !== undefined;
-  });
+  return errors.filter(isDisplayableHMSError);
 }
 
 function getHMSHomeUrl(): string {
@@ -925,12 +932,9 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
     },
   });
 
-  // Filter to only show errors we have descriptions for (skip unknown codes)
-  const knownErrors = errors.filter((error) => {
-    const codeNum = parseInt(error.code.replace('0x', ''), 16) || 0;
-    const shortCode = getShortCode(error.attr, codeNum);
-    return ERROR_DESCRIPTIONS[shortCode] !== undefined;
-  });
+  // Surface errors we can describe OR that carry actions — never hide an
+  // actionable fault just because its code isn't in our local catalog (#1840).
+  const knownErrors = errors.filter(isDisplayableHMSError);
 
   // Close on Escape key
   useEffect(() => {
@@ -998,7 +1002,8 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
                 const { label, color, bgColor, buttonHoverColor, Icon } = getSeverityInfo(error.severity);
                 const codeNum = parseInt(error.code.replace('0x', ''), 16) || 0;
                 const shortCode = getShortCode(error.attr, codeNum);
-                const description = ERROR_DESCRIPTIONS[shortCode];
+                const description = ERROR_DESCRIPTIONS[shortCode]
+                  ?? t('hmsErrors.unknownCode', 'Unrecognized HMS code — open the Bambu Lab Wiki for details.');
                 const hmsHomeUrl = getHMSHomeUrl();
                 const displayCode = shortCode.replace('_', '-');
 

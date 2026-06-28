@@ -496,6 +496,11 @@ class BambuMQTTClient:
         # Per-AMS previous dry_time, used to detect the falling edge above.
         # Seeded lazily as we observe each AMS unit.
         self._previous_dry_times: dict[int, int] = {}
+        # Per-AMS active-cycle target params (filament + temp) we sent on the
+        # last start. Bambu does not echo these back in the per-tick AMS push
+        # — only the dry_time countdown — so we cache what we sent to drive
+        # the UI badge. Cleared on stop or on the dry_time falling edge to 0.
+        self._drying_targets: dict[int, dict[str, object]] = {}
 
         self.state = PrinterState()
         self._client: mqtt.Client | None = None
@@ -2056,38 +2061,40 @@ class BambuMQTTClient:
 
         # Detect AMS drying-complete falling edge per-unit (#1349). When an
         # AMS's `dry_time` transitions from >0 to 0 the cycle just finished
-        # — fire the callback so smart-plug auto-off-after-drying can run.
-        # Works identically for queue-triggered, ambient, and manual drying
-        # because we observe the firmware-reported state, not our own intent.
-        if self.on_drying_complete:
-            for ams_unit in merged_ams:
-                try:
-                    ams_id = int(ams_unit.get("id", -1))
-                except (TypeError, ValueError):
-                    continue
-                if ams_id < 0:
-                    continue
-                # Only evaluate the edge when this update carries an explicit
-                # dry_time. An absent / unparseable value is NOT zero — treating
-                # it as 0 lets a tray-only partial fake a drying-complete edge
-                # (#1462). Skip without touching the remembered value so the
-                # next update that DOES carry dry_time sees the true previous.
-                raw_dry_time = ams_unit.get("dry_time")
-                if raw_dry_time is None:
-                    continue
-                try:
-                    current = int(raw_dry_time)
-                except (TypeError, ValueError):
-                    continue
-                previous = self._previous_dry_times.get(ams_id, 0)
-                self._previous_dry_times[ams_id] = current
-                if previous > 0 and current == 0:
-                    logger.info(
-                        "[%s] AMS %d drying complete (dry_time %d → 0)",
-                        self.serial_number,
-                        ams_id,
-                        previous,
-                    )
+        # — fire the callback so smart-plug auto-off-after-drying can run,
+        # and drop our cached target-cycle params so the badge stops claiming
+        # an active cycle. Works identically for queue-triggered, ambient,
+        # and manual drying because we observe the firmware-reported state.
+        for ams_unit in merged_ams:
+            try:
+                ams_id = int(ams_unit.get("id", -1))
+            except (TypeError, ValueError):
+                continue
+            if ams_id < 0:
+                continue
+            # Only evaluate the edge when this update carries an explicit
+            # dry_time. An absent / unparseable value is NOT zero — treating
+            # it as 0 lets a tray-only partial fake a drying-complete edge
+            # (#1462). Skip without touching the remembered value so the
+            # next update that DOES carry dry_time sees the true previous.
+            raw_dry_time = ams_unit.get("dry_time")
+            if raw_dry_time is None:
+                continue
+            try:
+                current = int(raw_dry_time)
+            except (TypeError, ValueError):
+                continue
+            previous = self._previous_dry_times.get(ams_id, 0)
+            self._previous_dry_times[ams_id] = current
+            if previous > 0 and current == 0:
+                logger.info(
+                    "[%s] AMS %d drying complete (dry_time %d → 0)",
+                    self.serial_number,
+                    ams_id,
+                    previous,
+                )
+                self._drying_targets.pop(ams_id, None)
+                if self.on_drying_complete:
                     self.on_drying_complete(ams_id)
 
         # Create a hash of relevant AMS data to detect changes
@@ -4092,6 +4099,15 @@ class BambuMQTTClient:
             self.serial_number,
             wire_json,
         )
+        # Track the active-cycle target so the badge can show "PETG @ 65°C"
+        # while drying. Bambu only echoes dry_time on subsequent pushes.
+        if mode == 1:
+            self._drying_targets[ams_id] = {
+                "filament": filament or "",
+                "temp": int(temp),
+            }
+        else:
+            self._drying_targets.pop(ams_id, None)
         return True
 
     def _handle_kprofile_response(self, data: dict):

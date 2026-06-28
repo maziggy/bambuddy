@@ -193,6 +193,25 @@ export default {
       large: 'Tarjetas grandes',
       extraLarge: 'Tarjetas extragrandes',
     },
+    pageView: {
+      cards: 'Tarjetas',
+      camWall: 'Muro de cámaras',
+    },
+    camWall: {
+      noPrinters: 'No hay impresoras que mostrar',
+      noSignal: 'Sin señal',
+      live: 'En vivo',
+      snap: 'Foto',
+      off: 'Inactivo',
+      summary: '{{live}} en vivo, {{snap}} fotos, {{total}} en total',
+      settings: {
+        title: 'Ajustes del muro de cámaras',
+        maxLive: 'Máx. transmisiones en vivo',
+        maxLiveHint: 'Cuántos mosaicos transmiten en vivo a la vez. Los demás se actualizan como fotos.',
+        snapshotInterval: 'Intervalo de fotos (segundos)',
+        snapshotIntervalHint: 'Con qué frecuencia los mosaicos no en vivo obtienen una nueva foto.',
+      },
+    },
     // Controls
     hideOffline: 'Ocultar desconectadas',
     nextAvailable: 'Próxima disponible',
@@ -535,11 +554,13 @@ export default {
       hours: 'horas',
       timeRemaining: '{{time}} restante',
       active: 'Secando',
+      targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Secado no compatible',
       powerRequired: 'Conecte el adaptador de corriente del AMS para activar el secado',
       startingDrying: 'Iniciando el secado...',
       stoppingDrying: 'Deteniendo el secado...',
       rotateTray: 'Girar la bobina durante el secado',
+      rotateUnavailableReason: 'No disponible — un slot de este AMS está cargado hacia el cabezal. La bobina está bloqueada por el tubo de alimentación y no puede girar. Retira el filamento primero.',
     },
     amsBackup: {
       titleOn: 'AMS Filament Backup está ACTIVADO. Haz clic para desactivar.',
@@ -1847,6 +1868,10 @@ export default {
     checkPrinterFirmware: 'Comprobar el firmware de la impresora',
     includeBetaUpdates: 'Incluir versiones beta',
     includeBetaUpdatesDesc: 'Notificar sobre versiones beta y preliminares al buscar actualizaciones',
+    localLogin: {
+      disable: 'Deshabilitar el inicio de sesión local con usuario/contraseña',
+      disableHint: 'Cuando se habilita, solo los proveedores SSO pueden iniciar sesión. LDAP no se ve afectado. Defina BAMBUDDY_LOCAL_LOGIN=true en el servidor para mantener una vía de recuperación.',
+    },
     // Queue
     enableRetry: 'Activar reintentos',
     // Home Assistant
@@ -2015,6 +2040,8 @@ export default {
     queueDryingBlockDescription: 'Bloquear la cola de impresión hasta que termine el secado. Cuando está desactivado, las impresiones tienen prioridad sobre el secado.',
     ambientDryingEnabled: 'Secado ambiental',
     ambientDryingEnabledDescription: 'Secar automáticamente el filamento en impresoras inactivas cuando la humedad supera el umbral, incluso sin impresiones en cola.',
+    printDryingEnabled: 'Continuar secado durante la impresión',
+    printDryingEnabledDescription: 'Permite que el secado automático siga funcionando durante una impresión en hardware compatible (H2D, H2C, H2S, P2S, H2D Pro, X2D, X1C, A2L con firmware reciente). La temperatura de secado se limita automáticamente 5°C por debajo del preajuste en reposo para proteger las bobinas.',
     dryingPresets: 'Preajustes de secado',
     dryingPresetsDescription: 'Temperatura y duración por tipo de filamento. El AMS 2 Pro usa temperaturas más bajas; el AMS-HT admite temperaturas más altas.',
     dryingFilament: 'Filamento',
@@ -2515,6 +2542,8 @@ export default {
         defaultGroup: 'Grupo predeterminado',
         defaultGroupDesc: 'Grupo asignado a los usuarios creados automáticamente. Si no se establece, se usa Visores como alternativa.',
         defaultGroupViewersFallback: 'Visores (predeterminado)',
+        autologin: 'Inicio automático',
+        autologinDesc: 'Redirigir a los visitantes no autenticados directamente a este proveedor. Solo un proveedor puede llevar esta marca.',
       },
     },
 
@@ -2663,6 +2692,8 @@ export default {
     signingIn: 'Iniciando sesión...',
     rememberMe: 'Recordarme',
     forgotPassword: '¿Olvidó su contraseña?',
+    autologinFailed: 'El inicio de sesión SSO automático falló. Elija un proveedor abajo para continuar.',
+    localDisabledNotice: 'El inicio de sesión local está deshabilitado. Use uno de los proveedores SSO de abajo.',
     loginSuccess: 'Sesión iniciada correctamente',
     loginFailed: 'Error al iniciar sesión',
     enterCredentials: 'Introduzca el nombre de usuario y la contraseña',

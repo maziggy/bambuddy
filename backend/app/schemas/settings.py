@@ -92,6 +92,16 @@ class AppSettings(BaseModel):
         default=False,
         description="Automatically dry AMS filament on idle printers when humidity exceeds threshold, regardless of queue",
     )
+    print_drying_enabled: bool = Field(
+        default=False,
+        description=(
+            "Allow auto-drying to also fire on a printer that is currently printing, "
+            "when its model+firmware supports concurrent drying (H2D 01.03.00.00+, "
+            "H2C/H2S/P2S/H2D Pro 01.02.00.00+, X2D/A2L 01.01.00.00+, X1C 01.11.02.00+). "
+            "Drying temperature is automatically capped 5 degC below the idle preset "
+            "(floor 40 degC) to protect spools during print."
+        ),
+    )
     drying_presets: str = Field(
         default="",
         description="JSON blob of drying presets per filament type (empty = use built-in defaults)",
@@ -329,6 +339,21 @@ class AppSettings(BaseModel):
         description="JSON array of 3 fan-speed preset values in % (0-100). Empty = use defaults [50, 75, 100]",
     )
 
+    # Local login (#1589) — when False, /auth/login rejects username+password
+    # credentials with HTTP 403 and the login page hides the credentials form,
+    # leaving only the OIDC SSO provider buttons. LDAP is governed by its own
+    # `ldap_enabled` toggle and is not affected. The env-var
+    # ``BAMBUDDY_LOCAL_LOGIN=true`` bypasses this gate at the route level so a
+    # server admin can recover an install whose SSO provider is unreachable
+    # without editing the DB.
+    local_login_enabled: bool = Field(
+        default=True,
+        description=(
+            "Allow username + password login on /auth/login. Disable when only SSO should be usable. "
+            "BAMBUDDY_LOCAL_LOGIN=true on the server overrides this to keep a recovery path open."
+        ),
+    )
+
     # LDAP authentication (#794)
     ldap_enabled: bool = Field(default=False, description="Enable LDAP authentication")
     ldap_server_url: str = Field(default="", description="LDAP server URL (e.g., ldap://ldap.example.com:389)")
@@ -413,6 +438,7 @@ class AppSettingsUpdate(BaseModel):
     check_updates: bool | None = None
     check_printer_firmware: bool | None = None
     include_beta_updates: bool | None = None
+    local_login_enabled: bool | None = None
     language: str | None = None
     notification_language: str | None = None
     bed_cooled_threshold: float | None = None
@@ -425,6 +451,7 @@ class AppSettingsUpdate(BaseModel):
     queue_drying_enabled: bool | None = None
     queue_drying_block: bool | None = None
     ambient_drying_enabled: bool | None = None
+    print_drying_enabled: bool | None = None
     drying_presets: str | None = None
     ams_humidity_thresholds: str | None = None
     per_printer_mapping_expanded: bool | None = None

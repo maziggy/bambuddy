@@ -193,6 +193,25 @@ export default {
       large: 'Große Karten',
       extraLarge: 'Extra große Karten',
     },
+    pageView: {
+      cards: 'Karten',
+      camWall: 'Kamera-Wand',
+    },
+    camWall: {
+      noPrinters: 'Keine Drucker anzuzeigen',
+      noSignal: 'Kein Signal',
+      live: 'Live',
+      snap: 'Foto',
+      off: 'Aus',
+      summary: '{{live}} live, {{snap}} Schnappschüsse, {{total}} insgesamt',
+      settings: {
+        title: 'Kamera-Wand-Einstellungen',
+        maxLive: 'Max. Live-Streams',
+        maxLiveHint: 'Wie viele Kacheln gleichzeitig live streamen. Andere aktualisieren als Schnappschüsse.',
+        snapshotInterval: 'Schnappschuss-Intervall (Sekunden)',
+        snapshotIntervalHint: 'Wie oft Nicht-Live-Kacheln einen neuen Schnappschuss abrufen.',
+      },
+    },
     // Controls
     hideOffline: 'Offline ausblenden',
     nextAvailable: 'Nächster verfügbar',
@@ -535,11 +554,13 @@ export default {
       hours: 'Stunden',
       timeRemaining: '{{time}} verbleibend',
       active: 'Trocknung',
+      targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Trocknung nicht unterstützt',
       powerRequired: 'AMS-Netzteil anschließen, um Trocknung zu aktivieren',
       startingDrying: 'Trocknung wird gestartet...',
       stoppingDrying: 'Trocknung wird gestoppt...',
       rotateTray: 'Spule während der Trocknung drehen',
+      rotateUnavailableReason: 'Nicht verfügbar — in diesem AMS ist ein Slot zum Druckkopf hin geladen. Die Spule ist durch den Zuführschlauch blockiert und kann nicht rotieren. Filament zuerst zurückziehen.',
     },
     amsBackup: {
       titleOn: 'AMS Filament Backup ist EIN. Zum Deaktivieren klicken.',
@@ -1844,6 +1865,10 @@ export default {
     checkPrinterFirmware: 'Drucker-Firmware prüfen',
     includeBetaUpdates: 'Beta-Versionen einschließen',
     includeBetaUpdatesDesc: 'Über Beta- und Vorabversionen bei der Updateprüfung benachrichtigen',
+    localLogin: {
+      disable: 'Lokale Benutzername-/Passwort-Anmeldung deaktivieren',
+      disableHint: 'Wenn aktiviert, ist nur die Anmeldung über SSO möglich. LDAP ist davon nicht betroffen. Setzen Sie BAMBUDDY_LOCAL_LOGIN=true auf dem Server, um einen Wiederherstellungsweg offen zu halten.',
+    },
     // Queue
     enableRetry: 'Wiederholung aktivieren',
     // Home Assistant
@@ -2012,6 +2037,8 @@ export default {
     queueDryingBlockDescription: 'Druckwarteschlange blockieren, bis die Trocknung abgeschlossen ist. Wenn aus, haben Drucke Vorrang.',
     ambientDryingEnabled: 'Umgebungstrocknung',
     ambientDryingEnabledDescription: 'Filament auf inaktiven Druckern automatisch trocknen, wenn die Luftfeuchtigkeit den Schwellenwert überschreitet — auch ohne Warteschlange.',
+    printDryingEnabled: 'Trocknen während des Drucks',
+    printDryingEnabledDescription: 'Automatische Trocknung auch während eines laufenden Drucks auf unterstützter Hardware (H2D, H2C, H2S, P2S, H2D Pro, X2D, X1C, A2L mit aktueller Firmware). Die Trocknungstemperatur wird zum Schutz der Spulen automatisch um 5°C unter dem Leerlaufwert begrenzt.',
     dryingPresets: 'Trocknungsvoreinstellungen',
     dryingPresetsDescription: 'Temperatur und Dauer pro Filamenttyp. AMS 2 Pro verwendet niedrigere Temperaturen, AMS-HT unterstützt höhere.',
     dryingFilament: 'Filament',
@@ -2512,6 +2539,8 @@ export default {
         defaultGroup: 'Standardgruppe',
         defaultGroupDesc: 'Gruppe, der automatisch erstellte Benutzer zugewiesen werden. Fallback auf Viewers, wenn nicht gesetzt.',
         defaultGroupViewersFallback: 'Viewers (Standard)',
+        autologin: 'Automatische Anmeldung',
+        autologinDesc: 'Nicht angemeldete Besucher direkt zu diesem Anbieter weiterleiten. Diese Option kann nur für einen Anbieter aktiv sein.',
       },
     },
 
@@ -2660,6 +2689,8 @@ export default {
     signingIn: 'Anmeldung läuft...',
     rememberMe: 'Angemeldet bleiben',
     forgotPassword: 'Passwort vergessen?',
+    autologinFailed: 'Automatische SSO-Anmeldung fehlgeschlagen. Bitte wählen Sie unten einen Anbieter.',
+    localDisabledNotice: 'Lokale Anmeldung ist deaktiviert. Bitte verwenden Sie einen der SSO-Anbieter unten.',
     loginSuccess: 'Erfolgreich angemeldet',
     loginFailed: 'Anmeldung fehlgeschlagen',
     enterCredentials: 'Bitte Benutzername und Passwort eingeben',

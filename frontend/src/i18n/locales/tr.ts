@@ -193,6 +193,25 @@ export default {
       large: 'Büyük kartlar',
       extraLarge: 'Çok büyük kartlar',
     },
+    pageView: {
+      cards: 'Kartlar',
+      camWall: 'Kamera duvarı',
+    },
+    camWall: {
+      noPrinters: 'Gösterilecek yazıcı yok',
+      noSignal: 'Sinyal yok',
+      live: 'Canlı',
+      snap: 'Foto',
+      off: 'Kapalı',
+      summary: '{{live}} canlı, {{snap}} fotoğraf, toplam {{total}}',
+      settings: {
+        title: 'Kamera duvarı ayarları',
+        maxLive: 'Maks. canlı yayın',
+        maxLiveHint: 'Aynı anda kaç döşemenin canlı yayın yaptığı. Diğerleri foto olarak yenilenir.',
+        snapshotInterval: 'Foto aralığı (saniye)',
+        snapshotIntervalHint: 'Canlı olmayan döşemelerin ne sıklıkla yeni bir foto aldığı.',
+      },
+    },
     // Kontroller
     hideOffline: 'Çevrimdışı olanları gizle',
     nextAvailable: 'Sıradaki müsait',
@@ -535,11 +554,13 @@ export default {
       hours: 'saat',
       timeRemaining: '{{time}} kaldı',
       active: 'Kurutuluyor',
+      targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Kurutma desteklenmiyor',
       powerRequired: 'Kurutmayı etkinleştirmek için AMS güç adaptörünü bağlayın',
       startingDrying: 'Kurutma başlatılıyor...',
       stoppingDrying: 'Kurutma durduruluyor...',
       rotateTray: 'Kurutma sırasında makarayı döndür',
+      rotateUnavailableReason: 'Kullanılamaz — bu AMS\'nin bir yuvası kafaya doğru yüklenmiş durumda. Makara besleme borusu tarafından kilitlendiği için döndürülemez. Önce filamenti geri çekin.',
     },
     amsBackup: {
       titleOn: 'AMS Filament Backup AÇIK. Devre dışı bırakmak için tıklayın.',
@@ -1847,6 +1868,10 @@ export default {
     checkPrinterFirmware: 'Yazıcı firmware\'ini kontrol et',
     includeBetaUpdates: 'Beta sürümleri dahil et',
     includeBetaUpdatesDesc: 'Güncellemeleri kontrol ederken beta ve önyayım sürümleri hakkında bildir',
+    localLogin: {
+      disable: 'Yerel kullanıcı adı/şifre ile oturum açmayı devre dışı bırak',
+      disableHint: 'Etkinleştirildiğinde yalnızca SSO sağlayıcıları ile oturum açılabilir. LDAP etkilenmez. Bir kurtarma yolu açık tutmak için sunucuda BAMBUDDY_LOCAL_LOGIN=true ayarlayın.',
+    },
     // Kuyruk
     enableRetry: 'Yeniden denemeyi etkinleştir',
     // Home Assistant
@@ -2015,6 +2040,8 @@ export default {
     queueDryingBlockDescription: 'Kurutma bitene kadar baskı kuyruğunu engelle. Kapalıyken, baskılar kurutmadan önceliklidir.',
     ambientDryingEnabled: 'Ortam kurutma',
     ambientDryingEnabledDescription: 'Kuyrukta baskı olmasa bile, nem eşiği aştığında boşta yazıcılarda filamenti otomatik olarak kurut.',
+    printDryingEnabled: 'Baskı sırasında kurutmaya devam et',
+    printDryingEnabledDescription: 'Desteklenen donanımda (H2D, H2C, H2S, P2S, H2D Pro, X2D, X1C, A2L güncel firmware ile) baskı sırasında otomatik kurutmanın çalışmaya devam etmesine izin verir. Makara koruması için kurutma sıcaklığı otomatik olarak boştaki ön ayarın 5°C altına sınırlandırılır.',
     dryingPresets: 'Kurutma Ön Ayarları',
     dryingPresetsDescription: 'Filament türü başına sıcaklık ve süre. AMS 2 Pro daha düşük sıcaklıklar kullanır, AMS-HT daha yüksek sıcaklıkları destekler.',
     dryingFilament: 'Filament',
@@ -2515,6 +2542,8 @@ export default {
         defaultGroup: 'Varsayılan Grup',
         defaultGroupDesc: 'Otomatik oluşturulan kullanıcılara atanan grup. Ayarlanmazsa Viewers\'a geri döner.',
         defaultGroupViewersFallback: 'Viewers (varsayılan)',
+        autologin: 'Otomatik oturum açma',
+        autologinDesc: 'Kimlik doğrulaması yapılmamış ziyaretçileri doğrudan bu sağlayıcıya yönlendir. Bu işareti yalnızca bir sağlayıcı taşıyabilir.',
       },
     },
 
@@ -2663,6 +2692,8 @@ export default {
     signingIn: 'Giriş yapılıyor...',
     rememberMe: 'Beni Hatırla',
     forgotPassword: 'Parolanızı mı unuttunuz?',
+    autologinFailed: 'Otomatik SSO girişi başarısız oldu. Devam etmek için aşağıdan bir sağlayıcı seçin.',
+    localDisabledNotice: 'Yerel oturum açma devre dışı. Aşağıdaki SSO sağlayıcılarından birini kullanın.',
     loginSuccess: 'Başarıyla giriş yapıldı',
     loginFailed: 'Giriş başarısız',
     enterCredentials: 'Lütfen kullanıcı adı ve parola girin',

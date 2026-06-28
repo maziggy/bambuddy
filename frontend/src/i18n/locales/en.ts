@@ -193,6 +193,25 @@ export default {
       large: 'Large cards',
       extraLarge: 'Extra large cards',
     },
+    pageView: {
+      cards: 'Cards',
+      camWall: 'Cam wall',
+    },
+    camWall: {
+      noPrinters: 'No printers to show',
+      noSignal: 'No signal',
+      live: 'Live',
+      snap: 'Snap',
+      off: 'Off',
+      summary: '{{live}} live, {{snap}} snapshots, {{total}} total',
+      settings: {
+        title: 'Cam wall settings',
+        maxLive: 'Max live streams',
+        maxLiveHint: 'How many tiles stream live at once. Others refresh as snapshots.',
+        snapshotInterval: 'Snapshot interval (seconds)',
+        snapshotIntervalHint: 'How often non-live tiles fetch a fresh snapshot.',
+      },
+    },
     // Controls
     hideOffline: 'Hide offline',
     nextAvailable: 'Next available',
@@ -538,11 +557,13 @@ export default {
       hours: 'hours',
       timeRemaining: '{{time}} left',
       active: 'Drying',
+      targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Drying not supported',
       powerRequired: 'Connect AMS power adapter to enable drying',
       startingDrying: 'Starting drying...',
       stoppingDrying: 'Stopping drying...',
       rotateTray: 'Rotate spool during drying',
+      rotateUnavailableReason: 'Unavailable — a slot in this AMS is loaded to the toolhead. The spool is locked by the feed tube and cannot rotate. Retract the filament first.',
     },
     // AMS Filament Backup status badge (printer-wide auto-switch to another spool)
     amsBackup: {
@@ -1858,6 +1879,10 @@ export default {
     checkPrinterFirmware: 'Check printer firmware',
     includeBetaUpdates: 'Include beta versions',
     includeBetaUpdatesDesc: 'Notify about beta and prerelease versions when checking for updates',
+    localLogin: {
+      disable: 'Disable local username/password login',
+      disableHint: 'When enabled, only SSO providers can sign in. LDAP is unaffected. Set BAMBUDDY_LOCAL_LOGIN=true on the server to keep a recovery path.',
+    },
     // Queue
     enableRetry: 'Enable retry',
     // Home Assistant
@@ -2026,6 +2051,8 @@ export default {
     queueDryingBlockDescription: 'Block the print queue until drying finishes. When off, prints take priority over drying.',
     ambientDryingEnabled: 'Ambient drying',
     ambientDryingEnabledDescription: 'Automatically dry filament on idle printers when humidity exceeds threshold, even without queued prints.',
+    printDryingEnabled: 'Continue drying while printing',
+    printDryingEnabledDescription: 'Allow auto-drying to keep running during a print on supported hardware (H2D, H2C, H2S, P2S, H2D Pro, X2D, X1C, A2L on recent firmware). Drying temperature is automatically capped 5°C below the idle preset to protect spools.',
     dryingPresets: 'Drying Presets',
     dryingPresetsDescription: 'Temperature and duration per filament type. AMS 2 Pro uses lower temps, AMS-HT supports higher temps.',
     dryingFilament: 'Filament',
@@ -2527,6 +2554,8 @@ export default {
         defaultGroup: 'Default Group',
         defaultGroupDesc: 'Group assigned to auto-created users. Falls back to Viewers if not set.',
         defaultGroupViewersFallback: 'Viewers (default)',
+        autologin: 'Autologin',
+        autologinDesc: 'Redirect unauthenticated visitors straight to this provider. Only one provider can carry this flag.',
       },
     },
 
@@ -2675,6 +2704,8 @@ export default {
     signingIn: 'Logging in...',
     rememberMe: 'Remember Me',
     forgotPassword: 'Forgot your password?',
+    autologinFailed: 'Automatic SSO sign-in failed. Pick a provider below to continue.',
+    localDisabledNotice: 'Local sign-in is disabled. Use one of the SSO providers below.',
     loginSuccess: 'Logged in successfully',
     loginFailed: 'Login failed',
     enterCredentials: 'Please enter username and password',

@@ -1785,6 +1785,272 @@ class TestVirtualPrinterInstance:
         for item in added_items:
             assert _json.loads(item.nozzle_mapping) == [16, 0]
 
+    @pytest.mark.asyncio
+    async def test_on_print_command_late_mqtt_retroactively_stamps_queue_item(self, tmp_path):
+        """#1780 round 3: Bambu Studio's MQTT project_file can arrive AFTER
+        `_add_to_print_queue` already gave up waiting (observed at 2.085 s
+        on H2C wireless setups). The queue item was committed with settings
+        defaults; the slicer's nozzle_mapping + workflow flags must be
+        patched onto it when MQTT lands, otherwise the H2C firmware falls
+        back to auto-pick.
+        """
+        import json as _json
+
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items: list = []
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(
+            side_effect=lambda item: (added_items.append(item), setattr(item, "id", 100 + len(added_items)))[0]
+        )
+
+        async def _flush():
+            # added_items[-1].id was set by `add`; nothing else to do.
+            return None
+
+        mock_db.flush = AsyncMock(side_effect=_flush)
+        mock_db.commit = AsyncMock()
+
+        # First execute() call (the position-max SELECT inside _add_to_print_queue)
+        # returns None; second (the eligible-pending SELECT in
+        # _restamp_recent_queue_item) returns the committed queue id; third
+        # (the UPDATE) is fire-and-forget.
+        position_max_result = MagicMock()
+        position_max_result.scalar = MagicMock(return_value=None)
+        select_pending_result = MagicMock()
+        select_pending_result.all = MagicMock(return_value=[(101,)])
+        update_result = MagicMock()
+        mock_db.execute = AsyncMock(side_effect=[position_max_result, select_pending_result, update_result])
+
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=99,
+            name="LateMQTT",
+            mode="queue",
+            model="O1C2",
+            access_code="12345678",
+            serial_suffix="391800099",
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+        # MQTT server presence enables the wait_for path; we don't actually
+        # use any methods on it.
+        inst._mqtt = MagicMock()
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "test"
+
+        # 1. _add_to_print_queue runs WITHOUT a prior on_print_command —
+        #    the wait_for times out (settings-default fallback) and the
+        #    queue item is committed.
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+            # Shorten the wait so the test isn't slow.
+            patch(
+                "backend.app.services.virtual_printer.manager._SLICER_OPTIONS_WAIT_TIMEOUT",
+                0.05,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        assert added_items[0].nozzle_mapping is None  # MQTT was never received
+        assert file_path.name in inst._recent_queue_items
+
+        # 2. MQTT project_file arrives AFTER the wait expired — must
+        #    retroactively patch the queue item.
+        await inst.on_print_command(
+            file_path.name,
+            {
+                "command": "project_file",
+                "file": file_path.name,
+                "nozzle_mapping": [16, -1, -1, 1],
+                "timelapse": True,
+                "bed_leveling": False,
+            },
+        )
+
+        # The UPDATE call is the third execute. Inspect its values.
+        update_call = mock_db.execute.await_args_list[2]
+        update_stmt = update_call.args[0]
+        compiled = update_stmt.compile(compile_kwargs={"literal_binds": False})
+        params = dict(compiled.params)
+        assert _json.loads(params["nozzle_mapping"]) == [16, -1, -1, 1]
+        assert params["timelapse"] is True
+        assert params["bed_levelling"] is False  # MQTT bed_leveling → column bed_levelling
+        # Recent-queue tracking dict is cleared after the patch.
+        assert file_path.name not in inst._recent_queue_items
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_catches_mqtt_stashed_post_wait_timeout(self, tmp_path):
+        """The actual race-window scenario: wait_for times out, then MQTT
+        arrives and stashes options AFTER the wait but BEFORE the
+        post-commit re-check. The post-commit pop must catch it.
+        """
+        import json as _json
+
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items: list = []
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(
+            side_effect=lambda item: (added_items.append(item), setattr(item, "id", 300 + len(added_items)))[0]
+        )
+        mock_db.flush = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+        position_max_result = MagicMock()
+        position_max_result.scalar = MagicMock(return_value=None)
+        select_pending_result = MagicMock()
+        select_pending_result.all = MagicMock(return_value=[(301,)])
+        update_result = MagicMock()
+        mock_db.execute = AsyncMock(side_effect=[position_max_result, select_pending_result, update_result])
+
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=96,
+            name="RaceCommitYield",
+            mode="queue",
+            model="O1C2",
+            access_code="12345678",
+            serial_suffix="391800096",
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+        inst._mqtt = MagicMock()
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        # Stash MQTT data on the FIRST commit (simulating MQTT arrival
+        # during _add_to_print_queue's commit yield); _restamp also calls
+        # db.commit later, so we one-shot the side effect.
+        commit_calls = {"n": 0}
+
+        async def _delayed_stash(*_args, **_kwargs):
+            commit_calls["n"] += 1
+            if commit_calls["n"] == 1:
+                inst._slicer_print_options[file_path.name] = {
+                    "command": "project_file",
+                    "file": file_path.name,
+                    "nozzle_mapping": [0, 16, -1, -1],
+                    "timelapse": False,
+                }
+            return None
+
+        mock_db.commit = AsyncMock(side_effect=_delayed_stash)
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "test"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+            patch(
+                "backend.app.services.virtual_printer.manager._SLICER_OPTIONS_WAIT_TIMEOUT",
+                0.05,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        # Queue item INSERTed with defaults (wait timed out, no slicer_opts).
+        assert len(added_items) == 1
+        # But the post-commit pop caught the late stash and applied the
+        # slicer nozzle_mapping via _restamp's UPDATE.
+        update_call = mock_db.execute.await_args_list[2]
+        update_stmt = update_call.args[0]
+        compiled = update_stmt.compile(compile_kwargs={"literal_binds": False})
+        params = dict(compiled.params)
+        assert _json.loads(params["nozzle_mapping"]) == [0, 16, -1, -1]
+        assert params["timelapse"] is False
+        # _recent_queue_items entry was consumed by the post-commit
+        # _restamp call.
+        assert file_path.name not in inst._recent_queue_items
+        # And the stash is empty.
+        assert file_path.name not in inst._slicer_print_options
+
+    @pytest.mark.asyncio
+    async def test_on_print_command_late_mqtt_skips_already_dispatched_item(self, tmp_path):
+        """Once the scheduler has picked the queue item up (status != pending),
+        the retroactive patch is a no-op — racing the dispatcher would be
+        unsafe.
+        """
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        mock_db = AsyncMock()
+        # The eligible-pending SELECT returns nothing — item is no longer pending.
+        empty_result = MagicMock()
+        empty_result.all = MagicMock(return_value=[])
+        mock_db.execute = AsyncMock(return_value=empty_result)
+        mock_db.commit = AsyncMock()
+
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=98,
+            name="LateMQTTDispatched",
+            mode="queue",
+            model="O1C2",
+            access_code="12345678",
+            serial_suffix="391800098",
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+        inst._mqtt = MagicMock()
+        # Pre-seed the recent-queue dict — pretend _add_to_print_queue just
+        # committed item id 42.
+        inst._recent_queue_items["test.3mf"] = ([42], 1_000_000.0)
+        # Drive _restamp via on_print_command on the late-MQTT path.
+        with patch("backend.app.services.virtual_printer.manager.time.monotonic", return_value=1_000_001.0):
+            await inst.on_print_command(
+                "test.3mf",
+                {
+                    "command": "project_file",
+                    "file": "test.3mf",
+                    "nozzle_mapping": [16, -1],
+                },
+            )
+        # No UPDATE was issued — only the eligibility SELECT ran.
+        assert mock_db.execute.await_count == 1
+        mock_db.commit.assert_not_awaited()
+        assert "test.3mf" not in inst._recent_queue_items
+
 
 class TestVirtualPrinterManager:
     """Tests for VirtualPrinterManager orchestrator."""

@@ -1431,6 +1431,126 @@ async def bulk_reset_spool_consumed_counter(
     return {"reset": len(spools)}
 
 
+class BulkUpdateRequest(BaseModel):
+    ids: list[int] = Field(..., min_length=1, max_length=500)
+    update: SpoolUpdate
+
+
+class BulkIdsRequest(BaseModel):
+    ids: list[int] = Field(..., min_length=1, max_length=500)
+
+
+@router.post("/spools/bulk-update")
+async def bulk_update_spools(
+    payload: BulkUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Apply the same partial update to every listed spool.
+
+    Per-spool errors are collected and returned alongside the success count so
+    a single bad ID doesn't abort the whole batch. Unknown IDs are reported
+    in the ``not_found`` list.
+    """
+    update_data = payload.update.model_dump(exclude_unset=True)
+    fields_set = set(payload.update.model_fields_set)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="update must include at least one field")
+    try:
+        prepared = await prepare_internal_spool_payload(db, update_data, fields_set)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # Auto-lock weight when the user explicitly sets weight_used — mirrors the
+    # per-spool PATCH behaviour so bulk edits don't desync the lock state.
+    if "weight_used" in prepared and "weight_locked" not in prepared:
+        prepared["weight_locked"] = True
+
+    result = await db.execute(select(Spool).where(Spool.id.in_(payload.ids)))
+    spools = {s.id: s for s in result.scalars().all()}
+    not_found = [sid for sid in payload.ids if sid not in spools]
+    updated_ids: list[int] = []
+    for sid, spool in spools.items():
+        for field, value in prepared.items():
+            setattr(spool, field, value)
+        updated_ids.append(sid)
+    await db.commit()
+    if updated_ids:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+    return {"updated": len(updated_ids), "not_found": not_found}
+
+
+@router.post("/spools/bulk-delete")
+async def bulk_delete_spools(
+    payload: BulkIdsRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Hard-delete every listed spool. Unknown IDs are returned in not_found."""
+    result = await db.execute(select(Spool).where(Spool.id.in_(payload.ids)))
+    spools = list(result.scalars().all())
+    found_ids = {s.id for s in spools}
+    not_found = [sid for sid in payload.ids if sid not in found_ids]
+    for spool in spools:
+        await db.delete(spool)
+    await db.commit()
+    if spools:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+    return {"deleted": len(spools), "not_found": not_found}
+
+
+@router.post("/spools/bulk-archive")
+async def bulk_archive_spools(
+    payload: BulkIdsRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Soft-archive every listed spool (sets archived_at). Already-archived spools are left alone and counted in already_archived."""
+    from datetime import datetime, timezone
+
+    result = await db.execute(select(Spool).where(Spool.id.in_(payload.ids)))
+    spools = list(result.scalars().all())
+    found_ids = {s.id for s in spools}
+    not_found = [sid for sid in payload.ids if sid not in found_ids]
+    archived: list[int] = []
+    already: list[int] = []
+    now = datetime.now(timezone.utc)
+    for spool in spools:
+        if spool.archived_at is not None:
+            already.append(spool.id)
+            continue
+        spool.archived_at = now
+        archived.append(spool.id)
+    await db.commit()
+    if archived:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+    return {"archived": len(archived), "already_archived": already, "not_found": not_found}
+
+
+@router.post("/spools/bulk-restore")
+async def bulk_restore_spools(
+    payload: BulkIdsRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Restore every listed archived spool. Non-archived rows are no-ops counted in already_active."""
+    result = await db.execute(select(Spool).where(Spool.id.in_(payload.ids)))
+    spools = list(result.scalars().all())
+    found_ids = {s.id for s in spools}
+    not_found = [sid for sid in payload.ids if sid not in found_ids]
+    restored: list[int] = []
+    already: list[int] = []
+    for spool in spools:
+        if spool.archived_at is None:
+            already.append(spool.id)
+            continue
+        spool.archived_at = None
+        restored.append(spool.id)
+    await db.commit()
+    if restored:
+        await ws_manager.broadcast({"type": "inventory_changed"})
+    return {"restored": len(restored), "already_active": already, "not_found": not_found}
+
+
 # ── K-Profiles ───────────────────────────────────────────────────────────────
 
 

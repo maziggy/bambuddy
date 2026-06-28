@@ -1229,6 +1229,15 @@ export default {
       batchCreateFailed: 'Creazione lotto non riuscita',
       batchUngrouped: '{{count}} elemento/i separato/i',
       batchUngroupFailed: 'Separazione del lotto non riuscita',
+      resumedAfterFailure: 'Coda ripresa — {{restored}} processo/i ripristinato/i come in attesa',
+      resumeAfterFailureFailed: 'Ripresa della coda non riuscita',
+    },
+    resumeAfterFailure: {
+      banner: '{{printer}} è bloccata da un errore di stampa precedente — {{count}} processo/i saltato/i',
+      bannerHint: 'Risolvi il problema della stampante, poi riprendi per ripristinare i processi saltati e rimuovere il blocco.',
+      button: 'Riprendi dopo errore',
+      confirmTitle: 'Riprendere la coda dopo l\'errore?',
+      confirmMessage: 'Ripristinare {{count}} processo/i saltato/i su {{printer}} come in attesa e rimuovere il blocco della stampa precedente. Assicurati che la stampante sia pronta prima di continuare.',
     },
     // Timeline view
     timeline: {

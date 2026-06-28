@@ -51,6 +51,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@avandeputte](https://github.com/avandeputte)
 - [@joeferrante](https://github.com/joeferrante)
 - [@GPop61](https://github.com)
+- [@CooleyMcCoolson](https://github.com/CooleyMcCoolson)
 ---
 
 ## One-time and historical supporters

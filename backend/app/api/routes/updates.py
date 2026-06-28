@@ -120,6 +120,50 @@ def _is_ha_addon() -> bool:
     return bool(os.environ.get("SUPERVISOR_TOKEN"))
 
 
+def _is_windows_installer_install() -> bool:
+    """Detect a Windows install that came from the Inno Setup installer.
+
+    The installer stages backend source via ``shutil.copytree`` (no ``.git``
+    directory) and does not bundle ``git.exe`` — so the git-fetch-and-reset
+    update path used everywhere else is structurally inoperable here. We
+    surface this as a distinct ``update_method`` and direct the user at the
+    release asset instead.
+
+    A Windows developer running from a real ``git clone`` keeps the git
+    path (``.git`` present), so this only catches installer users.
+    """
+    if sys.platform != "win32":
+        return False
+    return not (settings.app_dir / ".git").exists()
+
+
+def _find_windows_installer_asset(release_data: dict) -> str | None:
+    """Pick the Windows installer .exe out of a GitHub release's assets list.
+
+    Both filenames the workflow uploads end in ``windows-x64-setup.exe``
+    (versioned ``bambuddy-<version>-windows-x64-setup.exe`` and the
+    unversioned alias ``bambuddy-windows-x64-setup.exe`` on non-daily tags
+    only). Either works as a download URL; we prefer the versioned form
+    because it's the one guaranteed to exist on every release including
+    dailies.
+    """
+    assets = release_data.get("assets") or []
+    versioned: str | None = None
+    unversioned: str | None = None
+    for asset in assets:
+        name = asset.get("name") or ""
+        url = asset.get("browser_download_url")
+        if not isinstance(name, str) or not isinstance(url, str):
+            continue
+        if not name.endswith("windows-x64-setup.exe"):
+            continue
+        if name == "bambuddy-windows-x64-setup.exe":
+            unversioned = url
+        else:
+            versioned = url
+    return versioned or unversioned
+
+
 def _find_executable(name: str) -> str | None:
     """Find an executable in PATH or common locations."""
     # Try standard PATH first
@@ -459,10 +503,15 @@ async def check_for_updates(
 
             is_docker = _is_docker_environment()
             is_ha_addon = _is_ha_addon()
+            is_windows_installer = _is_windows_installer_install()
+            installer_download_url: str | None = None
             if is_ha_addon:
                 update_method = "ha_addon"
             elif is_docker:
                 update_method = "docker"
+            elif is_windows_installer:
+                update_method = "windows_installer"
+                installer_download_url = _find_windows_installer_asset(release_data)
             else:
                 update_method = "git"
             return {
@@ -475,7 +524,9 @@ async def check_for_updates(
                 "published_at": published_at,
                 "is_docker": is_docker,
                 "is_ha_addon": is_ha_addon,
+                "is_windows_installer": is_windows_installer,
                 "update_method": update_method,
+                "installer_download_url": installer_download_url,
             }
 
     except httpx.HTTPError as e:
@@ -825,6 +876,19 @@ async def apply_update(
                 "Docker installations cannot be updated in-app. "
                 "Please update via Docker Compose: "
                 "git pull && docker compose build --pull && docker compose up -d"
+            ),
+        }
+    if _is_windows_installer_install():
+        # The installer layout has no ``.git`` and no bundled ``git.exe`` —
+        # the git-fetch path would fail. Frontend swaps the "Update now"
+        # button for a Download Installer link via update_method, so this
+        # branch is only reached if /apply is hit directly.
+        return {
+            "success": False,
+            "is_windows_installer": True,
+            "message": (
+                "Windows installations are updated by re-running the installer. "
+                "Download the latest installer from the Bambuddy releases page."
             ),
         }
 

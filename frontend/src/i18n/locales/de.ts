@@ -2294,6 +2294,8 @@ export default {
     releaseNotes: 'Versionshinweise',
     updateViaDocker: 'Update über Docker Compose:',
     updateViaHomeAssistant: 'Updates werden vom Home Assistant Supervisor verwaltet. Öffne Einstellungen → Add-ons → Bambuddy in Home Assistant, um die neue Version zu installieren.',
+    updateViaWindowsInstaller: 'Windows-Installationen werden durch erneutes Ausführen des Installers aktualisiert. Lade die neue Version unten herunter — deine Daten, Einstellungen und Drucker bleiben erhalten.',
+    downloadWindowsInstaller: 'Installer für v{{version}} herunterladen',
     installUpdate: 'Update installieren',
     latestVersionRunning: 'Sie verwenden die neueste Version',
     failedToCheckUpdates: 'Update-Prüfung fehlgeschlagen: {{error}}',

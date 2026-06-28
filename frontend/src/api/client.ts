@@ -2825,7 +2825,9 @@ export interface UpdateCheckResult {
   message?: string;
   is_docker?: boolean;
   is_ha_addon?: boolean;
-  update_method?: 'docker' | 'git' | 'ha_addon';
+  is_windows_installer?: boolean;
+  update_method?: 'docker' | 'git' | 'ha_addon' | 'windows_installer';
+  installer_download_url?: string | null;
 }
 
 export interface UpdateStatus {
@@ -5334,7 +5336,7 @@ export const api = {
   getVersion: () => request<VersionInfo>('/updates/version'),
   checkForUpdates: () => request<UpdateCheckResult>('/updates/check'),
   applyUpdate: () =>
-    request<{ success: boolean; message: string; status?: UpdateStatus; is_docker?: boolean; is_ha_addon?: boolean }>('/updates/apply', {
+    request<{ success: boolean; message: string; status?: UpdateStatus; is_docker?: boolean; is_ha_addon?: boolean; is_windows_installer?: boolean }>('/updates/apply', {
       method: 'POST',
     }),
   getUpdateStatus: () => request<UpdateStatus>('/updates/status'),

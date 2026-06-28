@@ -2160,6 +2160,8 @@ export default {
     releaseNotes: '릴리스 노트',
     updateViaDocker: 'Docker Compose로 업데이트:',
     updateViaHomeAssistant: '업데이트는 Home Assistant 수퍼바이저에서 관리됩니다. Home Assistant에서 설정 → 애드온 → Bambuddy를 열어 새 버전을 설치하세요.',
+    updateViaWindowsInstaller: 'Windows 설치본은 설치 프로그램을 다시 실행하여 업데이트합니다. 아래에서 새 버전을 다운로드하세요 — 데이터, 설정 및 프린터는 유지됩니다.',
+    downloadWindowsInstaller: 'v{{version}} 설치 프로그램 다운로드',
     installUpdate: '업데이트 설치',
     latestVersionRunning: '최신 버전을 실행 중입니다',
     failedToCheckUpdates: '업데이트 확인 실패: {{error}}',

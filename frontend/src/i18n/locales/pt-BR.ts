@@ -2243,6 +2243,8 @@ export default {
     releaseNotes: 'Notas da versão',
     updateViaDocker: 'Atualizar via Docker Compose:',
     updateViaHomeAssistant: 'As atualizações são gerenciadas pelo Supervisor do Home Assistant. Abra Configurações → Complementos → Bambuddy no Home Assistant para instalar a nova versão.',
+    updateViaWindowsInstaller: 'Instalações no Windows são atualizadas executando o instalador novamente. Baixe a nova versão abaixo — seus dados, configurações e impressoras são preservados.',
+    downloadWindowsInstaller: 'Baixar instalador da v{{version}}',
     installUpdate: 'Instalar atualização',
     latestVersionRunning: 'Você está usando a versão mais recente',
     failedToCheckUpdates: 'Falha ao verificar atualizações: {{error}}',

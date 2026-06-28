@@ -488,6 +488,35 @@ describe('SettingsPage', () => {
       expect(screen.queryByText(/Home Assistant Supervisor/i)).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /install update/i })).not.toBeInTheDocument();
     });
+
+    it('shows the installer-download link for Windows installer installs', async () => {
+      const downloadUrl =
+        'https://github.com/maziggy/bambuddy/releases/download/v0.2.5/bambuddy-0.2.5-windows-x64-setup.exe';
+      await renderWithUpdateCheck({
+        update_available: true,
+        current_version: '0.2.4',
+        latest_version: '0.2.5',
+        release_name: '0.2.5',
+        release_notes: '',
+        release_url: 'https://github.com/maziggy/bambuddy/releases/tag/v0.2.5',
+        published_at: '2099-01-01T00:00:00Z',
+        is_docker: false,
+        is_ha_addon: false,
+        is_windows_installer: true,
+        update_method: 'windows_installer',
+        installer_download_url: downloadUrl,
+      });
+
+      const link = await screen.findByRole('link', { name: /download installer for v0\.2\.5/i });
+      expect(link).toHaveAttribute('href', downloadUrl);
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+      // The in-app update button must NOT render — the git-fetch path can't
+      // work from an installer payload.
+      expect(screen.queryByRole('button', { name: /install update/i })).not.toBeInTheDocument();
+      expect(screen.queryByText(/Home Assistant Supervisor/i)).not.toBeInTheDocument();
+      expect(screen.queryByText('docker compose pull && docker compose up -d')).not.toBeInTheDocument();
+    });
   });
 
   describe('tabs navigation', () => {

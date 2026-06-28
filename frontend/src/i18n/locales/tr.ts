@@ -2297,6 +2297,8 @@ export default {
     releaseNotes: 'Sürüm Notları',
     updateViaDocker: 'Docker Compose ile güncelle:',
     updateViaHomeAssistant: "Güncellemeler Home Assistant Supervisor tarafından yönetilir. Yeni sürümü yüklemek için Home Assistant'ta Ayarlar → Eklentiler → Bambuddy'ye gidin.",
+    updateViaWindowsInstaller: 'Windows kurulumları, kurucu yeniden çalıştırılarak güncellenir. Yeni sürümü aşağıdan indirin — verileriniz, ayarlarınız ve yazıcılarınız korunur.',
+    downloadWindowsInstaller: 'v{{version}} için kurucuyu indir',
     installUpdate: 'Güncellemeyi Yükle',
     latestVersionRunning: 'En son sürümü çalıştırıyorsunuz',
     failedToCheckUpdates: 'Güncellemeler kontrol edilemedi: {{error}}',

@@ -2293,6 +2293,8 @@ export default {
     releaseNotes: 'リリースノート',
     updateViaDocker: 'Docker Composeでアップデート:',
     updateViaHomeAssistant: 'アップデートはHome Assistant Supervisorによって管理されます。Home Assistantの設定→アドオン→Bambuddyを開いて新しいバージョンをインストールしてください。',
+    updateViaWindowsInstaller: 'Windowsインストールはインストーラーを再実行して更新します。下のリンクから新しいバージョンをダウンロードしてください — データ、設定、プリンターは保持されます。',
+    downloadWindowsInstaller: 'v{{version}} のインストーラーをダウンロード',
     installUpdate: 'アップデートをインストール',
     latestVersionRunning: '最新バージョンを使用しています',
     failedToCheckUpdates: 'アップデートの確認に失敗しました: {{error}}',

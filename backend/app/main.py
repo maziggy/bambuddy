@@ -691,6 +691,82 @@ def _get_start_plate_id(archive_id: int | None) -> int | None:
     return _print_plate_ids.get(archive_id)
 
 
+def _partial_progress_scale(progress: int | float | None) -> float:
+    """Clamp ``progress / 100`` into [0.0, 1.0] for partial-print scaling.
+
+    Used by every site that multiplies a "would-have-used" slicer estimate
+    down to "actually-used" for failed / cancelled / stopped prints. Centralised
+    so the three sites in ``_background_notifications`` (and the per-plate
+    override helper) can't drift apart on the coercion shape.
+    """
+    return max(0.0, min((progress or 0) / 100.0, 1.0))
+
+
+def _scope_notification_archive_data_to_plate(
+    archive_data: dict,
+    archive_file_path: str | None,
+    plate_id: int | None,
+    print_status: str,
+    progress: int | float | None,
+    base_dir: Path,
+) -> dict:
+    """Override summed-across-plates totals in ``archive_data`` with the values
+    for ``plate_id`` so the completion notification reports what was actually
+    printed, not the whole project (#1785).
+
+    The 3MF parser at services/archive.py:200-264 sums ``prediction`` and
+    ``weight`` across every plate of a multi-plate file (#1593) — correct for
+    the archive card's "whole project" headline, wrong for the completion
+    notification of a single-plate print. The queue UI already re-reads the
+    3MF per-plate at print_queue.py:272-285; this helper mirrors that for the
+    notification payload (filament grams, time estimate, per-slot breakdown).
+
+    No-ops when ``plate_id`` is None, the file is missing, or the 3MF carries
+    no per-plate values — in every fail case the original ``archive_data`` is
+    returned unchanged so the notification still sends.
+    """
+    if plate_id is None or not archive_file_path:
+        return archive_data
+
+    from backend.app.utils.threemf_tools import (
+        extract_filament_usage_from_3mf,
+        extract_print_time_from_3mf,
+    )
+
+    archive_path = base_dir / archive_file_path
+    if not archive_path.exists():
+        return archive_data
+
+    plate_slots = extract_filament_usage_from_3mf(archive_path, plate_id)
+    plate_grams = sum(f.get("used_g", 0) for f in plate_slots)
+    plate_time = extract_print_time_from_3mf(archive_path, plate_id)
+
+    scale = 1.0 if print_status == "completed" else _partial_progress_scale(progress)
+
+    if plate_time:
+        archive_data["print_time_seconds"] = plate_time
+
+    # Gate both the grams headline AND the per-slot breakdown on the same
+    # `plate_grams > 0` signal: if the 3MF carries per-plate filament rows but
+    # they all sum to zero (slicer bug / re-slice without estimate), drop back
+    # to the project-level grams the archive columns already provide rather
+    # than ship a project-level headline next to an all-zero per-plate
+    # breakdown.
+    if plate_grams > 0:
+        archive_data["actual_filament_grams"] = round(plate_grams * scale, 1)
+        archive_data["filament_slots"] = [
+            {
+                "slot_id": s.get("slot_id"),
+                "used_g": round((s.get("used_g") or 0) * scale, 1),
+                "type": s.get("type", ""),
+                "color": s.get("color", ""),
+            }
+            for s in plate_slots
+        ]
+
+    return archive_data
+
+
 def _extract_filament_data_from_mqtt(data: dict, ams_mapping: list[int] | None = None) -> dict[str, str]:
     """Best-effort filament metadata from the MQTT print-start snapshot.
 
@@ -4179,8 +4255,12 @@ async def on_print_complete(printer_id: int, data: dict):
     # Always drain the plate_id register on completion — the session already
     # consumed it at print-start injection; leaving it would leak into the next
     # print on the same archive_id (rare but possible with reprints) (#1697).
+    # Capture the popped value so the completion notification can scope the
+    # archive-level (summed-across-plates per #1593) filament + time totals
+    # down to the single plate that was actually printed (#1785).
+    notify_plate_id: int | None = None
     if archive_id:
-        _print_plate_ids.pop(archive_id, None)
+        notify_plate_id = _print_plate_ids.pop(archive_id, None)
 
     # Internal inventory: track AMS remain% deltas (skip if Spoolman handles usage)
     try:
@@ -4733,7 +4813,7 @@ async def on_print_complete(printer_id: int, data: dict):
                         # Scale filament usage for partial prints
                         if print_status != "completed" and archive.filament_used_grams:
                             progress = data.get("progress") or 0
-                            scale = max(0.0, min(progress / 100.0, 1.0))
+                            scale = _partial_progress_scale(progress)
                             archive_data["actual_filament_grams"] = round(archive.filament_used_grams * scale, 1)
                             archive_data["progress"] = progress
 
@@ -4741,9 +4821,21 @@ async def on_print_complete(printer_id: int, data: dict):
                         if archive.extra_data and archive.extra_data.get("filament_slots"):
                             slots = archive.extra_data["filament_slots"]
                             if print_status != "completed":
-                                scale = max(0.0, min((data.get("progress") or 0) / 100.0, 1.0))
+                                scale = _partial_progress_scale(data.get("progress"))
                                 slots = [{**s, "used_g": round(s["used_g"] * scale, 1)} for s in slots]
                             archive_data["filament_slots"] = slots
+
+                        # Scope project-summed totals down to the plate that was
+                        # actually printed — see _scope_notification_archive_data_to_plate
+                        # for the why (#1785).
+                        archive_data = _scope_notification_archive_data_to_plate(
+                            archive_data,
+                            archive.file_path,
+                            notify_plate_id,
+                            print_status,
+                            data.get("progress"),
+                            app_settings.base_dir,
+                        )
 
                         # Enrich filament_grams from usage_results when archive has no 3MF data
                         if not archive_data.get("actual_filament_grams") and usage_results:

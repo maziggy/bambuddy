@@ -485,6 +485,64 @@ def extract_filament_usage_from_3mf(file_path: Path, plate_id: int | None = None
     return filament_usage
 
 
+def extract_print_time_from_3mf(file_path: Path, plate_id: int | None = None) -> int | None:
+    """Extract the slicer's predicted print time from a 3MF's slice_info.config.
+
+    Multi-plate 3MFs carry one ``<plate><metadata key="prediction" .../></plate>``
+    per plate. The archive-level `print_time_seconds` is the sum across all plates
+    (see services/archive.py:200-264, #1593). For per-plate UI / notifications,
+    callers re-read the 3MF and request the specific plate's value via this helper.
+
+    Args:
+        file_path: Path to the 3MF file
+        plate_id: Plate index to filter for; if None, returns the first plate's
+            ``prediction`` (matches the legacy single-plate read).
+
+    Returns:
+        Predicted print time in seconds, or None if not found / unparseable.
+    """
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            if "Metadata/slice_info.config" not in zf.namelist():
+                return None
+
+            content = zf.read("Metadata/slice_info.config").decode()
+            root = ET.fromstring(content)
+
+            if plate_id is not None:
+                for plate_elem in root.findall(".//plate"):
+                    plate_index = None
+                    for meta in plate_elem.findall("metadata"):
+                        if meta.get("key") == "index":
+                            try:
+                                plate_index = int(meta.get("value", "0"))
+                            except ValueError:
+                                pass  # Skip plate with unparseable index
+                            break
+
+                    if plate_index == plate_id:
+                        for meta in plate_elem.findall("metadata"):
+                            if meta.get("key") == "prediction":
+                                try:
+                                    return int(meta.get("value", "0"))
+                                except ValueError:
+                                    return None
+                        break
+            else:
+                plate_elem = root.find(".//plate")
+                if plate_elem is not None:
+                    for meta in plate_elem.findall("metadata"):
+                        if meta.get("key") == "prediction":
+                            try:
+                                return int(meta.get("value", "0"))
+                            except ValueError:
+                                return None
+    except Exception as e:
+        logger.warning("Failed to extract print time from %s: %s", file_path, e)
+
+    return None
+
+
 def extract_bed_type_from_3mf(file_path: Path, plate_id: int | None = None) -> str | None:
     """Extract the build plate type (`curr_bed_type`) for a specific plate (#1281).
 

@@ -21,7 +21,10 @@ greenlet>=3.0.0
 
 # Pydantic
 pydantic>=2.0.0
-pydantic-settings>=2.0.0
+# 2.14.2 patches GHSA-4xgf-cpjx-pc3j (NestedSecretsSettingsSource follows
+# symlinks out of secrets_dir). Bambuddy does not use that source — pin
+# is precautionary so the audit stays clean.
+pydantic-settings>=2.14.2
 # Transitive of pydantic-settings, floor-pinned to patch CVE-2026-28684 (dotenv 1.2.1)
 python-dotenv>=1.2.2
 

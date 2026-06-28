@@ -1,0 +1,200 @@
+2026-06-28 18:06:43,998 INFO [backend.app.services.virtual_printer.mqtt_server] [9ff04aee] Starting periodic status push task
+2026-06-28 18:06:43,998 INFO [backend.app.services.virtual_printer.bind_server] [9ff04aee] Bind server listening on [IP]:3002 (TLS)
+2026-06-28 18:06:43,998 INFO [backend.app.services.virtual_printer.manager] [9ff04aee] [VP Bambuddy] Server-mode services started on [IP]
+2026-06-28 18:06:43,998 INFO [backend.app.services.virtual_printer.manager] [9ff04aee] Started server-mode VP: Bambuddy on [IP]
+2026-06-28 18:06:44,000 INFO [uvicorn.access] [-] [IP]:50051 - "PUT /api/v1/virtual-printers/1 HTTP/1.1" 200
+2026-06-28 18:06:49,393 INFO [backend.app.api.routes.virtual_printers] [cfdf5080] Updated virtual printer: Bambuddy (id=1)
+2026-06-28 18:06:49,395 INFO [backend.app.services.virtual_printer.manager] [cfdf5080] VP Bambuddy config changed (mode: review→review), restarting
+2026-06-28 18:06:49,395 INFO [backend.app.services.virtual_printer.mqtt_bridge] [cfdf5080] [Bambuddy] MQTT bridge unbound from printer 1
+2026-06-28 18:06:49,396 INFO [backend.app.services.virtual_printer.tcp_proxy] [cfdf5080] Stopping RTSP proxy
+2026-06-28 18:06:49,396 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] Stopping FTP server
+2026-06-28 18:06:49,396 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] Stopping simple MQTT server
+2026-06-28 18:06:49,396 INFO [backend.app.services.virtual_printer.tcp_proxy] [9ff04aee] Stopping RTSP proxy
+2026-06-28 18:06:49,396 INFO [backend.app.services.virtual_printer.ftp_server] [9ff04aee] Stopping FTP server
+2026-06-28 18:06:49,397 INFO [backend.app.services.virtual_printer.mqtt_server] [9ff04aee] Periodic status push task stopped
+2026-06-28 18:06:49,397 INFO [backend.app.services.virtual_printer.bind_server] [cfdf5080] Stopping bind server
+2026-06-28 18:06:49,397 INFO [backend.app.services.virtual_printer.ssdp_server] [cfdf5080] Stopping SSDP server
+2026-06-28 18:06:49,397 INFO [backend.app.services.virtual_printer.mqtt_server] [9ff04aee] Stopping simple MQTT server
+2026-06-28 18:06:49,398 INFO [backend.app.services.virtual_printer.bind_server] [9ff04aee] Stopping bind server
+2026-06-28 18:06:49,398 INFO [backend.app.services.virtual_printer.manager] [cfdf5080] Removed VP instance: Bambuddy
+2026-06-28 18:06:49,398 INFO [backend.app.services.virtual_printer.manager] [cfdf5080] [VP Bambuddy] Starting server-mode services on [IP]
+2026-06-28 18:06:49,399 INFO [backend.app.services.virtual_printer.certificate] [cfdf5080] Deleted printer certificate (CA preserved)
+2026-06-28 18:06:49,399 INFO [backend.app.services.virtual_printer.certificate] [cfdf5080] Generating certificates for virtual printer (serial: [SERIAL])...
+2026-06-28 18:06:49,521 INFO [backend.app.services.virtual_printer.certificate] [cfdf5080] Using existing CA certificate (expires in 7298 days)
+2026-06-28 18:06:49,652 INFO [backend.app.services.virtual_printer.certificate] [cfdf5080] Generating printer certificate with CN=[SERIAL], local IP: [IP]
+2026-06-28 18:06:49,656 INFO [backend.app.services.virtual_printer.certificate] [cfdf5080] Generated certificate chain at /app/data/virtual_printer/certs/1
+2026-06-28 18:06:49,656 INFO [backend.app.services.virtual_printer.certificate] [cfdf5080]   CA: CN=Virtual Printer CA
+2026-06-28 18:06:49,656 INFO [backend.app.services.virtual_printer.certificate] [cfdf5080]   Printer: CN=[SERIAL]
+2026-06-28 18:06:49,656 INFO [backend.app.services.virtual_printer.mqtt_bridge] [cfdf5080] [Bambuddy] MQTT bridge IP encoding armed: target=[IP] vp=[IP] (bind_address)
+2026-06-28 18:06:49,657 INFO [backend.app.services.virtual_printer.mqtt_bridge] [cfdf5080] [Bambuddy] MQTT bridge bound to printer 1 (serial=[SERIAL])
+2026-06-28 18:06:49,657 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] [Bambuddy] Starting virtual printer implicit FTPS on [IP]:990
+2026-06-28 18:06:49,659 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] FTP SSL context created with standard settings
+2026-06-28 18:06:49,659 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] Starting simple MQTT server on port 8883
+2026-06-28 18:06:49,684 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] MQTT SSL cert info: subject=CN=[SERIAL]
+issuer=CN=Virtual Printer CA
+2026-06-28 18:06:49,684 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] MQTT SSL context: TLS 1.2+, cert=/app/data/virtual_printer/certs/1/virtual_printer.crt
+2026-06-28 18:06:49,685 INFO [backend.app.services.virtual_printer.tcp_proxy] [cfdf5080] Starting RTSP TCP proxy: [IP]:322 → [IP]:322
+2026-06-28 18:06:49,686 INFO [backend.app.services.virtual_printer.bind_server] [cfdf5080] Starting bind server on ports [3000, 3002] (serial=[SERIAL], model=C12, tls=True)
+2026-06-28 18:06:49,686 INFO [backend.app.services.virtual_printer.ssdp_server] [cfdf5080] Starting virtual printer SSDP server: Bambuddy ([SERIAL])
+2026-06-28 18:06:49,686 INFO [backend.app.services.virtual_printer.ssdp_server] [cfdf5080] SSDP server listening on port 2021, advertising IP: [IP]
+2026-06-28 18:06:49,687 INFO [backend.app.services.virtual_printer.ssdp_server] [cfdf5080] Virtual printer: Bambuddy ([SERIAL]) model=C12
+2026-06-28 18:06:49,687 INFO [backend.app.services.virtual_printer.ssdp_server] [cfdf5080] SSDP server also listening on [IP]:2021
+2026-06-28 18:06:49,687 INFO [backend.app.services.virtual_printer.ssdp_server] [cfdf5080] Sent initial SSDP NOTIFY announcement
+2026-06-28 18:06:49,688 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] Implicit FTPS server started on port 990
+2026-06-28 18:06:49,688 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] FTP passive data port range: 50000-50009
+2026-06-28 18:06:49,688 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] Simple MQTT server listening on port 8883
+2026-06-28 18:06:49,688 INFO [backend.app.services.virtual_printer.tcp_proxy] [cfdf5080] RTSP TCP proxy listening on port 322
+2026-06-28 18:06:49,688 INFO [backend.app.services.virtual_printer.bind_server] [cfdf5080] Bind server listening on [IP]:3000 (plain)
+2026-06-28 18:06:49,688 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] Starting periodic status push task
+2026-06-28 18:06:49,689 INFO [backend.app.services.virtual_printer.bind_server] [cfdf5080] Bind server listening on [IP]:3002 (TLS)
+2026-06-28 18:06:49,689 INFO [backend.app.services.virtual_printer.manager] [cfdf5080] [VP Bambuddy] Server-mode services started on [IP]
+2026-06-28 18:06:49,689 INFO [backend.app.services.virtual_printer.manager] [cfdf5080] Started server-mode VP: Bambuddy on [IP]
+2026-06-28 18:06:49,690 INFO [uvicorn.access] [-] [IP]:50051 - "PUT /api/v1/virtual-printers/1 HTTP/1.1" 200
+2026-06-28 18:06:51,068 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] MQTT TLS connection from ('[IP]', 50058) - cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256), version=TLSv1.3
+2026-06-28 18:06:51,068 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] MQTT client connected: [IP]:50058
+2026-06-28 18:06:51,069 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] MQTT client authenticated successfully
+2026-06-28 18:06:51,069 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] MQTT client [IP]:50058 authenticated (negotiated keepalive=60s, idle disconnect disabled)
+2026-06-28 18:06:51,075 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] MQTT subscribe: device/[SERIAL]/report QoS=0
+2026-06-28 18:07:13,686 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] MQTT TLS connection from ('[IP]', 50061) - cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256), version=TLSv1.3
+2026-06-28 18:07:13,686 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] MQTT client connected: [IP]:50061
+2026-06-28 18:07:13,687 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] MQTT client authenticated successfully
+2026-06-28 18:07:13,687 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] MQTT client [IP]:50061 authenticated (negotiated keepalive=60s, idle disconnect disabled)
+2026-06-28 18:07:13,713 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] MQTT subscribe: device/[SERIAL]/report QoS=0
+2026-06-28 18:07:13,730 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20010","version":1}}...
+2026-06-28 18:07:13,730 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] MQTT pushing command: pushall
+2026-06-28 18:07:13,731 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] Sending status report in response to pushall
+2026-06-28 18:07:13,731 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] MQTT publish to device/[SERIAL]/request: {"info":{"command":"get_version","sequence_id":"20011"}}...
+2026-06-28 18:07:13,732 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] MQTT info command: get_version
+2026-06-28 18:07:13,732 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] Sent version response (product_name=[PRINTER])
+2026-06-28 18:07:24,058 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] MQTT publish to device/[SERIAL]/request: {"info":{"command":"get_version","sequence_id":"20012"}}...
+2026-06-28 18:07:24,058 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] MQTT info command: get_version
+2026-06-28 18:07:24,059 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] Sent version response (product_name=[PRINTER])
+2026-06-28 18:07:24,059 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20013","version":1}}...
+2026-06-28 18:07:24,059 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] MQTT pushing command: pushall
+2026-06-28 18:07:24,060 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] Sending status report in response to pushall
+2026-06-28 18:07:30,400 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] [Bambuddy] FTP connection from ('[IP]', 50069)
+2026-06-28 18:07:30,401 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] [Bambuddy] FTP login from [IP]
+2026-06-28 18:07:30,404 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] FTP EPSV listening on port 50003
+2026-06-28 18:07:30,408 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] FTP receiving file: verify_job from [IP]
+2026-06-28 18:07:30,411 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] FTP data TLS from [IP]: cipher=('ECDHE-RSA-AES256-GCM-SHA384', 'TLSv1.2', 256), version=TLSv1.2, session_reused=True
+2026-06-28 18:07:30,411 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] FTP data connection established from [IP]
+2026-06-28 18:07:30,513 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] FTP saved file: /app/data/virtual_printer/uploads/1/verify_job (16 bytes)
+2026-06-28 18:07:30,514 INFO [backend.app.services.virtual_printer.manager] [cfdf5080] [VP Bambuddy] Received file: verify_job from [IP]
+2026-06-28 18:07:30,516 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] [Bambuddy] FTP session cancelled from [IP]
+2026-06-28 18:07:30,517 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] [Bambuddy] FTP session ended from [IP]
+2026-06-28 18:07:30,538 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] [Bambuddy] FTP connection from ('[IP]', 50073)
+2026-06-28 18:07:30,541 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] [Bambuddy] FTP login from [IP]
+2026-06-28 18:07:30,546 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] FTP EPSV listening on port 50008
+2026-06-28 18:07:30,551 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] FTP receiving file: Isektentränkeblume_angepasst.gcode.3mf from [IP]
+2026-06-28 18:07:30,556 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] FTP data TLS from [IP]: cipher=('ECDHE-RSA-AES256-GCM-SHA384', 'TLSv1.2', 256), version=TLSv1.2, session_reused=True
+2026-06-28 18:07:30,557 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] FTP data connection established from [IP]
+2026-06-28 18:07:33,159 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] FTP saved file: /app/data/virtual_printer/uploads/1/Isektentränkeblume_angepasst.gcode.3mf (29249570 bytes)
+2026-06-28 18:07:33,160 INFO [backend.app.services.virtual_printer.manager] [cfdf5080] [VP Bambuddy] Received file: Isektentränkeblume_angepasst.gcode.3mf from [IP]
+2026-06-28 18:07:33,169 INFO [backend.app.services.virtual_printer.manager] [cfdf5080] [VP Bambuddy] Queued: 1 - Isektentränkeblume_angepasst.gcode.3mf
+2026-06-28 18:07:36,182 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] [Bambuddy] FTP session cancelled from [IP]
+2026-06-28 18:07:36,183 INFO [backend.app.services.virtual_printer.ftp_server] [cfdf5080] [Bambuddy] FTP session ended from [IP]
+2026-06-28 18:07:49,782 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] 1Hz status push: 21 pushes/min to [IP]:50058
+2026-06-28 18:07:49,782 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] 1Hz status push: 37 pushes/min to [IP]:50061
+2026-06-28 18:08:01,409 INFO [uvicorn.access] [-] [IP]:50083 - "POST /api/v1/pending-uploads/1/archive HTTP/1.1" 200
+2026-06-28 18:08:49,882 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] 1Hz status push: 60 pushes/min to [IP]:50061
+2026-06-28 18:08:51,288 INFO [backend.app.services.bambu_mqtt] [dbfa7f04] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-06-28 18:08:51,311 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=8, 4 profiles, expected=0.4
+2026-06-28 18:08:51,312 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 4 K-profiles for nozzle=0.4
+2026-06-28 18:08:51,313 INFO [backend.app.services.bambu_mqtt] [dbfa7f04] [[SERIAL]] Got 4 K-profiles for nozzle=0.4 on attempt 1
+2026-06-28 18:08:59,590 INFO [backend.app.api.routes.cloud] [a39e3e5a] get_filament_info called with 1 IDs: ['GFA00']
+2026-06-28 18:08:59,855 INFO [uvicorn.access] [-] [IP]:50106 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-06-28 18:09:05,792 INFO [uvicorn.access] [-] [IP]:50112 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-06-28 18:09:05,833 INFO [backend.app.api.routes.camera] [c174c37f] Using chamber image protocol for [PRINTER]
+2026-06-28 18:09:05,833 INFO [backend.app.api.routes.camera] [c174c37f] Camera viewer attached to printer-1 (subscribers=1)
+2026-06-28 18:09:05,834 INFO [backend.app.api.routes.camera] [c174c37f] Starting chamber image stream for [IP] (stream_id=1-fanout, model=[PRINTER])
+2026-06-28 18:09:05,857 INFO [backend.app.api.routes.camera] [c174c37f] Camera viewer detached from printer-1 (subscribers=0)
+2026-06-28 18:09:05,911 INFO [uvicorn.access] [-] [IP]:50083 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-06-28 18:09:05,967 INFO [backend.app.api.routes.camera] [63f16438] Using chamber image protocol for [PRINTER]
+2026-06-28 18:09:05,967 INFO [backend.app.api.routes.camera] [63f16438] Camera viewer attached to printer-1 (subscribers=1)
+2026-06-28 18:09:06,600 INFO [backend.app.services.camera] [c174c37f] Chamber image: connected to [IP]:6000
+2026-06-28 18:09:07,806 INFO [backend.app.api.routes.camera] [63f16438] Camera viewer detached from printer-1 (subscribers=0)
+2026-06-28 18:09:07,837 INFO [backend.app.api.routes.camera] [634b648a] Using chamber image protocol for [PRINTER]
+2026-06-28 18:09:07,837 INFO [backend.app.api.routes.camera] [634b648a] Camera viewer attached to printer-1 (subscribers=1)
+2026-06-28 18:09:09,119 INFO [backend.app.api.routes.camera] [634b648a] Camera viewer detached from printer-1 (subscribers=0)
+2026-06-28 18:09:09,143 INFO [backend.app.api.routes.camera] [c174c37f] Chamber image stream cancelled (stream_id=1-fanout)
+2026-06-28 18:09:09,150 INFO [backend.app.api.routes.camera] [c174c37f] Chamber image stream stopped for [IP] (stream_id=1-fanout)
+2026-06-28 18:09:09,150 INFO [backend.app.api.routes.camera] [4530c22b] Shut down camera fan-out broadcaster for printer 1
+2026-06-28 18:09:09,151 INFO [backend.app.api.routes.camera] [4530c22b] Stopped 0 camera stream(s) for printer 1
+2026-06-28 18:09:09,151 INFO [uvicorn.access] [-] [IP]:50113 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-06-28 18:09:09,235 INFO [backend.app.api.routes.camera] [f83dccc8] Using chamber image protocol for [PRINTER]
+2026-06-28 18:09:09,236 INFO [backend.app.api.routes.camera] [f83dccc8] Camera viewer attached to printer-1 (subscribers=1)
+2026-06-28 18:09:09,237 INFO [backend.app.api.routes.camera] [f83dccc8] Starting chamber image stream for [IP] (stream_id=1-fanout, model=[PRINTER])
+2026-06-28 18:09:10,000 INFO [backend.app.services.camera] [f83dccc8] Chamber image: connected to [IP]:6000
+2026-06-28 18:09:14,168 INFO [backend.app.api.routes.camera] [f83dccc8] Camera viewer detached from printer-1 (subscribers=0)
+2026-06-28 18:09:14,188 INFO [backend.app.api.routes.camera] [f83dccc8] Chamber image stream cancelled (stream_id=1-fanout)
+2026-06-28 18:09:14,195 INFO [backend.app.api.routes.camera] [f83dccc8] Chamber image stream stopped for [IP] (stream_id=1-fanout)
+2026-06-28 18:09:14,196 INFO [backend.app.api.routes.camera] [52fb9acc] Shut down camera fan-out broadcaster for printer 1
+2026-06-28 18:09:14,196 INFO [backend.app.api.routes.camera] [52fb9acc] Stopped 0 camera stream(s) for printer 1
+2026-06-28 18:09:14,197 INFO [uvicorn.access] [-] [IP]:50116 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-06-28 18:09:49,982 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] 1Hz status push: 60 pushes/min to [IP]:50061
+2026-06-28 18:10:27,714 INFO [backend.app.api.routes.print_queue] [2e2f91db] Added archive 1 to queue for 1
+2026-06-28 18:10:27,723 INFO [uvicorn.access] [-] [IP]:50116 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-06-28 18:10:30,409 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(1, 1, 1, None)]
+2026-06-28 18:10:30,434 INFO [backend.app.services.print_scheduler] [-] Starting queue item 1
+2026-06-28 18:10:30,443 INFO [backend.app.services.print_scheduler] [-] Queue item 1: FTP upload starting - printer=[PRINTER] ([PRINTER]), ip=[IP], file=Isektentränkeblume_angepasst.3mf, local_path=/app/data/archive/unassigned/20260628_180800_Isektentränkeblume_angepasst/Isektentränkeblume_angepasst.gcode.3mf, retry_enabled=True, retry_count=3, timeout=30.0
+2026-06-28 18:10:31,270 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-06-28 18:10:31,295 INFO [backend.app.services.bambu_ftp] [-] FTP connecting to [IP] for upload (model=[PRINTER], mode=prot_p, socket_timeout=30.0s)...
+2026-06-28 18:10:32,073 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-06-28 18:10:32,074 INFO [backend.app.services.bambu_ftp] [-] FTP connected to [IP]
+2026-06-28 18:10:32,074 INFO [backend.app.services.bambu_ftp] [-] FTP uploading /app/data/archive/unassigned/20260628_180800_Isektentränkeblume_angepasst/Isektentränkeblume_angepasst.gcode.3mf (29249570 bytes) to /Isektentränkeblume_angepasst.3mf
+2026-06-28 18:10:32,129 INFO [backend.app.services.bambu_ftp] [-] FTP data channel ready in 0.1s (PASV + TLS handshake)
+2026-06-28 18:10:50,076 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] 1Hz status push: 60 pushes/min to [IP]:50061
+2026-06-28 18:11:50,177 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] 1Hz status push: 60 pushes/min to [IP]:50061
+2026-06-28 18:12:50,277 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] 1Hz status push: 60 pushes/min to [IP]:50061
+2026-06-28 18:13:08,333 INFO [backend.app.services.bambu_ftp] [-] FTP STOR confirmed for /Isektentränkeblume_angepasst.3mf: 226
+2026-06-28 18:13:08,334 INFO [backend.app.services.bambu_ftp] [-] FTP upload complete: /Isektentränkeblume_angepasst.3mf (29249570 bytes in 156.3s, 183 KB/s)
+2026-06-28 18:13:08,335 INFO [backend.app.services.bambu_ftp] [-] FTP mode cached for [IP]: prot_p
+2026-06-28 18:13:08,354 INFO [backend.app.main] [-] Registered expected print: printer=1, file=Isektentränkeblume_angepasst.3mf, archive=1, ams_mapping=[254], plate_id=1
+2026-06-28 18:13:08,366 INFO [backend.app.services.print_scheduler] [-] Queue item 1: Status set to 'printing', sending print command...
+2026-06-28 18:13:08,369 INFO [backend.app.services.printer_manager] [-] PRINT COMMAND: printer=1, file=Isektentränkeblume_angepasst.3mf, caller=print_scheduler.py:321:check_queue
+2026-06-28 18:13:08,369 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] All filament slots use external spool — setting use_ams=False
+2026-06-28 18:13:08,369 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_1.gcode", "url": "ftp://Isektentr\u00e4nkeblume_angepasst.3mf", "file": "Isektentr\u00e4nkeblume_angepasst.3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": true, "auto_bed_leveling": 1, "flow_cali": false, "vibration_cali": true, "layer_inspect": false, "use_ams": false, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 0, "subtask_name": "Isektentr\u00e4nkeblume_angepasst", "profile_id": "0", "project_id": "251761359", "subtask_id": "251761359", "task_id": "251761359", "ams_mapping": [-1], "ams_mapping2": [{"ams_id": 255, "slot_id": 0}]}}
+2026-06-28 18:13:08,370 INFO [backend.app.services.print_scheduler] [-] Queue item 1: Print started successfully - Isektentränkeblume_angepasst.gcode.3mf
+2026-06-28 18:13:08,381 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FAILED, awaiting_plate_clear=False
+2026-06-28 18:13:08,393 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS Filament Backup: OFF
+2026-06-28 18:13:17,078 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT START detected - file: Isektentränkeblume_angepasst.3mf, subtask: Isektentränkeblume_angepasst, is_new: True, is_file_change: False
+2026-06-28 18:13:17,079 INFO [backend.app.main] [-] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-06-28 18:13:17,082 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping=None, tray_now=254, last_loaded_tray=254
+2026-06-28 18:13:17,087 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (1 trays): {'255-0': 0}
+2026-06-28 18:13:17,092 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=False
+2026-06-28 18:13:17,092 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: Isektentränkeblume_angepasst.3mf, subtask: Isektentränkeblume_angepasst
+2026-06-28 18:13:17,092 INFO [backend.app.main] [-] Using expected archive 1 for print (skipping duplicate)
+2026-06-28 18:13:17,099 INFO [backend.app.main] [-] [CALLBACK] Injected ams_mapping into usage tracker session: [254]
+2026-06-28 18:13:17,102 INFO [backend.app.main] [-] [ENERGY] No smart plug for printer 1 (archive 1)
+2026-06-28 18:13:17,110 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-28 18:13:17,110 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-06-28 18:13:18,318 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 81420 bytes
+2026-06-28 18:13:18,319 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 ([PRINTER])
+2026-06-28 18:13:18,324 INFO [backend.app.services.notification_service] [-] No notification providers configured for print_start event on printer 1
+2026-06-28 18:13:18,346 INFO [backend.app.main] [-] Loaded 8 printable objects for printer 1
+2026-06-28 18:13:19,187 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-06-28 18:13:20,660 INFO [backend.app.main] [-] [TIMELAPSE] Baseline at print start: 70 video files for printer 1
+2026-06-28 18:13:50,376 INFO [backend.app.services.virtual_printer.mqtt_server] [cfdf5080] [Bambuddy] 1Hz status push: 60 pushes/min to [IP]:50061
+2026-06-28 18:14:20,472 INFO [backend.app.api.routes.support] [bd1a68ee] Log level changed to DEBUG
+2026-06-28 18:14:20,472 INFO [backend.app.api.routes.bug_report] [bd1a68ee] Bug report: enabled debug logging
+2026-06-28 18:14:20,472 DEBUG [backend.app.services.bambu_mqtt] [bd1a68ee] [[SERIAL]] Requesting status update (pushall)
+2026-06-28 18:14:20,473 INFO [uvicorn.access] [-] [IP]:50183 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-06-28 18:14:20,677 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: Isektentränkeblume_angepasst.3mf, subtask_name: Isektentränkeblume_angepasst
+2026-06-28 18:14:20,677 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '0', 'tray_exist_bits': '0', 'tray_is_bbl_bits': '0', 'tray_tar': '254', 'tray_now': '254', 'tray_pre': '254', 'tray_read_done_bits': '0', 'tray_reading_bits': '0', 'version': 1, 'insert_flag': True, 'power_on_flag': False}
+2026-06-28 18:14:20,678 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 254
+2026-06-28 18:14:20,678 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 0 new units, 0 total
+2026-06-28 18:14:20,678 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-06-28 18:14:20,678 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-28 18:14:20,679 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-06-28 18:14:20,679 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-06-28 18:14:20,679 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-06-28 18:14:20,680 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-06-28 18:14:20,680 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-06-28 18:14:20,680 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-06-28 18:14:20,681 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -35dBm
+2026-06-28 18:14:20,681 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-06-28 18:14:20,681 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: Isektentränkeblume_angepasst.3mf, subtask: Isektentränkeblume_angepasst
+2026-06-28 18:14:22,693 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-28 18:14:22,860 DEBUG [backend.app.api.routes.printers] [d262b06d] API returning ams_mapping: [], ams_extruder_map: {}
+2026-06-28 18:14:22,870 DEBUG [backend.app.api.routes.printers] [d262b06d] Using tray_now directly as global ID: 254
+2026-06-28 18:14:26,717 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status

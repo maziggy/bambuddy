@@ -5465,11 +5465,16 @@ class BambuMQTTClient:
             )
 
         def hms_resume():
-            # BambuStudio's actual shape — plain resume, no err / no job_id.
-            # The `err`-bearing shape (`err`, `param: "reserve"`, `job_id`) is
-            # silently rejected by Bambu firmware on print_error- and hms[]-sourced
-            # faults alike; verified by injecting candidate shapes against a live
-            # H2D paused on a wrong-plate HMS. See #1830 §(2).
+            # Plain resume (no err / no job_id) — the default for the generic
+            # resume actions (RESUME_PRINTING, FILAMENT_LOAD_RESUME, PROCEED, …)
+            # not tied to a specific print_error dialog.
+            #
+            # This does NOT mean err-bearing shapes are dead: Bambu Studio/Handy
+            # send err-bearing `ignore` AND err-bearing `resume` for the two
+            # print_error-dialog buttons (captured live on an H2C — see the note
+            # by the `ignore` payload in hms_ignore). The #1830 §(2) "rejected"
+            # result was idle_ignore on a paused print and doesn't generalize to
+            # those verbs.
             publish(
                 {
                     "print": {
@@ -5498,17 +5503,53 @@ class BambuMQTTClient:
             # non-pause warnings. type=0 dismisses once, type=1 hides the same
             # warning permanently.
             #
-            # For HMS-paused state, `idle_ignore` is silently rejected by the
-            # firmware regardless of `err` (verified on a live H2D — see
-            # #1830 §(2)). The user-facing intent of "Ignore and resume" on a
-            # paused print is to continue, so we dispatch a plain resume
-            # instead. The `persistent` flag is informational in that branch —
-            # firmware can't honour "don't remind" through a resume — but the
-            # button still does what the user expects.
+            # For an HMS-paused *print_error dialog*, a plain `resume` makes the
+            # firmware re-evaluate the fault and immediately re-raise it
+            # (verified live on an H2C: 0500_809C cleared to 0x0 via
+            # clean_print_error, then came straight back on `resume`, still
+            # PAUSE). What Bambu Studio / Handy actually send for "Ignore and
+            # Resume" is a dedicated `ignore` verb whose `err` is the print_error
+            # as a DECIMAL string, carrying `param: "reserve"` — captured off
+            # `device/<sn>/request` on a live H2C, after which the dialog cleared
+            # and the print continued. See #1830.
+            #
+            # The `persistent` flag is informational here — firmware can't honour
+            # "don't remind" through ignore/resume — but the button still does
+            # what the user expects.
             #
             # NB: PrinterState's `state` field carries the MQTT `gcode_state`
-            # value verbatim — line 2144 stores `data["gcode_state"]` onto it.
+            # value verbatim — it mirrors `data["gcode_state"]` on each report.
             if self.state.state == "PAUSE":
+                # print_error-dialog faults arrive as an 8-char (32-bit) hex
+                # code; the `ignore` verb wants it as a decimal string. 16-char
+                # hms[]-array faults haven't been captured against a live
+                # printer yet, so they keep the plain-resume path. The route's
+                # schema already guarantees `print_error` is pure hex of length
+                # 8 or 16, so int(..., 16) can't raise here.
+                if print_error and len(print_error) == 8:
+                    err_decimal = str(int(print_error, 16))
+                    # Captured live from Bambu Handy on an H2C print_error
+                    # dialog (sniffed device/<sn>/request). Both dialog buttons
+                    # send the same err-bearing shape — err = decimal
+                    # print_error + param "reserve" + job_id — and differ ONLY
+                    # in the command verb:
+                    #   "Ignore and Resume"         -> "ignore"  (wired here)
+                    #   "Problem Solved and Resume" -> "resume"  (NOT wired —
+                    #       PROBLEM_SOLVED_RESUME still takes the plain-resume
+                    #       path; see the RESUME_* case)
+                    # e.g. 0500_809C -> err "83919004"; 0500_8062 -> "83918946".
+                    publish(
+                        {
+                            "print": {
+                                "command": "ignore",
+                                "err": err_decimal,
+                                "job_id": job_id or "0",
+                                "param": "reserve",
+                                "sequence_id": "0",
+                            }
+                        }
+                    )
+                    return
                 hms_resume()
                 return
             publish(
@@ -5572,6 +5613,17 @@ class BambuMQTTClient:
                 | HMSAction.FILAMENT_LOAD_RESUME
                 | HMSAction.PROCEED
             ):
+                # NB: PROBLEM_SOLVED_RESUME shares the print_error dialog (e.g.
+                # 0500_809C) with IGNORE_RESUME but is semantically a re-verify,
+                # not a bypass. Its real command (captured live from Handy) is an
+                # err-bearing `resume` ({"command":"resume","err":<decimal>,
+                # "param":"reserve","job_id":…}, documented by the `ignore`
+                # payload in hms_ignore) — and that `resume` RE-CHECKS the fault:
+                # confirmed live, clicking it on a still-failing plate re-raises,
+                # which is the intended "I fixed it, re-verify" semantics. Only
+                # `ignore` skips the check. So this PR wires the Ignore (bypass)
+                # button; Problem-Solved correctly stays on a re-checking resume
+                # (plain here). See #1830.
                 hms_resume()
 
             case HMSAction.STOP_PRINTING:

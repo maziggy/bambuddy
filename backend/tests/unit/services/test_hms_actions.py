@@ -131,20 +131,39 @@ class TestExecuteHmsActionDispatch:
         assert "err" not in cmds[0]["print"]
         assert "job_id" not in cmds[0]["print"]
 
-    def test_ignore_resume_dispatches_resume_when_print_paused(self, client):
-        # Verified on H2D: idle_ignore is silently rejected while gcode_state
-        # is PAUSE. The user's intent on a paused HMS modal is to continue,
-        # so IGNORE_RESUME dispatches a plain resume instead. See #1830 §(2).
+    def test_ignore_resume_dispatches_ignore_for_paused_print_error(self, client):
+        # A plain resume re-checks and re-raises a print_error dialog on the
+        # H2C; Bambu Studio/Handy send a dedicated `ignore` verb whose `err`
+        # is the print_error as a DECIMAL string with param "reserve".
+        # Captured off a live H2C (0500_809C -> 83919004). See #1830.
         client.state.state = "PAUSE"
-        client.execute_hms_action("03008070", HMSAction.IGNORE_RESUME)
+        client.execute_hms_action("0500809C", HMSAction.IGNORE_RESUME, job_id="task-7")
         cmds = self._published_commands(client)
         assert cmds[0] == {
             "print": {
-                "command": "resume",
-                "param": "",
+                "command": "ignore",
+                "err": "83919004",
+                "job_id": "task-7",
+                "param": "reserve",
                 "sequence_id": "0",
             }
         }
+
+    def test_ignore_resume_paused_defaults_job_id_to_zero(self, client):
+        client.state.state = "PAUSE"
+        client.execute_hms_action("0500809C", HMSAction.IGNORE_RESUME)
+        cmds = self._published_commands(client)
+        assert cmds[0]["print"]["command"] == "ignore"
+        assert cmds[0]["print"]["job_id"] == "0"
+
+    def test_ignore_resume_paused_16char_falls_back_to_resume(self, client):
+        # hms[]-array faults (16-char) haven't been captured against a live
+        # printer for the `ignore` verb, so a paused 16-char fault keeps the
+        # plain-resume path rather than guessing the err encoding.
+        client.state.state = "PAUSE"
+        client.execute_hms_action("0C00030000020010", HMSAction.IGNORE_RESUME)
+        cmds = self._published_commands(client)
+        assert cmds[0]["print"]["command"] == "resume"
 
     def test_ignore_resume_uses_idle_ignore_when_not_paused(self, client):
         # For non-pause warnings (e.g. AMS-side prompts during printing),
@@ -161,15 +180,15 @@ class TestExecuteHmsActionDispatch:
             }
         }
 
-    def test_dont_remind_dispatches_resume_when_paused(self, client):
-        # The persistent variant still degrades to resume on a paused print —
-        # the "don't remind" flag can't ride along on a resume, but the user
-        # clicked an action whose top-level intent is to continue, so we
-        # honour that. The behavioural contract is documented in hms_ignore.
+    def test_dont_remind_dispatches_ignore_when_paused(self, client):
+        # The persistent "don't remind" flag can't ride along on the paused
+        # ignore/resume path, but the action's top-level intent is to continue,
+        # so a paused print_error dialog still dismisses via the `ignore` verb.
+        # The behavioural contract is documented in hms_ignore.
         client.state.state = "PAUSE"
-        client.execute_hms_action("03008070", HMSAction.DONT_REMIND_NEXT_TIME)
+        client.execute_hms_action("0500809C", HMSAction.DONT_REMIND_NEXT_TIME)
         cmds = self._published_commands(client)
-        assert cmds[0]["print"]["command"] == "resume"
+        assert cmds[0]["print"]["command"] == "ignore"
 
     def test_dont_remind_uses_idle_ignore_type_one_when_not_paused(self, client):
         client.state.state = "RUNNING"

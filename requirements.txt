@@ -61,6 +61,14 @@ reportlab>=4.0.0
 trimesh>=4.0.0
 matplotlib>=3.8.0
 fast-simplification>=0.1.0
+# trimesh's 3MF loader uses networkx for scene-graph traversal and lxml
+# for the model.xml parse. Required by plate_thumbnail.py to render the
+# model out of a sliced .gcode.3mf when the BS/Orca CLI didn't embed
+# Metadata/plate_N.png. Not strictly transitive — trimesh imports both
+# lazily inside the 3MF code path, so the load call fails at runtime
+# ("No module named 'networkx'" / "No module named 'lxml'") if absent.
+networkx>=3.0
+lxml>=5.0
 
 # System monitoring
 psutil>=6.0.0

@@ -1,0 +1,200 @@
+2026-06-27 20:49:36,447 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping=None, tray_now=255, last_loaded_tray=3
+2026-06-27 20:49:36,448 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping-related keys: {'ams_extruder_map': {'0': 0}}
+2026-06-27 20:49:36,449 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 0: T0(type=PLA, color=F98C36FF, now=?, tar=?), T1(type=PETG, color=161616FF, now=?, tar=?), T2(type=PLA, color=2850E0FF, now=?, tar=?), T3(type=PLA, color=BCBCBCFF, now=?, tar=?)
+2026-06-27 20:49:36,457 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (1 trays): {'255-0': 0}
+2026-06-27 20:49:36,468 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=False
+2026-06-27 20:49:36,469 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: ESP32-cam-mount.stl.gcode.3mf, subtask: ESP32-cam-mount.stl
+2026-06-27 20:49:36,475 INFO [backend.app.main] [-] Trying filenames: ['ESP32-cam-mount.stl.gcode.3mf', 'ESP32-cam-mount.stl.3mf']
+2026-06-27 20:49:38,168 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-06-27 20:49:39,685 INFO [backend.app.services.bambu_ftp] [-] Successfully downloaded /ESP32-cam-mount.stl.gcode.3mf to /app/data/archive/temp/ESP32-cam-mount.stl.gcode.3mf (134715 bytes)
+2026-06-27 20:49:39,686 INFO [backend.app.services.bambu_ftp] [-] FTP mode cached for [IP]: prot_p
+2026-06-27 20:49:39,701 INFO [backend.app.main] [-] Downloaded: /ESP32-cam-mount.stl.gcode.3mf
+2026-06-27 20:49:39,738 INFO [backend.app.main] [-] Created archive 77 for ESP32-cam-mount.stl.gcode.3mf
+2026-06-27 20:49:39,741 INFO [backend.app.main] [-] [ENERGY] No smart plug for printer 1 (archive 77)
+2026-06-27 20:49:39,750 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-27 20:49:39,751 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-06-27 20:49:41,061 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 58816 bytes
+2026-06-27 20:49:41,061 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 ([PRINTER])
+2026-06-27 20:49:41,065 INFO [backend.app.services.notification_service] [-] No notification providers configured for print_start event on printer 1
+2026-06-27 20:49:41,069 INFO [backend.app.main] [-] Loaded 1 printable objects for printer 1
+2026-06-27 20:49:41,978 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-06-27 20:49:42,254 INFO [backend.app.main] [-] [TIMELAPSE] Baseline at print start: 35 video files for printer 1
+2026-06-27 20:54:05,727 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-27 20:57:02,573 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-27 20:57:02,574 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-06-27 20:57:03,862 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 37770 bytes
+2026-06-27 20:58:57,226 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-27 20:58:57,228 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-06-27 20:58:58,943 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 40896 bytes
+2026-06-27 20:59:05,741 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-27 21:04:05,754 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-27 21:07:49,032 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-27 21:07:49,033 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-06-27 21:07:50,808 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 41026 bytes
+2026-06-27 21:09:05,767 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-27 21:14:05,779 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-27 21:16:51,687 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-27 21:16:51,688 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-06-27 21:16:53,118 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 40615 bytes
+2026-06-27 21:19:05,789 INFO [backend.app.main] [-] Sending temperature alarm for [PRINTER] AMS-A: 36.4°C > 35.0°C
+2026-06-27 21:19:05,795 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-27 21:24:05,808 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-27 21:26:01,803 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT COMPLETE detected - state: FINISH, status: completed, file: ESP32-cam-mount.stl.gcode.3mf, subtask: ESP32-cam-mount.stl, was_running: True, timelapse_during_print: True
+2026-06-27 21:26:01,804 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] FINISH PHOTO MOMENT (FINISH fallback) — stage-22 never fired; capturing at FINISH-state transition
+2026-06-27 21:26:01,806 INFO [backend.app.main] [-] [FINISH-PHOTO-MOMENT] printer=1 trigger=finish_state timelapse_active=True
+2026-06-27 21:26:01,807 INFO [backend.app.main] [-] [FINISH-PHOTO-MOMENT] timelapse active for printer 1 — skipping pre-capture (last-frame extraction will run post-completion)
+2026-06-27 21:26:01,807 INFO [backend.app.main] [-] [CALLBACK] on_print_complete started for printer 1
+2026-06-27 21:26:01,808 INFO [backend.app.main] [-] [TIMING] WebSocket send_print_complete: 0.001s elapsed
+2026-06-27 21:26:01,809 INFO [backend.app.main] [-] Print complete - filename: ESP32-cam-mount.stl.gcode.3mf, subtask: ESP32-cam-mount.stl, status: completed
+2026-06-27 21:26:01,810 INFO [backend.app.main] [-] Looking for archive in _active_prints, keys to try: [(1, 'ESP32-cam-mount.stl.3mf'), (1, 'ESP32-cam-mount.stl.gcode.3mf'), (1, 'ESP32-cam-mount.stl'), (1, 'ESP32-cam-mount.stl.gcode.3mf'), (1, 'ESP32-cam-mount.stl.gcode.3mf')]...
+2026-06-27 21:26:01,810 INFO [backend.app.main] [-] Current _active_prints: [(1, 'ESP32-cam-mount.stl.gcode.3mf'), (1, 'ESP32-cam-mount.stl.3mf')]
+2026-06-27 21:26:01,811 INFO [backend.app.main] [-] Found archive 77 with key (1, 'ESP32-cam-mount.stl.3mf')
+2026-06-27 21:26:03,415 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-06-27 21:26:04,477 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-06-27 21:26:04,524 INFO [backend.app.main] [-] [TIMING] SD card cleanup: 2.717s elapsed
+2026-06-27 21:26:04,528 INFO [backend.app.main] [-] [TIMING] Queue item update: 2.721s elapsed
+2026-06-27 21:26:04,541 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] on_print_complete: printer=1, archive=77, session=yes, ams_mapping=None
+2026-06-27 21:26:04,541 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT COMPLETE printer 1: mapping=None, tray_now=255, last_loaded_tray=3
+2026-06-27 21:26:04,545 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: archive 77, plate_id=None, filament_usage=[{'slot_id': 1, 'used_g': 5.95, 'type': 'PLA', 'color': '#C0C0C0'}]
+2026-06-27 21:26:04,549 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: slot_to_tray=None (source: none)
+2026-06-27 21:26:04,549 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: using last_loaded_tray=3 (post-retract fallback)
+2026-06-27 21:26:04,549 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: slot_id=1 -> global_tray=3 -> AMS0-T3 (used_g=6.0, tray_now_override=3)
+2026-06-27 21:26:04,552 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: no spool assignment at printer 1 AMS0-T3
+2026-06-27 21:26:04,553 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] VT254: not in print mapping/tray_change_log — skipping fallback for printer 1
+2026-06-27 21:26:04,556 INFO [backend.app.services.spoolman_tracking] [-] [SPOOLMAN] No tracking data for print (printer=1, archive=77)
+2026-06-27 21:26:04,558 INFO [backend.app.main] [-] [TIMING] Spoolman usage report: 2.750s elapsed
+2026-06-27 21:26:04,558 INFO [backend.app.main] [-] [TIMING] Filament usage tracking: 2.751s elapsed
+2026-06-27 21:26:04,558 INFO [backend.app.main] [-] [TIMING] Archive lookup: 2.751s elapsed
+2026-06-27 21:26:04,559 INFO [backend.app.main] [-] [ARCHIVE] Updating archive 77 status...
+2026-06-27 21:26:04,567 INFO [backend.app.main] [-] [ARCHIVE] Archive 77 status updated to completed, failure_reason=None
+2026-06-27 21:26:04,568 INFO [backend.app.main] [-] [ARCHIVE] WebSocket notification sent for archive 77
+2026-06-27 21:26:04,568 INFO [backend.app.main] [-] [TIMING] Archive status update: 2.761s elapsed
+2026-06-27 21:26:04,576 INFO [backend.app.main] [-] [PRINT_LOG] Log entry written for archive 77
+2026-06-27 21:26:04,577 INFO [backend.app.main] [-] [TIMING] Print log entry: 2.770s elapsed
+2026-06-27 21:26:04,578 INFO [backend.app.main] [-] [TIMING] Background tasks scheduled (energy, photo): 2.771s elapsed
+2026-06-27 21:26:04,578 INFO [backend.app.main] [-] [TIMING] All background tasks scheduled: 2.771s elapsed
+2026-06-27 21:26:04,579 INFO [backend.app.main] [-] [TIMELAPSE] Timelapse was active during print, scheduling auto-scan for archive 77
+2026-06-27 21:26:04,579 INFO [backend.app.main] [-] [TIMING] Timelapse scan scheduled: 2.772s elapsed
+2026-06-27 21:26:04,580 INFO [backend.app.main] [-] [CALLBACK] on_print_complete finished for printer 1, archive 77
+2026-06-27 21:26:04,580 INFO [backend.app.main] [-] [ENERGY-BG] Starting energy calculation for archive 77
+2026-06-27 21:26:04,582 INFO [backend.app.main] [-] [PHOTO-BG] Starting finish photo capture for archive 77
+2026-06-27 21:26:04,584 INFO [backend.app.main] [-] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-06-27 21:26:04,586 INFO [backend.app.main] [-] [MAINT-BG] Starting maintenance check for printer 1
+2026-06-27 21:26:04,588 INFO [backend.app.main] [-] [LAYER-TL] Stitching layer timelapse for printer 1
+2026-06-27 21:26:04,595 INFO [backend.app.main] [-] [ENERGY-BG] No start kWh recorded for archive 77
+2026-06-27 21:26:04,601 INFO [backend.app.main] [-] [TIMELAPSE] Using print-start baseline: 35 existing video files for archive 77
+2026-06-27 21:26:04,602 INFO [backend.app.main] [-] [AUTO-OFF-BG] Completed
+2026-06-27 21:26:04,606 INFO [backend.app.main] [-] [TIMELAPSE] Attempt 1/4: waiting 5s before scanning for archive 77
+2026-06-27 21:26:04,635 INFO [backend.app.services.notification_service] [-] No notification providers configured for maintenance_due event on printer 1
+2026-06-27 21:26:04,635 INFO [backend.app.main] [-] [MAINT-BG] Sent notification: 1 items need attention
+2026-06-27 21:26:10,778 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-06-27 21:26:11,165 INFO [backend.app.main] [-] [TIMELAPSE] Attempt 1: Found 36 video files in /timelapse
+2026-06-27 21:26:11,166 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-06-20_06-16-55.avi
+2026-06-27 21:26:11,167 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-06-21_01-18-28.avi
+2026-06-27 21:26:11,167 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-06-21_04-05-47.avi
+2026-06-27 21:26:11,168 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-06-21_10-01-25.avi
+2026-06-27 21:26:11,168 INFO [backend.app.main] [-] [TIMELAPSE]   - video_2026-06-22_00-58-49.avi
+2026-06-27 21:26:11,169 INFO [backend.app.main] [-] [TIMELAPSE] Attempt 1: New file detected: video_2026-06-23_01-45-03.avi (downloading for archive 77)
+2026-06-27 21:26:12,031 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-06-27 21:26:47,062 INFO [backend.app.main] [-] [TIMELAPSE] Successfully attached timelapse to archive 77
+2026-06-27 21:26:52,879 INFO [backend.app.main] [-] [PHOTO-BG] Extracted finish photo from timelapse video_2026-06-23_01-45-03.avi for archive 77
+2026-06-27 21:26:52,884 INFO [backend.app.main] [-] [PHOTO-BG] Saved: finish_20260627_212649_5c9002db.jpg
+2026-06-27 21:26:52,886 INFO [backend.app.main] [-] [PHOTO-NOTIFY] Photo task returned: finish_20260627_212649_5c9002db.jpg
+2026-06-27 21:26:52,887 INFO [backend.app.main] [-] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260627_212649_5c9002db.jpg
+2026-06-27 21:26:52,900 INFO [backend.app.main] [-] [NOTIFY-BG] Loaded finish photo bytes: 46321 bytes
+2026-06-27 21:26:52,901 INFO [backend.app.services.notification_service] [-] on_print_complete called for printer 1 ([PRINTER]), status=completed
+2026-06-27 21:26:52,905 INFO [backend.app.services.notification_service] [-] No notification providers configured for on_print_complete event on printer 1
+2026-06-27 21:26:52,906 INFO [backend.app.main] [-] [NOTIFY-BG] Completed
+2026-06-27 21:27:26,899 INFO [backend.app.services.archive] [-] Converted timelapse to MP4 for archive 77 (video_2026-06-23_01-45-03.avi → video_2026-06-23_01-45-03.mp4)
+2026-06-27 21:29:05,822 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-27 21:31:38,880 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT START detected - file: mousepad-protector.gcode.3mf, subtask: mousepad-protector, is_new: True, is_file_change: False
+2026-06-27 21:31:38,881 INFO [backend.app.main] [-] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-06-27 21:31:38,886 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Skipped trays with invalid remain% for printer 1: AMS0-T0(remain=-1), AMS0-T1(remain=-1), AMS0-T2(remain=-1), AMS0-T3(remain=-1)
+2026-06-27 21:31:38,887 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping=None, tray_now=255, last_loaded_tray=3
+2026-06-27 21:31:38,887 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping-related keys: {'ams_extruder_map': {'0': 0}}
+2026-06-27 21:31:38,888 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 0: T0(type=PLA, color=F98C36FF, now=?, tar=?), T1(type=PETG, color=161616FF, now=?, tar=?), T2(type=PLA, color=2850E0FF, now=?, tar=?), T3(type=PLA, color=BCBCBCFF, now=?, tar=?)
+2026-06-27 21:31:38,893 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (1 trays): {'255-0': 0}
+2026-06-27 21:31:38,902 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=False
+2026-06-27 21:31:38,903 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: mousepad-protector.gcode.3mf, subtask: mousepad-protector
+2026-06-27 21:31:38,907 INFO [backend.app.main] [-] Trying filenames: ['mousepad-protector.gcode.3mf', 'mousepad-protector.3mf']
+2026-06-27 21:31:40,534 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-06-27 21:31:42,208 INFO [backend.app.services.bambu_ftp] [-] Successfully downloaded /mousepad-protector.gcode.3mf to /app/data/archive/temp/mousepad-protector.gcode.3mf (110779 bytes)
+2026-06-27 21:31:42,209 INFO [backend.app.services.bambu_ftp] [-] FTP mode cached for [IP]: prot_p
+2026-06-27 21:31:42,223 INFO [backend.app.main] [-] Downloaded: /mousepad-protector.gcode.3mf
+2026-06-27 21:31:42,263 INFO [backend.app.main] [-] Created archive 78 for mousepad-protector.gcode.3mf
+2026-06-27 21:31:42,267 INFO [backend.app.main] [-] [ENERGY] No smart plug for printer 1 (archive 78)
+2026-06-27 21:31:42,275 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-27 21:31:42,276 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-06-27 21:31:57,280 ERROR [backend.app.services.camera] [-] Chamber image: connection timeout to [IP]:6000
+2026-06-27 21:31:57,281 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 ([PRINTER])
+2026-06-27 21:31:57,286 INFO [backend.app.services.notification_service] [-] No notification providers configured for print_start event on printer 1
+2026-06-27 21:31:57,290 INFO [backend.app.main] [-] Loaded 2 printable objects for printer 1
+2026-06-27 21:31:58,206 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-06-27 21:31:58,515 INFO [backend.app.main] [-] [TIMELAPSE] Baseline at print start: 36 video files for printer 1
+2026-06-27 21:34:05,837 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-27 21:38:49,340 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-27 21:38:49,341 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-06-27 21:39:04,344 ERROR [backend.app.services.camera] [-] Chamber image: connection timeout to [IP]:6000
+2026-06-27 21:39:05,851 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-27 21:42:57,378 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-27 21:42:57,379 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-06-27 21:43:12,381 ERROR [backend.app.services.camera] [-] Chamber image: connection timeout to [IP]:6000
+2026-06-27 21:44:05,864 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-27 21:49:05,880 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-27 21:54:05,894 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-27 21:56:06,230 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-27 21:56:06,230 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-06-27 21:56:21,232 ERROR [backend.app.services.camera] [-] Chamber image: connection timeout to [IP]:6000
+2026-06-27 21:59:05,907 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-27 22:02:54,132 INFO [uvicorn.access] [-] [IP]:61715 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-06-27 22:02:54,445 INFO [uvicorn.access] [-] [IP]:61716 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-06-27 22:02:54,515 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-06-27 22:02:54,516 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-06-27 22:02:54,521 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-06-27 22:02:54,781 INFO [backend.app.api.routes.cloud] [fd4a2355] get_filament_info called with 3 IDs: ['GFL99', 'GFG99', 'GFU99']
+2026-06-27 22:02:54,892 INFO [backend.app.api.routes.printers] [781138c2] Cover using cached 3MF from /app/data/archive/temp/mousepad-protector.gcode.3mf (avoided duplicate FTP)
+2026-06-27 22:02:54,893 INFO [backend.app.api.routes.printers] [781138c2] Downloaded file size: 110779 bytes
+2026-06-27 22:02:54,894 INFO [backend.app.api.routes.printers] [781138c2] Cover: detected plate 1 from 3MF contents
+2026-06-27 22:02:55,006 WARNING [backend.app.api.routes.cloud] [fd4a2355] Failed to get cloud preset GFU99 (API ID: GFSU99): Failed to get setting detail: 400
+2026-06-27 22:02:55,066 INFO [uvicorn.access] [-] [IP]:61716 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-06-27 22:03:49,958 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-06-27 22:03:52,926 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-06-27 22:04:05,922 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-27 22:05:06,023 INFO [backend.app.services.stl_thumbnail] [9913022d] Generated STL thumbnail: /app/data/archive/library/thumbnails/9050c7244ea9498b92c974af00d2f050.png
+2026-06-27 22:05:06,064 INFO [uvicorn.access] [-] [IP]:61792 - "POST /api/v1/library/files?generate_stl_thumbnails=true HTTP/1.1" 200
+2026-06-27 22:05:36,366 INFO [uvicorn.access] [-] [IP]:60037 - "POST /api/v1/library/generate-stl-thumbnails HTTP/1.1" 200
+2026-06-27 22:05:40,633 INFO [uvicorn.access] [-] [IP]:60037 - "DELETE /api/v1/library/files/1 HTTP/1.1" 200
+2026-06-27 22:07:02,025 INFO [uvicorn.access] [-] [IP]:60078 - "DELETE /api/v1/archives/77 HTTP/1.1" 200
+2026-06-27 22:07:08,052 INFO [uvicorn.access] [-] [IP]:60104 - "DELETE /api/v1/archives/74 HTTP/1.1" 200
+2026-06-27 22:09:05,935 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-06-27 22:09:15,685 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-06-27 22:09:15,686 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-06-27 22:09:30,688 ERROR [backend.app.services.camera] [-] Chamber image: connection timeout to [IP]:6000
+2026-06-27 22:10:00,243 INFO [backend.app.api.routes.support] [47f8818f] Log level changed to DEBUG
+2026-06-27 22:10:00,244 INFO [backend.app.api.routes.bug_report] [47f8818f] Bug report: enabled debug logging
+2026-06-27 22:10:00,244 DEBUG [backend.app.services.bambu_mqtt] [47f8818f] [[SERIAL]] Requesting status update (pushall)
+2026-06-27 22:10:00,245 INFO [uvicorn.access] [-] [IP]:55599 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-06-27 22:10:00,349 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: mousepad-protector.gcode.3mf, subtask_name: mousepad-protector
+2026-06-27 22:10:00,350 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '3', 'tray_now': '3', 'tray_pre': '3', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 46, 'insert_flag': True, 'power_on_flag': True}
+2026-06-27 22:10:00,350 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 3
+2026-06-27 22:10:00,351 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-06-27 22:10:00,351 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-06-27 22:10:00,351 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-06-27 22:10:00,352 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-06-27 22:10:00,352 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-27 22:10:00,353 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-06-27 22:10:00,353 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-06-27 22:10:00,354 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-06-27 22:10:00,354 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-06-27 22:10:00,354 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-06-27 22:10:00,355 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'enable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-06-27 22:10:00,355 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Timelapse detected during print (from ipcam)
+2026-06-27 22:10:00,355 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -36dBm
+2026-06-27 22:10:00,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-06-27 22:10:00,356 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: mousepad-protector.gcode.3mf, subtask: mousepad-protector
+2026-06-27 22:10:02,400 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-06-27 22:10:02,401 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -35dBm
+2026-06-27 22:10:06,485 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-06-27 22:10:06,486 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-06-27 22:10:06,487 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-06-27 22:10:06,488 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status

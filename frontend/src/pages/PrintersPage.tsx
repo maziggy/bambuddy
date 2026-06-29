@@ -8611,14 +8611,6 @@ export function PrintersPage() {
             <Terminal className="w-4 h-4" />
             {t('terminal.title')}
           </Button>
-          <Button
-            onClick={() => setShowAddModal(true)}
-            disabled={!hasPermission('printers:create')}
-            title={!hasPermission('printers:create') ? t('printers.permission.noAdd') : undefined}
-          >
-            <Plus className="w-4 h-4" />
-            {t('printers.addPrinter')}
-          </Button>
         </div>
       </div>
 

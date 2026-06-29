@@ -3077,6 +3077,18 @@ function PrinterCard({
             <RotateCw className={`w-4 h-4 ${forceRefreshMutation.isPending ? 'animate-spin' : ''}`} />
             {t('printers.forceRefresh')}
           </button>
+          {onOpenTerminal && (
+            <button
+              className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
+              onClick={() => {
+                onOpenTerminal(printer.id, printer.name);
+                setShowMenu(false);
+              }}
+            >
+              <Terminal className="w-4 h-4" />
+              {t('terminal.title')}
+            </button>
+          )}
           <button
             className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
             onClick={() => {
@@ -3246,105 +3258,6 @@ function PrinterCard({
                   )}
                 </p>
               </div>
-            </div>
-            {/* Terminal + Menu buttons */}
-            <div className="flex items-center gap-1 flex-shrink-0">
-              {onOpenTerminal && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onOpenTerminal(printer.id, printer.name)}
-                  title={t('terminal.title')}
-                >
-                  <Terminal className="w-4 h-4" />
-                </Button>
-              )}
-            <div className="relative">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowMenu(!showMenu)}
-              >
-                <MoreVertical className="w-4 h-4" />
-              </Button>
-              {showMenu && (
-                <div className="absolute right-0 mt-2 w-48 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg z-20">
-                  <button
-                    className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
-                      hasPermission('printers:update')
-                        ? 'hover:bg-bambu-dark-tertiary'
-                        : 'opacity-50 cursor-not-allowed'
-                    }`}
-                    onClick={() => {
-                      if (!hasPermission('printers:update')) return;
-                      setShowEditModal(true);
-                      setShowMenu(false);
-                    }}
-                    title={!hasPermission('printers:update') ? t('printers.permission.noEdit') : undefined}
-                  >
-                    <Pencil className="w-4 h-4" />
-                    {t('common.edit')}
-                  </button>
-                  <button
-                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
-                    onClick={() => {
-                      setShowPrinterInfo(true);
-                      setShowMenu(false);
-                    }}
-                  >
-                    <Info className="w-4 h-4" />
-                    {t('printers.printerInformation')}
-                  </button>
-                  <button
-                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
-                    onClick={() => {
-                      connectMutation.mutate();
-                      setShowMenu(false);
-                    }}
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    {t('printers.reconnect')}
-                  </button>
-                  <button
-                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2 disabled:opacity-50"
-                    disabled={forceRefreshMutation.isPending}
-                    onClick={() => {
-                      forceRefreshMutation.mutate();
-                      setShowMenu(false);
-                    }}
-                  >
-                    <RotateCw className={`w-4 h-4 ${forceRefreshMutation.isPending ? 'animate-spin' : ''}`} />
-                    {t('printers.forceRefresh')}
-                  </button>
-                  <button
-                    className="w-full px-4 py-2 text-left text-sm hover:bg-bambu-dark-tertiary flex items-center gap-2"
-                    onClick={() => {
-                      setShowMQTTDebug(true);
-                      setShowMenu(false);
-                    }}
-                  >
-                    <Terminal className="w-4 h-4" />
-                    {t('printers.mqttDebug')}
-                  </button>
-                  <button
-                    className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
-                      hasPermission('printers:delete')
-                        ? 'text-red-400 hover:bg-bambu-dark-tertiary'
-                        : 'text-red-400/50 cursor-not-allowed'
-                    }`}
-                    onClick={() => {
-                      if (!hasPermission('printers:delete')) return;
-                      setShowDeleteConfirm(true);
-                      setShowMenu(false);
-                    }}
-                    title={!hasPermission('printers:delete') ? t('printers.permission.noDelete') : undefined}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    {t('common.delete')}
-                  </button>
-                </div>
-              )}
-            </div>
             </div>
           </div>
 

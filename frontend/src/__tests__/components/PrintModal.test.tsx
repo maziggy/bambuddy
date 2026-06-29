@@ -1197,6 +1197,52 @@ describe('PrintModal', () => {
       expect(queueCalls[0].quantity).toBe(3);
     });
 
+    it('quantity 1 + snippets configured: checkbox toggles cleanly (#1852)', async () => {
+      // The previous reset effect in PrintModal/index.tsx silently flipped
+      // gcodeInjection back to false whenever effectiveQuantity <= 1 in create
+      // mode, so a single print with snippets configured couldn't tick the
+      // checkbox — every click visibly un-ticked itself within the next render.
+      // The scheduler reads item.gcode_injection per queue item regardless of
+      // batch size, so quantity 1 must be allowed too.
+      const queueCalls: Record<string, unknown>[] = [];
+      server.use(
+        withSnippets(),
+        http.post('/api/v1/queue/', async ({ request }) => {
+          queueCalls.push((await request.json()) as Record<string, unknown>);
+          return HttpResponse.json({ id: queueCalls.length, status: 'pending' });
+        }),
+      );
+
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="create"
+          archiveId={1}
+          archiveName="Benchy"
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      // Quantity stays at default (1) — this is the OP's exact scenario.
+      const checkbox = (await screen.findByLabelText(/inject auto-print/i)) as HTMLInputElement;
+      expect(checkbox.checked).toBe(false);
+
+      await user.click(checkbox);
+      // CRITICAL: after the click the checkbox must stay checked. Under the
+      // pre-fix reset effect, the parent state would flip back to false within
+      // a render and the displayed `checked` attribute would track it.
+      await waitFor(() => expect(checkbox.checked).toBe(true));
+
+      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+      await waitFor(() => expect(queueCalls.length).toBe(1));
+      // The injection flag actually reaches the API — pre-fix the parent reset
+      // would have stripped it before submit.
+      expect(queueCalls[0].gcode_injection).toBe(true);
+    });
+
     it('injection OFF queues all copies through the scheduler path', async () => {
       const queueCalls: Record<string, unknown>[] = [];
       server.use(

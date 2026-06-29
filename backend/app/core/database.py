@@ -1180,6 +1180,21 @@ async def run_migrations(conn):
     else:
         await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN nozzle_offset_cali BOOLEAN DEFAULT TRUE")
 
+    # Migration: Per-item preheat / heat-soak override (#1468). preheat_override
+    # is one of {inherit, on, off} — 'inherit' falls back to the global
+    # preheat_enabled setting; 'on' / 'off' force the decision. The chamber
+    # target column overrides the filament-map derivation when not null.
+    # Existing rows default to 'inherit' + NULL so behaviour is unchanged for
+    # in-flight queues.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE print_queue ADD COLUMN preheat_override VARCHAR(10) DEFAULT 'inherit'",
+    )
+    await _safe_execute(
+        conn,
+        "ALTER TABLE print_queue ADD COLUMN preheat_chamber_target_override INTEGER",
+    )
+
     # Migration: Add library_file_id column to print_queue and make archive_id nullable
     # This allows queue items to reference library files directly (archive created at print start)
     try:

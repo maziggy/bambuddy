@@ -19,3 +19,48 @@ jobs:
           repository: maziggy/bambuddy
           ghtoken: ${{ secrets.GHRS_GITHUB_API_TOKEN }}
           ghpagesprefix: https://maziggy.github.io/bambuddy
+
+      # Inject ghcr.io container-download stats (cumulative + 30-day
+      # sparkline merged into a sidecar CSV so the chart grows beyond
+      # the 30-day window GHCR exposes). Runs after jgehrcke regenerates
+      # report.html on gh-pages.
+      - name: checkout-source
+        uses: actions/checkout@v4
+        with:
+          path: source
+
+      # jgehrcke/github-repo-stats commits to the `github-repo-stats`
+      # branch by default (NOT gh-pages — Pages is configured to serve
+      # from that branch). Direct git clone with the PAT surfaces real
+      # git stderr if anything fails, unlike actions/checkout@v4 which
+      # swallows errors as opaque "exit code 1".
+      - name: checkout-data-branch
+        env:
+          GH_PAT: ${{ secrets.GHRS_GITHUB_API_TOKEN }}
+        run: |
+          git clone --branch github-repo-stats --depth 1 \
+            "https://x-access-token:${GH_PAT}@github.com/${{ github.repository }}.git" \
+            data
+          cd data
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: inject-ghcr-pulls
+        run: |
+          python3 source/.github/scripts/ghcr_inject.py \
+            --report data/maziggy/bambuddy/latest-report/report.html \
+            --csv    data/maziggy/bambuddy/ghcr-pulls.csv \
+            --owner  maziggy \
+            --pkg    bambuddy
+
+      - name: commit-and-push
+        working-directory: data
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "no changes — skipping commit"
+            exit 0
+          fi
+          git add maziggy/bambuddy/latest-report/report.html \
+                  maziggy/bambuddy/ghcr-pulls.csv
+          git commit -m "ghcr-pulls: refresh container downloads chart"
+          git push

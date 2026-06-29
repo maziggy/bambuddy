@@ -327,6 +327,43 @@ class AppSettings(BaseModel):
         description="Shortest Job First — scheduler prioritizes shorter print jobs over longer ones",
     )
 
+    # Preheat / heat-soak before queued prints (#1468). The scheduler stage runs
+    # BEFORE FTP upload. Three hardware tiers behave differently:
+    #   - Chamber heater (H2C/H2D/H2DPro/H2S/X2D/X1E): M141 → wait for chamber
+    #     sensor to reach target → soak
+    #   - Chamber sensor only (X1C/P2S): M140 only → wait for radiant chamber
+    #     warm-up to reach target OR max-wait timeout → soak
+    #   - No chamber sensor (P1S/P1P/A1/A1 Mini): M140 only → fixed soak timer
+    #     (no way to verify chamber temp; relies entirely on max_wait + soak)
+    # Chamber target derives per-print from the loaded AMS filament types via
+    # preheat_filament_targets (max across loaded slots). A target of 0 skips
+    # the chamber phase but keeps the bed phase + soak. Per-queue-item
+    # `preheat_chamber_target_override` (nullable) bypasses the derivation.
+    preheat_enabled: bool = Field(
+        default=False,
+        description="Master toggle / default for new queue items. Per-item preheat_override can flip the decision per print.",
+    )
+    preheat_filament_targets: str = Field(
+        default="",
+        description=(
+            "JSON map of normalized filament type → chamber target °C. Empty = bundled defaults "
+            "(PLA/PETG/TPU/PVA: 0, PETG-CF: 40, ABS/ASA: 45, PA/PC/PC-FR: 50, PA-CF: 55, default: 0). "
+            "Scheduler picks max across loaded AMS slots; 0 disables chamber phase for that print."
+        ),
+    )
+    preheat_max_wait_seconds: int = Field(
+        default=900,
+        ge=60,
+        le=3600,
+        description="Maximum time to wait for the chamber to reach the target before falling through to the soak phase (radiant heating on X1C/P2S can take 15-30 min).",
+    )
+    preheat_soak_seconds: int = Field(
+        default=300,
+        ge=0,
+        le=1800,
+        description="Additional hold time at temperature after the chamber reaches the target (or after max_wait_seconds elapses). 0 = no soak.",
+    )
+
     # User-configurable presets for the printer-card temperature / fan-speed
     # popovers. Each is a JSON array of exactly 3 ints (the "Off" button is
     # rendered separately and is not configurable). Empty string = use built-in
@@ -516,6 +553,10 @@ class AppSettingsUpdate(BaseModel):
     stagger_interval_minutes: int | None = Field(default=None, ge=1, le=60)
     require_plate_clear: bool | None = None
     queue_shortest_first: bool | None = None
+    preheat_enabled: bool | None = None
+    preheat_filament_targets: str | None = None
+    preheat_max_wait_seconds: int | None = Field(default=None, ge=60, le=3600)
+    preheat_soak_seconds: int | None = Field(default=None, ge=0, le=1800)
     nozzle_temp_presets: str | None = None
     bed_temp_presets: str | None = None
     chamber_temp_presets: str | None = None

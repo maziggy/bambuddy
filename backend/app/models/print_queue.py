@@ -91,6 +91,15 @@ class PrintQueueItem(Base):
     # Nozzle offset calibration — dual-nozzle printers only, MQTT-gated (#1682)
     nozzle_offset_cali: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Preheat / heat-soak override (#1468). 'inherit' uses the global
+    # preheat_enabled setting; 'on' / 'off' force the per-item decision. The
+    # chamber target falls through: per-item override → max(filament-map[loaded
+    # tray type]) → 0 (skips chamber phase). 'inherit' + global off + override
+    # null = no preheat. Default 'inherit' so existing queue items behave
+    # exactly as before the migration.
+    preheat_override: Mapped[str] = mapped_column(String(10), default="inherit")
+    preheat_chamber_target_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Status: pending, printing, completed, failed, skipped, cancelled
     status: Mapped[str] = mapped_column(String(20), default="pending")
 

@@ -41,6 +41,8 @@ export interface PrintModalProps {
 /**
  * Print options that can be configured for a print job.
  */
+export type PreheatOverride = 'inherit' | 'on' | 'off';
+
 export interface PrintOptions {
   bed_levelling: boolean;
   flow_cali: boolean;
@@ -48,6 +50,12 @@ export interface PrintOptions {
   layer_inspect: boolean;
   timelapse: boolean;
   nozzle_offset_cali: boolean;
+  // Per-item preheat / heat-soak override (#1468). 'inherit' uses the global
+  // Settings → Workflow toggle; 'on' / 'off' force the per-print decision.
+  // chamber_target_override is non-null to bypass the per-filament-type
+  // derivation with an explicit °C target.
+  preheat_override: PreheatOverride;
+  preheat_chamber_target_override: number | null;
 }
 
 /**
@@ -60,6 +68,8 @@ export const DEFAULT_PRINT_OPTIONS: PrintOptions = {
   layer_inspect: false,
   timelapse: false,
   nozzle_offset_cali: true,
+  preheat_override: 'inherit',
+  preheat_chamber_target_override: null,
 };
 
 /**

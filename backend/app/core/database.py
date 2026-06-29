@@ -2701,19 +2701,35 @@ async def run_migrations(conn):
             logger.exception("macros table rebuild failed — manual intervention may be needed")
 
     # Migration: Create macro_vars table for persistent macro key-value storage
-    await _safe_execute(
-        conn,
-        """
-        CREATE TABLE IF NOT EXISTS macro_vars (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            key VARCHAR(200) NOT NULL,
-            value_json TEXT NOT NULL,
-            macro_id INTEGER REFERENCES macros(id) ON DELETE CASCADE,
-            expires_at DATETIME,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    # Use SERIAL for PostgreSQL, INTEGER PRIMARY KEY (implicit autoincrement) for SQLite.
+    if is_sqlite():
+        await _safe_execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS macro_vars (
+                id INTEGER PRIMARY KEY,
+                key VARCHAR(200) NOT NULL,
+                value_json TEXT NOT NULL,
+                macro_id INTEGER REFERENCES macros(id) ON DELETE CASCADE,
+                expires_at DATETIME,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
         )
-        """,
-    )
+    else:
+        await _safe_execute(
+            conn,
+            """
+            CREATE TABLE IF NOT EXISTS macro_vars (
+                id SERIAL PRIMARY KEY,
+                key VARCHAR(200) NOT NULL,
+                value_json TEXT NOT NULL,
+                macro_id INTEGER REFERENCES macros(id) ON DELETE CASCADE,
+                expires_at TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """,
+        )
     await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_macro_vars_key ON macro_vars(key)")
     await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_macro_vars_macro_id ON macro_vars(macro_id)")
     await _safe_execute(

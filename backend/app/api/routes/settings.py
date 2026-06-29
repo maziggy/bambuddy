@@ -140,6 +140,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "ldap_enabled",
             "ldap_auto_provision",
             "local_login_enabled",
+            "preheat_enabled",
         ]:
             settings_dict[setting.key] = setting.value.lower() == "true"
         elif setting.key in [
@@ -165,6 +166,8 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "forecast_global_lead_time_days",
             "session_max_hours",
             "pipeline_max_copies",
+            "preheat_max_wait_seconds",
+            "preheat_soak_seconds",
         ]:
             settings_dict[setting.key] = int(setting.value)
         elif setting.key == "default_printer_id":

@@ -1288,6 +1288,50 @@ class TestSlicerRejectionMessage:
         assert _slicer_rejection_message("") is None
         assert _slicer_rejection_message("Slicer sidecar unreachable: connection reset") is None
 
+    def test_replaces_input_preset_invalid_placeholder_with_cli_error_line(self):
+        # #1851: the CLI emits its catch-all "input preset file is invalid"
+        # placeholder for every -5 exit, including real preset-vs-printer
+        # compatibility rejections. The actual diagnostic only appears in the
+        # stdout `[error] run NNNN:` line; the function must prefer that.
+        text = (
+            "Slicer CLI failed (500): Slicing failed with error from slicer: "
+            "The input preset file is invalid and can not be parsed.: "
+            "Slicer process failed (exit code 251)\n"
+            "stdout: [2026-06-29 04:12:11.952784] [trace] Initializing StaticPrintConfigs\n"
+            "[2026-06-29 04:12:12.175810] [error] run 3008: filament preset "
+            "Generic PLA @BBL H2C (slot 1) is not compatible with printer "
+            "Bambu Lab A1 0.4 nozzle.\n"
+            "run found error, return -5, exit..."
+        )
+        assert (
+            _slicer_rejection_message(text) == "filament preset Generic PLA @BBL H2C (slot 1) is not compatible with "
+            "printer Bambu Lab A1 0.4 nozzle."
+        )
+
+    def test_keeps_meaningful_reason_even_when_cli_error_line_present(self):
+        # When the headline error_string is already a useful reason (here:
+        # the bed-boundary rejection), don't override it with a generic
+        # `[error]` line that may just be the same message restated. Avoids
+        # double-text duplication in the user-facing detail.
+        text = (
+            "Slicer CLI failed (500): Slicing failed with error from slicer: "
+            "Some objects are located over the boundary of the heated bed.: "
+            "Slicer process failed (exit code 204)\n"
+            "stdout: [error] some unrelated stdout chatter"
+        )
+        assert _slicer_rejection_message(text) == "Some objects are located over the boundary of the heated bed."
+
+    def test_cli_error_line_without_run_prefix(self):
+        # The CLI sometimes logs `[error] <msg>` without the `run NNNN:`
+        # prefix (different code paths). The regex must still pick it up.
+        text = (
+            "Slicer CLI failed (500): Slicing failed with error from slicer: "
+            "The input preset file is invalid and can not be parsed.: "
+            "Slicer process failed (exit code 251)\n"
+            "stdout: [2026-06-29 12:00:00.000000] [error] Configuration parse failed: missing key 'printer_settings_id'"
+        )
+        assert _slicer_rejection_message(text) == "Configuration parse failed: missing key 'printer_settings_id'"
+
 
 class TestSliceSlicerRejection:
     @pytest.mark.asyncio

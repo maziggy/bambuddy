@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, PlainSerializer, model_validator
+from pydantic import BaseModel, Field, PlainSerializer, model_validator
 
 
 # Custom serializer to ensure UTC datetimes have Z suffix
@@ -50,6 +50,11 @@ class PrintQueueItemCreate(BaseModel):
     # matches BambuStudio's default; the MQTT layer ignores the flag on
     # single-nozzle printers so the wire value stays "skip" there.
     nozzle_offset_cali: bool = True
+    # Preheat / heat-soak per-item override (#1468). 'inherit' uses the global
+    # preheat_enabled setting; 'on' / 'off' force the decision. The chamber
+    # target falls through: this override → max(filament-map[loaded tray]) → 0.
+    preheat_override: Literal["inherit", "on", "off"] = "inherit"
+    preheat_chamber_target_override: int | None = Field(default=None, ge=0, le=60)
     # Auto-print G-code injection
     gcode_injection: bool = False
     # Batch: create multiple copies (creates a batch if > 1)
@@ -85,6 +90,8 @@ class PrintQueueItemUpdate(BaseModel):
     timelapse: bool | None = None
     use_ams: bool | None = None
     nozzle_offset_cali: bool | None = None
+    preheat_override: Literal["inherit", "on", "off"] | None = None
+    preheat_chamber_target_override: int | None = Field(default=None, ge=0, le=60)
     # Auto-print G-code injection
     gcode_injection: bool | None = None
     # H2C dual-nozzle-rack slicer pick (#1780). list[int] per-filament
@@ -126,6 +133,8 @@ class PrintQueueItemResponse(BaseModel):
     timelapse: bool = False
     use_ams: bool = True
     nozzle_offset_cali: bool = True
+    preheat_override: Literal["inherit", "on", "off"] = "inherit"
+    preheat_chamber_target_override: int | None = None
     status: Literal["pending", "printing", "completed", "failed", "skipped", "cancelled"]
     started_at: UTCDatetime
     completed_at: UTCDatetime
@@ -233,6 +242,8 @@ class PrintQueueBulkUpdate(BaseModel):
     timelapse: bool | None = None
     use_ams: bool | None = None
     nozzle_offset_cali: bool | None = None
+    preheat_override: Literal["inherit", "on", "off"] | None = None
+    preheat_chamber_target_override: int | None = Field(default=None, ge=0, le=60)
     # Auto-print G-code injection
     gcode_injection: bool | None = None
 

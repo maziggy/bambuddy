@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -34,6 +34,9 @@ from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.notification_service import notification_service
 from backend.app.services.printer_manager import (
     printer_manager,
+    supports_airduct,
+    supports_chamber_heater,
+    supports_chamber_temp,
     supports_drying,
     supports_drying_while_printing,
 )
@@ -1554,6 +1557,17 @@ class PrintScheduler:
             return setting.value.lower() == "true"
         return default
 
+    async def _get_int_setting(self, db: AsyncSession, key: str, default: int) -> int:
+        """Read an int setting; falls back to default on missing/unparseable rows."""
+        result = await db.execute(select(Settings).where(Settings.key == key))
+        setting = result.scalar_one_or_none()
+        if setting and setting.value:
+            try:
+                return int(setting.value)
+            except ValueError:
+                pass
+        return default
+
     async def _get_drying_presets(self, db: AsyncSession) -> dict[str, dict[str, int]]:
         """Get drying presets (user-configured or built-in defaults)."""
         result = await db.execute(select(Settings).where(Settings.key == "drying_presets"))
@@ -1938,6 +1952,294 @@ class PrintScheduler:
         result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
         return list(result.scalars().all())
 
+    # Bundled defaults for preheat_filament_targets (#1468). Values are the
+    # chamber-temperature recommendations BambuStudio ships for the matching
+    # filament profile; users can override via Settings → Workflow → Preheat
+    # card. "default" applies when a loaded tray's normalised type isn't in
+    # the map (rare — Bambu RFID-tagged spools always carry a known type).
+    DEFAULT_PREHEAT_FILAMENT_TARGETS: dict[str, int] = {
+        "PLA": 0,
+        "PETG": 0,
+        "PETG-CF": 40,
+        "ABS": 45,
+        "ASA": 45,
+        "PA": 50,
+        "PA-CF": 55,
+        "PC": 50,
+        "PC-FR": 50,
+        "TPU": 0,
+        "PVA": 0,
+        "default": 0,
+    }
+
+    async def _get_preheat_filament_targets(self, db: AsyncSession) -> dict[str, int]:
+        """Parse the user-configured filament→chamber-target map, falling back
+        to DEFAULT_PREHEAT_FILAMENT_TARGETS on missing / malformed JSON. Keys
+        are uppercased and the 'default' fallback is always present in the
+        returned dict so the resolution loop can index it unconditionally."""
+        raw = await self._get_setting(db, "preheat_filament_targets")
+        if not raw:
+            return dict(self.DEFAULT_PREHEAT_FILAMENT_TARGETS)
+        try:
+            parsed = json.loads(raw)
+            if not isinstance(parsed, dict):
+                raise ValueError("not an object")
+        except (json.JSONDecodeError, ValueError) as exc:
+            logger.warning("preheat_filament_targets unparseable, using defaults: %s", exc)
+            return dict(self.DEFAULT_PREHEAT_FILAMENT_TARGETS)
+        # Coerce values to int; drop unparseable rows so a stray string
+        # doesn't crash the loop.
+        out: dict[str, int] = {}
+        for key, value in parsed.items():
+            try:
+                out[str(key).upper()] = int(value)
+            except (TypeError, ValueError):
+                continue
+        if "DEFAULT" not in out:
+            out["DEFAULT"] = self.DEFAULT_PREHEAT_FILAMENT_TARGETS["default"]
+        return out
+
+    @staticmethod
+    def _normalize_filament_type(tray_type: str) -> str:
+        """Reduce the printer's tray_type to a preset-lookup key. Mirrors the
+        existing drying-preset normalisation (split-at-space, upper-case) so
+        the two maps share vocabulary — "PLA Basic" → "PLA", "PA-CF" stays
+        "PA-CF" (no space to split on)."""
+        return tray_type.split()[0].upper() if tray_type else ""
+
+    def _derive_chamber_target(
+        self,
+        printer: Printer,
+        targets: dict[str, int],
+    ) -> int:
+        """Look up the chamber target for each loaded AMS tray and return the
+        max. Returns 0 when no AMS data is available (e.g. external-spool
+        prints) or when every loaded slot maps to 0 — the chamber phase then
+        short-circuits in the main loop.
+
+        Reads from `printer_manager.get_status(...).raw_data['ams']`, which is
+        the same source the dispatcher uses for AMS slot mapping. Empty / RFID-
+        less slots have empty `tray_type` and contribute nothing."""
+        state = printer_manager.get_status(printer.id)
+        if state is None:
+            return 0
+        ams_list = (state.raw_data or {}).get("ams") if state.raw_data else None
+        # Older Bambu firmware nests AMS as {"ams": {"ams": [...]}} — try both.
+        if isinstance(ams_list, dict):
+            ams_list = ams_list.get("ams") or []
+        if not isinstance(ams_list, list):
+            return 0
+        best = 0
+        for ams in ams_list:
+            for tray in (ams.get("tray") or []) if isinstance(ams, dict) else []:
+                normalised = self._normalize_filament_type(tray.get("tray_type") or "")
+                if not normalised:
+                    continue
+                target = targets.get(normalised, targets.get("DEFAULT", 0))
+                if target > best:
+                    best = target
+        return best
+
+    async def _preheat_and_soak(
+        self,
+        db: AsyncSession,
+        item: PrintQueueItem,
+        printer: Printer,
+        archive: PrintArchive | None,
+    ) -> None:
+        """Run the per-printer preheat + heat-soak stage before FTP upload (#1468).
+
+        Resolution order:
+          1. `item.preheat_override` — 'off' skips entirely; 'inherit' falls back
+             to the global `preheat_enabled` setting; 'on' forces the stage on
+             even if the global is off.
+          2. Chamber target — `item.preheat_chamber_target_override` if non-null;
+             else max of `preheat_filament_targets[normalize(t.tray_type)]`
+             across loaded AMS slots; else 0 (skips chamber phase, keeps bed
+             phase + soak timer).
+          3. Three hardware tiers branch the wait loop:
+             - Chamber heater (H2C/H2D/H2DPro/H2S/X2D/X1E via supports_chamber_heater):
+               send M141 to the resolved target, then wait for the chamber sensor
+               to reach it (or the max-wait timeout to elapse).
+             - Chamber sensor only (X1C/P2S via supports_chamber_temp ∧ ¬supports_chamber_heater):
+               no M141; the bed is the only heat source, so we wait for the chamber
+               sensor to rise via bed radiation OR fall through on timeout.
+             - No chamber sensor (P1S/P1P/A1/A1 Mini): no way to verify chamber
+               temperature; the function just heats the bed and holds for the
+               configured soak duration.
+
+        The bed target comes from the archive's parsed metadata
+        (`bed_temperature`); if missing the preheat stage logs and returns
+        without dispatching anything, rather than guessing at a default that
+        might wreck filament setup.
+
+        Failures are logged but never re-raised — preheat is best-effort. A
+        printer that goes offline mid-soak, a refused gcode command, or a
+        missing temperature reading must not turn into a failed queue item; the
+        normal upload + start path runs immediately after this method returns.
+        """
+        override = (getattr(item, "preheat_override", None) or "inherit").lower()
+        if override == "off":
+            return
+        if override == "inherit":
+            enabled = await self._get_bool_setting(db, "preheat_enabled", default=False)
+            if not enabled:
+                return
+        # override == "on" forces the stage on regardless of the global setting.
+
+        max_wait = await self._get_int_setting(db, "preheat_max_wait_seconds", default=900)
+        soak_seconds = await self._get_int_setting(db, "preheat_soak_seconds", default=300)
+
+        # Chamber target resolution:
+        #   1. Explicit per-item override beats everything (user knows best).
+        #   2. Otherwise derive from loaded AMS filament types via the per-
+        #      filament target map. PLA-only print derives 0 → chamber phase
+        #      auto-skips without the user touching anything.
+        explicit_target = getattr(item, "preheat_chamber_target_override", None)
+        if explicit_target is not None and explicit_target > 0:
+            chamber_target = int(explicit_target)
+            chamber_source = "item-override"
+        elif explicit_target == 0:
+            chamber_target = 0  # explicit 0 means "no chamber, even if filament wants it"
+            chamber_source = "item-override-zero"
+        else:
+            targets = await self._get_preheat_filament_targets(db)
+            chamber_target = self._derive_chamber_target(printer, targets)
+            chamber_source = "filament-map"
+
+        bed_target = int(archive.bed_temperature) if archive and archive.bed_temperature else 0
+        if bed_target <= 0:
+            logger.info(
+                "Queue item %s: preheat skipped — archive has no bed_temperature metadata",
+                item.id,
+            )
+            return
+
+        client = printer_manager.get_client(printer.id)
+        if client is None:
+            logger.warning("Queue item %s: preheat skipped — printer client unavailable", item.id)
+            return
+
+        model = printer.model or ""
+        has_heater = supports_chamber_heater(model)
+        has_sensor = supports_chamber_temp(model)
+        do_chamber = chamber_target > 0 and (has_heater or has_sensor)
+
+        logger.info(
+            "Queue item %s: preheat starting — bed=%d°C chamber_target=%d°C (source=%s override=%s "
+            "model=%s has_heater=%s has_sensor=%s) max_wait=%ds soak=%ds",
+            item.id,
+            bed_target,
+            chamber_target if do_chamber else 0,
+            chamber_source,
+            override,
+            model,
+            has_heater,
+            has_sensor,
+            max_wait,
+            soak_seconds,
+        )
+
+        # Dispatch heaters. set_bed_temperature / set_chamber_temperature already
+        # cache the target locally so the polling reads below see consistent
+        # state (firmware MQTT echoes lag by ~1s).
+        try:
+            client.set_bed_temperature(bed_target)
+        except Exception as exc:
+            logger.warning("Queue item %s: preheat bed M140 failed: %s", item.id, exc)
+            return
+
+        # Airduct mode (#1468 follow-up). Models with the cooling/heating flap
+        # (H2C/H2D/H2D Pro/H2S/X2D/P2S) keep the flap whatever the user last
+        # left it on, regardless of M141. Default cooling actively vents the
+        # chamber, so a `chamber_target > 0` print with the flap stuck in
+        # cooling never converges — the heater fights the open exhaust. We
+        # flip the flap BEFORE M141 to "heating" when the preheat wants
+        # chamber heat, and back to "cooling" when it doesn't (PLA-only print
+        # on an H2D that was previously running ABS would otherwise stay in
+        # heating mode and overheat PLA). The current-state read keeps the
+        # command idempotent — no MQTT chatter when the flap is already where
+        # we want it.
+        if supports_airduct(model):
+            desired_airduct = "heating" if chamber_target > 0 else "cooling"
+            desired_id = 1 if desired_airduct == "heating" else 0
+            current_state = printer_manager.get_status(printer.id)
+            current_airduct = getattr(current_state, "airduct_mode", None) if current_state else None
+            if current_airduct != desired_id:
+                try:
+                    client.set_airduct_mode(desired_airduct)
+                except Exception as exc:
+                    logger.warning(
+                        "Queue item %s: preheat airduct %s mode failed: %s",
+                        item.id,
+                        desired_airduct,
+                        exc,
+                    )
+
+        if do_chamber and has_heater:
+            try:
+                client.set_chamber_temperature(chamber_target)
+            except Exception as exc:
+                logger.warning("Queue item %s: preheat chamber M141 failed: %s", item.id, exc)
+
+        # Wait for convergence. Bed warm-up is fast (~5 min from cold); chamber
+        # via M141 takes a few minutes; chamber via bed radiation can take 20+.
+        # Poll every 3s — frequent enough for responsive logging without
+        # spamming the MQTT state stream. The "converged" predicate is:
+        #   bed reached target (within 2°C tolerance for floating-point + heater hysteresis),
+        #   AND
+        #   chamber phase satisfied (no chamber phase, no sensor, or sensor reached target).
+        BED_TOLERANCE = 2.0
+        CHAMBER_TOLERANCE = 2.0
+        POLL_INTERVAL = 3.0
+        deadline = asyncio.get_event_loop().time() + max_wait
+
+        while True:
+            state = printer_manager.get_status(printer.id)
+            if state is None:
+                logger.warning("Queue item %s: preheat lost state during wait", item.id)
+                break
+
+            temps = state.temperatures or {}
+            bed_now = float(temps.get("bed", 0) or 0)
+            chamber_now = float(temps.get("chamber", 0) or 0)
+            bed_ok = bed_now >= bed_target - BED_TOLERANCE
+
+            if not do_chamber:
+                chamber_ok = True  # phase disabled or model has neither sensor nor heater
+            elif not has_sensor:
+                chamber_ok = True  # P1S etc — can't read, rely on soak timer only
+            else:
+                chamber_ok = chamber_now >= chamber_target - CHAMBER_TOLERANCE
+
+            if bed_ok and chamber_ok:
+                logger.info(
+                    "Queue item %s: preheat target reached (bed=%.1f chamber=%.1f) — entering soak",
+                    item.id,
+                    bed_now,
+                    chamber_now,
+                )
+                break
+
+            if asyncio.get_event_loop().time() >= deadline:
+                logger.info(
+                    "Queue item %s: preheat max_wait reached (bed=%.1f/%d chamber=%.1f/%d) — falling through to soak",
+                    item.id,
+                    bed_now,
+                    bed_target,
+                    chamber_now,
+                    chamber_target if do_chamber else 0,
+                )
+                break
+
+            await asyncio.sleep(POLL_INTERVAL)
+
+        if soak_seconds > 0:
+            logger.info("Queue item %s: preheat soak — holding for %ds", item.id, soak_seconds)
+            await asyncio.sleep(soak_seconds)
+
+        logger.info("Queue item %s: preheat complete — proceeding to upload", item.id)
+
     async def _power_on_and_wait(self, plug: SmartPlug, printer_id: int, db: AsyncSession) -> bool:
         """Turn on smart plug and wait for printer to connect.
 
@@ -2184,6 +2486,22 @@ class PrintScheduler:
             await self._power_off_if_needed(db, item)
             return
 
+        # Cancel-while-dispatching race (#1853): the scheduler's snapshot of
+        # `items` was taken at the top of check_queue, but the user can /cancel
+        # any pending row in the gap before we reach this point. Re-read the
+        # row and bail out cleanly instead of starting an FTP upload for a row
+        # that's already cancelled. The atomic CAS at the pending→printing
+        # transition (below, before start_print) is the load-bearing guard;
+        # this is the early-exit optimisation that avoids wasted FTP I/O.
+        await db.refresh(item)
+        if item.status != "pending":
+            logger.info(
+                "Queue item %s no longer pending (status=%s) — aborting dispatch",
+                item.id,
+                item.status,
+            )
+            return
+
         # Determine source: archive or library file
         archive = None
         library_file = None
@@ -2250,7 +2568,12 @@ class PrintScheduler:
                         await db.delete(library_file)
                         file_path = settings.base_dir / archive.file_path
                         filename = archive.filename
-                    await db.flush()
+                    # Commit, not flush — flush opens the SQLite write
+                    # transaction (item.archive_id update + library_file
+                    # delete) and would hold the WAL writer lock through the
+                    # FTP upload below, causing "database is locked" cascades
+                    # for sensor history + concurrent cancels (#1853).
+                    await db.commit()
                     logger.info(
                         "Queue item %s: Created archive %s from library file %s",
                         item.id,
@@ -2302,6 +2625,13 @@ class PrintScheduler:
             logger.error("Queue item %s: File not found: %s", item.id, file_path)
             await self._power_off_if_needed(db, item)
             return
+
+        # Preheat / heat-soak (#1468) — fires before upload so the printer's
+        # bed (and chamber, if applicable) is at temperature when the firmware
+        # starts the actual print routine. Best-effort: any failure logs and
+        # falls through to the normal upload+start path rather than turning a
+        # configuration issue into a failed queue item.
+        await self._preheat_and_soak(db, item, printer, archive)
 
         # G-code injection for auto-print systems (#422)
         injected_path = None
@@ -2480,9 +2810,57 @@ class PrintScheduler:
         # If we crash after this commit but before start_print(), the item will be
         # in "printing" status without actually printing - but that's safer than
         # accidentally reprinting the same file hours later.
-        item.status = "printing"
-        item.started_at = datetime.now(timezone.utc)
+        #
+        # Atomic CAS (#1853): a user pressing /cancel mid-dispatch (between the
+        # initial pending read at the top of check_queue and this point) flips
+        # the row to "cancelled" in a separate session. Without the WHERE
+        # status='pending' clause, the unconditional update here would silently
+        # overwrite that cancellation and we'd ship the MQTT start_print below
+        # — printer obeys, user sees "I pressed cancel and the print started".
+        # rowcount==0 means the user won the race; bail out, best-effort delete
+        # the file we just uploaded, do NOT send start_print.
+        now_utc = datetime.now(timezone.utc)
+        cas = await db.execute(
+            update(PrintQueueItem)
+            .where(PrintQueueItem.id == item.id)
+            .where(PrintQueueItem.status == "pending")
+            .values(status="printing", started_at=now_utc)
+        )
         await db.commit()
+        if cas.rowcount == 0:
+            logger.info(
+                "Queue item %s no longer pending at print-command time "
+                "(cancelled or removed mid-dispatch) — aborting before MQTT send (#1853)",
+                item.id,
+            )
+            try:
+                await delete_file_async(
+                    printer.ip_address,
+                    printer.access_code,
+                    remote_path,
+                    socket_timeout=ftp_timeout,
+                    printer_model=printer.model,
+                )
+            except Exception as cleanup_err:
+                logger.debug(
+                    "Queue item %s: best-effort cleanup of uploaded file failed: %s",
+                    item.id,
+                    cleanup_err,
+                )
+            try:
+                await ws_manager.send_queue_item_failed(
+                    user_id=toast_uid,
+                    queue_item_id=item.id,
+                    printer_id=item.printer_id,
+                    reason="cancelled_mid_dispatch",
+                )
+            except Exception:
+                pass
+            return
+        # Sync the in-memory item so subsequent code that reads item.status /
+        # item.started_at sees the values we just persisted.
+        item.status = "printing"
+        item.started_at = now_utc
 
         for cleanup_path in cleanup_disk_paths:
             try:

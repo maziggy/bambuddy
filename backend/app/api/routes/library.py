@@ -3291,6 +3291,22 @@ def _patch_process_bed_type(process_json: str, bed_type: str) -> str:
 # evaluate the job at all.
 _SLICER_REJECTION_MARKER = "Slicing failed with error from slicer:"
 
+# The CLI writes its real diagnostic to stdout/stderr on the `[error]` level.
+# Format is `[<timestamp>] [error] run <NNNN>: <message>` (or sometimes without
+# the `run NNNN:` prefix). The bracketed timestamp is optional; the `[error]`
+# tag is what we anchor on. Used to recover the actual rejection reason for
+# the `error_string: "The input preset file is invalid and can not be parsed."`
+# case (#1851) — the CLI emits that generic placeholder for every -5 exit
+# including real preset-compat rejections, and the per-incident specifics
+# only live in the stdout dump.
+_CLI_ERROR_LINE_RE = re.compile(r"\[error\]\s*(?:run\s+\d+:\s*)?(.+?)\s*$", re.MULTILINE)
+
+# The placeholder error_string Bambu Studio writes to result.json for any
+# `--load-settings` parse / compat rejection (-5 exit). When the sidecar
+# surfaces this, the real reason lives in the stdout `[error]` line that we
+# mine via _CLI_ERROR_LINE_RE.
+_INPUT_PRESET_INVALID_PLACEHOLDER = "The input preset file is invalid and can not be parsed."
+
 
 def _slicer_rejection_message(error_text: str) -> str | None:
     """Extract the slicer's own rejection reason from a sidecar error string,
@@ -3301,16 +3317,34 @@ def _slicer_rejection_message(error_text: str) -> str | None:
     no. Retrying with the 3MF's embedded settings would then only "succeed"
     by silently reverting to the source file's original printer, masking the
     real problem; such failures must reach the user instead.
+
+    When the sidecar's `error_string` is Bambu Studio's generic
+    "The input preset file is invalid and can not be parsed." placeholder
+    (#1851) — emitted for every -5 exit, including the actual preset-compat
+    rejections whose real reason is logged to stdout as
+    `[error] run NNNN: <diagnostic>` — prefer the stdout `[error]` line so
+    the user sees which preset clashed with which printer.
     """
     if _SLICER_REJECTION_MARKER not in error_text:
         return None
     reason = error_text.split(_SLICER_REJECTION_MARKER, 1)[1]
+    # Mine the stdout/stderr dump for a more specific CLI diagnostic before
+    # we trim it off below. Done first so the lookup window covers the full
+    # response, not just the headline.
+    cli_diagnostic_match = _CLI_ERROR_LINE_RE.search(reason)
+    cli_diagnostic = cli_diagnostic_match.group(1).strip() if cli_diagnostic_match else None
     # Trim the sidecar's trailing exit-code note and any stderr/stdout dump.
     for cut in (": Slicer process failed", "\nstderr:", "\nstdout:"):
         idx = reason.find(cut)
         if idx != -1:
             reason = reason[:idx]
-    return reason.strip() or None
+    reason = reason.strip() or None
+    # When the headline is Bambu Studio's catch-all placeholder, the real
+    # reason is in the stdout `[error]` line. Substitute it. The placeholder
+    # by itself tells the user nothing about why their slice was rejected.
+    if cli_diagnostic and (reason is None or reason == _INPUT_PRESET_INVALID_PLACEHOLDER):
+        return cli_diagnostic
+    return reason
 
 
 async def _run_slicer_with_fallback(

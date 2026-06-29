@@ -102,6 +102,8 @@ export function PrintModal({
         layer_inspect: queueItem.layer_inspect ?? DEFAULT_PRINT_OPTIONS.layer_inspect,
         timelapse: queueItem.timelapse ?? DEFAULT_PRINT_OPTIONS.timelapse,
         nozzle_offset_cali: queueItem.nozzle_offset_cali ?? DEFAULT_PRINT_OPTIONS.nozzle_offset_cali,
+        preheat_override: queueItem.preheat_override ?? DEFAULT_PRINT_OPTIONS.preheat_override,
+        preheat_chamber_target_override: queueItem.preheat_chamber_target_override ?? DEFAULT_PRINT_OPTIONS.preheat_chamber_target_override,
       };
     }
     return DEFAULT_PRINT_OPTIONS;
@@ -239,6 +241,8 @@ export function PrintModal({
       layer_inspect: settings.default_layer_inspect ?? DEFAULT_PRINT_OPTIONS.layer_inspect,
       timelapse: settings.default_timelapse ?? DEFAULT_PRINT_OPTIONS.timelapse,
       nozzle_offset_cali: settings.default_nozzle_offset_cali ?? DEFAULT_PRINT_OPTIONS.nozzle_offset_cali,
+      preheat_override: DEFAULT_PRINT_OPTIONS.preheat_override,
+      preheat_chamber_target_override: DEFAULT_PRINT_OPTIONS.preheat_chamber_target_override,
     });
   }, [settings, mode]);
 
@@ -936,19 +940,19 @@ export function PrintModal({
   // Quantity only applies for single-printer or model-based assignment (not multi-printer)
   const effectiveQuantity = (assignmentMode === 'printer' && selectedPrinters.length > 1) ? 1 : quantity;
 
-  // Keep scheduleOptions.gcodeInjection in sync with the checkbox's render
-  // condition. The checkbox only renders for create + snippets configured +
-  // quantity > 1, so if the user ticks it at quantity 2 then drops back to 1
-  // the box hides but the state stays true.
+  // Clear gcode_injection if the admin removes all snippets while the modal
+  // is open — the checkbox itself hides via hasGcodeSnippets in
+  // ScheduleOptions, but the boolean would otherwise stay true and ship to
+  // the API. The previous gate also reset the flag whenever effectiveQuantity
+  // dropped to <= 1, which silently un-ticked the checkbox on every single-
+  // print create flow (#1852). The scheduler reads item.gcode_injection per
+  // queue item regardless of batch size, so there's no underlying reason for
+  // the quantity-1 case to be blocked.
   useEffect(() => {
-    if (
-      mode === 'create' &&
-      scheduleOptions.gcodeInjection &&
-      (effectiveQuantity <= 1 || !settings?.gcode_snippets)
-    ) {
+    if (mode === 'create' && scheduleOptions.gcodeInjection && !settings?.gcode_snippets) {
       setScheduleOptions((opts) => ({ ...opts, gcodeInjection: false }));
     }
-  }, [mode, effectiveQuantity, settings?.gcode_snippets, scheduleOptions.gcodeInjection]);
+  }, [mode, settings?.gcode_snippets, scheduleOptions.gcodeInjection]);
 
   // Modal title and action button text based on mode
   const getModalConfig = () => {

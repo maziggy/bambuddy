@@ -8,6 +8,7 @@ import { formatDateOnly } from '../utils/date';
 import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
 import { checkPasswordComplexity } from '../utils/password';
 import { PRESET_CATEGORIES, parsePresetTriple } from '../utils/temperatureFanPresets';
+import { PreheatFilamentTargetsEditor } from '../components/PreheatFilamentTargetsEditor';
 import type { APIKey, AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
 import { SlicerBundlesPanel } from '../components/SlicerBundlesPanel';
@@ -1010,6 +1011,10 @@ export function SettingsPage() {
       (settings.stagger_group_size ?? 2) !== (localSettings.stagger_group_size ?? 2) ||
       (settings.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
       (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
+      (settings.preheat_enabled ?? false) !== (localSettings.preheat_enabled ?? false) ||
+      (settings.preheat_filament_targets ?? '') !== (localSettings.preheat_filament_targets ?? '') ||
+      (settings.preheat_max_wait_seconds ?? 900) !== (localSettings.preheat_max_wait_seconds ?? 900) ||
+      (settings.preheat_soak_seconds ?? 300) !== (localSettings.preheat_soak_seconds ?? 300) ||
       (settings.nozzle_temp_presets ?? '') !== (localSettings.nozzle_temp_presets ?? '') ||
       (settings.bed_temp_presets ?? '') !== (localSettings.bed_temp_presets ?? '') ||
       (settings.chamber_temp_presets ?? '') !== (localSettings.chamber_temp_presets ?? '') ||
@@ -1104,6 +1109,10 @@ export function SettingsPage() {
         stagger_group_size: localSettings.stagger_group_size,
         stagger_interval_minutes: localSettings.stagger_interval_minutes,
         require_plate_clear: localSettings.require_plate_clear,
+        preheat_enabled: localSettings.preheat_enabled,
+        preheat_filament_targets: localSettings.preheat_filament_targets,
+        preheat_max_wait_seconds: localSettings.preheat_max_wait_seconds,
+        preheat_soak_seconds: localSettings.preheat_soak_seconds,
         nozzle_temp_presets: localSettings.nozzle_temp_presets,
         bed_temp_presets: localSettings.bed_temp_presets,
         chamber_temp_presets: localSettings.chamber_temp_presets,
@@ -4166,6 +4175,37 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
+          {/* Plate-Clear Confirmation */}
+          <Card id="card-plate">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Shield className="w-4 h-4 text-bambu-green" />
+                {t('settings.plateClear', 'Plate-Clear Confirmation')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 mr-4">
+                  <p className="text-sm text-white">
+                    {t('settings.requirePlateClear', 'Require plate-clear confirmation')}
+                  </p>
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.requirePlateClearDescription', 'When enabled, the scheduler waits for per-printer plate-clear confirmation before starting queued prints on printers with finished jobs. Disabling this also hides the plate status badge and the "Mark plate as cleared" button on printer cards.')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.require_plate_clear ?? false}
+                    onChange={(e) => updateSetting('require_plate_clear', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Temperature & Fan Presets */}
           <Card id="card-temp-fan-presets">
             <CardHeader>
@@ -4284,34 +4324,101 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Plate-Clear Confirmation */}
-          <Card id="card-plate">
+          {/* Preheat & Heat Soak (#1468) */}
+          <Card id="card-preheat">
             <CardHeader>
               <h3 className="text-base font-semibold text-white flex items-center gap-2">
-                <Shield className="w-4 h-4 text-bambu-green" />
-                {t('settings.plateClear', 'Plate-Clear Confirmation')}
+                <Flame className="w-4 h-4 text-amber-400" />
+                {t('settings.preheatTitle', 'Preheat & Heat Soak')}
               </h3>
             </CardHeader>
             <CardContent className="space-y-3">
+              <p className="text-xs text-bambu-gray">
+                {t('settings.preheatDescription', 'Heat the bed (and chamber, if supported) and hold at temperature before each queued print starts. Helpful for engineering filaments (PA, ABS) on printers without an active chamber heater — the bed warms the chamber by radiation while the soak timer runs. The bed target is read from the print file; chamber behaviour depends on printer model.')}
+              </p>
               <div className="flex items-center justify-between">
                 <div className="flex-1 mr-4">
                   <p className="text-sm text-white">
-                    {t('settings.requirePlateClear', 'Require plate-clear confirmation')}
+                    {t('settings.preheatEnabled', 'Enable preheat & soak')}
                   </p>
-                  <p className="text-xs text-bambu-gray mt-1">
-                    {t('settings.requirePlateClearDescription', 'When enabled, the scheduler waits for per-printer plate-clear confirmation before starting queued prints on printers with finished jobs. Disabling this also hides the plate status badge and the "Mark plate as cleared" button on printer cards.')}
+                  <p className="text-xs text-bambu-gray mt-0.5">
+                    {t('settings.preheatEnabledDesc', 'When off, queued prints dispatch immediately.')}
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={localSettings.require_plate_clear ?? false}
-                    onChange={(e) => updateSetting('require_plate_clear', e.target.checked)}
+                    checked={localSettings.preheat_enabled ?? false}
+                    onChange={(e) => updateSetting('preheat_enabled', e.target.checked)}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
                 </label>
               </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="block text-xs text-bambu-gray mb-1">
+                    {t('settings.preheatMaxWait', 'Max wait (seconds)')}
+                  </label>
+                  <input
+                    type="number"
+                    min={60}
+                    max={3600}
+                    value={localSettings.preheat_max_wait_seconds ?? 900}
+                    onChange={(e) => updateSetting('preheat_max_wait_seconds', Math.max(60, Math.min(3600, parseInt(e.target.value) || 900)))}
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green disabled:opacity-50"
+                    disabled={!(localSettings.preheat_enabled ?? false)}
+                  />
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.preheatMaxWaitHelp', 'Cap on the chamber warm-up phase before falling through.')}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs text-bambu-gray mb-1">
+                    {t('settings.preheatSoak', 'Soak (seconds)')}
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={1800}
+                    value={localSettings.preheat_soak_seconds ?? 300}
+                    onChange={(e) => updateSetting('preheat_soak_seconds', Math.max(0, Math.min(1800, parseInt(e.target.value) || 0)))}
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green disabled:opacity-50"
+                    disabled={!(localSettings.preheat_enabled ?? false)}
+                  />
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.preheatSoakHelp', 'Hold time after target reached or max-wait elapsed.')}
+                  </p>
+                </div>
+              </div>
+              {/* Per-filament chamber target editor (#1468) */}
+              <div className="pt-2 border-t border-bambu-dark-tertiary/50">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-sm text-white">
+                    {t('settings.preheatFilamentTargetsLabel', 'Per-filament chamber target (°C)')}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => updateSetting('preheat_filament_targets', '')}
+                    title={t('settings.preheatFilamentTargetsReset', 'Reset to defaults')}
+                    className="text-bambu-gray hover:text-white transition-colors p-1 rounded hover:bg-bambu-dark-tertiary"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <p className="text-xs text-bambu-gray mb-2">
+                  {t('settings.preheatFilamentTargetsHint', 'Bambuddy picks the highest target across the loaded AMS slots; PLA-only prints derive 0 and skip the chamber phase automatically.')}
+                </p>
+                <PreheatFilamentTargetsEditor
+                  value={localSettings.preheat_filament_targets ?? ''}
+                  onChange={(v) => updateSetting('preheat_filament_targets', v)}
+                  disabled={!(localSettings.preheat_enabled ?? false)}
+                />
+              </div>
+              <p className="text-xs text-bambu-gray pt-1 border-t border-bambu-dark-tertiary/50">
+                <span className="font-medium text-bambu-gray/90">{t('settings.preheatHardwareTitle', 'Per-printer behaviour:')}</span>{' '}
+                {t('settings.preheatHardwareDetail', 'H2C/H2D/H2D Pro/H2S/X2D/X1E actively heat the chamber via M141. X1C/P2S read chamber temp but rely on bed-radiation heating. P1S/P1P/A1/A1 Mini have no chamber sensor — only the soak timer applies.')}
+              </p>
             </CardContent>
           </Card>
 

@@ -176,7 +176,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - AMS slot configuration (model-filtered presets, K profiles, color picker, pre-population for configured slots)
 - AMS info card (hover for serial number, firmware version) with custom friendly names that persist across printers
 - **AMS remote drying** — Start, monitor, and stop drying sessions for AMS 2 Pro and AMS-HT directly from the Printers page with filament-based temperature/duration presets, optional spool rotation; automatic PSU detection and HMS power error reporting. Rotate-spool toggle is disabled per-AMS when any tray has filament threaded into the feed tube (the AMS mechanism is locked there — rotating would jam the filament)
-- **Queue auto-drying** — Automatically dry filament between scheduled prints when humidity exceeds threshold; configurable presets per filament type, optional blocking mode
+- **Queue auto-drying** — Automatically dry filament between scheduled prints when humidity exceeds the fair threshold, then continue for the configured drying duration; configurable presets per filament type, optional blocking mode
 - **Ambient drying** — Automatically keep filament dry on idle printers based on humidity, regardless of whether prints are queued
 - **Continue drying while printing** — On capable hardware (H2D 01.03.00.00+, H2C / H2S / P2S / H2D Pro 01.02.00.00+, X2D / A2L 01.01.00.00+, X1C 01.11.02.00+), auto-drying can keep running during a print. Default off, opt-in toggle in Settings → Print Queue. Drying temperature is automatically capped 5°C below the idle preset (floor 40°C) to protect spools inside the hot enclosure
 - Configurable drying presets per filament type (temperature & duration for AMS 2 Pro and AMS-HT)

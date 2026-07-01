@@ -3,7 +3,7 @@
 Covers:
 - Conservative drying parameter selection (mixed filaments)
 - Drying preset loading (user-configured vs defaults)
-- Auto-drying lifecycle: start, humidity stop, minimum drying time
+- Auto-drying lifecycle: start threshold, running dries continue to configured duration
 - Auto-drying stop conditions: feature disabled, no scheduled items, per-printer
 - Sync drying state after restart
 """

@@ -437,3 +437,91 @@ class TestCloudflareChallengeDetection:
             assert result["success"] is False
             assert result["needs_verification"] is False
             assert "Cloudflare" in result["message"]
+
+
+# ===========================================================================
+# Issue #1815: PFUS cloud user preset lookup silently 400s in resolver
+# ===========================================================================
+
+
+class TestSlicerSettingVersionParam:
+    """`/v1/iot-service/api/slicer/setting` endpoints require ?version=XX.YY.ZZ.WW.
+
+    The plural GET (`get_slicer_settings`) has always sent it. The singular
+    GET (`get_setting_detail`) and DELETE (`delete_setting`) hit the same
+    subtree and were silently omitting it since #1013's compliance rework
+    (2026-05-12), which surfaced as #1815: every PFUS-prefix cloud user preset
+    lookup in the slicer_filament_resolver 400'd, so BambuStudio saw the
+    generic-material fallback instead of the user's actual custom profile
+    (rescued in most cases by slot-tray_info_idx reuse or K-profile realign,
+    Bgabor997's spool 54 had neither).
+    """
+
+    def _auth(self) -> BambuCloudService:
+        cloud = BambuCloudService()
+        cloud.access_token = "test-token"
+        return cloud
+
+    @pytest.mark.asyncio
+    async def test_get_setting_detail_sends_version_param(self):
+        """`get_setting_detail` must include the version query param — without
+        it Bambu Cloud returns HTTP 400 'field version is not set'."""
+        cloud = self._auth()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"filament_id": "P4d64437", "name": "Overture Matte PLA"}
+
+        with patch.object(cloud._client, "get", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_response
+
+            result = await cloud.get_setting_detail("PFUS992454068158eb")
+
+            assert result["filament_id"] == "P4d64437"
+            url = mock_get.call_args[0][0]
+            assert url.endswith("/v1/iot-service/api/slicer/setting/PFUS992454068158eb")
+            params = mock_get.call_args.kwargs.get("params") or {}
+            assert params.get("version"), "get_setting_detail must send ?version=… to avoid 400"
+
+    @pytest.mark.asyncio
+    async def test_get_setting_detail_error_includes_response_body(self):
+        """The 400 body identifies the exact contract violation. Callers include
+        it in log warnings so a next contract change is self-diagnostic instead
+        of surfacing an opaque status code (which cost 50 days on #1815)."""
+        cloud = self._auth()
+
+        from backend.app.services.bambu_cloud import BambuCloudError
+
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        mock_response.text = "field 'version' is not set"
+
+        with patch.object(cloud._client, "get", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_response
+
+            with pytest.raises(BambuCloudError) as exc:
+                await cloud.get_setting_detail("PFUS992454068158eb")
+
+            assert "400" in str(exc.value)
+            assert "field 'version'" in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_delete_setting_sends_version_param(self):
+        """`delete_setting` hits the same subtree; same requirement applies."""
+        cloud = self._auth()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"{}"
+        mock_response.json.return_value = {}
+
+        with patch.object(cloud._client, "delete", new_callable=AsyncMock) as mock_delete:
+            mock_delete.return_value = mock_response
+
+            result = await cloud.delete_setting("PFUS992454068158eb")
+
+            assert result["success"] is True
+            url = mock_delete.call_args[0][0]
+            assert url.endswith("/v1/iot-service/api/slicer/setting/PFUS992454068158eb")
+            params = mock_delete.call_args.kwargs.get("params") or {}
+            assert params.get("version"), "delete_setting must send ?version=… to avoid 400"

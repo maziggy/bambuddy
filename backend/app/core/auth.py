@@ -49,15 +49,17 @@ logger = logging.getLogger(__name__)
 # entries also satisfy "not in the allowlist", so they fail closed regardless.
 #
 # Mapping rationale (see wiki/features/api-keys.md):
-#   can_read_status     → every ``*_READ`` + camera + stats + system + websocket
-#   can_queue           → queue write ops + archive reprint
-#   can_control_printer → physical printer + smart-plug control
-#   can_manage_library  → library upload/own + MakerWorld import (separate
-#                         trust level from queue management, hence its own flag)
-#   admin-only          → unmapped (default-deny); covers all create/update/
-#                         delete of admin resources, settings writes, user/
-#                         group/api-key/backup admin ops, discovery scan,
-#                         cloud auth, library ALL-ownership perms, purges
+#   can_read_status       → every ``*_READ`` + camera + stats + system + websocket
+#   can_queue             → queue write ops + archive reprint
+#   can_control_printer   → physical printer + smart-plug control
+#   can_manage_library    → library upload/own + MakerWorld import (separate
+#                           trust level from queue management, hence its own flag)
+#   can_manage_inventory  → spool/catalog/forecast writes + SpoolBuddy kiosk writes
+#   can_manage_maintenance→ per-printer maintenance log/reset + type-catalog CRUD
+#   admin-only            → unmapped (default-deny); covers all create/update/
+#                           delete of admin resources, settings writes, user/
+#                           group/api-key/backup admin ops, discovery scan,
+#                           cloud auth, library ALL-ownership perms, purges
 _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     # can_read_status — read-only access to status, history, and configuration
     Permission.PRINTERS_READ: "can_read_status",
@@ -138,6 +140,19 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     Permission.INVENTORY_UPDATE: "can_manage_inventory",
     Permission.INVENTORY_DELETE: "can_manage_inventory",
     Permission.INVENTORY_FORECAST_WRITE: "can_manage_inventory",
+    # can_manage_maintenance — carved out of the admin denylist so HA-style
+    # automations can log "cleaned nozzle" / reset a maintenance counter via
+    # `POST /maintenance/items/{item_id}/perform` without granting broader
+    # printer control or settings write (#1832 follow-up). Also covers the
+    # per-printer maintenance CRUD (assign/remove items, edit intervals) and
+    # the type-catalog CRUD — the type catalog is a config surface (system
+    # types are auto-seeded, custom types are user-defined), so grouping it
+    # with the item writes matches the operator mental model of "keys that
+    # log maintenance can also manage what gets tracked." MAINTENANCE_READ
+    # stays under can_read_status.
+    Permission.MAINTENANCE_CREATE: "can_manage_maintenance",
+    Permission.MAINTENANCE_UPDATE: "can_manage_maintenance",
+    Permission.MAINTENANCE_DELETE: "can_manage_maintenance",
     # can_access_cloud — narrow opt-in scope, gated by the router-level
     # ``_cloud_api_key_gate`` and additionally enforced here so the route-
     # level ``cloud_caller(Permission.CLOUD_AUTH)`` dep also fails closed
@@ -203,9 +218,8 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
         Permission.FILAMENTS_CREATE,
         Permission.FILAMENTS_UPDATE,
         Permission.FILAMENTS_DELETE,
-        Permission.MAINTENANCE_CREATE,
-        Permission.MAINTENANCE_UPDATE,
-        Permission.MAINTENANCE_DELETE,
+        # MAINTENANCE_CREATE / MAINTENANCE_UPDATE / MAINTENANCE_DELETE moved
+        # to the allowlist under `can_manage_maintenance` (#1832 follow-up).
         Permission.KPROFILES_CREATE,
         Permission.KPROFILES_UPDATE,
         Permission.KPROFILES_DELETE,

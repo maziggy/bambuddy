@@ -470,7 +470,7 @@ export interface PrinterStatus {
   ipcam: boolean;  // Live view enabled
   wifi_signal: number | null;  // WiFi signal strength in dBm
   wired_network: boolean;  // Ethernet connection detected
-  door_open: boolean;  // Enclosure door open (X1/P1S/P2S/H2*)
+  door_open: boolean;  // Enclosure door open (models with a door sensor: X1/X1C/X1E/X2D/P2S/H2*)
   nozzles: NozzleInfo[];  // Nozzle hardware info (index 0=left/primary, 1=right)
   nozzle_rack: NozzleRackSlot[];  // H2C 6-nozzle tool-changer rack
   print_options: PrintOptions | null;  // AI detection and print options
@@ -1048,6 +1048,7 @@ export interface APIKey {
   can_read_status: boolean;
   can_manage_library: boolean;
   can_manage_inventory: boolean;
+  can_manage_maintenance: boolean;
   can_access_cloud: boolean;
   can_update_energy_cost: boolean;
   printer_ids: number[] | null;
@@ -1064,6 +1065,7 @@ export interface APIKeyCreate {
   can_read_status?: boolean;
   can_manage_library?: boolean;
   can_manage_inventory?: boolean;
+  can_manage_maintenance?: boolean;
   can_access_cloud?: boolean;
   can_update_energy_cost?: boolean;
   printer_ids?: number[] | null;
@@ -1081,6 +1083,7 @@ export interface APIKeyUpdate {
   can_read_status?: boolean;
   can_manage_library?: boolean;
   can_manage_inventory?: boolean;
+  can_manage_maintenance?: boolean;
   can_access_cloud?: boolean;
   can_update_energy_cost?: boolean;
   printer_ids?: number[] | null;

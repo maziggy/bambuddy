@@ -215,6 +215,7 @@ class TestApiKeyScopeAllowlist:
             "can_control_printer",
             "can_manage_library",
             "can_manage_inventory",
+            "can_manage_maintenance",
             "can_access_cloud",
         }
         used_flags = set(_APIKEY_SCOPE_BY_PERMISSION.values())
@@ -241,6 +242,7 @@ class TestApiKeyScopeAllowlist:
             "can_control_printer",
             "can_manage_library",
             "can_manage_inventory",
+            "can_manage_maintenance",
             "can_access_cloud",
         ],
     )
@@ -268,12 +270,14 @@ class _FakeApiKey:
         can_control_printer=False,
         can_manage_library=False,
         can_manage_inventory=False,
+        can_manage_maintenance=False,
     ):
         self.can_read_status = can_read_status
         self.can_queue = can_queue
         self.can_control_printer = can_control_printer
         self.can_manage_library = can_manage_library
         self.can_manage_inventory = can_manage_inventory
+        self.can_manage_maintenance = can_manage_maintenance
 
 
 class TestCheckApiKeyPermissionsMatrix:
@@ -315,6 +319,11 @@ class TestCheckApiKeyPermissionsMatrix:
         ("INVENTORY_UPDATE", "can_manage_inventory", "update spool / SpoolBuddy kiosk write"),
         ("INVENTORY_DELETE", "can_manage_inventory", "delete spool record"),
         ("INVENTORY_FORECAST_WRITE", "can_manage_inventory", "update forecast SKU settings"),
+        # can_manage_maintenance (#1832 follow-up) — HA "cleaned nozzle" / reset counter
+        # is the load-bearing use case; MAINTENANCE_UPDATE gates POST /maintenance/items/{id}/perform.
+        ("MAINTENANCE_CREATE", "can_manage_maintenance", "assign maintenance type to printer"),
+        ("MAINTENANCE_UPDATE", "can_manage_maintenance", "log maintenance / edit interval"),
+        ("MAINTENANCE_DELETE", "can_manage_maintenance", "remove custom maintenance item"),
     ]
 
     _ADMIN_CASES = [
@@ -354,7 +363,14 @@ class TestCheckApiKeyPermissionsMatrix:
         # Wrong flag set, required flag off → 403 (no cross-scope leakage)
         other_flags = {
             f
-            for f in ("can_read_status", "can_queue", "can_control_printer", "can_manage_library")
+            for f in (
+                "can_read_status",
+                "can_queue",
+                "can_control_printer",
+                "can_manage_library",
+                "can_manage_inventory",
+                "can_manage_maintenance",
+            )
             if f != required_flag
         }
         for other in other_flags:

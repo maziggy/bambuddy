@@ -1,0 +1,200 @@
+2026-07-01 14:03:27,655 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:03:33,075 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:03:38,294 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:03:43,717 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:03:48,939 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:03:54,260 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:03:59,278 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:04:04,699 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:04:06,955 INFO [backend.app.services.virtual_printer.mqtt_server] [b278c72d] [BamBuddySRV] 1Hz status push: 60 pushes/min to [IP]:54698
+2026-07-01 14:04:09,917 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:04:15,334 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:04:20,751 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:04:26,071 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:04:31,088 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:04:36,303 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:04:41,719 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:04:46,836 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:04:51,856 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:04:57,279 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:05:02,200 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:05:07,720 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:05:12,739 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:05:17,758 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:05:22,881 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:05:28,302 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:05:33,321 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:05:38,742 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:05:43,964 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:05:48,985 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:05:54,006 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:05:59,225 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:06:04,443 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:06:09,864 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:06:15,283 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:06:20,502 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:06:25,824 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:06:31,245 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:06:36,768 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:06:41,989 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:06:47,309 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:06:52,428 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:06:57,446 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:07:02,762 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:07:08,280 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:07:13,296 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:07:18,313 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:07:23,931 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:07:28,947 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:07:34,463 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:07:39,780 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:07:45,103 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:07:50,423 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:07:55,942 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:08:01,264 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:08:01,326 INFO [backend.app.main] [-] Recorded 3 AMS sensor history entries
+2026-07-01 14:08:06,384 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:08:11,404 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:08:16,923 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:08:21,963 INFO [backend.app.services.virtual_printer.mqtt_server] [b278c72d] MQTT publish to device/09400A391800001/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20036","version":1}}...
+2026-07-01 14:08:21,963 INFO [backend.app.services.virtual_printer.mqtt_server] [b278c72d] MQTT pushing command: pushall
+2026-07-01 14:08:21,964 INFO [backend.app.services.virtual_printer.mqtt_server] [b278c72d] Sending status report in response to pushall
+2026-07-01 14:08:22,139 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:08:22,679 INFO [uvicorn.access] [-] [IP]:61733 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-01 14:08:22,684 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-07-01 14:08:22,684 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-01 14:08:22,684 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-07-01 14:08:23,935 INFO [backend.app.api.routes.cloud] [ef0871c1] get_filament_info called with 2 IDs: ['GFG00', 'GFA00']
+2026-07-01 14:08:24,059 WARNING [backend.app.api.routes.cloud] [ef0871c1] Failed to get cloud preset GFG00 (API ID: GFSG00): Failed to get setting detail: 400
+2026-07-01 14:08:24,149 INFO [uvicorn.access] [-] [IP]:61762 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-01 14:08:27,458 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:08:32,476 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:08:37,892 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:08:42,911 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:08:48,332 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:08:53,451 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:08:58,470 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:09:03,896 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:09:09,315 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:09:14,535 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:09:16,273 INFO [backend.app.services.virtual_printer.mqtt_server] [b278c72d] [BamBuddySRV] MQTT TLS connection from ('[IP]', 54861) - cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256), version=TLSv1.3
+2026-07-01 14:09:16,274 INFO [backend.app.services.virtual_printer.mqtt_server] [b278c72d] [BamBuddySRV] MQTT client connected: [IP]:54861
+2026-07-01 14:09:16,274 INFO [backend.app.services.virtual_printer.mqtt_server] [b278c72d] [BamBuddySRV] MQTT client authenticated successfully
+2026-07-01 14:09:16,275 INFO [backend.app.services.virtual_printer.mqtt_server] [b278c72d] [BamBuddySRV] MQTT client [IP]:54861 authenticated (negotiated keepalive=60s, idle disconnect disabled)
+2026-07-01 14:09:16,281 INFO [backend.app.services.virtual_printer.mqtt_server] [b278c72d] [BamBuddySRV] MQTT subscribe: device/09400A391800001/report QoS=0
+2026-07-01 14:09:19,957 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:09:22,074 INFO [backend.app.services.virtual_printer.mqtt_server] [b278c72d] [BamBuddySRV] 1Hz status push: 6 pushes/min to [IP]:54861
+2026-07-01 14:09:25,282 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:09:30,804 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:09:36,027 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:09:41,450 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:09:46,574 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:09:51,492 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:09:52,691 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-01 14:09:56,916 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:10:01,935 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:10:07,353 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:10:12,371 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:10:16,122 INFO [backend.app.api.routes.support] [e1ceb011] Log level changed to DEBUG
+2026-07-01 14:10:16,122 INFO [backend.app.api.routes.bug_report] [e1ceb011] Bug report: enabled debug logging
+2026-07-01 14:10:16,122 DEBUG [backend.app.services.bambu_mqtt] [e1ceb011] [[SERIAL]] Requesting status update (pushall)
+2026-07-01 14:10:16,122 INFO [uvicorn.access] [-] [IP]:60970 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-07-01 14:10:17,124 DEBUG [backend.app.services.virtual_printer.mqtt_server] [b278c72d] MQTT drain timeout for device/09400A391800001/report — client may be busy
+2026-07-01 14:10:17,204 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'cfg': 1797543, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-07-01 14:10:17,204 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-07-01 14:10:17,204 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797543 (binary: 0b110110110110110100111)
+2026-07-01 14:10:17,204 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_10.gcode, subtask_name: _V2_AM4xS_-_AMS_SLIDING_Stacking_System
+2026-07-01 14:10:17,204 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '7', 'ams_exist_bits_raw': '7', 'cali_id': 0, 'cali_stat': 0, 'cfs': [2, 9, 5, 7], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': '401', 'tray_hall_out_bits': '400', 'tray_is_bbl_bits': '401', 'tray_now': '2', 'tray_pre': '2', 'tray_read_done_bits': '401', 'tray_reading_bits': '0', 'tray_tar': '2', 'unbind_ams_stat': 0, 'version': 4752}
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 10
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 3 new units, 3 total
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x10001003 -> extruder 0
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 1 info=0x10002003 -> extruder 0
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 2 info=0x11001103 -> extruder 1
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '1': 0, '2': 1}
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=33042 (switch_state bits 12-14: 0)
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 34°C (heater OFF)
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=34.0, heating=False, respect_local=False
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 34.0, target: 0.0, heating: False
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 117522432, 'code': 131073}]
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 6, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -58dBm
+2026-07-01 14:10:17,205 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-07-01 14:10:17,206 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [514]
+2026-07-01 14:10:17,206 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_10.gcode, subtask: _V2_AM4xS_-_AMS_SLIDING_Stacking_System
+2026-07-01 14:10:17,488 DEBUG [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Received M-SEARCH from [IP]
+2026-07-01 14:10:17,488 INFO [backend.app.services.virtual_printer.ssdp_server] [b278c72d] Sent SSDP response to [IP] for 'BamBuddySRV' (Location=[IP], USN=09400A391800001)
+2026-07-01 14:10:18,789 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'cfg': 1797543, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-07-01 14:10:18,789 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-07-01 14:10:18,789 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797543 (binary: 0b110110110110110100111)
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_10.gcode, subtask_name: _V2_AM4xS_-_AMS_SLIDING_Stacking_System
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '7', 'ams_exist_bits_raw': '7', 'cali_id': 0, 'cali_stat': 0, 'cfs': [2, 9, 5, 7], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': '401', 'tray_hall_out_bits': '400', 'tray_is_bbl_bits': '401', 'tray_now': '2', 'tray_pre': '2', 'tray_read_done_bits': '401', 'tray_reading_bits': '0', 'tray_tar': '2', 'unbind_ams_stat': 0, 'version': 4752}
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 10
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 3 new units, 3 total
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x10001003 -> extruder 0
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 1 info=0x10002003 -> extruder 0
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 2 info=0x11001103 -> extruder 1
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '1': 0, '2': 1}
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=33042 (switch_state bits 12-14: 0)
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 34°C (heater OFF)
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=34.0, heating=False, respect_local=False
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 34.0, target: 0.0, heating: False
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 117522432, 'code': 131073}]
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 6, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -58dBm
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [514]
+2026-07-01 14:10:18,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_10.gcode, subtask: _V2_AM4xS_-_AMS_SLIDING_Stacking_System
+2026-07-01 14:10:20,519 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'cfg': 1797543, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-07-01 14:10:20,519 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-07-01 14:10:20,519 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797543 (binary: 0b110110110110110100111)
+2026-07-01 14:10:20,519 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_10.gcode, subtask_name: _V2_AM4xS_-_AMS_SLIDING_Stacking_System
+2026-07-01 14:10:20,519 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '7', 'ams_exist_bits_raw': '7', 'cali_id': 0, 'cali_stat': 0, 'cfs': [2, 9, 5, 7], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': '401', 'tray_hall_out_bits': '400', 'tray_is_bbl_bits': '401', 'tray_now': '2', 'tray_pre': '2', 'tray_read_done_bits': '401', 'tray_reading_bits': '0', 'tray_tar': '2', 'unbind_ams_stat': 0, 'version': 4753}
+2026-07-01 14:10:20,519 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 10
+2026-07-01 14:10:20,519 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 3 new units, 3 total
+2026-07-01 14:10:20,519 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x10001003 -> extruder 0
+2026-07-01 14:10:20,519 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 1 info=0x10002003 -> extruder 0
+2026-07-01 14:10:20,519 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 2 info=0x11001103 -> extruder 1
+2026-07-01 14:10:20,519 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '1': 0, '2': 1}
+2026-07-01 14:10:20,519 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-07-01 14:10:20,519 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-01 14:10:20,520 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=33042 (switch_state bits 12-14: 0)
+2026-07-01 14:10:20,520 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 34°C (heater OFF)
+2026-07-01 14:10:20,520 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-07-01 14:10:20,520 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=34.0, heating=False, respect_local=False
+2026-07-01 14:10:20,520 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 34.0, target: 0.0, heating: False
+2026-07-01 14:10:20,520 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 117522432, 'code': 131073}]
+2026-07-01 14:10:20,520 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 6, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-07-01 14:10:20,520 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -58dBm
+2026-07-01 14:10:20,520 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-07-01 14:10:20,520 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [514]
+2026-07-01 14:10:20,520 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_10.gcode, subtask: _V2_AM4xS_-_AMS_SLIDING_Stacking_System
+2026-07-01 14:10:22,186 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': False, 'cfg': 1797543, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-07-01 14:10:22,186 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-07-01 14:10:22,186 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1797543 (binary: 0b110110110110110100111)
+2026-07-01 14:10:22,186 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_10.gcode, subtask_name: _V2_AM4xS_-_AMS_SLIDING_Stacking_System
+2026-07-01 14:10:22,186 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '7', 'ams_exist_bits_raw': '7', 'cali_id': 0, 'cali_stat': 0, 'cfs': [2, 9, 5, 7], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': '401', 'tray_hall_out_bits': '400', 'tray_is_bbl_bits': '401', 'tray_now': '2', 'tray_pre': '2', 'tray_read_done_bits': '401', 'tray_reading_bits': '0', 'tray_tar': '2', 'unbind_ams_stat': 0, 'version': 4753}
+2026-07-01 14:10:22,186 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 10
+2026-07-01 14:10:22,186 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 3 new units, 3 total
+2026-07-01 14:10:22,186 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x10001003 -> extruder 0
+2026-07-01 14:10:22,186 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 1 info=0x10002003 -> extruder 0
+2026-07-01 14:10:22,187 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 2 info=0x11001103 -> extruder 1
+2026-07-01 14:10:22,187 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '1': 0, '2': 1}
+2026-07-01 14:10:22,187 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-07-01 14:10:22,187 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-01 14:10:22,187 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=33042 (switch_state bits 12-14: 0)
+2026-07-01 14:10:22,187 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 34°C (heater OFF)
+2026-07-01 14:10:22,187 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-07-01 14:10:22,187 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=34.0, heating=False, respect_local=False
+2026-07-01 14:10:22,187 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 34.0, target: 0.0, heating: False
+2026-07-01 14:10:22,187 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: [{'attr': 117522432, 'code': 131073}]
+2026-07-01 14:10:22,187 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 6, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-07-01 14:10:22,187 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -58dBm
+2026-07-01 14:10:22,187 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-07-01 14:10:22,187 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [514]
+2026-07-01 14:10:22,187 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_10.gcode, subtask: _V2_AM4xS_-_AMS_SLIDING_Stacking_System

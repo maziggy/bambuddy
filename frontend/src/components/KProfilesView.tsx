@@ -42,10 +42,13 @@ const truncateK = (value: string) => {
   return (Math.trunc(num * 1000) / 1000).toFixed(3);
 };
 
-// Get flow type label from nozzle_id (e.g., "HH00-0.4" -> "HF", "HS00-0.4" -> "S")
+// Get flow type label from nozzle_id (e.g., "HH00-0.4" -> "HF", "HS00-0.4" -> "S").
+// The printer does not report a nozzle type in the K-profile data, so a fetched
+// profile can have an empty nozzle_id — return "" (unknown) rather than inventing one.
 const getFlowTypeLabel = (nozzleId: string) => {
   if (nozzleId.startsWith('HH')) return 'HF';  // High Flow
-  return 'S';  // Standard Flow (default)
+  if (nozzleId.startsWith('HS')) return 'S';   // Standard Flow
+  return '';  // Unknown — not reported by the printer
 };
 
 // Extract nozzle type prefix from nozzle_id (e.g., "HH00-0.4" -> "HH00")
@@ -120,7 +123,7 @@ function KProfileCard({ profile, onEdit, onCopy, selectionMode, isSelected, onTo
             </span>
           )}
           <span className="text-xs text-bambu-gray whitespace-nowrap">
-            {flowType} {diameter}
+            {flowType ? `${flowType} ` : ''}{diameter}
           </span>
         </div>
         {note && (
@@ -184,7 +187,10 @@ function KProfileModal({
   const [filamentId, setFilamentId] = useState(profile?.filament_id || '');
   // Split nozzle into type and diameter
   const [nozzleType, setNozzleType] = useState(
-    profile?.nozzle_id ? getNozzleTypePrefix(profile.nozzle_id) : 'HH00'
+    // Existing profile without a nozzle_id -> unknown (blank), don't invent a type.
+    // New profiles default to HS00 (Standard) to match the backend default
+    // (set_kprofile uses "HS00-..."); High Flow is the rarer, printer-specific case.
+    profile ? (profile.nozzle_id ? getNozzleTypePrefix(profile.nozzle_id) : '') : 'HS00'
   );
   const [modalDiameter, setModalDiameter] = useState(
     profile?.nozzle_diameter || nozzleDiameter
@@ -313,8 +319,10 @@ function KProfileModal({
 
     // Format k_value to 6 decimal places for Bambu protocol
     const formattedKValue = parseFloat(kValue).toFixed(6);
-    // Combine nozzle type and diameter into nozzle_id (e.g., "HH00-0.4")
-    const nozzleId = `${nozzleType}-${modalDiameter}`;
+    // Combine nozzle type and diameter into nozzle_id (e.g., "HS00-0.4").
+    // If the type is unknown (blank, e.g. a fetched profile the printer never
+    // tagged), keep the original nozzle_id instead of writing a malformed "-0.4".
+    const nozzleId = nozzleType ? `${nozzleType}-${modalDiameter}` : (profile?.nozzle_id ?? '');
 
     // For editing or single extruder: just save one profile
     if (profile || selectedExtruders.length === 1) {
@@ -508,7 +516,7 @@ function KProfileModal({
                     if (!profile && filamentId && !name) {
                       const selectedFilament = knownFilaments.find(f => f.id === filamentId);
                       if (selectedFilament) {
-                        const flowLabel = newNozzleType === 'HS00' ? 'HF' : 'S';
+                        const flowLabel = newNozzleType === 'HH00' ? 'HF' : 'S';
                         setName(`${flowLabel} ${selectedFilament.name}`);
                       }
                     }
@@ -516,6 +524,7 @@ function KProfileModal({
                   disabled={!!profile}
                   className={`w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none ${profile ? 'opacity-60 cursor-not-allowed' : ''}`}
                 >
+                  {!nozzleType && <option value="">—</option>}
                   <option value="HH00">{t('kProfiles.modal.highFlow')}</option>
                   <option value="HS00">{t('kProfiles.modal.standard')}</option>
                 </select>
@@ -1002,7 +1011,7 @@ export function KProfilesView() {
               name: p.name,
               k_value: parseFloat(p.k_value).toFixed(6),
               filament_id: p.filament_id,
-              nozzle_id: p.nozzle_id || `HH00-${nozzleDiameter}`,
+              nozzle_id: p.nozzle_id || `HS00-${nozzleDiameter}`,
               nozzle_diameter: p.nozzle_diameter || nozzleDiameter,
               extruder_id: p.extruder_id ?? 0,
               slot_id: 0, // Always create new

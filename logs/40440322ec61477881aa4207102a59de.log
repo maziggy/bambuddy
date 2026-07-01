@@ -1,0 +1,200 @@
+2026-06-30 18:09:03,197 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:09:06,214 INFO [uvicorn.access] [-] [IP]:47282 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:09:48,332 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:09:51,356 INFO [uvicorn.access] [-] [IP]:45860 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:10:48,415 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:10:51,439 INFO [uvicorn.access] [-] [IP]:34850 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:11:48,435 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:11:51,540 INFO [uvicorn.access] [-] [IP]:38748 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:12:48,453 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:12:51,483 INFO [uvicorn.access] [-] [IP]:44954 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:13:48,523 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:13:51,585 INFO [uvicorn.access] [-] [IP]:33264 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:14:48,538 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:14:51,812 INFO [uvicorn.access] [-] [IP]:53856 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:15:48,625 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:15:51,765 INFO [uvicorn.access] [-] [IP]:35260 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:16:48,676 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:16:51,692 INFO [uvicorn.access] [-] [IP]:60834 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:17:48,726 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:17:51,742 INFO [uvicorn.access] [-] [IP]:39476 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:18:48,780 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:18:52,168 INFO [uvicorn.access] [-] [IP]:37488 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:19:48,795 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:19:51,811 INFO [uvicorn.access] [-] [IP]:45268 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:20:48,905 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:20:51,991 INFO [uvicorn.access] [-] [IP]:47618 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:21:48,962 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:21:51,986 INFO [uvicorn.access] [-] [IP]:50818 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:22:49,042 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:22:52,147 INFO [uvicorn.access] [-] [IP]:45076 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:23:49,134 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:23:52,258 INFO [uvicorn.access] [-] [IP]:60416 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:24:49,213 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:24:52,238 INFO [uvicorn.access] [-] [IP]:55742 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:25:49,286 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:25:52,312 INFO [uvicorn.access] [-] [IP]:35190 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:26:49,316 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:26:52,340 INFO [uvicorn.access] [-] [IP]:41898 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:27:49,409 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:27:52,437 INFO [uvicorn.access] [-] [IP]:41624 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:28:49,459 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:28:52,491 INFO [uvicorn.access] [-] [IP]:50432 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 18:29:49,506 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-06-30 18:29:52,568 INFO [uvicorn.access] [-] [IP]:47700 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-06-30 20:27:47,571 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-01 12:00:03,826 INFO [backend.app.services.local_backup] [-] Running scheduled local backup
+2026-07-01 12:00:43,140 INFO [backend.app.services.local_backup] [-] Pruned old backup: bambuddy-backup-20260626-120032.zip
+2026-07-01 12:00:43,141 INFO [backend.app.services.local_backup] [-] Local backup created: /app/backups/bambuddy-backup-20260701-120003.zip
+2026-07-01 12:22:48,951 INFO [uvicorn.access] [-] [IP]:43512 - "POST /api/v1/auth/login HTTP/1.1" 200
+2026-07-01 12:22:49,212 INFO [uvicorn.access] [-] [IP]:43720 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-01 12:22:49,265 INFO [uvicorn.access] [-] [IP]:43736 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-01 12:22:49,316 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-01 12:22:49,316 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-01 12:22:49,316 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-07-01 12:22:49,418 INFO [backend.app.api.routes.cloud] [6bed43c7] get_filament_info called with 4 IDs: ['P183f873', 'Paab9fe0', 'P0e8c370', 'P834a3fd']
+2026-07-01 12:22:49,789 WARNING [backend.app.api.routes.cloud] [6bed43c7] Failed to get cloud preset P183f873 (API ID: P183f873): Failed to get setting detail: 400
+2026-07-01 12:22:49,985 WARNING [backend.app.api.routes.cloud] [6bed43c7] Failed to get cloud preset Paab9fe0 (API ID: Paab9fe0): Failed to get setting detail: 400
+2026-07-01 12:22:50,174 WARNING [backend.app.api.routes.cloud] [6bed43c7] Failed to get cloud preset P0e8c370 (API ID: P0e8c370): Failed to get setting detail: 400
+2026-07-01 12:22:50,264 INFO [backend.app.services.firmware_check] [23b6a9eb] Got Bambu Lab build ID: WY5LDbwsuEVwIbsHPpwjS
+2026-07-01 12:22:50,362 WARNING [backend.app.api.routes.cloud] [6bed43c7] Failed to get cloud preset P834a3fd (API ID: P834a3fd): Failed to get setting detail: 400
+2026-07-01 12:22:50,366 INFO [uvicorn.access] [-] [IP]:43814 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-01 12:22:52,125 INFO [backend.app.services.homeassistant] [6919eba2] Turned ON HA entity '3D Printer' (switch.3d_printer)
+2026-07-01 12:22:52,129 INFO [uvicorn.access] [-] [IP]:43830 - "POST /api/v1/smart-plugs/1/control HTTP/1.1" 200
+2026-07-01 12:23:25,215 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 151609.6s, forcing reconnect
+2026-07-01 12:23:25,216 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connected and subscribed, but the printer has sent zero status reports. The most common cause is a wrong or mis-cased serial number — the device/<serial>/report MQTT topic is case-sensitive. Verify the serial number configured in Bambuddy exactly matches the printer.
+2026-07-01 12:23:25,216 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-01 12:23:25,223 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-01 12:23:26,078 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-01 12:24:51,090 INFO [backend.app.services.homeassistant] [1a3a13a7] Turned OFF HA entity '3D Printer' (switch.3d_printer)
+2026-07-01 12:24:51,090 INFO [backend.app.services.printer_manager] [1a3a13a7] Marking printer 1 as offline (smart plug power off)
+2026-07-01 12:24:51,090 INFO [backend.app.main] [1a3a13a7] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-01 12:24:51,094 INFO [uvicorn.access] [-] [IP]:52190 - "POST /api/v1/smart-plugs/1/control HTTP/1.1" 200
+2026-07-01 12:24:51,257 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-01 12:25:26,292 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-01 12:25:26,293 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-01 12:25:26,293 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-01 12:26:26,294 INFO [backend.app.main] [-] [#1752] Printer 1 offline debounce elapsed: still_offline=True
+2026-07-01 12:26:26,296 INFO [backend.app.main] [-] [#1752] Dispatching on_printer_offline for printer 1 ([PRINTER])
+2026-07-01 12:27:39,766 INFO [backend.app.services.homeassistant] [f813809f] Turned ON HA entity '3D Printer' (switch.3d_printer)
+2026-07-01 12:27:39,769 INFO [uvicorn.access] [-] [IP]:36004 - "POST /api/v1/smart-plugs/1/control HTTP/1.1" 200
+2026-07-01 12:28:03,364 WARNING [backend.app.services.bambu_mqtt] [5cdd5c67] [[SERIAL]] Connection stale - no message for 192.1s, forcing reconnect
+2026-07-01 12:28:03,365 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-01 12:28:03,372 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-01 12:28:04,153 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-01 12:28:41,224 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy [PRINTER]] MQTT TLS connection from ('[IP]', 46204) - cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256), version=TLSv1.3
+2026-07-01 12:28:41,224 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy [PRINTER]] MQTT client connected: [IP]:46204
+2026-07-01 12:28:41,224 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy [PRINTER]] MQTT client authenticated successfully
+2026-07-01 12:28:41,224 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy [PRINTER]] MQTT client [IP]:46204 authenticated (negotiated keepalive=60s, idle disconnect disabled)
+2026-07-01 12:28:41,236 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy [PRINTER]] MQTT subscribe: device/[SERIAL]/report QoS=0
+2026-07-01 12:28:41,268 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"info":{"command":"get_version","sequence_id":"20000"}}...
+2026-07-01 12:28:41,268 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT info command: get_version
+2026-07-01 12:28:41,268 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sent version response (product_name=[PRINTER])
+2026-07-01 12:28:41,269 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20001","version":1}}...
+2026-07-01 12:28:41,269 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-07-01 12:28:41,269 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-07-01 12:28:41,269 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"info":{"command":"get_version","sequence_id":"20002"}}...
+2026-07-01 12:28:41,269 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT info command: get_version
+2026-07-01 12:28:41,269 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sent version response (product_name=[PRINTER])
+2026-07-01 12:28:42,108 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"print":{"command":"extrusion_cali_get","filament_id":"","nozzle_diameter":"0.4","sequence_id":"200...
+2026-07-01 12:28:42,108 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT print command: extrusion_cali_get for 
+2026-07-01 12:29:15,486 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy [PRINTER]] 1Hz status push: 35 pushes/min to [IP]:46204
+2026-07-01 12:30:15,572 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy [PRINTER]] 1Hz status push: 60 pushes/min to [IP]:46204
+2026-07-01 12:30:25,418 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-01 12:30:31,008 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"info":{"command":"get_version","sequence_id":"20004"}}...
+2026-07-01 12:30:31,009 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT info command: get_version
+2026-07-01 12:30:31,009 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sent version response (product_name=[PRINTER])
+2026-07-01 12:30:31,010 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20005","version":1}}...
+2026-07-01 12:30:31,010 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-07-01 12:30:31,010 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-07-01 12:30:32,340 INFO [backend.app.services.virtual_printer.ftp_server] [-] [Bambuddy [PRINTER]] FTP connection from ('[IP]', 40102)
+2026-07-01 12:30:32,341 INFO [backend.app.services.virtual_printer.ftp_server] [-] [Bambuddy [PRINTER]] FTP login from [IP]
+2026-07-01 12:30:32,342 INFO [backend.app.services.virtual_printer.ftp_server] [-] FTP EPSV listening on port 50004
+2026-07-01 12:30:32,343 INFO [backend.app.services.virtual_printer.ftp_server] [-] FTP receiving file: gear_removal_tool.gcode.3mf from [IP]
+2026-07-01 12:30:32,344 INFO [backend.app.services.virtual_printer.ftp_server] [-] FTP data TLS from [IP]: cipher=('ECDHE-RSA-AES256-GCM-SHA384', 'TLSv1.2', 256), version=TLSv1.2, session_reused=True
+2026-07-01 12:30:32,344 INFO [backend.app.services.virtual_printer.ftp_server] [-] FTP data connection established from [IP]
+2026-07-01 12:30:32,446 INFO [backend.app.services.virtual_printer.ftp_server] [-] FTP saved file: /app/data/virtual_printer/uploads/1/gear_removal_tool.gcode.3mf (204758 bytes)
+2026-07-01 12:30:32,447 INFO [backend.app.services.virtual_printer.manager] [-] [VP Bambuddy [PRINTER]] Received file: gear_removal_tool.gcode.3mf from [IP]
+2026-07-01 12:30:37,565 INFO [backend.app.services.virtual_printer.manager] [-] [VP Bambuddy [PRINTER]] Archived: 33 - gear_removal_tool
+2026-07-01 12:30:37,584 INFO [backend.app.services.virtual_printer.manager] [-] [VP Bambuddy [PRINTER]] Added to queue: 34
+2026-07-01 12:30:37,585 INFO [backend.app.services.virtual_printer.ftp_server] [-] [Bambuddy [PRINTER]] FTP session cancelled from [IP]
+2026-07-01 12:30:37,585 INFO [backend.app.services.virtual_printer.ftp_server] [-] [Bambuddy [PRINTER]] FTP session ended from [IP]
+2026-07-01 12:30:43,454 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(34, 1, 33, None)]
+2026-07-01 12:30:43,454 INFO [backend.app.services.print_scheduler] [-] Queue skip summary: {'manual_start': 1}
+2026-07-01 12:31:03,242 INFO [backend.app.api.routes.print_queue] [52ad1acd] Updated queue item 34
+2026-07-01 12:31:03,243 INFO [uvicorn.access] [-] [IP]:51438 - "PATCH /api/v1/queue/34 HTTP/1.1" 200
+2026-07-01 12:31:04,665 INFO [backend.app.api.routes.cloud] [cacfef77] get_filament_info called with 4 IDs: ['P183f873', 'Paab9fe0', 'P0e8c370', 'P834a3fd']
+2026-07-01 12:31:04,979 WARNING [backend.app.api.routes.cloud] [cacfef77] Failed to get cloud preset P183f873 (API ID: P183f873): Failed to get setting detail: 400
+2026-07-01 12:31:05,165 WARNING [backend.app.api.routes.cloud] [cacfef77] Failed to get cloud preset Paab9fe0 (API ID: Paab9fe0): Failed to get setting detail: 400
+2026-07-01 12:31:05,357 WARNING [backend.app.api.routes.cloud] [cacfef77] Failed to get cloud preset P0e8c370 (API ID: P0e8c370): Failed to get setting detail: 400
+2026-07-01 12:31:05,547 WARNING [backend.app.api.routes.cloud] [cacfef77] Failed to get cloud preset P834a3fd (API ID: P834a3fd): Failed to get setting detail: 400
+2026-07-01 12:31:05,552 INFO [uvicorn.access] [-] [IP]:51586 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-01 12:31:13,458 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(34, 1, 33, None)]
+2026-07-01 12:31:13,463 INFO [backend.app.services.print_scheduler] [-] Starting queue item 34
+2026-07-01 12:31:13,465 INFO [backend.app.services.print_scheduler] [-] Queue item 34: FTP upload starting - printer=[PRINTER] ([PRINTER]), ip=[IP], file=gear_removal_tool.3mf, local_path=/app/data/archive/unassigned/20260701_123037_gear_removal_tool/gear_removal_tool.gcode.3mf, retry_enabled=True, retry_count=3, timeout=30.0
+2026-07-01 12:31:14,293 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-07-01 12:31:14,347 INFO [backend.app.services.bambu_ftp] [-] FTP connecting to [IP] for upload (model=[PRINTER], mode=prot_p, socket_timeout=30.0s)...
+2026-07-01 12:31:15,204 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-07-01 12:31:15,204 INFO [backend.app.services.bambu_ftp] [-] FTP connected to [IP]
+2026-07-01 12:31:15,204 INFO [backend.app.services.bambu_ftp] [-] FTP uploading /app/data/archive/unassigned/20260701_123037_gear_removal_tool/gear_removal_tool.gcode.3mf (204758 bytes) to /gear_removal_tool.3mf
+2026-07-01 12:31:15,304 INFO [backend.app.services.bambu_ftp] [-] FTP data channel ready in 0.1s (PASV + TLS handshake)
+2026-07-01 12:31:15,690 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy [PRINTER]] 1Hz status push: 60 pushes/min to [IP]:46204
+2026-07-01 12:31:17,717 INFO [backend.app.services.bambu_ftp] [-] FTP STOR confirmed for /gear_removal_tool.3mf: 226
+2026-07-01 12:31:17,718 INFO [backend.app.services.bambu_ftp] [-] FTP upload complete: /gear_removal_tool.3mf (204758 bytes in 2.5s, 80 KB/s)
+2026-07-01 12:31:17,718 INFO [backend.app.services.bambu_ftp] [-] FTP mode cached for [IP]: prot_p
+2026-07-01 12:31:17,740 INFO [backend.app.main] [-] Registered expected print: printer=1, file=gear_removal_tool.3mf, archive=33, ams_mapping=[-1, -1, -1, 3], plate_id=1
+2026-07-01 12:31:17,742 INFO [backend.app.services.print_scheduler] [-] Queue item 34: Status set to 'printing', sending print command...
+2026-07-01 12:31:17,742 INFO [backend.app.services.printer_manager] [-] PRINT COMMAND: printer=1, file=gear_removal_tool.3mf, caller=print_scheduler.py:321:check_queue
+2026-07-01 12:31:17,742 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_1.gcode", "url": "ftp://gear_removal_tool.3mf", "file": "gear_removal_tool.3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": true, "auto_bed_leveling": 1, "flow_cali": true, "vibration_cali": true, "layer_inspect": false, "use_ams": true, "cfg": "0", "extrude_cali_flag": 1, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 0, "subtask_name": "gear_removal_tool", "profile_id": "0", "project_id": "461650732", "subtask_id": "461650732", "task_id": "461650732", "ams_mapping": [-1, -1, -1, 3], "ams_mapping2": [{"ams_id": 255, "slot_id": 255}, {"ams_id": 255, "slot_id": 255}, {"ams_id": 255, "slot_id": 255}, {"ams_id": 0, "slot_id": 3}]}}
+2026-07-01 12:31:17,742 INFO [backend.app.services.print_scheduler] [-] Queue item 34: Print started successfully - gear_removal_tool.gcode.3mf
+2026-07-01 12:31:17,744 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=IDLE, awaiting_plate_clear=False
+2026-07-01 12:31:17,776 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS Filament Backup: OFF
+2026-07-01 12:31:25,947 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT START detected - file: gear_removal_tool.3mf, subtask: gear_removal_tool, is_new: True, is_file_change: False
+2026-07-01 12:31:25,948 INFO [backend.app.main] [-] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-07-01 12:31:25,949 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Skipped trays with invalid remain% for printer 1: AMS0-T0(remain=-1), AMS0-T1(remain=-1), AMS0-T2(remain=-1), AMS0-T3(remain=-1)
+2026-07-01 12:31:25,949 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping=None, tray_now=255, last_loaded_tray=1
+2026-07-01 12:31:25,950 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping-related keys: {'ams_extruder_map': {'0': 0}}
+2026-07-01 12:31:25,950 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 0: T0(type=PLA, color=808080FF, now=?, tar=?), T1(type=PLA, color=000000FF, now=?, tar=?), T2(type=PETG, color=808080FF, now=?, tar=?), T3(type=PLA, color=FF0000FF, now=?, tar=?)
+2026-07-01 12:31:25,951 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (1 trays): {'255-0': 0}
+2026-07-01 12:31:25,952 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=False
+2026-07-01 12:31:25,952 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: gear_removal_tool.3mf, subtask: gear_removal_tool
+2026-07-01 12:31:25,952 INFO [backend.app.main] [-] Using expected archive 33 for print (skipping duplicate)
+2026-07-01 12:31:25,955 INFO [backend.app.main] [-] [CALLBACK] Injected ams_mapping into usage tracker session: [-1, -1, -1, 3]
+2026-07-01 12:31:25,976 INFO [backend.app.main] [-] [ENERGY] Recorded starting energy (expected-print) for archive 33: 0.001 kWh
+2026-07-01 12:31:25,979 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-07-01 12:31:25,979 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-07-01 12:31:26,000 INFO [backend.app.api.routes.printers] [52c0828b] Cover: resolved plate 1 before download (subtask=gear_removal_tool)
+2026-07-01 12:31:26,000 INFO [backend.app.api.routes.printers] [52c0828b] Cover using cached 3MF from /app/data/archive/unassigned/20260701_123037_gear_removal_tool/gear_removal_tool.gcode.3mf (avoided duplicate FTP)
+2026-07-01 12:31:26,000 INFO [backend.app.api.routes.printers] [52c0828b] Downloaded file size: 204758 bytes
+2026-07-01 12:31:29,013 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 67657 bytes
+2026-07-01 12:31:29,013 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 ([PRINTER])
+2026-07-01 12:31:29,015 INFO [backend.app.services.notification_service] [-] No notification providers configured for print_start event on printer 1
+2026-07-01 12:31:29,016 INFO [backend.app.main] [-] Loaded 1 printable objects for printer 1
+2026-07-01 12:31:29,898 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-07-01 12:31:31,288 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-07-01 12:31:31,342 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /timelapse/video: 550 
+2026-07-01 12:31:33,639 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-07-01 12:31:37,130 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-07-01 12:31:37,173 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /record: 550 
+2026-07-01 12:31:37,358 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"info":{"command":"get_version","sequence_id":"20006"}}...
+2026-07-01 12:31:37,358 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT info command: get_version
+2026-07-01 12:31:37,359 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sent version response (product_name=[PRINTER])
+2026-07-01 12:31:37,359 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"info":{"command":"get_version","sequence_id":"20007"}}...
+2026-07-01 12:31:37,359 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT info command: get_version
+2026-07-01 12:31:37,359 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sent version response (product_name=[PRINTER])
+2026-07-01 12:31:43,010 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-07-01 12:31:43,046 INFO [backend.app.services.bambu_ftp] [-] FTP list_files failed for /recording: 550 
+2026-07-01 12:31:43,064 INFO [backend.app.main] [-] [TIMELAPSE] Baseline at print start: 0 video files for printer 1
+2026-07-01 12:31:58,860 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-07-01 12:32:15,772 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy [PRINTER]] 1Hz status push: 60 pushes/min to [IP]:46204
+2026-07-01 12:32:25,455 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-07-01 12:32:49,648 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Tray change during print: tray=3 at layer=0
+2026-07-01 12:32:50,739 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-07-01 12:32:55,438 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-01 12:33:15,854 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [Bambuddy [PRINTER]] 1Hz status push: 60 pushes/min to [IP]:46204
+2026-07-01 12:33:43,699 ERROR [backend.app.services.camera] [-] Chamber image: connection timeout to [IP]:6000
+2026-07-01 12:33:43,700 WARNING [backend.app.services.obico_detection] [-] Failed to capture snapshot for printer 1
+2026-07-01 12:33:46,219 INFO [backend.app.api.routes.support] [87b52ec5] Log level changed to DEBUG
+2026-07-01 12:33:46,220 INFO [backend.app.api.routes.bug_report] [87b52ec5] Bug report: enabled debug logging
+2026-07-01 12:33:46,220 DEBUG [backend.app.services.bambu_mqtt] [87b52ec5] [[SERIAL]] Requesting status update (pushall)
+2026-07-01 12:33:46,220 INFO [uvicorn.access] [-] [IP]:59114 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200

@@ -1095,25 +1095,36 @@ class VirtualPrinterInstance:
             self._mqtt.set_bridge(self._mqtt_bridge)
             await self._mqtt_bridge.start()
 
-            # RTSPS camera passthrough on port 322. BambuStudio's camera button
-            # connects to the device IP it bound on (the VP), not the IP in
-            # `ipcam.rtsp_url`. Without a listener on <bind_ip>:322 the slicer
-            # gets connection refused → "LAN connection failed". Same raw TCP
-            # pass-through used by SlicerProxyManager in proxy mode.
+            # Camera passthrough. BambuStudio / OrcaSlicer connect the "camera"
+            # button to the device IP they bound on (the VP), not the IP in the
+            # printer's `ipcam.rtsp_url`. Without a listener the slicer gets
+            # connection refused → "LAN connection failed" (RTSP models) or
+            # OrcaSlicer error `[2:-10061]` (chamber-image models, #1868).
+            #
+            # The port depends on the TARGET printer's model:
+            #   RTSPS (X1/X2/H2/P2S)        → 322
+            #   chamber-image (A1/P1P/P1S)  → 6000
+            #
+            # `get_camera_port()` is the same source of truth used by
+            # `routes/camera.py`, so slicer and Bambuddy UI agree.
             target_client = self._printer_manager.get_client(self.target_printer_id)
             target_ip = getattr(target_client, "ip_address", None) if target_client else None
+            target_model = getattr(target_client, "model", None) if target_client else None
             if target_ip:
+                from backend.app.services.camera import get_camera_port
+
+                camera_port = get_camera_port(target_model)
                 self._rtsp_proxy = TCPProxy(
-                    name="RTSP",
-                    listen_port=322,
+                    name=f"Camera-{camera_port}",
+                    listen_port=camera_port,
                     target_host=target_ip,
-                    target_port=322,
+                    target_port=camera_port,
                     bind_address=bind_addr,
                 )
                 self._tasks.append(
                     asyncio.create_task(
-                        run_with_logging(self._rtsp_proxy.start(), "RTSP"),
-                        name=f"vp_{self.id}_rtsp",
+                        run_with_logging(self._rtsp_proxy.start(), f"Camera-{camera_port}"),
+                        name=f"vp_{self.id}_camera",
                     )
                 )
 
@@ -1197,7 +1208,7 @@ class VirtualPrinterInstance:
             try:
                 await self._rtsp_proxy.stop()
             except Exception:
-                logger.exception("[VP %s] RTSP proxy stop failed", self.name)
+                logger.exception("[VP %s] Camera proxy stop failed", self.name)
             self._rtsp_proxy = None
         if self._ftp:
             await self._ftp.stop()

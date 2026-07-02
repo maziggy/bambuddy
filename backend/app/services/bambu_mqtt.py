@@ -292,7 +292,7 @@ class PrinterState:
     ipcam: bool = False  # Live view / camera streaming enabled
     wifi_signal: int | None = None  # WiFi signal strength in dBm
     wired_network: bool = False  # Ethernet connection detected (home_flag bit 18)
-    door_open: bool = False  # Enclosure door open (home_flag bit 23, X1/P1S/P2S/H2*)
+    door_open: bool = False  # Enclosure door open (home_flag bit 23; models with a door sensor: X1/X1C/X1E/X2D/P2S/H2*)
     # Nozzle hardware info (for dual nozzle printers, index 0 = left, 1 = right)
     nozzles: list = field(default_factory=lambda: [NozzleInfo(), NozzleInfo()])
     # AI detection and print options
@@ -2177,6 +2177,35 @@ class BambuMQTTClient:
             # Trigger layer change callback if layer increased
             if new_layer > old_layer and self.on_layer_change:
                 self.on_layer_change(new_layer)
+            # #1867 last-layer finish-photo trigger. A1 Mini (and other
+            # firmware variants) skips `stg_cur=22`, so the fallback fires
+            # at gcode_state=FINISH — which runs AFTER user End G-code
+            # (e.g. SwapMod plate-swap) and captures the wrong plate.
+            # Firing on the layer_num→total_layer_num edge captures the
+            # last object layer before any end G-code executes.
+            total = self.state.total_layers or 0
+            if (
+                total > 0
+                and new_layer >= total
+                and old_layer < total
+                and self._was_running
+                and not self._finish_photo_captured
+                and self.on_finish_photo_moment
+            ):
+                self._finish_photo_captured = True
+                logger.info(
+                    f"[{self.serial_number}] FINISH PHOTO MOMENT (last-layer) — "
+                    f"layer={new_layer}/{total}, "
+                    f"timelapse_active={self._timelapse_during_print}"
+                )
+                self.on_finish_photo_moment(
+                    {
+                        "trigger": "last_layer",
+                        "filename": self._previous_gcode_file or self.state.gcode_file,
+                        "subtask_name": self.state.subtask_name,
+                        "timelapse_was_active": self._timelapse_during_print,
+                    }
+                )
         if "total_layer_num" in data:
             # Some firmware (P1S observed) resets `total_layer_num` to 0 at
             # print end — same shape as the `layer_num` reset guarded above.

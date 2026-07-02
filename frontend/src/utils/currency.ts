@@ -29,6 +29,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   HUF: 'Ft',
   ILS: '₪',
   UAH: '₴',
+  IDR: 'Rp',
 };
 
 export function getCurrencySymbol(currencyCode: string): string {

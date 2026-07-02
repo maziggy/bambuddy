@@ -621,3 +621,96 @@ class TestPendingRequestRouting:
         return None so the response broadcasts."""
         assert server._lookup_pending_request_client(b"not valid json") is None
         assert server._lookup_pending_request_client(b'"a string, not a dict"') is None
+
+
+class TestSendPublishDrainTimeoutEviction:
+    """#1872: a slicer client that stops draining (e.g. macOS sleeps the
+    machine mid-session) used to keep its writer in `self._clients` for
+    hours — drain timed out at DEBUG, returned silently, and the push loop
+    kept spending 5 s per iteration on the zombie until SO_KEEPALIVE
+    detected the dead peer.
+
+    `_publish_to_report` now closes the writer and raises
+    `BrokenPipeError` on drain timeout so the push loop's existing
+    `except OSError` branch evicts the client on the same tick.
+    """
+
+    @pytest.mark.asyncio
+    async def test_drain_timeout_raises_broken_pipe_and_closes_writer(self):
+        """The core contract — drain > 5 s must raise BrokenPipeError AND
+        close the writer, not swallow the timeout."""
+        server = _make_server()
+
+        # Writer whose drain never completes — asyncio.wait_for should
+        # hit its 5 s ceiling. Use an unresolved future so the coroutine
+        # returned by drain() blocks indefinitely.
+        writer = MagicMock()
+        writer.write = MagicMock(return_value=None)
+        never = asyncio.Future()  # deliberately never resolved
+        writer.drain = MagicMock(return_value=never)
+        writer.close = MagicMock()
+
+        # Patch wait_for to raise TimeoutError immediately instead of
+        # actually waiting 5 s — we're testing our handler, not asyncio.
+        with pytest.MonkeyPatch.context() as mp:
+
+            async def fake_wait_for(coro, timeout):
+                # Cancel the pending drain future so it doesn't leak.
+                if not never.done():
+                    never.cancel()
+                raise TimeoutError()
+
+            mp.setattr(asyncio, "wait_for", fake_wait_for)
+
+            with pytest.raises(BrokenPipeError, match="drain timeout"):
+                await server._publish_to_report(writer, {"x": 1}, serial="01P00A391800001")
+
+        writer.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_drain_timeout_still_closes_writer_when_close_fails(self):
+        """Best-effort close: if the writer is already broken and
+        `.close()` raises, `_send_publish` must still raise
+        BrokenPipeError so the push loop evicts the client. Silent
+        swallowing here would put us right back to the #1872 zombie."""
+        server = _make_server()
+
+        writer = MagicMock()
+        writer.write = MagicMock(return_value=None)
+        never = asyncio.Future()
+        writer.drain = MagicMock(return_value=never)
+        writer.close = MagicMock(side_effect=OSError("already broken"))
+
+        with pytest.MonkeyPatch.context() as mp:
+
+            async def fake_wait_for(coro, timeout):
+                if not never.done():
+                    never.cancel()
+                raise TimeoutError()
+
+            mp.setattr(asyncio, "wait_for", fake_wait_for)
+
+            with pytest.raises(BrokenPipeError):
+                await server._publish_to_report(writer, {"x": 1}, serial="01P00A391800001")
+
+
+class TestHandleClientTCPKeepaliveTuning:
+    """#1872: without tightening Linux TCP keepalive knobs, dead-peer
+    detection defaults to ~2 h. A macOS sleep leaves the pre-sleep socket
+    in `self._clients` until then. Tighten to detect within ~2 min.
+    """
+
+    def test_handle_client_source_names_the_tuning_constants(self):
+        """The tuning code needs the three TCP_KEEP* constants to be
+        referenced by name so a socket-module regression / a stripped-down
+        platform can be diagnosed from a support bundle. Inspecting the
+        source keeps this pinned without spinning up a real socket in
+        the unit test (that's covered separately by integration)."""
+        source = inspect.getsource(SimpleMQTTServer._handle_client)
+        for name in ("TCP_KEEPIDLE", "TCP_KEEPINTVL", "TCP_KEEPCNT"):
+            assert name in source, (
+                f"_handle_client must reference {name} so the Linux "
+                "keepalive schedule is tightened (#1872). Without this "
+                "a macOS sleep leaves the pre-sleep socket in _clients "
+                "for ~2 h until the default SO_KEEPALIVE probes fire."
+            )

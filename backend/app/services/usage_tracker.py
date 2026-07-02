@@ -1083,6 +1083,10 @@ async def _track_from_3mf(
             continue
 
         # --- Mid-print tray switch: split weight across trays ---
+        # Split math is shared with the Spoolman writer via
+        # ``utils.tray_split.compute_tray_split_grams`` (#1793) — both
+        # inventory backends must attribute segments identically or a
+        # user running dual-mode sees divergent totals.
         if len(tray_changes) > 1:
             # Compute total weight for this slot (same logic as normal path)
             if layer_grams and slot_id in layer_grams:
@@ -1100,8 +1104,6 @@ async def _track_from_3mf(
                 from backend.app.utils.threemf_tools import (
                     extract_filament_properties_from_3mf,
                     extract_layer_filament_usage_from_3mf,
-                    get_cumulative_usage_at_layer,
-                    mm_to_grams,
                 )
 
                 split_layer_usage = extract_layer_filament_usage_from_3mf(file_path)
@@ -1110,46 +1112,20 @@ async def _track_from_3mf(
             except Exception:
                 pass  # Fall back to linear splitting
 
-            density = split_props.get("density", 1.24)
-            diameter = split_props.get("diameter", 1.75)
-            filament_id = slot_id - 1  # 0-based for gcode
+            from backend.app.utils.tray_split import compute_tray_split_grams
 
-            sum_previous = 0.0
-            for seg_idx, (tray_global, seg_start_layer) in enumerate(tray_changes):
-                is_last = seg_idx + 1 >= len(tray_changes)
+            segments = compute_tray_split_grams(
+                tray_changes=tray_changes,
+                total_weight=total_weight,
+                slot_id=slot_id,
+                layer_usage=split_layer_usage,
+                density=split_props.get("density", 1.24),
+                diameter=split_props.get("diameter", 1.75),
+                total_layers=(state.total_layers if state else 0) or 0,
+                last_layer_num=last_layer_num,
+            )
 
-                if is_last:
-                    # Last segment: remainder to avoid rounding drift
-                    segment_grams = total_weight - sum_previous
-                elif split_layer_usage:
-                    seg_end_layer = tray_changes[seg_idx + 1][1]
-                    mm_at_start = get_cumulative_usage_at_layer(split_layer_usage, seg_start_layer).get(filament_id, 0)
-                    mm_at_end = get_cumulative_usage_at_layer(split_layer_usage, seg_end_layer).get(filament_id, 0)
-                    segment_grams = mm_to_grams(mm_at_end - mm_at_start, diameter, density)
-                else:
-                    # No per-layer data: linear fallback by layer ratio (#1771).
-                    # Cascade denominators because firmware on some models (P1S
-                    # observed) resets `total_layer_num` to 0 at print end —
-                    # `last_layer_num` is the print's last-valid layer captured
-                    # mid-print and survives that reset (same shape as the
-                    # `last_progress` fallback at line 1040). Equal-split is the
-                    # last-resort fence: still wrong, but bounded — never dumps
-                    # the entire print onto the last segment, which was the
-                    # original #1771 symptom for the reporter (P1S, AMS Backup
-                    # fed from spool 1 then spool 2, all 260 g credited to
-                    # spool 2 even though spool 1 had given up its 180 g).
-                    seg_end_layer = tray_changes[seg_idx + 1][1]
-                    denom = (state.total_layers if state else 0) or last_layer_num
-                    if denom > 0:
-                        segment_grams = total_weight * (seg_end_layer - seg_start_layer) / denom
-                    else:
-                        # No layer information available from any source —
-                        # spread evenly across segments. The last segment will
-                        # get the rounding remainder via the `is_last` branch
-                        # above on its own iteration.
-                        segment_grams = total_weight / len(tray_changes)
-
-                sum_previous += segment_grams
+            for seg_idx, tray_global, segment_grams in segments:
                 if segment_grams <= 0:
                     continue
 
@@ -1168,6 +1144,8 @@ async def _track_from_3mf(
                 if seg_key in handled_trays:
                     continue
 
+                seg_start_layer = tray_changes[seg_idx][1]
+                is_last = seg_idx + 1 >= len(tray_changes)
                 logger.info(
                     "[UsageTracker] 3MF split: segment %d tray=%d (AMS%d-T%d) layers %d-%s -> %.1fg",
                     seg_idx,

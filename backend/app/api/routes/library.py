@@ -3285,6 +3285,57 @@ def _patch_process_bed_type(process_json: str, bed_type: str) -> str:
     return json.dumps(profile)
 
 
+# Support-related keys we lift from the source 3MF's project_settings.config
+# into the picked process preset before `--load-settings` sees it (#1881).
+# BambuStudio's shipped process presets ("0.20mm Standard @BBL H2D" etc.)
+# define `enable_support: 0` as their default — supports are a per-print
+# decision, not a per-quality one. `--load-settings` is authoritative, so
+# without preserving these fields the source's per-project support intent
+# (supports on, PVA in the interface slot, tree vs normal) gets discarded
+# and the slicer produces a single-material output with no supports at all.
+_SOURCE_PROCESS_SUPPORT_KEYS_TO_PRESERVE = (
+    "enable_support",
+    "support_filament",
+    "support_interface_filament",
+    "support_type",
+)
+
+
+def _patch_process_support_settings(process_json: str, source_3mf_bytes: bytes) -> str:
+    """Overlay the source 3MF's support configuration onto the process JSON.
+
+    Only fires on 3MF sources — STL / STEP don't carry `project_settings.
+    config`. Silently no-ops when the source doesn't have the config, has
+    a malformed one, or when the process JSON isn't parseable — the slice
+    then runs with the process preset's own defaults, which is the safe
+    fall-back for both this bug and the pre-fix behaviour.
+    """
+    from io import BytesIO
+
+    try:
+        with zipfile.ZipFile(BytesIO(source_3mf_bytes), "r") as zf:
+            if "Metadata/project_settings.config" not in zf.namelist():
+                return process_json
+            src_cfg = json.loads(zf.read("Metadata/project_settings.config").decode("utf-8"))
+    except (zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError, OSError, KeyError):
+        return process_json
+    if not isinstance(src_cfg, dict):
+        return process_json
+
+    try:
+        process_cfg = json.loads(process_json)
+    except json.JSONDecodeError:
+        return process_json
+    if not isinstance(process_cfg, dict):
+        return process_json
+
+    for key in _SOURCE_PROCESS_SUPPORT_KEYS_TO_PRESERVE:
+        if key in src_cfg:
+            process_cfg[key] = src_cfg[key]
+
+    return json.dumps(process_cfg)
+
+
 # The sidecar prefixes the slicer CLI's own error_string with this when the
 # slicer ran and rejected the job (model off the bed, incompatible filament
 # temps, range validation) — as opposed to the CLI crashing before it could
@@ -3457,6 +3508,15 @@ async def _run_slicer_with_fallback(
         # --load-settings (and the fallback's embedded values for keys we
         # didn't touch) still drive the slice.
         primary_bytes = _sanitize_project_settings_sentinels(primary_bytes)
+
+        # #1881: preserve the source 3MF's support configuration on top of
+        # the picked process preset. Bambu's shipped process presets set
+        # `enable_support: 0` by default (supports are a per-print, not
+        # per-quality, decision); `--load-settings` is authoritative so
+        # without patching, the source's `enable_support: 1` + support-slot
+        # assignments get discarded and the slice comes out single-material
+        # with a PVA slot loaded but never used.
+        presets["process"] = _patch_process_support_settings(presets["process"], primary_bytes)
 
     used_embedded_settings = False
     service = SlicerApiService(api_url)

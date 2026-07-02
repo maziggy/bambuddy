@@ -264,11 +264,19 @@ def substitute_unused_plate_filaments(source_3mf_bytes: bytes, plate_id: int | N
         return items
     # Local import keeps the bytes->ZipFile boundary in this module and
     # avoids dragging zipfile into every caller.
-    from backend.app.utils.threemf_tools import extract_plate_extruder_set_from_3mf
+    from backend.app.utils.threemf_tools import (
+        extract_plate_extruder_set_from_3mf,
+        extract_support_filament_slots_from_3mf,
+    )
 
     try:
         with zipfile.ZipFile(BytesIO(source_3mf_bytes), "r") as zf:
+            # Geometry-derived slots (per-object metadata + paint_color)
+            # plus process-derived support-filament slots. Supports aren't
+            # attached to object geometry so the geometry pass alone
+            # misses PVA-in-support-slot setups (#1881).
             used = extract_plate_extruder_set_from_3mf(zf, plate_id)
+            used |= extract_support_filament_slots_from_3mf(zf)
     except (zipfile.BadZipFile, OSError) as exc:
         logger.warning("Plate-filament parse failed (%s); leaving filament list unchanged", exc)
         return items

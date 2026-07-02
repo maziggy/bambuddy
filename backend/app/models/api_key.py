@@ -36,6 +36,9 @@ class APIKey(Base):
     can_manage_inventory: Mapped[bool] = mapped_column(
         Boolean, default=True
     )  # Inventory write ops (incl. SpoolBuddy kiosk NFC/scale/system)
+    can_manage_maintenance: Mapped[bool] = mapped_column(
+        Boolean, default=True
+    )  # Log/reset per-printer maintenance, edit intervals, manage the type catalog (#1832 follow-up)
     can_access_cloud: Mapped[bool] = mapped_column(Boolean, default=False)  # Read /cloud/* on the owner's behalf
     can_run_macros: Mapped[bool] = mapped_column(Boolean, default=False)  # Trigger macros via webhook
     # Narrowly-scoped settings write: only POST /settings/electricity-price.

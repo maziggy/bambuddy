@@ -55,6 +55,8 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@CooleyMcCoolson](https://github.com/CooleyMcCoolson)
 - [@mikeloveridge](https://github.com/mikeloveridge)
 - [@boernie](https://github.com/boernie)
+- [@qoatzelcoat](https://github.com/qoatzelcoat)
+- [@Sanaki](https://github.com/Sanaki)
 ---
 
 ## One-time and historical supporters

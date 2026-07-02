@@ -6070,3 +6070,115 @@ class TestTrayNowH2SExternalSpoolOverride:
 
         mqtt_client._process_message(_ams_payload(255))
         assert mqtt_client.state.tray_now == 255
+
+
+class TestLastLayerFinishPhotoTrigger:
+    """Tests for #1867: layer_num→total_layer_num edge fires the finish-photo
+    moment before user End G-code (e.g. SwapMod) executes.
+
+    A1 Mini firmware skips stg_cur=22 entirely, so the FINISH-state fallback
+    fires after end G-code has already moved the plate. The last-layer edge
+    is the earliest reliable "print finished" signal available across all
+    Bambu printer variants.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        client._was_running = True
+        client.state.total_layers = 100
+        client.state.layer_num = 99
+        return client
+
+    def test_fires_when_layer_reaches_total(self, mqtt_client):
+        events = []
+        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
+
+        mqtt_client._process_message({"print": {"layer_num": 100}})
+
+        assert len(events) == 1
+        assert events[0]["trigger"] == "last_layer"
+        assert mqtt_client._finish_photo_captured is True
+
+    def test_does_not_fire_when_layer_still_below_total(self, mqtt_client):
+        events = []
+        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
+
+        mqtt_client._process_message({"print": {"layer_num": 99}})
+
+        assert events == []
+        assert mqtt_client._finish_photo_captured is False
+
+    def test_edge_only_no_double_fire(self, mqtt_client):
+        """Once fired, subsequent messages at layer_num == total must not
+        re-fire (the guard flips _finish_photo_captured to True)."""
+        events = []
+        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
+
+        mqtt_client._process_message({"print": {"layer_num": 100}})
+        mqtt_client._process_message({"print": {"layer_num": 100}})
+        mqtt_client._process_message({"print": {"layer_num": 100}})
+
+        assert len(events) == 1
+
+    def test_does_not_fire_when_not_running(self, mqtt_client):
+        """If the print never went through RUNNING (Bambuddy restart mid-print,
+        firmware replay), _was_running is False and no photo trigger fires."""
+        mqtt_client._was_running = False
+        events = []
+        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
+
+        mqtt_client._process_message({"print": {"layer_num": 100}})
+
+        assert events == []
+
+    def test_does_not_fire_when_total_layers_unknown(self, mqtt_client):
+        """total=0 (before slicer metadata arrives) must never satisfy the
+        `new_layer >= total` condition."""
+        mqtt_client.state.total_layers = 0
+        mqtt_client.state.layer_num = 0
+        events = []
+        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
+
+        mqtt_client._process_message({"print": {"layer_num": 0}})
+
+        assert events == []
+
+    def test_stage_22_skipped_after_last_layer_already_fired(self, mqtt_client):
+        """Once the last-layer trigger has set _finish_photo_captured, the
+        stage-22 hook that runs later on AMS printers must be a no-op."""
+        events = []
+        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
+
+        mqtt_client._process_message({"print": {"layer_num": 100}})
+        assert len(events) == 1
+
+        mqtt_client.state.progress = 100
+        mqtt_client._process_message({"print": {"stg_cur": 22}})
+
+        assert len(events) == 1
+
+    def test_finish_state_fallback_skipped_after_last_layer_fired(self, mqtt_client):
+        """The gcode_state=FINISH fallback (which fires after end G-code on
+        every printer) must be suppressed once the last-layer edge fired.
+        This is the #1867 regression check — SwapMod plate must be captured
+        by last_layer, NOT by the post-End-G-code FINISH fallback."""
+        events = []
+        completion_events = []
+        mqtt_client.on_finish_photo_moment = lambda data: events.append(data)
+        mqtt_client.on_print_complete = lambda data: completion_events.append(data)
+        mqtt_client._previous_gcode_state = "RUNNING"
+
+        mqtt_client._process_message({"print": {"layer_num": 100}})
+        assert events[0]["trigger"] == "last_layer"
+
+        mqtt_client._process_message({"print": {"gcode_state": "FINISH"}})
+
+        assert len(events) == 1
+        assert len(completion_events) == 1

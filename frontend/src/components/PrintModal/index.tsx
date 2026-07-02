@@ -1099,11 +1099,11 @@ export function PrintModal({
                 onAutoConfigurePrinter={multiPrinterMapping.autoConfigurePrinter}
                 onUpdatePrinterConfig={multiPrinterMapping.updatePrinterConfig}
                 assignmentMode={assignmentMode}
-                onAssignmentModeChange={!isEditing ? setAssignmentMode : undefined}
+                onAssignmentModeChange={setAssignmentMode}
                 targetModel={targetModel}
-                onTargetModelChange={!isEditing ? setTargetModel : undefined}
+                onTargetModelChange={setTargetModel}
                 targetLocation={targetLocation}
-                onTargetLocationChange={!isEditing ? setTargetLocation : undefined}
+                onTargetLocationChange={setTargetLocation}
                 slicedForModel={slicedForModel}
               />
             )}

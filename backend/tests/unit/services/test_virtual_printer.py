@@ -3175,6 +3175,146 @@ class TestVirtualPrinterManagerDirectories:
         assert (tmp_path / "certs" / "42").exists()
 
 
+class TestVirtualPrinterCameraPassthrough:
+    """Tests for the non-proxy VP camera pass-through port selection (#1868).
+
+    The camera port must follow the TARGET printer's model, not the VP's
+    spoofed model: RTSP models (X1/X2/H2/P2S) use 322, chamber-image models
+    (A1/P1) use 6000. Before the fix, the manager hardcoded 322, so P1S /
+    A1 targets got a 322 listener with no upstream and BambuStudio /
+    OrcaSlicer Liveview failed with error `[2:-10061]` (the reporter's
+    symptom in #1868).
+    """
+
+    @staticmethod
+    def _patch_start_server(monkeypatch):
+        """Patch every non-camera constructor start_server touches so the
+        test only exercises the camera-port branch. Returns the list that
+        ``TCPProxy`` calls get captured into."""
+        from backend.app.services.virtual_printer import manager as vp_manager
+
+        tcp_calls: list[dict] = []
+
+        class FakeTCPProxy:
+            def __init__(self, **kwargs):
+                tcp_calls.append(kwargs)
+                self.kwargs = kwargs
+
+            async def start(self):
+                return None
+
+            async def stop(self):
+                return None
+
+        # Camera pass-through is the only TCPProxy start_server constructs.
+        monkeypatch.setattr(vp_manager, "TCPProxy", FakeTCPProxy)
+
+        # No-op every other service constructor + resolve_cert_and_advertise.
+        # start_server() awaits `.ready.wait()` on FTP/MQTT/Bind/SSDP after
+        # spawning them, so each fake instance must carry an already-set
+        # asyncio.Event as `.ready` — a plain MagicMock returns another
+        # MagicMock for `.wait()`, which `asyncio.gather` then rejects with
+        # `TypeError: An asyncio.Future, a coroutine or an awaitable is
+        # required`.
+        def _service_factory():
+            def make(*args, **kwargs):
+                inst = MagicMock()
+                inst.start = AsyncMock(return_value=None)
+                inst.stop = AsyncMock(return_value=None)
+                ready = asyncio.Event()
+                ready.set()
+                inst.ready = ready
+                return inst
+
+            return make
+
+        for name in (
+            "VirtualPrinterFTPServer",
+            "SimpleMQTTServer",
+            "MQTTBridge",
+            "BindServer",
+            "VirtualPrinterSSDPServer",
+            "SSDPProxy",
+        ):
+            monkeypatch.setattr(vp_manager, name, _service_factory())
+
+        return tcp_calls
+
+    async def _run_start_server(
+        self,
+        tmp_path,
+        monkeypatch,
+        *,
+        target_model: str,
+        target_ip: str = "192.168.1.100",
+    ) -> list[dict]:
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        tcp_calls = self._patch_start_server(monkeypatch)
+
+        instance = VirtualPrinterInstance(
+            vp_id=99,
+            name="CamTest",
+            mode="archive",
+            model="BL-P001",  # VP's spoofed identity — irrelevant here
+            access_code="12345678",
+            serial_suffix="391800099",
+            target_printer_id=7,
+            base_dir=tmp_path,
+        )
+
+        # printer_manager stub returns a client with the model + ip we want.
+        client = MagicMock()
+        client.ip_address = target_ip
+        client.model = target_model
+        printer_manager = MagicMock()
+        printer_manager.get_client.return_value = client
+        instance._printer_manager = printer_manager
+
+        # Cert / advertise resolution — start_server calls this early. Patch
+        # to a fixed tuple so no filesystem I/O is required.
+        monkeypatch.setattr(
+            instance,
+            "_resolve_cert_and_advertise",
+            lambda: (Path("/tmp/cert.pem"), Path("/tmp/key.pem"), "192.168.1.1"),  # nosec B108
+        )
+
+        try:
+            await instance.start_server()
+        finally:
+            for task in instance._tasks:
+                task.cancel()
+            await asyncio.gather(*instance._tasks, return_exceptions=True)
+
+        return tcp_calls
+
+    @pytest.mark.asyncio
+    async def test_rtsp_model_p2s_opens_port_322(self, tmp_path, monkeypatch):
+        calls = await self._run_start_server(tmp_path, monkeypatch, target_model="P2S")
+        assert any(c["listen_port"] == 322 and c["target_port"] == 322 for c in calls), (
+            f"Expected 322 pass-through for RTSP model P2S, got {calls}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_chamber_image_model_p1s_opens_port_6000(self, tmp_path, monkeypatch):
+        """#1868 regression guard: P1S target must expose 6000, not 322."""
+        calls = await self._run_start_server(tmp_path, monkeypatch, target_model="P1S")
+        assert any(c["listen_port"] == 6000 and c["target_port"] == 6000 for c in calls), (
+            f"Expected 6000 pass-through for chamber-image model P1S (#1868), got {calls}"
+        )
+        assert not any(c["listen_port"] == 322 for c in calls), f"P1S should NOT get a 322 listener, got {calls}"
+
+    @pytest.mark.asyncio
+    async def test_chamber_image_model_a1_opens_port_6000(self, tmp_path, monkeypatch):
+        calls = await self._run_start_server(tmp_path, monkeypatch, target_model="A1")
+        assert any(c["listen_port"] == 6000 and c["target_port"] == 6000 for c in calls)
+
+    @pytest.mark.asyncio
+    async def test_rtsp_model_x1c_opens_port_322(self, tmp_path, monkeypatch):
+        calls = await self._run_start_server(tmp_path, monkeypatch, target_model="X1C")
+        assert any(c["listen_port"] == 322 and c["target_port"] == 322 for c in calls)
+
+
 class TestVirtualPrinterInstanceProxyMode:
     """Tests for VirtualPrinterInstance proxy mode."""
 

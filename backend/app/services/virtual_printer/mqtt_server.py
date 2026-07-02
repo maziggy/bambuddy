@@ -594,12 +594,45 @@ class SimpleMQTTServer:
                     # Enable TCP keepalive so a hard network drop is detected
                     # by the OS within a few minutes rather than waiting for
                     # the next outbound write to ECONNRESET.
+                    #
+                    # Also tighten the Linux keepalive schedule. Defaults are
+                    # tcp_keepalive_time=7200 s (2 h before first probe),
+                    # tcp_keepalive_intvl=75, tcp_keepalive_probes=9 — so a
+                    # macOS client that goes to sleep silently is only
+                    # detected as dead ~2 h 11 min later, and until then the
+                    # push loop keeps stalling on drain-timeouts to the
+                    # zombie socket. #1872: a P1S sleep/wake left the pre-
+                    # sleep session in _clients for 5+ min with no eviction
+                    # signal. New settings (idle=60 s, interval=15 s,
+                    # count=4) detect a dead peer in ~2 min. `getattr` guards
+                    # keep this cross-platform — macOS has TCP_KEEPINTVL but
+                    # not TCP_KEEPIDLE (uses TCP_KEEPALIVE); other platforms
+                    # silently skip.
                     sock = writer.get_extra_info("socket")
                     if sock is not None:
                         try:
                             sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
                         except OSError as e:
                             logger.debug("%sFailed to set SO_KEEPALIVE on %s: %s", self._log_prefix, client_id, e)
+                        for opt_name, opt_value in (
+                            ("TCP_KEEPIDLE", 60),
+                            ("TCP_KEEPINTVL", 15),
+                            ("TCP_KEEPCNT", 4),
+                        ):
+                            opt = getattr(socket, opt_name, None)
+                            if opt is None:
+                                continue
+                            try:
+                                sock.setsockopt(socket.IPPROTO_TCP, opt, opt_value)
+                            except OSError as e:
+                                logger.debug(
+                                    "%sFailed to set %s=%s on %s: %s",
+                                    self._log_prefix,
+                                    opt_name,
+                                    opt_value,
+                                    client_id,
+                                    e,
+                                )
                     # Register client for periodic status pushes; start with
                     # self.serial as the fallback until we learn the slicer's
                     # preferred serial from the first SUBSCRIBE/PUBLISH.
@@ -1145,11 +1178,30 @@ class SimpleMQTTServer:
 
         writer.write(packet)
         # Timeout the drain to prevent blocking the event loop if the
-        # MQTT client stops reading (e.g. slicer busy with FTP upload).
+        # MQTT client stops reading (e.g. slicer busy with FTP upload,
+        # macOS suspends the client mid-session — #1872).
+        #
+        # On timeout, close the writer and raise BrokenPipeError so the
+        # push-loop's ``except OSError`` at ``_periodic_status_push``
+        # evicts the client from ``self._clients`` on this same tick.
+        # Before this, timeouts logged at DEBUG and returned silently,
+        # so the zombie writer sat in ``self._clients`` until SO_KEEPALIVE
+        # detected the dead peer (~2 h on Linux defaults). That kept the
+        # push loop spending 5 s per iteration on the stalled client and
+        # left the slicer's UI unaware the session was gone.
         try:
             await asyncio.wait_for(writer.drain(), timeout=5)
-        except TimeoutError:
-            logger.debug("MQTT drain timeout for %s — client may be busy", topic)
+        except TimeoutError as e:
+            logger.info(
+                "%sMQTT drain timeout for %s — closing stalled writer",
+                self._log_prefix,
+                topic,
+            )
+            try:
+                writer.close()
+            except Exception:
+                pass  # best-effort — writer may already be broken
+            raise BrokenPipeError(f"drain timeout on {topic}") from e
 
     async def _send_print_response(
         self, writer: asyncio.StreamWriter, sequence_id: str, filename: str, serial: str | None = None

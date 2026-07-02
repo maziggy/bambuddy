@@ -1,0 +1,200 @@
+2026-07-02 18:16:46,870 INFO [backend.app.services.virtual_printer.mqtt_server] [62fa47de] [P1S - [PRINTER]] MQTT client [IP]:63581 authenticated (negotiated keepalive=60s, idle disconnect disabled)
+2026-07-02 18:16:46,872 INFO [backend.app.services.virtual_printer.mqtt_server] [62fa47de] [P1S - [PRINTER]] MQTT subscribe: device/[SERIAL]/report QoS=0
+2026-07-02 18:16:46,959 INFO [backend.app.api.routes.virtual_printers] [e13f74d7] Updated virtual printer: P1S - [PRINTER] (id=1)
+2026-07-02 18:16:46,964 INFO [backend.app.services.virtual_printer.manager] [e13f74d7] VP P1S - [PRINTER] config changed (mode: queue→queue), restarting
+2026-07-02 18:16:46,965 INFO [backend.app.services.virtual_printer.mqtt_bridge] [e13f74d7] [P1S - [PRINTER]] MQTT bridge unbound from printer 1
+2026-07-02 18:16:46,965 INFO [backend.app.services.virtual_printer.tcp_proxy] [e13f74d7] Stopping RTSP proxy
+2026-07-02 18:16:46,965 INFO [backend.app.services.virtual_printer.ftp_server] [e13f74d7] Stopping FTP server
+2026-07-02 18:16:46,965 INFO [backend.app.services.virtual_printer.mqtt_server] [e13f74d7] Stopping simple MQTT server
+2026-07-02 18:16:46,965 INFO [backend.app.services.virtual_printer.tcp_proxy] [62fa47de] Stopping RTSP proxy
+2026-07-02 18:16:46,965 INFO [backend.app.services.virtual_printer.ftp_server] [62fa47de] Stopping FTP server
+2026-07-02 18:16:46,966 INFO [backend.app.services.virtual_printer.mqtt_server] [62fa47de] Periodic status push task stopped
+2026-07-02 18:16:46,967 WARNING [backend.app.services.virtual_printer.mqtt_server] [62fa47de] [P1S - [PRINTER]] MQTT client session error from [IP]:63581: [SSL: APPLICATION_DATA_AFTER_CLOSE_NOTIFY] application data after close notify (_ssl.c:2788)
+2026-07-02 18:16:46,967 INFO [backend.app.services.virtual_printer.bind_server] [e13f74d7] Stopping bind server
+2026-07-02 18:16:46,968 INFO [backend.app.services.virtual_printer.ssdp_server] [e13f74d7] Stopping SSDP server
+2026-07-02 18:16:46,968 INFO [backend.app.services.virtual_printer.mqtt_server] [62fa47de] Stopping simple MQTT server
+2026-07-02 18:16:46,968 INFO [backend.app.services.virtual_printer.bind_server] [62fa47de] Stopping bind server
+2026-07-02 18:16:46,968 INFO [backend.app.services.virtual_printer.manager] [e13f74d7] Removed VP instance: P1S - [PRINTER]
+2026-07-02 18:16:46,969 INFO [backend.app.services.virtual_printer.manager] [e13f74d7] [VP P1S - [PRINTER]] Starting server-mode services on [IP]
+2026-07-02 18:16:46,969 INFO [backend.app.services.virtual_printer.certificate] [e13f74d7] Deleted printer certificate (CA preserved)
+2026-07-02 18:16:46,969 INFO [backend.app.services.virtual_printer.certificate] [e13f74d7] Generating certificates for virtual printer (serial: [SERIAL])...
+2026-07-02 18:16:47,098 INFO [backend.app.services.virtual_printer.certificate] [e13f74d7] Using existing CA certificate (expires in 7299 days)
+2026-07-02 18:16:47,144 INFO [backend.app.services.virtual_printer.certificate] [e13f74d7] Generating printer certificate with CN=[SERIAL], local IP: [IP]
+2026-07-02 18:16:47,144 INFO [backend.app.services.virtual_printer.certificate] [e13f74d7] Added additional SAN IP: [IP]
+2026-07-02 18:16:47,148 INFO [backend.app.services.virtual_printer.certificate] [e13f74d7] Generated certificate chain at /app/data/virtual_printer/certs/1
+2026-07-02 18:16:47,149 INFO [backend.app.services.virtual_printer.certificate] [e13f74d7]   CA: CN=Virtual Printer CA
+2026-07-02 18:16:47,149 INFO [backend.app.services.virtual_printer.certificate] [e13f74d7]   Printer: CN=[SERIAL]
+2026-07-02 18:16:47,149 INFO [backend.app.services.virtual_printer.mqtt_bridge] [e13f74d7] [P1S - [PRINTER]] MQTT bridge IP encoding armed: target=[IP] vp=[IP] (bind_address)
+2026-07-02 18:16:47,149 INFO [backend.app.services.virtual_printer.mqtt_bridge] [e13f74d7] [P1S - [PRINTER]] MQTT bridge bound to printer 1 (serial=[SERIAL])
+2026-07-02 18:16:47,150 INFO [backend.app.services.virtual_printer.ftp_server] [e13f74d7] [P1S - [PRINTER]] Starting virtual printer implicit FTPS on [IP]:990
+2026-07-02 18:16:47,152 INFO [backend.app.services.virtual_printer.ftp_server] [e13f74d7] FTP SSL context created with standard settings
+2026-07-02 18:16:47,152 INFO [backend.app.services.virtual_printer.mqtt_server] [e13f74d7] Starting simple MQTT server on port 8883
+2026-07-02 18:16:47,179 INFO [backend.app.services.virtual_printer.mqtt_server] [e13f74d7] MQTT SSL cert info: subject=CN=[SERIAL]
+issuer=CN=Virtual Printer CA
+2026-07-02 18:16:47,184 INFO [backend.app.services.virtual_printer.mqtt_server] [e13f74d7] MQTT SSL context: TLS 1.2+, cert=/app/data/virtual_printer/certs/1/virtual_printer.crt
+2026-07-02 18:16:47,187 INFO [backend.app.services.virtual_printer.tcp_proxy] [e13f74d7] Starting RTSP TCP proxy: [IP]:322 → [IP]:322
+2026-07-02 18:16:47,191 INFO [backend.app.services.virtual_printer.bind_server] [e13f74d7] Starting bind server on ports [3000, 3002] (serial=[SERIAL], model=C12, tls=True)
+2026-07-02 18:16:47,193 INFO [backend.app.services.virtual_printer.ssdp_server] [e13f74d7] Starting virtual printer SSDP server: P1S - [PRINTER] ([SERIAL])
+2026-07-02 18:16:47,193 INFO [backend.app.services.virtual_printer.ssdp_server] [e13f74d7] SSDP server listening on port 2021, advertising IP: [IP]
+2026-07-02 18:16:47,193 INFO [backend.app.services.virtual_printer.ssdp_server] [e13f74d7] Virtual printer: P1S - [PRINTER] ([SERIAL]) model=C12
+2026-07-02 18:16:47,194 INFO [backend.app.services.virtual_printer.ssdp_server] [e13f74d7] SSDP server also listening on [IP]:2021
+2026-07-02 18:16:47,194 INFO [backend.app.services.virtual_printer.ssdp_server] [e13f74d7] Sent initial SSDP NOTIFY announcement
+2026-07-02 18:16:47,195 INFO [backend.app.services.virtual_printer.ftp_server] [e13f74d7] Implicit FTPS server started on port 990
+2026-07-02 18:16:47,195 INFO [backend.app.services.virtual_printer.ftp_server] [e13f74d7] FTP passive data port range: 50000-50009
+2026-07-02 18:16:47,195 INFO [backend.app.services.virtual_printer.mqtt_server] [e13f74d7] Simple MQTT server listening on port 8883
+2026-07-02 18:16:47,195 INFO [backend.app.services.virtual_printer.tcp_proxy] [e13f74d7] RTSP TCP proxy listening on port 322
+2026-07-02 18:16:47,195 INFO [backend.app.services.virtual_printer.bind_server] [e13f74d7] Bind server listening on [IP]:3000 (plain)
+2026-07-02 18:16:47,196 INFO [backend.app.services.virtual_printer.mqtt_server] [e13f74d7] Starting periodic status push task
+2026-07-02 18:16:47,196 INFO [backend.app.services.virtual_printer.bind_server] [e13f74d7] Bind server listening on [IP]:3002 (TLS)
+2026-07-02 18:16:47,196 INFO [backend.app.services.virtual_printer.manager] [e13f74d7] [VP P1S - [PRINTER]] Server-mode services started on [IP]
+2026-07-02 18:16:47,196 INFO [backend.app.services.virtual_printer.manager] [e13f74d7] Started server-mode VP: P1S - [PRINTER] on [IP]
+2026-07-02 18:16:47,198 INFO [uvicorn.access] [-] [IP]:60789 - "PUT /api/v1/virtual-printers/1 HTTP/1.1" 200
+2026-07-02 18:16:47,994 INFO [backend.app.services.virtual_printer.mqtt_server] [e13f74d7] [P1S - [PRINTER]] MQTT TLS connection from ('[IP]', 63582) - cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256), version=TLSv1.3
+2026-07-02 18:16:47,995 INFO [backend.app.services.virtual_printer.mqtt_server] [e13f74d7] [P1S - [PRINTER]] MQTT client connected: [IP]:63582
+2026-07-02 18:16:47,995 INFO [backend.app.services.virtual_printer.mqtt_server] [e13f74d7] [P1S - [PRINTER]] MQTT client authenticated successfully
+2026-07-02 18:16:47,996 INFO [backend.app.services.virtual_printer.mqtt_server] [e13f74d7] [P1S - [PRINTER]] MQTT client [IP]:63582 authenticated (negotiated keepalive=60s, idle disconnect disabled)
+2026-07-02 18:16:47,997 INFO [backend.app.services.virtual_printer.mqtt_server] [e13f74d7] [P1S - [PRINTER]] MQTT subscribe: device/[SERIAL]/report QoS=0
+2026-07-02 18:16:54,963 INFO [backend.app.api.routes.virtual_printers] [9b48830e] Updated virtual printer: P1S - [PRINTER] (id=1)
+2026-07-02 18:16:54,966 INFO [backend.app.services.virtual_printer.manager] [9b48830e] VP P1S - [PRINTER] config changed (mode: queue→queue), restarting
+2026-07-02 18:16:54,966 INFO [backend.app.services.virtual_printer.mqtt_bridge] [9b48830e] [P1S - [PRINTER]] MQTT bridge unbound from printer 1
+2026-07-02 18:16:54,966 INFO [backend.app.services.virtual_printer.tcp_proxy] [9b48830e] Stopping RTSP proxy
+2026-07-02 18:16:54,967 INFO [backend.app.services.virtual_printer.ftp_server] [9b48830e] Stopping FTP server
+2026-07-02 18:16:54,967 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] Stopping simple MQTT server
+2026-07-02 18:16:54,967 INFO [backend.app.services.virtual_printer.tcp_proxy] [e13f74d7] Stopping RTSP proxy
+2026-07-02 18:16:54,967 INFO [backend.app.services.virtual_printer.ftp_server] [e13f74d7] Stopping FTP server
+2026-07-02 18:16:54,967 INFO [backend.app.services.virtual_printer.mqtt_server] [e13f74d7] Periodic status push task stopped
+2026-07-02 18:16:54,971 WARNING [backend.app.services.virtual_printer.mqtt_server] [e13f74d7] [P1S - [PRINTER]] MQTT client session error from [IP]:63582: [SSL: APPLICATION_DATA_AFTER_CLOSE_NOTIFY] application data after close notify (_ssl.c:2788)
+2026-07-02 18:16:54,972 INFO [backend.app.services.virtual_printer.bind_server] [9b48830e] Stopping bind server
+2026-07-02 18:16:54,972 INFO [backend.app.services.virtual_printer.ssdp_server] [9b48830e] Stopping SSDP server
+2026-07-02 18:16:54,972 INFO [backend.app.services.virtual_printer.mqtt_server] [e13f74d7] Stopping simple MQTT server
+2026-07-02 18:16:54,973 INFO [backend.app.services.virtual_printer.bind_server] [e13f74d7] Stopping bind server
+2026-07-02 18:16:54,973 INFO [backend.app.services.virtual_printer.manager] [9b48830e] Removed VP instance: P1S - [PRINTER]
+2026-07-02 18:16:54,973 INFO [backend.app.services.virtual_printer.manager] [9b48830e] [VP P1S - [PRINTER]] Starting server-mode services on [IP]
+2026-07-02 18:16:54,974 INFO [backend.app.services.virtual_printer.certificate] [9b48830e] Deleted printer certificate (CA preserved)
+2026-07-02 18:16:54,974 INFO [backend.app.services.virtual_printer.certificate] [9b48830e] Generating certificates for virtual printer (serial: [SERIAL])...
+2026-07-02 18:16:55,098 INFO [backend.app.services.virtual_printer.certificate] [9b48830e] Using existing CA certificate (expires in 7299 days)
+2026-07-02 18:16:55,274 INFO [backend.app.services.virtual_printer.certificate] [9b48830e] Generating printer certificate with CN=[SERIAL], local IP: [IP]
+2026-07-02 18:16:55,275 INFO [backend.app.services.virtual_printer.certificate] [9b48830e] Added additional SAN IP: [IP]
+2026-07-02 18:16:55,278 INFO [backend.app.services.virtual_printer.certificate] [9b48830e] Generated certificate chain at /app/data/virtual_printer/certs/1
+2026-07-02 18:16:55,279 INFO [backend.app.services.virtual_printer.certificate] [9b48830e]   CA: CN=Virtual Printer CA
+2026-07-02 18:16:55,279 INFO [backend.app.services.virtual_printer.certificate] [9b48830e]   Printer: CN=[SERIAL]
+2026-07-02 18:16:55,279 INFO [backend.app.services.virtual_printer.mqtt_bridge] [9b48830e] [P1S - [PRINTER]] MQTT bridge IP encoding armed: target=[IP] vp=[IP] (bind_address)
+2026-07-02 18:16:55,279 INFO [backend.app.services.virtual_printer.mqtt_bridge] [9b48830e] [P1S - [PRINTER]] MQTT bridge bound to printer 1 (serial=[SERIAL])
+2026-07-02 18:16:55,280 INFO [backend.app.services.virtual_printer.ftp_server] [9b48830e] [P1S - [PRINTER]] Starting virtual printer implicit FTPS on [IP]:990
+2026-07-02 18:16:55,282 INFO [backend.app.services.virtual_printer.ftp_server] [9b48830e] FTP SSL context created with standard settings
+2026-07-02 18:16:55,282 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] Starting simple MQTT server on port 8883
+2026-07-02 18:16:55,310 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] MQTT SSL cert info: subject=CN=[SERIAL]
+issuer=CN=Virtual Printer CA
+2026-07-02 18:16:55,310 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] MQTT SSL context: TLS 1.2+, cert=/app/data/virtual_printer/certs/1/virtual_printer.crt
+2026-07-02 18:16:55,313 INFO [backend.app.services.virtual_printer.tcp_proxy] [9b48830e] Starting RTSP TCP proxy: [IP]:322 → [IP]:322
+2026-07-02 18:16:55,315 INFO [backend.app.services.virtual_printer.bind_server] [9b48830e] Starting bind server on ports [3000, 3002] (serial=[SERIAL], model=C12, tls=True)
+2026-07-02 18:16:55,315 INFO [backend.app.services.virtual_printer.ssdp_server] [9b48830e] Starting virtual printer SSDP server: P1S - [PRINTER] ([SERIAL])
+2026-07-02 18:16:55,315 INFO [backend.app.services.virtual_printer.ssdp_server] [9b48830e] SSDP server listening on port 2021, advertising IP: [IP]
+2026-07-02 18:16:55,316 INFO [backend.app.services.virtual_printer.ssdp_server] [9b48830e] Virtual printer: P1S - [PRINTER] ([SERIAL]) model=C12
+2026-07-02 18:16:55,316 INFO [backend.app.services.virtual_printer.ssdp_server] [9b48830e] SSDP server also listening on [IP]:2021
+2026-07-02 18:16:55,317 INFO [backend.app.services.virtual_printer.ssdp_server] [9b48830e] Sent initial SSDP NOTIFY announcement
+2026-07-02 18:16:55,318 INFO [backend.app.services.virtual_printer.ftp_server] [9b48830e] Implicit FTPS server started on port 990
+2026-07-02 18:16:55,318 INFO [backend.app.services.virtual_printer.ftp_server] [9b48830e] FTP passive data port range: 50000-50009
+2026-07-02 18:16:55,318 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] Simple MQTT server listening on port 8883
+2026-07-02 18:16:55,319 INFO [backend.app.services.virtual_printer.tcp_proxy] [9b48830e] RTSP TCP proxy listening on port 322
+2026-07-02 18:16:55,319 INFO [backend.app.services.virtual_printer.bind_server] [9b48830e] Bind server listening on [IP]:3000 (plain)
+2026-07-02 18:16:55,319 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] Starting periodic status push task
+2026-07-02 18:16:55,320 INFO [backend.app.services.virtual_printer.bind_server] [9b48830e] Bind server listening on [IP]:3002 (TLS)
+2026-07-02 18:16:55,320 INFO [backend.app.services.virtual_printer.manager] [9b48830e] [VP P1S - [PRINTER]] Server-mode services started on [IP]
+2026-07-02 18:16:55,320 INFO [backend.app.services.virtual_printer.manager] [9b48830e] Started server-mode VP: P1S - [PRINTER] on [IP]
+2026-07-02 18:16:55,322 INFO [uvicorn.access] [-] [IP]:60789 - "PUT /api/v1/virtual-printers/1 HTTP/1.1" 200
+2026-07-02 18:16:59,330 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] [P1S - [PRINTER]] MQTT TLS connection from ('[IP]', 63593) - cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256), version=TLSv1.3
+2026-07-02 18:16:59,335 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] [P1S - [PRINTER]] MQTT client connected: [IP]:63593
+2026-07-02 18:16:59,336 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] [P1S - [PRINTER]] MQTT client authenticated successfully
+2026-07-02 18:16:59,337 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] [P1S - [PRINTER]] MQTT client [IP]:63593 authenticated (negotiated keepalive=60s, idle disconnect disabled)
+2026-07-02 18:16:59,338 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] [P1S - [PRINTER]] MQTT subscribe: device/[SERIAL]/report QoS=0
+2026-07-02 18:17:02,633 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-02 18:17:31,788 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] MQTT publish to device/[SERIAL]/request: {"print":{"auto_recovery":false,"command":"print_option","option":0,"sequence_id":"20012"}}...
+2026-07-02 18:17:31,789 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] MQTT print command: print_option for 
+2026-07-02 18:17:32,427 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] MQTT publish to device/[SERIAL]/request: {"print":{"auto_recovery":true,"command":"print_option","option":1,"sequence_id":"20013"}}...
+2026-07-02 18:17:32,427 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] MQTT print command: print_option for 
+2026-07-02 18:17:33,435 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] MQTT publish to device/[SERIAL]/request: {"print":{"auto_recovery":false,"command":"print_option","option":0,"sequence_id":"20014"}}...
+2026-07-02 18:17:33,436 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] MQTT print command: print_option for 
+2026-07-02 18:17:33,919 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] MQTT publish to device/[SERIAL]/request: {"print":{"auto_recovery":true,"command":"print_option","option":1,"sequence_id":"20015"}}...
+2026-07-02 18:17:33,920 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] MQTT print command: print_option for 
+2026-07-02 18:17:49,680 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] MQTT publish to device/[SERIAL]/request: {"camera":{"command":"ipcam_record_set","control":"disable","sequence_id":"20016"}}...
+2026-07-02 18:17:55,427 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] [P1S - [PRINTER]] 1Hz status push: 56 pushes/min to [IP]:63593
+2026-07-02 18:18:01,552 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] MQTT publish to device/[SERIAL]/request: {"camera":{"command":"ipcam_record_set","control":"enable","sequence_id":"20017"}}...
+2026-07-02 18:18:55,533 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] [P1S - [PRINTER]] 1Hz status push: 60 pushes/min to [IP]:63593
+2026-07-02 18:19:18,833 INFO [backend.app.api.routes.cloud] [679e72d5] get_filament_info called with 2 IDs: ['GFA00', 'GFU99']
+2026-07-02 18:19:18,841 INFO [uvicorn.access] [-] [IP]:63675 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-02 18:19:46,788 INFO [uvicorn.access] [-] [IP]:63685 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-02 18:19:46,839 INFO [backend.app.api.routes.camera] [35c9b1e7] Using chamber image protocol for P1S
+2026-07-02 18:19:46,845 INFO [backend.app.api.routes.camera] [35c9b1e7] Camera viewer attached to printer-1 (subscribers=1)
+2026-07-02 18:19:46,847 INFO [backend.app.api.routes.camera] [35c9b1e7] Starting chamber image stream for [IP] (stream_id=1-fanout, model=P1S)
+2026-07-02 18:19:46,915 INFO [uvicorn.access] [-] [IP]:63689 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-02 18:19:46,938 INFO [backend.app.api.routes.camera] [35c9b1e7] Camera viewer detached from printer-1 (subscribers=0)
+2026-07-02 18:19:46,967 INFO [backend.app.api.routes.camera] [fa411c0f] Using chamber image protocol for P1S
+2026-07-02 18:19:46,967 INFO [backend.app.api.routes.camera] [fa411c0f] Camera viewer attached to printer-1 (subscribers=1)
+2026-07-02 18:19:47,636 INFO [backend.app.services.camera] [35c9b1e7] Chamber image: connected to [IP]:6000
+2026-07-02 18:19:48,717 INFO [backend.app.api.routes.camera] [fa411c0f] Camera viewer detached from printer-1 (subscribers=0)
+2026-07-02 18:19:48,735 INFO [backend.app.api.routes.camera] [cd35cbf6] Using chamber image protocol for P1S
+2026-07-02 18:19:48,735 INFO [backend.app.api.routes.camera] [cd35cbf6] Camera viewer attached to printer-1 (subscribers=1)
+2026-07-02 18:19:54,727 INFO [backend.app.api.routes.camera] [cd35cbf6] Camera viewer detached from printer-1 (subscribers=0)
+2026-07-02 18:19:54,755 INFO [backend.app.api.routes.camera] [35c9b1e7] Chamber image stream cancelled (stream_id=1-fanout)
+2026-07-02 18:19:55,602 INFO [backend.app.api.routes.camera] [35c9b1e7] Chamber image stream stopped for [IP] (stream_id=1-fanout)
+2026-07-02 18:19:55,602 INFO [backend.app.api.routes.camera] [58b223e7] Shut down camera fan-out broadcaster for printer 1
+2026-07-02 18:19:55,602 INFO [backend.app.api.routes.camera] [58b223e7] Stopped 0 camera stream(s) for printer 1
+2026-07-02 18:19:55,603 INFO [uvicorn.access] [-] [IP]:63688 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-07-02 18:19:55,651 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] [P1S - [PRINTER]] 1Hz status push: 60 pushes/min to [IP]:63593
+2026-07-02 18:20:12,410 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20018","version":1}}...
+2026-07-02 18:20:12,410 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] MQTT pushing command: pushall
+2026-07-02 18:20:12,410 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] Sending status report in response to pushall
+2026-07-02 18:20:55,757 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] [P1S - [PRINTER]] 1Hz status push: 60 pushes/min to [IP]:63593
+2026-07-02 18:21:55,859 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] [P1S - [PRINTER]] 1Hz status push: 60 pushes/min to [IP]:63593
+2026-07-02 18:22:02,641 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-02 18:22:55,960 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] [P1S - [PRINTER]] 1Hz status push: 60 pushes/min to [IP]:63593
+2026-07-02 18:23:03,973 INFO [backend.app.services.virtual_printer.ftp_server] [9b48830e] [P1S - [PRINTER]] FTP connection from ('[IP]', 63853)
+2026-07-02 18:23:03,976 INFO [backend.app.services.virtual_printer.ftp_server] [9b48830e] [P1S - [PRINTER]] FTP login from [IP]
+2026-07-02 18:23:03,983 INFO [backend.app.services.virtual_printer.ftp_server] [9b48830e] FTP EPSV listening on port 50001
+2026-07-02 18:23:03,985 INFO [backend.app.services.virtual_printer.ftp_server] [9b48830e] FTP receiving file: verify_job from [IP]
+2026-07-02 18:23:03,988 INFO [backend.app.services.virtual_printer.ftp_server] [9b48830e] FTP data TLS from [IP]: cipher=('ECDHE-RSA-AES256-GCM-SHA384', 'TLSv1.2', 256), version=TLSv1.2, session_reused=True
+2026-07-02 18:23:03,988 INFO [backend.app.services.virtual_printer.ftp_server] [9b48830e] FTP data connection established from [IP]
+2026-07-02 18:23:04,091 INFO [backend.app.services.virtual_printer.ftp_server] [9b48830e] FTP saved file: /app/data/virtual_printer/uploads/1/verify_job (16 bytes)
+2026-07-02 18:23:04,091 INFO [backend.app.services.virtual_printer.manager] [9b48830e] [VP P1S - [PRINTER]] Received file: verify_job from [IP]
+2026-07-02 18:23:04,092 INFO [backend.app.services.virtual_printer.ftp_server] [9b48830e] [P1S - [PRINTER]] FTP session cancelled from [IP]
+2026-07-02 18:23:04,092 INFO [backend.app.services.virtual_printer.ftp_server] [9b48830e] [P1S - [PRINTER]] FTP session ended from [IP]
+2026-07-02 18:23:56,068 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] [P1S - [PRINTER]] 1Hz status push: 60 pushes/min to [IP]:63593
+2026-07-02 18:24:56,169 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] [P1S - [PRINTER]] 1Hz status push: 60 pushes/min to [IP]:63593
+2026-07-02 18:25:00,636 INFO [backend.app.api.routes.cloud] [6dd4687c] get_filament_info called with 2 IDs: ['GFA00', 'GFU99']
+2026-07-02 18:25:00,639 INFO [uvicorn.access] [-] [IP]:63961 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-02 18:25:08,975 INFO [backend.app.api.routes.support] [44de0904] Log level changed to DEBUG
+2026-07-02 18:25:09,019 INFO [backend.app.api.routes.bug_report] [44de0904] Bug report: enabled debug logging
+2026-07-02 18:25:09,020 DEBUG [backend.app.services.bambu_mqtt] [44de0904] [[SERIAL]] Requesting status update (pushall)
+2026-07-02 18:25:09,021 INFO [uvicorn.access] [-] [IP]:63958 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-07-02 18:25:09,698 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-07-02 18:25:09,698 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 6, 'insert_flag': True, 'power_on_flag': False}
+2026-07-02 18:25:09,698 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-07-02 18:25:09,698 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-07-02 18:25:09,698 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-07-02 18:25:09,698 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-02 18:25:09,699 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-07-02 18:25:09,699 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-02 18:25:09,699 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-07-02 18:25:09,699 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-07-02 18:25:09,700 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-07-02 18:25:09,701 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-07-02 18:25:09,701 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-07-02 18:25:09,702 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-07-02 18:25:09,703 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -60dBm
+2026-07-02 18:25:09,703 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-07-02 18:25:09,704 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-07-02 18:25:11,769 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-02 18:25:11,769 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -59dBm
+2026-07-02 18:25:13,410 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20019","version":1}}...
+2026-07-02 18:25:13,410 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] MQTT pushing command: pushall
+2026-07-02 18:25:13,410 INFO [backend.app.services.virtual_printer.mqtt_server] [9b48830e] Sending status report in response to pushall
+2026-07-02 18:25:13,722 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-02 18:25:13,722 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -60dBm
+2026-07-02 18:25:15,818 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-07-02 18:25:15,824 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-07-02 18:25:15,824 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-02 18:25:15,825 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-02 18:25:15,825 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -59dBm
+2026-07-02 18:25:19,007 DEBUG [backend.app.api.routes.printers] [36db73e4] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-07-02 18:25:19,012 DEBUG [backend.app.api.routes.printers] [36db73e4] Using tray_now directly as global ID: 255

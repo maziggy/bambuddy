@@ -1721,13 +1721,18 @@ class PrintScheduler:
                 await self._stop_drying(pid)
             return
 
-        # Get humidity threshold (global fallback)
+        # Get humidity thresholds. Fair remains the start threshold; good is
+        # the auto-stop threshold once a drying cycle is already running.
         result = await db.execute(select(Settings).where(Settings.key == "ams_humidity_fair"))
         setting = result.scalar_one_or_none()
-        global_humidity_threshold = int(setting.value) if setting else 60
+        global_start_humidity_threshold = int(setting.value) if setting else 60
+
+        result = await db.execute(select(Settings).where(Settings.key == "ams_humidity_good"))
+        setting = result.scalar_one_or_none()
+        stop_humidity_threshold = int(setting.value) if setting else 40
 
         # Per-filament humidity threshold overrides (#1605). Empty → fall back
-        # to the global threshold for every AMS unit.
+        # to the global start threshold for every AMS unit.
         per_type_thresholds = await self._get_humidity_thresholds(db)
 
         # Get drying presets
@@ -1799,8 +1804,8 @@ class PrintScheduler:
                 # Most-restrictive of all loaded tray types; falls back to the
                 # global threshold when no overrides are configured.
                 trays = ams_data.get("tray", []) or []
-                humidity_threshold = self.resolve_humidity_threshold(
-                    trays, per_type_thresholds, global_humidity_threshold
+                start_humidity_threshold = self.resolve_humidity_threshold(
+                    trays, per_type_thresholds, global_start_humidity_threshold
                 )
 
                 dry_time = int(ams_data.get("dry_time") or 0)
@@ -1820,20 +1825,26 @@ class PrintScheduler:
                             humidity = int(h_idx)
                         except (ValueError, TypeError):
                             pass
-                # Already drying — check if humidity dropped below threshold (with minimum drying time)
+                # Already drying — check if humidity reached the good threshold
+                # (with minimum drying time). The printer firmware stops the
+                # cycle on its own when dry_time reaches 0.
                 if dry_time > 0:
                     if pid not in self._drying_in_progress:
                         # Drying we didn't start (manual or from before restart) — track but don't stop
                         self._drying_in_progress[pid] = time.monotonic()
                     started_at = self._drying_in_progress[pid]
                     elapsed = time.monotonic() - started_at
-                    if humidity is not None and humidity <= humidity_threshold and elapsed >= self._min_drying_seconds:
+                    if (
+                        humidity is not None
+                        and humidity <= stop_humidity_threshold
+                        and elapsed >= self._min_drying_seconds
+                    ):
                         logger.info(
                             "Auto-drying: printer %d AMS %d — humidity %d%% <= threshold %d%% after %dm, stopping drying",
                             pid,
                             ams_id,
                             humidity,
-                            humidity_threshold,
+                            stop_humidity_threshold,
                             int(elapsed / 60),
                         )
                         printer_manager.send_drying_command(pid, ams_id, temp=0, duration=0, mode=0)
@@ -1850,13 +1861,13 @@ class PrintScheduler:
                     continue
 
                 # Humidity below threshold — no need to start drying
-                if humidity is None or humidity <= humidity_threshold:
+                if humidity is None or humidity <= start_humidity_threshold:
                     logger.debug(
                         "Auto-drying: printer %d AMS %d skipped — humidity %s <= threshold %d",
                         pid,
                         ams_id,
                         humidity,
-                        humidity_threshold,
+                        start_humidity_threshold,
                     )
                     continue
 
@@ -1895,7 +1906,7 @@ class PrintScheduler:
                     pid,
                     ams_id,
                     humidity,
-                    humidity_threshold,
+                    start_humidity_threshold,
                     filament_type,
                     temp,
                     duration_hours,

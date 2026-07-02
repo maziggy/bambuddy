@@ -3,7 +3,7 @@
 Covers:
 - Conservative drying parameter selection (mixed filaments)
 - Drying preset loading (user-configured vs defaults)
-- Auto-drying lifecycle: start, humidity stop, minimum drying time
+- Auto-drying lifecycle: start at fair threshold, humidity stop at good threshold, minimum drying time
 - Auto-drying stop conditions: feature disabled, no scheduled items, per-printer
 - Sync drying state after restart
 """
@@ -250,7 +250,7 @@ class TestMinimumDryingTime:
     @patch("backend.app.services.print_scheduler.printer_manager")
     @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
     async def test_no_stop_before_minimum_time(self, mock_sd, mock_pm, scheduler):
-        """Drying should NOT stop when humidity drops below threshold before 30 min."""
+        """Drying should NOT stop when humidity reaches good before 30 min."""
         # Simulate: drying started 5 minutes ago
         scheduler._drying_in_progress = {1: time.monotonic() - 300}
 
@@ -276,10 +276,11 @@ class TestMinimumDryingTime:
         scheduler._is_printer_idle = MagicMock(return_value=True)
         db = AsyncMock()
 
-        # Mock settings: enabled, threshold=21
+        # Mock settings: enabled, start threshold=21, stop threshold=20
         settings_returns = {
             "queue_drying_enabled": self._make_setting("true"),
             "ams_humidity_fair": self._make_setting("21"),
+            "ams_humidity_good": self._make_setting("20"),
             "queue_drying_block": self._make_setting("false"),
             "drying_presets": None,
         }
@@ -305,8 +306,8 @@ class TestMinimumDryingTime:
     @pytest.mark.asyncio
     @patch("backend.app.services.print_scheduler.printer_manager")
     @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
-    async def test_stops_after_minimum_time(self, mock_sd, mock_pm, scheduler):
-        """Drying SHOULD stop when humidity below threshold AND 30 min elapsed."""
+    async def test_does_not_stop_between_good_and_fair_after_minimum_time(self, mock_sd, mock_pm, scheduler):
+        """Drying should continue below fair until humidity reaches good."""
         # Simulate: drying started 35 minutes ago
         scheduler._drying_in_progress = {1: time.monotonic() - 2100}
 
@@ -317,7 +318,7 @@ class TestMinimumDryingTime:
                     "id": 0,
                     "module_type": "n3f",
                     "dry_time": 600,
-                    "humidity_raw": "18",
+                    "humidity_raw": "50",
                     "dry_sf_reason": [],
                     "tray": [{"tray_type": "PLA"}],
                 }
@@ -333,7 +334,55 @@ class TestMinimumDryingTime:
 
         settings_returns = {
             "queue_drying_enabled": self._make_setting("true"),
-            "ams_humidity_fair": self._make_setting("21"),
+            "ams_humidity_fair": self._make_setting("60"),
+            "ams_humidity_good": self._make_setting("40"),
+            "queue_drying_block": self._make_setting("false"),
+            "drying_presets": None,
+        }
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns, printer_id=1))
+
+        item = MagicMock()
+        item.printer_id = 1
+        item.scheduled_time = MagicMock()
+        item.manual_start = False
+
+        await scheduler._check_auto_drying(db, [item], set())
+
+        mock_pm.send_drying_command.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
+    async def test_stops_after_minimum_time_at_good_threshold(self, mock_sd, mock_pm, scheduler):
+        """Drying SHOULD stop when humidity reaches good AND 30 min elapsed."""
+        # Simulate: drying started 35 minutes ago
+        scheduler._drying_in_progress = {1: time.monotonic() - 2100}
+
+        state = MagicMock()
+        state.raw_data = {
+            "ams": [
+                {
+                    "id": 0,
+                    "module_type": "n3f",
+                    "dry_time": 600,
+                    "humidity_raw": "40",
+                    "dry_sf_reason": [],
+                    "tray": [{"tray_type": "PLA"}],
+                }
+            ]
+        }
+        state.firmware_version = "01.09.00.00"
+        mock_pm.get_status.return_value = state
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "X1C"
+
+        scheduler._is_printer_idle = MagicMock(return_value=True)
+        db = AsyncMock()
+
+        settings_returns = {
+            "queue_drying_enabled": self._make_setting("true"),
+            "ams_humidity_fair": self._make_setting("60"),
+            "ams_humidity_good": self._make_setting("40"),
             "queue_drying_block": self._make_setting("false"),
             "drying_presets": None,
         }

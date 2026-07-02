@@ -1,0 +1,200 @@
+2026-07-02 09:03:37,576 INFO [backend.app.main] [-] [CALLBACK] on_print_complete finished for printer 1, archive 324
+2026-07-02 09:03:37,577 INFO [backend.app.main] [-] [ENERGY-BG] Starting energy calculation for archive 324
+2026-07-02 09:03:37,578 INFO [backend.app.main] [-] [PHOTO-BG] Starting finish photo capture for archive 324
+2026-07-02 09:03:37,578 INFO [backend.app.main] [-] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-07-02 09:03:37,578 INFO [backend.app.services.smart_plug_manager] [-] Print on printer 1 ended with status 'cancelled', skipping auto-off to allow investigation
+2026-07-02 09:03:37,578 INFO [backend.app.main] [-] [AUTO-OFF-BG] Completed
+2026-07-02 09:03:37,579 INFO [backend.app.main] [-] [LAYER-TL] Cancelled layer timelapse for printer 1 (status: cancelled)
+2026-07-02 09:03:37,586 INFO [backend.app.main] [-] [ENERGY-BG] No start kWh recorded for archive 324
+2026-07-02 09:03:37,593 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X1C)
+2026-07-02 09:03:39,847 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 84911 bytes
+2026-07-02 09:03:39,859 INFO [backend.app.services.camera] [-] Saved camera frame to: /app/data/archive/1/20260702_090236_X1C Bat Bot Prod/photos/finish_20260702_090337_de6d3c66.jpg
+2026-07-02 09:03:39,860 INFO [backend.app.services.camera] [-] Finish photo saved: finish_20260702_090337_de6d3c66.jpg
+2026-07-02 09:03:39,867 INFO [backend.app.main] [-] [PHOTO-BG] Saved: finish_20260702_090337_de6d3c66.jpg
+2026-07-02 09:03:39,868 INFO [backend.app.main] [-] [PHOTO-NOTIFY] Photo task returned: finish_20260702_090337_de6d3c66.jpg
+2026-07-02 09:03:39,868 INFO [backend.app.main] [-] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260702_090337_de6d3c66.jpg
+2026-07-02 09:03:39,886 INFO [backend.app.main] [-] [NOTIFY-BG] Loaded finish photo bytes: 84911 bytes
+2026-07-02 09:03:39,887 INFO [backend.app.services.notification_service] [-] on_print_complete called for printer 1 ([PRINTER]), status=cancelled
+2026-07-02 09:03:39,892 INFO [backend.app.services.notification_service] [-] Found 2 providers for on_print_stopped: ["Juanpi's Notifications", 'Shop Notfications']
+2026-07-02 09:03:40,103 INFO [backend.app.services.notification_service] [-] Sent notification via Juanpi's Notifications
+2026-07-02 09:03:40,365 INFO [backend.app.services.notification_service] [-] Sent notification via Shop Notfications
+2026-07-02 09:03:40,369 INFO [backend.app.main] [-] [NOTIFY-BG] Completed
+2026-07-02 09:03:47,115 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X1C)
+2026-07-02 09:03:47,703 INFO [uvicorn.access] [-] [IP]:0 - "DELETE /api/v1/library/files/73 HTTP/1.1" 200
+2026-07-02 09:03:48,571 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 47526 bytes
+2026-07-02 09:03:48,701 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 2: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2F2AVBKkkAZc4BkSpFkTYASu-MKL81Iz76PgqqxizXW_I'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:03:48,838 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 3: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2FAF82K6ZBPP_h7sj-eJhaqW9FZcK1KCiw6IX_IrP3VFE'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:03:55,803 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/library/files?generate_stl_thumbnails=true HTTP/1.1" 200
+2026-07-02 09:03:58,856 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X1C)
+2026-07-02 09:04:00,457 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 49632 bytes
+2026-07-02 09:04:00,590 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 2: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2FWkSeLPEbkyVQs1dXQ_MDVPw79BSDUClf3sHNmqPHCYk'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:04:00,726 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 3: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2F2ulQXpYX7OtPxSdw02FrUIgLS8Xhfapl5aircyy65vA'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:04:04,268 INFO [backend.app.api.routes.print_queue] [7acd5e28] Added library file 74 to queue for 1 (×5)
+2026-07-02 09:04:04,280 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-07-02 09:04:08,603 INFO [backend.app.services.print_scheduler] [-] Queue check: found 5 pending items: [(321, 1, None, 74), (322, 1, None, 74), (323, 1, None, 74), (324, 1, None, 74), (325, 1, None, 74)]
+2026-07-02 09:04:08,609 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FAILED, awaiting_plate_clear=True
+2026-07-02 09:04:08,609 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-07-02 09:04:10,758 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X1C)
+2026-07-02 09:04:13,073 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 46469 bytes
+2026-07-02 09:04:13,201 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 2: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2FzfN7uLU0fYATaVA0OXLzxcnAey9oUD21VSqhOki4Vmc'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:04:13,339 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 3: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2FkOsQrwEfZyVU8l11R1FWNhJUb5IMIvC6XL0EatUUGCU'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:04:13,687 INFO [backend.app.api.routes.camera] [9d7b4f64] Using RTSP protocol for H2C
+2026-07-02 09:04:13,691 INFO [backend.app.api.routes.camera] [9d7b4f64] Camera viewer attached to printer-3 (subscribers=1)
+2026-07-02 09:04:13,714 INFO [backend.app.api.routes.camera] [9d7b4f64] Starting RTSP camera stream for [IP] (stream_id=3-fanout, model=H2C, fps=15, probesize=32, analyzeduration=0)
+2026-07-02 09:04:13,724 INFO [backend.app.api.routes.camera] [69ddf0fd] Using RTSP protocol for X1C
+2026-07-02 09:04:13,725 INFO [backend.app.api.routes.camera] [69ddf0fd] Camera viewer attached to printer-1 (subscribers=1)
+2026-07-02 09:04:13,735 INFO [backend.app.api.routes.camera] [69ddf0fd] Starting RTSP camera stream for [IP] (stream_id=1-fanout, model=X1C, fps=15, probesize=32, analyzeduration=0)
+2026-07-02 09:04:13,748 INFO [backend.app.api.routes.camera] [5cd0070a] Using RTSP protocol for X1C
+2026-07-02 09:04:13,748 INFO [backend.app.api.routes.camera] [5cd0070a] Camera viewer attached to printer-2 (subscribers=1)
+2026-07-02 09:04:13,762 INFO [backend.app.api.routes.camera] [5cd0070a] Starting RTSP camera stream for [IP] (stream_id=2-fanout, model=X1C, fps=15, probesize=32, analyzeduration=0)
+2026-07-02 09:04:14,920 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/printers/1/clear-plate HTTP/1.1" 200
+2026-07-02 09:04:20,827 INFO [backend.app.api.routes.camera] [69ddf0fd] Camera viewer detached from printer-1 (subscribers=0)
+2026-07-02 09:04:20,920 INFO [backend.app.api.routes.camera] [9d7b4f64] Camera viewer detached from printer-3 (subscribers=0)
+2026-07-02 09:04:20,933 INFO [backend.app.api.routes.camera] [5cd0070a] Camera viewer detached from printer-2 (subscribers=0)
+2026-07-02 09:04:21,034 INFO [backend.app.api.routes.camera] [9d7b4f64] Camera stream cancelled (stream_id=3-fanout)
+2026-07-02 09:04:21,041 INFO [backend.app.api.routes.camera] [69ddf0fd] Camera stream cancelled (stream_id=1-fanout)
+2026-07-02 09:04:21,046 INFO [backend.app.api.routes.camera] [5cd0070a] Camera stream cancelled (stream_id=2-fanout)
+2026-07-02 09:04:21,341 INFO [backend.app.api.routes.camera] [bdb884d0] Shut down camera fan-out broadcaster for printer 2
+2026-07-02 09:04:21,342 INFO [backend.app.api.routes.camera] [bdb884d0] Stopped 0 camera stream(s) for printer 2
+2026-07-02 09:04:21,343 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/printers/2/camera/stop HTTP/1.1" 200
+2026-07-02 09:04:23,090 WARNING [backend.app.api.routes.camera] [9d7b4f64] ffmpeg didn't terminate gracefully, killing (stream_id=3-fanout)
+2026-07-02 09:04:23,091 WARNING [backend.app.api.routes.camera] [69ddf0fd] ffmpeg didn't terminate gracefully, killing (stream_id=1-fanout)
+2026-07-02 09:04:24,096 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X1C)
+2026-07-02 09:04:25,891 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 39756 bytes
+2026-07-02 09:04:26,025 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 2: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2FqBd_vP5O-ra6PR5a50jrB-BPGwSsBcbywlITP26i2cI'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:04:26,170 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 3: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2FucOehXmYQL3GsYP9ba6NBxF13AzQdY2FjSMAduuPZKU'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:04:36,189 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X1C)
+2026-07-02 09:04:37,743 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 42880 bytes
+2026-07-02 09:04:37,875 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 2: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2FI78jiLCd3dAzzr2HjQeVUDEl_Mi8nz1g1nbdVKrejJk'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:04:38,007 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 3: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2Fztg_7ApPBFdkTGphUqJ029a8KYPzhey7D74wVarrdTY'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:04:38,670 INFO [backend.app.services.print_scheduler] [-] Queue check: found 5 pending items: [(321, 1, None, 74), (322, 1, None, 74), (323, 1, None, 74), (324, 1, None, 74), (325, 1, None, 74)]
+2026-07-02 09:04:38,680 INFO [backend.app.services.print_scheduler] [-] Starting queue item 321
+2026-07-02 09:04:38,805 INFO [backend.app.services.print_scheduler] [-] Queue item 321: Created archive 325 from library file 74
+2026-07-02 09:04:38,836 INFO [backend.app.services.print_scheduler] [-] Queue item 321: FTP upload starting - printer=[PRINTER] (X1C), ip=[IP], file=X1C_Bat_Bot_Prod.3mf, local_path=/app/data/archive/library/files/489867b89a2943bf9eb73cf3c276c0ef.3mf, retry_enabled=True, retry_count=3, timeout=90.0
+2026-07-02 09:04:38,969 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=X1C, prot_c=False)
+2026-07-02 09:04:39,012 INFO [backend.app.services.bambu_ftp] [-] FTP connecting to [IP] for upload (model=X1C, mode=prot_p, socket_timeout=90.0s)...
+2026-07-02 09:04:39,132 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=X1C, prot_c=False)
+2026-07-02 09:04:39,132 INFO [backend.app.services.bambu_ftp] [-] FTP connected to [IP]
+2026-07-02 09:04:39,132 INFO [backend.app.services.bambu_ftp] [-] FTP uploading /app/data/archive/library/files/489867b89a2943bf9eb73cf3c276c0ef.3mf (2911041 bytes) to /X1C_Bat_Bot_Prod.3mf
+2026-07-02 09:04:39,166 INFO [backend.app.services.bambu_ftp] [-] FTP data channel ready in 0.0s (PASV + TLS handshake)
+2026-07-02 09:04:41,019 WARNING [backend.app.services.bambu_ftp] [-] FTP STOR returned error_temp for /X1C_Bat_Bot_Prod.3mf but file is intact on the printer (2911041 bytes match) — proceeding: 426 Failure reading network stream.
+2026-07-02 09:04:41,019 INFO [backend.app.services.bambu_ftp] [-] FTP upload complete: /X1C_Bat_Bot_Prod.3mf (2911041 bytes in 1.9s, 1506 KB/s)
+2026-07-02 09:04:41,020 INFO [backend.app.services.bambu_ftp] [-] FTP mode cached for [IP]: prot_p
+2026-07-02 09:04:41,028 INFO [backend.app.main] [-] Registered expected print: printer=1, file=X1C_Bat_Bot_Prod.3mf, archive=325, ams_mapping=[-1, -1, -1, -1, 128], plate_id=8
+2026-07-02 09:04:41,045 INFO [backend.app.services.print_scheduler] [-] Queue item 321: Status set to 'printing', sending print command...
+2026-07-02 09:04:41,045 INFO [backend.app.services.printer_manager] [-] PRINT COMMAND: printer=1, file=X1C_Bat_Bot_Prod.3mf, caller=print_scheduler.py:321:check_queue
+2026-07-02 09:04:41,046 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_8.gcode", "url": "ftp://X1C_Bat_Bot_Prod.3mf", "file": "X1C_Bat_Bot_Prod.3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": true, "auto_bed_leveling": 1, "flow_cali": true, "vibration_cali": true, "layer_inspect": false, "use_ams": true, "cfg": "0", "extrude_cali_flag": 1, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 0, "subtask_name": "X1C_Bat_Bot_Prod", "profile_id": "0", "project_id": "589654035", "subtask_id": "589654035", "task_id": "589654035", "ams_mapping": [-1, -1, -1, -1, 128], "ams_mapping2": [{"ams_id": 255, "slot_id": 255}, {"ams_id": 255, "slot_id": 255}, {"ams_id": 255, "slot_id": 255}, {"ams_id": 255, "slot_id": 255}, {"ams_id": 128, "slot_id": 0}]}}
+2026-07-02 09:04:41,046 INFO [backend.app.services.print_scheduler] [-] Queue item 321: Print started successfully - X1C Bat Bot Prod.gcode.3mf
+2026-07-02 09:04:41,055 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Captured ams_mapping from print command: [-1, -1, -1, -1, 128]
+2026-07-02 09:04:41,060 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FAILED, awaiting_plate_clear=False
+2026-07-02 09:04:41,060 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-07-02 09:04:48,027 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X1C)
+2026-07-02 09:04:49,483 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 42771 bytes
+2026-07-02 09:04:49,615 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 2: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2F7kjdAAlVzoOVLdv5ePRiz7pkFK-MgeuO-06b97UJbLM'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:04:49,758 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 3: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2F2ofEdSxAXLR2wdKK45KHls6M23dyq9SCrKVN5uRxyOk'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:04:59,775 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X1C)
+2026-07-02 09:05:01,329 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 48390 bytes
+2026-07-02 09:05:01,455 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 2: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2FpUltUdGZH7NtuUrA1ccZjkzxYtqYrmOstRrTXiKZKU4'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:05:01,599 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 3: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2Fo0V0G0TyFpDB6OaoeKCn0aZ9rXhEBhrct_CLjgp93YI'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:05:01,852 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS Filament Backup: OFF
+2026-07-02 09:05:01,997 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS Filament Backup: ON
+2026-07-02 09:05:11,119 INFO [backend.app.services.print_scheduler] [-] Queue check: found 4 pending items: [(322, 1, None, 74), (323, 1, None, 74), (324, 1, None, 74), (325, 1, None, 74)]
+2026-07-02 09:05:11,124 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=PREPARE, awaiting_plate_clear=False
+2026-07-02 09:05:11,125 INFO [backend.app.services.print_scheduler] [-] Queue: printer 2 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-07-02 09:05:11,618 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X1C)
+2026-07-02 09:05:13,050 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 31670 bytes
+2026-07-02 09:05:13,178 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 2: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2FtUdmC3iZpWlWVtTNR2dvChYdZ_FV7vJtRPadChkKuHg'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:05:13,313 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 3: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2FKyoIap6xnbTjwb9SxcOwUeoz_zHDtBTzVCAjvAEhcwM'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:05:16,380 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT START detected - file: /data/Metadata/plate_8.gcode, subtask: X1C_Bat_Bot_Prod, is_new: True, is_file_change: False
+2026-07-02 09:05:16,381 INFO [backend.app.main] [-] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-07-02 09:05:16,410 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Skipped trays with invalid remain% for printer 1: AMS0-T0(remain=-1), AMS0-T2(remain=-1), AMS0-T3(remain=-1), AMS128-T0(remain=-1)
+2026-07-02 09:05:16,411 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping=[65535, 65535, 65535, 65535, 32768], tray_now=128, last_loaded_tray=128
+2026-07-02 09:05:16,411 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping-related keys: {'mapping': [65535, 65535, 65535, 65535, 32768], 'ams_extruder_map': {'0': 0, '128': 0}}
+2026-07-02 09:05:16,411 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 0: T0(type=PETG, color=000000FF, now=?, tar=?), T1(type=PLA-S, color=00000000, now=?, tar=?), T2(type=PETG, color=000000FF, now=?, tar=?), T3(type=PETG, color=000000FF, now=?, tar=?)
+2026-07-02 09:05:16,411 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 128: T0(type=PA-CF, color=F98C36FF, now=?, tar=?)
+2026-07-02 09:05:16,416 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Snapshotted 1 spool assignments for printer 1: {'0-1': 15}
+2026-07-02 09:05:16,424 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (2 trays): {'0-1': 34, '255-0': 0}
+2026-07-02 09:05:16,447 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=False
+2026-07-02 09:05:16,447 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: /data/Metadata/plate_8.gcode, subtask: X1C_Bat_Bot_Prod
+2026-07-02 09:05:16,448 INFO [backend.app.main] [-] Using expected archive 325 for print (skipping duplicate)
+2026-07-02 09:05:16,476 INFO [backend.app.main] [-] [ENERGY] No smart plug for printer 1 (archive 325)
+2026-07-02 09:05:16,492 INFO [backend.app.main] [-] [SNAPSHOT] Using buffered frame for printer 1: 62470 bytes
+2026-07-02 09:05:16,492 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 ([PRINTER])
+2026-07-02 09:05:16,506 INFO [backend.app.services.notification_service] [-] Found 1 providers for print_start: ["Juanpi's Notifications"]
+2026-07-02 09:05:16,718 INFO [backend.app.services.notification_service] [-] Sent notification via Juanpi's Notifications
+2026-07-02 09:05:16,730 INFO [backend.app.main] [-] Loaded 2 printable objects for printer 1
+2026-07-02 09:05:16,857 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=X1C, prot_c=False)
+2026-07-02 09:05:17,365 INFO [backend.app.main] [-] [TIMELAPSE] Baseline at print start: 575 video files for printer 1
+2026-07-02 09:05:23,474 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 1: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2F8vBP8_BoyMI4IUKO8HIIHDUBYgGgNx5KbjmrEPZ3d4w'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:05:23,483 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using RTSP (model: X1C)
+2026-07-02 09:05:24,950 INFO [backend.app.services.camera] [-] Successfully captured camera frame bytes: 47439 bytes
+2026-07-02 09:05:25,084 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 2: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2F9cp31RU2qHIe_Xs4ZvN3c86LOV5DSU3ik6YqMusup4I'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:05:25,221 WARNING [backend.app.services.obico_detection] [-] ML API call failed for printer 3: Client error '400 BAD REQUEST' for url 'http://[IP]:3333/p/?img=http%3A%2F%2F192.168.16.124%3A8000%2Fapi%2Fv1%2Fobico%2Fcached-frame%2FfbTXpTpytSlsTf8L1Q3IToG52IAqb0ngL_QsK7fWWaA'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+2026-07-02 09:05:33,208 INFO [backend.app.api.routes.support] [54b58cae] Log level changed to DEBUG
+2026-07-02 09:05:33,209 INFO [backend.app.api.routes.bug_report] [54b58cae] Bug report: enabled debug logging
+2026-07-02 09:05:33,209 DEBUG [backend.app.services.bambu_mqtt] [54b58cae] [[SERIAL]] Requesting status update (pushall)
+2026-07-02 09:05:33,209 DEBUG [backend.app.services.bambu_mqtt] [54b58cae] [[SERIAL]] Requesting status update (pushall)
+2026-07-02 09:05:33,209 DEBUG [backend.app.services.bambu_mqtt] [54b58cae] [[SERIAL]] Requesting status update (pushall)
+2026-07-02 09:05:33,211 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-07-02 09:05:34,119 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_[USER]er_detector': True, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-07-02 09:05:34,120 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_[USER]er_detector', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-07-02 09:05:34,120 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_8.gcode, subtask_name: X1C_Bat_Bot_Prod
+2026-07-02 09:05:34,120 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '11', 'ams_exist_bits_raw': '11', 'cali_id': 0, 'cali_stat': 0, 'insert_flag': False, 'power_on_flag': False, 'tray_exist_bits': '1000f', 'tray_is_bbl_bits': '1000f', 'tray_now': '128', 'tray_pre': '128', 'tray_read_done_bits': '1000f', 'tray_reading_bits': '0', 'tray_tar': '128', 'unbind_ams_stat': 0, 'version': 355915}
+2026-07-02 09:05:34,120 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 128
+2026-07-02 09:05:34,120 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-07-02 09:05:34,120 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-07-02 09:05:34,120 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 128 info=0x2004 -> extruder 0
+2026-07-02 09:05:34,121 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '128': 0}
+2026-07-02 09:05:34,121 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-07-02 09:05:34,121 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-02 09:05:34,121 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-07-02 09:05:34,121 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 35°C (heater OFF)
+2026-07-02 09:05:34,121 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-07-02 09:05:34,121 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=35.0, heating=False, respect_local=False
+2026-07-02 09:05:34,121 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 35.0, target: 0.0, heating: False
+2026-07-02 09:05:34,121 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-07-02 09:05:34,122 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-07-02 09:05:34,123 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -50dBm
+2026-07-02 09:05:34,123 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-07-02 09:05:34,124 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 65535, 65535, 65535, 32768]
+2026-07-02 09:05:34,124 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_8.gcode, subtask: X1C_Bat_Bot_Prod
+2026-07-02 09:05:34,292 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_[USER]er_detector': True, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': False, 'spaghetti_detector': False}
+2026-07-02 09:05:34,292 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_[USER]er_detector', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-07-02 09:05:34,292 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: /data/Metadata/plate_12.gcode, subtask_name: Isaac_Listening_Stations_X1C_Prints_(0626)_plate_12
+2026-07-02 09:05:34,292 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'ams_exist_bits_raw': '1', 'cali_id': 0, 'cali_stat': 0, 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'e', 'tray_now': '1', 'tray_pre': '1', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'tray_tar': '1', 'unbind_ams_stat': 0, 'version': 49879}
+2026-07-02 09:05:34,293 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 1
+2026-07-02 09:05:34,294 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-07-02 09:05:34,295 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-07-02 09:05:34,295 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-02 09:05:34,296 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-07-02 09:05:34,296 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-02 09:05:34,297 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=1 (switch_state bits 12-14: 0)
+2026-07-02 09:05:34,297 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 39°C (heater OFF)
+2026-07-02 09:05:34,297 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-07-02 09:05:34,298 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=39.0, heating=False, respect_local=False
+2026-07-02 09:05:34,299 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 39.0, target: 0.0, heating: False
+2026-07-02 09:05:34,299 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-07-02 09:05:34,300 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 7, 'mode_bits': 2, 'resolution': '720p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-07-02 09:05:34,300 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-07-02 09:05:34,300 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}]
+2026-07-02 09:05:34,301 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: [65535, 2, 1]
+2026-07-02 09:05:34,301 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: /data/Metadata/plate_12.gcode, subtask: Isaac_Listening_Stations_X1C_Prints_(0626)_plate_12

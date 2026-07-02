@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     # app_dir == base_dir.
     app_dir: Path = _app_dir
     archive_dir: Path = _data_dir / "archive"
+    macros_dir: Path = _data_dir / "macros"
     plate_calibration_dir: Path = _plate_cal_dir  # Plate detection references
     static_dir: Path = _app_dir / "static"  # Static files are part of app, not data
     log_dir: Path = _log_dir

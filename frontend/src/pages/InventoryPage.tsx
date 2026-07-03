@@ -7,7 +7,7 @@ import {
   Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   TrendingDown, Layers, Printer, AlertTriangle, X, Clock, LayoutGrid, TableProperties, Columns,
   ArrowUp, ArrowDown, ArrowUpDown, Group, ChevronDown, Check, RefreshCw, TrendingUp, Lock, Copy, Eraser, MapPin,
-  Upload, Download,
+  Upload, Download, ScanBarcode,
 } from 'lucide-react';
 import { ForecastPanel } from '../components/ForecastPanel';
 import { api, spoolbuddyApi, ApiError } from '../api/client';
@@ -16,6 +16,8 @@ import { Button } from '../components/Button';
 import { FilamentSwatch } from '../components/FilamentSwatch';
 import { buildFilamentBackground } from '../components/filamentSwatchHelpers';
 import {SpoolFormModal, type SpoolFormMode} from '../components/SpoolFormModal';
+import { BarcodeScannerModal, type ScannedFilamentResult } from '../components/BarcodeScannerModal';
+import type { SpoolFormData } from '../components/spool-form/types';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ColumnConfigModal, type ColumnConfig } from '../components/ColumnConfigModal';
 import { LabelTemplatePickerModal } from '../components/LabelTemplatePickerModal';
@@ -483,7 +485,37 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   const { hasPermission, loading: authLoading } = useAuth();
   const canViewForecast = !authLoading && hasPermission('inventory:forecast_read');
   const [searchParams, setSearchParams] = useSearchParams();
-  const [formModal, setFormModal] = useState<{ spool?: InventorySpool | null; mode: SpoolFormMode } | null>(null);
+  const [formModal, setFormModal] = useState<{
+    spool?: InventorySpool | null;
+    mode: SpoolFormMode;
+    initialData?: Partial<SpoolFormData>;
+    scannedBarcode?: string;
+    fromBarcodeScan?: boolean;
+  } | null>(null);
+  const [barcodeScanOpen, setBarcodeScanOpen] = useState(false);
+
+  const handleBarcodeResolved = useCallback((result: ScannedFilamentResult) => {
+    setBarcodeScanOpen(false);
+    const initialData: Partial<SpoolFormData> = {};
+    if (result.material) initialData.material = result.material;
+    if (result.brand) initialData.brand = result.brand;
+    if (result.subtype) initialData.subtype = result.subtype;
+    if (result.color_name) initialData.color_name = result.color_name;
+    if (result.rgba) initialData.rgba = result.rgba;
+    if (result.label_weight) initialData.label_weight = result.label_weight;
+    // No match at all (not even an OCR guess) — leave a breadcrumb so the
+    // user isn't staring at a blank form with zero context.
+    if (!result.matched && Object.keys(initialData).length === 0 && result.barcode) {
+      initialData.note = `Barcode: ${result.barcode}`;
+    }
+    setFormModal({
+      spool: null,
+      mode: 'create',
+      initialData,
+      scannedBarcode: result.barcode ?? undefined,
+      fromBarcodeScan: true,
+    });
+  }, []);
   const deepLinkHandled = useRef(false);
   const [confirmAction, setConfirmAction] = useState<
     | { type: 'delete' | 'archive' | 'reset-consumed-counter'; spoolId: number }
@@ -1356,6 +1388,10 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
             <Printer className="w-4 h-4" />
             {t('inventory.labels.printLabels', 'Print labels…')}
           </Button>
+          <Button variant="secondary" onClick={() => setBarcodeScanOpen(true)}>
+            <ScanBarcode className="w-4 h-4" />
+            {t('inventory.barcodeScan.scanButton', 'Scan Barcode')}
+          </Button>
           <Button onClick={() => setFormModal({ spool: null, mode: 'create' })}>
             <Plus className="w-4 h-4" />
             {t('inventory.addSpool')}
@@ -1973,6 +2009,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           <EmptyFilterState
             hasFilters={hasActiveFilters}
             onAddSpool={() => setFormModal({ spool: null, mode: 'create' })}
+            onScanBarcode={() => setBarcodeScanOpen(true)}
             t={t}
           />
         )
@@ -2186,6 +2223,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           <EmptyFilterState
             hasFilters={hasActiveFilters}
             onAddSpool={() => setFormModal({ spool: null, mode: 'create' })}
+            onScanBarcode={() => setBarcodeScanOpen(true)}
             t={t}
           />
         )
@@ -2201,7 +2239,15 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           currencySymbol={currencySymbol}
           spoolmanMode={spoolmanMode}
           spoolsQueryKey={spoolsQueryKey}
+          initialData={formModal.initialData}
+          forcedDataOrigin={formModal.fromBarcodeScan ? 'barcode_scan' : undefined}
+          scannedBarcode={formModal.scannedBarcode}
         />
+      )}
+
+      {/* Barcode Scanner Modal (scan-to-add) */}
+      {barcodeScanOpen && (
+        <BarcodeScannerModal onClose={() => setBarcodeScanOpen(false)} onResolved={handleBarcodeResolved} />
       )}
 
       {/* Confirm Modal (delete / archive / reset-consumed-counter / reset-all-consumed-counters) */}
@@ -2714,10 +2760,12 @@ function SpoolTableGroup({
 function EmptyFilterState({
   hasFilters,
   onAddSpool,
+  onScanBarcode,
   t,
 }: {
   hasFilters: boolean;
   onAddSpool: () => void;
+  onScanBarcode: () => void;
   t: (key: string) => string;
 }) {
   return (
@@ -2751,10 +2799,16 @@ function EmptyFilterState({
         }
       </p>
       {!hasFilters && (
-        <Button onClick={onAddSpool}>
-          <Package className="w-4 h-4" />
-          {t('inventory.addSpool')}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={onScanBarcode}>
+            <ScanBarcode className="w-4 h-4" />
+            {t('inventory.barcodeScan.scanButton')}
+          </Button>
+          <Button onClick={onAddSpool}>
+            <Package className="w-4 h-4" />
+            {t('inventory.addSpool')}
+          </Button>
+        </div>
       )}
     </div>
   );

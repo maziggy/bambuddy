@@ -1195,6 +1195,9 @@ export interface AppSettings {
   bed_cooled_threshold: number;
   // Inventory low stock threshold
   low_stock_threshold: number;
+  // Gates the Open Filament Database outbound lookup used by scan-to-add
+  // barcode/label scanning. Native in-inventory barcode lookup is unaffected.
+  barcode_lookup_enabled: boolean;
   // Session policy (#1706) — admin-set ceiling, hours, [1, 720]
   session_max_hours: number;
   // User email notifications toggle
@@ -2845,6 +2848,10 @@ export interface InventorySpool {
   tray_uuid: string | null;
   data_origin: string | null;
   tag_type: string | null;
+  // Scanned UPC/EAN (canonicalized, no leading zeros) — set by the scan-to-add
+  // barcode/label flow so a later scan of the same barcode resolves from the
+  // user's own inventory before falling back to the Open Filament Database.
+  barcode: string | null;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
@@ -2857,6 +2864,39 @@ export interface InventorySpool {
   k_profiles?: SpoolKProfile[];
   storage_location?: string | null;
   location_id?: number | null;
+}
+
+// Scan-to-add barcode lookup (#1). `source` tells the caller how much to
+// trust the fields: "inventory" is an exact match against the user's own
+// spools, "ofd" is community-sourced from the Open Filament Database, and
+// "parsed" (label-parse only) means the fields are OCR text-heuristic guesses.
+export interface BarcodeLookupResult {
+  enabled: boolean;
+  matched: boolean;
+  source: 'inventory' | 'ofd' | null;
+  barcode: string;
+  material: string | null;
+  brand: string | null;
+  subtype: string | null;
+  color_name: string | null;
+  rgba: string | null;
+  label_weight: number | null;
+  nozzle_temp_min: number | null;
+  nozzle_temp_max: number | null;
+}
+
+export interface LabelParseResult {
+  matched: boolean;
+  source: 'inventory' | 'ofd' | 'parsed' | null;
+  barcode: string | null;
+  material: string | null;
+  brand: string | null;
+  subtype: string | null;
+  color_name: string | null;
+  rgba: string | null;
+  label_weight: number | null;
+  nozzle_temp_min: number | null;
+  nozzle_temp_max: number | null;
 }
 
 export interface SpoolmanBulkCreateResult {
@@ -5263,6 +5303,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ spool: data, quantity }),
     }),
+  // ── Scan-to-add barcode lookup ───────────────────────────────────────────
+  lookupFilamentBarcode: (barcode: string) =>
+    request<BarcodeLookupResult>(`/inventory/barcode/${encodeURIComponent(barcode)}`),
+  parseFilamentLabel: (text: string) =>
+    request<LabelParseResult>('/inventory/barcode/parse-label', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+  refreshBarcodeDatabase: () =>
+    request<{ entries: number }>('/inventory/barcode/refresh-database', { method: 'POST' }),
   // ── CSV import/export (#1576) ────────────────────────────────────────────
   // dry_run=true → preview (no write); omitted → real import. Both share one
   // multipart upload helper; see `uploadSpoolsCsv` below.

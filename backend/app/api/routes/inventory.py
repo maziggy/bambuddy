@@ -30,6 +30,8 @@ from backend.app.models.spool_k_profile import SpoolKProfile
 from backend.app.models.user import User
 from backend.app.schemas.location import LocationCreate, LocationResponse, LocationUpdate
 from backend.app.schemas.spool import (
+    BarcodeLookupResponse,
+    LabelParseResponse,
     SpoolAssignmentCreate,
     SpoolAssignmentResponse,
     SpoolBulkCreate,
@@ -42,6 +44,8 @@ from backend.app.schemas.spool import (
     normalize_extra_colors,
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
+from backend.app.services import ofd_client
+from backend.app.services.filament_label_parser import extract_barcode, parse_title
 from backend.app.services.location_service import (
     DUPLICATE_LOCATION_NAME,
     assign_location_name,
@@ -1280,6 +1284,126 @@ async def bulk_create_spools(
     result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id.in_(ids)))
     await ws_manager.broadcast({"type": "inventory_changed"})
     return list(result.scalars().all())
+
+
+_BARCODE_FIELD_KEYS = (
+    "material",
+    "brand",
+    "subtype",
+    "color_name",
+    "rgba",
+    "label_weight",
+    "nozzle_temp_min",
+    "nozzle_temp_max",
+)
+
+
+async def _resolve_barcode(db: AsyncSession, canonical_barcode: str, lookup_enabled: bool) -> tuple[dict, str | None]:
+    """Resolve a canonicalized barcode: the user's own inventory first, then OFD.
+
+    Returns (fields, source). ``source`` is "inventory", "ofd", or None (no match).
+    """
+    result = await db.execute(
+        select(Spool).where(Spool.barcode == canonical_barcode).order_by(Spool.created_at.desc()).limit(1)
+    )
+    existing = result.scalars().first()
+    if existing:
+        fields = {key: getattr(existing, key) for key in _BARCODE_FIELD_KEYS}
+        return fields, "inventory"
+
+    if not lookup_enabled:
+        return {}, None
+
+    try:
+        ofd_fields = await ofd_client.lookup(canonical_barcode)
+    except Exception:
+        logger.warning("OFD lookup failed for barcode %s", canonical_barcode, exc_info=True)
+        ofd_fields = None
+    if ofd_fields:
+        return {key: ofd_fields.get(key) for key in _BARCODE_FIELD_KEYS}, "ofd"
+
+    return {}, None
+
+
+@router.get("/barcode/{barcode}", response_model=BarcodeLookupResponse)
+async def lookup_barcode(
+    barcode: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """Resolve a scanned/entered barcode to filament fields.
+
+    Checks the user's own inventory (any spool previously created from this
+    barcode) before falling back to the Open Filament Database, so repeat
+    scans of the same retail barcode get instant, exact matches without an
+    external call.
+    """
+    from backend.app.api.routes.settings import get_setting
+
+    lookup_enabled = (await get_setting(db, "barcode_lookup_enabled") or "true") == "true"
+    canonical = ofd_client.canon(barcode)
+    fields, source = await _resolve_barcode(db, canonical, lookup_enabled)
+    return BarcodeLookupResponse(
+        enabled=lookup_enabled,
+        matched=source is not None,
+        source=source,
+        barcode=canonical,
+        **fields,
+    )
+
+
+class LabelParseRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=4000)
+
+
+@router.post("/barcode/parse-label", response_model=LabelParseResponse)
+async def parse_label(
+    payload: LabelParseRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """Parse OCR'd label text into best-effort filament fields.
+
+    If the text also contains a barcode, that barcode is resolved through the
+    same inventory-then-OFD chain as ``GET /barcode/{barcode}`` and overrides
+    the text-heuristic guesses where present.
+    """
+    from backend.app.api.routes.settings import get_setting
+
+    lookup_enabled = (await get_setting(db, "barcode_lookup_enabled") or "true") == "true"
+
+    try:
+        extra_brands = await ofd_client.get_brands()
+    except Exception:
+        extra_brands = []
+    guessed = parse_title(payload.text, extra_brands=extra_brands)
+    # diameter_mm has no home on Spool — it's parse-only context, not persisted.
+    guessed.pop("diameter_mm", None)
+
+    barcode = extract_barcode(payload.text)
+    source = "parsed" if guessed else None
+    if barcode:
+        canonical = ofd_client.canon(barcode)
+        fields, resolved_source = await _resolve_barcode(db, canonical, lookup_enabled)
+        if resolved_source:
+            guessed = {**guessed, **{k: v for k, v in fields.items() if v is not None}}
+            source = resolved_source
+
+    return LabelParseResponse(
+        matched=source in ("inventory", "ofd"),
+        source=source,
+        barcode=ofd_client.canon(barcode) if barcode else None,
+        **guessed,
+    )
+
+
+@router.post("/barcode/refresh-database")
+async def refresh_barcode_database(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+):
+    """Force a re-download of the Open Filament Database, bypassing the 24h cache TTL."""
+    count = await ofd_client.refresh_database()
+    return {"entries": count}
 
 
 @router.patch("/spools/{spool_id}", response_model=SpoolResponse)

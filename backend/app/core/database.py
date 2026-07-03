@@ -3296,6 +3296,13 @@ async def run_migrations(conn):
     # names by appending " Email" (#1792). See ``_migrate_rename_user_print_template_names``.
     await _migrate_rename_user_print_template_names(conn)
 
+    # Migration: Add barcode column to spool for scan-to-add lookups. Stores
+    # the canonicalized (no leading zeros) UPC/EAN of a scanned spool so a
+    # later scan of the same barcode resolves from the user's own inventory
+    # before falling back to the Open Filament Database.
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN barcode VARCHAR(64)")
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_spool_barcode ON spool (barcode)")
+
 
 _USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (
     ("user_print_start", "User Print Started", "User Print Started Email"),

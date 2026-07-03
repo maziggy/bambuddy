@@ -114,6 +114,7 @@ class SpoolBase(BaseModel):
     tray_uuid: str | None = None
     data_origin: str | None = None
     tag_type: str | None = None
+    barcode: str | None = None
     cost_per_kg: float | None = Field(default=None, ge=0)
     weight_locked: bool = False
     last_scale_weight: int | None = None
@@ -169,6 +170,7 @@ class SpoolUpdate(BaseModel):
     tray_uuid: str | None = None
     data_origin: str | None = None
     tag_type: str | None = None
+    barcode: str | None = None
     cost_per_kg: float | None = Field(default=None, ge=0)
     weight_locked: bool | None = None
     # User-defined category + per-spool low-stock threshold override (#729).
@@ -219,6 +221,46 @@ class SpoolResponse(SpoolBase):
 
     class Config:
         from_attributes = True
+
+
+class BarcodeLookupResponse(BaseModel):
+    """Result of resolving a scanned/entered barcode to filament fields.
+
+    ``source`` tells the frontend how much to trust the prefilled fields:
+    a hit against the user's own inventory is exact, an OFD hit is
+    community-sourced, and no source means the fields (if any) came from
+    OCR label-text heuristics instead of a barcode match.
+    """
+
+    enabled: bool = True
+    matched: bool = False
+    source: str | None = None  # "inventory" | "ofd" | None
+    barcode: str
+    material: str | None = None
+    brand: str | None = None
+    subtype: str | None = None
+    color_name: str | None = None
+    rgba: str | None = None
+    label_weight: int | None = None
+    nozzle_temp_min: int | None = None
+    nozzle_temp_max: int | None = None
+
+
+class LabelParseResponse(BaseModel):
+    """Best-effort fields parsed from OCR'd label text, with an authoritative
+    barcode-lookup override applied when the text also contained a barcode."""
+
+    matched: bool = False
+    source: str | None = None  # "inventory" | "ofd" | "parsed" | None
+    barcode: str | None = None
+    material: str | None = None
+    brand: str | None = None
+    subtype: str | None = None
+    color_name: str | None = None
+    rgba: str | None = None
+    label_weight: int | None = None
+    nozzle_temp_min: int | None = None
+    nozzle_temp_max: int | None = None
 
 
 class SpoolAssignmentCreate(BaseModel):

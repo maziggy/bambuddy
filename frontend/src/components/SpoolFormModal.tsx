@@ -39,6 +39,17 @@ interface SpoolFormModalProps {
   spoolmanMode?: boolean;
   /** Query key to invalidate after mutations (differs for Spoolman vs local). */
   spoolsQueryKey?: string[];
+  /**
+   * Prefill for a fresh `create` (e.g. from the scan-to-add barcode/label
+   * flow). Merged over `defaultFormData` and switches the form into
+   * quick-add mode, since scanned data has no `slicer_filament` match.
+   */
+  initialData?: Partial<SpoolFormData>;
+  /** Forces `data_origin` on create (e.g. "barcode_scan"). Ignored when editing. */
+  forcedDataOrigin?: string;
+  /** Barcode that produced `initialData`, persisted on the new spool so a
+   *  later scan of the same barcode resolves from inventory. Ignored when editing. */
+  scannedBarcode?: string;
 }
 
 export function SpoolFormModal({
@@ -51,6 +62,9 @@ export function SpoolFormModal({
   onSpoolsCreated,
   spoolmanMode = false,
   spoolsQueryKey = ['inventory-spools'],
+  initialData,
+  forcedDataOrigin,
+  scannedBarcode,
 }: SpoolFormModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -386,6 +400,15 @@ export function SpoolFormModal({
         } else {
           setSelectedProfiles(new Set());
         }
+      } else if (initialData) {
+        // Prefill from the scan-to-add barcode/label flow. Quick-add is the
+        // right validation mode here — scanned data has no `slicer_filament`
+        // match, and quick-add only requires `material`.
+        setFormData({ ...defaultFormData, ...initialData });
+        setPresetInputValue('');
+        setSelectedProfiles(new Set());
+        setQuickAdd(true);
+        setQuantity(1);
       } else {
         setFormData(defaultFormData);
         setPresetInputValue('');
@@ -398,7 +421,7 @@ export function SpoolFormModal({
       setWeightTouched(false);
       setLocationIdTouched(false);
     }
-  }, [isOpen, spool, mode, isCopying]);
+  }, [isOpen, spool, mode, isCopying, initialData]);
 
   // Legacy rows may have storage_location text but no location_id yet — link when catalog loads.
   useEffect(() => {
@@ -772,6 +795,12 @@ export function SpoolFormModal({
     // Backend derives storage_location; omitting on untouched edit avoids stale overwrites.
     if (!isEditing || locationIdTouched) {
       data.location_id = formData.location_id;
+    }
+
+    // Scan-to-add provenance: only applies to a fresh create, never an edit.
+    if (!isEditing) {
+      if (forcedDataOrigin) data.data_origin = forcedDataOrigin;
+      if (scannedBarcode) data.barcode = scannedBarcode;
     }
 
     if (isEditing) {

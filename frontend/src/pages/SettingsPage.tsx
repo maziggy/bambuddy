@@ -421,6 +421,16 @@ export function SettingsPage() {
     },
   });
 
+  const refreshBarcodeDatabaseMutation = useMutation({
+    mutationFn: () => api.refreshBarcodeDatabase(),
+    onSuccess: (result) => {
+      showToast(t('settings.barcodeScan.databaseRefreshed', { count: result.entries }), 'success');
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('settings.barcodeScan.databaseRefreshFailed'), 'error');
+    },
+  });
+
   const { data: printers } = useQuery({
     queryKey: ['printers'],
     queryFn: api.getPrinters,
@@ -1002,6 +1012,7 @@ export function SettingsPage() {
       (settings.bambu_studio_api_url ?? '') !== (localSettings.bambu_studio_api_url ?? '') ||
       settings.prometheus_enabled !== localSettings.prometheus_enabled ||
       settings.prometheus_token !== localSettings.prometheus_token ||
+      (settings.barcode_lookup_enabled ?? true) !== (localSettings.barcode_lookup_enabled ?? true) ||
       (settings.user_notifications_enabled ?? true) !== (localSettings.user_notifications_enabled ?? true) ||
       (settings.default_bed_levelling ?? true) !== (localSettings.default_bed_levelling ?? true) ||
       (settings.default_flow_cali ?? false) !== (localSettings.default_flow_cali ?? false) ||
@@ -1100,6 +1111,7 @@ export function SettingsPage() {
         bambu_studio_api_url: localSettings.bambu_studio_api_url,
         prometheus_enabled: localSettings.prometheus_enabled,
         prometheus_token: localSettings.prometheus_token,
+        barcode_lookup_enabled: localSettings.barcode_lookup_enabled,
         user_notifications_enabled: localSettings.user_notifications_enabled,
         default_bed_levelling: localSettings.default_bed_levelling,
         default_flow_cali: localSettings.default_flow_cali,
@@ -5064,6 +5076,46 @@ export function SettingsPage() {
                     />
                     <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
                   </label>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card id="card-barcode-scan">
+              <CardHeader>
+                <h2 className="text-lg font-semibold text-white">{t('settings.barcodeScan.title')}</h2>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white">{t('settings.barcodeScan.enableLookup')}</p>
+                    <p className="text-sm text-bambu-gray">
+                      {t('settings.barcodeScan.enableLookupDesc')}
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={localSettings.barcode_lookup_enabled ?? true}
+                      onChange={(e) => updateSetting('barcode_lookup_enabled', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                  </label>
+                </div>
+                <div className="pt-2 border-t border-bambu-dark-tertiary">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={refreshBarcodeDatabaseMutation.isPending}
+                    onClick={() => refreshBarcodeDatabaseMutation.mutate()}
+                  >
+                    {refreshBarcodeDatabaseMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4" />
+                    )}
+                    {t('settings.barcodeScan.refreshNow')}
+                  </Button>
                 </div>
               </CardContent>
             </Card>

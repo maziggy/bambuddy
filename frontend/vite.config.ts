@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 import fs from 'fs'
@@ -73,39 +73,53 @@ function serveGcodeViewer() {
   }
 }
 
-export default defineConfig({
-  // Default base ('/') emits absolute asset URLs (/assets/...). Required so
-  // deep SPA routes (camera popup at /camera/<id>, /projects/<id>, kiosk
-  // /spoolbuddy/ams, refresh on any nested route) resolve their <script>
-  // and <link> tags to /assets/... instead of /<route-prefix>/assets/...,
-  // which the SPA fallback would otherwise return as text/html and the
-  // browser would refuse to execute (#1221). The earlier `base: ''` partial
-  // fix for subpath reverse proxies (#1195, wontfix) is reverted — that
-  // audience uses NPM + Cloudflare Tunnel at a real domain per the
-  // documented workaround, which doesn't depend on this setting.
-  plugins: [react(), serveGcodeViewer()],
-  build: {
-    outDir: '../static',
-    emptyOutDir: true,
-    chunkSizeWarningLimit: 3000,
-  },
-  server: {
-    host: '0.0.0.0',
-    proxy: {
-      '/api/v1/ws': {
-        target: backendUrl,
-        ws: true,
-        changeOrigin: true,
-      },
-      '/api': {
-        target: backendUrl,
-        changeOrigin: true,
+export default defineConfig(({ mode }) => {
+  // Dev-only escape hatch for testing through a reverse proxy / custom
+  // hostname (e.g. a tunnel domain), where Vite's dev server otherwise
+  // rejects the request with "Blocked request. This host is not allowed."
+  // Set in a git-ignored `.env.local` (matched by the `*.local` gitignore
+  // rule) — never hardcode a personal hostname into this shared config file.
+  //   VITE_DEV_ALLOWED_HOSTS=test.example.com,another.example.com
+  const env = loadEnv(mode, process.cwd(), '')
+  const devAllowedHosts = env.VITE_DEV_ALLOWED_HOSTS
+    ? env.VITE_DEV_ALLOWED_HOSTS.split(',').map((h) => h.trim()).filter(Boolean)
+    : undefined
+
+  return {
+    // Default base ('/') emits absolute asset URLs (/assets/...). Required so
+    // deep SPA routes (camera popup at /camera/<id>, /projects/<id>, kiosk
+    // /spoolbuddy/ams, refresh on any nested route) resolve their <script>
+    // and <link> tags to /assets/... instead of /<route-prefix>/assets/...,
+    // which the SPA fallback would otherwise return as text/html and the
+    // browser would refuse to execute (#1221). The earlier `base: ''` partial
+    // fix for subpath reverse proxies (#1195, wontfix) is reverted — that
+    // audience uses NPM + Cloudflare Tunnel at a real domain per the
+    // documented workaround, which doesn't depend on this setting.
+    plugins: [react(), serveGcodeViewer()],
+    build: {
+      outDir: '../static',
+      emptyOutDir: true,
+      chunkSizeWarningLimit: 3000,
+    },
+    server: {
+      host: '0.0.0.0',
+      ...(devAllowedHosts ? { allowedHosts: devAllowedHosts } : {}),
+      proxy: {
+        '/api/v1/ws': {
+          target: backendUrl,
+          ws: true,
+          changeOrigin: true,
+        },
+        '/api': {
+          target: backendUrl,
+          changeOrigin: true,
+        },
       },
     },
-  },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
+      },
     },
-  },
+  }
 })

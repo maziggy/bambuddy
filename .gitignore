@@ -92,4 +92,3 @@ gitleaks-report.json
 scripts/pip-audit.sh
 
 security/
-frontend/package-lock.json

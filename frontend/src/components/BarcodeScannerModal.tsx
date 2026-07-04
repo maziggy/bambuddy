@@ -5,6 +5,7 @@ import type { BrowserMultiFormatReader as BrowserMultiFormatReaderType, IScanner
 import { Button } from './Button';
 import { api } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
+import { extractGtinFromManualEntry, extractGtinFromScan, isValidUpcEanBarcode } from '../utils/barcode';
 
 type ScanTab = 'scan' | 'photo' | 'manual';
 
@@ -125,6 +126,7 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
   // missing-HTTPS setup.
   const [cameraError, setCameraError] = useState<{ type: 'https-required' } | { type: 'other'; message: string } | null>(null);
   const [manualBarcode, setManualBarcode] = useState('');
+  const [manualError, setManualError] = useState<string | null>(null);
   const [ocrHint, setOcrHint] = useState<string | null>(null);
   // Drives the Photo tab's button label ("Take" vs "Choose Photograph").
   // Seeded with the touch-device heuristic, then refined below with a real
@@ -209,16 +211,38 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
       return;
     }
 
-    import('@zxing/browser').then(({ BrowserMultiFormatReader }) => {
+    import('@zxing/browser').then(({ BrowserMultiFormatReader, BarcodeFormat }) => {
       if (cancelled || !videoRef.current) return;
       const reader: BrowserMultiFormatReaderType = new BrowserMultiFormatReader();
+      // Retail filament spools carry either a linear UPC/EAN barcode or (less
+      // commonly) a GS1 Digital Link QR code encoding the same GTIN in its
+      // URL path. Restricting decode to just these formats (instead of every
+      // symbology ZXing supports) cuts down on false-positive reads from
+      // webcam noise, which is where the single-digit "barcode" misreads
+      // were coming from.
+      reader.possibleFormats = [
+        BarcodeFormat.UPC_A,
+        BarcodeFormat.UPC_E,
+        BarcodeFormat.EAN_13,
+        BarcodeFormat.EAN_8,
+        BarcodeFormat.QR_CODE,
+      ];
       reader
         .decodeFromVideoDevice(undefined, videoRef.current, (result, _err, controls) => {
           controlsRef.current = controls;
-          if (result && !resolvingRef.current) {
-            controls.stop();
-            void resolveBarcode(result.getText());
-          }
+          if (!result || resolvingRef.current) return;
+          // A UPC/EAN decode is already a bare digit string; a QR decode is
+          // typically a GS1 Digital Link URL with the GTIN embedded in its
+          // path — extractGtinFromScan pulls the candidate out of either shape.
+          const candidate = extractGtinFromScan(result.getText());
+          // Defense-in-depth: even within the restricted formats above, a
+          // corrupted read can still surface a bad check digit, and a QR
+          // code might not be a GS1 Digital Link at all — validate before
+          // treating it as a real barcode. An invalid read is silently
+          // ignored so the scan loop just keeps looking.
+          if (!candidate || !isValidUpcEanBarcode(candidate)) return;
+          controls.stop();
+          void resolveBarcode(candidate);
         })
         .then((controls) => {
           controlsRef.current = controls;
@@ -290,7 +314,17 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
   const handleManualSubmit = () => {
     const trimmed = manualBarcode.trim();
     if (!trimmed) return;
-    void resolveBarcode(trimmed);
+    // Tolerates spaces/dashes for readability and a pasted GS1 Digital Link
+    // URL (e.g. copied from a phone's native QR scanner), not just bare digits.
+    const candidate = extractGtinFromManualEntry(trimmed);
+    if (!candidate || !isValidUpcEanBarcode(candidate)) {
+      setManualError(
+        t('inventory.barcodeScan.manualInvalid', 'Enter a valid UPC-A, EAN-8, or EAN-13 barcode (8, 12, or 13 digits)'),
+      );
+      return;
+    }
+    setManualError(null);
+    void resolveBarcode(candidate);
   };
 
   const busy = loadingMessage !== null;
@@ -366,6 +400,24 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
                     <>
                       <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
                         <video ref={videoRef} muted playsInline autoPlay className="w-full h-full object-cover" />
+                        {!cameraError && (
+                          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                            <div className="relative w-[82%] max-w-xs h-[38%]">
+                              {/* Dim everything outside the guide box so the target area stands out */}
+                              <div
+                                className="absolute inset-0 rounded-lg"
+                                style={{ boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)' }}
+                              />
+                              {/* Corner brackets marking the guide box */}
+                              <div className="absolute -top-0.5 -left-0.5 w-6 h-6 border-t-2 border-l-2 border-bambu-green rounded-tl-md" />
+                              <div className="absolute -top-0.5 -right-0.5 w-6 h-6 border-t-2 border-r-2 border-bambu-green rounded-tr-md" />
+                              <div className="absolute -bottom-0.5 -left-0.5 w-6 h-6 border-b-2 border-l-2 border-bambu-green rounded-bl-md" />
+                              <div className="absolute -bottom-0.5 -right-0.5 w-6 h-6 border-b-2 border-r-2 border-bambu-green rounded-br-md" />
+                              {/* Sweeping scan line */}
+                              <div className="barcode-scan-line absolute left-0 right-0 h-0.5 -translate-y-1/2 bg-bambu-green shadow-[0_0_6px_2px_rgba(0,174,66,0.6)]" />
+                            </div>
+                          </div>
+                        )}
                       </div>
                       {cameraError ? (
                         <p className="text-sm text-red-400 text-center">
@@ -377,7 +429,7 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
                         </p>
                       ) : (
                         <p className="text-sm text-bambu-gray text-center">
-                          {t('inventory.barcodeScan.scanHint', 'Point the camera at the barcode on the spool box')}
+                          {t('inventory.barcodeScan.scanHint', 'Align the barcode within the frame')}
                         </p>
                       )}
                     </>
@@ -421,14 +473,20 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
                     type="text"
                     inputMode="numeric"
                     value={manualBarcode}
-                    onChange={(e) => setManualBarcode(e.target.value)}
+                    onChange={(e) => {
+                      setManualBarcode(e.target.value);
+                      setManualError(null);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') handleManualSubmit();
                     }}
                     placeholder={t('inventory.barcodeScan.manualPlaceholder', 'e.g. 6938936716785')}
-                    className="w-full bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded-lg px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:ring-2 focus:ring-bambu-green"
+                    className={`w-full bg-bambu-dark-tertiary border rounded-lg px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:ring-2 ${
+                      manualError ? 'border-red-500 focus:ring-red-500' : 'border-bambu-dark-tertiary focus:ring-bambu-green'
+                    }`}
                     autoFocus
                   />
+                  {manualError && <p className="text-xs text-red-400">{manualError}</p>}
                   <Button onClick={handleManualSubmit} disabled={!manualBarcode.trim()} className="w-full">
                     {t('inventory.barcodeScan.lookUp', 'Look Up')}
                   </Button>

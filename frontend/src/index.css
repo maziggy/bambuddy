@@ -468,6 +468,29 @@ body {
   box-shadow: var(--card-shadow);
 }
 
+/* Barcode scanner viewfinder scan-line: sweeps the guide box top-to-bottom
+   so it's obvious where to line up the barcode. */
+@keyframes barcode-scan-line {
+  0%,
+  100% {
+    top: 6%;
+  }
+  50% {
+    top: 94%;
+  }
+}
+
+.barcode-scan-line {
+  animation: barcode-scan-line 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .barcode-scan-line {
+    animation: none;
+    top: 50%;
+  }
+}
+
 /* ============================================
    SPOOLBUDDY KIOSK MODAL CONSTRAINTS
    Cap large modals (max-w-2xl) to viewport on the

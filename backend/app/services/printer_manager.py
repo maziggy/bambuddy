@@ -602,6 +602,24 @@ class PrinterManager:
             return client.state
         return None
 
+    # Gcode states in which a job is loaded / in progress and cutting power
+    # would ruin the print. PAUSE is included on purpose — a paused print is
+    # still loaded on the bed. Used by the smart-plug auto-off guard (#1890) so
+    # a re-print started from the touchscreen isn't killed mid-print.
+    ACTIVE_PRINT_STATES = ("RUNNING", "PAUSE", "PREPARE", "SLICING")
+
+    def is_print_active(self, printer_id: int) -> bool:
+        """True when the printer currently has a print loaded / in progress.
+
+        Returns False when disconnected or in any idle/terminal state
+        (IDLE / FINISH / FAILED / unknown), so callers fail *open* only for
+        the safe "nothing is printing" case. #1890.
+        """
+        state = self.get_status(printer_id)
+        if not state or not state.connected:
+            return False
+        return state.state in self.ACTIVE_PRINT_STATES
+
     def get_model(self, printer_id: int) -> str | None:
         """Get the cached model for a printer."""
         return self._models.get(printer_id)

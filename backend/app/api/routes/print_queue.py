@@ -16,7 +16,6 @@ from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_owners
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
-from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_batch import PrintBatch
@@ -1272,9 +1271,7 @@ async def stop_queue_item(
     holding only _OWN saw the Stop button in the queue UI but got 403 on click.
     """
 
-    from backend.app.models.smart_plug import SmartPlug
     from backend.app.services.printer_manager import printer_manager
-    from backend.app.services.tasmota import tasmota_service
 
     user, can_modify_all = auth_result
 
@@ -1323,33 +1320,21 @@ async def stop_queue_item(
     item.error_message = "Stopped by user" if stop_sent else "Stopped by user (printer was offline)"
     await db.commit()
 
-    # Get smart plug info if auto-off is enabled
-    plug_ip = None
-    if auto_off_after:
-        result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-        plug = result.scalar_one_or_none()
-        if plug and plug.enabled:
-            plug_ip = plug.ip_address
-
     logger.info("Stopped printing queue item %s (stop command sent: %s)", item_id, stop_sent)
 
-    # Schedule background task for cooldown + power off
-    if plug_ip:
+    # Schedule power-off if the queue item opted in. Delegates to the smart-plug
+    # manager so the off honours each plug's configured strategy (time delay or
+    # temperature threshold), is cancelled if the printer starts printing again,
+    # and never cuts power on a loaded print (#1890). Previously an inline block
+    # hardcoded a 50°C / 600s cooldown wait and powered off on the timeout
+    # regardless of print state.
+    if auto_off_after:
+        from backend.app.services.smart_plug_manager import smart_plug_manager
 
-        async def cooldown_and_poweroff():
-            logger.info("Auto-off: Waiting for printer %s to cool down before power off...", printer_id)
-            await printer_manager.wait_for_cooldown(printer_id, target_temp=50.0, timeout=600)
-            # Re-fetch plug since we're in a new async context
-            from backend.app.core.database import async_session
-
-            async with async_session() as new_db:
-                result = await new_db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-                plug = result.scalar_one_or_none()
-                if plug and plug.enabled:
-                    logger.info("Auto-off: Powering off printer %s", printer_id)
-                    await tasmota_service.turn_off(plug)
-
-        spawn_background_task(cooldown_and_poweroff(), name=f"queue-cooldown-poweroff-{printer_id}")
+        try:
+            await smart_plug_manager.schedule_off_after_queue_job(printer_id, db)
+        except Exception as e:
+            logger.warning("Auto-off: Failed to schedule power-off for printer %s: %s", printer_id, e)
 
     return {"message": "Print stopped" if stop_sent else "Queue item cancelled (printer was offline)"}
 

@@ -477,6 +477,46 @@ class TestPrinterManager:
         assert result is True
 
     # ========================================================================
+    # Tests for is_print_active (#1890)
+    # ========================================================================
+
+    @pytest.mark.parametrize(
+        "state,expected",
+        [
+            ("RUNNING", True),
+            ("PAUSE", True),
+            ("PREPARE", True),
+            ("SLICING", True),
+            ("FINISH", False),
+            ("IDLE", False),
+            ("FAILED", False),
+            ("unknown", False),
+        ],
+    )
+    def test_is_print_active_state_matrix(self, manager, mock_client, state, expected):
+        """A job-loaded state is 'active'; idle/terminal states are not."""
+        mock_client.state.connected = True
+        mock_client.state.state = state
+        mock_client.check_staleness.return_value = True
+        manager._clients[1] = mock_client
+
+        assert manager.is_print_active(1) is expected
+
+    def test_is_print_active_false_when_disconnected(self, manager, mock_client):
+        """Even in RUNNING, a disconnected printer is not treated as active —
+        we fail safe (no active print) only for the 'nothing printing' cases."""
+        mock_client.state.connected = False
+        mock_client.state.state = "RUNNING"
+        mock_client.check_staleness.return_value = False
+        manager._clients[1] = mock_client
+
+        assert manager.is_print_active(1) is False
+
+    def test_is_print_active_false_for_unknown_printer(self, manager):
+        """Unknown printer id → not active (no client)."""
+        assert manager.is_print_active(999) is False
+
+    # ========================================================================
     # Tests for logging methods
     # ========================================================================
 

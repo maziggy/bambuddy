@@ -1,6 +1,7 @@
 """Spoolman integration service for syncing AMS filament data."""
 
 import asyncio
+import json
 import logging
 import weakref
 from dataclasses import dataclass
@@ -854,6 +855,35 @@ class SpoolmanClient:
                         logger.debug("Found spool %s matching tag %s", spool["id"], tag_uid)
                         return spool
         return None
+
+    async def find_spool_by_barcode(self, barcode: str, cached_spools: list[dict] | None = None) -> dict | None:
+        """Return the spool matching the given canonical barcode, or None if not found.
+
+        Spoolman has no native barcode field, so the value is stored JSON-encoded
+        under extra.bambu_barcode (same pattern as extra.tag for RFID). Searches
+        archived spools too, so a repeat scan resolves even if the original spool
+        was later archived — matching the local-inventory barcode lookup's behavior.
+        When more than one spool carries the same barcode, the most recently
+        registered one wins.
+        """
+        spools = cached_spools if cached_spools is not None else await self.get_all_spools(allow_archived=True)
+        matches: list[dict] = []
+        for spool in spools:
+            extra = spool.get("extra") or {}
+            raw = extra.get("bambu_barcode")
+            if not isinstance(raw, str) or not raw:
+                continue
+            try:
+                stored = json.loads(raw)
+            except (json.JSONDecodeError, ValueError):
+                stored = raw
+            if isinstance(stored, str) and stored == barcode:
+                matches.append(spool)
+
+        if not matches:
+            return None
+        matches.sort(key=lambda s: s.get("registered") or "", reverse=True)
+        return matches[0]
 
     def _find_spool_by_location(self, location: str, cached_spools: list[dict] | None) -> dict | None:
         """Return the spool at the exact location string, or None; fallback when RFID is unavailable."""

@@ -106,6 +106,17 @@ class TestMapSpoolmanSpool:
         assert result["weight_used"] == pytest.approx(250.0)
         assert result["weight_used_baseline"] == pytest.approx(0.0)
         assert result["data_origin"] == "spoolman"
+        # No extra.bambu_barcode on this spool — reads back as None, not missing.
+        assert result["barcode"] is None
+
+    def test_barcode_read_from_extra(self):
+        """Spoolman has no native barcode field; it's stored JSON-encoded under
+        extra.bambu_barcode (same pattern as bambu_slicer_filament/bambu_color_name)."""
+        import json
+
+        spool = {**MINIMAL_SPOOL, "extra": {"bambu_barcode": json.dumps("6938936716785")}}
+        result = _map_spoolman_spool(spool)
+        assert result["barcode"] == "6938936716785"
 
     def test_remaining_weight_drives_synthetic_used_for_parity(self):
         """When remaining_weight is set, weight_used = label - remaining and

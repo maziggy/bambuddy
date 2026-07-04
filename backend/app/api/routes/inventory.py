@@ -1298,19 +1298,41 @@ _BARCODE_FIELD_KEYS = (
 )
 
 
-async def _resolve_barcode(db: AsyncSession, canonical_barcode: str, lookup_enabled: bool) -> tuple[dict, str | None]:
+async def _resolve_barcode(
+    db: AsyncSession, canonical_barcode: str, settings: dict[str, str]
+) -> tuple[dict, str | None]:
     """Resolve a canonicalized barcode: the user's own inventory first, then OFD.
+
+    When Spoolman mode is active, "the user's own inventory" means Spoolman's
+    spools (barcode stored under extra.bambu_barcode — see find_spool_by_barcode)
+    since that's where the visible inventory actually lives; otherwise it means
+    the local ``Spool`` table. Falls back to OFD if barcode_lookup_enabled.
 
     Returns (fields, source). ``source`` is "inventory", "ofd", or None (no match).
     """
-    result = await db.execute(
-        select(Spool).where(Spool.barcode == canonical_barcode).order_by(Spool.created_at.desc()).limit(1)
-    )
-    existing = result.scalars().first()
-    if existing:
-        fields = {key: getattr(existing, key) for key in _BARCODE_FIELD_KEYS}
-        return fields, "inventory"
+    client = await _ensure_spoolman_client(settings)
+    if client:
+        try:
+            spool = await client.find_spool_by_barcode(canonical_barcode)
+        except Exception:
+            logger.warning("Spoolman barcode lookup failed for %s", canonical_barcode, exc_info=True)
+            spool = None
+        if spool:
+            from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
 
+            mapped = _map_spoolman_spool(spool)
+            fields = {key: mapped.get(key) for key in _BARCODE_FIELD_KEYS}
+            return fields, "inventory"
+    else:
+        result = await db.execute(
+            select(Spool).where(Spool.barcode == canonical_barcode).order_by(Spool.created_at.desc()).limit(1)
+        )
+        existing = result.scalars().first()
+        if existing:
+            fields = {key: getattr(existing, key) for key in _BARCODE_FIELD_KEYS}
+            return fields, "inventory"
+
+    lookup_enabled = settings.get("barcode_lookup_enabled", "true") == "true"
     if not lookup_enabled:
         return {}, None
 
@@ -1338,11 +1360,10 @@ async def lookup_barcode(
     scans of the same retail barcode get instant, exact matches without an
     external call.
     """
-    from backend.app.api.routes.settings import get_setting
-
-    lookup_enabled = (await get_setting(db, "barcode_lookup_enabled") or "true") == "true"
+    settings = await _load_settings_map(db)
+    lookup_enabled = settings.get("barcode_lookup_enabled", "true") == "true"
     canonical = ofd_client.canon(barcode)
-    fields, source = await _resolve_barcode(db, canonical, lookup_enabled)
+    fields, source = await _resolve_barcode(db, canonical, settings)
     return BarcodeLookupResponse(
         enabled=lookup_enabled,
         matched=source is not None,
@@ -1368,9 +1389,7 @@ async def parse_label(
     same inventory-then-OFD chain as ``GET /barcode/{barcode}`` and overrides
     the text-heuristic guesses where present.
     """
-    from backend.app.api.routes.settings import get_setting
-
-    lookup_enabled = (await get_setting(db, "barcode_lookup_enabled") or "true") == "true"
+    settings = await _load_settings_map(db)
 
     try:
         extra_brands = await ofd_client.get_brands()
@@ -1384,7 +1403,7 @@ async def parse_label(
     source = "parsed" if guessed else None
     if barcode:
         canonical = ofd_client.canon(barcode)
-        fields, resolved_source = await _resolve_barcode(db, canonical, lookup_enabled)
+        fields, resolved_source = await _resolve_barcode(db, canonical, settings)
         if resolved_source:
             guessed = {**guessed, **{k: v for k, v in fields.items() if v is not None}}
             source = resolved_source

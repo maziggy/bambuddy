@@ -41,7 +41,7 @@ from backend.app.models.settings import Settings
 from backend.app.models.spoolman_k_profile import SpoolmanKProfile
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.models.user import User
-from backend.app.schemas.spool import SpoolKProfileBase
+from backend.app.schemas.spool import SpoolKProfileBase, normalize_barcode
 from backend.app.schemas.spoolman import SpoolmanFilamentPatch, SpoolmanSlotAssignmentEnriched
 from backend.app.services.location_service import (
     enrich_spool_dicts_with_location_id,
@@ -319,6 +319,10 @@ class SpoolmanInventoryCreate(BaseModel):
     # in the spool's extra dict and read it back in _map_spoolman_spool.
     slicer_filament: str | None = Field(None, max_length=128)
     slicer_filament_name: str | None = Field(None, max_length=255)
+    # Scanned/entered barcode. Spoolman has no native field for this, so it's
+    # persisted under bambu_barcode in the spool's extra dict (same pattern
+    # as slicer_filament/color_name above) and read back in _map_spoolman_spool.
+    barcode: str | None = Field(None, max_length=64)
 
     @field_validator("rgba")
     @classmethod
@@ -329,6 +333,11 @@ class SpoolmanInventoryCreate(BaseModel):
     @classmethod
     def validate_storage_location(cls, v: str | None) -> str | None:
         return _validate_storage_location(v)
+
+    @field_validator("barcode")
+    @classmethod
+    def validate_barcode(cls, v: str | None) -> str | None:
+        return normalize_barcode(v)
 
     @model_validator(mode="after")
     def validate_weight_consistency(self) -> SpoolmanInventoryCreate:
@@ -361,6 +370,8 @@ class SpoolmanInventoryUpdate(BaseModel):
     # schema). Pass an empty string to clear; null/omitted leaves unchanged.
     slicer_filament: str | None = Field(None, max_length=128)
     slicer_filament_name: str | None = Field(None, max_length=255)
+    # Pass an empty string to clear; null/omitted leaves the stored value unchanged.
+    barcode: str | None = Field(None, max_length=64)
 
     @field_validator("rgba")
     @classmethod
@@ -371,6 +382,11 @@ class SpoolmanInventoryUpdate(BaseModel):
     @classmethod
     def validate_storage_location(cls, v: str | None) -> str | None:
         return _validate_storage_location(v)
+
+    @field_validator("barcode")
+    @classmethod
+    def validate_barcode(cls, v: str | None) -> str | None:
+        return normalize_barcode(v)
 
     @model_validator(mode="after")
     def validate_tag_fields(self) -> SpoolmanInventoryUpdate:
@@ -555,10 +571,16 @@ async def create_spool(
 
     spool, price_warnings = await _apply_price_if_set(client, spool, data.cost_per_kg)
 
-    # Persist slicer_filament AND color_name under the spool's extra dict
-    # (mirror update_spool). Spoolman has no `color_name` field on filament
-    # (#1357) so we own the round-trip ourselves.
-    if data.slicer_filament is not None or data.slicer_filament_name is not None or data.color_name is not None:
+    # Persist slicer_filament, color_name, AND barcode under the spool's extra
+    # dict (mirror update_spool). Spoolman has no native field for any of
+    # these (#1357, and barcode has no native field either) so we own the
+    # round-trip ourselves.
+    if (
+        data.slicer_filament is not None
+        or data.slicer_filament_name is not None
+        or data.color_name is not None
+        or data.barcode is not None
+    ):
         # Ensure extra fields are registered before write.
         if data.slicer_filament is not None:
             await client.ensure_extra_field("bambu_slicer_filament")
@@ -566,6 +588,8 @@ async def create_spool(
             await client.ensure_extra_field("bambu_slicer_filament_name")
         if data.color_name is not None:
             await client.ensure_extra_field("bambu_color_name")
+        if data.barcode is not None:
+            await client.ensure_extra_field("bambu_barcode")
         new_extra: dict = {}
         if data.slicer_filament is not None:
             new_extra["bambu_slicer_filament"] = json.dumps(data.slicer_filament)
@@ -573,6 +597,8 @@ async def create_spool(
             new_extra["bambu_slicer_filament_name"] = json.dumps(data.slicer_filament_name)
         if data.color_name is not None:
             new_extra["bambu_color_name"] = json.dumps(data.color_name)
+        if data.barcode is not None:
+            new_extra["bambu_barcode"] = json.dumps(data.barcode)
         if new_extra:
             try:
                 async with _translate_spoolman_errors():
@@ -580,7 +606,7 @@ async def create_spool(
             except HTTPException:
                 # Best-effort — the spool already exists, log and continue.
                 logger.warning(
-                    "Failed to persist slicer_filament/color_name for spool %s",
+                    "Failed to persist slicer_filament/color_name/barcode for spool %s",
                     spool.get("id"),
                 )
 
@@ -852,7 +878,8 @@ async def update_spool(
     sf_set = "slicer_filament" in data.model_fields_set
     sfn_set = "slicer_filament_name" in data.model_fields_set
     cn_set = "color_name" in data.model_fields_set
-    if sf_set or sfn_set or cn_set:
+    bc_set = "barcode" in data.model_fields_set
+    if sf_set or sfn_set or cn_set or bc_set:
         # Ensure extra fields are registered (Spoolman rejects PATCHes with
         # unknown keys with HTTP 400). Idempotent if startup already ran this.
         if sf_set:
@@ -861,6 +888,8 @@ async def update_spool(
             await client.ensure_extra_field("bambu_slicer_filament_name")
         if cn_set:
             await client.ensure_extra_field("bambu_color_name")
+        if bc_set:
+            await client.ensure_extra_field("bambu_barcode")
         new_extra: dict = {}
         if sf_set:
             new_extra["bambu_slicer_filament"] = json.dumps(data.slicer_filament or "")
@@ -868,6 +897,8 @@ async def update_spool(
             new_extra["bambu_slicer_filament_name"] = json.dumps(data.slicer_filament_name or "")
         if cn_set:
             new_extra["bambu_color_name"] = json.dumps(data.color_name or "")
+        if bc_set:
+            new_extra["bambu_barcode"] = json.dumps(data.barcode or "")
         async with _translate_spoolman_errors():
             updated = await client.merge_spool_extra(spool_id, new_extra)
 

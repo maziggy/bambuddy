@@ -405,6 +405,68 @@ class TestSpoolmanClient:
             mock_get.assert_called_once()  # Should call get_spools
 
     @pytest.mark.asyncio
+    async def test_find_spool_by_barcode_with_cached_spools(self, client):
+        """find_spool_by_barcode reads the JSON-encoded extra.bambu_barcode value."""
+        import json
+
+        cached = [
+            {"id": 1, "extra": {"bambu_barcode": json.dumps("6938936716785")}},
+            {"id": 2, "extra": {"bambu_barcode": json.dumps("012345678905")}},
+        ]
+
+        with patch.object(client, "get_all_spools", AsyncMock()) as mock_get:
+            result = await client.find_spool_by_barcode("6938936716785", cached_spools=cached)
+            assert result["id"] == 1
+            mock_get.assert_not_called()  # Should NOT call get_all_spools
+
+    @pytest.mark.asyncio
+    async def test_find_spool_by_barcode_without_cached_spools(self, client):
+        """find_spool_by_barcode fetches (including archived) spools when cache not provided."""
+        import json
+
+        mock_spools = [{"id": 1, "extra": {"bambu_barcode": json.dumps("6938936716785")}}]
+
+        with patch.object(client, "get_all_spools", AsyncMock(return_value=mock_spools)) as mock_get:
+            result = await client.find_spool_by_barcode("6938936716785")
+            assert result["id"] == 1
+            mock_get.assert_called_once_with(allow_archived=True)
+
+    @pytest.mark.asyncio
+    async def test_find_spool_by_barcode_no_match_returns_none(self, client):
+        cached = [{"id": 1, "extra": {"bambu_barcode": '"999"'}}]
+        with patch.object(client, "get_all_spools", AsyncMock()):
+            result = await client.find_spool_by_barcode("6938936716785", cached_spools=cached)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_find_spool_by_barcode_ignores_spools_without_extra(self, client):
+        cached = [{"id": 1, "extra": {}}, {"id": 2}]
+        with patch.object(client, "get_all_spools", AsyncMock()):
+            result = await client.find_spool_by_barcode("6938936716785", cached_spools=cached)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_find_spool_by_barcode_prefers_most_recently_registered(self, client):
+        """When multiple spools share a barcode, the most recently registered one wins."""
+        import json
+
+        cached = [
+            {
+                "id": 1,
+                "extra": {"bambu_barcode": json.dumps("6938936716785")},
+                "registered": "2024-01-01T00:00:00+00:00",
+            },
+            {
+                "id": 2,
+                "extra": {"bambu_barcode": json.dumps("6938936716785")},
+                "registered": "2024-06-01T00:00:00+00:00",
+            },
+        ]
+        with patch.object(client, "get_all_spools", AsyncMock()):
+            result = await client.find_spool_by_barcode("6938936716785", cached_spools=cached)
+        assert result["id"] == 2
+
+    @pytest.mark.asyncio
     async def test_find_spools_by_location_prefix_with_cached_spools(self, client):
         """Verify find_spools_by_location_prefix uses cached spools when provided."""
         cached = [

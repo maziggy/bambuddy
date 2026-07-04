@@ -30,6 +30,7 @@ class MappedSpoolFields(TypedDict):
     color_name: str | None
     color_name_is_synthesized: bool
     rgba: str | None
+    barcode: str | None
     label_weight: int | None
     core_weight: int | None
     core_weight_catalog_id: None
@@ -311,6 +312,10 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         "color_name": color_name,
         "color_name_is_synthesized": color_name_is_synthesized,
         "rgba": rgba,
+        # Spoolman has no native barcode field — persisted under
+        # spool.extra.bambu_barcode (JSON-encoded string), same pattern as
+        # bambu_slicer_filament/bambu_color_name.
+        "barcode": (_extract_extra_str(extra, "bambu_barcode") or None),
         "brand": vendor.get("name") or None,
         "label_weight": label_weight,
         "core_weight": _safe_int(

@@ -128,6 +128,29 @@ class TestSpoolmanInventoryMapping:
         # RFID tag: 32-char → tray_uuid
         assert spool["tray_uuid"] == "AABBCCDDEEFF0011AABBCCDDEEFF0011"
         assert spool["tag_uid"] is None
+        # No bambu_barcode in extra — barcode reads back as None, not dropped/missing.
+        assert spool["barcode"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_spools_reads_barcode_from_extra(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """A spool with extra.bambu_barcode maps its barcode into the response."""
+        import json as _json
+
+        spool_with_barcode = {
+            **SAMPLE_SPOOLMAN_SPOOL,
+            "extra": {"bambu_barcode": _json.dumps("6938936716785")},
+        }
+        mock_spoolman_client.get_all_spools.return_value = [spool_with_barcode]
+
+        response = await async_client.get("/api/v1/spoolman/inventory/spools")
+        spool = response.json()[0]
+        assert spool["barcode"] == "6938936716785"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -1342,6 +1365,101 @@ class TestColorNamePassthrough:
             if c.args and c.args[0] == "bambu_color_name"
         ]
         assert color_name_calls == []
+
+
+class TestBarcodePassthrough:
+    """barcode persistence via spool.extra.bambu_barcode.
+
+    Spoolman has no native barcode field, so create/update own the round-trip
+    the same way they already do for color_name/slicer_filament — this is the
+    fix for the "barcode silently dropped in Spoolman mode" bug: previously
+    SpoolmanInventoryCreate/Update had no `barcode` field at all, so the value
+    the frontend already sent was ignored, and the Barcode column/form field
+    always showed empty for Spoolman-backed spools.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_create_writes_barcode_to_spool_extra(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """barcode from create payload lands in spool.extra.bambu_barcode."""
+        import json as _json
+
+        payload = {
+            "material": "PLA",
+            "label_weight": 1000,
+            "weight_used": 0,
+            "barcode": "06938936716785",
+        }
+        response = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
+        assert response.status_code == 200
+        mock_spoolman_client.ensure_extra_field.assert_any_call("bambu_barcode")
+        mock_spoolman_client.merge_spool_extra.assert_called_once()
+        args = mock_spoolman_client.merge_spool_extra.call_args.args
+        extra_patch = args[1]
+        # Leading zero stripped by normalize_barcode, matching the local-inventory
+        # canonicalization so a repeat scan of either form resolves the same spool.
+        assert _json.loads(extra_patch["bambu_barcode"]) == "6938936716785"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_writes_barcode_to_spool_extra(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """barcode from update payload lands in spool.extra.bambu_barcode."""
+        import json as _json
+
+        payload = {"barcode": "6938936716785"}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 200
+        mock_spoolman_client.ensure_extra_field.assert_any_call("bambu_barcode")
+        mock_spoolman_client.merge_spool_extra.assert_called_once()
+        args = mock_spoolman_client.merge_spool_extra.call_args.args
+        extra_patch = args[1]
+        assert _json.loads(extra_patch["bambu_barcode"]) == "6938936716785"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_clears_barcode_with_empty_string(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """An explicit empty-string barcode clears the stored extra value."""
+        import json as _json
+
+        payload = {"barcode": ""}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 200
+        args = mock_spoolman_client.merge_spool_extra.call_args.args
+        extra_patch = args[1]
+        assert _json.loads(extra_patch["bambu_barcode"]) == ""
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_omits_barcode_skips_extra_write(
+        self,
+        async_client: AsyncClient,
+        spoolman_settings,
+        mock_spoolman_client,
+    ):
+        """When barcode is absent from the PATCH body, the route must not write
+        to spool.extra at all (preserves any existing scanned value)."""
+        payload = {"note": "no barcode here"}
+        response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
+        assert response.status_code == 200
+        barcode_calls = [
+            c for c in mock_spoolman_client.ensure_extra_field.call_args_list if c.args and c.args[0] == "bambu_barcode"
+        ]
+        assert barcode_calls == []
 
 
 class TestSpoolmanInventoryAuth:

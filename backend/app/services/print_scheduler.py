@@ -2329,30 +2329,20 @@ class PrintScheduler:
         return prev_item.status in ("completed", "cancelled")
 
     async def _power_off_if_needed(self, db: AsyncSession, item: PrintQueueItem):
-        """Power off printer if auto_off_after is enabled (waits for cooldown)."""
+        """Schedule power-off if the queue item enabled auto_off_after.
+
+        Delegates to the smart-plug manager so the off honours each plug's
+        configured strategy (time delay or temperature threshold), is cancelled
+        if the printer starts printing again, and never cuts power on a loaded
+        print (#1890). Previously this hardcoded a 50°C / 600s cooldown wait and
+        powered off on the timeout regardless of print state.
+        """
         if not item.auto_off_after:
             return
-
-        plugs = await self._get_smart_plugs(db, item.printer_id)
-        plug_ids = [p.id for p in plugs if p.enabled]
-        if plug_ids:
-            logger.info("Auto-off: Waiting for printer %s to cool down before power off...", item.printer_id)
-            # Wait for cooldown (up to 10 minutes)
-            await printer_manager.wait_for_cooldown(item.printer_id, target_temp=50.0, timeout=600)
-            # Re-fetch plugs in a fresh session after the long cooldown wait
-            async with async_session() as new_db:
-                for plug_id in plug_ids:
-                    try:
-                        result = await new_db.execute(select(SmartPlug).where(SmartPlug.id == plug_id))
-                        plug = result.scalar_one_or_none()
-                        if plug and plug.enabled:
-                            logger.info("Auto-off: Powering off plug '%s' for printer %s", plug.name, item.printer_id)
-                            service = await smart_plug_manager.get_service_for_plug(plug, new_db)
-                            await service.turn_off(plug)
-                    except Exception as e:
-                        logger.warning(
-                            "Auto-off: Failed to power off plug %s for printer %s: %s", plug_id, item.printer_id, e
-                        )
+        try:
+            await smart_plug_manager.schedule_off_after_queue_job(item.printer_id, db)
+        except Exception as e:
+            logger.warning("Auto-off: Failed to schedule power-off for printer %s: %s", item.printer_id, e)
 
     async def _get_job_name(self, db: AsyncSession, item: PrintQueueItem) -> str:
         """Get a human-readable name for a queue item."""

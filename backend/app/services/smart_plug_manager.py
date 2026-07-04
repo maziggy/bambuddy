@@ -227,12 +227,15 @@ class SmartPlugManager:
                 logger.debug("Smart plug '%s' is disabled, skipping auto-on", plug.name)
                 continue
 
+            # Cancel any pending off task FIRST — a re-print must abort a
+            # scheduled auto-off regardless of the plug's auto_on setting
+            # (#1890). Previously this lived behind the auto_on gate, so a plug
+            # with auto_on disabled kept its pending off and cut power mid-print.
+            self._cancel_pending_off(plug.id)
+
             if not plug.auto_on:
                 logger.debug("Smart plug '%s' auto_on is disabled", plug.name)
                 continue
-
-            # Cancel any pending off task
-            self._cancel_pending_off(plug.id)
 
             # Turn on the plug
             logger.info("Print started on printer %s, turning on plug '%s'", printer_id, plug.name)
@@ -289,10 +292,51 @@ class SmartPlugManager:
                 plug.name,
             )
 
-            if plug.off_delay_mode == "time":
-                self._schedule_delayed_off(plug, printer_id, plug.off_delay_minutes * 60)
-            elif plug.off_delay_mode == "temperature":
-                self._schedule_temp_based_off(plug, printer_id, plug.off_temp_threshold)
+            self._schedule_off_per_mode(plug, printer_id)
+
+    def _schedule_off_per_mode(self, plug: "SmartPlug", printer_id: int):
+        """Schedule an auto-off using the plug's configured off strategy.
+
+        Honours the per-plug ``off_delay_mode`` — ``time`` waits
+        ``off_delay_minutes``; ``temperature`` waits until the nozzle drops
+        below ``off_temp_threshold`` (#1890 — the queue/scheduler auto-off
+        paths used to hardcode 50°C / 600s and ignore these settings). Both
+        branches register a cancellable task in ``_pending_off``, so a re-print
+        cancels the pending off via :meth:`on_print_start`.
+        """
+        if plug.off_delay_mode == "temperature":
+            self._schedule_temp_based_off(plug, printer_id, plug.off_temp_threshold)
+        else:
+            # Default / "time": also the safe fallback for any unexpected value.
+            self._schedule_delayed_off(plug, printer_id, plug.off_delay_minutes * 60)
+
+    async def schedule_off_after_queue_job(self, printer_id: int, db: AsyncSession):
+        """Schedule auto-off for a printer after a queue job that opted in.
+
+        The print-queue "auto off after this job" toggle (`auto_off_after`) is
+        a per-job override, independent of the plug's global ``auto_off`` flag —
+        so unlike :meth:`on_print_complete` this does NOT gate on ``plug.auto_off``.
+        It still honours ``enabled`` and skips HA-script entities (which can only
+        be triggered, not turned off), and uses each plug's configured off
+        strategy via :meth:`_schedule_off_per_mode`. Replaces the three inline
+        ``wait_for_cooldown(50°C, 600s)`` blocks that ignored plug settings,
+        fired on the cooldown *timeout* regardless of print state, and could not
+        be cancelled by a re-print (#1890).
+        """
+        plugs = await self._get_plugs_for_printer(printer_id, db)
+        for plug in plugs:
+            if not plug.enabled:
+                logger.debug("Smart plug '%s' is disabled, skipping queue auto-off", plug.name)
+                continue
+            if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script."):
+                logger.debug("Smart plug '%s' is a HA script entity, skipping queue auto-off", plug.name)
+                continue
+            logger.info(
+                "Queue job finished on printer %s, scheduling turn-off for plug '%s'",
+                printer_id,
+                plug.name,
+            )
+            self._schedule_off_per_mode(plug, printer_id)
 
     async def on_drying_complete(self, printer_id: int, db: AsyncSession):
         """Schedule turn-off for plugs flagged ``auto_off_after_drying`` when
@@ -380,6 +424,21 @@ class SmartPlugManager:
         """Wait and turn off."""
         try:
             await asyncio.sleep(delay_seconds)
+
+            # #1890: never cut power while a print is loaded / running. The
+            # delay fires unconditionally after N minutes, so if the user
+            # re-started (or reprinted) in the meantime, the printer is active
+            # again — skip the off and clear the pending flag rather than
+            # killing the print mid-way.
+            if printer_manager.is_print_active(printer_id):
+                logger.info(
+                    "Skipping auto-off for plug %s: printer %s is printing again (state=%s)",
+                    plug_id,
+                    printer_id,
+                    getattr(printer_manager.get_status(printer_id), "state", "unknown"),
+                )
+                await self._mark_auto_off_pending(plug_id, False)
+                return
 
             # Create a minimal plug-like object for the service
             class PlugInfo:
@@ -489,6 +548,22 @@ class SmartPlugManager:
                         )
 
                     if max_nozzle_temp < temp_threshold:
+                        # #1890: the nozzle can dip below the threshold between
+                        # a finished print and a fresh one starting (e.g. a
+                        # touchscreen reprint during the PREPARE/heating phase).
+                        # Guard the turn-off so we never cut power on a loaded
+                        # print; keep polling until it's genuinely idle again.
+                        if printer_manager.is_print_active(printer_id):
+                            logger.info(
+                                "Deferring temp-based auto-off for plug %s: printer %s is printing again (state=%s)",
+                                plug_id,
+                                printer_id,
+                                getattr(printer_manager.get_status(printer_id), "state", "unknown"),
+                            )
+                            await asyncio.sleep(check_interval)
+                            elapsed += check_interval
+                            continue
+
                         # All nozzles are below threshold, turn off
                         class PlugInfo:
                             def __init__(self):
@@ -625,6 +700,22 @@ class SmartPlugManager:
                             continue
 
                     logger.info("Resuming pending auto-off for plug '%s' (printer %s)", plug.name, plug.printer_id)
+
+                    # #1890: never resume a power-off onto a live print. If the
+                    # printer started a new print during the downtime, the stale
+                    # pending off must be dropped, not executed — same guard the
+                    # live off-executors use.
+                    if printer_manager.is_print_active(plug.printer_id):
+                        logger.info(
+                            "Not resuming auto-off for plug '%s': printer %s is printing (state=%s); clearing pending",
+                            plug.name,
+                            plug.printer_id,
+                            getattr(printer_manager.get_status(plug.printer_id), "state", "unknown"),
+                        )
+                        plug.auto_off_pending = False
+                        plug.auto_off_pending_since = None
+                        await db.commit()
+                        continue
 
                     # Resume the appropriate off mode
                     if plug.off_delay_mode == "temperature":

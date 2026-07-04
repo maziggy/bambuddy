@@ -153,6 +153,20 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     Permission.MAINTENANCE_CREATE: "can_manage_maintenance",
     Permission.MAINTENANCE_UPDATE: "can_manage_maintenance",
     Permission.MAINTENANCE_DELETE: "can_manage_maintenance",
+    # can_manage_archives — print-history curation. Carved out of the admin
+    # denylist so automations can prune old prints via API key (#1888): the
+    # archive delete/update routes gate on
+    # ``require_ownership_permission(ARCHIVES_*_ALL, ARCHIVES_*_OWN)``, which
+    # resolves the ALL permission for API keys (no per-row ownership identity,
+    # same as can_queue / can_manage_library), so OWN and ALL map to the same
+    # scope. ARCHIVES_PURGE stays admin-only (see denylist) as a genuinely
+    # destructive op that drops the stats contribution, mirroring LIBRARY_PURGE.
+    # ARCHIVES_REPRINT_* stays under can_queue (it enqueues a print).
+    Permission.ARCHIVES_CREATE: "can_manage_archives",
+    Permission.ARCHIVES_UPDATE_OWN: "can_manage_archives",
+    Permission.ARCHIVES_UPDATE_ALL: "can_manage_archives",
+    Permission.ARCHIVES_DELETE_OWN: "can_manage_archives",
+    Permission.ARCHIVES_DELETE_ALL: "can_manage_archives",
     # can_access_cloud — narrow opt-in scope, gated by the router-level
     # ``_cloud_api_key_gate`` and additionally enforced here so the route-
     # level ``cloud_caller(Permission.CLOUD_AUTH)`` dep also fails closed
@@ -200,11 +214,13 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
         Permission.PRINTERS_CREATE,
         Permission.PRINTERS_UPDATE,
         Permission.PRINTERS_DELETE,
-        Permission.ARCHIVES_CREATE,
-        Permission.ARCHIVES_UPDATE_OWN,
-        Permission.ARCHIVES_UPDATE_ALL,
-        Permission.ARCHIVES_DELETE_OWN,
-        Permission.ARCHIVES_DELETE_ALL,
+        # ARCHIVES_CREATE / _UPDATE_OWN / _UPDATE_ALL / _DELETE_OWN /
+        # _DELETE_ALL moved to the allowlist under `can_manage_archives`
+        # (#1888) — split between allow/deny made the whole archive-management
+        # surface unreachable for API keys via `require_ownership_permission`
+        # (same regression class as the library/maintenance carve-outs in
+        # #1832). ARCHIVES_PURGE stays denied as a genuinely destructive op
+        # that drops the print's stats contribution.
         Permission.ARCHIVES_PURGE,
         # LIBRARY_UPDATE_ALL / LIBRARY_DELETE_ALL moved to the allowlist
         # under `can_manage_library` (#1832) — split between allow/deny made

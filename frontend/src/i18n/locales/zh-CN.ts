@@ -4260,6 +4260,7 @@ export default {
       cameraNeedsHttps: '摄像头不可用——需要 HTTPS（或 localhost）。请改用标签照片或手动输入。',
       cameraError: '摄像头不可用（{{error}}）。如果 Bambuddy 未通过 HTTPS 提供服务，这是正常现象——请改用标签照片或手动输入。',
       photoHint: '拍摄或选择料盘标签的照片——即使不支持摄像头扫描也可使用。',
+      takePhoto: '拍照',
       choosePhoto: '选择照片',
       manualHint: '输入料盘包装上印刷的条形码',
       manualPlaceholder: '例如 6938936716785',

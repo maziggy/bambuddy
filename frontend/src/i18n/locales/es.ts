@@ -4275,6 +4275,7 @@ export default {
       cameraNeedsHttps: 'Cámara no disponible — se requiere HTTPS (o localhost). Usa Foto de la etiqueta o Entrada manual en su lugar.',
       cameraError: 'Cámara no disponible ({{error}}). Si Bambuddy no se sirve por HTTPS, esto es normal — usa Foto de la etiqueta o Entrada manual en su lugar.',
       photoHint: 'Toma o elige una foto de la etiqueta del carrete — funciona incluso sin soporte de escaneo por cámara.',
+      takePhoto: 'Tomar foto',
       choosePhoto: 'Elegir foto',
       manualHint: 'Escribe el código de barras impreso en la caja del carrete',
       manualPlaceholder: 'p. ej. 6938936716785',

@@ -4261,6 +4261,7 @@ export default {
       cameraNeedsHttps: "Caméra indisponible — HTTPS (ou localhost) est requis. Utilisez plutôt Photo de l'étiquette ou Saisie manuelle.",
       cameraError: "Caméra indisponible ({{error}}). Si Bambuddy n'est pas servi en HTTPS, c'est normal — utilisez plutôt Photo de l'étiquette ou Saisie manuelle.",
       photoHint: "Prenez ou choisissez une photo de l'étiquette de la bobine — fonctionne même sans prise en charge du scan par caméra.",
+      takePhoto: 'Prendre une photo',
       choosePhoto: 'Choisir une photo',
       manualHint: 'Saisissez le code-barres imprimé sur la boîte de la bobine',
       manualPlaceholder: 'ex. 6938936716785',

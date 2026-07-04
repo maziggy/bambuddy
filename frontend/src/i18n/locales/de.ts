@@ -4272,6 +4272,7 @@ export default {
       cameraNeedsHttps: 'Kamera nicht verfügbar — HTTPS (oder localhost) ist erforderlich. Verwende stattdessen Foto des Etiketts oder Manuelle Eingabe.',
       cameraError: 'Kamera nicht verfügbar ({{error}}). Falls Bambuddy nicht über HTTPS bereitgestellt wird, ist das zu erwarten — verwende stattdessen Foto des Etiketts oder Manuelle Eingabe.',
       photoHint: 'Mache ein Foto des Spulenetiketts oder wähle eines aus — funktioniert auch ohne Kamera-Scan-Unterstützung.',
+      takePhoto: 'Foto aufnehmen',
       choosePhoto: 'Foto auswählen',
       manualHint: 'Gib den auf der Spulenverpackung aufgedruckten Barcode ein',
       manualPlaceholder: 'z. B. 6938936716785',

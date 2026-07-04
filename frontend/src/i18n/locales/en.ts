@@ -4306,6 +4306,7 @@ export default {
       cameraNeedsHttps: 'Camera not available — HTTPS (or localhost) is required. Use Photo of Label or Manual Entry instead.',
       cameraError: 'Camera unavailable ({{error}}). If Bambuddy isn\'t served over HTTPS, this is expected — use Photo of Label or Manual Entry instead.',
       photoHint: 'Take or choose a photo of the spool label — this works even without camera-scanning support.',
+      takePhoto: 'Take Photo',
       choosePhoto: 'Choose Photo',
       manualHint: 'Type the barcode printed on the spool box',
       manualPlaceholder: 'e.g. 6938936716785',

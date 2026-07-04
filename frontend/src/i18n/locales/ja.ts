@@ -4272,6 +4272,7 @@ export default {
       cameraNeedsHttps: 'カメラを利用できません — HTTPS（またはlocalhost）が必要です。代わりにラベルの写真または手動入力を使用してください。',
       cameraError: 'カメラを利用できません（{{error}}）。BambuddyがHTTPSで配信されていない場合はこれが原因です — 代わりにラベルの写真または手動入力を使用してください。',
       photoHint: 'スプールラベルの写真を撮影または選択してください — カメラスキャンに対応していない場合でも利用できます。',
+      takePhoto: '写真を撮る',
       choosePhoto: '写真を選択',
       manualHint: 'スプール箱に印刷されたバーコードを入力してください',
       manualPlaceholder: '例: 6938936716785',

@@ -4260,6 +4260,7 @@ export default {
       cameraNeedsHttps: "Fotocamera non disponibile — è richiesto HTTPS (o localhost). Usa invece Foto dell'etichetta o Inserimento manuale.",
       cameraError: "Fotocamera non disponibile ({{error}}). Se Bambuddy non è servito tramite HTTPS, è normale — usa invece Foto dell'etichetta o Inserimento manuale.",
       photoHint: "Scatta o scegli una foto dell'etichetta della bobina — funziona anche senza supporto alla scansione tramite fotocamera.",
+      takePhoto: 'Scatta foto',
       choosePhoto: 'Scegli foto',
       manualHint: 'Digita il codice a barre stampato sulla scatola della bobina',
       manualPlaceholder: 'es. 6938936716785',

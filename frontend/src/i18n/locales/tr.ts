@@ -4262,6 +4262,7 @@ export default {
       cameraNeedsHttps: 'Kamera kullanılamıyor — HTTPS (veya localhost) gereklidir. Bunun yerine Etiket Fotoğrafı veya Manuel Giriş kullanın.',
       cameraError: 'Kamera kullanılamıyor ({{error}}). Bambuddy HTTPS üzerinden sunulmuyorsa bu beklenen bir durumdur — bunun yerine Etiket Fotoğrafı veya Manuel Giriş kullanın.',
       photoHint: 'Makara etiketinin fotoğrafını çekin veya seçin — kamera taraması desteklenmese bile çalışır.',
+      takePhoto: 'Fotoğraf Çek',
       choosePhoto: 'Fotoğraf Seç',
       manualHint: 'Makara kutusuna basılı barkodu girin',
       manualPlaceholder: 'örn. 6938936716785',

@@ -4061,6 +4061,7 @@ export default {
       cameraNeedsHttps: '카메라를 사용할 수 없습니다 — HTTPS(또는 localhost)가 필요합니다. 대신 라벨 사진 또는 수동 입력을 사용하세요.',
       cameraError: '카메라를 사용할 수 없습니다 ({{error}}). Bambuddy가 HTTPS로 제공되지 않는 경우 정상적인 현상입니다 — 대신 라벨 사진 또는 수동 입력을 사용하세요.',
       photoHint: '스풀 라벨 사진을 찍거나 선택하세요 — 카메라 스캔이 지원되지 않아도 사용할 수 있습니다.',
+      takePhoto: '사진 촬영',
       choosePhoto: '사진 선택',
       manualHint: '스풀 상자에 인쇄된 바코드를 입력하세요',
       manualPlaceholder: '예: 6938936716785',

@@ -34,6 +34,21 @@ function hasCameraSupport(): boolean {
   return typeof window !== 'undefined' && window.isSecureContext && !!navigator.mediaDevices?.getUserMedia;
 }
 
+// Best-effort guess for whether this device has a camera, purely to decide
+// the Photo tab's button label ("Take Photograph" vs "Choose Photograph").
+// The <input capture> attribute that triggers the OS camera app has no JS
+// API to ask "will this actually open a camera" ahead of time, so this is a
+// heuristic, not a hard guarantee — the file picker still works either way.
+function guessDeviceHasCamera(): boolean {
+  // Touch-primary devices (phones/tablets) almost always have a camera, and
+  // are exactly the class of device where browsers honor `capture`. Desktop
+  // browsers generally ignore `capture` and show a plain file picker even if
+  // a webcam is attached, so a coarse-pointer check is a better proxy here
+  // than device enumeration would be.
+  if (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches) return true;
+  return typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+}
+
 function loadImageFile(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -111,6 +126,10 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
   const [cameraError, setCameraError] = useState<{ type: 'https-required' } | { type: 'other'; message: string } | null>(null);
   const [manualBarcode, setManualBarcode] = useState('');
   const [ocrHint, setOcrHint] = useState<string | null>(null);
+  // Drives the Photo tab's button label ("Take" vs "Choose Photograph").
+  // Seeded with the touch-device heuristic, then refined below with a real
+  // device list when the browser allows enumeration.
+  const [hasCameraDevice, setHasCameraDevice] = useState<boolean>(guessDeviceHasCamera);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -124,6 +143,23 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
+
+  useEffect(() => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    let cancelled = false;
+    navigator.mediaDevices
+      .enumerateDevices()
+      .then((devices) => {
+        if (!cancelled) setHasCameraDevice(devices.some((d) => d.kind === 'videoinput'));
+      })
+      .catch(() => {
+        // enumerateDevices can reject in some insecure-context browsers —
+        // keep the touch-device heuristic from initial state.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const resolveBarcode = async (barcode: string) => {
     if (resolvingRef.current) return;
@@ -368,7 +404,9 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
                   />
                   <Button onClick={() => fileInputRef.current?.click()}>
                     <ImageIcon className="w-4 h-4" />
-                    {t('inventory.barcodeScan.choosePhoto', 'Choose Photo')}
+                    {hasCameraDevice
+                      ? t('inventory.barcodeScan.takePhoto', 'Take Photo')
+                      : t('inventory.barcodeScan.choosePhoto', 'Choose Photo')}
                   </Button>
                   {ocrHint && <p className="text-xs text-bambu-gray text-center">{ocrHint}</p>}
                 </div>

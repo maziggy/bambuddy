@@ -726,6 +726,7 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
       tray_uuid: null,
       data_origin: null,
       tag_type: null,
+      barcode: null,
       last_scale_weight: null,
       last_weighed_at: null,
       category: formData.category.trim() || null,

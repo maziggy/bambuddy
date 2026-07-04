@@ -201,7 +201,7 @@ const columnHeaders: Record<string, (t: TFn) => string> = {
   note: (t) => t('inventory.note'),
   pa_k: () => 'PA(K)',
   tag_id: () => 'Tag ID',
-  barcode: (t) => t('inventory.barcode', 'Barcode'),
+  barcode: (t) => t('inventory.barcode', { defaultValue: 'Barcode' }),
   data_origin: () => 'Data Origin',
   tag_type: () => 'Linked Tag Type',
   stock: (t) => t('inventory.stock'),

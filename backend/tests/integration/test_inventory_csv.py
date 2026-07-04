@@ -489,6 +489,63 @@ class TestInventoryCsvExtraColumns:
         assert data["error_count"] == 1
         assert "low_stock_threshold_pct" in data["rows"][0]["reason"]
 
+    async def test_barcode_round_trip(self, async_client: AsyncClient, db_session: AsyncSession):
+        # barcode must survive an export → import cycle, canonicalized the
+        # same way a manual form edit or a scan would be (no leading zeros).
+        db_session.add(
+            Spool(
+                material="PLA",
+                brand="Sunlu",
+                color_name="Black",
+                rgba="000000ff",
+                barcode="6938936716785",
+            )
+        )
+        await db_session.commit()
+
+        csv_text = (await async_client.get("/api/v1/inventory/spools/export")).text
+        assert "barcode" in csv_text.splitlines()[0]
+        assert "6938936716785" in csv_text
+
+        for spool in (await db_session.execute(select(Spool))).scalars().all():
+            await db_session.delete(spool)
+        await db_session.commit()
+
+        response = await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+        assert response.status_code == 200, response.text
+        assert response.json()["created"] == 1
+
+        spool = (await db_session.execute(select(Spool))).scalars().one()
+        assert spool.barcode == "6938936716785"
+
+    async def test_barcode_is_canonicalized_on_import(self, async_client: AsyncClient, db_session: AsyncSession):
+        # A leading-zero EAN-13 typed straight into the CSV must normalize to
+        # the same canonical form the scan-to-add lookup uses, so it still
+        # matches a later scan of the UPC-A printing of the same barcode.
+        csv_text = "material,barcode\nPLA,0012345678905\n"
+
+        response = await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+        assert response.status_code == 200, response.text
+        assert response.json()["created"] == 1
+
+        spool = (await db_session.execute(select(Spool))).scalars().one()
+        assert spool.barcode == "12345678905"
+
+    async def test_import_without_barcode_column_defaults_to_none(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        # A CSV that never had the barcode column (e.g. exported before this
+        # feature existed, or hand-written) must import cleanly with barcode
+        # left unset — not an error, not a missing-column failure.
+        csv_text = "material,brand,color_name,rgba\nPLA,Sunlu,Black,000000ff\n"
+
+        response = await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+        assert response.status_code == 200, response.text
+        assert response.json()["created"] == 1
+
+        spool = (await db_session.execute(select(Spool))).scalars().one()
+        assert spool.barcode is None
+
 
 @pytest.mark.asyncio
 @pytest.mark.integration

@@ -33,8 +33,11 @@ from backend.app.schemas.spool import SpoolCreate
 # import — `weight_used` is the source of truth, and accepting both would let
 # them contradict. `last_used` is a timestamp the model carries but SpoolCreate
 # does not, so import applies it to the ORM object directly (see persist path).
-# `storage_location`, `category` and `low_stock_threshold_pct` are SpoolCreate
-# fields included so a round-trip preserves them (they'd otherwise be lost).
+# `storage_location`, `category`, `low_stock_threshold_pct` and `barcode` are
+# SpoolCreate fields included so a round-trip preserves them (they'd otherwise
+# be lost). `barcode` is canonicalized by SpoolCreate's validator on import
+# (digits only, leading zeros stripped) same as a manual form edit, so a
+# re-imported spool still resolves on a future scan-to-add lookup.
 CSV_COLUMNS = [
     "material",
     "brand",
@@ -54,6 +57,7 @@ CSV_COLUMNS = [
     "storage_location",
     "category",
     "low_stock_threshold_pct",
+    "barcode",
 ]
 
 # Upload ceiling for the import endpoint. A spool inventory CSV is a few KB
@@ -350,8 +354,11 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
 
         row_error: str | None = None
 
-        # Plain text passthrough columns.
-        for field in ("subtype", "effect_type", "extra_colors", "note", "storage_location", "category"):
+        # Plain text passthrough columns. `cell()` returns "" when the column
+        # is absent from the uploaded file's header (see `col_index` above),
+        # so an import missing e.g. `barcode` entirely just falls through to
+        # SpoolCreate's default (None) — same as any other omitted column.
+        for field in ("subtype", "effect_type", "extra_colors", "note", "storage_location", "category", "barcode"):
             value = cell(raw_row, field)
             if value:
                 data[field] = value

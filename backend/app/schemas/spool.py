@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
@@ -77,6 +78,21 @@ def normalize_effect_type(value: str | None) -> str | None:
     return canonical
 
 
+def normalize_barcode(value: str | None) -> str | None:
+    """Canonicalize a barcode to the same form the scan-to-add lookup uses:
+    digits only, leading zeros stripped, so a manually-typed UPC-A and its
+    EAN-13 leading-zero form store identically and match on a later scan.
+    Mirrors ``backend.app.services.ofd_client.canon()`` — duplicated rather
+    than imported so this schema module doesn't reach into the services layer.
+    """
+    if value is None:
+        return None
+    digits = re.sub(r"\D", "", value)
+    if not digits:
+        return None
+    return digits.lstrip("0") or "0"
+
+
 class SpoolBase(BaseModel):
     material: str = Field(..., min_length=1, max_length=50)
     subtype: str | None = None
@@ -95,6 +111,11 @@ class SpoolBase(BaseModel):
     @classmethod
     def _validate_effect_type(cls, v: str | None) -> str | None:
         return normalize_effect_type(v)
+
+    @field_validator("barcode")
+    @classmethod
+    def _validate_barcode(cls, v: str | None) -> str | None:
+        return normalize_barcode(v)
 
     label_weight: int = 1000
     core_weight: int = 250
@@ -156,6 +177,11 @@ class SpoolUpdate(BaseModel):
     @classmethod
     def _validate_effect_type(cls, v: str | None) -> str | None:
         return normalize_effect_type(v)
+
+    @field_validator("barcode")
+    @classmethod
+    def _validate_barcode(cls, v: str | None) -> str | None:
+        return normalize_barcode(v)
 
     label_weight: int | None = None
     core_weight: int | None = None

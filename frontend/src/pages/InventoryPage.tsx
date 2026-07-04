@@ -91,6 +91,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'note', label: 'Note', visible: false },
   { id: 'pa_k', label: 'PA(K)', visible: true },
   { id: 'tag_id', label: 'Tag ID', visible: false },
+  { id: 'barcode', label: 'Barcode', visible: false },
   { id: 'data_origin', label: 'Data Origin', visible: false },
   { id: 'tag_type', label: 'Linked Tag Type', visible: false },
   { id: 'stock', label: 'Stock', visible: false },
@@ -200,6 +201,7 @@ const columnHeaders: Record<string, (t: TFn) => string> = {
   note: (t) => t('inventory.note'),
   pa_k: () => 'PA(K)',
   tag_id: () => 'Tag ID',
+  barcode: (t) => t('inventory.barcode', 'Barcode'),
   data_origin: () => 'Data Origin',
   tag_type: () => 'Linked Tag Type',
   stock: (t) => t('inventory.stock'),
@@ -311,6 +313,14 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
     return (
       <span className="text-sm text-bambu-gray font-mono" title={tag}>
         {tag.length > 12 ? `${tag.slice(0, 6)}...${tag.slice(-4)}` : tag}
+      </span>
+    );
+  },
+  barcode: ({ spool }) => {
+    if (!spool.barcode) return <span className="text-sm text-bambu-gray/50">-</span>;
+    return (
+      <span className="text-sm text-bambu-gray font-mono" title={spool.barcode}>
+        {spool.barcode}
       </span>
     );
   },
@@ -431,6 +441,7 @@ const columnSortValues: Record<string, (spool: InventorySpool, assignmentMap: Re
   used: (s) => s.weight_used,
   remaining: (s) => s.label_weight > 0 ? Math.max(0, s.label_weight - s.weight_used) / s.label_weight : 0,
   note: (s) => (s.note || '').toLowerCase(),
+  barcode: (s) => s.barcode || '',
   data_origin: (s) => (s.data_origin || '').toLowerCase(),
   tag_type: (s) => (s.tag_type || '').toLowerCase(),
   stock: (s) => s.slicer_filament ? 1 : 0,
@@ -489,7 +500,6 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     spool?: InventorySpool | null;
     mode: SpoolFormMode;
     initialData?: Partial<SpoolFormData>;
-    scannedBarcode?: string;
     fromBarcodeScan?: boolean;
   } | null>(null);
   const [barcodeScanOpen, setBarcodeScanOpen] = useState(false);
@@ -503,16 +513,14 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     if (result.color_name) initialData.color_name = result.color_name;
     if (result.rgba) initialData.rgba = result.rgba;
     if (result.label_weight) initialData.label_weight = result.label_weight;
-    // No match at all (not even an OCR guess) — leave a breadcrumb so the
-    // user isn't staring at a blank form with zero context.
-    if (!result.matched && Object.keys(initialData).length === 0 && result.barcode) {
-      initialData.note = `Barcode: ${result.barcode}`;
-    }
+    // Populate the visible Barcode field whenever we captured one — whether
+    // it resolved (inventory/OFD match) or not, so the user always sees what
+    // was scanned and it's ready to save for next time.
+    if (result.barcode) initialData.barcode = result.barcode;
     setFormModal({
       spool: null,
       mode: 'create',
       initialData,
-      scannedBarcode: result.barcode ?? undefined,
       fromBarcodeScan: true,
     });
   }, []);
@@ -1337,7 +1345,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
   return (
     <div className="p-4 md:p-8 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
             <Package className="w-7 h-7 text-bambu-green" />
@@ -1345,7 +1353,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           </h1>
           <p className="text-bambu-gray mt-1">{t('inventory.subtitle')}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* CSV import/export (#1576). Operates on Bambuddy's local inventory.
               In Spoolman mode the buttons stay visible (feature parity) but are
               disabled with a hint pointing at Spoolman's own CSV export, since
@@ -1354,23 +1362,23 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
             variant="secondary"
             disabled={spoolmanMode}
             onClick={() => setCsvImportOpen(true)}
-            title={spoolmanCsvHint}
+            title={spoolmanCsvHint ?? t('inventory.csv.importButton', 'Import CSV')}
           >
             <Upload className="w-4 h-4" />
-            {t('inventory.csv.importButton', 'Import CSV')}
+            <span className="hidden sm:inline">{t('inventory.csv.importButton', 'Import CSV')}</span>
           </Button>
           <Button
             variant="secondary"
             disabled={spoolmanMode || exportingCsv}
             onClick={handleExportCsv}
-            title={spoolmanCsvHint}
+            title={spoolmanCsvHint ?? t('inventory.csv.exportButton', 'Export CSV')}
           >
             {exportingCsv ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            {t('inventory.csv.exportButton', 'Export CSV')}
+            <span className="hidden sm:inline">{t('inventory.csv.exportButton', 'Export CSV')}</span>
           </Button>
-          <Button variant="secondary" onClick={() => setLocationsModalOpen(true)}>
+          <Button variant="secondary" onClick={() => setLocationsModalOpen(true)} title={t('locations.manage')}>
             <MapPin className="w-4 h-4" />
-            {t('locations.manage')}
+            <span className="hidden sm:inline">{t('locations.manage')}</span>
           </Button>
           <Button
             variant="secondary"
@@ -1386,15 +1394,15 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
             }
           >
             <Printer className="w-4 h-4" />
-            {t('inventory.labels.printLabels', 'Print labels…')}
+            <span className="hidden sm:inline">{t('inventory.labels.printLabels', 'Print labels…')}</span>
           </Button>
-          <Button variant="secondary" onClick={() => setBarcodeScanOpen(true)}>
+          <Button variant="secondary" onClick={() => setBarcodeScanOpen(true)} title={t('inventory.barcodeScan.scanButton', 'Scan Barcode')}>
             <ScanBarcode className="w-4 h-4" />
-            {t('inventory.barcodeScan.scanButton', 'Scan Barcode')}
+            <span className="hidden sm:inline">{t('inventory.barcodeScan.scanButton', 'Scan Barcode')}</span>
           </Button>
-          <Button onClick={() => setFormModal({ spool: null, mode: 'create' })}>
+          <Button onClick={() => setFormModal({ spool: null, mode: 'create' })} title={t('inventory.addSpool')}>
             <Plus className="w-4 h-4" />
-            {t('inventory.addSpool')}
+            <span className="hidden sm:inline">{t('inventory.addSpool')}</span>
           </Button>
         </div>
       </div>
@@ -2241,7 +2249,6 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           spoolsQueryKey={spoolsQueryKey}
           initialData={formModal.initialData}
           forcedDataOrigin={formModal.fromBarcodeScan ? 'barcode_scan' : undefined}
-          scannedBarcode={formModal.scannedBarcode}
         />
       )}
 

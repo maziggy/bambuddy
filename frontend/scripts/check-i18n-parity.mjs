@@ -143,6 +143,7 @@ function isAlwaysAllowedIdentical(value) {
 const DE_COGNATES = [
   'Name', 'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Modus',
   'Stop', 'Reset', 'Test', 'Code', 'Token', 'Server', 'Port', 'Bug', 'Job',
+  'Barcode',  // scan-to-add — German uses the same English loanword
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
 

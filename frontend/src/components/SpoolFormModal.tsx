@@ -47,9 +47,6 @@ interface SpoolFormModalProps {
   initialData?: Partial<SpoolFormData>;
   /** Forces `data_origin` on create (e.g. "barcode_scan"). Ignored when editing. */
   forcedDataOrigin?: string;
-  /** Barcode that produced `initialData`, persisted on the new spool so a
-   *  later scan of the same barcode resolves from inventory. Ignored when editing. */
-  scannedBarcode?: string;
 }
 
 export function SpoolFormModal({
@@ -64,7 +61,6 @@ export function SpoolFormModal({
   spoolsQueryKey = ['inventory-spools'],
   initialData,
   forcedDataOrigin,
-  scannedBarcode,
 }: SpoolFormModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -385,6 +381,10 @@ export function SpoolFormModal({
           low_stock_threshold_pct: spool.low_stock_threshold_pct ?? null,
           location_id: spool.location_id ?? null,
           spoolman_filament_id: null,
+          // A copy represents a new, not-yet-scanned physical spool — carrying
+          // over the source's barcode would make it falsely resolve to this
+          // copy on a later scan of the original item.
+          barcode: isCopying ? '' : (spool.barcode || ''),
         });
         setPresetInputValue(spool.slicer_filament_name || spool.slicer_filament || '');
 
@@ -782,6 +782,7 @@ export function SpoolFormModal({
       cost_per_kg: formData.cost_per_kg,
       category: formData.category.trim() || null,
       low_stock_threshold_pct: formData.low_stock_threshold_pct,
+      barcode: formData.barcode.trim() || null,
       ...(spoolmanMode ? { spoolman_filament_id: formData.spoolman_filament_id } : {}),
     };
 
@@ -798,9 +799,8 @@ export function SpoolFormModal({
     }
 
     // Scan-to-add provenance: only applies to a fresh create, never an edit.
-    if (!isEditing) {
-      if (forcedDataOrigin) data.data_origin = forcedDataOrigin;
-      if (scannedBarcode) data.barcode = scannedBarcode;
+    if (!isEditing && forcedDataOrigin) {
+      data.data_origin = forcedDataOrigin;
     }
 
     if (isEditing) {

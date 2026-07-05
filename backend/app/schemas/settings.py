@@ -274,12 +274,12 @@ class AppSettings(BaseModel):
         description="Low stock threshold percentage (%) for inventory filtering and display",
     )
 
-    # Gates the Open Filament Database outbound lookup used by scan-to-add
-    # barcode/label scanning. Scanning against the user's own inventory is
-    # always local and unaffected by this toggle.
+    # Gates the outbound lookups (Open Filament Database, SpoolmanDB-Community)
+    # used by scan-to-add barcode/label scanning. Scanning against the user's
+    # own inventory is always local and unaffected by this toggle.
     barcode_lookup_enabled: bool = Field(
         default=True,
-        description="Allow barcode/label scanning to query the community Open Filament Database",
+        description="Allow barcode/label scanning to query community filament databases (Open Filament Database, SpoolmanDB-Community)",
     )
 
     # Session policy (#1706) — admin-set ceiling for user session lifetime.

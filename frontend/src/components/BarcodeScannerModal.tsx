@@ -12,7 +12,7 @@ type ScanTab = 'scan' | 'photo' | 'manual';
 export interface ScannedFilamentResult {
   barcode: string | null;
   matched: boolean;
-  source: 'inventory' | 'ofd' | 'parsed' | null;
+  source: 'inventory' | 'ofd' | 'spoolmandb-community' | 'parsed' | null;
   material: string | null;
   brand: string | null;
   subtype: string | null;
@@ -111,6 +111,15 @@ async function ocrBestOrientation(file: File, onProgress: (message: string) => v
   return best.text;
 }
 
+function getSourceLabel(
+  source: ScannedFilamentResult['source'],
+  t: (key: string, fallback: string) => string,
+): string {
+  if (source === 'inventory') return t('inventory.barcodeScan.sourceInventory', 'your inventory');
+  if (source === 'spoolmandb-community') return t('inventory.barcodeScan.sourceSpoolmanDbCommunity', 'SpoolmanDB-Community');
+  return t('inventory.barcodeScan.sourceOfd', 'the Open Filament Database');
+}
+
 export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModalProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -170,10 +179,7 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
     try {
       const result = await api.lookupFilamentBarcode(barcode);
       if (result.matched) {
-        const sourceLabel =
-          result.source === 'inventory'
-            ? t('inventory.barcodeScan.sourceInventory', 'your inventory')
-            : t('inventory.barcodeScan.sourceOfd', 'the Open Filament Database');
+        const sourceLabel = getSourceLabel(result.source, t);
         showToast(t('inventory.barcodeScan.matchedToast', 'Matched from {{source}}', { source: sourceLabel }), 'success');
       } else {
         showToast(t('inventory.barcodeScan.noMatchToast', 'No match found — fill in the details manually'), 'info');
@@ -283,10 +289,7 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
       setLoadingMessage(t('inventory.barcodeScan.parsingLabel', 'Parsing label…'));
       const result = await api.parseFilamentLabel(text);
       if (result.matched) {
-        const sourceLabel =
-          result.source === 'inventory'
-            ? t('inventory.barcodeScan.sourceInventory', 'your inventory')
-            : t('inventory.barcodeScan.sourceOfd', 'the Open Filament Database');
+        const sourceLabel = getSourceLabel(result.source, t);
         showToast(t('inventory.barcodeScan.matchedToast', 'Matched from {{source}}', { source: sourceLabel }), 'success');
       } else if (result.material || result.brand) {
         showToast(t('inventory.barcodeScan.guessedToast', 'Guessed details from the label — please review'), 'info');

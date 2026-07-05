@@ -46,6 +46,7 @@ class APIKey(Base):
         Boolean, default=True
     )  # Create/update/delete projects + manage membership (add archives) (#1893)
     can_access_cloud: Mapped[bool] = mapped_column(Boolean, default=False)  # Read /cloud/* on the owner's behalf
+    can_run_macros: Mapped[bool] = mapped_column(Boolean, default=False)  # Trigger macros via webhook
     # Narrowly-scoped settings write: only POST /settings/electricity-price.
     # Lets HA/Tibber-style automations push dynamic tariff updates without
     # granting full SETTINGS_UPDATE (which is denied for API keys because it

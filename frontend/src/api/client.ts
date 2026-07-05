@@ -3162,6 +3162,7 @@ export type Permission =
   | 'api_keys:read' | 'api_keys:create' | 'api_keys:update' | 'api_keys:delete'
   | 'users:read' | 'users:create' | 'users:update' | 'users:delete'
   | 'groups:read' | 'groups:create' | 'groups:update' | 'groups:delete'
+  | 'macros:read' | 'macros:create' | 'macros:update' | 'macros:delete' | 'macros:run'
   | 'pipelines:read' | 'pipelines:write' | 'pipelines:run'
   | 'websocket:connect';
 
@@ -6481,7 +6482,79 @@ export const api = {
     request<{ success: boolean }>(`/local-presets/${id}`, { method: 'DELETE' }),
   refreshBaseProfileCache: () =>
     request<{ refreshed: number; failed: number; total: number }>('/local-presets/base-cache/refresh', { method: 'POST' }),
+
+  // Macro cfg files
+  getMacroCfgFiles: () => request<MacroCfgFile[]>('/macros/cfg-files'),
+  getMacroCfgFile: (id: number) => request<MacroCfgFile>(`/macros/cfg-files/${id}`),
+  getMacroCfgFileContent: (id: number) => request<{ content: string }>(`/macros/cfg-files/${id}/content`),
+  createMacroCfgFile: (data: { name: string; content?: string }) =>
+    request<MacroCfgFile>('/macros/cfg-files', { method: 'POST', body: JSON.stringify(data) }),
+  saveMacroCfgFile: (id: number, content: string) =>
+    request<MacroCfgFile>(`/macros/cfg-files/${id}`, { method: 'PUT', body: JSON.stringify({ content }) }),
+  deleteMacroCfgFile: (id: number) =>
+    request<{ ok: boolean }>(`/macros/cfg-files/${id}`, { method: 'DELETE' }),
+
+  // Macros
+  getMacros: () => request<Macro[]>('/macros'),
+  getMacro: (id: number) => request<Macro>(`/macros/${id}`),
+  runMacro: (id: number, printer_id?: number) =>
+    request<MacroRun>(`/macros/${id}/run`, { method: 'POST', body: JSON.stringify({ printer_id: printer_id ?? null }) }),
+  getMacroRuns: (id: number) => request<MacroRun[]>(`/macros/${id}/runs`),
+  getMacroRun: (runId: number) => request<MacroRun>(`/macros/runs/${runId}`),
+  cancelMacroRun: (runId: number) => request<{ ok: boolean }>(`/macros/runs/${runId}/cancel`, { method: 'POST' }),
+  getGcodeWhitelist: () => request<string[]>('/macros/gcode-whitelist'),
+  getFunctionCatalogue: () => request<MacroFunctionSpec[]>('/macros/functions'),
+  execLine: (line: string, printer_id?: number) =>
+    request<{ status: string; log: string; hms_errors: { code: string; severity: number; message: string }[]; printer_state: string; run_id: number | null }>('/macros/exec', { method: 'POST', body: JSON.stringify({ line, printer_id: printer_id ?? null }) }),
 };
+
+// Macro types
+export interface MacroCfgFile {
+  id: number;
+  name: string;
+  file_path: string;
+  parse_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Macro {
+  id: number;
+  name: string;
+  description: string | null;
+  cfg_file_id: number | null;
+  trigger_type: 'manual' | 'webhook' | 'schedule';
+  cron_expression: string | null;
+  printer_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MacroRun {
+  id: number;
+  macro_id: number;
+  printer_id: number | null;
+  status: 'pending' | 'running' | 'success' | 'error';
+  trigger: 'manual' | 'webhook' | 'schedule' | 'gcode_embed' | 'terminal';
+  started_at: string;
+  finished_at: string | null;
+  log: string | null;
+}
+
+export interface MacroFunctionArg {
+  description: string;
+  required: boolean;
+  default: string | null;
+}
+
+export interface MacroFunctionSpec {
+  name: string;
+  description: string;
+  args: Record<string, MacroFunctionArg>;
+  context_var: string | null;
+  requires_printer: boolean;
+  allowed_in_embed: boolean;
+}
 
 // AMS History types
 export interface AMSHistoryPoint {

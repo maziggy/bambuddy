@@ -371,8 +371,27 @@ class ThreeMFParser:
 
                     raw_model = match.group(1).strip()
                     self.metadata["sliced_for_model"] = normalize_printer_model(raw_model)
+
+            # Scan full G-code for embedded macro calls: "; MACRO: macro_name [args]"
+            self._parse_embedded_macros(zf, gcode_path)
         except Exception:
             pass  # G-code header parsing is best-effort; metadata may come from other sources
+
+    def _parse_embedded_macros(self, zf: zipfile.ZipFile, gcode_path: str):
+        """Scan G-code for '; MACRO: name' comment lines and collect them."""
+        try:
+            macro_pattern = re.compile(r"^\s*;\s*MACRO:\s*(.+)", re.IGNORECASE)
+            embedded: list[str] = []
+            with zf.open(gcode_path) as f:
+                for raw_line in f:
+                    line = raw_line.decode("utf-8", errors="ignore").rstrip()
+                    m = macro_pattern.match(line)
+                    if m:
+                        embedded.append(m.group(1).strip())
+            if embedded:
+                self.metadata["embedded_macros"] = embedded
+        except Exception:
+            pass  # Best-effort; don't block archiving
 
     def _extract_filament_info(self, data: dict):
         """Extract filament info from project settings — includes support
@@ -1303,6 +1322,28 @@ class ArchiveService:
         self.db.add(archive)
         await self.db.commit()
         await self.db.refresh(archive)
+
+        # Fire any embedded macros found in the G-code (side-effect only; no printer commands)
+        embedded_macros: list[str] = metadata.get("embedded_macros", [])
+        if embedded_macros:
+            import asyncio
+
+            from sqlalchemy import select as _select
+
+            from backend.app.models.macro import Macro
+            from backend.app.services.macro_runner import macro_runner
+
+            result = await self.db.execute(_select(Macro).where(Macro.name.in_(embedded_macros)))
+            found_macros = result.scalars().all()
+            for macro in found_macros:
+                asyncio.create_task(
+                    macro_runner.run_macro(
+                        macro.id,
+                        printer_id,
+                        "gcode_embed",
+                        allow_printer_commands=False,
+                    )
+                )
 
         return archive
 

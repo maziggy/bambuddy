@@ -1308,6 +1308,7 @@ def check_permission(api_key: APIKey, permission: str) -> None:
         "queue": "can_queue",
         "control_printer": "can_control_printer",
         "read_status": "can_read_status",
+        "macros": "can_run_macros",
     }
 
     if permission not in permission_map:

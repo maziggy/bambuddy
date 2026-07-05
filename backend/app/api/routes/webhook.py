@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,8 +10,10 @@ from backend.app.core.auth import check_permission, check_printer_access, get_ap
 from backend.app.core.database import get_db
 from backend.app.models.api_key import APIKey
 from backend.app.models.archive import PrintArchive
+from backend.app.models.macro import Macro, MacroRun
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
+from backend.app.services.macro_runner import macro_runner
 from backend.app.services.printer_manager import printer_manager
 
 logger = logging.getLogger(__name__)
@@ -338,3 +341,45 @@ async def webhook_get_queue_status(
         )
 
     return response
+
+
+# ------------------------------------------------------------------
+# Macro webhook
+# ------------------------------------------------------------------
+
+
+class MacroRunWebhookRequest(BaseModel):
+    printer_id: int | None = None
+
+
+@router.post("/macro/{macro_id}/run")
+async def webhook_run_macro(
+    macro_id: int,
+    body: MacroRunWebhookRequest,
+    api_key: APIKey = Depends(get_api_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger a macro via webhook. Authenticated by API key."""
+    check_permission(api_key, "macros")
+
+    macro = await db.get(Macro, macro_id)
+    if not macro:
+        raise HTTPException(404, "Macro not found")
+    if macro.trigger_type != "webhook":
+        raise HTTPException(400, "Macro is not configured for webhook triggering")
+
+    printer_id = body.printer_id if body.printer_id is not None else macro.printer_id
+    run = MacroRun(
+        macro_id=macro_id,
+        printer_id=printer_id,
+        status="pending",
+        trigger="webhook",
+    )
+    db.add(run)
+    await db.flush()
+    run_id = run.id
+    await db.commit()
+
+    asyncio.create_task(macro_runner.run_macro(macro_id, printer_id, "webhook", run_id=run_id))
+
+    return {"run_id": run_id, "status": "accepted"}

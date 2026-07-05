@@ -3261,11 +3261,11 @@ async def home_axes(
         raise HTTPException(404, "Printer not found")
 
     client = printer_manager.get_client(printer_id)
-    if not client:
-        raise HTTPException(400, "Printer not connected")
+    if not client or not client.state.connected:
+        raise HTTPException(503, "Printer is not connected")
 
-    if not client.send_gcode("G28"):
-        raise HTTPException(500, "Failed to send home command")
+    if not client.send_gcode("G28\n"):
+        raise HTTPException(503, "Failed to send home command — printer may have just disconnected")
 
     return {"success": True, "message": "Full auto-home sequence sent"}
 

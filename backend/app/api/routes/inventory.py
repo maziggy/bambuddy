@@ -30,6 +30,7 @@ from backend.app.models.spool_k_profile import SpoolKProfile
 from backend.app.models.user import User
 from backend.app.schemas.location import LocationCreate, LocationResponse, LocationUpdate
 from backend.app.schemas.spool import (
+    MAX_EXTRA_COLOR_STOPS,
     BarcodeLookupResponse,
     LabelParseResponse,
     SpoolAssignmentCreate,
@@ -44,7 +45,7 @@ from backend.app.schemas.spool import (
     normalize_extra_colors,
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
-from backend.app.services import ofd_client
+from backend.app.services import ofd_client, spoolmandb_community_client
 from backend.app.services.filament_label_parser import extract_barcode, parse_title
 from backend.app.services.location_service import (
     DUPLICATE_LOCATION_NAME,
@@ -1081,6 +1082,107 @@ async def sync_from_filamentcolors(
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
+def _derive_effect_type(variant: dict) -> str | None:
+    """Map SpoolmanDB-Community's overlapping effect-ish fields onto Bambuddy's
+    single ``effect_type`` enum (see ``ALLOWED_EFFECT_TYPES`` in schemas/spool.py).
+
+    Priority (most-structural signal first): a multi-color split (driven by
+    ``multi_color_direction`` + how many hex stops it has) beats a simple
+    glow/pattern/translucent/finish flag, since it describes the filament's
+    physical structure rather than just a surface accent.
+    """
+    hexes = variant.get("hexes") or []
+    direction = variant.get("multi_color_direction")
+    if direction and len(hexes) >= 2:
+        if direction == "longitudinal":
+            return "gradient"
+        if len(hexes) == 2:
+            return "dual-color"
+        if len(hexes) == 3:
+            return "tri-color"
+        return "multicolor"
+    if variant.get("glow"):
+        return "glow"
+    if variant.get("pattern") == "sparkle":
+        return "sparkle"
+    if variant.get("pattern") == "marble":
+        return "marble"
+    if variant.get("translucent"):
+        return "translucent"
+    if variant.get("finish") == "matte":
+        return "matte"
+    return None
+
+
+@router.post("/colors/sync-spoolmandb-community")
+async def sync_from_spoolmandb_community(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Sync colors from SpoolmanDB-Community into the color catalog.
+
+    Unlike the FilamentColors.xyz sync above (a paginated live API, hence the
+    SSE progress stream), SpoolmanDB-Community is fetched as one bounded
+    download — a plain JSON response is enough.
+    """
+    try:
+        variants = await spoolmandb_community_client.get_filaments()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"SpoolmanDB-Community fetch failed: {e}") from e
+
+    added = 0
+    skipped = 0
+    seen_keys: set[tuple[str, str, str | None]] = set()
+    for variant in variants:
+        manufacturer = variant.get("brand")
+        color_name = variant.get("color_name")
+        material = variant.get("material") or None
+        rgba = variant.get("rgba")
+        if not manufacturer or not color_name or not rgba:
+            skipped += 1
+            continue
+
+        key = (manufacturer, color_name, material)
+        if key in seen_keys:
+            skipped += 1
+            continue
+        seen_keys.add(key)
+
+        existing = await db.execute(
+            select(ColorCatalogEntry)
+            .where(
+                ColorCatalogEntry.manufacturer == manufacturer,
+                ColorCatalogEntry.color_name == color_name,
+                ColorCatalogEntry.material == material,
+            )
+            .limit(1)
+        )
+        if existing.scalar_one_or_none():
+            skipped += 1
+            continue
+
+        hexes = variant.get("hexes") or []
+        # Canonical extra_colors form: lowercase, no '#', comma-joined (see
+        # normalize_extra_colors) — capped at MAX_EXTRA_COLOR_STOPS extra stops.
+        extra_stops = [h.lstrip("#").lower() for h in hexes[1 : 1 + MAX_EXTRA_COLOR_STOPS]]
+        extra_colors = ",".join(extra_stops) if extra_stops else None
+        db.add(
+            ColorCatalogEntry(
+                manufacturer=manufacturer,
+                color_name=color_name,
+                hex_color=f"#{rgba[:6]}",
+                material=material,
+                is_default=False,
+                extra_colors=extra_colors,
+                effect_type=_derive_effect_type(variant),
+            )
+        )
+        added += 1
+
+    await db.commit()
+    return {"added": added, "skipped": skipped, "total": len(variants)}
+
+
 # ── Spool CRUD ───────────────────────────────────────────────────────────────
 
 
@@ -1301,14 +1403,19 @@ _BARCODE_FIELD_KEYS = (
 async def _resolve_barcode(
     db: AsyncSession, canonical_barcode: str, settings: dict[str, str]
 ) -> tuple[dict, str | None]:
-    """Resolve a canonicalized barcode: the user's own inventory first, then OFD.
+    """Resolve a canonicalized barcode: the user's own inventory first, then OFD,
+    then SpoolmanDB-Community.
 
     When Spoolman mode is active, "the user's own inventory" means Spoolman's
     spools (barcode stored under extra.bambu_barcode — see find_spool_by_barcode)
     since that's where the visible inventory actually lives; otherwise it means
-    the local ``Spool`` table. Falls back to OFD if barcode_lookup_enabled.
+    the local ``Spool`` table. Falls back to OFD, then SpoolmanDB-Community, if
+    barcode_lookup_enabled — OFD stays first since it's purpose-built for
+    barcode lookups; SpoolmanDB-Community's barcode coverage is far sparser but
+    broader in brand coverage, so it's a secondary fallback, not a replacement.
 
-    Returns (fields, source). ``source`` is "inventory", "ofd", or None (no match).
+    Returns (fields, source). ``source`` is "inventory", "ofd",
+    "spoolmandb-community", or None (no match).
     """
     client = await _ensure_spoolman_client(settings)
     if client:
@@ -1343,6 +1450,14 @@ async def _resolve_barcode(
         ofd_fields = None
     if ofd_fields:
         return {key: ofd_fields.get(key) for key in _BARCODE_FIELD_KEYS}, "ofd"
+
+    try:
+        spoolmandb_fields = await spoolmandb_community_client.lookup(canonical_barcode)
+    except Exception:
+        logger.warning("SpoolmanDB-Community lookup failed for barcode %s", canonical_barcode, exc_info=True)
+        spoolmandb_fields = None
+    if spoolmandb_fields:
+        return {key: spoolmandb_fields.get(key) for key in _BARCODE_FIELD_KEYS}, "spoolmandb-community"
 
     return {}, None
 
@@ -1386,8 +1501,8 @@ async def parse_label(
     """Parse OCR'd label text into best-effort filament fields.
 
     If the text also contains a barcode, that barcode is resolved through the
-    same inventory-then-OFD chain as ``GET /barcode/{barcode}`` and overrides
-    the text-heuristic guesses where present.
+    same inventory → OFD → SpoolmanDB-Community chain as ``GET /barcode/{barcode}``
+    and overrides the text-heuristic guesses where present.
     """
     settings = await _load_settings_map(db)
 
@@ -1409,7 +1524,7 @@ async def parse_label(
             source = resolved_source
 
     return LabelParseResponse(
-        matched=source in ("inventory", "ofd"),
+        matched=source in ("inventory", "ofd", "spoolmandb-community"),
         source=source,
         barcode=ofd_client.canon(barcode) if barcode else None,
         **guessed,
@@ -1420,9 +1535,18 @@ async def parse_label(
 async def refresh_barcode_database(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
-    """Force a re-download of the Open Filament Database, bypassing the 24h cache TTL."""
-    count = await ofd_client.refresh_database()
-    return {"entries": count}
+    """Force a re-download of the OFD + SpoolmanDB-Community databases, bypassing the 24h cache TTL."""
+    ofd_count = await ofd_client.refresh_database()
+    try:
+        spoolmandb_count = await spoolmandb_community_client.refresh_database()
+    except Exception:
+        logger.warning("SpoolmanDB-Community refresh failed", exc_info=True)
+        spoolmandb_count = 0
+    return {
+        "entries": ofd_count + spoolmandb_count,
+        "ofd_entries": ofd_count,
+        "spoolmandb_community_entries": spoolmandb_count,
+    }
 
 
 @router.patch("/spools/{spool_id}", response_model=SpoolResponse)

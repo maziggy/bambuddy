@@ -260,7 +260,7 @@ class BarcodeLookupResponse(BaseModel):
 
     enabled: bool = True
     matched: bool = False
-    source: str | None = None  # "inventory" | "ofd" | None
+    source: str | None = None  # "inventory" | "ofd" | "spoolmandb-community" | None
     barcode: str
     material: str | None = None
     brand: str | None = None
@@ -277,7 +277,7 @@ class LabelParseResponse(BaseModel):
     barcode-lookup override applied when the text also contained a barcode."""
 
     matched: bool = False
-    source: str | None = None  # "inventory" | "ofd" | "parsed" | None
+    source: str | None = None  # "inventory" | "ofd" | "spoolmandb-community" | "parsed" | None
     barcode: str | None = None
     material: str | None = None
     brand: str | None = None

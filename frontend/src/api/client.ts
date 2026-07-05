@@ -2876,7 +2876,7 @@ export interface InventorySpool {
 export interface BarcodeLookupResult {
   enabled: boolean;
   matched: boolean;
-  source: 'inventory' | 'ofd' | null;
+  source: 'inventory' | 'ofd' | 'spoolmandb-community' | null;
   barcode: string;
   material: string | null;
   brand: string | null;
@@ -2890,7 +2890,7 @@ export interface BarcodeLookupResult {
 
 export interface LabelParseResult {
   matched: boolean;
-  source: 'inventory' | 'ofd' | 'parsed' | null;
+  source: 'inventory' | 'ofd' | 'spoolmandb-community' | 'parsed' | null;
   barcode: string | null;
   material: string | null;
   brand: string | null;
@@ -5315,7 +5315,10 @@ export const api = {
       body: JSON.stringify({ text }),
     }),
   refreshBarcodeDatabase: () =>
-    request<{ entries: number }>('/inventory/barcode/refresh-database', { method: 'POST' }),
+    request<{ entries: number; ofd_entries?: number; spoolmandb_community_entries?: number }>(
+      '/inventory/barcode/refresh-database',
+      { method: 'POST' },
+    ),
   // ── CSV import/export (#1576) ────────────────────────────────────────────
   // dry_run=true → preview (no write); omitted → real import. Both share one
   // multipart upload helper; see `uploadSpoolsCsv` below.
@@ -5476,6 +5479,10 @@ export const api = {
     request<{ deleted: number }>('/inventory/colors/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
   resetColorCatalog: () =>
     request<{ status: string }>('/inventory/colors/reset', { method: 'POST' }),
+  syncSpoolmanDBCommunityColors: () =>
+    request<{ added: number; skipped: number; total: number }>('/inventory/colors/sync-spoolmandb-community', {
+      method: 'POST',
+    }),
   lookupColor: (manufacturer: string, colorName: string, material?: string) =>
     request<ColorLookupResult>(`/inventory/colors/lookup?manufacturer=${encodeURIComponent(manufacturer)}&color_name=${encodeURIComponent(colorName)}${material ? `&material=${encodeURIComponent(material)}` : ''}`),
   searchColors: (manufacturer?: string, material?: string) =>

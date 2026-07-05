@@ -109,7 +109,10 @@ class TestLookupBarcodeEndpoint:
     async def test_unmatched_barcode_returns_matched_false(self):
         db = _db(spool=None)
 
-        with patch("backend.app.services.ofd_client.lookup", new=AsyncMock(return_value=None)):
+        with (
+            patch("backend.app.services.ofd_client.lookup", new=AsyncMock(return_value=None)),
+            patch("backend.app.services.spoolmandb_community_client.lookup", new=AsyncMock(return_value=None)),
+        ):
             result = await lookup_barcode(barcode="099999999999", db=db, _=None)
 
         assert result.matched is False
@@ -120,7 +123,10 @@ class TestLookupBarcodeEndpoint:
     async def test_barcode_is_canonicalized_in_response(self):
         db = _db(spool=None)
 
-        with patch("backend.app.services.ofd_client.lookup", new=AsyncMock(return_value=None)):
+        with (
+            patch("backend.app.services.ofd_client.lookup", new=AsyncMock(return_value=None)),
+            patch("backend.app.services.spoolmandb_community_client.lookup", new=AsyncMock(return_value=None)),
+        ):
             result = await lookup_barcode(barcode="0012345678905", db=db, _=None)
 
         assert result.barcode == "12345678905"
@@ -205,6 +211,80 @@ class TestLookupBarcodeSpoolmanMode:
         assert result.source == "ofd"
 
 
+class TestLookupBarcodeSpoolmanDbCommunityFallback:
+    """SpoolmanDB-Community is consulted only after both the native-inventory
+    check AND OFD miss — it has broader brand coverage than OFD but far
+    sparser barcode coverage, so it stays a secondary fallback, not a
+    replacement (see _resolve_barcode's docstring)."""
+
+    @pytest.mark.asyncio
+    async def test_spoolmandb_community_hit_when_ofd_misses(self):
+        db = _db(spool=None)
+        smdb_fields = {"material": "PLA", "brand": "Bambu Lab", "color_name": "Ivory White"}
+
+        with (
+            patch("backend.app.services.ofd_client.lookup", new=AsyncMock(return_value=None)),
+            patch(
+                "backend.app.services.spoolmandb_community_client.lookup",
+                new=AsyncMock(return_value=smdb_fields),
+            ),
+        ):
+            result = await lookup_barcode(barcode="6975337031345", db=db, _=None)
+
+        assert result.matched is True
+        assert result.source == "spoolmandb-community"
+        assert result.material == "PLA"
+        assert result.brand == "Bambu Lab"
+
+    @pytest.mark.asyncio
+    async def test_ofd_hit_takes_priority_over_spoolmandb_community(self):
+        """Same barcode resolvable by both — OFD (purpose-built for barcodes) must win."""
+        db = _db(spool=None)
+        ofd_fields = {"material": "PETG", "brand": "Overture"}
+
+        with (
+            patch("backend.app.services.ofd_client.lookup", new=AsyncMock(return_value=ofd_fields)),
+            patch("backend.app.services.spoolmandb_community_client.lookup", new=AsyncMock()) as mock_smdb_lookup,
+        ):
+            result = await lookup_barcode(barcode="012345678905", db=db, _=None)
+
+        mock_smdb_lookup.assert_not_called()
+        assert result.source == "ofd"
+        assert result.material == "PETG"
+
+    @pytest.mark.asyncio
+    async def test_spoolmandb_community_lookup_error_degrades_to_unmatched(self):
+        """A SpoolmanDB-Community connectivity failure must not error the request."""
+        db = _db(spool=None)
+
+        with (
+            patch("backend.app.services.ofd_client.lookup", new=AsyncMock(return_value=None)),
+            patch(
+                "backend.app.services.spoolmandb_community_client.lookup",
+                new=AsyncMock(side_effect=RuntimeError("unreachable")),
+            ),
+        ):
+            result = await lookup_barcode(barcode="012345678905", db=db, _=None)
+
+        assert result.matched is False
+        assert result.source is None
+
+    @pytest.mark.asyncio
+    async def test_disabled_setting_also_skips_spoolmandb_community(self):
+        db = _db(spool=None, settings_rows=[_make_settings_row("barcode_lookup_enabled", "false")])
+
+        with (
+            patch("backend.app.services.ofd_client.lookup", new=AsyncMock()) as mock_ofd_lookup,
+            patch("backend.app.services.spoolmandb_community_client.lookup", new=AsyncMock()) as mock_smdb_lookup,
+        ):
+            result = await lookup_barcode(barcode="012345678905", db=db, _=None)
+
+        mock_ofd_lookup.assert_not_called()
+        mock_smdb_lookup.assert_not_called()
+        assert result.enabled is False
+        assert result.matched is False
+
+
 class TestParseLabelEndpoint:
     @pytest.mark.asyncio
     async def test_parses_text_without_barcode(self):
@@ -244,3 +324,29 @@ class TestParseLabelEndpoint:
         assert result.source == "ofd"
         assert result.matched is True
         assert result.barcode == "6938936716785"
+
+    @pytest.mark.asyncio
+    async def test_embedded_barcode_resolved_via_spoolmandb_community_when_ofd_misses(self):
+        """A SpoolmanDB-Community-only hit must still report matched=True — regression
+        guard for the `matched = source in (...)` check needing the new source value."""
+        db = _db(spool=None)
+        smdb_fields = {"material": "PLA", "brand": "Bambu Lab", "label_weight": 1000}
+
+        with (
+            patch("backend.app.services.ofd_client.get_brands", new=AsyncMock(return_value=[])),
+            patch("backend.app.services.ofd_client.lookup", new=AsyncMock(return_value=None)),
+            patch(
+                "backend.app.services.spoolmandb_community_client.lookup",
+                new=AsyncMock(return_value=smdb_fields),
+            ),
+        ):
+            result = await parse_label(
+                payload=LabelParseRequest(text="Generic PLA Ivory EAN: 6975337031345"),
+                db=db,
+                _=None,
+            )
+
+        assert result.material == "PLA"
+        assert result.brand == "Bambu Lab"
+        assert result.source == "spoolmandb-community"
+        assert result.matched is True

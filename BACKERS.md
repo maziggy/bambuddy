@@ -26,6 +26,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@Praxeis](https://github.com/Praxeis)
 - [@jmclaren7](https://github.com/jmclaren7)
 - [@RoBoT24-web](https://github.com/RoBoT24-web)
+- [@Rayvenhaus](https://github.com/Rayvenhaus)
 
 ## Supporters ($15/mo+)
 
@@ -58,6 +59,9 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@qoatzelcoat](https://github.com/qoatzelcoat)
 - [@Sanaki](https://github.com/Sanaki)
 - [@jlofshult](https://github.com/jlofshult)
+- [@TriadX1](https://github.com/TriadX1)
+- [@hazzardr](https://github.com/hazzardr)
+
 ---
 
 ## One-time and historical supporters

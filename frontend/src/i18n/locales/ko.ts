@@ -1885,8 +1885,11 @@ export default {
     manageMaintenanceDescription: '완료된 유지보수 기록, 카운터 재설정, 주기 편집, 유지보수 유형 카탈로그 관리. 프린터 제어를 더 광범위하게 허용하지 않고 "노즐을 청소했다"를 기록하는 Home Assistant 자동화에 적합합니다.',
     manageArchives: '아카이브 관리',
     manageArchivesDescription: '오래된 출력물 제거를 포함하여 출력 아카이브를 편집하고 삭제합니다. 통계 기여 항목의 제거는 포함되지 않습니다. 출력 기록을 정리하는 자동화에 적합합니다.',
+    manageProjects: '프로젝트 관리',
+    manageProjectsDescription: '프로젝트를 생성, 업데이트, 삭제하고 프로젝트에 아카이브를 추가합니다. 출력물을 프로젝트로 정리하는 자동화에 적합합니다.',
     maintenanceBadge: '유지보수',
     archivesBadge: '아카이브',
+    projectsBadge: '프로젝트',
     libraryBadge: '라이브러리',
     inventoryBadge: '재고',
     cloudAccess: '클라우드 접근 허용',
@@ -2961,7 +2964,8 @@ export default {
       selectAll: '모두 선택',
       clearAll: '모두 해제',
       permissionsSelected: '{{count}}개 선택됨',
-      noResults: '검색과 일치하는 권한이 없습니다'
+      noResults: '검색과 일치하는 권한이 없습니다',
+      websocketHint: '실시간 업데이트에 필요합니다. 이 권한이 없으면 인터페이스는 주기적 폴링으로 대체됩니다.'
     }
   },
   users: {

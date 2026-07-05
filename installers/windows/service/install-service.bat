@@ -29,7 +29,8 @@ REM "service not found" returns non-zero and we want to proceed.
 
 REM Register the service. NSSM wraps uvicorn so Windows treats it as a
 REM proper service (autostart, recovery, supervised restart).
-"%NSSM%" install Bambuddy "%PYTHON%" "-m uvicorn backend.app.main:app --host 0.0.0.0 --port %PORT%"
+REM --loop asyncio required: uvloop can truncate VP FTP uploads (#1896).
+"%NSSM%" install Bambuddy "%PYTHON%" "-m uvicorn backend.app.main:app --host 0.0.0.0 --port %PORT% --loop asyncio"
 if errorlevel 1 (
     echo [install-service] nssm install failed
     exit /b 1

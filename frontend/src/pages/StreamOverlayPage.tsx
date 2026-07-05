@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Layers, Clock, Timer, Printer } from 'lucide-react';
-import { api, withStreamToken } from '../api/client';
+import { api, ApiError, withStreamToken } from '../api/client';
 import type { PrinterStatus } from '../api/client';
 import { formatDuration, formatETA, type TimeFormat } from '../utils/date';
 
@@ -157,11 +157,16 @@ export function StreamOverlayPage() {
       try {
         const resp = await api.getWebSocketToken();
         token = resp.token;
-      } catch {
-        // Token mint failed — auth disabled, no JWT yet, or transient
-        // network error. Fall through; auth-disabled deployments still
-        // succeed, auth-enabled ones close with 4401 and the page's
-        // polling fallback continues to refresh the status.
+      } catch (err) {
+        // A 401 (JWT expired) / 403 (no WEBSOCKET_CONNECT permission) is an
+        // auth decision — a tokenless socket would just be closed 4401, so
+        // skip opening one and let the REST polling fallback keep the overlay
+        // fresh. There's no reconnect loop on this page, so this is purely
+        // avoiding one doomed socket per mount. A network/5xx error is not
+        // auth: fall through and try anyway (auth-disabled deployments land
+        // here with no token and connect fine).
+        const status = err instanceof ApiError ? err.status : 0;
+        if (status === 401 || status === 403) return;
       }
       if (cancelled) return;
 

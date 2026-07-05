@@ -236,6 +236,7 @@ export function SettingsPage() {
     can_manage_inventory: true,
     can_manage_maintenance: true,
     can_manage_archives: true,
+    can_manage_projects: true,
     can_access_cloud: false,
     can_update_energy_cost: false,
   });
@@ -395,7 +396,7 @@ export function SettingsPage() {
   });
 
   const createAPIKeyMutation = useMutation({
-    mutationFn: (data: { name: string; can_queue: boolean; can_control_printer: boolean; can_read_status: boolean; can_manage_library: boolean; can_manage_inventory: boolean; can_manage_maintenance: boolean; can_manage_archives: boolean; can_access_cloud: boolean }) =>
+    mutationFn: (data: { name: string; can_queue: boolean; can_control_printer: boolean; can_read_status: boolean; can_manage_library: boolean; can_manage_inventory: boolean; can_manage_maintenance: boolean; can_manage_archives: boolean; can_manage_projects: boolean; can_access_cloud: boolean }) =>
       api.createAPIKey(data),
     onSuccess: (data) => {
       setCreatedAPIKey(data.key || null);
@@ -3899,6 +3900,18 @@ export function SettingsPage() {
                       <label className="flex items-center gap-3 cursor-pointer">
                         <input
                           type="checkbox"
+                          checked={newAPIKeyPermissions.can_manage_projects}
+                          onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_manage_projects: e.target.checked }))}
+                          className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
+                        />
+                        <div>
+                          <span className="text-white">{t('settings.manageProjects')}</span>
+                          <p className="text-xs text-bambu-gray">{t('settings.manageProjectsDescription')}</p>
+                        </div>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
                           checked={newAPIKeyPermissions.can_access_cloud}
                           onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_access_cloud: e.target.checked }))}
                           className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
@@ -3988,6 +4001,9 @@ export function SettingsPage() {
                             )}
                             {key.can_manage_archives && (
                               <span className="px-1.5 py-0.5 bg-indigo-500/20 text-indigo-400 rounded">{t('settings.archivesBadge')}</span>
+                            )}
+                            {key.can_manage_projects && (
+                              <span className="px-1.5 py-0.5 bg-lime-500/20 text-lime-400 rounded">{t('settings.projectsBadge')}</span>
                             )}
                             {key.can_access_cloud && (
                               <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded">{t('settings.cloudBadge', 'Cloud')}</span>

@@ -165,7 +165,6 @@ class PrintScheduler:
         self._check_interval = 30  # seconds
         self._power_on_wait_time = 180  # seconds to wait for printer after power on (3 min)
         self._power_on_check_interval = 10  # seconds between connection checks
-        self._min_drying_seconds = 1800  # 30 minutes minimum before humidity re-check can stop drying
         # Track which printers are currently auto-drying (printer_id -> start timestamp)
         self._drying_in_progress: dict[int, float] = {}
         # Defensive in-memory dispatch hold (#1157): a printer that just received
@@ -1820,33 +1819,29 @@ class PrintScheduler:
                             humidity = int(h_idx)
                         except (ValueError, TypeError):
                             pass
-                # Already drying — check if humidity dropped below threshold (with minimum drying time)
+                # Already drying — let it run to its configured duration (#1892).
+                #
+                # We deliberately do NOT stop drying from a humidity re-check here.
+                # Relative humidity drops steeply in heated air, so the AMS sensor
+                # reads ~15-20% within minutes of the dryer starting even while the
+                # filament is still saturated. A humidity-based early-stop therefore
+                # always fires at the minimum-time floor, truncating both user-started
+                # manual cycles and Bambuddy's own preset-duration dries to ~30 min.
+                # The firmware stops when the configured duration elapses; scheduling
+                # stops (print takes priority, queue no longer needs drying) are
+                # handled separately via _stop_drying().
                 if dry_time > 0:
                     if pid not in self._drying_in_progress:
-                        # Drying we didn't start (manual or from before restart) — track but don't stop
+                        # Drying we didn't start (manual or from before restart) —
+                        # track it so scheduling stops still apply; never auto-stop it.
                         self._drying_in_progress[pid] = time.monotonic()
-                    started_at = self._drying_in_progress[pid]
-                    elapsed = time.monotonic() - started_at
-                    if humidity is not None and humidity <= humidity_threshold and elapsed >= self._min_drying_seconds:
-                        logger.info(
-                            "Auto-drying: printer %d AMS %d — humidity %d%% <= threshold %d%% after %dm, stopping drying",
-                            pid,
-                            ams_id,
-                            humidity,
-                            humidity_threshold,
-                            int(elapsed / 60),
-                        )
-                        printer_manager.send_drying_command(pid, ams_id, temp=0, duration=0, mode=0)
-                    else:
-                        logger.debug(
-                            "Auto-drying: printer %d AMS %d — drying (%dm left, humidity %s%%, elapsed %dm/%dm min)",
-                            pid,
-                            ams_id,
-                            dry_time,
-                            humidity,
-                            int(elapsed / 60),
-                            self._min_drying_seconds // 60,
-                        )
+                    logger.debug(
+                        "Auto-drying: printer %d AMS %d — drying (%dm left, humidity %s%%), letting it run",
+                        pid,
+                        ams_id,
+                        dry_time,
+                        humidity,
+                    )
                     continue
 
                 # Humidity below threshold — no need to start drying

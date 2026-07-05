@@ -10,12 +10,30 @@ up a real TLS/FTP server.
 """
 
 import asyncio
+import io
 import ssl
+import zipfile
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from backend.app.services.virtual_printer.ftp_server import MAX_UPLOAD_BYTES, FTPSession
+
+
+def _valid_3mf_bytes() -> bytes:
+    """A minimal but structurally valid ZIP (stands in for a .gcode.3mf).
+
+    Bambu 3MF files are ZIP containers; the streaming STOR path validates the
+    received file opens as a ZIP before acking 226 (#1896), so happy-path
+    tests must feed real ZIP bytes rather than arbitrary filler.
+    """
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("Metadata/slice_info.config", "<config/>")
+        zf.writestr("3D/3dmodel.model", "<model/>")
+        # Pad an entry so the archive spans several 64 KiB read chunks.
+        zf.writestr("plate_1.gcode", b"G1 X0 Y0\n" * 40000)
+    return buf.getvalue()
 
 
 def _make_session(tmp_path, *, data_chunks: list[bytes]) -> FTPSession:
@@ -63,8 +81,9 @@ def _make_session(tmp_path, *, data_chunks: list[bytes]) -> FTPSession:
 async def test_stor_writes_payload_to_disk(tmp_path):
     """Happy path: chunks fed to the data reader land in the upload_dir
     with the right content + the slicer gets 226."""
-    payload = b"X" * (3 * 64 * 1024 + 123)  # 3 chunks + a partial one
+    payload = _valid_3mf_bytes()  # spans several 64 KiB chunks, opens as ZIP
     chunks = [payload[i : i + 65536] for i in range(0, len(payload), 65536)]
+    assert len(chunks) > 3  # exercise the multi-chunk read loop
     session = _make_session(tmp_path, data_chunks=chunks)
     session.send = AsyncMock()
 
@@ -78,6 +97,54 @@ async def test_stor_writes_payload_to_disk(tmp_path):
     sent_codes = [args[0][0] for args in session.send.call_args_list]
     assert 150 in sent_codes  # "Opening data connection"
     assert 226 in sent_codes  # "Transfer complete"
+    assert 426 not in sent_codes
+
+
+@pytest.mark.asyncio
+async def test_stor_rejects_truncated_3mf(tmp_path):
+    """#1896: a .3mf whose tail was lost (uvloop ragged-EOF data loss, or any
+    other silent truncation) must NOT be acked with 226 — the read loop sees a
+    clean EOF and no write error, so only a ZIP-integrity check catches it.
+    Reject with 426, drop the file, and never fire the on_file_received
+    callback that would archive/queue/forward the corrupt job."""
+    payload = _valid_3mf_bytes()
+    truncated = payload[: len(payload) - 4096]  # drop the EOCD-bearing tail
+    chunks = [truncated[i : i + 65536] for i in range(0, len(truncated), 65536)]
+
+    callback = AsyncMock()
+    session = _make_session(tmp_path, data_chunks=chunks)
+    session.on_file_received = callback
+    session.send = AsyncMock()
+
+    await session.cmd_STOR("truncated.gcode.3mf")
+
+    # Corrupt file dropped, not left in the upload dir.
+    assert not (session.upload_dir / "truncated.gcode.3mf").exists()
+    sent_codes = [args[0][0] for args in session.send.call_args_list]
+    assert 426 in sent_codes
+    assert 226 not in sent_codes
+    # The archive/queue/forward callback must never run for a corrupt upload.
+    callback.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_stor_skips_zip_validation_for_non_3mf(tmp_path):
+    """The ZIP-integrity gate is scoped to .3mf uploads. A non-3MF file (e.g.
+    a plain .gcode some slicers still send) is not a ZIP and must keep the
+    prior pass-through behaviour — 226, not a false-positive 426."""
+    payload = b"G1 X0 Y0\n" * 5000  # plain text, deliberately not a ZIP
+    chunks = [payload[i : i + 65536] for i in range(0, len(payload), 65536)]
+    session = _make_session(tmp_path, data_chunks=chunks)
+    session.send = AsyncMock()
+
+    await session.cmd_STOR("plain.gcode")
+
+    saved = session.upload_dir / "plain.gcode"
+    assert saved.exists()
+    assert saved.read_bytes() == payload
+    sent_codes = [args[0][0] for args in session.send.call_args_list]
+    assert 226 in sent_codes
+    assert 426 not in sent_codes
 
 
 @pytest.mark.asyncio

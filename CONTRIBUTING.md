@@ -117,8 +117,9 @@ pip install -r requirements-dev.txt  # Dev/test dependencies (pytest, ruff, band
 pip install pre-commit
 pre-commit install
 
-# Run backend
-DEBUG=true uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+# Run backend (--loop asyncio matches production; avoids a uvloop TLS bug
+# that can truncate Virtual Printer FTP uploads on slow storage — see #1896)
+DEBUG=true uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000 --loop asyncio
 ```
 
 ### Frontend Setup

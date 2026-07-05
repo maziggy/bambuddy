@@ -2561,6 +2561,25 @@ async def run_migrations(conn):
         async with conn.begin_nested():
             await conn.execute(text("UPDATE api_keys SET can_manage_archives = FALSE"))
 
+    # #1893: carve project CRUD + membership (create/update/delete, add-archives)
+    # out of the admin denylist so automations can manage projects via API key.
+    # Identical shape and reasoning to can_manage_archives above: PROJECTS_CREATE
+    # / _UPDATE / _DELETE were EXPLICITLY denied for every API key under the
+    # pre-migration model (they were on ``_APIKEY_DENIED_PERMISSIONS``), so no
+    # existing integration relies on them. Column default TRUE for keys created
+    # via the UI going forward; existing rows backfill to FALSE so the upgrade
+    # path does not silently widen scope for keys created before this flag
+    # existed. Users opt in via Settings → API Keys per key. BOOLEAN is valid on
+    # both SQLite and Postgres, so no dialect branch is needed.
+    column_existed = await _api_keys_column_exists(conn, "can_manage_projects")
+    await _safe_execute(
+        conn,
+        "ALTER TABLE api_keys ADD COLUMN can_manage_projects BOOLEAN DEFAULT TRUE",
+    )
+    if not column_existed:
+        async with conn.begin_nested():
+            await conn.execute(text("UPDATE api_keys SET can_manage_projects = FALSE"))
+
     # Migration: Soft-delete column for trash bin (Issue #1008). Indexed so the
     # sweeper's "SELECT ... WHERE deleted_at < cutoff" and the trash list's
     # "WHERE deleted_at IS NOT NULL" stay cheap as the table grows.

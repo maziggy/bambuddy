@@ -167,6 +167,17 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     Permission.ARCHIVES_UPDATE_ALL: "can_manage_archives",
     Permission.ARCHIVES_DELETE_OWN: "can_manage_archives",
     Permission.ARCHIVES_DELETE_ALL: "can_manage_archives",
+    # can_manage_projects — project curation. Carved out of the admin denylist
+    # so automations can create projects and batch-add archives via API key
+    # (#1893). The project mutation routes gate on plain
+    # ``RequirePermissionIfAuthEnabled(Permission.PROJECTS_*)`` (no OWN/ALL
+    # ownership split — projects have no per-row ownership permission), so the
+    # three CRUD permissions map directly to the one scope. Membership edits
+    # (e.g. add-archives-to-project) gate on PROJECTS_UPDATE, so they're covered.
+    # PROJECTS_READ stays under can_read_status (unchanged).
+    Permission.PROJECTS_CREATE: "can_manage_projects",
+    Permission.PROJECTS_UPDATE: "can_manage_projects",
+    Permission.PROJECTS_DELETE: "can_manage_projects",
     # can_access_cloud — narrow opt-in scope, gated by the router-level
     # ``_cloud_api_key_gate`` and additionally enforced here so the route-
     # level ``cloud_caller(Permission.CLOUD_AUTH)`` dep also fails closed
@@ -228,9 +239,10 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
         # `require_ownership_permission`. Purge stays denied as a genuinely
         # destructive op.
         Permission.LIBRARY_PURGE,
-        Permission.PROJECTS_CREATE,
-        Permission.PROJECTS_UPDATE,
-        Permission.PROJECTS_DELETE,
+        # PROJECTS_CREATE / _UPDATE / _DELETE moved to the allowlist under
+        # `can_manage_projects` (#1893) — they were denied for every API key,
+        # making the project-management surface (create, add-archives, delete)
+        # unreachable, same regression class as the archives/library carve-outs.
         Permission.FILAMENTS_CREATE,
         Permission.FILAMENTS_UPDATE,
         Permission.FILAMENTS_DELETE,

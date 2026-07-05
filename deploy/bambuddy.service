@@ -32,7 +32,9 @@ EnvironmentFile=-INSTALL_PATH/.env
 Environment="PATH=INSTALL_PATH/venv/bin:/usr/local/bin:/usr/bin:/bin"
 
 # Server configuration
-ExecStart=INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+# --loop asyncio is required: uvloop's SSL layer can silently truncate VP FTP
+# uploads on a ragged client close over slow storage (#1896). Do not remove.
+ExecStart=INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000} --loop asyncio
 
 # Restart policy
 Restart=on-failure

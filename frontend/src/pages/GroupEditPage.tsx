@@ -282,9 +282,16 @@ export function GroupEditPage() {
                         type="checkbox"
                         checked={permissions.includes(perm.value)}
                         onChange={() => togglePermission(perm.value)}
-                        className="w-4 h-4 rounded border-bambu-gray text-bambu-green focus:ring-bambu-green focus:ring-offset-0 bg-bambu-dark-secondary"
+                        className="w-4 h-4 shrink-0 rounded border-bambu-gray text-bambu-green focus:ring-bambu-green focus:ring-offset-0 bg-bambu-dark-secondary"
                       />
-                      <span className="text-sm text-bambu-gray">{perm.label}</span>
+                      <span className="flex flex-col">
+                        <span className="text-sm text-bambu-gray">{perm.label}</span>
+                        {perm.value === 'websocket:connect' && (
+                          <span className="text-xs text-bambu-gray/60">
+                            {t('groups.editor.websocketHint')}
+                          </span>
+                        )}
+                      </span>
                     </label>
                   ))}
                 </div>

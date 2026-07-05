@@ -770,7 +770,8 @@ WorkingDirectory=$INSTALL_PATH
 EnvironmentFile=$INSTALL_PATH/.env
 Environment="DATA_DIR=$INSTALL_PATH/data"
 Environment="LOG_DIR=$INSTALL_PATH/logs"
-ExecStart=$INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port $BAMBUDDY_PORT
+# --loop asyncio required: uvloop can truncate VP FTP uploads (#1896)
+ExecStart=$INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port $BAMBUDDY_PORT --loop asyncio
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

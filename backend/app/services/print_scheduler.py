@@ -890,6 +890,14 @@ class PrintScheduler:
             logger.warning("Cannot compute AMS mapping: printer %s status unavailable", printer_id)
             return None
 
+        # Filament Track Switch (FTS): when installed it routes any AMS slot to
+        # either extruder, so the per-nozzle hard filter below must NOT apply.
+        # Otherwise a print on one nozzle can't use a spool physically loaded in
+        # an AMS on the *other* nozzle, and the matcher falls through to a
+        # same-type wrong-colour spool on the target nozzle — the H2C + FTS
+        # wrong-filament bug (#2186). Mirrors the frontend skip added for #1162.
+        fts_installed = bool(getattr(getattr(status, "fila_switch", None), "installed", False))
+
         # Get filament requirements from source file
         filament_reqs = await self._get_filament_requirements(db, item)
         if not filament_reqs:
@@ -964,7 +972,7 @@ class PrintScheduler:
 
         # Compute mapping: match required filaments to available slots
         return self._match_filaments_to_slots(
-            filament_reqs, loaded_filaments, prefer_lowest, inventory_remain_overrides
+            filament_reqs, loaded_filaments, prefer_lowest, inventory_remain_overrides, fts_installed
         )
 
     def _build_override_direct_mapping(self, force_overrides: list[dict], status) -> list[int] | None:
@@ -1274,6 +1282,7 @@ class PrintScheduler:
         loaded: list[dict],
         prefer_lowest: bool = False,
         inventory_remain_overrides: dict[int, float] | None = None,
+        fts_installed: bool = False,
     ) -> list[int] | None:
         """Match required filaments to loaded filaments and build AMS mapping.
 
@@ -1316,8 +1325,11 @@ class PrintScheduler:
             # Nozzle-aware filtering: restrict to trays on the correct nozzle.
             # Hard filter — cross-nozzle assignment causes print failures
             # ("position of left hotend is abnormal"), so never fall back.
+            # Skipped when an FTS is installed: it routes any AMS slot to either
+            # extruder, so restricting to one nozzle would wrongly exclude the
+            # correct spool sitting in the other nozzle's AMS (#2186).
             req_nozzle_id = req.get("nozzle_id")
-            if req_nozzle_id is not None:
+            if req_nozzle_id is not None and not fts_installed:
                 available = [f for f in available if f.get("extruder_id") == req_nozzle_id]
 
             # Sort by remaining filament (ascending) so lowest-remain spool wins .find().

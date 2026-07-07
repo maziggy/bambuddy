@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -2486,6 +2486,22 @@ class PrintScheduler:
             await self._power_off_if_needed(db, item)
             return
 
+        # Cancel-while-dispatching race (#1853): the scheduler's snapshot of
+        # `items` was taken at the top of check_queue, but the user can /cancel
+        # any pending row in the gap before we reach this point. Re-read the
+        # row and bail out cleanly instead of starting an FTP upload for a row
+        # that's already cancelled. The atomic CAS at the pending→printing
+        # transition (below, before start_print) is the load-bearing guard;
+        # this is the early-exit optimisation that avoids wasted FTP I/O.
+        await db.refresh(item)
+        if item.status != "pending":
+            logger.info(
+                "Queue item %s no longer pending (status=%s) — aborting dispatch",
+                item.id,
+                item.status,
+            )
+            return
+
         # Determine source: archive or library file
         archive = None
         library_file = None
@@ -2552,7 +2568,12 @@ class PrintScheduler:
                         await db.delete(library_file)
                         file_path = settings.base_dir / archive.file_path
                         filename = archive.filename
-                    await db.flush()
+                    # Commit, not flush — flush opens the SQLite write
+                    # transaction (item.archive_id update + library_file
+                    # delete) and would hold the WAL writer lock through the
+                    # FTP upload below, causing "database is locked" cascades
+                    # for sensor history + concurrent cancels (#1853).
+                    await db.commit()
                     logger.info(
                         "Queue item %s: Created archive %s from library file %s",
                         item.id,
@@ -2789,9 +2810,57 @@ class PrintScheduler:
         # If we crash after this commit but before start_print(), the item will be
         # in "printing" status without actually printing - but that's safer than
         # accidentally reprinting the same file hours later.
-        item.status = "printing"
-        item.started_at = datetime.now(timezone.utc)
+        #
+        # Atomic CAS (#1853): a user pressing /cancel mid-dispatch (between the
+        # initial pending read at the top of check_queue and this point) flips
+        # the row to "cancelled" in a separate session. Without the WHERE
+        # status='pending' clause, the unconditional update here would silently
+        # overwrite that cancellation and we'd ship the MQTT start_print below
+        # — printer obeys, user sees "I pressed cancel and the print started".
+        # rowcount==0 means the user won the race; bail out, best-effort delete
+        # the file we just uploaded, do NOT send start_print.
+        now_utc = datetime.now(timezone.utc)
+        cas = await db.execute(
+            update(PrintQueueItem)
+            .where(PrintQueueItem.id == item.id)
+            .where(PrintQueueItem.status == "pending")
+            .values(status="printing", started_at=now_utc)
+        )
         await db.commit()
+        if cas.rowcount == 0:
+            logger.info(
+                "Queue item %s no longer pending at print-command time "
+                "(cancelled or removed mid-dispatch) — aborting before MQTT send (#1853)",
+                item.id,
+            )
+            try:
+                await delete_file_async(
+                    printer.ip_address,
+                    printer.access_code,
+                    remote_path,
+                    socket_timeout=ftp_timeout,
+                    printer_model=printer.model,
+                )
+            except Exception as cleanup_err:
+                logger.debug(
+                    "Queue item %s: best-effort cleanup of uploaded file failed: %s",
+                    item.id,
+                    cleanup_err,
+                )
+            try:
+                await ws_manager.send_queue_item_failed(
+                    user_id=toast_uid,
+                    queue_item_id=item.id,
+                    printer_id=item.printer_id,
+                    reason="cancelled_mid_dispatch",
+                )
+            except Exception:
+                pass
+            return
+        # Sync the in-memory item so subsequent code that reads item.status /
+        # item.started_at sees the values we just persisted.
+        item.status = "printing"
+        item.started_at = now_utc
 
         for cleanup_path in cleanup_disk_paths:
             try:

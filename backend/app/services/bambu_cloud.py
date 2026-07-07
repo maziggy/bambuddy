@@ -66,14 +66,15 @@ def _detect_cloudflare_challenge(response) -> str | None:
     return None
 
 
-# The `/v1/iot-service/api/slicer/setting` endpoint requires a `version` query
-# parameter in the XX.YY.ZZ.WW format Bambu Studio releases use (without it the
-# API returns HTTP 400 "field 'version' is not set"; non-matching formats like
-# "bambuddy-1.0" return HTTP 422 "Invalid input parameters"). However, Bambu's
-# server accepts ANY value within that format — it doesn't validate against a
-# release manifest. We therefore use a neutral "1.0.0.0" placeholder that does
-# not impersonate any real Bambu Studio release. Our client identity is in the
-# User-Agent header.
+# The `/v1/iot-service/api/slicer/setting` endpoint subtree — the plural GET
+# for the list, the singular GET/DELETE for a specific preset by setting_id, and
+# the POST for create — requires a `version` query parameter in the XX.YY.ZZ.WW
+# format Bambu Studio releases use. Without it the API returns HTTP 400
+# "field 'version' is not set"; non-matching formats like "bambuddy-1.0" return
+# HTTP 422 "Invalid input parameters". However, Bambu's server accepts ANY value
+# within that format — it doesn't validate against a release manifest. We
+# therefore use a neutral "1.0.0.0" placeholder that does not impersonate any
+# real Bambu Studio release. Our client identity is in the User-Agent header.
 _SLICER_API_VERSION = "1.0.0.0"
 
 
@@ -397,13 +398,17 @@ class BambuCloudService:
 
         try:
             response = await self._client.get(
-                f"{self.base_url}/v1/iot-service/api/slicer/setting/{setting_id}", headers=self._get_headers()
+                f"{self.base_url}/v1/iot-service/api/slicer/setting/{setting_id}",
+                headers=self._get_headers(),
+                params={"version": _SLICER_API_VERSION},
             )
 
             if response.status_code == 200:
                 return response.json()
 
-            raise BambuCloudError(f"Failed to get setting detail: {response.status_code}")
+            # Include body so a future contract change is self-diagnostic from logs.
+            body = (response.text or "")[:200]
+            raise BambuCloudError(f"Failed to get setting detail: {response.status_code} {body}")
 
         except httpx.RequestError as e:
             raise BambuCloudError(f"Request failed: {e}")
@@ -557,7 +562,9 @@ class BambuCloudService:
 
         try:
             response = await self._client.delete(
-                f"{self.base_url}/v1/iot-service/api/slicer/setting/{setting_id}", headers=self._get_headers()
+                f"{self.base_url}/v1/iot-service/api/slicer/setting/{setting_id}",
+                headers=self._get_headers(),
+                params={"version": _SLICER_API_VERSION},
             )
 
             if response.status_code in (200, 204):

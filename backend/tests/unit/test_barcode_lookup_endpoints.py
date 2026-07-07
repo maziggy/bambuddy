@@ -555,6 +555,58 @@ class TestParseLabelEndpoint:
         assert result.source == "spoolmandb-community"
         assert result.matched is True
 
+    @pytest.mark.asyncio
+    async def test_labelled_sku_resolved_when_no_gtin_present(self):
+        """A box with only a printed SKU (e.g. Panchroma "SKU: CA03006", no
+        scannable retail barcode at all) must still resolve via OFD's
+        lookup_article, exactly like a Code 128 camera scan of the same SKU
+        would (see TestLookupBarcodeEndpointSkuPath)."""
+        db = _db()
+        ofd_fields = {"material": "PLA", "brand": "Panchroma"}
+        ofd_codes = [{"code": "CA03006", "kind": "sku", "is_refill": False}]
+
+        with (
+            patch("backend.app.services.ofd_client.get_brands", new=AsyncMock(return_value=[])),
+            patch(
+                "backend.app.services.ofd_client.lookup_article",
+                new=AsyncMock(return_value=(ofd_fields, ofd_codes)),
+            ),
+            patch("backend.app.services.spoolmandb_community_client.lookup_sku", new=AsyncMock(return_value=None)),
+        ):
+            result = await parse_label(
+                payload=LabelParseRequest(text="Panchroma PLA Silk Gold SKU: CA03006"),
+                db=db,
+                _=None,
+            )
+
+        assert result.material == "PLA"
+        assert result.brand == "Panchroma"
+        assert result.source == "ofd"
+        assert result.matched is True
+        assert result.barcode == "CA03006"
+
+    @pytest.mark.asyncio
+    async def test_gtin_takes_priority_over_sku_when_both_present(self):
+        db = _db()
+        ofd_fields = {"material": "PETG", "brand": "Overture"}
+        ofd_codes = [{"code": "6938936716785", "kind": "gtin", "is_refill": False}]
+
+        with (
+            patch("backend.app.services.ofd_client.get_brands", new=AsyncMock(return_value=[])),
+            patch("backend.app.services.ofd_client.lookup", new=AsyncMock(return_value=(ofd_fields, ofd_codes))),
+            patch("backend.app.services.spoolmandb_community_client.lookup", new=AsyncMock(return_value=None)),
+            patch("backend.app.services.ofd_client.lookup_article", new=AsyncMock()) as mock_article,
+        ):
+            result = await parse_label(
+                payload=LabelParseRequest(text="Generic PETG EAN: 6938936716785 SKU: CA03006"),
+                db=db,
+                _=None,
+            )
+
+        mock_article.assert_not_called()
+        assert result.barcode == "6938936716785"
+        assert result.source == "ofd"
+
 
 class TestRefreshBarcodeDatabase:
     """Both external refreshes are independently guarded — a failure in one

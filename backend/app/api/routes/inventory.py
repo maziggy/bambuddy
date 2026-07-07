@@ -48,7 +48,7 @@ from backend.app.schemas.spool import (
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
 from backend.app.services import ofd_client, spoolmandb_community_client
-from backend.app.services.filament_label_parser import extract_barcode, parse_title
+from backend.app.services.filament_label_parser import extract_barcode, extract_sku, parse_title
 from backend.app.services.location_service import (
     DUPLICATE_LOCATION_NAME,
     assign_location_name,
@@ -1661,9 +1661,12 @@ async def parse_label(
 ):
     """Parse OCR'd label text into best-effort filament fields.
 
-    If the text also contains a barcode, that barcode is resolved through the
-    same inventory → OFD → SpoolmanDB-Community chain as ``GET /barcode/{barcode}``
-    and overrides the text-heuristic guesses where present.
+    If the text also contains a barcode or a labelled SKU/article number
+    (e.g. "SKU: CA03006" — some boxes print only this, no scannable retail
+    barcode at all), that code is resolved through the same
+    inventory → OFD → SpoolmanDB-Community chain as ``GET /barcode/{barcode}``
+    and overrides the text-heuristic guesses where present. A GTIN takes
+    priority when both are present in the text.
     """
     settings = await _load_settings_map(db)
 
@@ -1675,12 +1678,12 @@ async def parse_label(
     # diameter_mm has no home on Spool — it's parse-only context, not persisted.
     guessed.pop("diameter_mm", None)
 
-    barcode = extract_barcode(payload.text)
+    code_text = extract_barcode(payload.text) or extract_sku(payload.text)
     source = "parsed" if guessed else None
     canonical: str | None = None
     linked_codes: list[dict] = []
-    if barcode:
-        canonical, kind = _classify_code(barcode)
+    if code_text:
+        canonical, kind = _classify_code(code_text)
         fields, resolved_source, all_codes = await _resolve_barcode(db, canonical, kind, settings)
         if resolved_source:
             guessed = {**guessed, **{k: v for k, v in fields.items() if v is not None}}

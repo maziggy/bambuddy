@@ -320,3 +320,35 @@ def extract_barcode(text: str) -> str | None:
         m = re.search(r"(?<!\d)(\d{12,14})(?!\d)", text)
         cand = m.group(1) if m else None
     return cand if cand and 8 <= len(cand) <= 14 else None
+
+
+# Labels manufacturers print next to a SKU/article number on a spool box —
+# e.g. "SKU: CA03006" (Panchroma), "SKU PA02106" (Polylite). Deliberately
+# does NOT include "MODEL" (too prone to false positives on unrelated
+# "printer model" text elsewhere in a photographed label).
+_SKU_LABEL_RE = re.compile(
+    r"(?:SKU|ARTICLE\s*(?:#|NO\.?|NUMBER)?|P\s*/\s*N|REF(?:ERENCE)?|ITEM\s*(?:#|NO\.?)?)"
+    r"\s*[:#]?\s*"
+    # Lookahead requires at least one digit in the candidate — a genuine SKU
+    # is always alphanumeric, never a plain word, so this rejects OCR'd
+    # sentence text that happens to follow "SKU" with no separator (e.g.
+    # "no SKU here" must not match "HERE" as if it were a code).
+    r"(?=[A-Z0-9\-]*\d)([A-Z0-9][A-Z0-9\-]{2,19})",
+    re.IGNORECASE,
+)
+
+
+def extract_sku(text: str) -> str | None:
+    """Pull a manufacturer SKU/article number out of free text, e.g. label OCR.
+
+    Used as a fallback in the label-parse flow when `extract_barcode` finds
+    no GTIN — some boxes (e.g. Panchroma, Polylite) print only a "SKU: ..."
+    label with no scannable retail barcode at all, but that SKU is still
+    resolvable against OFD's `article_number` / SpoolmanDB-Community's
+    `codes` (see `_resolve_barcode` in `routes/inventory.py`). Requires an
+    explicit label immediately before the code (SKU/Article #/P-N/REF/Item #)
+    to avoid false-matching arbitrary alphanumeric text elsewhere on the
+    label. Returns the trimmed, uppercased code, or None.
+    """
+    m = _SKU_LABEL_RE.search(text)
+    return m.group(1).strip().upper() if m else None

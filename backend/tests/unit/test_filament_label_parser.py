@@ -5,7 +5,7 @@ Tests:
 - extract_barcode() labelled and bare-digit-run extraction
 """
 
-from backend.app.services.filament_label_parser import extract_barcode, parse_title
+from backend.app.services.filament_label_parser import extract_barcode, extract_sku, parse_title
 
 
 class TestParseTitle:
@@ -89,3 +89,38 @@ class TestExtractBarcode:
 
     def test_too_long_digit_run_rejected(self):
         assert extract_barcode("Serial 123456789012345678") is None
+
+
+class TestExtractSku:
+    """Fallback used by parse_label when extract_barcode finds no GTIN —
+    some boxes (e.g. Panchroma, Polylite) print only a labelled SKU, no
+    scannable retail barcode at all."""
+
+    def test_labelled_sku_with_colon(self):
+        assert extract_sku("Panchroma PLA Silk Gold SKU: CA03006") == "CA03006"
+
+    def test_labelled_sku_no_colon(self):
+        # OCR often loses the colon, or the label/value sit on separate
+        # lines that collapse to a single space after whitespace normalization.
+        assert extract_sku("PolyLite PLA Hedgehog SKU PA02106") == "PA02106"
+
+    def test_labelled_article_number(self):
+        assert extract_sku("Article #: ALZMNTABS01") == "ALZMNTABS01"
+
+    def test_labelled_p_slash_n(self):
+        assert extract_sku("P/N: X004ASRBVZ") == "X004ASRBVZ"
+
+    def test_labelled_ref(self):
+        assert extract_sku("REF: GF-A00123") == "GF-A00123"
+
+    def test_result_is_uppercased(self):
+        assert extract_sku("sku: alzmntabs01") == "ALZMNTABS01"
+
+    def test_no_label_present_returns_none(self):
+        assert extract_sku("SUNLU PLA+ Black 1KG") is None
+
+    def test_word_immediately_after_sku_is_not_mistaken_for_a_code(self):
+        """A pure word (no digits) right after "SKU" — e.g. plain sentence
+        text — must not be captured as if it were a code."""
+        assert extract_sku("no sku here at all, just PLA Basic 1kg") is None
+        assert extract_sku("This SKU is currently out of stock") is None

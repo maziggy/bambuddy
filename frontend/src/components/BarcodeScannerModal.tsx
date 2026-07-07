@@ -236,9 +236,9 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
       return;
     }
 
-    import('@zxing/browser').then(({ BrowserMultiFormatReader, BarcodeFormat }) => {
+    Promise.all([import('@zxing/browser'), import('@zxing/library')]).then(
+      ([{ BrowserMultiFormatReader, BarcodeFormat }, { DecodeHintType }]) => {
       if (cancelled || !videoRef.current) return;
-      const reader: BrowserMultiFormatReaderType = new BrowserMultiFormatReader();
       // Retail filament spools carry a linear UPC/EAN barcode, a GS1 Digital
       // Link QR code encoding the same GTIN in its URL path, or — for some
       // manufacturers (e.g. a Polymaker box with no UPC/EAN at all) — a Code
@@ -247,14 +247,22 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
       // symbology ZXing supports) cuts down on false-positive reads from
       // webcam noise, which is where the single-digit "barcode" misreads
       // were coming from.
-      reader.possibleFormats = [
+      const hints = new Map<unknown, unknown>();
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
         BarcodeFormat.UPC_A,
         BarcodeFormat.UPC_E,
         BarcodeFormat.EAN_13,
         BarcodeFormat.EAN_8,
         BarcodeFormat.QR_CODE,
         BarcodeFormat.CODE_128,
-      ];
+      ]);
+      // TRY_HARDER trades a bit of per-frame CPU for meaningfully better
+      // detection of dense/small 1D barcodes — e.g. some third-party spool
+      // boxes carry an Amazon FNSKU-style Code 128 label instead of a retail
+      // GTIN, and those are dense enough that ZXing's default (fast) mode
+      // misses them far more often than a phone's native camera scanner would.
+      hints.set(DecodeHintType.TRY_HARDER, true);
+      const reader: BrowserMultiFormatReaderType = new BrowserMultiFormatReader(hints);
       reader
         .decodeFromVideoDevice(undefined, videoRef.current, (result, _err, controls) => {
           // Guard against the window between this effect's cleanup running

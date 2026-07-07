@@ -874,17 +874,17 @@ const ERROR_DESCRIPTIONS: Record<string, string> = {
   '18FF_C00A': 'Please observe the nozzle of the right extruder. If the filament has been extruded, select \'Continue\'; if not, please push the filament forward slightly and then select \'Retry\'.',
 };
 
-function getSeverityInfo(severity: number): { label: string; color: string; bgColor: string; buttonHoverColor: string; Icon: typeof AlertTriangle } {
+function getSeverityInfo(severity: number): { label: string; color: string; bgColor: string; Icon: typeof AlertTriangle } {
   switch (severity) {
     case 1:
-      return { label: 'Fatal', color: 'text-red-500', bgColor: 'bg-red-500/20', buttonHoverColor: 'bg-red-500/10', Icon: AlertTriangle };
+      return { label: 'Fatal', color: 'text-red-500', bgColor: 'bg-red-500/20', Icon: AlertTriangle };
     case 2:
-      return { label: 'Serious', color: 'text-red-400', bgColor: 'bg-red-500/15', buttonHoverColor: 'bg-red-500/10', Icon: AlertTriangle };
+      return { label: 'Serious', color: 'text-red-400', bgColor: 'bg-red-500/15', Icon: AlertTriangle };
     case 3:
-      return { label: 'Warning', color: 'text-orange-400', bgColor: 'bg-orange-500/20', buttonHoverColor: 'bg-orange-500/10', Icon: AlertCircle };
+      return { label: 'Warning', color: 'text-orange-400', bgColor: 'bg-orange-500/20', Icon: AlertCircle };
     case 4:
     default:
-      return { label: 'Info', color: 'text-blue-400', bgColor: 'bg-blue-500/20', buttonHoverColor: 'bg-blue-500/10', Icon: Info };
+      return { label: 'Info', color: 'text-blue-400', bgColor: 'bg-blue-500/20', Icon: Info };
   }
 }
 
@@ -1000,7 +1000,7 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
           ) : (
             <div className="space-y-3">
               {knownErrors.map((error, index) => {
-                const { label, color, bgColor, buttonHoverColor, Icon } = getSeverityInfo(error.severity);
+                const { label, color, bgColor, Icon } = getSeverityInfo(error.severity);
                 const codeNum = parseInt(error.code.replace('0x', ''), 16) || 0;
                 const shortCode = getShortCode(error.attr, codeNum);
                 const description = ERROR_DESCRIPTIONS[shortCode] ?? t('hmsErrors.unknownCode');
@@ -1024,26 +1024,42 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
                         <p className="text-sm text-bambu-gray mb-2">{description}</p>
                         {error.actions && error.actions.length > 0 && (
                           <div className="flex flex-wrap gap-2 my-2">
-                            {error.actions.map((action) => (
-                              <button
-                                key={action}
-                                onClick={() => {
-                                  // full_code is the firmware-matching key (16
-                                  // chars for hms[]-array faults, 8 chars for
-                                  // print_error). Fall back to the 8-char
-                                  // shortCode for older backends that haven't
-                                  // populated it. See #1830.
-                                  activateActionMutation.mutate({
-                                    action,
-                                    print_error: error.full_code || shortCode.replace("_", ""),
-                                    job_id: error.job_id ?? null,
-                                  });
-                                }}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg ${bgColor} ${color} hover:${buttonHoverColor} transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0`}
-                              >
-                                {t(`hmsErrors.actions.${action}`, action)}
-                              </button>
-                            ))}
+                            {error.actions.map((action) => {
+                              const pendingVars = activateActionMutation.variables;
+                              const isThisPending =
+                                activateActionMutation.isPending
+                                && pendingVars?.action === action
+                                && pendingVars?.print_error === (error.full_code || shortCode.replace('_', ''));
+                              return (
+                                <button
+                                  key={action}
+                                  onClick={() => {
+                                    // full_code is the firmware-matching key (16
+                                    // chars for hms[]-array faults, 8 chars for
+                                    // print_error). Fall back to the 8-char
+                                    // shortCode for older backends that haven't
+                                    // populated it. See #1830.
+                                    activateActionMutation.mutate({
+                                      action,
+                                      print_error: error.full_code || shortCode.replace('_', ''),
+                                      job_id: error.job_id ?? null,
+                                    });
+                                  }}
+                                  // Static hover/active classes — Tailwind's JIT
+                                  // can't resolve `hover:${var}` template
+                                  // literals, so the previous severity-tinted
+                                  // hover never reached the compiled CSS and
+                                  // the action buttons read as inert badges.
+                                  // White-on-tint reads as a clear affordance
+                                  // against any severity-coloured container.
+                                  disabled={!hasPermission('printers:control') || activateActionMutation.isPending}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 text-white border border-white/20 hover:border-white/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                                >
+                                  {isThisPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                                  {t(`hmsErrors.actions.${action}`, action)}
+                                </button>
+                              );
+                            })}
                           </div>
                         )}
                         <a

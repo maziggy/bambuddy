@@ -3824,14 +3824,17 @@ async def execute_hms_action(
     # command. publish() success is NOT the same as printer-ack: Bambu's
     # firmware silently rejects malformed HMS commands at QoS 1 (the broker
     # ACKs the publish, but the printer drops it). Verified end-to-end against
-    # a live H2D — see #1830 §(3). We sample (gcode_state, hms_errors length)
-    # because every accepted HMS action mutates at least one of them.
+    # a live H2D — see #1830 §(3).
     #
-    # PrinterState.state carries the MQTT `gcode_state` value verbatim (see
-    # bambu_mqtt.py line 2144); the raw `print_error` int isn't preserved on
-    # state, only the derived HMSError entries are.
-    pre_gcode = client.state.state
-    pre_hms_count = len(client.state.hms_errors)
+    # We probe `_last_message_time` (bumped on every MQTT push) rather than a
+    # (gcode_state, hms_errors-length) diff. The old diff missed the
+    # wrong-plate IGNORE_RESUME case where the printer briefly resumes and
+    # re-pauses with the same fault inside the 2.5s window: both fields
+    # round-trip to their pre-publish values → false 502 even though the
+    # firmware fully ack'd the resume. Every accepted command triggers a
+    # pushall response within ~100-500ms, so a fresh inbound message after
+    # the publish is the robust ack signal.
+    pre_last_message = client._last_message_time
 
     success = client.execute_hms_action(body.print_error, body.action, body.job_id)
     if not success:
@@ -3845,12 +3848,12 @@ async def execute_hms_action(
     # coroutine is awaiting.
     await asyncio.sleep(HMS_ACTION_ACK_WAIT_SECONDS)
 
-    acked = client.state.state != pre_gcode or len(client.state.hms_errors) != pre_hms_count
+    acked = client._last_message_time > pre_last_message
     if not acked:
-        # Publish succeeded but the printer's state didn't move. Almost always
-        # firmware-side silent rejection (err mismatch, command/state mismatch).
-        # 502 makes it visible at the UI instead of the 200-but-broken loop
-        # #1830 reported.
+        # Publish succeeded but the printer sent nothing back. Almost always
+        # firmware-side silent rejection (err mismatch, command/state mismatch)
+        # or a dropped MQTT route. 502 makes it visible at the UI instead of
+        # the 200-but-broken loop #1830 reported.
         raise HTTPException(502, "Printer did not acknowledge HMS action within 2.5s")
 
     return {"success": True, "message": "HMS action executed"}

@@ -234,8 +234,14 @@ class PrintScheduler:
                 )
             items = list(result.scalars().all())
 
-            # Read plate-clear setting once per queue check
-            require_plate_clear = await self._get_bool_setting(db, "require_plate_clear", default=True)
+            # Read plate-clear setting once per queue check. Default MUST be
+            # False to match the schema (SettingsSchema.require_plate_clear
+            # defaults False) and the frontend (toggle + card badge both treat a
+            # missing value as off). When no settings row exists, a True default
+            # here re-enabled the plate-clear gate the UI showed as disabled,
+            # blocking dispatch to FINISH-state printers forever with no UI path
+            # to clear it (#1865).
+            require_plate_clear = await self._get_bool_setting(db, "require_plate_clear", default=False)
 
             if not items:
                 # No pending items — still check auto-drying on idle printers

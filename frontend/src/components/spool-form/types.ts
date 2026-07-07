@@ -1,5 +1,5 @@
 
-import type { Printer, SpoolKProfile } from '../../api/client';
+import type { LinkedCode, Printer, SpoolKProfile } from '../../api/client';
 
 // Catalog color display type (moved from component)
 export interface CatalogDisplayColor {
@@ -153,6 +153,10 @@ export interface AdditionalSectionProps extends SectionProps {
   // When true the empty-spool weight is managed by Spoolman on the filament
   // object, so SpoolWeightPicker is hidden and an info notice is shown instead.
   spoolmanMode?: boolean;
+  // Sibling GTIN/SKU codes discovered by cross-referencing OFD/SpoolmanDB-Community
+  // against the primary Barcode field's value (see _resolve_barcode in
+  // routes/inventory.py) — read-only display only, never submitted with the form.
+  linkedCodes?: LinkedCode[];
 }
 
 // PA Profile section props

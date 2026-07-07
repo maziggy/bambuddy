@@ -467,6 +467,34 @@ class TestSpoolmanClient:
         assert result["id"] == 2
 
     @pytest.mark.asyncio
+    async def test_find_spool_by_barcode_matches_linked_code(self, client):
+        """A scan of a sibling GTIN/SKU (never itself scanned/typed) must still
+        resolve via extra.bambu_linked_codes, so repeat scans of any
+        cross-referenced code hit this spool too (see _resolve_linked_codes_json
+        in routes/spoolman_inventory.py)."""
+        import json
+
+        cached = [
+            {
+                "id": 1,
+                "extra": {
+                    "bambu_barcode": json.dumps("6938936716785"),
+                    "bambu_linked_codes": json.dumps([{"code": "ALZMNTABS01", "kind": "sku", "is_refill": False}]),
+                },
+            }
+        ]
+        with patch.object(client, "get_all_spools", AsyncMock()):
+            result = await client.find_spool_by_barcode("ALZMNTABS01", cached_spools=cached)
+        assert result["id"] == 1
+
+    @pytest.mark.asyncio
+    async def test_find_spool_by_barcode_ignores_malformed_linked_codes(self, client):
+        cached = [{"id": 1, "extra": {"bambu_linked_codes": "not json"}}]
+        with patch.object(client, "get_all_spools", AsyncMock()):
+            result = await client.find_spool_by_barcode("ALZMNTABS01", cached_spools=cached)
+        assert result is None
+
+    @pytest.mark.asyncio
     async def test_find_spools_by_location_prefix_with_cached_spools(self, client):
         """Verify find_spools_by_location_prefix uses cached spools when provided."""
         cached = [

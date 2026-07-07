@@ -79,14 +79,26 @@ def normalize_effect_type(value: str | None) -> str | None:
 
 
 def normalize_barcode(value: str | None) -> str | None:
-    """Canonicalize a barcode to the same form the scan-to-add lookup uses:
-    digits only, leading zeros stripped, so a manually-typed UPC-A and its
-    EAN-13 leading-zero form store identically and match on a later scan.
-    Mirrors ``backend.app.services.ofd_client.canon()`` — duplicated rather
-    than imported so this schema module doesn't reach into the services layer.
+    """Canonicalize a manually-typed barcode or SKU/article number.
+
+    Purely numeric input is treated as a GTIN the same way the scan-to-add
+    lookup does: digits only, leading zeros stripped, so a manually-typed
+    UPC-A and its EAN-13 leading-zero form store identically and match on a
+    later scan. Mirrors ``backend.app.services.ofd_client.canon()`` —
+    duplicated rather than imported so this schema module doesn't reach into
+    the services layer.
+
+    Input containing any letter is instead treated as a manufacturer
+    SKU/article number (e.g. a Code 128 "inventory barcode" with no UPC/EAN
+    counterpart) and only trimmed + uppercased — digit-stripping an
+    alphanumeric code would otherwise mangle it into near-nothing (e.g.
+    "ALZMNTABS01" -> "1").
     """
     if value is None:
         return None
+    if any(ch.isalpha() for ch in value):
+        stripped = value.strip()
+        return stripped.upper() or None
     digits = re.sub(r"\D", "", value)
     if not digits:
         return None
@@ -226,6 +238,18 @@ class SpoolKProfileResponse(SpoolKProfileBase):
         from_attributes = True
 
 
+class LinkedCode(BaseModel):
+    """One sibling code (GTIN barcode or manufacturer SKU/article number)
+    discovered for the same physical product as the primary scanned/entered
+    code — e.g. another package-size GTIN, the refill-pack GTIN, or the
+    manufacturer SKU. Read-only display data; excludes the primary code
+    itself. See `_resolve_barcode` in `routes/inventory.py`."""
+
+    code: str
+    kind: str  # "gtin" | "sku"
+    is_refill: bool = False
+
+
 class SpoolResponse(SpoolBase):
     id: int
     # rgba is intentionally unconstrained on the response side: the write paths
@@ -244,18 +268,19 @@ class SpoolResponse(SpoolBase):
     created_at: datetime
     updated_at: datetime
     k_profiles: list[SpoolKProfileResponse] = []
+    linked_codes: list[LinkedCode] = []
 
     class Config:
         from_attributes = True
 
 
 class BarcodeLookupResponse(BaseModel):
-    """Result of resolving a scanned/entered barcode to filament fields.
+    """Result of resolving a scanned/entered barcode or SKU to filament fields.
 
     ``source`` tells the frontend how much to trust the prefilled fields:
-    a hit against the user's own inventory is exact, an OFD hit is
-    community-sourced, and no source means the fields (if any) came from
-    OCR label-text heuristics instead of a barcode match.
+    a hit against the user's own inventory is exact, an OFD/SpoolmanDB-Community
+    hit is community-sourced, and no source means the fields (if any) came
+    from OCR label-text heuristics instead of a code match.
     """
 
     enabled: bool = True
@@ -270,6 +295,7 @@ class BarcodeLookupResponse(BaseModel):
     label_weight: int | None = None
     nozzle_temp_min: int | None = None
     nozzle_temp_max: int | None = None
+    linked_codes: list[LinkedCode] = []
 
 
 class LabelParseResponse(BaseModel):
@@ -287,6 +313,7 @@ class LabelParseResponse(BaseModel):
     label_weight: int | None = None
     nozzle_temp_min: int | None = None
     nozzle_temp_max: int | None = None
+    linked_codes: list[LinkedCode] = []
 
 
 class SpoolAssignmentCreate(BaseModel):

@@ -69,3 +69,18 @@ export function extractGtinFromManualEntry(text: string): string | null {
   const digitsOnly = trimmed.replace(/[\s-]/g, '');
   return digitsOnly && /^\d+$/.test(digitsOnly) ? digitsOnly : null;
 }
+
+/**
+ * Light sanity check for a manufacturer SKU/article number — e.g. a decoded
+ * Code 128 "inventory barcode" (no UPC/EAN counterpart, like some Polymaker
+ * boxes ship with) or a manually-typed SKU. Unlike a GTIN, a SKU has no
+ * universal checksum to validate against, so this only guards against
+ * obviously-wrong input (empty, or absurdly long/short) — Code 128's own
+ * symbology-level checksum and start/stop pattern already make a successful
+ * camera decode trustworthy; the backend's OFD/SpoolmanDB-Community lookups
+ * are the real arbiter of whether it resolves to anything.
+ */
+export function isPlausibleSku(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length >= 3 && trimmed.length <= 32;
+}

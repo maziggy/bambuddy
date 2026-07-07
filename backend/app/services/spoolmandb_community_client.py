@@ -3,23 +3,30 @@
 SpoolmanDB-Community (https://github.com/Icezaza2543/SpoolmanDB-Community, a
 community-maintained continuation of Donkie/SpoolmanDB) publishes a much
 broader brand/material/colour catalog than the Open Filament Database (OFD),
-and a subset of its entries also carry EAN/GTIN retail barcodes. Real barcode
-coverage is sparse compared to OFD (which is purpose-built for barcode
-lookups), so this client is consulted as a fallback *after* OFD, not instead
-of it — see `_resolve_barcode` in `backend/app/api/routes/inventory.py`.
+and a subset of its entries also carry EAN/GTIN retail barcodes and/or
+manufacturer SKUs. Real barcode coverage is sparse compared to OFD (which is
+purpose-built for barcode lookups), so this client is consulted as a fallback
+*after* OFD, not instead of it — see `_resolve_barcode` in
+`backend/app/api/routes/inventory.py`.
 
 The compiled `filaments.json` this project publishes on GitHub Pages does
 NOT carry `color_name` as its own field (it's already baked into the `name`
 string at compile time, and the `{color_name}` placeholder's position isn't
 fixed across manufacturers, so it can't be reliably recovered afterwards).
 The raw per-manufacturer source files (`filaments/*.json` in the repo) DO
-have exact `color.name` alongside `color.eans`/`color.eans_refill`, so this
-client downloads the whole repo as a tarball and parses those source files
-directly instead of fetching the compiled JSON.
+have exact `color.name` alongside `color.eans`/`color.eans_refill`/
+`color.codes`, so this client downloads the whole repo as a tarball and
+parses those source files directly instead of fetching the compiled JSON.
 
-Caches the downloaded+parsed variant list and the built barcode index on
-disk with a 24h TTL — refreshed lazily on the next lookup once stale, same
-pattern as `ofd_client.py` (this backend has no scheduler/cron).
+Each color's `eans` (retail-pack GTINs), `eans_refill` (refill-pack GTINs),
+and `codes` (manufacturer SKUs) are all siblings of the same physical
+product — a hit on any one of them (via `lookup`/`lookup_sku`) also returns
+every other code for that color, letting a scan of an *unfamiliar* code
+still resolve once *any* of its siblings has been seen before.
+
+Caches the downloaded+parsed variant list and the built indexes on disk with
+a 24h TTL — refreshed lazily on the next lookup once stale, same pattern as
+`ofd_client.py` (this backend has no scheduler/cron).
 """
 
 from __future__ import annotations
@@ -42,6 +49,11 @@ logger = logging.getLogger(__name__)
 SPOOLMANDB_COMMUNITY_TARBALL_URL = "https://codeload.github.com/Icezaza2543/SpoolmanDB-Community/tar.gz/refs/heads/main"
 SPOOLMANDB_COMMUNITY_TTL_SECONDS = 24 * 3600
 
+# Bump whenever the on-disk cache shape changes, so an old cache file (e.g.
+# pre-dating codes/SKU support and the gtin/sku index split) is treated as
+# stale and rebuilt instead of being misread.
+_CACHE_VERSION = 2
+
 # Same fixed field set `_resolve_barcode` reads off any lookup source
 # (duplicated here rather than imported from the routes module — services
 # shouldn't depend on routes; this mirrors the repo's established convention
@@ -59,7 +71,8 @@ _BARCODE_FIELD_KEYS = (
 )
 
 # In-process cache so we don't re-download/rebuild on every request.
-_index: dict[str, dict] | None = None
+_gtin_index: dict[str, dict] | None = None
+_sku_index: dict[str, dict] | None = None
 _variants: list[dict] | None = None
 _brands: list[str] | None = None
 _index_loaded_at = 0.0
@@ -131,7 +144,7 @@ def _parse_manufacturer_file(manufacturer: str, data: dict) -> list[dict]:
 
     Deliberately NOT crossed with `weights`/`diameters` (unlike SpoolmanDB-Community's
     own compiler) — barcode/catalog fields don't need that multiplication, and a
-    color's `eans`/`eans_refill` aren't associated with a specific weight anyway.
+    color's `eans`/`eans_refill`/`codes` aren't associated with a specific weight anyway.
     """
     variants: list[dict] = []
     for filament in data.get("filaments", []):
@@ -153,6 +166,7 @@ def _parse_manufacturer_file(manufacturer: str, data: dict) -> list[dict]:
             rgba = _hex_to_rgba(color.get("hex") or hexes)
             eans = color.get("eans") or []
             eans_refill = color.get("eans_refill") or []
+            codes = color.get("codes") or []
 
             variants.append(
                 {
@@ -173,6 +187,7 @@ def _parse_manufacturer_file(manufacturer: str, data: dict) -> list[dict]:
                     "multi_color_direction": color.get("multi_color_direction", filament.get("multi_color_direction")),
                     "eans": eans,
                     "eans_refill": eans_refill,
+                    "codes": codes,
                 }
             )
     return variants
@@ -209,63 +224,116 @@ async def _download_and_parse_variants() -> list[dict]:
     return variants
 
 
-def _build_index(variants: list[dict]) -> dict[str, dict]:
-    """Build {canonical_gtin: fields} from every eans/eans_refill entry across all variants."""
-    index: dict[str, dict] = {}
+def _all_codes_for(variant: dict) -> list[dict]:
+    """Every GTIN/SKU sibling for one color: eans + eans_refill + codes (SKUs)."""
+    codes: list[dict] = []
+    for barcode in variant.get("eans", []):
+        codes.append({"code": canon(barcode), "kind": "gtin", "is_refill": False})
+    for barcode in variant.get("eans_refill", []):
+        codes.append({"code": canon(barcode), "kind": "gtin", "is_refill": True})
+    for sku in variant.get("codes", []):
+        if not isinstance(sku, str) or not sku.strip():
+            continue
+        codes.append({"code": sku.strip().upper(), "kind": "sku", "is_refill": False})
+    return codes
+
+
+def _build_index(variants: list[dict]) -> tuple[dict[str, dict], dict[str, dict]]:
+    """Build (gtin_index, sku_index) from every variant's eans/eans_refill/codes.
+
+    Both map a canonicalized/normalized code to ``{"fields": {...}, "all_codes": [...]}``
+    — ``all_codes`` lists every sibling code for that same color (see `_all_codes_for`),
+    so a hit on any one of them can recover the rest.
+    """
+    gtin_index: dict[str, dict] = {}
+    sku_index: dict[str, dict] = {}
     for variant in variants:
         fields = {key: variant.get(key) for key in _BARCODE_FIELD_KEYS}
-        for barcode in (*variant.get("eans", []), *variant.get("eans_refill", [])):
-            index[canon(barcode)] = fields
-    return index
+        all_codes = _all_codes_for(variant)
+        if not all_codes:
+            continue
+        entry = {"fields": fields, "all_codes": all_codes}
+        for c in all_codes:
+            if c["kind"] == "gtin":
+                gtin_index[c["code"]] = entry
+            else:
+                sku_index[c["code"]] = entry
+    return gtin_index, sku_index
 
 
-def _load_cached() -> tuple[dict, list, list] | None:
+def _load_cached() -> tuple[dict, dict, list, list] | None:
     path = _cache_path()
     if not path.exists():
         return None
     try:
         data = json.loads(path.read_text())
+        if data.get("cache_version") != _CACHE_VERSION:
+            return None
         if time.time() - data.get("built_at", 0) > SPOOLMANDB_COMMUNITY_TTL_SECONDS:
             return None
-        if "variants" not in data:
-            return None
-        return data.get("index"), data.get("brands", []), data.get("variants", [])
+        return (
+            data.get("gtin_index", {}),
+            data.get("sku_index", {}),
+            data.get("brands", []),
+            data.get("variants", []),
+        )
     except Exception:
         return None
 
 
-async def _refresh() -> tuple[dict, list, list]:
-    """Download + parse the repo tarball; build the barcode index + brand list; cache all three."""
+async def _refresh() -> tuple[dict, dict, list, list]:
+    """Download + parse the repo tarball; build the indexes + brand list; cache all of it."""
     variants = await _download_and_parse_variants()
-    index = _build_index(variants)
+    gtin_index, sku_index = _build_index(variants)
     brands = sorted({v["manufacturer"] for v in variants if v.get("manufacturer")})
     try:
         path = _cache_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"built_at": time.time(), "index": index, "brands": brands, "variants": variants}))
+        path.write_text(
+            json.dumps(
+                {
+                    "cache_version": _CACHE_VERSION,
+                    "built_at": time.time(),
+                    "gtin_index": gtin_index,
+                    "sku_index": sku_index,
+                    "brands": brands,
+                    "variants": variants,
+                }
+            )
+        )
     except Exception:
         logger.warning("Failed to write SpoolmanDB-Community cache file", exc_info=True)
-    return index, brands, variants
+    return gtin_index, sku_index, brands, variants
 
 
 async def _ensure_loaded(force: bool = False) -> None:
-    global _index, _brands, _variants, _index_loaded_at
-    if _index is not None and not force and (time.time() - _index_loaded_at) < SPOOLMANDB_COMMUNITY_TTL_SECONDS:
+    global _gtin_index, _sku_index, _brands, _variants, _index_loaded_at
+    if _gtin_index is not None and not force and (time.time() - _index_loaded_at) < SPOOLMANDB_COMMUNITY_TTL_SECONDS:
         return
     async with _refresh_lock:
-        if _index is not None and not force and (time.time() - _index_loaded_at) < SPOOLMANDB_COMMUNITY_TTL_SECONDS:
+        if (
+            _gtin_index is not None
+            and not force
+            and (time.time() - _index_loaded_at) < SPOOLMANDB_COMMUNITY_TTL_SECONDS
+        ):
             return
         loaded = None if force else _load_cached()
         if loaded is None:
             loaded = await _refresh()
-        _index, _brands, _variants = loaded
+        _gtin_index, _sku_index, _brands, _variants = loaded
         _index_loaded_at = time.time()
 
 
-async def get_index(force: bool = False) -> dict[str, dict]:
-    """Return the barcode -> fields index (memory -> disk cache -> download)."""
-    await _ensure_loaded(force)
-    return _index or {}
+async def get_gtin_index() -> dict[str, dict]:
+    """Return the canonical-GTIN -> {fields, all_codes} index (memory -> disk cache -> download)."""
+    await _ensure_loaded()
+    return _gtin_index or {}
+
+
+async def get_sku_index() -> dict[str, dict]:
+    """Return the normalized-SKU -> {fields, all_codes} index."""
+    await _ensure_loaded()
+    return _sku_index or {}
 
 
 async def get_brands() -> list[str]:
@@ -284,13 +352,27 @@ async def get_filaments() -> list[dict]:
     return _variants or []
 
 
-async def lookup(barcode: str) -> dict | None:
-    """Return filament fields for a barcode from SpoolmanDB-Community, or None if not found."""
-    idx = await get_index()
-    return idx.get(canon(barcode))
+async def lookup(barcode: str) -> tuple[dict, list[dict]] | None:
+    """Resolve a GTIN barcode: (fields, all_codes) for its color, or None if not found."""
+    idx = await get_gtin_index()
+    entry = idx.get(canon(barcode))
+    if not entry:
+        return None
+    return entry["fields"], entry["all_codes"]
+
+
+async def lookup_sku(code: str) -> tuple[dict, list[dict]] | None:
+    """Resolve a manufacturer SKU the same way `lookup` resolves a GTIN."""
+    idx = await get_sku_index()
+    entry = idx.get((code or "").strip().upper())
+    if not entry:
+        return None
+    return entry["fields"], entry["all_codes"]
 
 
 async def refresh_database() -> int:
-    """Force a re-download of the repo tarball regardless of TTL. Returns the barcode-index entry count."""
-    idx = await get_index(force=True)
-    return len(idx)
+    """Force a re-download of the repo tarball regardless of TTL. Returns the combined entry count."""
+    await _ensure_loaded(force=True)
+    gtin_idx = await get_gtin_index()
+    sku_idx = await get_sku_index()
+    return len(gtin_idx) + len(sku_idx)

@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { ForecastPanel } from '../components/ForecastPanel';
 import { api, spoolbuddyApi, ApiError } from '../api/client';
-import type { InventorySpool, SpoolCatalogEntry } from '../api/client';
+import type { InventorySpool, LinkedCode, SpoolCatalogEntry } from '../api/client';
 import { Button } from '../components/Button';
 import { FilamentSwatch } from '../components/FilamentSwatch';
 import { buildFilamentBackground } from '../components/filamentSwatchHelpers';
@@ -501,6 +501,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
     mode: SpoolFormMode;
     initialData?: Partial<SpoolFormData>;
     fromBarcodeScan?: boolean;
+    linkedCodes?: LinkedCode[];
   } | null>(null);
   const [barcodeScanOpen, setBarcodeScanOpen] = useState(false);
 
@@ -522,6 +523,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
       mode: 'create',
       initialData,
       fromBarcodeScan: true,
+      linkedCodes: result.linked_codes,
     });
   }, []);
   const deepLinkHandled = useRef(false);
@@ -2249,6 +2251,7 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           spoolsQueryKey={spoolsQueryKey}
           initialData={formModal.initialData}
           forcedDataOrigin={formModal.fromBarcodeScan ? 'barcode_scan' : undefined}
+          scannedLinkedCodes={formModal.linkedCodes}
         />
       )}
 

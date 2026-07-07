@@ -2816,6 +2816,16 @@ export type SpoolLabelTemplate =
   | 'avery_5160'
   | 'avery_l7160';
 
+// One sibling code (GTIN barcode or manufacturer SKU/article number)
+// discovered for the same physical product as the primary scanned/entered
+// code — e.g. another package-size GTIN, the refill-pack GTIN, or the
+// manufacturer SKU. Read-only display data; excludes the primary code itself.
+export interface LinkedCode {
+  code: string;
+  kind: 'gtin' | 'sku';
+  is_refill: boolean;
+}
+
 export interface InventorySpool {
   id: number;
   material: string;
@@ -2870,6 +2880,7 @@ export interface InventorySpool {
   k_profiles?: SpoolKProfile[];
   storage_location?: string | null;
   location_id?: number | null;
+  linked_codes?: LinkedCode[];
 }
 
 // Scan-to-add barcode lookup (#1). `source` tells the caller how much to
@@ -2889,6 +2900,7 @@ export interface BarcodeLookupResult {
   label_weight: number | null;
   nozzle_temp_min: number | null;
   nozzle_temp_max: number | null;
+  linked_codes: LinkedCode[];
 }
 
 export interface LabelParseResult {
@@ -2903,6 +2915,7 @@ export interface LabelParseResult {
   label_weight: number | null;
   nozzle_temp_min: number | null;
   nozzle_temp_max: number | null;
+  linked_codes: LinkedCode[];
 }
 
 export interface SpoolmanBulkCreateResult {

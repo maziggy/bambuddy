@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, Save, Beaker, Palette, Zap, Tag, Unlink } from 'lucide-react';
 import { api, ApiError } from '../api/client';
-import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, BuiltinFilament, SpoolmanBulkCreateResult, SpoolKProfileInput, SpoolmanFilamentEntry } from '../api/client';
+import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, BuiltinFilament, SpoolmanBulkCreateResult, SpoolKProfileInput, SpoolmanFilamentEntry, LinkedCode } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import type { SpoolFormData, PrinterWithCalibrations, ColorPreset } from './spool-form/types';
@@ -47,6 +47,13 @@ interface SpoolFormModalProps {
   initialData?: Partial<SpoolFormData>;
   /** Forces `data_origin` on create (e.g. "barcode_scan"). Ignored when editing. */
   forcedDataOrigin?: string;
+  /**
+   * Sibling GTIN/SKU codes discovered alongside `initialData.barcode` during
+   * a scan-to-add flow (see `ScannedFilamentResult.linked_codes`). Read-only
+   * display only — ignored when editing (the spool's own persisted
+   * `linked_codes` are used instead).
+   */
+  scannedLinkedCodes?: LinkedCode[];
 }
 
 export function SpoolFormModal({
@@ -61,6 +68,7 @@ export function SpoolFormModal({
   spoolsQueryKey = ['inventory-spools'],
   initialData,
   forcedDataOrigin,
+  scannedLinkedCodes,
 }: SpoolFormModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -988,6 +996,7 @@ export function SpoolFormModal({
                   }}
                   globalLowStockThreshold={globalLowStockThreshold}
                   spoolmanMode={spoolmanMode}
+                  linkedCodes={isEditing ? spool?.linked_codes : scannedLinkedCodes}
                 />
               </div>
 

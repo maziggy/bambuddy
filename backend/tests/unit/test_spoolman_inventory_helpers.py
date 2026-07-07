@@ -118,6 +118,41 @@ class TestMapSpoolmanSpool:
         result = _map_spoolman_spool(spool)
         assert result["barcode"] == "6938936716785"
 
+    def test_no_linked_codes_returns_empty_list(self):
+        result = _map_spoolman_spool(MINIMAL_SPOOL)
+        assert result["linked_codes"] == []
+
+    def test_linked_codes_read_from_extra_excluding_primary(self):
+        """extra.bambu_linked_codes stores every cross-referenced sibling code
+        (see _resolve_linked_codes_json in routes/spoolman_inventory.py) —
+        the primary barcode itself must be excluded since it's already shown
+        via the `barcode` field."""
+        import json
+
+        spool = {
+            **MINIMAL_SPOOL,
+            "extra": {
+                "bambu_barcode": json.dumps("6938936716785"),
+                "bambu_linked_codes": json.dumps(
+                    [
+                        {"code": "6938936716785", "kind": "gtin", "is_refill": False},
+                        {"code": "6938936716786", "kind": "gtin", "is_refill": True},
+                        {"code": "ALZMNTABS01", "kind": "sku", "is_refill": False},
+                    ]
+                ),
+            },
+        }
+        result = _map_spoolman_spool(spool)
+        assert result["linked_codes"] == [
+            {"code": "6938936716786", "kind": "gtin", "is_refill": True},
+            {"code": "ALZMNTABS01", "kind": "sku", "is_refill": False},
+        ]
+
+    def test_linked_codes_tolerates_malformed_json(self):
+        spool = {**MINIMAL_SPOOL, "extra": {"bambu_linked_codes": "not json"}}
+        result = _map_spoolman_spool(spool)
+        assert result["linked_codes"] == []
+
     def test_remaining_weight_drives_synthetic_used_for_parity(self):
         """When remaining_weight is set, weight_used = label - remaining and
         the baseline absorbs the used_weight delta. This mirrors the internal

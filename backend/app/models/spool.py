@@ -78,9 +78,21 @@ class Spool(Base):
 
     k_profiles: Mapped[list["SpoolKProfile"]] = relationship(back_populates="spool", cascade="all, delete-orphan")
     assignments: Mapped[list["SpoolAssignment"]] = relationship(back_populates="spool", cascade="all, delete-orphan")
+    codes: Mapped[list["SpoolCode"]] = relationship(back_populates="spool", cascade="all, delete-orphan")
     location: Mapped["Location | None"] = relationship(back_populates="spools")
+
+    @property
+    def linked_codes(self) -> list["SpoolCode"]:
+        """Every discovered code except the primary one (already shown via `barcode`).
+
+        Read-only display data for SpoolResponse's `linked_codes` field —
+        callers must eager-load `codes` (`selectinload(Spool.codes)`) first;
+        this never triggers its own lazy load in an async context.
+        """
+        return [c for c in self.codes if not c.is_primary]
 
 
 from backend.app.models.location import Location  # noqa: E402
 from backend.app.models.spool_assignment import SpoolAssignment  # noqa: E402
+from backend.app.models.spool_code import SpoolCode  # noqa: E402
 from backend.app.models.spool_k_profile import SpoolKProfile  # noqa: E402

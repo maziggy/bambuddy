@@ -73,6 +73,7 @@ describe('BarcodeScannerModal', () => {
       label_weight: 1000,
       nozzle_temp_min: 190,
       nozzle_temp_max: 230,
+      linked_codes: [],
     });
 
     const onResolved = vi.fn();
@@ -114,6 +115,7 @@ describe('BarcodeScannerModal', () => {
       label_weight: null,
       nozzle_temp_min: null,
       nozzle_temp_max: null,
+      linked_codes: [],
     });
 
     const onResolved = vi.fn();
@@ -129,6 +131,58 @@ describe('BarcodeScannerModal', () => {
         expect.objectContaining({ barcode: '000000000000', matched: false, source: null }),
       );
     });
+  });
+
+  it('falls back to treating non-GTIN manual input as a SKU', async () => {
+    vi.mocked(api.lookupFilamentBarcode).mockResolvedValueOnce({
+      enabled: true,
+      matched: true,
+      source: 'ofd',
+      barcode: 'ALZMNTABS01',
+      material: 'ASA',
+      brand: 'Polymaker',
+      subtype: null,
+      color_name: null,
+      rgba: null,
+      label_weight: null,
+      nozzle_temp_min: null,
+      nozzle_temp_max: null,
+      linked_codes: [{ code: '6938936716785', kind: 'gtin', is_refill: false }],
+    });
+
+    const onResolved = vi.fn();
+    render(<BarcodeScannerModal onClose={vi.fn()} onResolved={onResolved} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /manual entry/i }));
+    const input = await screen.findByPlaceholderText(/6938936716785/);
+    fireEvent.change(input, { target: { value: 'alzmntabs01' } });
+    fireEvent.click(screen.getByRole('button', { name: /look up/i }));
+
+    await waitFor(() => {
+      expect(api.lookupFilamentBarcode).toHaveBeenCalledWith('ALZMNTABS01');
+    });
+    await waitFor(() => {
+      expect(onResolved).toHaveBeenCalledWith(
+        expect.objectContaining({
+          barcode: 'ALZMNTABS01',
+          matched: true,
+          source: 'ofd',
+          linked_codes: [{ code: '6938936716785', kind: 'gtin', is_refill: false }],
+        }),
+      );
+    });
+  });
+
+  it('rejects manual input that is too short to be a plausible SKU', async () => {
+    render(<BarcodeScannerModal onClose={vi.fn()} onResolved={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /manual entry/i }));
+    const input = await screen.findByPlaceholderText(/6938936716785/);
+    fireEvent.change(input, { target: { value: 'ab' } });
+    fireEvent.click(screen.getByRole('button', { name: /look up/i }));
+
+    expect(await screen.findByText(/manufacturer SKU\/article number/i)).toBeInTheDocument();
+    expect(api.lookupFilamentBarcode).not.toHaveBeenCalled();
   });
 
   it('does not call onResolved when the lookup request fails', async () => {

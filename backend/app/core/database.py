@@ -206,6 +206,7 @@ async def init_db():
         spool,
         spool_assignment,
         spool_catalog,
+        spool_code,
         spool_k_profile,
         spool_usage_history,
         spoolbuddy_device,
@@ -3340,6 +3341,41 @@ async def run_migrations(conn):
     # before falling back to the Open Filament Database.
     await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN barcode VARCHAR(64)")
     await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_spool_barcode ON spool (barcode)")
+
+    # Migration: backfill the new one-to-many spool_code table from the
+    # existing single Spool.barcode column, so multi-code cross-referencing
+    # (see _resolve_barcode in routes/inventory.py) has a starting point for
+    # spools scanned before this feature shipped. Spool.barcode itself is
+    # unchanged and stays the denormalized "primary code" column. The
+    # spool_code table itself is created by Base.metadata.create_all() above
+    # (new model, not an ALTER), so this only needs to backfill rows.
+    await _migrate_backfill_spool_codes(conn)
+
+
+async def _migrate_backfill_spool_codes(conn) -> None:
+    """Backfill spool_code from every Spool.barcode set before this feature shipped.
+
+    Idempotent via NOT EXISTS on the same (spool_id, code) key the table's
+    unique constraint enforces, so re-running on every startup is safe and
+    never double-inserts or races the constraint.
+    """
+    from sqlalchemy import text
+
+    async with conn.begin_nested():
+        await conn.execute(
+            text(
+                """
+                INSERT INTO spool_code (spool_id, code, kind, is_refill, is_primary)
+                SELECT spool.id, spool.barcode, 'gtin', false, true
+                FROM spool
+                WHERE spool.barcode IS NOT NULL
+                  AND NOT EXISTS (
+                    SELECT 1 FROM spool_code
+                    WHERE spool_code.spool_id = spool.id AND spool_code.code = spool.barcode
+                  )
+                """
+            )
+        )
 
 
 _USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (

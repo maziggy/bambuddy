@@ -5,7 +5,8 @@ import type { BrowserMultiFormatReader as BrowserMultiFormatReaderType, IScanner
 import { Button } from './Button';
 import { api } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
-import { extractGtinFromManualEntry, extractGtinFromScan, isValidUpcEanBarcode } from '../utils/barcode';
+import { extractGtinFromManualEntry, extractGtinFromScan, isPlausibleSku, isValidUpcEanBarcode } from '../utils/barcode';
+import type { LinkedCode } from '../api/client';
 
 type ScanTab = 'scan' | 'photo' | 'manual';
 
@@ -19,6 +20,7 @@ export interface ScannedFilamentResult {
   color_name: string | null;
   rgba: string | null;
   label_weight: number | null;
+  linked_codes: LinkedCode[];
 }
 
 interface BarcodeScannerModalProps {
@@ -194,6 +196,7 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
         color_name: result.color_name,
         rgba: result.rgba,
         label_weight: result.label_weight,
+        linked_codes: result.linked_codes,
       });
     } catch {
       showToast(t('inventory.barcodeScan.lookupFailed', 'Barcode lookup failed'), 'error');
@@ -220,9 +223,11 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
     import('@zxing/browser').then(({ BrowserMultiFormatReader, BarcodeFormat }) => {
       if (cancelled || !videoRef.current) return;
       const reader: BrowserMultiFormatReaderType = new BrowserMultiFormatReader();
-      // Retail filament spools carry either a linear UPC/EAN barcode or (less
-      // commonly) a GS1 Digital Link QR code encoding the same GTIN in its
-      // URL path. Restricting decode to just these formats (instead of every
+      // Retail filament spools carry a linear UPC/EAN barcode, a GS1 Digital
+      // Link QR code encoding the same GTIN in its URL path, or — for some
+      // manufacturers (e.g. a Polymaker box with no UPC/EAN at all) — a Code
+      // 128 "inventory barcode" encoding a SKU/article number instead of a
+      // GTIN. Restricting decode to just these formats (instead of every
       // symbology ZXing supports) cuts down on false-positive reads from
       // webcam noise, which is where the single-digit "barcode" misreads
       // were coming from.
@@ -232,11 +237,24 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
         BarcodeFormat.EAN_13,
         BarcodeFormat.EAN_8,
         BarcodeFormat.QR_CODE,
+        BarcodeFormat.CODE_128,
       ];
       reader
         .decodeFromVideoDevice(undefined, videoRef.current, (result, _err, controls) => {
           controlsRef.current = controls;
           if (!result || resolvingRef.current) return;
+          if (result.getBarcodeFormat() === BarcodeFormat.CODE_128) {
+            // Code 128 has its own symbology-level checksum and start/stop
+            // pattern, so a successful decode is already trustworthy — unlike
+            // a bare guessed digit string, it doesn't need a GTIN-style
+            // checksum (it's typically not even a GTIN, but a manufacturer
+            // SKU/article number). Only a light sanity check is applied.
+            const text = result.getText().trim();
+            if (!isPlausibleSku(text)) return;
+            controls.stop();
+            void resolveBarcode(text);
+            return;
+          }
           // A UPC/EAN decode is already a bare digit string; a QR decode is
           // typically a GS1 Digital Link URL with the GTIN embedded in its
           // path — extractGtinFromScan pulls the candidate out of either shape.
@@ -306,6 +324,7 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
         color_name: result.color_name,
         rgba: result.rgba,
         label_weight: result.label_weight,
+        linked_codes: result.linked_codes,
       });
     } catch {
       setOcrHint(null);
@@ -320,14 +339,26 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
     // Tolerates spaces/dashes for readability and a pasted GS1 Digital Link
     // URL (e.g. copied from a phone's native QR scanner), not just bare digits.
     const candidate = extractGtinFromManualEntry(trimmed);
-    if (!candidate || !isValidUpcEanBarcode(candidate)) {
-      setManualError(
-        t('inventory.barcodeScan.manualInvalid', 'Enter a valid UPC-A, EAN-8, or EAN-13 barcode (8, 12, or 13 digits)'),
-      );
+    if (candidate && isValidUpcEanBarcode(candidate)) {
+      setManualError(null);
+      void resolveBarcode(candidate);
       return;
     }
-    setManualError(null);
-    void resolveBarcode(candidate);
+    // Not a valid GTIN shape — fall back to treating the raw input as a
+    // manufacturer SKU/article number (e.g. a Polymaker inventory barcode
+    // typed by hand instead of scanned) rather than hard-rejecting it. The
+    // backend's OFD/SpoolmanDB-Community lookups decide if it resolves.
+    if (isPlausibleSku(trimmed)) {
+      setManualError(null);
+      void resolveBarcode(trimmed.toUpperCase());
+      return;
+    }
+    setManualError(
+      t(
+        'inventory.barcodeScan.manualInvalid',
+        'Enter a valid UPC-A/EAN-8/EAN-13 barcode, or a manufacturer SKU/article number (3+ characters)',
+      ),
+    );
   };
 
   const busy = loadingMessage !== null;
@@ -470,11 +501,13 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
               {activeTab === 'manual' && (
                 <div className="space-y-4 py-2">
                   <p className="text-sm text-bambu-gray">
-                    {t('inventory.barcodeScan.manualHint', 'Type the barcode printed on the spool box')}
+                    {t(
+                      'inventory.barcodeScan.manualHint',
+                      'Type the barcode or SKU/article number printed on the spool box',
+                    )}
                   </p>
                   <input
                     type="text"
-                    inputMode="numeric"
                     value={manualBarcode}
                     onChange={(e) => {
                       setManualBarcode(e.target.value);

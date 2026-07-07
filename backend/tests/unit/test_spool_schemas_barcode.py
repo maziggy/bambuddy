@@ -32,6 +32,15 @@ class TestNormalizeBarcode:
     def test_all_zeros_returns_zero(self):
         assert normalize_barcode("0000") == "0"
 
+    def test_alphanumeric_sku_is_not_digit_stripped(self):
+        """A Code 128 manufacturer SKU/article number (e.g. Polymaker's
+        inventory barcode with no UPC/EAN counterpart) must survive intact —
+        stripping non-digits would mangle "ALZMNTABS01" down to "1"."""
+        assert normalize_barcode("ALZMNTABS01") == "ALZMNTABS01"
+
+    def test_sku_is_trimmed_and_uppercased(self):
+        assert normalize_barcode("  alzmntabs01  ") == "ALZMNTABS01"
+
 
 class TestSpoolCreateBarcodeValidation:
     def test_canonicalizes_on_create(self):
@@ -45,6 +54,10 @@ class TestSpoolCreateBarcodeValidation:
     def test_blank_barcode_normalizes_to_none(self):
         spool = SpoolCreate(material="PLA", barcode="")
         assert spool.barcode is None
+
+    def test_sku_barcode_survives_create(self):
+        spool = SpoolCreate(material="PLA", barcode="ALZMNTABS01")
+        assert spool.barcode == "ALZMNTABS01"
 
 
 class TestSpoolUpdateBarcodeValidation:

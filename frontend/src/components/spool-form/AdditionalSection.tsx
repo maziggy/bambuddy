@@ -178,6 +178,7 @@ export function AdditionalSection({
   onCreateLocation,
   globalLowStockThreshold,
   spoolmanMode = false,
+  linkedCodes = [],
 }: AdditionalSectionProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -382,7 +383,6 @@ export function AdditionalSection({
         <input
           id="spool-barcode"
           type="text"
-          inputMode="numeric"
           className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm font-mono placeholder:text-bambu-gray/50 placeholder:font-sans focus:outline-none focus:border-bambu-green"
           placeholder={t('inventory.barcodePlaceholder', 'e.g. 6938936716785')}
           value={formData.barcode}
@@ -392,6 +392,15 @@ export function AdditionalSection({
         <p className="text-xs text-bambu-gray mt-1">
           {t('inventory.barcodeHelp', 'Filled in automatically by Scan Barcode. Enter one manually so a future scan of the same code matches this spool instantly.')}
         </p>
+        {linkedCodes.length > 0 && (
+          <p className="text-xs text-bambu-gray mt-1 font-mono">
+            {t('inventory.linkedCodesLabel', 'Also matches: {{codes}}', {
+              codes: linkedCodes
+                .map((c) => (c.is_refill ? `${c.code} (${t('inventory.linkedCodesRefill', 'refill')})` : c.code))
+                .join(', '),
+            })}
+          </p>
+        )}
       </div>
 
       {/* Note */}

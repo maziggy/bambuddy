@@ -230,6 +230,24 @@ async def _translate_spoolman_errors():
         raise HTTPException(status_code=503, detail="Spoolman server is not reachable") from exc
 
 
+async def _resolve_linked_codes_json(barcode: str) -> str | None:
+    """Cross-reference `barcode` against OFD/SpoolmanDB-Community and return the
+    discovered code bundle JSON-encoded for extra.bambu_linked_codes, or None
+    if nothing was found. Mirrors `_persist_barcode_codes_for_spool`'s
+    cross-referencing for the local-DB inventory mode (see `routes/inventory.py`)."""
+    from backend.app.api.routes.inventory import _classify_code, _external_all_codes
+
+    code, kind = _classify_code(barcode)
+    try:
+        external = await _external_all_codes(code, kind)
+    except Exception:
+        logger.warning("Cross-reference lookup failed for Spoolman barcode %s", barcode, exc_info=True)
+        external = None
+    if not external:
+        return None
+    return json.dumps(external[2])
+
+
 def _raise_if_partial_failure(spools: list[dict], results: list, operation: str) -> None:
     """Raise HTTP 502 if any gather result is an exception, logging each failure."""
     failures = [(s["id"], r) for s, r in zip(spools, results, strict=True) if isinstance(r, BaseException)]
@@ -590,6 +608,7 @@ async def create_spool(
             await client.ensure_extra_field("bambu_color_name")
         if data.barcode is not None:
             await client.ensure_extra_field("bambu_barcode")
+            await client.ensure_extra_field("bambu_linked_codes")
         new_extra: dict = {}
         if data.slicer_filament is not None:
             new_extra["bambu_slicer_filament"] = json.dumps(data.slicer_filament)
@@ -599,6 +618,10 @@ async def create_spool(
             new_extra["bambu_color_name"] = json.dumps(data.color_name)
         if data.barcode is not None:
             new_extra["bambu_barcode"] = json.dumps(data.barcode)
+            if data.barcode:
+                linked_json = await _resolve_linked_codes_json(data.barcode)
+                if linked_json:
+                    new_extra["bambu_linked_codes"] = linked_json
         if new_extra:
             try:
                 async with _translate_spoolman_errors():
@@ -890,6 +913,7 @@ async def update_spool(
             await client.ensure_extra_field("bambu_color_name")
         if bc_set:
             await client.ensure_extra_field("bambu_barcode")
+            await client.ensure_extra_field("bambu_linked_codes")
         new_extra: dict = {}
         if sf_set:
             new_extra["bambu_slicer_filament"] = json.dumps(data.slicer_filament or "")
@@ -899,6 +923,11 @@ async def update_spool(
             new_extra["bambu_color_name"] = json.dumps(data.color_name or "")
         if bc_set:
             new_extra["bambu_barcode"] = json.dumps(data.barcode or "")
+            new_extra["bambu_linked_codes"] = json.dumps([])
+            if data.barcode:
+                linked_json = await _resolve_linked_codes_json(data.barcode)
+                if linked_json:
+                    new_extra["bambu_linked_codes"] = linked_json
         async with _translate_spoolman_errors():
             updated = await client.merge_spool_extra(spool_id, new_extra)
 

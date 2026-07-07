@@ -261,7 +261,10 @@ def _build_index(variants: list[dict]) -> tuple[dict[str, dict], dict[str, dict]
     return gtin_index, sku_index
 
 
-def _load_cached() -> tuple[dict, dict, list, list] | None:
+def _read_cache_file() -> dict | None:
+    """Parse the cache file and check its version, ignoring TTL. Returns the
+    raw dict, or None if missing/corrupt/wrong-version — those are the only
+    conditions that make a cache file truly unusable; staleness alone does not."""
     path = _cache_path()
     if not path.exists():
         return None
@@ -269,16 +272,36 @@ def _load_cached() -> tuple[dict, dict, list, list] | None:
         data = json.loads(path.read_text())
         if data.get("cache_version") != _CACHE_VERSION:
             return None
-        if time.time() - data.get("built_at", 0) > SPOOLMANDB_COMMUNITY_TTL_SECONDS:
-            return None
-        return (
-            data.get("gtin_index", {}),
-            data.get("sku_index", {}),
-            data.get("brands", []),
-            data.get("variants", []),
-        )
+        return data
     except Exception:
         return None
+
+
+def _cache_tuple(data: dict) -> tuple[dict, dict, list, list]:
+    return (
+        data.get("gtin_index", {}),
+        data.get("sku_index", {}),
+        data.get("brands", []),
+        data.get("variants", []),
+    )
+
+
+def _load_cached() -> tuple[dict, dict, list, list] | None:
+    """Return the cache contents if present and fresh (within TTL), else None."""
+    data = _read_cache_file()
+    if data is None:
+        return None
+    if time.time() - data.get("built_at", 0) > SPOOLMANDB_COMMUNITY_TTL_SECONDS:
+        return None
+    return _cache_tuple(data)
+
+
+def _load_stale_cached() -> tuple[dict, dict, list, list] | None:
+    """Return the cache contents regardless of TTL — a last-resort fallback
+    for when a refresh attempt fails (e.g. offline), so a working-but-old
+    index is still served instead of dropping to "no match" for everything."""
+    data = _read_cache_file()
+    return None if data is None else _cache_tuple(data)
 
 
 async def _refresh() -> tuple[dict, dict, list, list]:
@@ -289,7 +312,12 @@ async def _refresh() -> tuple[dict, dict, list, list]:
     try:
         path = _cache_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
+        # Write to a temp file and rename over the real path — Path.replace()
+        # is atomic (POSIX rename(2) semantics, and Windows-safe since it
+        # replaces an existing destination too), so a reader never observes a
+        # half-written cache file even if the process is killed mid-write.
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        tmp_path.write_text(
             json.dumps(
                 {
                     "cache_version": _CACHE_VERSION,
@@ -301,6 +329,7 @@ async def _refresh() -> tuple[dict, dict, list, list]:
                 }
             )
         )
+        tmp_path.replace(path)
     except Exception:
         logger.warning("Failed to write SpoolmanDB-Community cache file", exc_info=True)
     return gtin_index, sku_index, brands, variants
@@ -319,7 +348,18 @@ async def _ensure_loaded(force: bool = False) -> None:
             return
         loaded = None if force else _load_cached()
         if loaded is None:
-            loaded = await _refresh()
+            try:
+                loaded = await _refresh()
+            except Exception:
+                # Offline/upstream-down: a stale-but-working index beats no
+                # index at all. Only re-raise if there's truly nothing on
+                # disk to fall back to (e.g. first-ever startup with no
+                # network) — that's the one case where the caller must know
+                # the lookup couldn't be attempted at all.
+                loaded = _load_stale_cached()
+                if loaded is None:
+                    raise
+                logger.warning("SpoolmanDB-Community refresh failed; serving stale disk cache instead", exc_info=True)
         _gtin_index, _sku_index, _brands, _variants = loaded
         _index_loaded_at = time.time()
 

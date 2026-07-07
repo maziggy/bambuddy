@@ -11,7 +11,7 @@ Tests:
 
 import json
 import time
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -218,6 +218,55 @@ class TestCachingAndLookup:
             result = await ofd_client.get_gtin_index()
             mock_refresh.assert_awaited_once()
         assert ofd_client.canon("06938936716785") in result
+
+    @pytest.mark.asyncio
+    async def test_refresh_failure_falls_back_to_stale_disk_cache(self, tmp_path):
+        """Offline/upstream-down must not discard an otherwise-usable, if old,
+        index — a stale hit beats reporting no match for every barcode."""
+        stale_time = time.time() - ofd_client.OFD_TTL_SECONDS - 10
+        gtin_index, article_index, variant_codes = ofd_client._build_index(SAMPLE_ALL_JSON)
+        self._write_cache(tmp_path, gtin_index, article_index, variant_codes, ["Sunlu"], built_at=stale_time)
+
+        with patch(
+            "backend.app.services.ofd_client._refresh",
+            new=AsyncMock(side_effect=RuntimeError("offline")),
+        ):
+            result = await ofd_client.get_gtin_index()
+        assert ofd_client.canon("06938936716785") in result
+
+    @pytest.mark.asyncio
+    async def test_refresh_failure_with_no_cache_at_all_raises(self, tmp_path):
+        """No stale fallback exists (first-ever startup, no network) — the
+        caller must still learn the lookup couldn't be attempted."""
+        with (
+            patch(
+                "backend.app.services.ofd_client._refresh",
+                new=AsyncMock(side_effect=RuntimeError("offline")),
+            ),
+            pytest.raises(RuntimeError),
+        ):
+            await ofd_client.get_gtin_index()
+
+    @pytest.mark.asyncio
+    async def test_refresh_writes_cache_atomically(self, tmp_path):
+        """Cache writes go through a temp file + rename, never a partial file
+        at the real path — even if a write is interrupted mid-way."""
+        cache_path = tmp_path / "ofd_cache.json"
+        all_json_response = MagicMock()
+        all_json_response.raise_for_status = MagicMock()
+        all_json_response.json = MagicMock(return_value=SAMPLE_ALL_JSON)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=all_json_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("backend.app.services.ofd_client.httpx.AsyncClient", return_value=mock_client):
+            await ofd_client._refresh()
+
+        assert cache_path.exists()
+        assert not cache_path.with_suffix(".json.tmp").exists()
+        data = json.loads(cache_path.read_text())
+        assert data["cache_version"] == ofd_client._CACHE_VERSION
 
     @pytest.mark.asyncio
     async def test_lookup_returns_none_for_unknown_barcode(self, tmp_path):

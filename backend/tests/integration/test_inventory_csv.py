@@ -531,6 +531,33 @@ class TestInventoryCsvExtraColumns:
         spool = (await db_session.execute(select(Spool))).scalars().one()
         assert spool.barcode == "12345678905"
 
+    async def test_alphanumeric_sku_barcode_imports_intact(self, async_client: AsyncClient, db_session: AsyncSession):
+        # A manufacturer SKU/article number (e.g. a Polymaker inventory
+        # barcode with no UPC/EAN counterpart) must survive CSV import
+        # unmangled, same as scanning/typing it into the form does.
+        csv_text = "material,barcode\nPLA,ALZMNTABS01\n"
+
+        response = await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+        assert response.status_code == 200, response.text
+        assert response.json()["created"] == 1
+
+        spool = (await db_session.execute(select(Spool))).scalars().one()
+        assert spool.barcode == "ALZMNTABS01"
+
+    async def test_garbage_barcode_cell_is_a_row_error(self, async_client: AsyncClient):
+        # A cell with no digits and no letters (e.g. a stray "---" placeholder)
+        # normalizes to None, which SpoolCreate accepts as "no barcode" — that
+        # would otherwise silently drop data the user actually typed. Must
+        # surface as a row error instead, like every other malformed column.
+        csv_text = "material,barcode\nPLA,---\n"
+
+        response = await async_client.post("/api/v1/inventory/spools/import?dry_run=true", files=_csv_upload(csv_text))
+
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["error_count"] == 1
+        assert "barcode" in data["rows"][0]["reason"]
+
     async def test_import_without_barcode_column_defaults_to_none(
         self, async_client: AsyncClient, db_session: AsyncSession
     ):

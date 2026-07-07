@@ -147,7 +147,7 @@ class SpoolBase(BaseModel):
     tray_uuid: str | None = None
     data_origin: str | None = None
     tag_type: str | None = None
-    barcode: str | None = None
+    barcode: str | None = Field(default=None, max_length=64)  # matches Spool.barcode's VARCHAR(64)
     cost_per_kg: float | None = Field(default=None, ge=0)
     weight_locked: bool = False
     last_scale_weight: int | None = None
@@ -208,7 +208,7 @@ class SpoolUpdate(BaseModel):
     tray_uuid: str | None = None
     data_origin: str | None = None
     tag_type: str | None = None
-    barcode: str | None = None
+    barcode: str | None = Field(default=None, max_length=64)  # matches Spool.barcode's VARCHAR(64)
     cost_per_kg: float | None = Field(default=None, ge=0)
     weight_locked: bool | None = None
     # User-defined category + per-spool low-stock threshold override (#729).
@@ -257,6 +257,10 @@ class SpoolResponse(SpoolBase):
     # or data sourced from AMS firmware / backups may carry malformed values.
     # A single bad row must not 500 the entire inventory list endpoint (#1055).
     rgba: str | None = None
+    # Same rationale as rgba: the write paths cap barcode at 64 chars (matching
+    # the DB column), but SQLite doesn't enforce VARCHAR length, so a legacy
+    # row written before that cap existed must still read back without 500ing.
+    barcode: str | None = None
     added_full: bool | None = None
     last_used: datetime | None = None
     encode_time: datetime | None = None

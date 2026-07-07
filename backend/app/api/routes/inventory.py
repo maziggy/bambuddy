@@ -1701,7 +1701,11 @@ async def refresh_barcode_database(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Force a re-download of the OFD + SpoolmanDB-Community databases, bypassing the 24h cache TTL."""
-    ofd_count = await ofd_client.refresh_database()
+    try:
+        ofd_count = await ofd_client.refresh_database()
+    except Exception:
+        logger.warning("OFD refresh failed", exc_info=True)
+        ofd_count = 0
     try:
         spoolmandb_count = await spoolmandb_community_client.refresh_database()
     except Exception:

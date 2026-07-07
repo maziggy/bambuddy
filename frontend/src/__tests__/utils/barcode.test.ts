@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { extractGtinFromManualEntry, extractGtinFromScan, isValidUpcEanBarcode } from '../../utils/barcode';
+import {
+  expandUpcEToUpcA,
+  extractGtinFromManualEntry,
+  extractGtinFromScan,
+  isValidUpcEanBarcode,
+} from '../../utils/barcode';
 
 describe('isValidUpcEanBarcode', () => {
   it('accepts a valid UPC-A code', () => {
@@ -46,6 +51,35 @@ describe('isValidUpcEanBarcode', () => {
   it('rejects lengths outside the GTIN family (8/12/13/14)', () => {
     expect(isValidUpcEanBarcode('12345678901')).toBe(false); // 11 digits
     expect(isValidUpcEanBarcode('123456789012345')).toBe(false); // 15 digits
+  });
+});
+
+describe('expandUpcEToUpcA', () => {
+  it('expands the canonical GS1 example pair (d6=6, the "5-9" rule)', () => {
+    expect(expandUpcEToUpcA('01234565')).toBe('012345000065');
+  });
+
+  it('expanded UPC-A validates as a correct checksum', () => {
+    // The UPC-E check digit is by design identical to the expanded UPC-A's
+    // check digit — confirms the expansion produces a checksum-valid code.
+    expect(isValidUpcEanBarcode(expandUpcEToUpcA('01234565')!)).toBe(true);
+  });
+
+  it('expands the d6=0/1/2 rule (manufacturer = d1 d2 d6, product = d3 d4 d5)', () => {
+    // Hand-derived and verified: body "1000000005" + check digit 4 computed
+    // via the standard mod-10 algorithm.
+    expect(expandUpcEToUpcA('01000504')).toBe('010000000054');
+    expect(isValidUpcEanBarcode(expandUpcEToUpcA('01000504')!)).toBe(true);
+  });
+
+  it('rejects non-8-digit input', () => {
+    expect(expandUpcEToUpcA('1234567')).toBeNull();
+    expect(expandUpcEToUpcA('123456789')).toBeNull();
+    expect(expandUpcEToUpcA('')).toBeNull();
+  });
+
+  it('rejects non-digit characters', () => {
+    expect(expandUpcEToUpcA('0123456A')).toBeNull();
   });
 });
 

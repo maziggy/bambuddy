@@ -7,7 +7,10 @@ barcode matches the stored spool via `_resolve_barcode`'s native-inventory
 check regardless of which UPC-A/EAN-13 form was typed or scanned.
 """
 
-from backend.app.schemas.spool import SpoolCreate, SpoolUpdate, normalize_barcode
+import pytest
+from pydantic import ValidationError
+
+from backend.app.schemas.spool import SpoolCreate, SpoolResponse, SpoolUpdate, normalize_barcode
 
 
 class TestNormalizeBarcode:
@@ -59,6 +62,16 @@ class TestSpoolCreateBarcodeValidation:
         spool = SpoolCreate(material="PLA", barcode="ALZMNTABS01")
         assert spool.barcode == "ALZMNTABS01"
 
+    def test_rejects_barcode_over_64_chars(self):
+        """Matches Spool.barcode's VARCHAR(64) — Postgres would truncate a
+        longer value silently, so reject it up front instead (#max_length parity)."""
+        with pytest.raises(ValidationError):
+            SpoolCreate(material="PLA", barcode="A" * 65)
+
+    def test_accepts_barcode_at_64_char_boundary(self):
+        spool = SpoolCreate(material="PLA", barcode="A" * 64)
+        assert spool.barcode == "A" * 64
+
 
 class TestSpoolUpdateBarcodeValidation:
     def test_canonicalizes_on_update(self):
@@ -68,3 +81,27 @@ class TestSpoolUpdateBarcodeValidation:
     def test_unset_barcode_stays_unset(self):
         update = SpoolUpdate()
         assert "barcode" not in update.model_fields_set
+
+    def test_rejects_barcode_over_64_chars(self):
+        with pytest.raises(ValidationError):
+            SpoolUpdate(barcode="A" * 65)
+
+
+class TestSpoolResponseBarcodeUnconstrained:
+    def test_legacy_over_length_barcode_does_not_500(self):
+        """rgba already has this same escape hatch (#1055) — a barcode written
+        before the 64-char cap existed (SQLite doesn't enforce VARCHAR length)
+        must still read back instead of 500ing the whole inventory list."""
+        response = SpoolResponse.model_validate(
+            {
+                "id": 1,
+                "material": "PLA",
+                "barcode": "A" * 100,
+                "label_weight": 1000,
+                "core_weight": 250,
+                "weight_used": 0,
+                "created_at": "2026-01-01T00:00:00",
+                "updated_at": "2026-01-01T00:00:00",
+            }
+        )
+        assert response.barcode == "A" * 100

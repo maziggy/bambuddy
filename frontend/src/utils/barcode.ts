@@ -28,6 +28,49 @@ export function isValidUpcEanBarcode(value: string): boolean {
   return calculated === checkDigit;
 }
 
+/**
+ * Expand a decoded UPC-E code to its equivalent 12-digit UPC-A form.
+ *
+ * UPC-E is a "zero-suppressed" compression of a UPC-A code, used on small
+ * packaging — ZXing decodes it to its own raw 8-digit form (number-system
+ * digit + 6 compressed digits + check digit), which is NOT validatable via
+ * `isValidUpcEanBarcode`'s standard checksum directly: that algorithm
+ * assumes a genuinely-encoded EAN-8 payload, not UPC-E's compression, so an
+ * 8-digit UPC-E read would silently fail validation and be dropped even
+ * when correctly decoded. It must be expanded to UPC-A first.
+ *
+ * The expansion rule is keyed on the last of the 6 compressed digits and is
+ * the standard GS1 zero-suppression table; the UPC-E check digit is by
+ * design identical to the expanded UPC-A's check digit, so no separate
+ * check-digit computation is needed here — `isValidUpcEanBarcode` verifies
+ * it against the expanded form. Verified against the canonical example
+ * pair UPC-E "01234565" <-> UPC-A "012345000065".
+ *
+ * Returns null if `upce` isn't an 8-digit string.
+ */
+export function expandUpcEToUpcA(upce: string): string | null {
+  if (!/^\d{8}$/.test(upce)) return null;
+  const [numberSystem, d1, d2, d3, d4, d5, d6, checkDigit] = upce.split('');
+
+  let body: string;
+  switch (d6) {
+    case '0':
+    case '1':
+    case '2':
+      body = `${d1}${d2}${d6}0000${d3}${d4}${d5}`;
+      break;
+    case '3':
+      body = `${d1}${d2}${d3}00000${d4}${d5}`;
+      break;
+    case '4':
+      body = `${d1}${d2}${d3}${d4}00000${d5}`;
+      break;
+    default:
+      body = `${d1}${d2}${d3}${d4}${d5}0000${d6}`;
+  }
+  return `${numberSystem}${body}${checkDigit}`;
+}
+
 // GS1 Digital Link QR codes encode the GTIN as the "01" application
 // identifier in the URL path, e.g. "https://id.gs1.org/01/06938936716785"
 // or "https://id.gs1.org/01/06938936716785/10/LOT123" when a batch/lot AI

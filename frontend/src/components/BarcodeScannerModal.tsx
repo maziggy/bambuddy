@@ -5,7 +5,13 @@ import type { BrowserMultiFormatReader as BrowserMultiFormatReaderType, IScanner
 import { Button } from './Button';
 import { api } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
-import { extractGtinFromManualEntry, extractGtinFromScan, isPlausibleSku, isValidUpcEanBarcode } from '../utils/barcode';
+import {
+  expandUpcEToUpcA,
+  extractGtinFromManualEntry,
+  extractGtinFromScan,
+  isPlausibleSku,
+  isValidUpcEanBarcode,
+} from '../utils/barcode';
 import type { LinkedCode } from '../api/client';
 
 type ScanTab = 'scan' | 'photo' | 'manual';
@@ -143,6 +149,12 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
   // Seeded with the touch-device heuristic, then refined below with a real
   // device list when the browser allows enumeration.
   const [hasCameraDevice, setHasCameraDevice] = useState<boolean>(guessDeviceHasCamera);
+  // Bumped on a failed lookup to restart the camera decode loop — the reader
+  // is already stopped by the time resolveBarcode is called (see the scan
+  // callback below), and activeTab/cameraSupported don't change on a lookup
+  // failure, so without this the video feed would freeze until the user
+  // left and re-entered the Scan tab.
+  const [scanRetryToken, setScanRetryToken] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -202,6 +214,10 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
       showToast(t('inventory.barcodeScan.lookupFailed', 'Barcode lookup failed'), 'error');
       resolvingRef.current = false;
       setLoadingMessage(null);
+      // The scan loop was already stopped before this call (see the decode
+      // callback below) — bump the retry token so the camera effect restarts
+      // it instead of leaving the feed frozen.
+      setScanRetryToken((n) => n + 1);
     }
   };
 
@@ -241,6 +257,16 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
       ];
       reader
         .decodeFromVideoDevice(undefined, videoRef.current, (result, _err, controls) => {
+          // Guard against the window between this effect's cleanup running
+          // (component unmount / tab switch) and a frame callback that was
+          // already in flight: without this, a stale ref write here would
+          // leave the camera stream live with nothing left to stop it (the
+          // camera light stays on) since cleanup has already fired and won't
+          // run again.
+          if (cancelled) {
+            controls.stop();
+            return;
+          }
           controlsRef.current = controls;
           if (!result || resolvingRef.current) return;
           if (result.getBarcodeFormat() === BarcodeFormat.CODE_128) {
@@ -253,6 +279,16 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
             if (!isPlausibleSku(text)) return;
             controls.stop();
             void resolveBarcode(text);
+            return;
+          }
+          if (result.getBarcodeFormat() === BarcodeFormat.UPC_E) {
+            // ZXing decodes UPC-E to its own compressed 8-digit form, which
+            // does not validate against the standard EAN-8 checksum — expand
+            // to the equivalent UPC-A form first (see expandUpcEToUpcA).
+            const expanded = expandUpcEToUpcA(result.getText());
+            if (!expanded || !isValidUpcEanBarcode(expanded)) return;
+            controls.stop();
+            void resolveBarcode(expanded);
             return;
           }
           // A UPC/EAN decode is already a bare digit string; a QR decode is
@@ -269,6 +305,15 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
           void resolveBarcode(candidate);
         })
         .then((controls) => {
+          // Same race as above: decodeFromVideoDevice's setup (getUserMedia
+          // through the first frame) is async, so cleanup can already have
+          // run by the time this resolves. If so, stop the stream directly
+          // instead of stashing it in a ref nothing will use again — that's
+          // what left the camera light on.
+          if (cancelled) {
+            controls.stop();
+            return;
+          }
           controlsRef.current = controls;
         })
         .catch((err: unknown) => {
@@ -287,7 +332,7 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
       controlsRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, cameraSupported]);
+  }, [activeTab, cameraSupported, scanRetryToken]);
 
   const handlePhotoSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

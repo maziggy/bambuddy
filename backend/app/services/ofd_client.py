@@ -172,7 +172,10 @@ def _build_index(all_json: dict) -> tuple[dict[str, dict], dict[str, dict], dict
     return gtin_index, article_index, variant_codes
 
 
-def _load_cached() -> tuple[dict, dict, dict, list] | None:
+def _read_cache_file() -> dict | None:
+    """Parse the cache file and check its version, ignoring TTL. Returns the
+    raw dict, or None if missing/corrupt/wrong-version — those are the only
+    conditions that make a cache file truly unusable; staleness alone does not."""
     path = _cache_path()
     if not path.exists():
         return None
@@ -180,16 +183,36 @@ def _load_cached() -> tuple[dict, dict, dict, list] | None:
         data = json.loads(path.read_text())
         if data.get("cache_version") != _CACHE_VERSION:
             return None
-        if time.time() - data.get("built_at", 0) > OFD_TTL_SECONDS:
-            return None
-        return (
-            data.get("gtin_index", {}),
-            data.get("article_index", {}),
-            data.get("variant_codes", {}),
-            data.get("brands", []),
-        )
+        return data
     except Exception:
         return None
+
+
+def _cache_tuple(data: dict) -> tuple[dict, dict, dict, list]:
+    return (
+        data.get("gtin_index", {}),
+        data.get("article_index", {}),
+        data.get("variant_codes", {}),
+        data.get("brands", []),
+    )
+
+
+def _load_cached() -> tuple[dict, dict, dict, list] | None:
+    """Return the cache contents if present and fresh (within TTL), else None."""
+    data = _read_cache_file()
+    if data is None:
+        return None
+    if time.time() - data.get("built_at", 0) > OFD_TTL_SECONDS:
+        return None
+    return _cache_tuple(data)
+
+
+def _load_stale_cached() -> tuple[dict, dict, dict, list] | None:
+    """Return the cache contents regardless of TTL — a last-resort fallback
+    for when a refresh attempt fails (e.g. offline), so a working-but-old
+    index is still served instead of dropping to "no match" for everything."""
+    data = _read_cache_file()
+    return None if data is None else _cache_tuple(data)
 
 
 async def _refresh() -> tuple[dict, dict, dict, list]:
@@ -203,7 +226,12 @@ async def _refresh() -> tuple[dict, dict, dict, list]:
     try:
         path = _cache_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
+        # Write to a temp file and rename over the real path — Path.replace()
+        # is atomic (POSIX rename(2) semantics, and Windows-safe since it
+        # replaces an existing destination too), so a reader never observes a
+        # half-written cache file even if the process is killed mid-write.
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        tmp_path.write_text(
             json.dumps(
                 {
                     "cache_version": _CACHE_VERSION,
@@ -215,6 +243,7 @@ async def _refresh() -> tuple[dict, dict, dict, list]:
                 }
             )
         )
+        tmp_path.replace(path)
     except Exception:
         logger.warning("Failed to write OFD cache file", exc_info=True)
     return gtin_index, article_index, variant_codes, brands
@@ -231,7 +260,18 @@ async def _ensure_loaded(force: bool = False) -> None:
             return
         loaded = None if force else _load_cached()
         if loaded is None:
-            loaded = await _refresh()
+            try:
+                loaded = await _refresh()
+            except Exception:
+                # Offline/upstream-down: a stale-but-working index beats no
+                # index at all. Only re-raise if there's truly nothing on
+                # disk to fall back to (e.g. first-ever startup with no
+                # network) — that's the one case where the caller must know
+                # the lookup couldn't be attempted at all.
+                loaded = _load_stale_cached()
+                if loaded is None:
+                    raise
+                logger.warning("OFD refresh failed; serving stale disk cache instead", exc_info=True)
         _gtin_index, _article_index, _variant_codes, _brands = loaded
         _index_loaded_at = time.time()
 

@@ -22,7 +22,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.app.api.routes.inventory import LabelParseRequest, _classify_code, lookup_barcode, parse_label
+from backend.app.api.routes.inventory import (
+    LabelParseRequest,
+    _classify_code,
+    lookup_barcode,
+    parse_label,
+    refresh_barcode_database,
+)
 
 
 def _make_mock_spool(**overrides):
@@ -548,3 +554,46 @@ class TestParseLabelEndpoint:
         assert result.brand == "Bambu Lab"
         assert result.source == "spoolmandb-community"
         assert result.matched is True
+
+
+class TestRefreshBarcodeDatabase:
+    """Both external refreshes are independently guarded — a failure in one
+    must not 500 the endpoint or discard a refresh that already succeeded in
+    the other (a bare OFD network blip previously took down the whole
+    force-refresh call even when SpoolmanDB-Community had just refreshed fine)."""
+
+    @pytest.mark.asyncio
+    async def test_both_succeed_sums_entries(self):
+        with (
+            patch("backend.app.services.ofd_client.refresh_database", new=AsyncMock(return_value=10)),
+            patch("backend.app.services.spoolmandb_community_client.refresh_database", new=AsyncMock(return_value=5)),
+        ):
+            result = await refresh_barcode_database(_=None)
+
+        assert result == {"entries": 15, "ofd_entries": 10, "spoolmandb_community_entries": 5}
+
+    @pytest.mark.asyncio
+    async def test_ofd_failure_degrades_to_zero_and_still_returns_spoolmandb_count(self):
+        with (
+            patch(
+                "backend.app.services.ofd_client.refresh_database",
+                new=AsyncMock(side_effect=RuntimeError("network blip")),
+            ),
+            patch("backend.app.services.spoolmandb_community_client.refresh_database", new=AsyncMock(return_value=5)),
+        ):
+            result = await refresh_barcode_database(_=None)
+
+        assert result == {"entries": 5, "ofd_entries": 0, "spoolmandb_community_entries": 5}
+
+    @pytest.mark.asyncio
+    async def test_spoolmandb_failure_degrades_to_zero_and_still_returns_ofd_count(self):
+        with (
+            patch("backend.app.services.ofd_client.refresh_database", new=AsyncMock(return_value=10)),
+            patch(
+                "backend.app.services.spoolmandb_community_client.refresh_database",
+                new=AsyncMock(side_effect=RuntimeError("network blip")),
+            ),
+        ):
+            result = await refresh_barcode_database(_=None)
+
+        assert result == {"entries": 10, "ofd_entries": 10, "spoolmandb_community_entries": 0}

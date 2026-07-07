@@ -461,6 +461,27 @@ async def parse_and_validate(raw_bytes: bytes, db: AsyncSession) -> ImportPrevie
             error += 1
             continue
 
+        # normalize_barcode() silently returns None for a cell that has no
+        # digits and no letters (e.g. "---" or "***") — SpoolCreate treats
+        # that as a perfectly valid "no barcode", so it wouldn't raise above.
+        # Surface it as a row error instead of silently dropping data the
+        # user explicitly typed, matching how every other malformed column
+        # (rgba, last_used, the numeric fields) is already handled.
+        raw_barcode = data.get("barcode")
+        if raw_barcode and spool.barcode is None:
+            rows.append(
+                ImportRowResult(
+                    row_number=row_number,
+                    status="error",
+                    reason=f"barcode has no usable digits or letters (got '{raw_barcode}')",
+                    material=material,
+                    brand=brand,
+                    color_name=color_name,
+                )
+            )
+            error += 1
+            continue
+
         spool_data = spool.model_dump()
         if last_used is not None:
             # last_used isn't a SpoolCreate field; graft it onto the persisted

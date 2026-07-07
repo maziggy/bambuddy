@@ -136,8 +136,8 @@ export function AMSHistoryModal({
   const tempTrend = getTrend(chartData.map(d => d.temperature));
 
   const TrendIcon = ({ trend }: { trend: string }) => {
-    if (trend === 'up') return <TrendingUp className="w-4 h-4 text-red-400" />;
-    if (trend === 'down') return <TrendingDown className="w-4 h-4 text-green-400" />;
+    if (trend === 'up') return <TrendingUp className="w-4 h-4 text-red-600 dark:text-red-400" />;
+    if (trend === 'down') return <TrendingDown className="w-4 h-4 text-green-600 dark:text-green-400" />;
     return <Minus className="w-4 h-4 text-gray-400 dark:text-bambu-gray" />;
   };
 

@@ -5,7 +5,11 @@
  * sponsors page with a Matomo-trackable `?from=app-toast-{milestone}` param.
  *
  * The 14-day cooldown + already-seen-milestone deduplication is owned by the
- * backend service — the hook just trusts the check endpoint's verdict.
+ * backend service. The hook trusts the check endpoint's verdict, and the moment
+ * it actually renders the toast it POSTs /dismiss to anchor the cooldown — being
+ * *shown* is what arms the 14-day gate, not the user clicking the CTA. (Clicking
+ * is optional; without this record-on-show, an ignored toast would never persist
+ * any state and would re-fire on every fresh browser session.)
  */
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -77,11 +81,11 @@ export function useSponsorPrompt(currencyCode = 'EUR') {
           action: {
             label: t('sponsors.viewSupporters', 'View supporters'),
             href: `https://bambuddy.cool/sponsors.html?from=app-toast-${result.milestone}`,
-            onClick: () => {
-              void sponsorPromptApi.dismiss(result.milestone!);
-            },
           },
         });
+        // Anchor the 14-day cooldown as soon as the toast is on screen, so an
+        // ignored toast doesn't re-fire on the next browser session.
+        void sponsorPromptApi.dismiss(result.milestone);
       } catch {
         // Network / 401 — silently skip; next session retries.
       }

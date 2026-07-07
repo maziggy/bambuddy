@@ -412,7 +412,7 @@ function DualNozzleHoverCard({ leftSlot, rightSlot, activeNozzle, filamentInfo, 
     const filamentName = slot.filament_id ? filamentInfo?.[slot.filament_id]?.name : undefined;
     return (
       <div className="flex-1 space-y-1.5">
-        <div className={`text-[10px] font-bold pb-1 border-b border-bambu-dark-tertiary/50 ${isActive ? 'text-amber-400' : 'text-bambu-gray'}`}>
+        <div className={`text-[10px] font-bold pb-1 border-b border-bambu-dark-tertiary/50 ${isActive ? 'text-amber-700 dark:text-amber-400' : 'text-bambu-gray'}`}>
           {side === 'L' ? t('common.left') : t('common.right')}
         </div>
         {slot.nozzle_diameter && (
@@ -716,8 +716,8 @@ function AmsBackupBadge({ state, onClick }: AmsBackupBadgeProps) {
   let title: string;
   if (state === true) {
     className += known
-      ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 cursor-pointer'
-      : 'bg-blue-500/20 text-blue-400 cursor-default';
+      ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 hover:bg-blue-500/30 cursor-pointer'
+      : 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 cursor-default';
     title = t('printers.amsBackup.titleOn');
   } else if (state === false) {
     className += known
@@ -1347,9 +1347,9 @@ function NozzleTemperatureControlBox({
   };
 
   return (
-    <div className={`rounded-lg border p-2 ${isActive ? 'border-amber-400/60 bg-amber-400/10' : 'border-bambu-dark-tertiary bg-bambu-dark'}`}>
+    <div className={`rounded-lg border p-2 ${isActive ? 'border-amber-500/60 dark:border-amber-400/60 bg-amber-50 dark:bg-amber-400/10' : 'border-bambu-dark-tertiary bg-bambu-dark'}`}>
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <span className={`text-xs font-medium ${isActive ? 'text-amber-300' : 'text-white'}`}>{label}</span>
+        <span className={`text-xs font-medium ${isActive ? 'text-amber-700 dark:text-amber-300' : 'text-white'}`}>{label}</span>
         <span className="text-[10px] text-bambu-gray">
           {Math.round(current ?? 0)}°C
           {target !== undefined ? ` / ${Math.round(target)}°` : ''}
@@ -1682,7 +1682,7 @@ export function AmsNameHoverCard({
               {canEdit && (
                 <div className="space-y-1">
                   {saveError && (
-                    <p className="text-[10px] text-red-400 break-words">{saveError}</p>
+                    <p className="text-[10px] text-red-700 dark:text-red-400 break-words">{saveError}</p>
                   )}
                   <div className="flex gap-1 justify-end">
                     <button
@@ -2140,13 +2140,13 @@ function PrinterCard({
     if (isPrintingOrPaused) {
       return {
         label: t('printers.plateStatus.inUse'),
-        className: 'bg-blue-500/20 text-blue-400',
+        className: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400',
       };
     }
     if (status.awaiting_plate_clear) {
       return {
         label: t('printers.plateStatus.notCleared'),
-        className: 'bg-yellow-500/20 text-yellow-400',
+        className: 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400',
       };
     }
     return {
@@ -3089,8 +3089,8 @@ function PrinterCard({
           <button
             className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 ${
               hasPermission('printers:delete')
-                ? 'text-red-400 hover:bg-bambu-dark-tertiary'
-                : 'text-red-400/50 cursor-not-allowed'
+                ? 'text-red-700 dark:text-red-400 hover:bg-bambu-dark-tertiary'
+                : 'text-red-700/50 dark:text-red-400/50 cursor-not-allowed'
             }`}
             onClick={() => {
               if (!hasPermission('printers:delete')) return;
@@ -3138,7 +3138,7 @@ function PrinterCard({
               ? 'bg-bambu-green/10 border-bambu-green/50'
               : canDrop
                 ? 'bg-bambu-green/10 border-bambu-green'
-                : 'bg-red-500/10 border-red-500/50'
+                : 'bg-red-50 dark:bg-red-500/10 border-red-300 dark:border-red-500/50'
           }`}
         >
           <div className="text-center">
@@ -3154,8 +3154,8 @@ function PrinterCard({
               </>
             ) : (
               <>
-                <X className="w-8 h-8 mx-auto mb-2 text-red-400" />
-                <p className="text-sm font-medium text-red-400">{t('printers.cannotPrint', 'Printer busy')}</p>
+                <X className="w-8 h-8 mx-auto mb-2 text-red-600 dark:text-red-400" />
+                <p className="text-sm font-medium text-red-700 dark:text-red-400">{t('printers.cannotPrint', 'Printer busy')}</p>
               </>
             )}
           </div>
@@ -3208,7 +3208,7 @@ function PrinterCard({
                       onClick={() => clearPlateMutation.mutate()}
                       disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
                       aria-label={t('printers.plateStatus.markCleared')}
-                      className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md bg-yellow-500/20 border border-yellow-400/40 text-yellow-400 hover:bg-yellow-500/30 transition-colors disabled:opacity-50"
+                      className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-300 dark:border-yellow-400/40 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 transition-colors disabled:opacity-50"
                       title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
                     >
                       {clearPlateMutation.isPending ? (
@@ -3250,7 +3250,7 @@ function PrinterCard({
                   maintenance UI. */}
               {printer.is_active === false ? (
                 <span
-                  className="flex items-center gap-1.5 px-2 py-1 rounded-full text-xs bg-amber-500/20 text-amber-400"
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-full text-xs bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400"
                   title={t('printers.maintenance.subtitle')}
                 >
                   <Wrench className="w-3 h-3" />
@@ -3360,7 +3360,7 @@ function PrinterCard({
               {queueCount > 0 && (
                 <button
                   onClick={() => navigate('/queue')}
-                  className="flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-indigo-500/20 text-indigo-400 hover:opacity-80 transition-opacity"
+                  className="flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 hover:opacity-80 transition-opacity"
                   title={t('printers.queue.inQueue', { count: queueCount })}
                 >
                   <Layers className="w-3 h-3" />
@@ -3373,7 +3373,7 @@ function PrinterCard({
                   onClick={() => setShowFirmwareModal(true)}
                   className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs hover:opacity-80 transition-opacity ${
                     firmwareInfo.update_available
-                      ? 'bg-orange-500/20 text-orange-400'
+                      ? 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400'
                       : 'bg-status-ok/20 text-status-ok'
                   }`}
                   title={
@@ -3397,7 +3397,7 @@ function PrinterCard({
                 <span
                   className={`flex items-center px-2 py-1 rounded-full text-xs ${
                     status.door_open
-                      ? 'bg-yellow-500/20 text-yellow-400'
+                      ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400'
                       : 'bg-status-ok/20 text-status-ok'
                   }`}
                   title={status.door_open ? t('printers.door.open') : t('printers.door.closed')}
@@ -3416,8 +3416,8 @@ function PrinterCard({
             <Card className="w-full max-w-md mx-4">
               <CardContent>
                 <div className="flex items-start gap-3 mb-4">
-                  <div className="p-2 rounded-full bg-red-500/20">
-                    <AlertTriangle className="w-5 h-5 text-red-400" />
+                  <div className="p-2 rounded-full bg-red-100 dark:bg-red-500/20">
+                    <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
                   </div>
                   <div>
                     <h3 className="text-lg font-semibold text-white">{t('printers.confirm.deleteTitle')}</h3>
@@ -3481,9 +3481,9 @@ function PrinterCard({
           // out-of-service.
           <>
             {viewMode === 'compact' ? (
-              <div className="mt-2 flex items-center gap-2 px-2 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/30">
-                <Wrench className="w-3 h-3 text-amber-400 shrink-0" />
-                <span className="text-[11px] text-amber-400 font-medium truncate">
+              <div className="mt-2 flex items-center gap-2 px-2 py-1.5 rounded-full bg-amber-50 dark:bg-amber-500/15 border border-amber-300 dark:border-amber-500/30">
+                <Wrench className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span className="text-[11px] text-amber-700 dark:text-amber-400 font-medium truncate">
                   {t('printers.maintenance.pillLabel')}
                 </span>
               </div>
@@ -3495,10 +3495,10 @@ function PrinterCard({
                   </span>
                   <div className="flex-1 h-[2px] bg-bambu-dark-tertiary" />
                 </div>
-                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-[10px] flex items-center gap-3">
-                  <Wrench className="w-6 h-6 text-amber-400 shrink-0" />
+                <div className="p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 rounded-[10px] flex items-center gap-3">
+                  <Wrench className="w-6 h-6 text-amber-600 dark:text-amber-400 shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-amber-400 font-medium">
+                    <p className="text-sm text-amber-700 dark:text-amber-400 font-medium">
                       {t('printers.maintenance.title')}
                     </p>
                     <p className="text-xs text-bambu-gray mt-0.5">
@@ -3715,14 +3715,14 @@ function PrinterCard({
                   label: t('printers.fans.partCooling'),
                   value: status.cooling_fan_speed ?? 0,
                   Icon: Fan,
-                  activeClass: 'text-cyan-400',
+                  activeClass: 'text-cyan-600 dark:text-cyan-400',
                 },
                 {
                   key: 'aux',
                   label: t('printers.fans.auxiliary'),
                   value: status.big_fan1_speed ?? 0,
                   Icon: Wind,
-                  activeClass: 'text-blue-400',
+                  activeClass: 'text-blue-600 dark:text-blue-400',
                 },
                 ...(hasChamberFan
                   ? [
@@ -3731,7 +3731,7 @@ function PrinterCard({
                         label: t('printers.fans.chamber'),
                         value: status.big_fan2_speed ?? 0,
                         Icon: AirVent,
-                        activeClass: 'text-green-400',
+                        activeClass: 'text-green-600 dark:text-green-400',
                       },
                     ]
                   : []),
@@ -3921,13 +3921,13 @@ function PrinterCard({
                           title={canUseStatusControls ? t('printers.activeNozzle', { nozzle: activeNozzle === 'L' ? t('common.left') : t('common.right') }) : statusControlTitle}
                           onClick={() => canUseStatusControls && setStatusControlMenu(statusControlMenu === 'nozzle-select' ? null : 'nozzle-select')}
                         >
-                          <NozzleIcon className="w-3.5 h-3.5 mb-0.5 text-amber-400" />
+                          <NozzleIcon className="w-3.5 h-3.5 mb-0.5 text-amber-600 dark:text-amber-400" />
                           <div className="flex items-center gap-2">
-                            <span className={`text-[11px] font-bold ${activeNozzle === 'L' ? 'text-amber-400' : 'text-gray-500'}`}>
+                            <span className={`text-[11px] font-bold ${activeNozzle === 'L' ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500'}`}>
                               L{leftNozzleSlot?.nozzle_diameter ? ` ${leftNozzleSlot.nozzle_diameter}` : ''}
                             </span>
                             <span className="text-[9px] text-bambu-gray/40">·</span>
-                            <span className={`text-[11px] font-bold ${activeNozzle === 'R' ? 'text-amber-400' : 'text-gray-500'}`}>
+                            <span className={`text-[11px] font-bold ${activeNozzle === 'R' ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500'}`}>
                               R{rightNozzleSlot?.nozzle_diameter ? ` ${rightNozzleSlot.nozzle_diameter}` : ''}
                             </span>
                           </div>
@@ -3996,7 +3996,7 @@ function PrinterCard({
                 type="button"
                 onClick={() => clearPlateMutation.mutate()}
                 disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
-                className="mt-2 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-500/20 border border-yellow-400/40 text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs font-medium disabled:opacity-50"
+                className="mt-2 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-300 dark:border-yellow-400/40 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs font-medium disabled:opacity-50"
                 title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
               >
                 {clearPlateMutation.isPending ? (
@@ -4037,7 +4037,7 @@ function PrinterCard({
                         disabled={!status.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
                         className={`${iconControlClass} ${
                           status.chamber_light
-                            ? 'bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20'
+                            ? 'bg-yellow-50 dark:bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/20'
                             : 'bg-bambu-dark text-bambu-gray/50 hover:bg-bambu-dark-tertiary hover:text-white'
                         }`}
                         title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (status.chamber_light ? t('printers.chamberLightOff') : t('printers.chamberLightOn'))}
@@ -4049,8 +4049,8 @@ function PrinterCard({
                       {(['P2S', 'X2D', 'H2D', 'H2C', 'H2S'].includes(printer.model ?? '')) && (() => {
                         const isHeating = status.airduct_mode === 1;
                         const Icon = isHeating ? Flame : Snowflake;
-                        const color = isHeating ? 'text-orange-400' : 'text-sky-400';
-                        const bg = isHeating ? 'bg-orange-500/10 text-orange-400 hover:bg-orange-500/20' : 'bg-sky-500/10 text-sky-400 hover:bg-sky-500/20';
+                        const color = isHeating ? 'text-orange-600 dark:text-orange-400' : 'text-sky-600 dark:text-sky-400';
+                        const bg = isHeating ? 'bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400 hover:bg-orange-500/20' : 'bg-sky-50 dark:bg-sky-500/10 text-sky-700 dark:text-sky-400 hover:bg-sky-500/20';
                         return (
                           <div className="relative">
                             <button
@@ -4097,7 +4097,7 @@ function PrinterCard({
                         const canControl = hasPermission('printers:control');
                         const disabled = isPrinting || !canControl;
                         const bambuIsPlateBelow = true; // positive Z moves plate away from nozzle
-                        const jogButtonClass = 'flex h-8 w-8 items-center justify-center rounded bg-indigo-500/15 text-indigo-300 transition-colors hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50';
+                        const jogButtonClass = 'flex h-8 w-8 items-center justify-center rounded bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 transition-colors hover:bg-indigo-200 dark:hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50';
                         const requestZJog = (direction: 1 | -1) => {
                           const signed = direction * bedJogStep * (bambuIsPlateBelow ? 1 : -1);
                           const warnedKey = `bambuddy.bedJog.warned.${printer.id}`;
@@ -4125,7 +4125,7 @@ function PrinterCard({
                               className={`${iconControlClass} ${
                                 disabled
                                   ? 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
-                                  : 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20'
+                                  : 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-500/20'
                               }`}
                               title={!canControl ? t('printers.permission.noControl') : isPrinting ? t('printers.bedJog.disabledWhilePrinting') : t('printers.bedJog.title')}
                             >
@@ -4268,7 +4268,7 @@ function PrinterCard({
                           disabled={!status.connected || plateDetectionMutation.isPending || !hasPermission('printers:update')}
                           className={`${iconControlClass} rounded-r-none ${
                             printer.plate_detection_enabled
-                              ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20'
+                              ? 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400 hover:bg-green-500/20'
                               : 'bg-bambu-dark text-bambu-gray/50 hover:bg-bambu-dark-tertiary hover:text-white'
                           }`}
                           title={!hasPermission('printers:update') ? t('printers.plateDetection.noPermission') : (printer.plate_detection_enabled ? t('printers.plateDetection.enabledClick') : t('printers.plateDetection.disabledClick'))}
@@ -4284,7 +4284,7 @@ function PrinterCard({
                           disabled={!status.connected || isCheckingPlate || !hasPermission('printers:update')}
                           className={`flex h-8 w-8 items-center justify-center rounded-r-lg border-l border-bambu-dark-tertiary transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                             printer.plate_detection_enabled
-                              ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20'
+                              ? 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400 hover:bg-green-500/20'
                               : 'bg-bambu-dark text-bambu-gray/50 hover:bg-bambu-dark-tertiary hover:text-white'
                           }`}
                           title={!hasPermission('printers:update') ? t('printers.plateDetection.noPermission') : t('printers.plateDetection.manageCalibration')}
@@ -4306,7 +4306,7 @@ function PrinterCard({
                             disabled={!isPrinting || !hasPermission('printers:control')}
                             className={`${iconControlClass} ${
                               isPrinting
-                                ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
+                                ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20'
                                 : 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
                             }`}
                             title={isPrinting ? t('printers.speed.title') : undefined}
@@ -4361,7 +4361,7 @@ function PrinterCard({
                             ? unavailablePrintActionClass
                             : isPaused
                               ? 'bg-bambu-green/20 text-bambu-green hover:bg-bambu-green/30'
-                              : 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'
+                              : 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30'
                           }
                         `}
                         title={!hasPermission('printers:control') ? t('printers.permission.noControl') : (isPaused ? t('printers.resume') : t('printers.pause'))}
@@ -4383,7 +4383,7 @@ function PrinterCard({
                           ${printControlClass}
                           ${stopUnavailable
                             ? unavailablePrintActionClass
-                            : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                            : 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-500/30'
                           }
                         `}
                         title={!hasPermission('printers:control') ? t('printers.permission.noControl') : t('printers.stop')}
@@ -4527,7 +4527,7 @@ function PrinterCard({
                                       }}
                                       className={`ml-1 flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-colors ${
                                         ams.dry_time > 0
-                                          ? 'bg-amber-500/20 text-amber-400'
+                                          ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400'
                                           : ams.dry_sf_reason?.length
                                             ? 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
                                             : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark/80'
@@ -4542,15 +4542,15 @@ function PrinterCard({
                             </div>
                             {/* Drying status bar */}
                             {ams.dry_time > 0 && (
-                              <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 px-2 py-1 text-[9px]">
-                                <Flame className="w-3 h-3 text-amber-400 shrink-0" />
-                                <span className="text-amber-400 font-medium">{t('printers.drying.active')}</span>
+                              <div className="flex items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-500/10 px-2 py-1 text-[9px]">
+                                <Flame className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                                <span className="text-amber-700 dark:text-amber-400 font-medium">{t('printers.drying.active')}</span>
                                 {ams.dry_filament && ams.dry_target_temp != null && (
-                                  <span className="text-amber-300/70">
+                                  <span className="text-amber-700/80 dark:text-amber-300/70">
                                     {t('printers.drying.targetSummary', { filament: ams.dry_filament, temp: ams.dry_target_temp })}
                                   </span>
                                 )}
-                                <span className="text-amber-300/70">
+                                <span className="text-amber-700/80 dark:text-amber-300/70">
                                   {t('printers.drying.timeRemaining', {
                                     time: ams.dry_time >= 60
                                       ? `${Math.floor(ams.dry_time / 60)}h ${ams.dry_time % 60}m`
@@ -4560,7 +4560,7 @@ function PrinterCard({
                                 <button
                                   onClick={() => stopDryingMutation.mutate(ams.id)}
                                   disabled={stopDryingMutation.isPending}
-                                  className="ml-auto text-amber-400 hover:text-amber-300 transition-colors disabled:opacity-50"
+                                  className="ml-auto text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 transition-colors disabled:opacity-50"
                                   title={t('printers.drying.stop')}
                                 >
                                   <X className="w-3 h-3" />
@@ -5013,7 +5013,7 @@ function PrinterCard({
                                     }}
                                     className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-colors ${
                                       ams.dry_time > 0
-                                        ? 'bg-amber-500/20 text-amber-400'
+                                        ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400'
                                         : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark/80'
                                     }`}
                                     title={ams.dry_time > 0 ? t('printers.drying.stop') : t('printers.drying.start')}
@@ -5025,14 +5025,14 @@ function PrinterCard({
                             </div>
                             {/* HT AMS drying status bar */}
                             {ams.dry_time > 0 && (
-                              <div className="flex items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg bg-amber-500/10 px-2 py-1 text-[9px]">
-                                <Flame className="w-3 h-3 text-amber-400 shrink-0" />
+                              <div className="flex items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg bg-amber-50 dark:bg-amber-500/10 px-2 py-1 text-[9px]">
+                                <Flame className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
                                 {ams.dry_filament && ams.dry_target_temp != null && (
-                                  <span className="text-amber-300/70 text-[8px] truncate">
+                                  <span className="text-amber-700/80 dark:text-amber-300/70 text-[8px] truncate">
                                     {t('printers.drying.targetSummary', { filament: ams.dry_filament, temp: ams.dry_target_temp })}
                                   </span>
                                 )}
-                                <span className="text-amber-300/70 text-[8px] truncate">
+                                <span className="text-amber-700/80 dark:text-amber-300/70 text-[8px] truncate">
                                   {ams.dry_time >= 60
                                     ? `${Math.floor(ams.dry_time / 60)}h ${ams.dry_time % 60}m`
                                     : `${ams.dry_time}m`}
@@ -5040,7 +5040,7 @@ function PrinterCard({
                                 <button
                                   onClick={() => stopDryingMutation.mutate(ams.id)}
                                   disabled={stopDryingMutation.isPending}
-                                  className="ml-auto text-amber-400 hover:text-amber-300 transition-colors disabled:opacity-50 shrink-0"
+                                  className="ml-auto text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 transition-colors disabled:opacity-50 shrink-0"
                                   title={t('printers.drying.stop')}
                                 >
                                   <X className="w-3 h-3" />
@@ -5551,7 +5551,7 @@ function PrinterCard({
             {/* HA entity buttons row */}
             {scriptPlugs && scriptPlugs.length > 0 && (
               <div className="flex items-center gap-2 mt-2">
-                <Home className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                <Home className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
                 <span className="text-xs text-bambu-gray">HA:</span>
                 <div className="h-[2px] w-5 bg-bambu-dark-tertiary/50" />
                 <div className="flex flex-wrap gap-1">
@@ -5569,7 +5569,7 @@ function PrinterCard({
                         }}
                         disabled={runScriptMutation.isPending}
                         title={`${isScript ? 'Run' : 'Toggle'} ${script.ha_entity_id}`}
-                        className="px-2 py-0.5 text-xs bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 rounded transition-colors flex items-center gap-1"
+                        className="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 hover:bg-blue-500/30 rounded transition-colors flex items-center gap-1"
                       >
                         <Play className="w-2.5 h-2.5" />
                         {script.name}
@@ -5759,8 +5759,8 @@ function PrinterCard({
             <div className="p-4 space-y-4">
               {plateCheckResult.needs_calibration ? (
                 <>
-                  <div className="p-3 rounded-lg bg-blue-500/20 border border-blue-500/50">
-                    <p className="font-medium text-blue-400">
+                  <div className="p-3 rounded-lg bg-blue-100 dark:bg-blue-500/20 border border-blue-300 dark:border-blue-500/50">
+                    <p className="font-medium text-blue-700 dark:text-blue-400">
                       {t('printers.plateDetection.calibrationRequired')}
                     </p>
                     <p className="text-sm text-bambu-gray mt-1" dangerouslySetInnerHTML={{ __html: t('printers.plateDetection.calibrationInstructions') }} />
@@ -5772,8 +5772,8 @@ function PrinterCard({
                 </>
               ) : (
                 <>
-                  <div className={`p-3 rounded-lg ${plateCheckResult.is_empty ? 'bg-green-500/20 border border-green-500/50' : 'bg-yellow-500/20 border border-yellow-500/50'}`}>
-                    <p className={`font-medium ${plateCheckResult.is_empty ? 'text-green-400' : 'text-yellow-400'}`}>
+                  <div className={`p-3 rounded-lg ${plateCheckResult.is_empty ? 'bg-green-100 dark:bg-green-500/20 border border-green-300 dark:border-green-500/50' : 'bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-300 dark:border-yellow-500/50'}`}>
+                    <p className={`font-medium ${plateCheckResult.is_empty ? 'text-green-700 dark:text-green-400' : 'text-yellow-700 dark:text-yellow-400'}`}>
                       {plateCheckResult.is_empty ? t('printers.plateDetection.plateEmpty') : t('printers.plateDetection.objectsDetected')}
                     </p>
                     <p className="text-sm text-bambu-gray mt-1">
@@ -6120,7 +6120,7 @@ function PrinterCard({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl w-full max-w-sm p-5">
             <div className="flex items-start gap-3 mb-4">
-              <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+              <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
               <div>
                 <h3 className="text-sm font-semibold text-white mb-1">
                   {t('printers.bedJog.notHomedTitle')}
@@ -6147,7 +6147,7 @@ function PrinterCard({
                   bedJogMutation.mutate({ distance: d, force: true });
                   setShowNotHomedModal(null);
                 }}
-                className="w-full px-3 py-2 rounded-lg text-xs font-medium bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 transition-colors"
+                className="w-full px-3 py-2 rounded-lg text-xs font-medium bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 transition-colors"
               >
                 {t('printers.bedJog.moveAnyway')}
               </button>
@@ -6764,7 +6764,7 @@ export function AddPrinterModal({
             </Button>
 
             {discoveryError && (
-              <div className="mt-2 text-sm text-red-400">{discoveryError}</div>
+              <div className="mt-2 text-sm text-red-700 dark:text-red-400">{discoveryError}</div>
             )}
 
             {newPrinters.length > 0 && (
@@ -6925,10 +6925,10 @@ export function AddPrinterModal({
               {t('diagnostic.runButton')}
             </button>
             {saveWarning ? (
-              <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 space-y-3">
+              <div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 p-3 space-y-3">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-400" />
-                  <p className="text-sm text-amber-300">{t('printers.addPreflight.warning')}</p>
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+                  <p className="text-sm text-amber-700 dark:text-amber-300">{t('printers.addPreflight.warning')}</p>
                 </div>
                 <DiagnosticChecklist result={saveWarning} />
                 <div className="flex gap-3">
@@ -7051,9 +7051,9 @@ function FirmwareUpdateModal({
       <Card className="w-full max-w-md mx-4">
         <CardContent>
           <div className="flex items-start gap-3 mb-4">
-            <div className={`p-2 rounded-full ${firmwareInfo.update_available ? 'bg-orange-500/20' : 'bg-status-ok/20'}`}>
+            <div className={`p-2 rounded-full ${firmwareInfo.update_available ? 'bg-orange-100 dark:bg-orange-500/20' : 'bg-status-ok/20'}`}>
               {firmwareInfo.update_available
-                ? <Download className="w-5 h-5 text-orange-400" />
+                ? <Download className="w-5 h-5 text-orange-600 dark:text-orange-400" />
                 : <CheckCircle className="w-5 h-5 text-status-ok" />}
             </div>
             <div className="flex-1">
@@ -7085,12 +7085,12 @@ function FirmwareUpdateModal({
                 {showSecondLine && (
                   <div className="flex justify-between items-center text-sm mt-1">
                     <span className="text-bambu-gray">{t('printers.firmwareModal.latestVersion')}</span>
-                    <span className="text-orange-400 font-mono">{displayVersion}</span>
+                    <span className="text-orange-700 dark:text-orange-400 font-mono">{displayVersion}</span>
                   </div>
                 )}
                 {displayNotes && (
                   <details className="mt-3 text-sm" open={!showSecondLine} key={displayVersion ?? 'none'}>
-                    <summary className={`cursor-pointer hover:underline ${showSecondLine ? 'text-orange-400' : 'text-status-ok'}`}>
+                    <summary className={`cursor-pointer hover:underline ${showSecondLine ? 'text-orange-700 dark:text-orange-400' : 'text-status-ok'}`}>
                       {t('printers.firmwareModal.releaseNotes')}
                     </summary>
                     <div className="mt-2 text-bambu-gray text-xs max-h-40 overflow-y-auto whitespace-pre-wrap">
@@ -7121,8 +7121,8 @@ function FirmwareUpdateModal({
                   const relClass = isCurrent
                     ? 'text-bambu-gray'
                     : cmp > 0
-                      ? 'text-orange-400'
-                      : 'text-blue-400';
+                      ? 'text-orange-700 dark:text-orange-400'
+                      : 'text-blue-700 dark:text-blue-400';
                   return (
                     <button
                       key={v.version}
@@ -7130,7 +7130,7 @@ function FirmwareUpdateModal({
                       disabled={!v.file_available || !canUpdate || isCurrent}
                       onClick={() => setSelectedVersion(v.version)}
                       className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 transition-colors ${
-                        isSelected ? 'bg-orange-500/10' : 'hover:bg-bambu-dark'
+                        isSelected ? 'bg-orange-50 dark:bg-orange-500/10' : 'hover:bg-bambu-dark'
                       } ${!v.file_available || !canUpdate || isCurrent ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
                     >
                       <div className="flex items-center gap-2 min-w-0">
@@ -7139,7 +7139,7 @@ function FirmwareUpdateModal({
                       </div>
                       <span className={`text-xs px-2 py-0.5 rounded-full ${
                         isCurrent
-                          ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                          ? 'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-500/30'
                           : v.file_available
                             ? 'bg-bambu-green/15 text-bambu-green border border-bambu-green/30'
                             : 'bg-bambu-gray/10 text-bambu-gray border border-bambu-gray/30'
@@ -7173,7 +7173,7 @@ function FirmwareUpdateModal({
               ) : (
                 <div className="space-y-1">
                   {prepareInfo.errors.map((error, i) => (
-                    <div key={i} className="flex items-center gap-2 text-red-400 text-sm">
+                    <div key={i} className="flex items-center gap-2 text-red-700 dark:text-red-400 text-sm">
                       <AlertCircle className="w-4 h-4 flex-shrink-0" />
                       {error}
                     </div>
@@ -7201,7 +7201,7 @@ function FirmwareUpdateModal({
               </div>
               <p className="text-xs text-bambu-gray mt-1">{uploadStatus.message}</p>
               {uploadStatus.error && (
-                <p className="text-xs text-red-400 mt-1">{uploadStatus.error}</p>
+                <p className="text-xs text-red-700 dark:text-red-400 mt-1">{uploadStatus.error}</p>
               )}
             </div>
           )}
@@ -7459,7 +7459,7 @@ function EditPrinterModal({
                   className="rounded border-bambu-dark-tertiary bg-bambu-dark text-amber-400 focus:ring-amber-400"
                 />
                 <label htmlFor="edit_maintenance_mode" className="text-sm text-bambu-gray flex items-center gap-1.5">
-                  <Wrench className="w-3.5 h-3.5 text-amber-400" />
+                  <Wrench className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                   {t('printers.maintenance.editFieldLabel')}
                 </label>
               </div>
@@ -7468,10 +7468,10 @@ function EditPrinterModal({
               </p>
             </div>
             {saveWarning ? (
-              <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 space-y-3">
+              <div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 p-3 space-y-3">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-400" />
-                  <p className="text-sm text-amber-300">{t('printers.addPreflight.warning')}</p>
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+                  <p className="text-sm text-amber-700 dark:text-amber-300">{t('printers.addPreflight.warning')}</p>
                 </div>
                 <DiagnosticChecklist result={saveWarning} />
                 <div className="flex gap-3">
@@ -7557,13 +7557,13 @@ function PowerDropdownItem({
   return (
     <div className="flex items-center justify-between px-3 py-2 hover:bg-gray-100 dark:hover:bg-bambu-dark-tertiary">
       <div className="flex items-center gap-2 min-w-0">
-        <span className="text-sm text-gray-900 dark:text-white truncate">{printer.name}</span>
+        <span className="text-sm text-white truncate">{printer.name}</span>
         {plugStatus && (
           <span
             className={`text-xs px-1.5 py-0.5 rounded ${
               plugStatus.state === 'ON'
                 ? 'bg-bambu-green/20 text-bambu-green'
-                : 'bg-red-500/20 text-red-400'
+                : 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400'
             }`}
           >
             {plugStatus.state || '?'}

@@ -42,7 +42,7 @@ export function FolderReadmePanel({ folderId }: FolderReadmePanelProps) {
             {data.filename}
           </span>
           {data.truncated && (
-            <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 flex-shrink-0">
+            <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 flex-shrink-0">
               {t('fileManager.readme.truncated')}
             </span>
           )}

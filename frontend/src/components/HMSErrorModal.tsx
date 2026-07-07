@@ -879,12 +879,12 @@ function getSeverityInfo(severity: number): { label: string; color: string; bgCo
     case 1:
       return { label: 'Fatal', color: 'text-red-500', bgColor: 'bg-red-500/20', Icon: AlertTriangle };
     case 2:
-      return { label: 'Serious', color: 'text-red-400', bgColor: 'bg-red-500/15', Icon: AlertTriangle };
+      return { label: 'Serious', color: 'text-red-700 dark:text-red-400', bgColor: 'bg-red-100 dark:bg-red-500/15', Icon: AlertTriangle };
     case 3:
-      return { label: 'Warning', color: 'text-orange-400', bgColor: 'bg-orange-500/20', Icon: AlertCircle };
+      return { label: 'Warning', color: 'text-orange-700 dark:text-orange-400', bgColor: 'bg-orange-100 dark:bg-orange-500/20', Icon: AlertCircle };
     case 4:
     default:
-      return { label: 'Info', color: 'text-blue-400', bgColor: 'bg-blue-500/20', Icon: Info };
+      return { label: 'Info', color: 'text-blue-700 dark:text-blue-400', bgColor: 'bg-blue-100 dark:bg-blue-500/20', Icon: Info };
   }
 }
 
@@ -979,7 +979,7 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-orange-400" />
+            <AlertTriangle className="w-5 h-5 text-orange-600 dark:text-orange-400" />
             <h2 className="text-lg font-semibold text-white">{t('hmsErrors.title', { name: printerName })}</h2>
           </div>
           <button
@@ -1089,7 +1089,7 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
             <button
               onClick={() => clearMutation.mutate()}
               disabled={!hasPermission('printers:control') || clearMutation.isPending}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
             >
               {clearMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

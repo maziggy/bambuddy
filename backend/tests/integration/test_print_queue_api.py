@@ -2482,7 +2482,7 @@ class TestResumeQueueAfterFailure:
             defaults = {
                 "filename": f"resume_print_{counter}.3mf",
                 "print_name": f"Resume Print {counter}",
-                "file_path": f"/tmp/resume_print_{counter}.3mf",
+                "file_path": f"/tmp/resume_print_{counter}.3mf",  # nosec B108
                 "file_size": 1024,
                 "content_hash": f"resumehash{counter:08d}",
                 "status": "completed",
@@ -2721,7 +2721,7 @@ class TestReorderEndpoint:
             defaults = {
                 "filename": f"reorder_{_counter[0]}.3mf",
                 "print_name": f"Reorder {_counter[0]}",
-                "file_path": f"/tmp/reorder_{_counter[0]}.3mf",
+                "file_path": f"/tmp/reorder_{_counter[0]}.3mf",  # nosec B108
                 "file_size": 1024,
                 "content_hash": f"reorderhash{_counter[0]:06d}",
                 "status": "completed",

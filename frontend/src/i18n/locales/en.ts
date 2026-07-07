@@ -4235,6 +4235,8 @@ export default {
       title: 'Print spool labels',
       selectedCount: '{{count}} selected',
       pickSpools: 'Pick which spools to print labels for:',
+      monochrome: 'Monochrome (black & white printer)',
+      monochromeHint: 'Drops the colour swatch and widens the text',
       searchPlaceholder: 'Search name, brand, or #ID',
       filterByMaterial: 'Material:',
       allMaterials: 'All',

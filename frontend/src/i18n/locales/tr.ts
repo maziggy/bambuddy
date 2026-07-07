@@ -4191,6 +4191,8 @@ export default {
       title: 'Makara etiketleri yazdır',
       selectedCount: '{{count}} seçildi',
       pickSpools: 'Hangi makaralar için etiket yazdırılacağını seçin:',
+      monochrome: 'Tek renk (siyah beyaz yazıcı)',
+      monochromeHint: 'Renk örneğini kaldırır ve metni genişletir',
       searchPlaceholder: 'Ad, marka veya #ID ara',
       filterByMaterial: 'Malzeme:',
       allMaterials: 'Tümü',

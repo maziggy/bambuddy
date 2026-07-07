@@ -109,7 +109,7 @@ export function PrintOptionsPanel({
               bypasses the per-filament-type derivation. */}
           <div className="pt-2 mt-1 border-t border-bambu-dark-tertiary/60">
             <div className="flex items-center gap-2 mb-1.5">
-              <Flame className="w-3.5 h-3.5 text-amber-400" />
+              <Flame className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
               <span className="text-sm text-white">{t('settings.preheatTitle', 'Preheat & Heat Soak')}</span>
             </div>
             <p className="text-xs text-bambu-gray mb-2">

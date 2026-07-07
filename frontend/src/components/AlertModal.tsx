@@ -42,7 +42,7 @@ export function AlertModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const iconColor = variant === 'warning' ? 'text-yellow-400' : 'text-red-400';
+  const iconColor = variant === 'warning' ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400';
 
   return (
     <div

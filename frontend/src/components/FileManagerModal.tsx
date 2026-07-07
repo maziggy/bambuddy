@@ -702,7 +702,7 @@ export function FileManagerModal({ printerId, printerName, onClose }: FileManage
               variant="secondary"
               disabled={selectedFiles.size === 0 || deleteMutation.isPending}
               onClick={handleDelete}
-              className="text-red-400 hover:text-red-300"
+              className="text-red-700 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
             >
               {deleteMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

@@ -125,9 +125,9 @@ export function SpoolCsvImportModal({ onClose, onImported }: SpoolCsvImportModal
           )}
 
           {error && (
-            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-3">
-              <XCircle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-red-300 break-words">{error}</p>
+            <div className="p-3 bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30 rounded-lg flex items-start gap-3">
+              <XCircle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-red-700 dark:text-red-300 break-words">{error}</p>
             </div>
           )}
 
@@ -135,10 +135,10 @@ export function SpoolCsvImportModal({ onClose, onImported }: SpoolCsvImportModal
             <>
               {/* Summary */}
               <div className="flex flex-wrap gap-3 text-sm">
-                <span className="px-2 py-1 rounded bg-green-500/10 text-green-400">
+                <span className="px-2 py-1 rounded bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400">
                   {t('inventory.csv.validCount', '{{count}} valid', { count: preview.valid_count })}
                 </span>
-                <span className="px-2 py-1 rounded bg-red-500/10 text-red-400">
+                <span className="px-2 py-1 rounded bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400">
                   {t('inventory.csv.errorCount', '{{count}} error', { count: preview.error_count })}
                 </span>
                 <span className="px-2 py-1 rounded bg-bambu-dark text-bambu-gray">
@@ -147,9 +147,9 @@ export function SpoolCsvImportModal({ onClose, onImported }: SpoolCsvImportModal
               </div>
 
               {preview.warnings.length > 0 && (
-                <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg space-y-1">
+                <div className="p-3 bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-500/30 rounded-lg space-y-1">
                   {preview.warnings.map((w, i) => (
-                    <p key={i} className="text-xs text-yellow-300">{w}</p>
+                    <p key={i} className="text-xs text-yellow-700 dark:text-yellow-300">{w}</p>
                   ))}
                 </div>
               )}
@@ -176,7 +176,7 @@ export function SpoolCsvImportModal({ onClose, onImported }: SpoolCsvImportModal
                               <div className="flex items-center gap-1.5">
                                 {statusIcon(row.status)}
                                 {row.status === 'error' && row.reason && (
-                                  <span className="text-xs text-red-400 break-words">{row.reason}</span>
+                                  <span className="text-xs text-red-700 dark:text-red-400 break-words">{row.reason}</span>
                                 )}
                               </div>
                             </td>
@@ -203,7 +203,7 @@ export function SpoolCsvImportModal({ onClose, onImported }: SpoolCsvImportModal
                                 )}
                                 {row.duplicate_of_existing && (
                                   <span title={t('inventory.csv.duplicateExisting', 'A spool with this material, brand and color already exists — it will still be imported as a new spool')}>
-                                    <Copy className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                                    <Copy className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
                                   </span>
                                 )}
                               </div>

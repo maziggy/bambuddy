@@ -212,7 +212,7 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
                     <div>
                       <p className="text-white font-medium flex items-center gap-2">
                         {overwrite ? (
-                          <RefreshCw className="w-4 h-4 text-orange-400" />
+                          <RefreshCw className="w-4 h-4 text-orange-600 dark:text-orange-400" />
                         ) : (
                           <SkipForward className="w-4 h-4 text-bambu-gray" />
                         )}
@@ -361,8 +361,8 @@ export function RestoreModal({ onClose, onRestore, onSuccess }: RestoreModalProp
                       <AlertTriangle className="w-4 h-4 text-orange-500" />
                       {t('backup.newApiKeysGenerated')}
                     </h4>
-                    <div className="p-3 rounded bg-orange-500/10 border border-orange-500/30">
-                      <p className="text-xs text-orange-200 mb-2">
+                    <div className="p-3 rounded bg-orange-50 dark:bg-orange-500/10 border border-orange-300 dark:border-orange-500/30">
+                      <p className="text-xs text-orange-800 dark:text-orange-200 mb-2">
                         {t('backup.keysShownOnce')}
                       </p>
                       <div className="space-y-2">

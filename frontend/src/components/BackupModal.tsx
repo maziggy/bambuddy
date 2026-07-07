@@ -271,10 +271,10 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
 
           {/* Archive warning */}
           {selected.archives && (
-            <div className="mx-4 mb-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+            <div className="mx-4 mb-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-500/30">
               <div className="flex items-start gap-2 text-sm">
                 <Archive className="w-4 h-4 text-yellow-500 mt-0.5 flex-shrink-0" />
-                <div className="text-yellow-200 dark:text-yellow-200 text-yellow-700">
+                <div className="text-yellow-700 dark:text-yellow-200">
                   <span className="font-medium">ZIP file will be created.</span>
                   <span className="text-yellow-600 dark:text-yellow-200/70"> Includes all 3MF files, thumbnails, timelapses, and photos. This may take a while and result in a large file.</span>
                 </div>
@@ -296,7 +296,7 @@ export function BackupModal({ onClose, onExport }: BackupModalProps) {
                 <Toggle checked={includeAccessCodes} onChange={setIncludeAccessCodes} />
               </div>
               {includeAccessCodes && (
-                <div className="mt-2 p-2 rounded bg-orange-500/10 border border-orange-500/30">
+                <div className="mt-2 p-2 rounded bg-orange-50 dark:bg-orange-500/10 border border-orange-300 dark:border-orange-500/30">
                   <div className="flex items-start gap-2 text-xs">
                     <AlertTriangle className="w-3 h-3 text-orange-500 dark:text-orange-400 mt-0.5 flex-shrink-0" />
                     <span className="text-orange-700 dark:text-orange-200">

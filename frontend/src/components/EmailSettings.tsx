@@ -207,14 +207,14 @@ export function EmailSettings() {
         <CardContent>
           <div className="space-y-3">
             {advancedEnabled ? (
-              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+              <div className="bg-green-50 dark:bg-green-500/10 border border-green-300 dark:border-green-500/30 rounded-lg p-4">
                 <div className="flex items-start gap-3">
-                  <CheckCircle className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" />
+                  <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
                   <div className="space-y-2">
                     <p className="text-white font-medium">
                       {t('settings.email.advancedAuthEnabled') || 'Advanced Authentication is enabled'}
                     </p>
-                    <ul className="text-sm text-green-300 space-y-1 list-disc list-inside">
+                    <ul className="text-sm text-green-700 dark:text-green-300 space-y-1 list-disc list-inside">
                       <li>{t('settings.email.feature1') || 'Passwords are auto-generated and emailed to new users'}</li>
                       <li>{t('settings.email.feature2') || 'Users can login with username or email'}</li>
                       <li>{t('settings.email.feature3') || 'Forgot password feature is available'}</li>
@@ -224,14 +224,14 @@ export function EmailSettings() {
                 </div>
               </div>
             ) : (
-              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+              <div className="bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-500/30 rounded-lg p-4">
                 <div className="flex items-start gap-3">
-                  <AlertTriangle className="w-5 h-5 text-yellow-400 mt-0.5 flex-shrink-0" />
+                  <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
                   <div className="space-y-2">
                     <p className="text-white font-medium">
                       {t('settings.email.advancedAuthDisabled') || 'Advanced Authentication is disabled'}
                     </p>
-                    <p className="text-sm text-yellow-300">
+                    <p className="text-sm text-yellow-700 dark:text-yellow-300">
                       {t('settings.email.advancedAuthDisabledDesc') || 'Enable advanced authentication to activate email-based features for user management.'}
                     </p>
                   </div>

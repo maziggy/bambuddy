@@ -206,7 +206,7 @@ export function LibraryTagsModal({ open, onClose, onPickTag }: LibraryTagsModalP
                         </button>
                         <button
                           type="button"
-                          className="p-1.5 text-bambu-gray hover:text-red-400 rounded"
+                          className="p-1.5 text-bambu-gray hover:text-red-600 dark:hover:text-red-400 rounded"
                           onClick={() => setDeleteTarget(tag)}
                           title={t('common.delete')}
                           aria-label={t('fileManager.tags.deleteAria', { name: tag.name })}

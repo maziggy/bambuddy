@@ -4189,6 +4189,8 @@ export default {
       title: 'Imprimir etiquetas de bobinas',
       selectedCount: '{{count}} selecionado',
       pickSpools: 'Escolha para quais bobinas imprimir etiquetas:',
+      monochrome: 'Monocromático (impressora preto e branco)',
+      monochromeHint: 'Remove a amostra de cor e amplia o texto',
       searchPlaceholder: 'Buscar por nome, marca ou #ID',
       filterByMaterial: 'Material:',
       allMaterials: 'Tudo',

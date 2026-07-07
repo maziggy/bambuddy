@@ -4189,6 +4189,8 @@ export default {
       title: '列印線材標籤',
       selectedCount: '已選 {{count}} 項',
       pickSpools: '選擇要列印標籤的線材：',
+      monochrome: '單色（黑白印表機）',
+      monochromeHint: '移除顏色色塊並加寬文字',
       searchPlaceholder: '按名稱、品牌或 #ID 搜尋',
       filterByMaterial: '材料：',
       allMaterials: '全部',

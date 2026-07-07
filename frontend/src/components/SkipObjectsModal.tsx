@@ -240,7 +240,7 @@ export function SkipObjectsModal({ printerId, isOpen, onClose }: SkipObjectsModa
                       <span className={`text-lg font-mono font-bold ${obj.skipped ? 'text-red-500 dark:text-red-400' : 'text-green-600 dark:text-bambu-green'}`}>
                         {obj.id}
                       </span>
-                      <span className={`text-[8px] uppercase tracking-wider ${obj.skipped ? 'text-red-400/60' : 'text-green-500/60 dark:text-bambu-green/60'}`}>
+                      <span className={`text-[8px] uppercase tracking-wider ${obj.skipped ? 'text-red-700/70 dark:text-red-400/60' : 'text-green-500/60 dark:text-bambu-green/60'}`}>
                         ID
                       </span>
                     </div>
@@ -251,7 +251,7 @@ export function SkipObjectsModal({ printerId, isOpen, onClose }: SkipObjectsModa
                         {obj.name}
                       </span>
                       {obj.skipped && (
-                        <span className="text-[10px] text-red-400/60">{t('printers.willBeSkipped')}</span>
+                        <span className="text-[10px] text-red-700/70 dark:text-red-400/60">{t('printers.willBeSkipped')}</span>
                       )}
                     </div>
 

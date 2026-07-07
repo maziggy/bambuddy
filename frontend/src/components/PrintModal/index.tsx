@@ -1127,9 +1127,9 @@ export function PrintModal({
               const selectedPrinter = printers?.find(p => p.id === selectedPrinters[0]);
               if (selectedPrinter && selectedPrinter.model && slicedForModel !== selectedPrinter.model) {
                 return (
-                  <div className="p-3 mb-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
-                    <span className="text-sm text-yellow-400">
+                  <div className="p-3 mb-2 bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-500/30 rounded-lg flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
+                    <span className="text-sm text-yellow-700 dark:text-yellow-400">
                       File was sliced for {slicedForModel}, but printing on {selectedPrinter.model}
                     </span>
                   </div>
@@ -1140,9 +1140,9 @@ export function PrintModal({
 
             {/* Warning when archive data couldn't be loaded */}
             {archiveDataMissing && (
-              <div className="flex items-start gap-2 p-3 mb-2 bg-orange-500/10 border border-orange-500/30 rounded-lg text-sm">
-                <AlertCircle className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
-                <p className="text-orange-400">
+              <div className="flex items-start gap-2 p-3 mb-2 bg-orange-50 dark:bg-orange-500/10 border border-orange-300 dark:border-orange-500/30 rounded-lg text-sm">
+                <AlertCircle className="w-4 h-4 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0" />
+                <p className="text-orange-700 dark:text-orange-400">
                   Archive data unavailable. The source file may have been deleted. Filament mapping is disabled.
                 </p>
               </div>
@@ -1212,7 +1212,7 @@ export function PrintModal({
 
             {/* Error message */}
             {updateQueueMutation.isError && (
-              <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-sm text-red-400">
+              <div className="mb-4 p-3 bg-red-100 dark:bg-red-500/20 border border-red-500/50 rounded-lg text-sm text-red-700 dark:text-red-400">
                 {(updateQueueMutation.error as Error)?.message || 'Failed to complete operation'}
               </div>
             )}

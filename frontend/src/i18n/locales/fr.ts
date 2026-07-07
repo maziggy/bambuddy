@@ -4190,6 +4190,8 @@ export default {
       title: 'Imprimer étiquettes de bobines',
       selectedCount: '{{count}} sélectionné',
       pickSpools: 'Choisissez les bobines pour lesquelles imprimer des étiquettes :',
+      monochrome: 'Monochrome (imprimante noir et blanc)',
+      monochromeHint: 'Supprime la pastille de couleur et élargit le texte',
       searchPlaceholder: 'Rechercher par nom, marque ou #ID',
       filterByMaterial: 'Matériau :',
       allMaterials: 'Tout',

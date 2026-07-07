@@ -3990,6 +3990,8 @@ export default {
       title: '스풀 라벨 인쇄',
       selectedCount: '{{count}}개 선택됨',
       pickSpools: '라벨을 인쇄할 스풀 선택:',
+      monochrome: '흑백 (흑백 프린터)',
+      monochromeHint: '색상 견본을 제거하고 텍스트를 넓힙니다',
       searchPlaceholder: '이름, 브랜드 또는 #ID 검색',
       filterByMaterial: '재료:',
       allMaterials: '전체',

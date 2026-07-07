@@ -260,7 +260,7 @@ export function SystemInfoPage() {
                     ? t('support.debugLoggingEnabled', 'Capturing detailed logs')
                     : t('support.debugLoggingDisabled', 'Normal logging level')}
                   {debugLoggingState?.enabled && debugLoggingState.duration_seconds !== null && (
-                    <span className="text-amber-400 ml-2">
+                    <span className="text-amber-700 dark:text-amber-400 ml-2">
                       ({Math.floor(debugLoggingState.duration_seconds / 60)}m {debugLoggingState.duration_seconds % 60}s)
                     </span>
                   )}
@@ -272,7 +272,7 @@ export function SystemInfoPage() {
               disabled={debugToggling}
               className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
                 debugLoggingState?.enabled
-                  ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'
+                  ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-500/20 dark:text-amber-400 dark:hover:bg-amber-500/30'
                   : 'bg-bambu-green/20 text-bambu-green hover:bg-bambu-green/30'
               } disabled:opacity-50`}
             >
@@ -330,7 +330,7 @@ export function SystemInfoPage() {
 
           {/* Error message */}
           {bundleError && (
-            <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-sm">
+            <div className="p-3 bg-red-100 border border-red-300 rounded-lg text-red-700 dark:bg-red-500/20 dark:border-red-500/30 dark:text-red-400 text-sm">
               {bundleError}
             </div>
           )}
@@ -339,7 +339,7 @@ export function SystemInfoPage() {
           {!debugLoggingState?.enabled && (
             <div className="p-4 bg-bambu-dark-tertiary/50 rounded-lg">
               <p className="text-sm text-bambu-gray">
-                <span className="text-amber-400 font-medium">{t('support.instructions', 'To report an issue:')}</span>
+                <span className="text-amber-700 dark:text-amber-400 font-medium">{t('support.instructions', 'To report an issue:')}</span>
                 <br />
                 1. {t('support.step1', 'Enable debug logging')}
                 <br />
@@ -374,7 +374,7 @@ export function SystemInfoPage() {
                 </ul>
               </div>
               <div>
-                <p className="text-red-400 font-medium mb-1">{t('support.notCollected', 'NOT collected:')}</p>
+                <p className="text-red-700 dark:text-red-400 font-medium mb-1">{t('support.notCollected', 'NOT collected:')}</p>
                 <ul className="text-bambu-gray space-y-0.5">
                   <li>• {t('support.notItem1', 'Printer names and serial numbers')}</li>
                   <li>• {t('support.notItem2', 'Access codes and passwords')}</li>
@@ -556,7 +556,7 @@ export function SystemInfoPage() {
                       printer.state === 'RUNNING'
                         ? 'bg-bambu-green/20 text-bambu-green'
                         : printer.state === 'IDLE'
-                        ? 'bg-blue-500/20 text-blue-400'
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400'
                         : 'bg-bambu-dark-tertiary'
                     }`}
                   >

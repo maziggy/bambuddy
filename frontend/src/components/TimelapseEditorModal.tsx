@@ -491,9 +491,9 @@ export function TimelapseEditorModal({
 
                 <button
                   onClick={removeAudio}
-                  className="p-2 hover:bg-red-500/20 rounded transition-colors"
+                  className="p-2 hover:bg-red-100 dark:hover:bg-red-500/20 rounded transition-colors"
                 >
-                  <Trash2 className="w-4 h-4 text-red-400" />
+                  <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
                 </button>
               </div>
             ) : (

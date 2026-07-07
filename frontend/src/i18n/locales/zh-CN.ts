@@ -4189,6 +4189,8 @@ export default {
       title: '打印线材标签',
       selectedCount: '已选 {{count}} 项',
       pickSpools: '选择要打印标签的线材：',
+      monochrome: '单色（黑白打印机）',
+      monochromeHint: '移除颜色色块并加宽文本',
       searchPlaceholder: '按名称、品牌或 #ID 搜索',
       filterByMaterial: '材料：',
       allMaterials: '全部',

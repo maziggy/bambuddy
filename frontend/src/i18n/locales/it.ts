@@ -4189,6 +4189,8 @@ export default {
       title: 'Stampa etichette bobine',
       selectedCount: '{{count}} selezionato',
       pickSpools: 'Scegli per quali bobine stampare le etichette:',
+      monochrome: 'Monocromatico (stampante in bianco e nero)',
+      monochromeHint: 'Rimuove il campione di colore e allarga il testo',
       searchPlaceholder: 'Cerca per nome, marca o #ID',
       filterByMaterial: 'Materiale:',
       allMaterials: 'Tutto',

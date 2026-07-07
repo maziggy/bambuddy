@@ -194,9 +194,9 @@ export function FilamentMapping({
         <Circle className="w-4 h-4" fill={statusColor} stroke="none" />
         <span>{t('printModal.filamentMapping')}</span>
         {hasTypeMismatch ? (
-          <span className="text-xs text-orange-400">(Type not found)</span>
+          <span className="text-xs text-orange-700 dark:text-orange-400">(Type not found)</span>
         ) : hasColorMismatch ? (
-          <span className="text-xs text-yellow-400">(Color mismatch)</span>
+          <span className="text-xs text-yellow-700 dark:text-yellow-400">(Color mismatch)</span>
         ) : (
           <span className="text-xs text-bambu-green">(Ready)</span>
         )}
@@ -264,8 +264,8 @@ export function FilamentMapping({
                     item.status === 'match'
                       ? 'border-bambu-green/50 text-bambu-green'
                       : item.status === 'type_only'
-                      ? 'border-yellow-400/50 text-yellow-400'
-                      : 'border-orange-400/50 text-orange-400'
+                      ? 'border-yellow-500 dark:border-yellow-400/50 text-yellow-700 dark:text-yellow-400'
+                      : 'border-orange-500 dark:border-orange-400/50 text-orange-700 dark:text-orange-400'
                   } ${item.isManual ? 'ring-1 ring-blue-400/50' : ''}`}
                   title={item.isManual ? 'Manually selected' : 'Auto-matched'}
                 >
@@ -315,11 +315,11 @@ export function FilamentMapping({
                   <Check className="w-3 h-3 text-bambu-green" />
                 ) : item.status === 'type_only' ? (
                   <span title="Same type, different color">
-                    <AlertTriangle className="w-3 h-3 text-yellow-400" />
+                    <AlertTriangle className="w-3 h-3 text-yellow-600 dark:text-yellow-400" />
                   </span>
                 ) : (
                   <span title="Filament type not loaded">
-                    <AlertTriangle className="w-3 h-3 text-orange-400" />
+                    <AlertTriangle className="w-3 h-3 text-orange-600 dark:text-orange-400" />
                   </span>
                 )}
               </div>
@@ -346,7 +346,7 @@ export function FilamentMapping({
             </span>
           </div>
           {hasTypeMismatch && (
-            <p className="text-xs text-orange-400 mt-2">Required filament type not found in printer.</p>
+            <p className="text-xs text-orange-700 dark:text-orange-400 mt-2">Required filament type not found in printer.</p>
           )}
         </div>
       )}

@@ -141,7 +141,7 @@ function ConfirmRevokeModal({ token, onConfirm, onCancel }: ConfirmRevokeModalPr
     >
       <div className="bg-bambu-dark-secondary rounded-lg p-6 max-w-md w-full border border-red-500/40">
         <div className="flex items-start gap-3 mb-4">
-          <AlertTriangle className="w-6 h-6 text-red-400 flex-shrink-0 mt-0.5" />
+          <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
           <div>
             <h2 className="text-lg font-semibold text-white">
               {t('cameraTokens.confirmRevoke.title', 'Revoke this token?')}
@@ -217,7 +217,7 @@ function JustCreatedModal({ token, onClose }: JustCreatedModalProps) {
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
       <div className="bg-bambu-dark-secondary rounded-lg p-6 max-w-2xl w-full border border-bambu-green/40">
         <div className="flex items-start gap-3 mb-4">
-          <AlertTriangle className="w-6 h-6 text-yellow-400 flex-shrink-0 mt-0.5" />
+          <AlertTriangle className="w-6 h-6 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
           <div>
             <h2 className="text-lg font-semibold text-white">
               {t('cameraTokens.created.title', 'Token created — copy it now')}
@@ -273,10 +273,10 @@ function TokenRow({ token, showOwner, ownerLabel, onRevoke }: TokenRowProps) {
       {showOwner && <td className="py-3 px-3 text-bambu-gray">{ownerLabel}</td>}
       <td className="py-3 px-3 text-bambu-gray font-mono text-xs">{token.lookup_prefix}…</td>
       <td className="py-3 px-3 text-bambu-gray">{formatDate(token.created_at)}</td>
-      <td className={`py-3 px-3 ${expired ? 'text-red-400' : 'text-bambu-gray'}`}>
+      <td className={`py-3 px-3 ${expired ? 'text-red-700 dark:text-red-400' : 'text-bambu-gray'}`}>
         {formatDate(token.expires_at)}
         {expired && (
-          <span className="ml-2 px-2 py-0.5 text-xs bg-red-500/20 text-red-300 rounded">
+          <span className="ml-2 px-2 py-0.5 text-xs bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 rounded">
             {t('cameraTokens.list.expired', 'Expired')}
           </span>
         )}
@@ -286,7 +286,7 @@ function TokenRow({ token, showOwner, ownerLabel, onRevoke }: TokenRowProps) {
         <button
           type="button"
           onClick={() => onRevoke(token.id)}
-          className="inline-flex items-center gap-1 px-2 py-1 text-sm text-red-400 hover:text-red-300"
+          className="inline-flex items-center gap-1 px-2 py-1 text-sm text-red-700 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
           title={t('cameraTokens.list.revoke', 'Revoke')}
         >
           <Trash2 className="w-4 h-4" />

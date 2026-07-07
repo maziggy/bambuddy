@@ -118,7 +118,7 @@ export function FilamentOverride({
                   disabled={compatible.length === 0}
                   className={`flex-1 px-2 py-1 rounded border text-xs bg-bambu-dark-secondary focus:outline-none focus:ring-1 focus:ring-bambu-green ${
                     isOverridden
-                      ? 'border-blue-400/50 text-blue-400'
+                      ? 'border-blue-500/50 dark:border-blue-400/50 text-blue-700 dark:text-blue-400'
                       : 'border-bambu-gray/30 text-bambu-gray'
                   }`}
                 >

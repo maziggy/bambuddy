@@ -600,7 +600,7 @@ function PresetDetailModal({
           {/* Footer */}
           {showDeleteConfirm ? (
             <div className="flex-shrink-0 p-4 border-t border-bambu-dark-tertiary bg-red-500/5">
-              <div className="flex items-center gap-2 mb-3 text-red-400">
+              <div className="flex items-center gap-2 mb-3 text-red-700 dark:text-red-400">
                 <AlertTriangle className="w-5 h-5" />
                 <span className="font-medium">{t('profiles.presets.deleteConfirm')}</span>
               </div>
@@ -770,9 +770,9 @@ function TemplatesModal({
   };
 
   const typeLabels = {
-    filament: { label: t('profiles.presets.types.filament'), icon: Droplet, color: 'text-amber-400' },
-    print: { label: t('profiles.presets.types.process'), icon: Settings2, color: 'text-blue-400' },
-    printer: { label: t('profiles.presets.types.printer'), icon: PrinterIcon, color: 'text-purple-400' },
+    filament: { label: t('profiles.presets.types.filament'), icon: Droplet, color: 'text-amber-600 dark:text-amber-400' },
+    print: { label: t('profiles.presets.types.process'), icon: Settings2, color: 'text-blue-600 dark:text-blue-400' },
+    printer: { label: t('profiles.presets.types.printer'), icon: PrinterIcon, color: 'text-purple-600 dark:text-purple-400' },
   };
 
   const templateToDelete = deleteConfirmId ? templates.find(tpl => tpl.id === deleteConfirmId) : null;
@@ -803,7 +803,7 @@ function TemplatesModal({
             <CardContent className="p-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-2 bg-red-500/20 rounded-lg">
-                  <AlertTriangle className="w-6 h-6 text-red-400" />
+                  <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold text-white">{t('profiles.templates.deleteTitle')}</h3>
@@ -832,7 +832,7 @@ function TemplatesModal({
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-amber-400" />
+              <Sparkles className="w-5 h-5 text-amber-600 dark:text-amber-400" />
               {t('profiles.templates.title')}
             </h2>
             <button onClick={onClose} className="text-bambu-gray hover:text-white">
@@ -909,7 +909,7 @@ function TemplatesModal({
                             }`}
                           />
                           {editSettingsError && (
-                            <p className="text-xs text-red-400 mt-1">{editSettingsError}</p>
+                            <p className="text-xs text-red-700 dark:text-red-400 mt-1">{editSettingsError}</p>
                           )}
                         </div>
                         <div className="flex gap-2">
@@ -964,7 +964,7 @@ function TemplatesModal({
                       </button>
                       <button
                         onClick={() => setDeleteConfirmId(template.id)}
-                        className="p-1 text-bambu-gray hover:text-red-400"
+                        className="p-1 text-bambu-gray hover:text-red-600 dark:hover:text-red-400"
                         title={t('common.delete')}
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1117,7 +1117,7 @@ function DiffModal({
           {/* Header */}
           <div className="flex-shrink-0 flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <GitCompare className="w-5 h-5 text-blue-400" />
+              <GitCompare className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               {t('profiles.diff.title')}
             </h2>
             <button onClick={onClose} className="text-bambu-gray hover:text-white">
@@ -1140,15 +1140,15 @@ function DiffModal({
           {/* Stats and filters */}
           <div className="flex-shrink-0 flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
             <div className="flex items-center gap-4 text-sm">
-              <span className="flex items-center gap-1 text-green-400">
+              <span className="flex items-center gap-1 text-green-700 dark:text-green-400">
                 <PlusIcon className="w-3.5 h-3.5" />
                 {stats.added} {t('profiles.diff.added')}
               </span>
-              <span className="flex items-center gap-1 text-red-400">
+              <span className="flex items-center gap-1 text-red-700 dark:text-red-400">
                 <MinusIcon className="w-3.5 h-3.5" />
                 {stats.removed} {t('profiles.diff.removed')}
               </span>
-              <span className="flex items-center gap-1 text-amber-400">
+              <span className="flex items-center gap-1 text-amber-700 dark:text-amber-400">
                 <ArrowRight className="w-3.5 h-3.5" />
                 {stats.changed} {t('profiles.diff.changed')}
               </span>
@@ -1221,9 +1221,9 @@ function DiffModal({
                     }[entry.status];
 
                     const statusIcon = {
-                      added: <PlusIcon className="w-3.5 h-3.5 text-green-400" />,
-                      removed: <MinusIcon className="w-3.5 h-3.5 text-red-400" />,
-                      changed: <ArrowRight className="w-3.5 h-3.5 text-amber-400" />,
+                      added: <PlusIcon className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />,
+                      removed: <MinusIcon className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />,
+                      changed: <ArrowRight className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />,
                       same: <Equal className="w-3.5 h-3.5 text-bambu-gray-dark" />,
                     }[entry.status];
 
@@ -1237,7 +1237,7 @@ function DiffModal({
                         </td>
                         <td className="p-3">
                           <span className={`text-sm font-mono break-all ${
-                            entry.status === 'removed' ? 'text-red-300' :
+                            entry.status === 'removed' ? 'text-red-700 dark:text-red-300' :
                             entry.status === 'changed' ? 'text-white' : 'text-bambu-gray'
                           }`}>
                             {formatValue(entry.left)}
@@ -1245,7 +1245,7 @@ function DiffModal({
                         </td>
                         <td className="p-3">
                           <span className={`text-sm font-mono break-all ${
-                            entry.status === 'added' ? 'text-green-300' :
+                            entry.status === 'added' ? 'text-green-700 dark:text-green-300' :
                             entry.status === 'changed' ? 'text-white' : 'text-bambu-gray'
                           }`}>
                             {formatValue(entry.right)}
@@ -1839,7 +1839,7 @@ function CreatePresetModal({
             >
               <Code className="w-4 h-4" />
               JSON
-              {jsonError && <AlertCircle className="w-3 h-3 text-red-400" />}
+              {jsonError && <AlertCircle className="w-3 h-3 text-red-600 dark:text-red-400" />}
             </button>
             <div className="flex-1 max-[640px]:hidden" />
             <button
@@ -1908,7 +1908,7 @@ function CreatePresetModal({
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-medium text-white flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                       {t('profiles.templates.title')}
                     </h3>
                     {Object.keys(settingsObj).filter(k => k !== 'inherits').length > 0 && (
@@ -2155,7 +2155,7 @@ function CreatePresetModal({
                               </div>
                               <button
                                 onClick={() => updateField(key, undefined)}
-                                className="p-1 text-bambu-gray hover:text-red-400 transition-colors"
+                                className="p-1 text-bambu-gray hover:text-red-600 dark:hover:text-red-400 transition-colors"
                               >
                                 <X className="w-4 h-4" />
                               </button>
@@ -2202,7 +2202,7 @@ function CreatePresetModal({
             {activeTab === 'json' && (
               <div className="space-y-2">
                 {jsonError && (
-                  <div className="flex items-center gap-2 text-red-400 text-sm">
+                  <div className="flex items-center gap-2 text-red-700 dark:text-red-400 text-sm">
                     <AlertCircle className="w-4 h-4" />
                     {jsonError}
                   </div>
@@ -2592,7 +2592,7 @@ function CloudProfilesView({
         <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <GitCompare className="w-5 h-5 text-blue-400" />
+              <GitCompare className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               <span className="text-white font-medium">{t('profiles.cloudView.compareMode')}</span>
               <span className="text-bambu-gray">
                 {compareSelection[0]
@@ -2669,7 +2669,7 @@ function CloudProfilesView({
           {/* Filament Column */}
           <div>
             <div className="flex items-center gap-2 mb-3 px-1">
-              <Droplet className="w-4 h-4 text-amber-400" />
+              <Droplet className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               <h3 className="text-sm font-medium text-bambu-gray">{t('profiles.cloudView.columns.filament')}</h3>
               <span className="text-xs text-bambu-gray-dark">
                 ({filteredPresets.filter(p => p.type === 'filament').length})
@@ -2700,7 +2700,7 @@ function CloudProfilesView({
           {/* Process Column */}
           <div>
             <div className="flex items-center gap-2 mb-3 px-1">
-              <Settings2 className="w-4 h-4 text-blue-400" />
+              <Settings2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
               <h3 className="text-sm font-medium text-bambu-gray">{t('profiles.cloudView.columns.process')}</h3>
               <span className="text-xs text-bambu-gray-dark">
                 ({filteredPresets.filter(p => p.type === 'process').length})
@@ -2731,7 +2731,7 @@ function CloudProfilesView({
           {/* Printer Column */}
           <div>
             <div className="flex items-center gap-2 mb-3 px-1">
-              <PrinterIcon className="w-4 h-4 text-purple-400" />
+              <PrinterIcon className="w-4 h-4 text-purple-600 dark:text-purple-400" />
               <h3 className="text-sm font-medium text-bambu-gray">{t('profiles.cloudView.columns.printer')}</h3>
               <span className="text-xs text-bambu-gray-dark">
                 ({filteredPresets.filter(p => p.type === 'printer').length})

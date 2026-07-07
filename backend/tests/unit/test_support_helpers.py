@@ -1166,8 +1166,8 @@ class TestRedactRawPushStatus:
         out = _redact_raw_push_status(raw)
 
         # LAN topology must be scrubbed (mirrors the #1429 VP fix).
-        assert out["net"]["info"][0]["ip"] == "0.0.0.0"
-        assert out["net"]["info"][1]["ip"] == "0.0.0.0"
+        assert out["net"]["info"][0]["ip"] == "0.0.0.0"  # nosec B104 - redaction sentinel, not a bind address
+        assert out["net"]["info"][1]["ip"] == "0.0.0.0"  # nosec B104 - redaction sentinel, not a bind address
         # Non-IP siblings inside the entry survive so the shape stays
         # diagnosable (interface count, mask presence, etc.).
         assert out["net"]["info"][0]["mask"] == "255.255.255.0"

@@ -557,7 +557,7 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
           )}
 
           {presetsQuery.isError && (
-            <div className="text-sm text-red-400" role="alert">
+            <div className="text-sm text-red-700 dark:text-red-400" role="alert">
               {t(
                 'slice.presetsLoadFailed',
                 'Failed to load presets. Open Settings → Profiles to import them, or sign in to Bambu Cloud.',
@@ -787,7 +787,7 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
           )}
 
           {errorMessage && (
-            <div className="text-sm text-red-400 bg-red-900/20 border border-red-900/40 rounded p-2" role="alert">
+            <div className="text-sm text-red-700 dark:text-red-400 bg-red-900/20 border border-red-900/40 rounded p-2" role="alert">
               {errorMessage}
             </div>
           )}
@@ -892,7 +892,7 @@ function CloudStatusBanner({
 
   const tones: Record<'expired' | 'unreachable', { tone: string; icon: typeof Cloud }> = {
     expired: {
-      tone: 'border-amber-700/40 bg-amber-900/20 text-amber-200',
+      tone: 'border-amber-300 dark:border-amber-700/40 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200',
       icon: CloudOff,
     },
     unreachable: {

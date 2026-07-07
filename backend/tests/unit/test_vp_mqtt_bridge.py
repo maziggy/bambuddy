@@ -1565,7 +1565,7 @@ class TestBindAddressAutoResolve:
     async def test_rewrite_arms_via_auto_resolved_host_ip(self):
         """When bind_address is 0.0.0.0, fall back to the host interface in
         the target printer's subnet and rewrite to that IP."""
-        server = _make_server(bind_address="0.0.0.0")
+        server = _make_server(bind_address="0.0.0.0")  # nosec B104
         bridge = _make_bridge(server)
         with patch(
             "backend.app.services.virtual_printer.mqtt_bridge._resolve_host_interface_for_target",
@@ -1680,7 +1680,7 @@ class TestNotArmedDiagnosticLogging:
         assert "no ip_address" in not_armed[0].getMessage()
 
     def test_no_matching_host_interface_logs_specific_reason(self, caplog):
-        server = _make_server(bind_address="0.0.0.0")
+        server = _make_server(bind_address="0.0.0.0")  # nosec B104
         bridge = _make_bridge(server)
         with (
             patch(

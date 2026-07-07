@@ -375,42 +375,39 @@ class ThreeMFParser:
             pass  # G-code header parsing is best-effort; metadata may come from other sources
 
     def _extract_filament_info(self, data: dict):
-        """Extract filament info, preferring non-support filaments."""
+        """Extract filament info from project settings — includes support
+        materials so a PLA-model / PVA-support project shows both on the
+        archive card badge (#1881).
+
+        Earlier code filtered by ``filament_is_support``; that hid PVA
+        (and any other soluble/breakaway support material) from the card
+        even when the user had explicitly configured it, and made source
+        3MFs look single-material until the print completed. slice_info
+        (parsed separately) is still preferred when present — it lists
+        only filaments the print actually consumes, this fallback only
+        runs on unsliced source 3MFs.
+        """
         try:
             filament_types = data.get("filament_type", [])
             filament_colors = data.get("filament_colour", [])
-            filament_is_support = data.get("filament_is_support", [])
 
             if not filament_types:
                 return
 
-            # Collect all non-support filaments
-            non_support_types = []
-            non_support_colors = []
+            unique_types: list[str] = []
+            for ftype in filament_types:
+                if ftype and ftype not in unique_types:
+                    unique_types.append(ftype)
 
-            for i, ftype in enumerate(filament_types):
-                is_support = filament_is_support[i] if i < len(filament_is_support) else "0"
-                if is_support == "0":
-                    if ftype and ftype not in non_support_types:
-                        non_support_types.append(ftype)
-                    if i < len(filament_colors) and filament_colors[i]:
-                        color = filament_colors[i]
-                        if color not in non_support_colors:
-                            non_support_colors.append(color)
+            unique_colors: list[str] = []
+            for color in filament_colors:
+                if color and color not in unique_colors:
+                    unique_colors.append(color)
 
-            # Fallback to first filament if all are support
-            if not non_support_types and filament_types:
-                non_support_types = [filament_types[0]]
-            if not non_support_colors and filament_colors:
-                non_support_colors = [filament_colors[0]]
-
-            # Store filament type(s)
-            if non_support_types:
-                self.metadata["filament_type"] = ", ".join(non_support_types)
-
-            # Store all colors as comma-separated (for multi-color display)
-            if non_support_colors:
-                self.metadata["filament_color"] = ",".join(non_support_colors)
+            if unique_types:
+                self.metadata["filament_type"] = ", ".join(unique_types)
+            if unique_colors:
+                self.metadata["filament_color"] = ",".join(unique_colors)
 
         except Exception:
             pass  # Filament info is optional; fall back to slice_info values

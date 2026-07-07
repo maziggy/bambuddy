@@ -326,3 +326,48 @@ class TestSubstituteUnusedPlateFilaments:
         items = ["a.json", "b.json", "c.json"]
         result = substitute_unused_plate_filaments(zip_bytes, plate_id=1, items=items)
         assert result == items
+
+    def test_support_material_slot_preserved(self):
+        # #1881 regression: object geometry references only slot 1 (PLA),
+        # but slot 2 (PVA) is configured as the support material in
+        # project_settings.config. Without the support-slot union, slot 2's
+        # user-picked PVA profile would be overwritten with slot 1's PLA
+        # and the print would come out single-material with PLA supports.
+        model_settings = self._model_settings_xml([(1, [1])])
+        project_settings = json.dumps(
+            {
+                "enable_support": "1",
+                "support_filament": "2",
+                "support_interface_filament": "2",
+                "filament_type": ["PLA", "PVA"],
+            }
+        ).encode()
+        zip_bytes = _make_3mf(
+            {
+                "Metadata/model_settings.config": model_settings,
+                "Metadata/project_settings.config": project_settings,
+            }
+        )
+        items = ["pla.json", "pva_support.json"]
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=1, items=items)
+        assert result == ["pla.json", "pva_support.json"]
+
+    def test_support_disabled_still_substitutes_unused(self):
+        # When supports are off, slot 2 is genuinely unused — the temp-spread
+        # validator still needs the substitution to succeed.
+        model_settings = self._model_settings_xml([(1, [1])])
+        project_settings = json.dumps(
+            {
+                "enable_support": "0",
+                "support_filament": "2",
+            }
+        ).encode()
+        zip_bytes = _make_3mf(
+            {
+                "Metadata/model_settings.config": model_settings,
+                "Metadata/project_settings.config": project_settings,
+            }
+        )
+        items = ["pla.json", "abs_never_used.json"]
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=1, items=items)
+        assert result == ["pla.json", "pla.json"]

@@ -162,6 +162,11 @@ class TestApiKeyDenylistIntegrity:
             # can_manage_archives allowlist scope; must not be denied.
             Permission.ARCHIVES_DELETE_ALL,
             Permission.ARCHIVES_UPDATE_ALL,
+            # #1893: project CRUD moved off the denylist to the
+            # can_manage_projects allowlist scope; must not be denied.
+            Permission.PROJECTS_CREATE,
+            Permission.PROJECTS_UPDATE,
+            Permission.PROJECTS_DELETE,
             # SpoolBuddy kiosk reads settings (e.g. language) via API key — must stay allowed.
             Permission.SETTINGS_READ,
         }
@@ -221,6 +226,7 @@ class TestApiKeyScopeAllowlist:
             "can_manage_inventory",
             "can_manage_maintenance",
             "can_manage_archives",
+            "can_manage_projects",
             "can_access_cloud",
         }
         used_flags = set(_APIKEY_SCOPE_BY_PERMISSION.values())
@@ -249,6 +255,7 @@ class TestApiKeyScopeAllowlist:
             "can_manage_inventory",
             "can_manage_maintenance",
             "can_manage_archives",
+            "can_manage_projects",
             "can_access_cloud",
         ],
     )
@@ -278,6 +285,7 @@ class _FakeApiKey:
         can_manage_inventory=False,
         can_manage_maintenance=False,
         can_manage_archives=False,
+        can_manage_projects=False,
     ):
         self.can_read_status = can_read_status
         self.can_queue = can_queue
@@ -286,6 +294,7 @@ class _FakeApiKey:
         self.can_manage_inventory = can_manage_inventory
         self.can_manage_maintenance = can_manage_maintenance
         self.can_manage_archives = can_manage_archives
+        self.can_manage_projects = can_manage_projects
 
 
 class TestCheckApiKeyPermissionsMatrix:
@@ -341,6 +350,13 @@ class TestCheckApiKeyPermissionsMatrix:
         ("ARCHIVES_UPDATE_ALL", "can_manage_archives", "edit any archive"),
         ("ARCHIVES_DELETE_OWN", "can_manage_archives", "delete own archive"),
         ("ARCHIVES_DELETE_ALL", "can_manage_archives", "delete any archive"),
+        # can_manage_projects (#1893) — project CRUD + membership via API key.
+        # Projects gate on plain PROJECTS_* (no OWN/ALL split), so the three
+        # permissions map directly to the one scope. PROJECTS_READ stays under
+        # can_read_status. Membership edits (add-archives) gate on PROJECTS_UPDATE.
+        ("PROJECTS_CREATE", "can_manage_projects", "create a project"),
+        ("PROJECTS_UPDATE", "can_manage_projects", "update a project / add archives"),
+        ("PROJECTS_DELETE", "can_manage_projects", "delete a project"),
     ]
 
     _ADMIN_CASES = [
@@ -392,6 +408,7 @@ class TestCheckApiKeyPermissionsMatrix:
                 "can_manage_inventory",
                 "can_manage_maintenance",
                 "can_manage_archives",
+                "can_manage_projects",
             )
             if f != required_flag
         }

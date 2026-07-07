@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Archive, ListOrdered, BarChart3, Cloud, Settings, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Keyboard, Github, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Globe, type LucideIcon } from 'lucide-react';
+import { Printer, Archive, ListOrdered, BarChart3, Cloud, Settings, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Keyboard, Github, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Globe, Bell, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -48,6 +48,11 @@ export const defaultNavItems: NavItem[] = [
   { id: 'profiles', to: '/profiles', icon: Cloud, labelKey: 'nav.profiles' },
   { id: 'maintenance', to: '/maintenance', icon: Wrench, labelKey: 'nav.maintenance' },
   { id: 'stats', to: '/stats', icon: BarChart3, labelKey: 'nav.stats' },
+  // User-account feature: gated in isHidden() on advanced auth + user_notifications
+  // + the notifications:user_email permission. Kept adjacent to Settings
+  // intentionally. Do not drop this entry — without it the /notifications page
+  // is orphaned (route + page still exist but no nav link) (#1901).
+  { id: 'notifications', to: '/notifications', icon: Bell, labelKey: 'nav.notifications' },
   { id: 'settings', to: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ];
 
@@ -296,6 +301,11 @@ export function Layout() {
       files: ['library:read', 'library:read_own', 'library:read_all'],
       makerworld: 'makerworld:view',
       settings: 'settings:read',
+      // The user-email-preferences API requires notifications:user_email, so
+      // gate the nav item on the same permission (both default groups —
+      // Administrators and Operators — hold it). The advanced-auth /
+      // user_notifications enablement gate is applied separately below.
+      notifications: 'notifications:user_email',
     };
 
     const isHidden = (id: string) => {

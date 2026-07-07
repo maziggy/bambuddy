@@ -27,17 +27,21 @@ def _is_excluded(name: str) -> bool:
 
 
 def _get_network_interfaces_psutil() -> list[dict]:
-    """Windows path: enumerate interfaces via psutil.
+    """Non-Linux path (Windows, macOS, BSD): enumerate interfaces via psutil.
 
-    fcntl + ioctl is Linux-only, and the ``ip`` command isn't available
-    on Windows either, so both Linux code paths return empty here. psutil
-    is already a Bambuddy dep (``psutil>=6.0.0``) and gives us cross-
-    platform name + IPv4 + netmask in one call.
+    The ioctl request numbers in the Linux path (SIOCGIFADDR 0x8915,
+    SIOCGIFNETMASK 0x891B) and the sockaddr layout they return are
+    Linux-specific. On macOS/BSD ``fcntl`` still imports, so those ioctls
+    don't raise ImportError — they raise ``OSError`` per interface and the
+    Linux path silently returns an empty list (no VP bind interfaces).
+    Windows has no ``fcntl``/``ip`` at all. psutil is already a Bambuddy dep
+    (``psutil>=6.0.0``) and gives cross-platform name + IPv4 + netmask in one
+    call, so we use it for everything that isn't Linux.
 
     Filters: IPv4 only (matches the Linux path), skip loopback and
     link-local (169.254.0.0/16), skip interfaces psutil reports as down.
-    No name-based exclusion — users on Windows may legitimately want to
-    bind a VP to a Hyper-V / WSL / Tailscale virtual adapter.
+    No name-based exclusion — users may legitimately want to bind a VP to a
+    Hyper-V / WSL / Tailscale / utun virtual adapter.
     """
     try:
         import psutil
@@ -100,10 +104,12 @@ def get_network_interfaces() -> list[dict]:
     Returns:
         List of dicts with name, ip, netmask, subnet, broadcast
     """
-    # Windows has no fcntl and no `ip` binary; the Linux ioctl path below
-    # raises ImportError on import fcntl. Route to the psutil-based path
-    # instead. The Linux path stays as-is for behavioural parity.
-    if sys.platform == "win32":
+    # Only Linux has the SIOCGIFADDR/SIOCGIFNETMASK ioctls + sockaddr layout the
+    # path below relies on. Windows lacks fcntl entirely; macOS/BSD have fcntl but
+    # different ioctl numbers, so the ioctl path there fails per-interface and
+    # returns an empty list (breaking the VP bind-interface dropdown on macOS).
+    # Route everything non-Linux to the cross-platform psutil path.
+    if not sys.platform.startswith("linux"):
         return _get_network_interfaces_psutil()
 
     interfaces = []

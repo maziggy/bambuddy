@@ -332,6 +332,26 @@ create_user() {
     log_success "Service user created"
 }
 
+# Ensure a directory exists and is owned by the current user. Used on macOS so
+# the install tree stays user-owned (git/venv/npm never touch a root-owned dir).
+# Only elevates when the target's parent is root-owned (e.g. /opt); a path under
+# $HOME is created without any sudo prompt.
+ensure_user_owned_dir() {
+    local dir="$1"
+
+    if [[ -d "$dir" ]] && [[ -w "$dir" ]]; then
+        return
+    fi
+
+    if mkdir -p "$dir" 2>/dev/null; then
+        return
+    fi
+
+    log_info "Creating $dir (requires your password)..."
+    sudo mkdir -p "$dir"
+    sudo chown "$(id -un):$(id -gn)" "$dir"
+}
+
 download_bambuddy() {
     log_info "Downloading BamBuddy..."
 
@@ -343,7 +363,23 @@ download_bambuddy() {
         exit 1
     fi
 
-    if [[ -d "$INSTALL_PATH/.git" ]]; then
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        # macOS has no service user — the whole install runs as the current user.
+        # Create the target user-owned (elevating only if its parent is root-owned,
+        # e.g. /opt), then clone/update without sudo so the venv/frontend the user
+        # builds next aren't fighting a root-owned tree.
+        ensure_user_owned_dir "$INSTALL_PATH"
+        if [[ -d "$INSTALL_PATH/.git" ]]; then
+            log_info "Existing installation found, updating..."
+            git config --global --add safe.directory "$INSTALL_PATH" 2>/dev/null || true
+            cd "$INSTALL_PATH"
+            git fetch origin
+            git checkout "$BRANCH" 2>/dev/null || git checkout -b "$BRANCH" "origin/$BRANCH"
+            git reset --hard "origin/$BRANCH"
+        else
+            git clone --branch "$BRANCH" https://github.com/maziggy/bambuddy.git "$INSTALL_PATH"
+        fi
+    elif [[ -d "$INSTALL_PATH/.git" ]]; then
         log_info "Existing installation found, updating..."
         # Add safe.directory to avoid "dubious ownership" error when running as root
         git config --global --add safe.directory "$INSTALL_PATH" 2>/dev/null || true
@@ -472,9 +508,12 @@ build_frontend() {
 create_directories() {
     log_info "Creating data directories..."
 
-    sudo mkdir -p "$DATA_DIR" "$LOG_DIR"
-
-    if [[ "$OS_TYPE" != "macos" ]]; then
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        # Rootless: DATA_DIR/LOG_DIR default under the user-owned install path.
+        ensure_user_owned_dir "$DATA_DIR"
+        ensure_user_owned_dir "$LOG_DIR"
+    else
+        sudo mkdir -p "$DATA_DIR" "$LOG_DIR"
         sudo chown -R "$SERVICE_USER:$SERVICE_USER" "$DATA_DIR" "$LOG_DIR"
     fi
 
@@ -503,11 +542,15 @@ LOG_LEVEL=$LOG_LEVEL
 LOG_TO_FILE=true
 EOF
 
-    sudo mv /tmp/bambuddy.env "$env_file"
-    if [[ "$OS_TYPE" != "macos" ]]; then
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        # Rootless: install path is user-owned, so write it directly.
+        mv /tmp/bambuddy.env "$env_file"
+        chmod 600 "$env_file"
+    else
+        sudo mv /tmp/bambuddy.env "$env_file"
         sudo chown "$SERVICE_USER:$SERVICE_USER" "$env_file"
+        sudo chmod 600 "$env_file"
     fi
-    sudo chmod 600 "$env_file"
 
     log_success "Environment file created at $env_file"
 }
@@ -844,6 +887,27 @@ main() {
     log_info "Detecting system..."
     detect_os
     log_success "Detected: $OS_TYPE (package manager: $PKG_MANAGER)"
+
+    # macOS must run rootless. Homebrew hard-refuses to run as root, and a venv
+    # / node_modules created by root can't be managed by the launchd agent (which
+    # runs as the user). Bail early with an actionable message instead of dying
+    # halfway through on "brew: running as root is not supported".
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        if [[ "$EUID" -eq 0 ]]; then
+            log_error "Don't run the macOS installer with sudo."
+            log_info  "Homebrew, the Python venv, and the launchd agent must all be created as your"
+            log_info  "normal user. Re-run without sudo (the script elevates only when it truly needs to):"
+            echo ""
+            echo "    ./install.sh"
+            echo ""
+            exit 1
+        fi
+        # /opt requires sudo to create and would leave a root-owned tree; default
+        # macOS installs to a user-owned location so the whole flow stays rootless.
+        if [[ "$DEFAULT_INSTALL_PATH" == "/opt/bambuddy" ]]; then
+            DEFAULT_INSTALL_PATH="$HOME/bambuddy"
+        fi
+    fi
 
     # Check/install Python
     if ! detect_python; then

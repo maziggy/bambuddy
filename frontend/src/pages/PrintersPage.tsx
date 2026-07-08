@@ -115,7 +115,7 @@ import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModa
 import { FileUploadModal } from '../components/FileUploadModal';
 import { PrintModal } from '../components/PrintModal';
 import { PrinterInfoModal } from '../components/PrinterInfoModal';
-import { getAmsLabel, getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, isBambuLabSpool } from '../utils/amsHelpers';
+import { getAmsLabel, getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, isBambuLabSpool, resolveSlotNozzleDiameter } from '../utils/amsHelpers';
 import { getPrinterImage, getWifiStrength, filterCompatibleQueueItems } from '../utils/printer';
 import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
 import { Collapsible } from '../components/Collapsible';
@@ -6255,6 +6255,7 @@ function PrinterCard({
           printerId={printer.id}
           slotInfo={configureSlotModal}
           printerModel={mapModelCode(printer.model) || undefined}
+          nozzleDiameter={resolveSlotNozzleDiameter(status, configureSlotModal.amsId)}
           onSuccess={() => {
             // Refresh slot presets to show updated profile name
             queryClient.invalidateQueries({ queryKey: ['slotPresets', printer.id] });

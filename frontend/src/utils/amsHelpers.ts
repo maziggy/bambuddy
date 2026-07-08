@@ -344,6 +344,32 @@ export function filterFilamentsByNozzle<T extends { extruderId?: number }>(
 }
 
 /**
+ * Resolve the installed nozzle diameter feeding a given AMS unit, so the
+ * Configure-AMS-Slot picker filters filament presets by the nozzle actually on
+ * the machine instead of assuming 0.4mm (#1899).
+ *
+ * On dual-nozzle printers (H2D) each AMS is bound to one extruder via
+ * `ams_extruder_map` (amsId → extruder index, 0=left/primary, 1=right), so we
+ * read that nozzle's diameter. Single-nozzle printers have no map entry and
+ * fall back to the primary nozzle (index 0). Returns undefined when the printer
+ * hasn't reported nozzle hardware yet, letting the caller keep its own default.
+ * Diameter is the bare decimal string the status carries, e.g. "0.4" / "0.6".
+ */
+export function resolveSlotNozzleDiameter(
+  status: {
+    nozzles?: { nozzle_diameter?: string }[];
+    ams_extruder_map?: Record<string, number>;
+  } | null | undefined,
+  amsId: number,
+): string | undefined {
+  const nozzles = status?.nozzles;
+  if (!nozzles || nozzles.length === 0) return undefined;
+  const extruderIdx = status?.ams_extruder_map?.[String(amsId)] ?? 0;
+  const diameter = nozzles[extruderIdx]?.nozzle_diameter || nozzles[0]?.nozzle_diameter;
+  return diameter || undefined;
+}
+
+/**
  * Detect Bambu Lab RFID-tagged spool by tray_uuid (32 hex) or tag_uid (16 hex).
  *
  * Permissive zero-string check: any non-zero non-empty value returns true. The

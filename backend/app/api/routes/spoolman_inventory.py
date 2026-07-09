@@ -235,9 +235,10 @@ async def _resolve_linked_codes_json(barcode: str) -> str | None:
     discovered code bundle JSON-encoded for extra.bambu_linked_codes, or None
     if nothing was found. Mirrors `_persist_barcode_codes_for_spool`'s
     cross-referencing for the local-DB inventory mode (see `routes/inventory.py`)."""
-    from backend.app.api.routes.inventory import _classify_code, _external_all_codes
+    from backend.app.api.routes.inventory import _external_all_codes
+    from backend.app.schemas.spool import classify_code
 
-    code, kind = _classify_code(barcode)
+    code, kind = classify_code(barcode)
     try:
         external = await _external_all_codes(code, kind)
     except Exception:

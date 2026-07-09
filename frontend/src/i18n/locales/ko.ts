@@ -3394,6 +3394,9 @@ export default {
     searchSubfoldersHint: '하위 폴더 포함',
     readme: {
       truncated: '잘림',
+      show: 'README 표시',
+      hide: 'README 숨기기',
+      label: 'README',
     },
     tags: {
       title: '태그',

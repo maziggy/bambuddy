@@ -3571,6 +3571,9 @@ export default {
     searchSubfoldersHint: 'Sous-dossiers inclus',
     readme: {
       truncated: 'Tronqué',
+      show: 'Afficher le README',
+      hide: 'Masquer le README',
+      label: 'README',
     },
     tags: {
       title: 'Étiquettes',

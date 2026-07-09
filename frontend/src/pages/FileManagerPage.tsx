@@ -1935,11 +1935,13 @@ export function FileManagerPage() {
           </div>
         </div>
 
-        {/* Files area */}
+        {/* Files area + README rail (#2520 item 2). On wide screens the
+            README docks as a collapsible right-hand column (rendered after
+            the files column, below) so it no longer steals vertical space
+            from the file list; on narrow screens it stacks above the list
+            via `order-first` and the page itself scrolls. */}
+        <div className="flex-1 flex flex-col lg:flex-row min-w-0 min-h-0 gap-4 lg:gap-6">
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          {/* Markdown description panel (#1268) — auto-hides if the folder
-              has no README/description.md so non-users pay no UI cost. */}
-          {selectedFolderId !== null && <FolderReadmePanel folderId={selectedFolderId} />}
           {/* Tag filter rail (#1268). Lists every catalog tag as a togglable
               chip — active chips are filled green and show an X, inactive
               chips are outlined and toggle ON when clicked. Clicking an active
@@ -2556,6 +2558,10 @@ export function FileManagerPage() {
               </div>
             </div>
           )}
+        </div>
+          {/* README rail — collapsible right column on lg+, stacks on top
+              on mobile. See the files-area wrapper comment above (#2520). */}
+          {selectedFolderId !== null && <FolderReadmePanel folderId={selectedFolderId} />}
         </div>
       </div>
 

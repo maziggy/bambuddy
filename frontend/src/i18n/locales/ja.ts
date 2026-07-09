@@ -3582,6 +3582,9 @@ export default {
     searchSubfoldersHint: 'サブフォルダーを含む',
     readme: {
       truncated: '切り詰め',
+      show: 'READMEを表示',
+      hide: 'READMEを非表示',
+      label: 'README',
     },
     tags: {
       title: 'タグ',

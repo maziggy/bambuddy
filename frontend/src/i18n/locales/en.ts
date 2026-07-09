@@ -3611,6 +3611,9 @@ export default {
     searchSubfoldersHint: 'Including subfolders',
     readme: {
       truncated: 'Truncated',
+      show: 'Show README',
+      hide: 'Hide README',
+      label: 'README',
     },
     tags: {
       title: 'Tags',

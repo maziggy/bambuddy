@@ -3578,6 +3578,9 @@ export default {
     searchSubfoldersHint: 'Alt klasörler dahil',
     readme: {
       truncated: 'Kısaltıldı',
+      show: 'README’yi göster',
+      hide: 'README’yi gizle',
+      label: 'README',
     },
     tags: {
       title: 'Etiketler',

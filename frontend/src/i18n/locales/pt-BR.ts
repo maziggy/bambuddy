@@ -3570,6 +3570,9 @@ export default {
     searchSubfoldersHint: 'Incluindo subpastas',
     readme: {
       truncated: 'Truncado',
+      show: 'Mostrar README',
+      hide: 'Ocultar README',
+      label: 'README',
     },
     tags: {
       title: 'Tags',

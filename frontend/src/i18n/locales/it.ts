@@ -3570,6 +3570,9 @@ export default {
     searchSubfoldersHint: 'Sottocartelle incluse',
     readme: {
       truncated: 'Troncato',
+      show: 'Mostra README',
+      hide: 'Nascondi README',
+      label: 'README',
     },
     tags: {
       title: 'Etichette',

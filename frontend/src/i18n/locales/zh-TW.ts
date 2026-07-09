@@ -3570,6 +3570,9 @@ export default {
     searchSubfoldersHint: '包含子資料夾',
     readme: {
       truncated: '已截斷',
+      show: '顯示 README',
+      hide: '隱藏 README',
+      label: 'README',
     },
     tags: {
       title: '標籤',

@@ -3582,6 +3582,9 @@ export default {
     searchSubfoldersHint: 'Inklusive Unterordner',
     readme: {
       truncated: 'Gekürzt',
+      show: 'README anzeigen',
+      hide: 'README ausblenden',
+      label: 'README',
     },
     tags: {
       title: 'Tags',

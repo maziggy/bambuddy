@@ -3585,6 +3585,9 @@ export default {
     searchSubfoldersHint: 'Incluyendo subcarpetas',
     readme: {
       truncated: 'Truncado',
+      show: 'Mostrar README',
+      hide: 'Ocultar README',
+      label: 'README',
     },
     tags: {
       title: 'Etiquetas',

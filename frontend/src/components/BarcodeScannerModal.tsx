@@ -333,7 +333,16 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
             setCameraError({ type: 'other', message: err instanceof Error ? err.message : String(err) });
           }
         });
-    });
+    })
+      // Covers a failed chunk load for either dynamic import (e.g. a stale
+      // cached index.html after a redeploy requesting a chunk hash that no
+      // longer exists on the server) — without this, the scan tab was left
+      // on a black video feed with no error shown, since the .catch above is
+      // only on the inner decode-setup chain and never runs.
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setCameraError({ type: 'other', message: err instanceof Error ? err.message : String(err) });
+      });
 
     return () => {
       cancelled = true;

@@ -147,6 +147,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 
 # Run the application
 # Use standard asyncio loop (uvloop has permission issues in some Docker environments)
-# Port is configurable via PORT environment variable (default: 8000)
+# Port is configurable via PORT (default 8000); bind address via HOST (default
+# 0.0.0.0). Set HOST=127.0.0.1 to bind loopback only, e.g. when a reverse proxy
+# on the same host fronts the app.
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000} --loop asyncio"]
+CMD ["sh", "-c", "uvicorn backend.app.main:app --host ${HOST:-0.0.0.0} --port ${PORT:-8000} --loop asyncio"]

@@ -14,7 +14,13 @@ fastapi>=0.109.0,<0.136.0
 uvicorn[standard]>=0.27.0
 
 # Database
-sqlalchemy>=2.0.0
+# 2.0.38 is a hard floor, not a preference: it changed the aiosqlite dialect's
+# default pool for file databases from NullPool to AsyncAdaptedQueuePool.
+# core/database._create_engine() passes pool_size/max_overflow on the SQLite
+# branch, which NullPool rejects — on <=2.0.37 every SQLite install (and the
+# test suite, which imports the module-level engine) dies at import with
+# "Invalid argument(s) 'pool_size','max_overflow' sent to create_engine()".
+sqlalchemy>=2.0.38
 aiosqlite>=0.19.0
 asyncpg>=0.29.0
 greenlet>=3.0.0
@@ -146,6 +152,9 @@ numpy>=1.24.0
 pytest>=9.0.3
 pytest-asyncio>=0.23.0
 httpx>=0.26.0
-ruff>=0.2.0
+# Lint/format is pinned exactly in requirements-dev.txt — that file is the
+# source of truth for the version CI enforces. This floor only keeps `ruff`
+# importable for anyone who installs the runtime file alone.
+ruff>=0.8.0
 
 pillow>=12.2.0

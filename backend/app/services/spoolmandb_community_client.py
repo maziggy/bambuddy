@@ -332,6 +332,14 @@ def _load_stale_cached() -> tuple[dict, dict, list, list] | None:
 async def _refresh() -> tuple[dict, dict, list, list]:
     """Download + parse the repo tarball; build the indexes + brand list; cache all of it."""
     variants = await _download_and_parse_variants()
+    if not variants:
+        # A 200 that parses to zero manufacturer files (e.g. the repo layout
+        # changes and the path filter matches nothing) must not overwrite a
+        # good cache with an empty one and silently return "no match" for
+        # everyone for a full TTL. _ensure_loaded's except-path already logs
+        # + serves the stale cache on any refresh failure, so raising here
+        # reuses that fallback instead of caching this.
+        raise RuntimeError("SpoolmanDB-Community refresh parsed zero manufacturer files - keeping previous cache")
     gtin_index, sku_index = _build_index(variants)
     brands = sorted({v["manufacturer"] for v in variants if v.get("manufacturer")})
     try:

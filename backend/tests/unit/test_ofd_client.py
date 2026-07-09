@@ -269,6 +269,52 @@ class TestCachingAndLookup:
         assert data["cache_version"] == ofd_client._CACHE_VERSION
 
     @pytest.mark.asyncio
+    async def test_empty_refresh_result_with_no_cache_raises(self, tmp_path):
+        """A 200 that parses to zero gtin/article entries (e.g. upstream's
+        dump shape changes) must not be treated as a successful, cacheable
+        refresh — with nothing to fall back to, the caller must learn the
+        refresh effectively failed."""
+        empty_response = MagicMock()
+        empty_response.raise_for_status = MagicMock()
+        empty_response.json = MagicMock(return_value={})
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=empty_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("backend.app.services.ofd_client.httpx.AsyncClient", return_value=mock_client),
+            pytest.raises(RuntimeError, match="zero entries"),
+        ):
+            await ofd_client._refresh()
+
+        assert not (tmp_path / "ofd_cache.json").exists()
+
+    @pytest.mark.asyncio
+    async def test_empty_refresh_result_falls_back_to_stale_cache_untouched(self, tmp_path):
+        """An empty refresh must not clobber a good stale cache - the stale
+        entries keep serving lookups instead of "no match" for a full TTL."""
+        stale_time = time.time() - ofd_client.OFD_TTL_SECONDS - 10
+        gtin_index, article_index, variant_codes = ofd_client._build_index(SAMPLE_ALL_JSON)
+        self._write_cache(tmp_path, gtin_index, article_index, variant_codes, ["Sunlu"], built_at=stale_time)
+        cache_path = tmp_path / "ofd_cache.json"
+        before = cache_path.read_text()
+
+        empty_response = MagicMock()
+        empty_response.raise_for_status = MagicMock()
+        empty_response.json = MagicMock(return_value={})
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=empty_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("backend.app.services.ofd_client.httpx.AsyncClient", return_value=mock_client):
+            result = await ofd_client.get_gtin_index()
+
+        assert ofd_client.canon("06938936716785") in result
+        assert cache_path.read_text() == before
+
+    @pytest.mark.asyncio
     async def test_lookup_returns_none_for_unknown_barcode(self, tmp_path):
         gtin_index, article_index, variant_codes = ofd_client._build_index(SAMPLE_ALL_JSON)
         self._write_cache(tmp_path, gtin_index, article_index, variant_codes, ["Sunlu"])

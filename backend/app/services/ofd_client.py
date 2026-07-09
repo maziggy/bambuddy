@@ -223,6 +223,13 @@ async def _refresh() -> tuple[dict, dict, dict, list]:
         all_json = resp.json()
     gtin_index, article_index, variant_codes = _build_index(all_json)
     brands = sorted({b["name"] for b in all_json.get("brands", []) if b.get("name")})
+    if not gtin_index and not article_index:
+        # A 200 that parses to zero entries (e.g. upstream's dump shape
+        # changes) must not overwrite a good cache with an empty one and
+        # silently return "no match" for everyone for a full TTL. _ensure_loaded's
+        # except-path already logs + serves the stale cache on any refresh
+        # failure, so raising here reuses that fallback instead of caching this.
+        raise RuntimeError("OFD refresh parsed zero entries - keeping previous cache")
     try:
         path = _cache_path()
         path.parent.mkdir(parents=True, exist_ok=True)

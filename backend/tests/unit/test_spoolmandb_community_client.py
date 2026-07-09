@@ -316,6 +316,43 @@ class TestCachingAndLookup:
         assert data["cache_version"] == smdb._CACHE_VERSION
 
     @pytest.mark.asyncio
+    async def test_empty_refresh_result_with_no_cache_raises(self, tmp_path):
+        """A refresh that parses to zero manufacturer files (e.g. the repo
+        layout changes and the path filter matches nothing) must not be
+        treated as a successful, cacheable refresh - with nothing to fall
+        back to, the caller must learn the refresh effectively failed."""
+        with (
+            patch(
+                "backend.app.services.spoolmandb_community_client._download_and_parse_variants",
+                new=AsyncMock(return_value=[]),
+            ),
+            pytest.raises(RuntimeError, match="zero manufacturer files"),
+        ):
+            await smdb._refresh()
+
+        assert not (tmp_path / "spoolmandb_community_cache.json").exists()
+
+    @pytest.mark.asyncio
+    async def test_empty_refresh_result_falls_back_to_stale_cache_untouched(self, tmp_path):
+        """An empty refresh must not clobber a good stale cache - the stale
+        entries keep serving lookups instead of "no match" for a full TTL."""
+        stale_time = time.time() - smdb.SPOOLMANDB_COMMUNITY_TTL_SECONDS - 10
+        variants = smdb._parse_manufacturer_file("Bambu Lab", SAMPLE_MANUFACTURER_FILE)
+        gtin_index, sku_index = smdb._build_index(variants)
+        self._write_cache(tmp_path, gtin_index, sku_index, ["Bambu Lab"], variants, built_at=stale_time)
+        cache_path = tmp_path / "spoolmandb_community_cache.json"
+        before = cache_path.read_text()
+
+        with patch(
+            "backend.app.services.spoolmandb_community_client._download_and_parse_variants",
+            new=AsyncMock(return_value=[]),
+        ):
+            result = await smdb.get_gtin_index()
+
+        assert smdb.canon("6975337031345") in result
+        assert cache_path.read_text() == before
+
+    @pytest.mark.asyncio
     async def test_lookup_returns_none_for_unknown_barcode(self, tmp_path):
         variants = smdb._parse_manufacturer_file("Bambu Lab", SAMPLE_MANUFACTURER_FILE)
         gtin_index, sku_index = smdb._build_index(variants)

@@ -1281,13 +1281,26 @@ async def import_spools_csv(
         return preview
 
     created = 0
+    created_spools: list[tuple[Spool, str | None]] = []
     for row in preview.rows:
         if row.status == "valid" and row.spool is not None:
-            db.add(Spool(**row.spool))
+            spool = Spool(**row.spool)
+            db.add(spool)
+            created_spools.append((spool, row.spool.get("barcode")))
             created += 1
 
     if created:
         await db.commit()
+        # Resolve each distinct barcode's external cross-reference once, not
+        # once per row — an import can have many rows sharing one barcode.
+        codes_by_barcode: dict[str, tuple[str, str, list[dict]]] = {}
+        for spool, barcode in created_spools:
+            if not barcode:
+                continue
+            if barcode not in codes_by_barcode:
+                codes_by_barcode[barcode] = await _resolve_codes_for_barcode(barcode)
+            code, kind, all_codes = codes_by_barcode[barcode]
+            await _persist_spool_codes(db, spool.id, code, kind, all_codes)
         await ws_manager.broadcast({"type": "inventory_changed"})
 
     return ImportResult(
@@ -1400,8 +1413,11 @@ async def bulk_create_spools(
     await db.commit()
     ids = [s.id for s in spools]
     if payload.get("barcode"):
+        # All spools in a bulk-create batch share one barcode — resolve the
+        # external cross-reference once, not once per spool.
+        code, kind, all_codes = await _resolve_codes_for_barcode(payload["barcode"])
         for spool_id in ids:
-            await _persist_barcode_codes_for_spool(db, spool_id, payload["barcode"])
+            await _persist_spool_codes(db, spool_id, code, kind, all_codes)
     result = await db.execute(
         select(Spool).options(selectinload(Spool.k_profiles), selectinload(Spool.codes)).where(Spool.id.in_(ids))
     )
@@ -1596,18 +1612,30 @@ async def _persist_spool_codes(
     await db.commit()
 
 
+async def _resolve_codes_for_barcode(barcode: str) -> tuple[str, str, list[dict]]:
+    """Classify `barcode` and cross-reference it externally, returning
+    `(canonical_code, kind, sibling_codes)`. Swallows lookup failures — a spool
+    still gets created/imported with just its primary code if the external
+    databases are unreachable. `_external_all_codes` reads the 24h-cached
+    in-memory index, not the network, so batch callers should resolve once per
+    unique barcode rather than once per row/spool, but a repeat call for the
+    same barcode is cheap either way."""
+    code, kind = classify_code(barcode)
+    try:
+        external = await _external_all_codes(code, kind)
+    except Exception:
+        logger.warning("Cross-reference lookup failed while resolving codes for barcode %s", barcode, exc_info=True)
+        external = None
+    all_codes = external[2] if external else []
+    return code, kind, all_codes
+
+
 async def _persist_barcode_codes_for_spool(db: AsyncSession, spool_id: int, barcode: str | None) -> None:
     """Cross-reference `barcode` externally and persist it plus any discovered
     siblings against `spool_id`. No-op if `barcode` is unset."""
     if not barcode:
         return
-    code, kind = classify_code(barcode)
-    try:
-        external = await _external_all_codes(code, kind)
-    except Exception:
-        logger.warning("Cross-reference lookup failed while persisting codes for spool %s", spool_id, exc_info=True)
-        external = None
-    all_codes = external[2] if external else []
+    code, kind, all_codes = await _resolve_codes_for_barcode(barcode)
     await _persist_spool_codes(db, spool_id, code, kind, all_codes)
 
 

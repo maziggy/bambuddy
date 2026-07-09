@@ -92,6 +92,28 @@ class TestCreateSpoolPersistsCodes:
             assert codes[0].code == "ALZMNTABS01"
             assert codes[0].kind == "sku"
 
+    async def test_bulk_create_resolves_shared_barcode_only_once(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """All spools in a batch share one barcode — the external
+        cross-reference must be resolved once per batch, not once per spool."""
+        with patch(
+            "backend.app.api.routes.inventory._external_all_codes", new=AsyncMock(return_value=None)
+        ) as mock_external:
+            resp = await async_client.post(
+                "/api/v1/inventory/spools/bulk",
+                json={"spool": {"material": "PLA", "barcode": "ALZMNTABS01", "label_weight": 1000}, "quantity": 3},
+            )
+
+        assert resp.status_code == 200
+        spools = resp.json()
+        assert len(spools) == 3
+        assert mock_external.await_count == 1
+        for spool in spools:
+            codes = await _codes_for(db_session, spool["id"])
+            assert len(codes) == 1
+            assert codes[0].code == "ALZMNTABS01"
+
 
 class TestUpdateSpoolPersistsCodes:
     async def test_setting_barcode_on_update_persists_codes(self, async_client: AsyncClient, db_session: AsyncSession):

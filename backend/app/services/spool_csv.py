@@ -37,7 +37,12 @@ from backend.app.schemas.spool import SpoolCreate
 # SpoolCreate fields included so a round-trip preserves them (they'd otherwise
 # be lost). `barcode` is canonicalized by SpoolCreate's validator on import
 # (digits only, leading zeros stripped) same as a manual form edit, so a
-# re-imported spool still resolves on a future scan-to-add lookup.
+# re-imported spool still resolves on a future scan-to-add lookup. Only the
+# primary barcode round-trips this way — sibling SpoolCode rows (other
+# GTIN/SKU forms cross-referenced from external databases) are not exported
+# and are simply re-derived from the primary barcode on import, same as any
+# other create path. Intentional: they're a cache of external lookups, not
+# user data.
 CSV_COLUMNS = [
     "material",
     "brand",

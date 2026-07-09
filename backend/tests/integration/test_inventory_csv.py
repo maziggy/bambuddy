@@ -5,6 +5,8 @@ import (only valid rows persisted, atomically), and Color Catalog resolution
 of brand + color_name → rgba.
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -12,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.color_catalog import ColorCatalogEntry
 from backend.app.models.spool import Spool
+from backend.app.models.spool_code import SpoolCode
 
 
 def _csv_upload(text: str):
@@ -572,6 +575,106 @@ class TestInventoryCsvExtraColumns:
 
         spool = (await db_session.execute(select(Spool))).scalars().one()
         assert spool.barcode is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+class TestInventoryCsvImportPersistsSpoolCodes:
+    """A CSV-imported spool must get SpoolCode rows exactly like every other
+    create path, so it resolves on a future scan without waiting for a
+    restart to trigger the backfill migration."""
+
+    async def test_gtin_barcode_row_persists_spool_code(self, async_client: AsyncClient, db_session: AsyncSession):
+        csv_text = "material,barcode\nPLA,0012345678905\n"
+
+        with (
+            patch("backend.app.services.ofd_client.lookup", new=AsyncMock(return_value=None)),
+            patch("backend.app.services.ofd_client.lookup_article", new=AsyncMock(return_value=None)),
+            patch("backend.app.services.spoolmandb_community_client.lookup", new=AsyncMock(return_value=None)),
+            patch("backend.app.services.spoolmandb_community_client.lookup_sku", new=AsyncMock(return_value=None)),
+        ):
+            response = await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+        assert response.status_code == 200, response.text
+        assert response.json()["created"] == 1
+
+        spool = (await db_session.execute(select(Spool))).scalars().one()
+        codes = (await db_session.execute(select(SpoolCode).where(SpoolCode.spool_id == spool.id))).scalars().all()
+        assert len(codes) == 1
+        assert codes[0].code == "12345678905"
+        assert codes[0].kind == "gtin"
+        assert codes[0].is_primary is True
+
+    async def test_sku_barcode_row_persists_spool_code(self, async_client: AsyncClient, db_session: AsyncSession):
+        csv_text = "material,barcode\nPLA,ALZMNTABS01\n"
+
+        with (
+            patch("backend.app.services.ofd_client.lookup", new=AsyncMock(return_value=None)),
+            patch("backend.app.services.ofd_client.lookup_article", new=AsyncMock(return_value=None)),
+            patch("backend.app.services.spoolmandb_community_client.lookup", new=AsyncMock(return_value=None)),
+            patch("backend.app.services.spoolmandb_community_client.lookup_sku", new=AsyncMock(return_value=None)),
+        ):
+            response = await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+        assert response.status_code == 200, response.text
+        assert response.json()["created"] == 1
+
+        spool = (await db_session.execute(select(Spool))).scalars().one()
+        codes = (await db_session.execute(select(SpoolCode).where(SpoolCode.spool_id == spool.id))).scalars().all()
+        assert len(codes) == 1
+        assert codes[0].code == "ALZMNTABS01"
+        assert codes[0].kind == "sku"
+
+    async def test_imported_barcode_resolves_from_inventory_on_rescan(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        csv_text = "material,barcode\nPLA,0012345678905\n"
+
+        with (
+            patch("backend.app.services.ofd_client.lookup", new=AsyncMock(return_value=None)),
+            patch("backend.app.services.ofd_client.lookup_article", new=AsyncMock(return_value=None)),
+            patch("backend.app.services.spoolmandb_community_client.lookup", new=AsyncMock(return_value=None)),
+            patch("backend.app.services.spoolmandb_community_client.lookup_sku", new=AsyncMock(return_value=None)),
+        ):
+            response = await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+        assert response.status_code == 200, response.text
+
+        with (
+            patch("backend.app.services.ofd_client.lookup", new=AsyncMock()) as mock_ofd,
+            patch("backend.app.services.ofd_client.lookup_article", new=AsyncMock()) as mock_ofd_article,
+            patch("backend.app.services.spoolmandb_community_client.lookup", new=AsyncMock()) as mock_smdb,
+            patch("backend.app.services.spoolmandb_community_client.lookup_sku", new=AsyncMock()) as mock_smdb_sku,
+        ):
+            lookup_resp = await async_client.get("/api/v1/inventory/barcode/12345678905")
+
+        assert lookup_resp.status_code == 200
+        body = lookup_resp.json()
+        assert body["matched"] is True
+        assert body["source"] == "inventory"
+        mock_ofd.assert_not_called()
+        mock_ofd_article.assert_not_called()
+        mock_smdb.assert_not_called()
+        mock_smdb_sku.assert_not_called()
+
+    async def test_shared_barcode_resolved_once_across_import_batch(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """Two rows sharing one barcode must trigger exactly one external
+        cross-reference lookup, not one per row."""
+        csv_text = "material,barcode\nPLA,ALZMNTABS01\nPETG,ALZMNTABS01\n"
+
+        with patch(
+            "backend.app.api.routes.inventory._external_all_codes", new=AsyncMock(return_value=None)
+        ) as mock_external:
+            response = await async_client.post("/api/v1/inventory/spools/import", files=_csv_upload(csv_text))
+
+        assert response.status_code == 200, response.text
+        assert response.json()["created"] == 2
+        assert mock_external.await_count == 1
+
+        spools = (await db_session.execute(select(Spool))).scalars().all()
+        for spool in spools:
+            codes = (await db_session.execute(select(SpoolCode).where(SpoolCode.spool_id == spool.id))).scalars().all()
+            assert len(codes) == 1
+            assert codes[0].code == "ALZMNTABS01"
 
 
 @pytest.mark.asyncio

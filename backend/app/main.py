@@ -356,6 +356,23 @@ _stage22_finish_frames: dict[int, bytes] = {}
 # grab (Bambu printers allow only one RTSP client at a time).
 _stage22_finish_in_flight: dict[int, asyncio.Event] = {}
 
+# #1867: rolling "last in-print camera frame" per printer. Refreshed on
+# layer-change while the model is still printing, then consumed by the
+# FINISH-state finish-photo path. Firmware that never emits `stg_cur=22`
+# (A1 Mini, confirmed) only reaches `on_finish_photo_moment` at the
+# gcode_state=FINISH transition — which Bambu reports AFTER the user End
+# G-code (e.g. SwapMod plate-swap) has run, so a live grab there captures the
+# swapped/empty plate. Banking is layer-driven, so it naturally freezes at the
+# final object layer: the End G-code emits no further layer_num increases, so
+# the last banked frame is always the finished print before the swap.
+_inprint_frame_bank: dict[int, bytes] = {}
+# Monotonic timestamp of the last banked frame per printer — throttles banking
+# so tall prints don't add a camera grab on every layer.
+_inprint_frame_bank_ts: dict[int, float] = {}
+# Minimum seconds between banked frames, except the final object layer which
+# always refreshes for the best framing.
+_INPRINT_BANK_MIN_INTERVAL = 25.0
+
 # Per-printer "connected" edge tracker. Used by `on_printer_status_change`
 # to fire `reconcile_stale_active_prints` exactly once per (re)connection
 # (#1542 follow-up — power-cycle ghost prints). The value is True after
@@ -2125,6 +2142,60 @@ async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -
     return None
 
 
+async def _maybe_bank_inprint_frame(printer_id: int, layer_num: int) -> None:
+    """#1867: bank a recent in-print camera frame for the finish photo.
+
+    Called on every layer change. Grabs one frame (throttled) into
+    ``_inprint_frame_bank`` so the FINISH-state finish-photo path has a
+    pre-swap image on firmware that never emits ``stg_cur=22``. Because it is
+    driven by layer_num increases, banking stops the instant printing ends and
+    the End G-code (e.g. SwapMod plate swap) runs — no further layer changes
+    arrive — so the last banked frame is the finished print, not the swapped
+    plate. Best-effort: any failure just leaves the previous banked frame.
+    """
+    logger = logging.getLogger(__name__)
+    client = printer_manager.get_client(printer_id)
+    state = client.state if client else None
+    if not state or state.state != "RUNNING":
+        return
+    # Only during actual extrusion — firmware ticks layer_num during the
+    # pre-print calibration sequence, whose sub-stages are non-zero.
+    if state.mc_print_sub_stage not in (None, 0):
+        return
+
+    total = state.total_layers or 0
+    is_last_layer = total > 0 and layer_num >= total
+    now = time.monotonic()
+    last = _inprint_frame_bank_ts.get(printer_id, 0.0)
+    if not is_last_layer and (now - last) < _INPRINT_BANK_MIN_INTERVAL:
+        return
+
+    try:
+        async with async_session() as db:
+            from backend.app.models.printer import Printer
+
+            result = await db.execute(select(Printer).where(Printer.id == printer_id))
+            printer = result.scalar_one_or_none()
+        if not printer:
+            return
+        # Reuses the notification snapshot path, which honours the
+        # `capture_finish_photo` setting (returns None when disabled) so we
+        # don't bank frames the user never asked for.
+        frame = await _capture_snapshot_for_notification(printer_id, printer, logger)
+        if frame:
+            _inprint_frame_bank[printer_id] = frame
+            _inprint_frame_bank_ts[printer_id] = now
+            logger.debug(
+                "[FINISH-PHOTO-BANK] banked in-print frame for printer %s at layer %s/%s (%d bytes)",
+                printer_id,
+                layer_num,
+                total,
+                len(frame),
+            )
+    except Exception as e:
+        logger.debug("[FINISH-PHOTO-BANK] bank failed for printer %s: %s", printer_id, e)
+
+
 def _apply_camera_rotation(image_data: bytes, printer, logger) -> bytes:
     """Apply camera rotation to snapshot image if configured."""
     rotation = getattr(printer, "camera_rotation", 0)
@@ -2258,6 +2329,10 @@ async def on_print_start(printer_id: int, data: dict):
     # #1721: drop any leftover pre-captured finish frame from a prior print
     # so a never-consumed cache entry can't bleed into the new print's photo.
     _stage22_finish_frames.pop(printer_id, None)
+    # #1867: same for the in-print frame bank — a queued print must not reuse
+    # the previous job's banked frame.
+    _inprint_frame_bank.pop(printer_id, None)
+    _inprint_frame_bank_ts.pop(printer_id, None)
 
     # Cancel any active bed cooldown waiter for this printer
     if _bed_cool_waiters.pop(printer_id, None):
@@ -3905,7 +3980,23 @@ async def on_finish_photo_moment(printer_id: int, data: dict):
 
         frame_bytes: bytes | None = None
 
-        if printer.external_camera_enabled and printer.external_camera_url:
+        # #1867: on the FINISH-state fallback the End G-code (e.g. SwapMod
+        # plate-swap) has already run, so a live grab now captures the swapped
+        # or empty plate. Prefer the banked in-print frame — the finished
+        # print from the last object layer, before the swap. Only for
+        # `finish_state`: the `stage_22` and `last_layer` triggers fire before
+        # the swap and give cleaner (parked-toolhead) framing via a live grab.
+        if trigger == "finish_state":
+            banked = _inprint_frame_bank.get(printer_id)
+            if banked:
+                frame_bytes = banked
+                logger.info(
+                    "[FINISH-PHOTO-MOMENT] using banked in-print frame (%d bytes) — "
+                    "avoids post-swap live grab on stage-22-less firmware",
+                    len(banked),
+                )
+
+        if frame_bytes is None and printer.external_camera_enabled and printer.external_camera_url:
             from backend.app.services.external_camera import capture_frame
 
             frame_bytes = await capture_frame(
@@ -3918,7 +4009,7 @@ async def on_finish_photo_moment(printer_id: int, data: dict):
                     "[FINISH-PHOTO-MOMENT] captured external-camera frame (%d bytes)",
                     len(frame_bytes),
                 )
-        else:
+        elif frame_bytes is None:
             from backend.app.api.routes.camera import get_buffered_frame
 
             buffered = get_buffered_frame(printer_id)
@@ -6020,6 +6111,12 @@ async def lifespan(app: FastAPI):
         from backend.app.services.layer_timelapse import on_layer_change as tl_layer_change
 
         await tl_layer_change(printer_id, layer_num)
+
+        # #1867: bank a recent in-print frame so the FINISH-state finish-photo
+        # path (firmware that never emits stg_cur=22, e.g. A1 Mini) has a
+        # pre-swap image to fall back on instead of a live grab of the swapped
+        # plate. Layer-driven, so it freezes at the final object layer.
+        await _maybe_bank_inprint_frame(printer_id, layer_num)
 
         # First layer complete notification (layer_num >= 2 means layer 1 is done).
         # Gate on actual printing state — Bambu firmware ticks layer_num during

@@ -3580,6 +3580,9 @@ export default {
     searchSubfoldersHint: '包含子文件夹',
     readme: {
       truncated: '已截断',
+      show: '显示 README',
+      hide: '隐藏 README',
+      label: 'README',
     },
     tags: {
       title: '标签',
@@ -6268,6 +6271,7 @@ export default {
         pass: '打印机报告此选项已开启 — 发送的文件将存储在 SD 卡上，归档将包含缩略图和切片机元数据。',
         fail: '打印机报告此选项已关闭。请启用"将发送的文件存储在外部存储中" — 在较新固件 (P2S 01.02 / Bambu Studio 2.6+) 中，开关位于打印机的打印设置中；在较旧版本中位于 Bambu Studio / OrcaSlicer 的设备选项卡中。如果不启用此选项，每次归档的打印都将没有缩略图也没有切片机元数据。',
         skip: '未检查 — 需要有效的 MQTT 连接。在该设置仅存在于切片机中的较旧切片机上，打印机不会报告此设置，因此即使选项已关闭，此检查也会通过 — 请手动验证安装步骤 4。',
+        skip_unsupported_model: '此型号有 SD 卡槽，但无法开启该选项 — 当前 P1 系列固件不会在 Bambu Studio 中显示此开关，且打印机没有屏幕。这里无需修复；在 Bambu Lab 通过固件添加支持之前，存档的打印可能缺少缩略图和切片元数据。',
       },
       port_rtsps: {
         title: '摄像头端口（{{protocol}} {{port}}）',

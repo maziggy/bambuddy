@@ -1330,6 +1330,40 @@ class TestApplyTrayExistBitsHelper:
         assert cleared == 0
         assert units[0]["tray"][0]["state"] == 9
 
+    def test_annotate_exists_marks_present_and_absent(self):
+        """#2527: annotate_exists writes the tray_exist_bits presence bit onto
+        every slot so a non-RFID spool (present, no tray_type) is distinguishable
+        from a truly-empty slot. 0x5 = slots 0,2 present; slots 1,3 absent."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [{"id": 0, "tray": [{"id": i} for i in range(4)]}]
+        apply_tray_exist_bits(units, "5", power_on_flag=True, annotate_exists=True)
+        exists = [t["exists"] for t in units[0]["tray"]]
+        assert exists == [True, False, True, False]
+
+    def test_annotate_exists_present_unknown_slot_not_cleared(self):
+        """A present slot with no tray_type (fresh non-RFID spool) keeps its
+        state and is marked exists=True — the UI then shows "?" not "Empty"."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        # 0x1 = slot 0 present. Slot 0 has no tray_type (unidentified spool).
+        units = [{"id": 0, "tray": [{"id": 0, "state": 9}]}]
+        cleared = apply_tray_exist_bits(units, "1", power_on_flag=True, annotate_exists=True)
+        assert cleared == 0
+        assert units[0]["tray"][0]["exists"] is True
+        # Present slot is left untouched (only absent slots get state=9 forced).
+        assert units[0]["tray"][0]["state"] == 9
+
+    def test_annotate_exists_off_by_default_keeps_wire_clean(self):
+        """The VP bridge calls this without annotate_exists, so the slicer-facing
+        tray dict must NOT gain a non-standard `exists` key."""
+        from backend.app.services.bambu_mqtt import apply_tray_exist_bits
+
+        units = [{"id": 0, "tray": [{"id": 0, "tray_type": "PLA"}, {"id": 1}]}]
+        apply_tray_exist_bits(units, "1", power_on_flag=True)
+        assert "exists" not in units[0]["tray"][0]
+        assert "exists" not in units[0]["tray"][1]
+
 
 class TestNozzleRackData:
     """Tests for nozzle rack data parsing from H2 series device.nozzle.info."""

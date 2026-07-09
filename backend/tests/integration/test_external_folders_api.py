@@ -297,6 +297,104 @@ class TestExternalFolderScan:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_scan_indexes_pre_existing_markdown(
+        self, async_client: AsyncClient, db_session, external_folder, external_dir
+    ):
+        """Scan should index a README.md already on disk (#2520 item 1).
+
+        Markdown dropped into the folder by external tools (not the Upload
+        dialog) must be picked up so the Folder Readme panel can show it.
+        """
+        (external_dir / "README.md").write_text("# Fishing Floats\n\nDescription.")
+
+        response = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        assert response.status_code == 200
+        # 4 supported files from the fixture + the new README.md
+        assert response.json()["added"] == 5
+
+        response = await async_client.get(f"/api/v1/library/files?folder_id={external_folder['id']}")
+        root_filenames = {f["filename"] for f in response.json()}
+        assert "README.md" in root_filenames
+
+        # Readme panel can now resolve it.
+        response = await async_client.get(f"/api/v1/library/folders/{external_folder['id']}/readme")
+        assert response.status_code == 200
+        assert response.json()["filename"] == "README.md"
+        assert "Fishing Floats" in response.json()["content"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_preserves_uploaded_markdown(self, async_client: AsyncClient, db_session, tmp_path):
+        """Scanning must not delete an uploaded README.md (#2520 destructive-cleanup bug).
+
+        Before the fix, .md was absent from _SCANNABLE_EXTENSIONS, so an
+        uploaded markdown record was never re-found during the walk and the
+        cleanup pass purged it — the Readme panel then 404'd and hid.
+        """
+        import io
+
+        writable_dir = tmp_path / "writable"
+        writable_dir.mkdir()
+        response = await async_client.post(
+            "/api/v1/library/folders/external",
+            json={"name": "Writable", "external_path": str(writable_dir), "readonly": False},
+        )
+        folder = response.json()
+
+        upload = await async_client.post(
+            f"/api/v1/library/files?folder_id={folder['id']}",
+            files={"file": ("README.md", io.BytesIO(b"# Model\n\nHello"), "text/markdown")},
+        )
+        assert upload.status_code in (200, 201)
+
+        # Panel works before the scan.
+        readme = await async_client.get(f"/api/v1/library/folders/{folder['id']}/readme")
+        assert readme.status_code == 200
+
+        # The scan that used to nuke the record.
+        scan = await async_client.post(f"/api/v1/library/folders/{folder['id']}/scan")
+        assert scan.status_code == 200
+        assert scan.json()["removed"] == 0
+
+        # Record and panel survive.
+        readme = await async_client.get(f"/api/v1/library/folders/{folder['id']}/readme")
+        assert readme.status_code == 200
+        assert readme.json()["filename"] == "README.md"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_preserves_non_scannable_file_on_disk(self, async_client: AsyncClient, db_session, tmp_path):
+        """Cleanup must gate on disk presence, not scannable-extension membership (#2520).
+
+        Any uploaded file whose extension is outside _SCANNABLE_EXTENSIONS
+        (here a .txt) stays on disk, so its DB record must survive a scan
+        rather than being treated as deleted.
+        """
+        import io
+
+        writable_dir = tmp_path / "writable_txt"
+        writable_dir.mkdir()
+        response = await async_client.post(
+            "/api/v1/library/folders/external",
+            json={"name": "Writable Txt", "external_path": str(writable_dir), "readonly": False},
+        )
+        folder = response.json()
+
+        upload = await async_client.post(
+            f"/api/v1/library/files?folder_id={folder['id']}",
+            files={"file": ("notes.txt", io.BytesIO(b"keep me"), "text/plain")},
+        )
+        assert upload.status_code in (200, 201)
+
+        scan = await async_client.post(f"/api/v1/library/folders/{folder['id']}/scan")
+        assert scan.status_code == 200
+        assert scan.json()["removed"] == 0
+
+        files = await async_client.get(f"/api/v1/library/files?folder_id={folder['id']}")
+        assert "notes.txt" in {f["filename"] for f in files.json()}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_scan_non_external_folder_fails(self, async_client: AsyncClient, db_session):
         """Verify scan fails on regular (non-external) folder."""
         # Create a regular folder

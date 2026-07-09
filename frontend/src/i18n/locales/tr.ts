@@ -3588,6 +3588,9 @@ export default {
     searchSubfoldersHint: 'Alt klasörler dahil',
     readme: {
       truncated: 'Kısaltıldı',
+      show: 'README’yi göster',
+      hide: 'README’yi gizle',
+      label: 'README',
     },
     tags: {
       title: 'Etiketler',
@@ -6220,6 +6223,7 @@ export default {
         pass: 'Yazıcı bu seçeneğin açık olduğunu bildiriyor — gönderilen dosyalar SD kartta saklanacak ve arşivler küçük resim ve dilimleyici meta verileri içerecek.',
         fail: 'Yazıcı bu seçeneğin kapalı olduğunu bildiriyor. "Gönderilen dosyaları harici depolamada sakla" seçeneğini etkinleştirin — yeni donanım yazılımlarında (P2S 01.02 / Bambu Studio 2.6+) düğme yazıcının Baskı Ayarları\'nda; eski sürümlerde Bambu Studio / OrcaSlicer\'in Cihaz sekmesindedir. Bu seçenek olmadan, arşivlenen her baskıda küçük resim ve dilimleyici meta verisi olmayacak.',
         skip: 'Kontrol edilmedi — etkin bir MQTT bağlantısı gerekli. Bu ayarın yalnızca dilimleyicide bulunduğu eski dilimleyicilerde yazıcı bunu bildirmez, bu nedenle seçenek kapalı olsa bile bu kontrol geçer — kurulum adımı 4\'ü manuel olarak doğrulayın.',
+        skip_unsupported_model: 'Bu modelde SD yuvası var ancak seçeneği açmanın bir yolu yok — mevcut P1 serisi bellenim, Bambu Studio\'da bu anahtarı göstermiyor ve yazıcının ekranı yok. Burada düzeltilecek bir şey yok; Bambu Lab bellenim desteği ekleyene kadar arşivlenen baskılarda küçük resimler ve dilimleyici meta verileri eksik olabilir.',
       },
       port_rtsps: {
         title: 'Kamera portu ({{protocol}} {{port}})',

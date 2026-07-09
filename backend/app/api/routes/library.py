@@ -1353,6 +1353,7 @@ _SCANNABLE_EXTENSIONS = {
     ".gif",
     ".webp",
     ".svg",
+    ".md",
 }
 
 
@@ -1720,9 +1721,17 @@ async def scan_external_folder(
             db.add(db_file)
             added += 1
 
-    # Remove DB entries for files that no longer exist on disk
+    # Remove DB entries for files that no longer exist on disk.
+    #
+    # Gate on actual disk presence, NOT merely absence from found_paths:
+    # found_paths only collects extensions in _SCANNABLE_EXTENSIONS, so a
+    # record for any other file the upload path admitted (e.g. a .md README,
+    # #2520) would otherwise be treated as "deleted from disk" and purged on
+    # every scan even though the file is still there. os.path.exists keeps
+    # such records; genuinely-deleted files (absent from disk) are still
+    # cleaned up. External file_path is the absolute on-disk path.
     for path_str, db_file in existing_files.items():
-        if path_str not in found_paths:
+        if path_str not in found_paths and not os.path.exists(path_str):
             # Clean up thumbnail if we generated one
             if db_file.thumbnail_path:
                 try:

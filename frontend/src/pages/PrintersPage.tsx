@@ -863,8 +863,15 @@ function TemperatureIndicator({ temp, goodThreshold = 28, fairThreshold = 35, on
  *
  *  Returns null when the slot is loaded (tray_type is present).
  */
-function getEmptySlotKind(tray: { tray_type?: string | null; state?: number | null } | null | undefined): 'physical' | 'reset' | null {
+function getEmptySlotKind(tray: { tray_type?: string | null; state?: number | null; exists?: boolean | null } | null | undefined): 'physical' | 'reset' | null {
   if (tray?.tray_type) return null;
+  // tray_exist_bits is firmware's authoritative presence signal: a non-RFID
+  // spool the firmware can't identify is physically present (exists === true)
+  // but carries no tray_type, so it must read as "?" (loaded, unconfigured),
+  // never "Empty" (#2527). BambuStudio draws it the same way. Only fall back to
+  // the state=9/10 heuristic when the bitmask was unavailable (exists == null).
+  if (tray?.exists === true) return 'reset';
+  if (tray?.exists === false) return 'physical';
   return (tray?.state === 9 || tray?.state === 10) ? 'physical' : 'reset';
 }
 

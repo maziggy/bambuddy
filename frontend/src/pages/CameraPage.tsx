@@ -61,6 +61,12 @@ export function CameraPage() {
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const stallCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Consecutive "stalled/inactive" status reads. We only reconnect after two
+  // in a row (~10s) so a brief blip while the shared fan-out upstream is
+  // starting up or handing over between viewers doesn't tear down a stream
+  // that's about to deliver frames — the churn that stranded the P1S camera
+  // black for ~20 min (#2521).
+  const stallStrikesRef = useRef(0);
 
   // Fetch printer info for the title
   const { data: printer } = useQuery({
@@ -283,22 +289,33 @@ export function CameraPage() {
       return;
     }
 
-    // Start stall detection after stream has loaded
+    // Start stall detection after stream has loaded. Reset the strike counter
+    // so a fresh load doesn't inherit strikes from a previous stall episode.
+    stallStrikesRef.current = 0;
     stallCheckIntervalRef.current = setInterval(async () => {
       try {
         const status = await api.getCameraStatus(id);
-        // Trigger reconnect if:
-        // 1. Backend reports stall (no frames for 10+ seconds)
-        // 2. OR stream is not active anymore (process died)
-        if (status.stalled || (!status.active && !streamError)) {
-          console.log(`Stream issue detected: stalled=${status.stalled}, active=${status.active}, reconnecting...`);
-          if (stallCheckIntervalRef.current) {
-            clearInterval(stallCheckIntervalRef.current);
-            stallCheckIntervalRef.current = null;
-          }
-          setStreamLoading(false);
-          attemptReconnect();
+        // A "bad" read is: backend reports stall (no frames for 10+ seconds),
+        // OR the stream is no longer active (process died).
+        const bad = status.stalled || (!status.active && !streamError);
+        if (!bad) {
+          stallStrikesRef.current = 0;
+          return;
         }
+        stallStrikesRef.current += 1;
+        // Require two consecutive bad reads before acting (#2521) — one blip
+        // during fan-out startup/handover is not a real stall.
+        if (stallStrikesRef.current < 2) {
+          return;
+        }
+        stallStrikesRef.current = 0;
+        console.log(`Stream issue detected: stalled=${status.stalled}, active=${status.active}, reconnecting...`);
+        if (stallCheckIntervalRef.current) {
+          clearInterval(stallCheckIntervalRef.current);
+          stallCheckIntervalRef.current = null;
+        }
+        setStreamLoading(false);
+        attemptReconnect();
       } catch {
         // Ignore fetch errors - server might be temporarily unavailable
       }
@@ -328,6 +345,8 @@ export function CameraPage() {
     setStreamError(false);
     // Reset reconnect attempts on successful connection
     setReconnectAttempts(0);
+    // A frame rendered — clear any accumulated stall strikes (#2521).
+    stallStrikesRef.current = 0;
     setIsReconnecting(false);
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);

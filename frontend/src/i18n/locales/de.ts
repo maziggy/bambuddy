@@ -3592,6 +3592,9 @@ export default {
     searchSubfoldersHint: 'Inklusive Unterordner',
     readme: {
       truncated: 'Gekürzt',
+      show: 'README anzeigen',
+      hide: 'README ausblenden',
+      label: 'README',
     },
     tags: {
       title: 'Tags',
@@ -6280,6 +6283,7 @@ export default {
         pass: 'Der Drucker meldet, dass diese Option aktiv ist — gesendete Dateien werden auf der SD-Karte gespeichert und Archive enthalten Vorschaubilder und Slicer-Metadaten.',
         fail: 'Der Drucker meldet, dass diese Option deaktiviert ist. Aktivieren Sie "Gesendete Dateien auf externem Speicher speichern" — bei neuer Firmware (P2S 01.02 / Bambu Studio 2.6+) liegt der Schalter in den Druckeinstellungen des Druckers, bei älteren Versionen im Geräte-Tab von Bambu Studio / OrcaSlicer. Ohne diese Option fehlen jedem archivierten Druck Vorschaubild und Slicer-Metadaten.',
         skip: 'Nicht geprüft — eine aktive MQTT-Verbindung ist erforderlich. Bei älteren Slicern, in denen diese Einstellung nur im Slicer existiert, meldet sie der Drucker nicht — diese Prüfung besteht auch dann, wenn die Option deaktiviert ist. Prüfen Sie Installationsschritt 4 in diesem Fall manuell.',
+        skip_unsupported_model: 'Dieses Modell hat einen SD-Slot, aber keine Möglichkeit, die Option zu aktivieren — die aktuelle P1-Firmware zeigt den Schalter in Bambu Studio nicht an und der Drucker hat kein Display. Hier gibt es nichts zu beheben; archivierten Drucken fehlen möglicherweise Vorschaubilder und Slicer-Metadaten, bis Bambu Lab dies per Firmware unterstützt.',
       },
       port_rtsps: {
         title: 'Kameraport ({{protocol}} {{port}})',

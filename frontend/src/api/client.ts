@@ -365,6 +365,7 @@ export interface AMSTray {
   drying_temp: number | null;      // RFID-recommended drying temp
   drying_time: number | null;      // RFID-recommended drying time (hours)
   state: number | null;            // AMS tray state: 9=empty, 10=spool present not loaded, 11=loaded
+  exists?: boolean | null;         // Firmware tray_exist_bits: spool physically present (non-RFID → "?" not "Empty", #2527)
 }
 
 export interface AMSUnit {

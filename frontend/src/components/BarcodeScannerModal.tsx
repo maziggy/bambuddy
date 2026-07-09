@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, ScanBarcode, Image as ImageIcon, Keyboard, Loader2 } from 'lucide-react';
 import type { BrowserMultiFormatReader as BrowserMultiFormatReaderType, IScannerControls } from '@zxing/browser';
+import type { DecodeHintType } from '@zxing/library';
 import { Button } from './Button';
 import { api } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
@@ -247,7 +248,7 @@ export function BarcodeScannerModal({ onClose, onResolved }: BarcodeScannerModal
       // symbology ZXing supports) cuts down on false-positive reads from
       // webcam noise, which is where the single-digit "barcode" misreads
       // were coming from.
-      const hints = new Map<unknown, unknown>();
+      const hints = new Map<DecodeHintType, unknown>();
       hints.set(DecodeHintType.POSSIBLE_FORMATS, [
         BarcodeFormat.UPC_A,
         BarcodeFormat.UPC_E,

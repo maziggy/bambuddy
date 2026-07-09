@@ -49,6 +49,13 @@ logger = logging.getLogger(__name__)
 SPOOLMANDB_COMMUNITY_TARBALL_URL = "https://codeload.github.com/Icezaza2543/SpoolmanDB-Community/tar.gz/refs/heads/main"
 SPOOLMANDB_COMMUNITY_TTL_SECONDS = 24 * 3600
 
+# The real tarball is ~13 MB and each per-manufacturer source file is a few
+# KB. These caps guard the 24h auto-refresh against a malformed or
+# maliciously huge upstream response OOMing the backend - well above real
+# usage, but firm enough to abort instead of buffering an unbounded body.
+_MAX_TARBALL_BYTES = 64 * 1024 * 1024
+_MAX_MEMBER_BYTES = 8 * 1024 * 1024
+
 # Bump whenever the on-disk cache shape changes, so an old cache file (e.g.
 # pre-dating codes/SKU support and the gtin/sku index split) is treated as
 # stale and rebuilt instead of being misread.
@@ -196,9 +203,16 @@ def _parse_manufacturer_file(manufacturer: str, data: dict) -> list[dict]:
 async def _download_and_parse_variants() -> list[dict]:
     """Download the SpoolmanDB-Community repo tarball and parse every manufacturer source file."""
     async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
-        resp = await client.get(SPOOLMANDB_COMMUNITY_TARBALL_URL)
-        resp.raise_for_status()
-        raw = resp.content
+        chunks = bytearray()
+        async with client.stream("GET", SPOOLMANDB_COMMUNITY_TARBALL_URL) as resp:
+            resp.raise_for_status()
+            async for chunk in resp.aiter_bytes():
+                chunks.extend(chunk)
+                if len(chunks) > _MAX_TARBALL_BYTES:
+                    raise ValueError(
+                        f"SpoolmanDB-Community tarball exceeded {_MAX_TARBALL_BYTES} byte cap - aborting download"
+                    )
+        raw = bytes(chunks)
 
     variants: list[dict] = []
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
@@ -209,11 +223,22 @@ async def _download_and_parse_variants() -> list[dict]:
             parts = Path(member.name).parts
             if len(parts) < 2 or parts[-2] != "filaments" or not member.name.endswith(".json"):
                 continue
+            if member.size > _MAX_MEMBER_BYTES:
+                logger.warning(
+                    "Skipping oversized SpoolmanDB-Community source file %s (%d bytes)", member.name, member.size
+                )
+                continue
             extracted = tar.extractfile(member)
             if not extracted:
                 continue
+            # Belt-and-braces against a tar header that understates the real
+            # member size: read one byte past the cap and bail if it's there.
+            content = extracted.read(_MAX_MEMBER_BYTES + 1)
+            if len(content) > _MAX_MEMBER_BYTES:
+                logger.warning("Skipping SpoolmanDB-Community source file %s - exceeds size cap", member.name)
+                continue
             try:
-                data = json.loads(extracted.read())
+                data = json.loads(content)
             except (json.JSONDecodeError, ValueError):
                 logger.warning("Skipping malformed SpoolmanDB-Community source file: %s", member.name)
                 continue

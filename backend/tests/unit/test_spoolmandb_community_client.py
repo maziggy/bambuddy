@@ -11,10 +11,13 @@ Tests:
   shape triggers refresh)
 """
 
+import io
 import json
+import tarfile
 import time
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
 from backend.app.services import spoolmandb_community_client as smdb
@@ -374,3 +377,130 @@ class TestCachingAndLookup:
             count = await smdb.refresh_database()
             mock_refresh.assert_awaited_once()
         assert count == 4  # 3 gtins + 1 sku
+
+
+def _manufacturer_json(name: str, ean: str) -> bytes:
+    return json.dumps(
+        {
+            "manufacturer": name,
+            "filaments": [{"name": "Test {color_name}", "material": "PLA", "colors": [{"name": "Red", "eans": [ean]}]}],
+        }
+    ).encode()
+
+
+def _build_tarball(files: dict[str, bytes]) -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, content in files.items():
+            info = tarfile.TarInfo(name=name)
+            info.size = len(content)
+            tar.addfile(info, io.BytesIO(content))
+    return buf.getvalue()
+
+
+_RealAsyncClient = httpx.AsyncClient
+
+
+def _mock_client_factory(tarball_bytes: bytes):
+    """A drop-in replacement for httpx.AsyncClient that serves `tarball_bytes`
+    for any request, so _download_and_parse_variants's real streaming/parsing
+    code runs against a small in-memory tarball instead of the network."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=tarball_bytes)
+
+    def factory(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return _RealAsyncClient(*args, **kwargs)
+
+    return factory
+
+
+class TestDownloadAndParseVariantsSizeCaps:
+    """Covers the review finding: the tarball download and per-member reads
+    were both unbounded, so a malformed or huge upstream response could OOM
+    the backend on the 24h auto-refresh."""
+
+    @pytest.mark.asyncio
+    async def test_successful_download_parses_all_members(self, monkeypatch):
+        tarball = _build_tarball(
+            {
+                "SpoolmanDB-Community-main/filaments/a.json": _manufacturer_json("A Co", "1111111111111"),
+                "SpoolmanDB-Community-main/filaments/b.json": _manufacturer_json("B Co", "2222222222222"),
+            }
+        )
+        monkeypatch.setattr(httpx, "AsyncClient", _mock_client_factory(tarball))
+
+        variants = await smdb._download_and_parse_variants()
+
+        assert {v["manufacturer"] for v in variants} == {"A Co", "B Co"}
+
+    @pytest.mark.asyncio
+    async def test_oversized_member_is_skipped_others_still_parsed(self, monkeypatch):
+        small_file = _manufacturer_json("Small Co", "1111111111111")
+        huge_file = _manufacturer_json("Huge Co", "2222222222222") + b" " * 1000
+        monkeypatch.setattr(smdb, "_MAX_MEMBER_BYTES", len(small_file) + 10)
+        assert len(huge_file) > smdb._MAX_MEMBER_BYTES
+
+        tarball = _build_tarball(
+            {
+                "SpoolmanDB-Community-main/filaments/small.json": small_file,
+                "SpoolmanDB-Community-main/filaments/huge.json": huge_file,
+            }
+        )
+        monkeypatch.setattr(httpx, "AsyncClient", _mock_client_factory(tarball))
+
+        variants = await smdb._download_and_parse_variants()
+
+        assert {v["manufacturer"] for v in variants} == {"Small Co"}
+
+    @pytest.mark.asyncio
+    async def test_total_download_size_over_cap_raises(self, monkeypatch):
+        monkeypatch.setattr(smdb, "_MAX_TARBALL_BYTES", 50)
+        tarball = _build_tarball(
+            {"SpoolmanDB-Community-main/filaments/a.json": _manufacturer_json("A Co", "1111111111111")}
+        )
+        assert len(tarball) > 50
+        monkeypatch.setattr(httpx, "AsyncClient", _mock_client_factory(tarball))
+
+        with pytest.raises(ValueError, match="exceeded"):
+            await smdb._download_and_parse_variants()
+
+    @pytest.mark.asyncio
+    async def test_total_size_cap_exceeded_falls_back_to_stale_disk_cache(self, tmp_path, monkeypatch):
+        """End-to-end: a tarball over the total cap must not surface as a hard
+        failure to callers when a stale-but-usable cache exists — same
+        stale-fallback contract as any other refresh failure."""
+        monkeypatch.setattr(smdb, "_gtin_index", None)
+        monkeypatch.setattr(smdb, "_sku_index", None)
+        monkeypatch.setattr(smdb, "_brands", None)
+        monkeypatch.setattr(smdb, "_variants", None)
+        monkeypatch.setattr(smdb, "_index_loaded_at", 0.0)
+        monkeypatch.setattr(smdb, "_cache_path", lambda: tmp_path / "spoolmandb_community_cache.json")
+        monkeypatch.setattr(smdb, "_MAX_TARBALL_BYTES", 50)
+
+        variants = smdb._parse_manufacturer_file("Bambu Lab", SAMPLE_MANUFACTURER_FILE)
+        gtin_index, sku_index = smdb._build_index(variants)
+        stale_time = time.time() - smdb.SPOOLMANDB_COMMUNITY_TTL_SECONDS - 10
+        cache_file = tmp_path / "spoolmandb_community_cache.json"
+        cache_file.write_text(
+            json.dumps(
+                {
+                    "cache_version": smdb._CACHE_VERSION,
+                    "built_at": stale_time,
+                    "gtin_index": gtin_index,
+                    "sku_index": sku_index,
+                    "brands": ["Bambu Lab"],
+                    "variants": variants,
+                }
+            )
+        )
+
+        tarball = _build_tarball(
+            {"SpoolmanDB-Community-main/filaments/a.json": _manufacturer_json("A Co", "1111111111111")}
+        )
+        assert len(tarball) > 50
+        monkeypatch.setattr(httpx, "AsyncClient", _mock_client_factory(tarball))
+
+        result = await smdb.get_gtin_index()
+        assert smdb.canon("6975337031345") in result

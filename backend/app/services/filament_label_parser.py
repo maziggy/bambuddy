@@ -316,6 +316,14 @@ def extract_barcode(text: str) -> str | None:
     """
     m = re.search(r"(?:EAN|UPC|GTIN|BARCODE)\s*[:#]?\s*(\d[\d\s]{6,16}\d)", text, re.IGNORECASE)
     cand = re.sub(r"\D", "", m.group(1)) if m else None
+    if cand and not (8 <= len(cand) <= 14):
+        # A labelled match outside the valid range (e.g. OCR noise glued extra
+        # digits onto "EAN: ...") must not block the bare-digit fallback below
+        # from finding a real GTIN elsewhere in the text - a truthy-but-invalid
+        # cand previously short-circuited the `if not cand` check and fell
+        # through to the final range check, returning None even when a valid
+        # bare GTIN was present later in the same text.
+        cand = None
     if not cand:
         m = re.search(r"(?<!\d)(\d{12,14})(?!\d)", text)
         cand = m.group(1) if m else None

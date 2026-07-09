@@ -90,6 +90,14 @@ class TestExtractBarcode:
     def test_too_long_digit_run_rejected(self):
         assert extract_barcode("Serial 123456789012345678") is None
 
+    def test_out_of_range_labelled_match_falls_back_to_valid_bare_gtin(self):
+        """A labelled match outside the valid 8-14 digit range (e.g. OCR noise
+        glued extra digits onto the EAN field) must not block the bare-digit
+        fallback from finding a real GTIN elsewhere in the same text - the
+        out-of-range candidate is truthy, which previously short-circuited the
+        fallback and returned None even with a valid barcode right there."""
+        assert extract_barcode("EAN: 1234567890123456789 more text 6938936716785 end") == "6938936716785"
+
 
 class TestExtractSku:
     """Fallback used by parse_label when extract_barcode finds no GTIN —

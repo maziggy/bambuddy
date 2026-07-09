@@ -1631,9 +1631,18 @@ async def _resolve_codes_for_barcode(barcode: str) -> tuple[str, str, list[dict]
 
 
 async def _persist_barcode_codes_for_spool(db: AsyncSession, spool_id: int, barcode: str | None) -> None:
-    """Cross-reference `barcode` externally and persist it plus any discovered
-    siblings against `spool_id`. No-op if `barcode` is unset."""
+    """Replace every SpoolCode row for `spool_id` with the set cross-referenced
+    from `barcode` — or with nothing, if `barcode` is unset. Delete-then-insert
+    (mirrors Spoolman mode's reset-then-set of bambu_linked_codes in
+    _resolve_linked_codes_json) instead of only ever inserting: without this,
+    editing a barcode A -> B left A's rows in place alongside B's, so both
+    still resolved on scan, and clearing a barcode entirely left every
+    previously-discovered sibling code still matching. Safe to call
+    unconditionally on create/bulk-create too — a fresh spool has no rows to
+    delete."""
+    await db.execute(delete(SpoolCode).where(SpoolCode.spool_id == spool_id))
     if not barcode:
+        await db.commit()
         return
     code, kind, all_codes = await _resolve_codes_for_barcode(barcode)
     await _persist_spool_codes(db, spool_id, code, kind, all_codes)

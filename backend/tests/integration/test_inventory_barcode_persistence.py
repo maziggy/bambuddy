@@ -159,6 +159,84 @@ class TestUpdateSpoolPersistsCodes:
         assert update_resp.status_code == 200
         mock_external.assert_not_called()
 
+    async def test_changing_barcode_replaces_old_codes_not_augments_them(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        """A -> B must leave only B's bundle behind — A's row, and the row of
+        any sibling code discovered for A, must be gone, not just B's rows
+        added alongside them (which would leave two is_primary rows and let
+        the stale barcode A keep resolving)."""
+        ofd_hit_a = ({"material": "PLA"}, [{"code": "ALZMNTABS01", "kind": "sku", "is_refill": False}])
+        p1, p2, p3, p4 = _patch_external(ofd_result=ofd_hit_a)
+        with p1, p2, p3, p4:
+            create_resp = await async_client.post(
+                "/api/v1/inventory/spools",
+                json={"material": "PLA", "barcode": "06938936716785", "label_weight": 1000},
+            )
+        spool_id = create_resp.json()["id"]
+        codes = await _codes_for(db_session, spool_id)
+        assert {c.code for c in codes} == {"6938936716785", "ALZMNTABS01"}
+
+        p1, p2, p3, p4 = _patch_external()
+        with p1, p2, p3, p4:
+            update_resp = await async_client.patch(
+                f"/api/v1/inventory/spools/{spool_id}",
+                json={"barcode": "012345678905"},
+            )
+        assert update_resp.status_code == 200
+
+        # SQLite reuses a deleted row's rowid on the next insert (no
+        # AUTOINCREMENT keyword on spool_code.id), so the old, now-replaced
+        # row can come back with the exact same primary key as the new one.
+        # db_session's identity map would otherwise hand back its stale
+        # cached object for that PK instead of the freshly queried row.
+        db_session.expire_all()
+        codes = await _codes_for(db_session, spool_id)
+        assert {c.code for c in codes} == {"12345678905"}
+        assert codes[0].is_primary is True
+
+        # The old barcode and its sibling no longer resolve from inventory.
+        with (
+            patch("backend.app.services.ofd_client.lookup", new=AsyncMock(return_value=None)) as mock_ofd,
+            patch(
+                "backend.app.services.ofd_client.lookup_article", new=AsyncMock(return_value=None)
+            ) as mock_ofd_article,
+            patch(
+                "backend.app.services.spoolmandb_community_client.lookup", new=AsyncMock(return_value=None)
+            ) as mock_smdb,
+            patch(
+                "backend.app.services.spoolmandb_community_client.lookup_sku", new=AsyncMock(return_value=None)
+            ) as mock_smdb_sku,
+        ):
+            stale_resp = await async_client.get("/api/v1/inventory/barcode/6938936716785")
+        assert stale_resp.json()["matched"] is False
+        # "6938936716785" classifies as gtin, so only the gtin-side lookups
+        # (not the SKU/article ones) are exercised on the external fallback.
+        mock_ofd.assert_called_once()
+        mock_ofd_article.assert_not_called()
+        mock_smdb.assert_called_once()
+        mock_smdb_sku.assert_not_called()
+
+    async def test_clearing_barcode_removes_all_codes(self, async_client: AsyncClient, db_session: AsyncSession):
+        ofd_hit = ({"material": "PLA"}, [{"code": "ALZMNTABS01", "kind": "sku", "is_refill": False}])
+        p1, p2, p3, p4 = _patch_external(ofd_result=ofd_hit)
+        with p1, p2, p3, p4:
+            create_resp = await async_client.post(
+                "/api/v1/inventory/spools",
+                json={"material": "PLA", "barcode": "06938936716785", "label_weight": 1000},
+            )
+        spool_id = create_resp.json()["id"]
+        assert len(await _codes_for(db_session, spool_id)) == 2
+
+        update_resp = await async_client.patch(
+            f"/api/v1/inventory/spools/{spool_id}",
+            json={"barcode": None},
+        )
+        assert update_resp.status_code == 200
+        assert update_resp.json()["barcode"] is None
+        db_session.expire_all()
+        assert await _codes_for(db_session, spool_id) == []
+
 
 class TestReadPathResolvesOwnInventoryThroughRealSql:
     """Exercises the actual _resolve_barcode SQL against a real DB — the gap

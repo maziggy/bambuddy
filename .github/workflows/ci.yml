@@ -42,7 +42,10 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install ruff
-        run: pip install ruff
+        # Install the exact pin from requirements-dev.txt rather than the latest
+        # release, so CI and contributors run the same linter. `pip install ruff`
+        # silently drifted ahead of every local venv.
+        run: pip install "$(grep -E '^ruff==' requirements-dev.txt)"
 
       - name: Run ruff check
         run: ruff check backend/

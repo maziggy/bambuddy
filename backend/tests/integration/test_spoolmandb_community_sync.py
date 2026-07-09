@@ -175,7 +175,7 @@ async def test_sync_is_idempotent_on_rerun(async_client: AsyncClient, db_session
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_sync_dedupes_repeated_variants_in_process(async_client: AsyncClient, db_session):
-    """Two variants with the same (manufacturer, color_name, material) — e.g. two
+    """Two variants with the same (manufacturer, material, hex) — e.g. two
     weight/diameter source rows for the same color — only produce one catalog row."""
     duplicate_variants = [SAMPLE_VARIANTS[0], {**SAMPLE_VARIANTS[0]}]
     with patch(
@@ -188,6 +188,107 @@ async def test_sync_dedupes_repeated_variants_in_process(async_client: AsyncClie
     body = response.json()
     assert body["added"] == 1
     assert body["skipped"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_sync_dedupes_same_hex_under_different_color_names(async_client: AsyncClient, db_session):
+    """SpoolmanDB-Community's raw source files often give the same physical
+    color multiple names across sub-lines (e.g. "White" vs "Ivory White") —
+    these must collapse to a single catalog row since they share a hex under
+    the same manufacturer/material, not two near-duplicate entries."""
+    variants = [
+        {**SAMPLE_VARIANTS[0], "color_name": "White", "rgba": "FFFFFFFF"},
+        {**SAMPLE_VARIANTS[0], "color_name": "Ivory White", "rgba": "ffffffff"},
+    ]
+    with patch(
+        "backend.app.services.spoolmandb_community_client.get_filaments",
+        new=AsyncMock(return_value=variants),
+    ):
+        response = await async_client.post("/api/v1/inventory/colors/sync-spoolmandb-community")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["added"] == 1
+    assert body["skipped"] == 1
+
+    result = await db_session.execute(select(ColorCatalogEntry).where(ColorCatalogEntry.manufacturer == "Bambu Lab"))
+    rows = result.scalars().all()
+    assert len(rows) == 1
+    assert rows[0].color_name == "White"  # first-seen wins
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_sync_does_not_dedupe_different_hex_same_name(async_client: AsyncClient, db_session):
+    """Two genuinely different colors must not collapse just because a
+    dedup pass exists — only a matching hex counts as a duplicate."""
+    variants = [
+        {**SAMPLE_VARIANTS[0], "color_name": "White", "rgba": "FFFFFFFF"},
+        {**SAMPLE_VARIANTS[0], "color_name": "White", "rgba": "F5F5F5FF"},
+    ]
+    with patch(
+        "backend.app.services.spoolmandb_community_client.get_filaments",
+        new=AsyncMock(return_value=variants),
+    ):
+        response = await async_client.post("/api/v1/inventory/colors/sync-spoolmandb-community")
+
+    assert response.status_code == 200
+    assert response.json()["added"] == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_sync_does_not_dedupe_same_hex_different_material(async_client: AsyncClient, db_session):
+    """The same hex under a different material for the same manufacturer is
+    a distinct catalog entry — the dedup key includes material."""
+    variants = [
+        {**SAMPLE_VARIANTS[0], "material": "PLA", "color_name": "White", "rgba": "FFFFFFFF"},
+        {**SAMPLE_VARIANTS[0], "material": "PETG", "color_name": "White", "rgba": "FFFFFFFF"},
+    ]
+    with patch(
+        "backend.app.services.spoolmandb_community_client.get_filaments",
+        new=AsyncMock(return_value=variants),
+    ):
+        response = await async_client.post("/api/v1/inventory/colors/sync-spoolmandb-community")
+
+    assert response.status_code == 200
+    assert response.json()["added"] == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_sync_skips_hex_already_in_catalog_under_a_different_name(async_client: AsyncClient, db_session):
+    """A hex already present in the catalog (e.g. from a prior sync, or
+    manually added) for the same manufacturer/material must be skipped even
+    though the incoming color_name doesn't match anything already stored."""
+    db_session.add(
+        ColorCatalogEntry(
+            manufacturer="Bambu Lab",
+            color_name="Snow White",
+            hex_color="#FFFFFF",
+            material="PLA",
+            is_default=False,
+        )
+    )
+    await db_session.commit()
+
+    variants = [{**SAMPLE_VARIANTS[0], "color_name": "Ivory White", "rgba": "FFFFFFFF"}]
+    with patch(
+        "backend.app.services.spoolmandb_community_client.get_filaments",
+        new=AsyncMock(return_value=variants),
+    ):
+        response = await async_client.post("/api/v1/inventory/colors/sync-spoolmandb-community")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["added"] == 0
+    assert body["skipped"] == 1
+
+    result = await db_session.execute(select(ColorCatalogEntry).where(ColorCatalogEntry.manufacturer == "Bambu Lab"))
+    rows = result.scalars().all()
+    assert len(rows) == 1
+    assert rows[0].color_name == "Snow White"  # untouched, no second row added
 
 
 @pytest.mark.asyncio

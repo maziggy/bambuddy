@@ -1126,6 +1126,14 @@ async def sync_from_spoolmandb_community(
     Unlike the FilamentColors.xyz sync above (a paginated live API, hence the
     SSE progress stream), SpoolmanDB-Community is fetched as one bounded
     download — a plain JSON response is enough.
+
+    Dedup key is (manufacturer, material, hex) rather than (manufacturer,
+    material, color_name): SpoolmanDB-Community's raw source files often give
+    the same physical color multiple names across manufacturer sub-lines
+    (e.g. "White" vs "Ivory White"), which a name-based check would treat as
+    distinct and let both into the catalog. Comparing hex instead catches
+    that regardless of naming, so each manufacturer/material only ever gets
+    one catalog row per distinct color.
     """
     try:
         variants = await spoolmandb_community_client.get_filaments()
@@ -1134,7 +1142,7 @@ async def sync_from_spoolmandb_community(
 
     added = 0
     skipped = 0
-    seen_keys: set[tuple[str, str, str | None]] = set()
+    seen_keys: set[tuple[str, str | None, str]] = set()
     for variant in variants:
         manufacturer = variant.get("brand")
         color_name = variant.get("color_name")
@@ -1144,7 +1152,8 @@ async def sync_from_spoolmandb_community(
             skipped += 1
             continue
 
-        key = (manufacturer, color_name, material)
+        hex6 = rgba[:6].upper()
+        key = (manufacturer, material, hex6)
         if key in seen_keys:
             skipped += 1
             continue
@@ -1154,8 +1163,8 @@ async def sync_from_spoolmandb_community(
             select(ColorCatalogEntry)
             .where(
                 ColorCatalogEntry.manufacturer == manufacturer,
-                ColorCatalogEntry.color_name == color_name,
                 ColorCatalogEntry.material == material,
+                func.upper(ColorCatalogEntry.hex_color) == f"#{hex6}",
             )
             .limit(1)
         )
@@ -1172,7 +1181,7 @@ async def sync_from_spoolmandb_community(
             ColorCatalogEntry(
                 manufacturer=manufacturer,
                 color_name=color_name,
-                hex_color=f"#{rgba[:6]}",
+                hex_color=f"#{hex6}",
                 material=material,
                 is_default=False,
                 extra_colors=extra_colors,

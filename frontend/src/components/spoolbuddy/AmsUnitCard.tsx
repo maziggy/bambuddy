@@ -10,12 +10,16 @@ function isTrayEmpty(tray: AMSTray): boolean {
   return !tray.tray_type || tray.tray_type === '';
 }
 
-// Mirror of PrintersPage.getEmptySlotKind (#1694): 'physical' when firmware
-// confirms no spool (state 9/10), 'reset' when tray_type is absent but the
-// firmware hasn't confirmed empty (= spool loaded, slot just unconfigured).
+// Mirror of PrintersPage.getEmptySlotKind (#1694, #2527): 'physical' when
+// firmware confirms no spool, 'reset' when a spool is present but has no
+// tray_type (= loaded, slot just unconfigured — e.g. a non-RFID spool).
+// tray_exist_bits (exists) is authoritative when present; otherwise fall back
+// to the state=9/10 heuristic.
 function getEmptySlotKind(tray: AMSTray): 'physical' | 'reset' | null {
   if (tray.tray_type) return null;
-  const state = (tray as { state?: number | null }).state ?? null;
+  if (tray.exists === true) return 'reset';
+  if (tray.exists === false) return 'physical';
+  const state = tray.state ?? null;
   return state === 9 || state === 10 ? 'physical' : 'reset';
 }
 

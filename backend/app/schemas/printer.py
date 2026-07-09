@@ -181,6 +181,10 @@ class AMSTray(BaseModel):
     drying_temp: int | None = None  # RFID-recommended drying temp
     drying_time: int | None = None  # RFID-recommended drying time (hours)
     state: int | None = None  # AMS tray state: 9=empty, 10=spool present not loaded, 11=loaded
+    # Firmware's authoritative "spool physically present" bit (from tray_exist_bits).
+    # True for a non-RFID spool the firmware can't identify — the UI shows "?" rather
+    # than "Empty" (#2527). None when the bitmask was unavailable (→ state-based fallback).
+    exists: bool | None = None
 
 
 class AMSUnit(BaseModel):

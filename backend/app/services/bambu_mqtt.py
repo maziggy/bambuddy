@@ -56,6 +56,7 @@ def apply_tray_exist_bits(
     *,
     power_on_flag: bool = True,
     log_label: str | None = None,
+    annotate_exists: bool = False,
 ) -> int:
     """Wipe stale per-tray filament fields on slots whose `tray_exist_bits` bit is 0.
 
@@ -86,6 +87,14 @@ def apply_tray_exist_bits(
     `tray_exist_bits_str` is expected as a hex string (firmware sends it that
     way). Ints are tolerated for defensive symmetry but typically not seen
     on the wire. ``None`` / empty / unparseable → no-op.
+
+    ``annotate_exists`` writes a per-tray ``exists`` bool (from the bitmask) on
+    every processed slot. This is firmware's authoritative "spool physically
+    present" signal — the same one BambuStudio uses to draw a ``?`` for a
+    non-RFID spool in an otherwise-unidentified slot. Bambuddy's AMS card keys
+    empty-vs-unknown off it so a non-Bambu spool shows ``?`` instead of "Empty"
+    (#2527). Only the internal (printer-card) caller sets this; the VP bridge
+    leaves it False so the ``exists`` key never reaches the slicer wire format.
 
     Mutates ``units`` in place. Returns the number of slots cleared.
     """
@@ -131,6 +140,8 @@ def apply_tray_exist_bits(
                 continue
             global_bit = ams_id * 4 + tray_id
             slot_exists = (tray_exist_bits >> global_bit) & 1
+            if annotate_exists:
+                tray["exists"] = bool(slot_exists)
             if slot_exists:
                 continue
             tray["state"] = 9
@@ -2009,6 +2020,7 @@ class BambuMQTTClient:
                 ams_data.get("tray_exist_bits"),
                 power_on_flag=ams_data.get("power_on_flag", True),
                 log_label=self.serial_number,
+                annotate_exists=True,
             )
 
         self.state.raw_data["ams"] = merged_ams

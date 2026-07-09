@@ -81,6 +81,49 @@ async def test_backfills_a_code_row_for_every_barcoded_spool(engine):
         assert rows2[0][0] == "12345678901234"
 
 
+async def test_alphanumeric_sku_barcode_backfills_as_sku_not_gtin(engine):
+    """A manufacturer SKU/article number stored on Spool.barcode must classify
+    as 'sku', not get hardcoded to 'gtin' — the mis-kinded row would never
+    match on a future scan since _resolve_barcode filters by kind."""
+    async with engine.begin() as conn:
+        await _insert_spool(conn, 1, "ALZMNTABS01")
+
+    async with engine.begin() as conn:
+        await _migrate_backfill_spool_codes(conn)
+
+    async with engine.begin() as conn:
+        rows = await _codes_for(conn, 1)
+        assert len(rows) == 1
+        code, kind, _, _ = rows[0]
+        assert code == "ALZMNTABS01"
+        assert kind == "sku"
+
+
+async def test_heals_a_mis_kinded_row_from_an_earlier_buggy_build(engine):
+    """A row backfilled (or persisted) by a pre-fix build may carry the wrong
+    kind for its code — e.g. a numeric SKU wrongly hardcoded to 'gtin'. The
+    migration must correct it in place, not just skip it as already-existing."""
+    async with engine.begin() as conn:
+        await _insert_spool(conn, 1, "99999999999")
+        await conn.execute(
+            text(
+                "INSERT INTO spool_code (spool_id, code, kind, is_refill, is_primary) "
+                "VALUES (1, '99999999999', 'gtin', 0, 1)"
+            )
+        )
+
+    async with engine.begin() as conn:
+        await _migrate_backfill_spool_codes(conn)
+
+    async with engine.begin() as conn:
+        rows = await _codes_for(conn, 1)
+        assert len(rows) == 1
+        code, kind, _, is_primary = rows[0]
+        assert code == "99999999999"
+        assert kind == "sku"
+        assert is_primary
+
+
 async def test_spool_without_barcode_gets_no_code_row(engine):
     async with engine.begin() as conn:
         await _insert_spool(conn, 1, None)

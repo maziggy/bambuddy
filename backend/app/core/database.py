@@ -3355,27 +3355,44 @@ async def run_migrations(conn):
 async def _migrate_backfill_spool_codes(conn) -> None:
     """Backfill spool_code from every Spool.barcode set before this feature shipped.
 
-    Idempotent via NOT EXISTS on the same (spool_id, code) key the table's
-    unique constraint enforces, so re-running on every startup is safe and
-    never double-inserts or races the constraint.
+    Classifies each barcode individually via classify_code instead of assuming
+    'gtin' — Spool.barcode can hold an alphanumeric SKU (e.g. a manufacturer
+    article number with no UPC/EAN counterpart), and a hardcoded kind would
+    mis-classify those rows so they never match on a future scan.
+
+    Also heals rows already backfilled (or written by the multi-code feature
+    itself) whose kind disagrees with the current classification — covers
+    spools created by an earlier, buggier build of this feature on this
+    branch. Matching on (spool_id, code) is unique per the table's constraint,
+    so this and the insert are both safe to re-run on every startup.
     """
     from sqlalchemy import text
 
+    from backend.app.schemas.spool import classify_code
+
     async with conn.begin_nested():
-        await conn.execute(
-            text(
-                """
-                INSERT INTO spool_code (spool_id, code, kind, is_refill, is_primary)
-                SELECT spool.id, spool.barcode, 'gtin', false, true
-                FROM spool
-                WHERE spool.barcode IS NOT NULL
-                  AND NOT EXISTS (
-                    SELECT 1 FROM spool_code
-                    WHERE spool_code.spool_id = spool.id AND spool_code.code = spool.barcode
-                  )
-                """
-            )
-        )
+        rows = (await conn.execute(text("SELECT id, barcode FROM spool WHERE barcode IS NOT NULL"))).all()
+        for spool_id, barcode in rows:
+            code, kind = classify_code(barcode)
+            existing = (
+                await conn.execute(
+                    text("SELECT kind FROM spool_code WHERE spool_id = :spool_id AND code = :code"),
+                    {"spool_id": spool_id, "code": code},
+                )
+            ).first()
+            if existing is None:
+                await conn.execute(
+                    text(
+                        "INSERT INTO spool_code (spool_id, code, kind, is_refill, is_primary) "
+                        "VALUES (:spool_id, :code, :kind, false, true)"
+                    ),
+                    {"spool_id": spool_id, "code": code, "kind": kind},
+                )
+            elif existing[0] != kind:
+                await conn.execute(
+                    text("UPDATE spool_code SET kind = :kind WHERE spool_id = :spool_id AND code = :code"),
+                    {"spool_id": spool_id, "code": code, "kind": kind},
+                )
 
 
 _USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (

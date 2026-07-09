@@ -136,3 +136,73 @@ class TestUpdateSpoolPersistsCodes:
 
         assert update_resp.status_code == 200
         mock_external.assert_not_called()
+
+
+class TestReadPathResolvesOwnInventoryThroughRealSql:
+    """Exercises the actual _resolve_barcode SQL against a real DB — the gap
+    Martin flagged: test_barcode_lookup_endpoints.py only ever drives the
+    resolver against a MagicMock DB, so the SpoolCode query itself (and the
+    scan/persist classification agreement it depends on) was never actually
+    exercised. This is also the exact regression case from the review: a
+    UPC-A with a leading zero must resolve on repeat scan regardless of
+    whether the raw or already-normalized form is scanned."""
+
+    async def test_repeat_scan_of_leading_zero_upc_a_resolves_from_own_inventory(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        p1, p2, p3, p4 = _patch_external()
+        with p1, p2, p3, p4:
+            create_resp = await async_client.post(
+                "/api/v1/inventory/spools",
+                json={"material": "PLA", "barcode": "036000291452", "label_weight": 1000},
+            )
+        assert create_resp.status_code == 200
+        assert create_resp.json()["barcode"] == "36000291452"  # stored, zero-stripped
+
+        # Re-scan both the raw (as-scanned) and the already-stripped (as-stored)
+        # forms — both must resolve from inventory with zero external calls.
+        for barcode in ("036000291452", "36000291452"):
+            with (
+                patch("backend.app.services.ofd_client.lookup", new=AsyncMock()) as mock_ofd,
+                patch("backend.app.services.ofd_client.lookup_article", new=AsyncMock()) as mock_ofd_article,
+                patch("backend.app.services.spoolmandb_community_client.lookup", new=AsyncMock()) as mock_smdb,
+                patch("backend.app.services.spoolmandb_community_client.lookup_sku", new=AsyncMock()) as mock_smdb_sku,
+            ):
+                resp = await async_client.get(f"/api/v1/inventory/barcode/{barcode}")
+
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["matched"] is True, f"barcode {barcode} failed to resolve: {body}"
+            assert body["source"] == "inventory"
+            mock_ofd.assert_not_called()
+            mock_ofd_article.assert_not_called()
+            mock_smdb.assert_not_called()
+            mock_smdb_sku.assert_not_called()
+
+    async def test_repeat_scan_of_alphanumeric_sku_resolves_from_own_inventory(
+        self, async_client: AsyncClient, db_session: AsyncSession
+    ):
+        p1, p2, p3, p4 = _patch_external()
+        with p1, p2, p3, p4:
+            create_resp = await async_client.post(
+                "/api/v1/inventory/spools",
+                json={"material": "PLA", "barcode": "ALZMNTABS01", "label_weight": 1000},
+            )
+        assert create_resp.status_code == 200
+
+        with (
+            patch("backend.app.services.ofd_client.lookup", new=AsyncMock()) as mock_ofd,
+            patch("backend.app.services.ofd_client.lookup_article", new=AsyncMock()) as mock_ofd_article,
+            patch("backend.app.services.spoolmandb_community_client.lookup", new=AsyncMock()) as mock_smdb,
+            patch("backend.app.services.spoolmandb_community_client.lookup_sku", new=AsyncMock()) as mock_smdb_sku,
+        ):
+            resp = await async_client.get("/api/v1/inventory/barcode/ALZMNTABS01")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["matched"] is True
+        assert body["source"] == "inventory"
+        mock_ofd.assert_not_called()
+        mock_ofd_article.assert_not_called()
+        mock_smdb.assert_not_called()
+        mock_smdb_sku.assert_not_called()

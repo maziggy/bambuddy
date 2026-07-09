@@ -10,7 +10,7 @@ check regardless of which UPC-A/EAN-13 form was typed or scanned.
 import pytest
 from pydantic import ValidationError
 
-from backend.app.schemas.spool import SpoolCreate, SpoolResponse, SpoolUpdate, normalize_barcode
+from backend.app.schemas.spool import SpoolCreate, SpoolResponse, SpoolUpdate, classify_code, normalize_barcode
 
 
 class TestNormalizeBarcode:
@@ -43,6 +43,62 @@ class TestNormalizeBarcode:
 
     def test_sku_is_trimmed_and_uppercased(self):
         assert normalize_barcode("  alzmntabs01  ") == "ALZMNTABS01"
+
+
+class TestClassifyCode:
+    def test_valid_upc_a_is_gtin(self):
+        assert classify_code("012345678905") == ("12345678905", "gtin")
+
+    def test_valid_ean_13_is_gtin(self):
+        assert classify_code("06938936716785") == ("6938936716785", "gtin")
+
+    def test_bad_checksum_falls_back_to_sku(self):
+        # Right length (12 digits) but an invalid check digit.
+        assert classify_code("099999999999") == ("99999999999", "sku")
+
+    def test_alphanumeric_code_is_sku(self):
+        """A Code 128 manufacturer SKU/article number — e.g. Polymaker's
+        inventory barcode with no UPC/EAN counterpart (issue that motivated
+        this feature)."""
+        assert classify_code("ALZMNTABS01") == ("ALZMNTABS01", "sku")
+
+    def test_sku_is_stripped_and_uppercased(self):
+        assert classify_code("  alzmntabs01  ") == ("ALZMNTABS01", "sku")
+
+    def test_short_digit_string_below_floor_is_sku(self):
+        assert classify_code("12345") == ("12345", "sku")
+
+    def test_leading_zero_upc_a_still_classifies_gtin_after_stripping(self):
+        """Regression for the exact bug reported in review: a UPC-A with a
+        leading zero must classify as gtin whether you feed it the raw
+        scanned value or the already-normalize_barcode'd stored value — the
+        GTIN checksum is invariant to leading-zero padding (a leading zero
+        always lands in a weight-agnostic position relative to the check
+        digit), so re-padding the stripped canonical form and checking there
+        gives the same verdict the raw value would have."""
+        raw = "036000291452"  # 12-digit UPC-A, one leading zero
+        stored = normalize_barcode(raw)  # what SpoolCreate/SpoolUpdate persist
+        assert stored == "36000291452"  # confirms the zero really is stripped
+        assert classify_code(raw) == ("36000291452", "gtin")
+        assert classify_code(stored) == ("36000291452", "gtin")
+
+    def test_classification_is_stable_across_normalize_barcode(self):
+        """classify_code(x) == classify_code(normalize_barcode(x)) for any x —
+        this is what guarantees a scan (raw input) and a repeat lookup of the
+        stored value (already normalized) can never disagree on kind."""
+        for raw in (
+            "0012345678905",
+            "012345678905",
+            "06938936716785",
+            "0000000000123456",  # heavily zero-padded, still within GTIN-14
+            "ALZMNTABS01",
+            "  alzmntabs01  ",
+            "099999999999",
+            "12345",
+            "",
+        ):
+            stored = normalize_barcode(raw)
+            assert classify_code(raw) == classify_code(stored), raw
 
 
 class TestSpoolCreateBarcodeValidation:

@@ -105,6 +105,53 @@ def normalize_barcode(value: str | None) -> str | None:
     return digits.lstrip("0") or "0"
 
 
+# GTIN-8/12/13/14 are the only standard checksummed lengths. The floor below
+# the max (rather than requiring an exact match) accounts for leading zeros
+# already stripped by normalize_barcode — see classify_code.
+_GTIN_LENGTHS = (8, 12, 13, 14)
+_MIN_GTIN_LENGTH = 7
+_MAX_GTIN_LENGTH = max(_GTIN_LENGTHS)
+
+
+def _gtin_checksum_valid(digits: str) -> bool:
+    payload, check = digits[:-1], int(digits[-1])
+    total = 0
+    for i, ch in enumerate(reversed(payload)):
+        total += int(ch) * (3 if i % 2 == 0 else 1)
+    return (10 - (total % 10)) % 10 == check
+
+
+def classify_code(raw: str | None) -> tuple[str, str]:
+    """Canonicalize `raw` exactly like `normalize_barcode`, then classify the
+    result as ("gtin", canonical-digits) or ("sku", canonical-stripped-upper).
+
+    Classification runs on the *canonicalized* value, not the raw input, so
+    a freshly-scanned barcode and that same barcode already stored on a spool
+    (which went through `normalize_barcode` at write time, stripping leading
+    zeros) always classify identically — without this, a UPC-A like
+    "036000291452" classifies as gtin when scanned (checksum-checked on the
+    raw 12 digits) but as sku when re-classified from the stored,
+    already-stripped 11-digit form, so a repeat scan of the user's own
+    barcode never matches its own inventory row.
+
+    This works because the GTIN mod-10 checksum is invariant to leading-zero
+    padding: weights are assigned right-to-left starting at the check digit,
+    so a leading zero always lands in a weight-agnostic position and
+    contributes 0 to the checksum sum no matter how many digits precede it.
+    Padding the canonical (already zero-stripped) form back out to a full
+    GTIN length and checksum-checking there therefore gives the exact same
+    answer checking the original, un-stripped value would have.
+    """
+    canonical = normalize_barcode(raw) or ""
+    if (
+        canonical.isdigit()
+        and _MIN_GTIN_LENGTH <= len(canonical) <= _MAX_GTIN_LENGTH
+        and _gtin_checksum_valid(canonical.zfill(_MAX_GTIN_LENGTH))
+    ):
+        return canonical, "gtin"
+    return canonical, "sku"
+
+
 class SpoolBase(BaseModel):
     material: str = Field(..., min_length=1, max_length=50)
     subtype: str | None = None

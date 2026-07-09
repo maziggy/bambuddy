@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -43,6 +42,7 @@ from backend.app.schemas.spool import (
     SpoolKProfileResponse,
     SpoolResponse,
     SpoolUpdate,
+    classify_code,
     normalize_effect_type,
     normalize_extra_colors,
 )
@@ -1420,28 +1420,6 @@ _BARCODE_FIELD_KEYS = (
     "nozzle_temp_max",
 )
 
-# GTIN-8/12/13/14 are the only standard checksummed lengths; anything else
-# (or a failed checksum) is treated as a manufacturer SKU/article number
-# instead — e.g. a Code 128 "inventory barcode" with no UPC/EAN counterpart.
-_GTIN_LENGTHS = (8, 12, 13, 14)
-
-
-def _gtin_checksum_valid(digits: str) -> bool:
-    payload, check = digits[:-1], int(digits[-1])
-    total = 0
-    for i, ch in enumerate(reversed(payload)):
-        total += int(ch) * (3 if i % 2 == 0 else 1)
-    return (10 - (total % 10)) % 10 == check
-
-
-def _classify_code(raw: str) -> tuple[str, str]:
-    """Canonicalize `raw` and classify it as ("gtin", digits-only-no-leading-zeros)
-    or ("sku", stripped-uppercased) for routing through the right lookup path."""
-    digits = re.sub(r"\D", "", raw or "")
-    if len(digits) in _GTIN_LENGTHS and _gtin_checksum_valid(digits):
-        return ofd_client.canon(raw), "gtin"
-    return (raw or "").strip().upper(), "sku"
-
 
 async def _external_all_codes(code: str, kind: str) -> tuple[dict, str, list[dict]] | None:
     """Cross-reference OFD and SpoolmanDB-Community for `code`, merging both hits.
@@ -1529,7 +1507,7 @@ async def _external_all_codes(code: str, kind: str) -> tuple[dict, str, list[dic
 async def _resolve_barcode(
     db: AsyncSession, code: str, kind: str, settings: dict[str, str]
 ) -> tuple[dict, str | None, list[dict]]:
-    """Resolve a classified code (see `_classify_code`): the user's own inventory
+    """Resolve a classified code (see `classify_code`): the user's own inventory
     first, then OFD, then SpoolmanDB-Community, cross-referencing between the
     two external databases along the way.
 
@@ -1562,11 +1540,14 @@ async def _resolve_barcode(
             fields = {key: mapped.get(key) for key in _BARCODE_FIELD_KEYS}
             return fields, "inventory", mapped.get("linked_codes") or []
     else:
+        # Match on `code` alone, not `kind` — a canonical code string
+        # identifies one product regardless of how it was classified at
+        # write time (`kind` is only used to route external-DB lookups and
+        # as row metadata). This also means a row written before the
+        # classify_code fix (mis-kinded due to the scan/persist split) still
+        # resolves on the next scan.
         result = await db.execute(
-            select(SpoolCode)
-            .where(SpoolCode.code == code, SpoolCode.kind == kind)
-            .order_by(SpoolCode.created_at.desc())
-            .limit(1)
+            select(SpoolCode).where(SpoolCode.code == code).order_by(SpoolCode.created_at.desc()).limit(1)
         )
         hit = result.scalars().first()
         if hit:
@@ -1620,7 +1601,7 @@ async def _persist_barcode_codes_for_spool(db: AsyncSession, spool_id: int, barc
     siblings against `spool_id`. No-op if `barcode` is unset."""
     if not barcode:
         return
-    code, kind = _classify_code(barcode)
+    code, kind = classify_code(barcode)
     try:
         external = await _external_all_codes(code, kind)
     except Exception:
@@ -1645,7 +1626,7 @@ async def lookup_barcode(
     """
     settings = await _load_settings_map(db)
     lookup_enabled = settings.get("barcode_lookup_enabled", "true") == "true"
-    canonical, kind = _classify_code(barcode)
+    canonical, kind = classify_code(barcode)
     fields, source, all_codes = await _resolve_barcode(db, canonical, kind, settings)
     linked_codes = [c for c in all_codes if c["code"] != canonical]
     return BarcodeLookupResponse(
@@ -1692,7 +1673,7 @@ async def parse_label(
     canonical: str | None = None
     linked_codes: list[dict] = []
     if code_text:
-        canonical, kind = _classify_code(code_text)
+        canonical, kind = classify_code(code_text)
         fields, resolved_source, all_codes = await _resolve_barcode(db, canonical, kind, settings)
         if resolved_source:
             guessed = {**guessed, **{k: v for k, v in fields.items() if v is not None}}

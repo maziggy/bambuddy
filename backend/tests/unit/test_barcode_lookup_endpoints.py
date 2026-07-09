@@ -1,9 +1,6 @@
 """Unit tests for the scan-to-add barcode/SKU lookup endpoints.
 
 Tests:
-- `_classify_code`: GTIN (checksummed, standard length) vs. SKU/article-number
-  classification, the gate that routes a scanned/typed code down the GTIN or
-  SKU resolution path (e.g. a Code 128 "inventory barcode" with no UPC/EAN).
 - GET /inventory/barcode/{barcode}: native-inventory hit (via the SpoolCode
   table), OFD hit, SpoolmanDB-Community hit, disabled setting, unmatched.
 - SKU path: same chain via lookup_article/lookup_sku instead of lookup.
@@ -15,6 +12,11 @@ Tests:
 - Spoolman-mode awareness: when Spoolman is the active inventory backend,
   "the user's own inventory" means Spoolman's spools (via
   SpoolmanClient.find_spool_by_barcode), not the local Spool table.
+
+`classify_code` itself (GTIN vs. SKU classification, shared with
+`normalize_barcode` — see `schemas/spool.py`) is tested in
+`test_spool_schemas_barcode.py`, including the scan/persist classification
+parity that fixes a leading-zero UPC-A never matching its own inventory row.
 """
 
 from contextlib import ExitStack, contextmanager
@@ -24,7 +26,6 @@ import pytest
 
 from backend.app.api.routes.inventory import (
     LabelParseRequest,
-    _classify_code,
     lookup_barcode,
     parse_label,
     refresh_barcode_database,
@@ -120,30 +121,6 @@ def _no_op_external():
             patch("backend.app.services.spoolmandb_community_client.lookup_sku", new=AsyncMock(return_value=None))
         )
         yield
-
-
-class TestClassifyCode:
-    def test_valid_upc_a_is_gtin(self):
-        assert _classify_code("012345678905") == ("12345678905", "gtin")
-
-    def test_valid_ean_13_is_gtin(self):
-        assert _classify_code("06938936716785") == ("6938936716785", "gtin")
-
-    def test_bad_checksum_falls_back_to_sku(self):
-        # Right length (12 digits) but an invalid check digit.
-        assert _classify_code("099999999999") == ("099999999999", "sku")
-
-    def test_alphanumeric_code_is_sku(self):
-        """A Code 128 manufacturer SKU/article number — e.g. Polymaker's
-        inventory barcode with no UPC/EAN counterpart (issue that motivated
-        this feature)."""
-        assert _classify_code("ALZMNTABS01") == ("ALZMNTABS01", "sku")
-
-    def test_sku_is_stripped_and_uppercased(self):
-        assert _classify_code("  alzmntabs01  ") == ("ALZMNTABS01", "sku")
-
-    def test_wrong_length_digit_string_is_sku(self):
-        assert _classify_code("12345") == ("12345", "sku")
 
 
 class TestLookupBarcodeEndpointGtinPath:

@@ -26,6 +26,11 @@ logger = logging.getLogger(__name__)
 # on some firmwares and is the very reconnect cost we are trying to avoid).
 _GRACE_SECONDS = 5.0
 
+# Upper bound on how long a new broadcaster waits for a displaced one to finish
+# tearing down before proceeding anyway (#2521). Teardown is normally sub-second
+# (cancel pump + close socket); the cap only guards a wedged upstream close.
+_TEARDOWN_WAIT_SECONDS = 10.0
+
 # Per-subscriber queue depth. Small on purpose: if a viewer can't keep up
 # with the printer's frame rate we drop frames for that viewer rather than
 # blocking the broadcaster. Live video — old frames have no value.
@@ -41,7 +46,7 @@ UpstreamFactory = Callable[[asyncio.Event], AsyncGenerator[bytes, None]]
 class MjpegBroadcaster:
     """Single upstream MJPEG stream, fanned out to N subscribers."""
 
-    def __init__(self, key: str, factory: UpstreamFactory) -> None:
+    def __init__(self, key: str, factory: UpstreamFactory, predecessor: MjpegBroadcaster | None = None) -> None:
         self._key = key
         self._factory = factory
         self._subscribers: list[asyncio.Queue[bytes]] = []
@@ -52,6 +57,22 @@ class MjpegBroadcaster:
         # stop reconnecting when the last subscriber leaves.
         self._upstream_disconnect = asyncio.Event()
         self._stopped = False
+        # Most recent chunk pumped to subscribers. New (late) subscribers are
+        # primed with it so the browser renders a frame immediately instead of
+        # waiting for the next upstream frame — critical on slow chamber-image
+        # cams where the wait looked like a permanent black screen (#2521).
+        self._last_chunk: bytes | None = None
+        # Set once teardown is fully complete (pump cancelled AND the upstream
+        # socket closed). A successor broadcaster waits on this before dialing
+        # so a single-connection printer never sees two sockets at once — the
+        # overlap stranded frames on an orphaned socket for the ~20 min it took
+        # the printer's TCP keepalive to reap it (#2521).
+        self._teardown_complete = asyncio.Event()
+        # The stopped broadcaster this one replaces, if any. The pump waits for
+        # its socket to close before opening ours. Guarding at the pump (not at
+        # get_or_create) keeps it correct when concurrent viewers race to
+        # replace the same stopped broadcaster — only the single pump dials.
+        self._predecessor = predecessor
 
     @property
     def key(self) -> str:
@@ -79,6 +100,15 @@ class MjpegBroadcaster:
             queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=_SUBSCRIBER_QUEUE_SIZE)
             self._subscribers.append(queue)
 
+            # Prime a late joiner with the last frame so it renders instantly
+            # (#2521). The very first subscriber has nothing to prime yet — it
+            # starts the pump below.
+            if self._last_chunk is not None:
+                try:
+                    queue.put_nowait(self._last_chunk)
+                except asyncio.QueueFull:  # pragma: no cover — fresh queue
+                    pass
+
             if self._pump_task is None or self._pump_task.done():
                 # Reset the disconnect signal in case a previous pump set it.
                 self._upstream_disconnect = asyncio.Event()
@@ -105,6 +135,18 @@ class MjpegBroadcaster:
         """Tear down immediately, kick all subscribers. Idempotent."""
         pump_task = await self._mark_stopped_locked(notify_subscribers=True)
         await self._await_pump_cancellation(pump_task)
+        # Upstream socket is now closed (pump's finally ran) — release anyone
+        # waiting to open a replacement broadcaster (#2521).
+        self._teardown_complete.set()
+
+    async def wait_until_torn_down(self) -> None:
+        """Block until this broadcaster's upstream socket has fully closed.
+
+        Only meaningful for a stopped broadcaster; on a live one this never
+        returns. get_or_create_broadcaster gates a replacement on it so the
+        old and new upstream sockets never overlap (#2521).
+        """
+        await self._teardown_complete.wait()
 
     async def _grace_then_stop(self) -> None:
         try:
@@ -123,6 +165,8 @@ class MjpegBroadcaster:
             self._grace_task = None
             self._stopped = True
         await self._await_pump_cancellation(pump_task)
+        # Upstream socket is now closed — release any pending replacement (#2521).
+        self._teardown_complete.set()
 
     async def _mark_stopped_locked(self, *, notify_subscribers: bool) -> asyncio.Task | None:
         """Mark the broadcaster stopped and detach the pump task.
@@ -165,10 +209,23 @@ class MjpegBroadcaster:
     async def _pump(self) -> None:
         """Drive the upstream generator and broadcast each chunk."""
         try:
+            # Don't dial the printer until the broadcaster we're replacing has
+            # closed its socket (#2521). Bounded so a wedged teardown degrades
+            # to the old overlap behaviour rather than never producing a frame.
+            predecessor = self._predecessor
+            self._predecessor = None
+            if predecessor is not None:
+                try:
+                    await asyncio.wait_for(predecessor.wait_until_torn_down(), timeout=_TEARDOWN_WAIT_SECONDS)
+                except asyncio.TimeoutError:
+                    logger.warning("Prior broadcaster %r didn't tear down in time; dialing anyway", self._key)
             async for chunk in self._factory(self._upstream_disconnect):
                 # Snapshot subscribers under lock so we don't iterate a list
                 # mutated by subscribe()/unsubscribe() while we are putting.
+                # Remember the frame under the same lock so subscribe() can
+                # prime a late joiner with a consistent last-chunk value (#2521).
                 async with self._lock:
+                    self._last_chunk = chunk
                     targets = list(self._subscribers)
                 for queue in targets:
                     try:
@@ -203,12 +260,20 @@ async def get_or_create_broadcaster(key: str, factory: UpstreamFactory) -> Mjpeg
 
     A broadcaster that has been stopped (force shutdown or grace timeout) is
     replaced with a fresh instance — the caller will subscribe to the new one.
+
+    When replacing a stopped broadcaster, the fresh instance is handed it as a
+    predecessor: its pump waits for the old socket to close before dialing, so
+    a single-connection cam (chamber-image port 6000) never sees two sockets at
+    once. Otherwise the printer keeps feeding the orphaned socket and starves
+    the new one until its TCP keepalive reaps it, ~20 min later (#2521).
     """
     async with _registry_lock:
         existing = _broadcasters.get(key)
         if existing is not None and not existing.stopped:
             return existing
-        new_bc = MjpegBroadcaster(key, factory)
+        # `existing` (if any) is stopped/tearing down — chain the new pump
+        # behind its socket close.
+        new_bc = MjpegBroadcaster(key, factory, predecessor=existing)
         _broadcasters[key] = new_bc
         return new_bc
 

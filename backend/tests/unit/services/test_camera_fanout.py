@@ -112,6 +112,50 @@ async def test_multiple_subscribers_share_single_upstream():
 
 
 # ---------------------------------------------------------------------------
+# Late subscribers are primed with the last frame (#2521)
+# ---------------------------------------------------------------------------
+
+
+async def test_late_subscriber_primed_with_last_frame():
+    """A viewer that joins after the stream is running must receive the most
+    recent frame immediately, not wait for the next upstream frame. On slow
+    chamber-image cams that wait looked like a permanent black screen (#2521).
+    """
+
+    async def factory(disconnect: asyncio.Event) -> AsyncGenerator[bytes, None]:
+        yield b"first"
+        await disconnect.wait()  # then hold the stream open, no further frames
+
+    bc = MjpegBroadcaster("p1", factory)
+    q1 = await bc.subscribe()
+    # First subscriber consumes the frame; this also guarantees the pump has
+    # recorded it as the last chunk.
+    assert await asyncio.wait_for(q1.get(), timeout=1.0) == b"first"
+
+    # Late joiner is handed that frame at once, even though no new frame is coming.
+    q2 = await bc.subscribe()
+    assert await asyncio.wait_for(q2.get(), timeout=0.2) == b"first"
+
+    await bc.force_shutdown()
+
+
+async def test_first_subscriber_not_primed():
+    """The very first subscriber has no prior frame to be primed with — its
+    queue starts empty and it triggers the upstream connect.
+    """
+
+    async def factory(disconnect: asyncio.Event) -> AsyncGenerator[bytes, None]:
+        await disconnect.wait()  # never produces a frame
+        yield b"never"  # pragma: no cover
+
+    bc = MjpegBroadcaster("p1", factory)
+    q1 = await bc.subscribe()
+    await asyncio.sleep(0)  # let the pump start
+    assert q1.empty()
+    await bc.force_shutdown()
+
+
+# ---------------------------------------------------------------------------
 # Slow subscriber should not block fast subscribers
 # ---------------------------------------------------------------------------
 
@@ -338,4 +382,66 @@ async def test_force_shutdown_then_subscribe_via_registry_works():
     queue = await bc2.subscribe()
     chunk = await asyncio.wait_for(queue.get(), timeout=1.0)
     assert chunk == b"hello"
+    await shutdown_broadcaster("p1")
+
+
+# ---------------------------------------------------------------------------
+# Teardown barrier: replacement waits for the prior upstream socket to close
+# ---------------------------------------------------------------------------
+
+
+async def test_wait_until_torn_down_completes_after_force_shutdown():
+    bc = MjpegBroadcaster("p1", _make_factory([b"x"] * 1000, delay=0.05))
+    await bc.subscribe()
+    await bc.force_shutdown()
+    # Fully torn down → the barrier returns promptly.
+    await asyncio.wait_for(bc.wait_until_torn_down(), timeout=1.0)
+
+
+async def test_successor_pump_waits_for_predecessor_socket_close():
+    """A replacement broadcaster's pump must not dial the printer until the
+    displaced (stopped) one's socket has finished closing — otherwise a
+    single-connection printer briefly sees two sockets and strands frames on
+    the orphaned one (#2521). Guarding at the pump (not at get_or_create) keeps
+    it correct even when concurrent viewers race to replace the same corpse.
+    Drive the mid-teardown state directly so the test is deterministic.
+    """
+    factory = _make_factory([b"x"] * 1000, delay=0.02)
+    bc1 = MjpegBroadcaster("p1", factory)
+    # Register it and simulate "grace fired: stopped, but socket not yet closed".
+    camera_fanout._broadcasters["p1"] = bc1
+    bc1._stopped = True  # noqa: SLF001 — white-box: mid-teardown snapshot
+    assert not bc1._teardown_complete.is_set()  # noqa: SLF001
+
+    # get_or_create returns immediately with the successor chained to bc1.
+    bc2 = await get_or_create_broadcaster("p1", factory)
+    assert bc2 is not bc1
+    # Subscribing starts bc2's pump, but it must block on bc1's teardown before
+    # producing any frame.
+    queue = await bc2.subscribe()
+    await asyncio.sleep(0.03)
+    assert queue.empty(), "successor produced a frame before the prior upstream closed"
+
+    # Predecessor teardown completes → bc2's pump dials and frames flow.
+    bc1._teardown_complete.set()  # noqa: SLF001
+    assert await asyncio.wait_for(queue.get(), timeout=1.0) == b"x"
+    await shutdown_broadcaster("p1")
+
+
+async def test_successor_pump_times_out_if_predecessor_wedges(monkeypatch):
+    """If a displaced broadcaster's teardown never completes, the successor's
+    pump must dial anyway (bounded wait) rather than never producing a frame.
+    """
+    monkeypatch.setattr(camera_fanout, "_TEARDOWN_WAIT_SECONDS", 0.05)
+    factory = _make_factory([b"x"] * 1000, delay=0.02)
+    bc1 = MjpegBroadcaster("p1", factory)
+    camera_fanout._broadcasters["p1"] = bc1
+    bc1._stopped = True  # noqa: SLF001 — wedged mid-teardown, event never set
+    # teardown_complete intentionally never set.
+
+    bc2 = await get_or_create_broadcaster("p1", factory)
+    assert bc2 is not bc1
+    queue = await bc2.subscribe()
+    # After the bounded wait elapses the pump dials and delivers a frame.
+    assert await asyncio.wait_for(queue.get(), timeout=1.0) == b"x"
     await shutdown_broadcaster("p1")

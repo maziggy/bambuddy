@@ -6247,6 +6247,7 @@ export default {
         pass: 'La impresora informa que esta opción está activada — los archivos enviados se guardarán en la tarjeta SD y los archivos tendrán miniaturas y metadatos del slicer.',
         fail: 'La impresora informa que esta opción está desactivada. Active "Almacenar archivos enviados en almacenamiento externo" — en firmware reciente (P2S 01.02 / Bambu Studio 2.6+) el conmutador está en los Ajustes de Impresión de la impresora; en versiones anteriores está en la pestaña Dispositivo de Bambu Studio / OrcaSlicer. Sin esta opción, cada impresión archivada queda sin miniatura ni metadatos del slicer.',
         skip: 'No comprobado — se necesita una conexión MQTT activa. En slicers más antiguos donde este ajuste solo existe en el slicer, la impresora no lo reporta, así que esta comprobación pasa aunque la opción esté desactivada — verifique el paso 4 de la instalación manualmente.',
+        skip_unsupported_model: 'Este modelo tiene ranura SD pero no hay forma de activar la opción — el firmware actual de la serie P1 no muestra el interruptor en Bambu Studio y la impresora no tiene pantalla. Aquí no hay nada que arreglar; a las impresiones archivadas pueden faltarles miniaturas y metadatos del slicer hasta que Bambu Lab lo admita por firmware.',
       },
       port_rtsps: {
         title: 'Puerto de la cámara ({{protocol}} {{port}})',

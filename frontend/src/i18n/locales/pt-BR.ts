@@ -6227,6 +6227,7 @@ export default {
         pass: 'A impressora informa que esta opção está ligada — os arquivos enviados serão armazenados no cartão SD e os arquivos terão miniaturas e metadados do fatiador.',
         fail: 'A impressora informa que esta opção está desligada. Ative "Armazenar arquivos enviados no armazenamento externo" — em firmwares recentes (P2S 01.02 / Bambu Studio 2.6+) o interruptor fica nas Configurações de Impressão da impressora; em versões mais antigas, está na aba Dispositivo do Bambu Studio / OrcaSlicer. Sem essa opção, cada impressão arquivada fica sem miniatura nem metadados do fatiador.',
         skip: 'Não verificado — é necessária uma conexão MQTT ativa. Em fatiadores mais antigos onde essa configuração existe apenas no fatiador, a impressora não a reporta, então esta verificação passa mesmo com a opção desligada — verifique o passo 4 da instalação manualmente.',
+        skip_unsupported_model: 'Este modelo tem slot SD mas nenhuma forma de ativar a opção — o firmware atual da série P1 não mostra o botão no Bambu Studio e a impressora não tem tela. Não há nada a corrigir aqui; as impressões arquivadas podem ficar sem miniaturas e metadados do fatiador até que a Bambu Lab adicione suporte por firmware.',
       },
       port_rtsps: {
         title: 'Porta da câmera ({{protocol}} {{port}})',

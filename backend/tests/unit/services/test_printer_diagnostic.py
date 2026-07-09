@@ -341,3 +341,31 @@ class TestExternalStorageCheck:
         with _Env(state=_state(store_to_sdcard=False)):
             result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="X1C"))
         assert _statuses(result)["external_storage"] == "fail"
+
+    async def test_skips_on_p1s_no_reachable_toggle(self):
+        # #2524: P1S HAS a MicroSD slot (so has_external_storage is True and
+        # the check proceeds), but current P1 firmware never publishes the
+        # capability that renders the toggle in Bambu Studio and the P1S has
+        # no screen — store_to_sdcard is stuck False with no way to fix it.
+        # Report an informational skip (with a reason the UI explains), not a
+        # permanently-unresolvable fail; overall must not escalate.
+        with _Env(state=_state(store_to_sdcard=False)):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="P1S"))
+        check = next(c for c in result.checks if c.id == "external_storage")
+        assert check.status == "skip"
+        assert check.params == {"reason": "unsupported_model"}
+        assert result.overall == "ok"
+
+    async def test_skips_on_p1p_no_reachable_toggle(self):
+        with _Env(state=_state(store_to_sdcard=False)):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="P1P"))
+        check = next(c for c in result.checks if c.id == "external_storage")
+        assert check.status == "skip"
+        assert check.params == {"reason": "unsupported_model"}
+
+    async def test_p1s_still_passes_when_store_to_sdcard_true(self):
+        # If a P1S somehow reports the option ON, respect it — pass, don't
+        # mask it as an unsupported-model skip.
+        with _Env(state=_state(store_to_sdcard=True)):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="P1S"))
+        assert _statuses(result)["external_storage"] == "pass"

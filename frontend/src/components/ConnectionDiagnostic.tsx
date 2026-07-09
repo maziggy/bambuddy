@@ -44,10 +44,19 @@ export function DiagnosticChecklist({ result }: { result: PrinterDiagnosticResul
       check.id === 'port_rtsps'
         ? { protocol: 'RTSPS', port: 322, ...check.params }
         : check.params;
-    const detail = t(`diagnostic.check.${check.id}.${check.status}`, {
-      ...params,
-      defaultValue: '',
-    });
+    // A check may carry a `reason` to select a more specific message variant
+    // (e.g. external_storage skip on P1-series → skip_unsupported_model #2524);
+    // fall back to the plain per-status text when no variant key exists.
+    const reason = (check.params as { reason?: string } | undefined)?.reason;
+    const detail = t(
+      `diagnostic.check.${check.id}.${check.status}${reason ? `_${reason}` : ''}`,
+      {
+        ...params,
+        defaultValue: reason
+          ? t(`diagnostic.check.${check.id}.${check.status}`, { ...params, defaultValue: '' })
+          : '',
+      },
+    );
     return (
       <li
         key={check.id}

@@ -6227,6 +6227,7 @@ export default {
         pass: 'La stampante segnala che questa opzione è attiva — i file inviati saranno memorizzati sulla scheda SD e gli archivi avranno miniature e metadati dello slicer.',
         fail: 'La stampante segnala che questa opzione è disattivata. Abilita "Memorizza file inviati su archiviazione esterna" — nei firmware recenti (P2S 01.02 / Bambu Studio 2.6+) l\'interruttore si trova nelle Impostazioni di stampa della stampante; nelle versioni precedenti è nella scheda Dispositivo di Bambu Studio / OrcaSlicer. Senza questa opzione, ogni stampa archiviata è priva di miniatura e di metadati dello slicer.',
         skip: 'Non verificato — è necessaria una connessione MQTT attiva. Negli slicer più vecchi dove questa impostazione esiste solo nello slicer, la stampante non la segnala, quindi questo controllo passa anche se l\'opzione è disattivata — verifica manualmente il passo 4 dell\'installazione.',
+        skip_unsupported_model: 'Questo modello ha uno slot SD ma nessun modo per attivare l\'opzione — il firmware attuale della serie P1 non mostra l\'interruttore in Bambu Studio e la stampante non ha uno schermo. Non c\'è nulla da correggere qui; alle stampe archiviate potrebbero mancare miniature e metadati dello slicer finché Bambu Lab non aggiungerà il supporto via firmware.',
       },
       port_rtsps: {
         title: 'Porta fotocamera ({{protocol}} {{port}})',

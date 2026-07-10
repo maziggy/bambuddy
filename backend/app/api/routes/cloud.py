@@ -861,9 +861,24 @@ async def get_filament_info(
                         if not name:
                             still_unresolved.append(setting_id)
                     except Exception as e:
-                        logger.warning(
-                            f"Failed to get cloud preset {setting_id} "
-                            f"(API ID: {_filament_id_to_setting_id(setting_id)}): {e}"
+                        # A 400 here is the *expected* answer, not a fault, and Phase 3
+                        # exists to handle it (#2530). Two routine causes:
+                        #   * Many official presets are only addressable with a printer
+                        #     variant suffix — "GFSA00" resolves, "GFSL05" does not, only
+                        #     "GFSL05_07" (@BBL A1) does. The bare ID is all the AMS
+                        #     reports, so the lookup legitimately misses.
+                        #   * Personal presets ("P…") belong to the Bambu account that
+                        #     sliced the file; another account will never resolve them.
+                        # Logging those at WARNING on every AMS tooltip refresh trains
+                        # users to ignore the log. Anything else — expired token, 5xx,
+                        # a connection failure — stays at WARNING because it is a fault.
+                        expected_miss = isinstance(e, BambuCloudError) and e.status_code == 400
+                        logger.log(
+                            logging.DEBUG if expected_miss else logging.WARNING,
+                            "Failed to get cloud preset %s (API ID: %s): %s",
+                            setting_id,
+                            _filament_id_to_setting_id(setting_id),
+                            e,
                         )
                         still_unresolved.append(setting_id)
 

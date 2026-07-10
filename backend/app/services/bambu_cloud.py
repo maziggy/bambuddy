@@ -79,9 +79,17 @@ _SLICER_API_VERSION = "1.0.0.0"
 
 
 class BambuCloudError(Exception):
-    """Base exception for Bambu Cloud errors."""
+    """Base exception for Bambu Cloud errors.
 
-    pass
+    ``status_code`` carries the upstream HTTP status when the failure came from
+    a response rather than from the transport, so callers can tell an expected
+    "this preset isn't in the catalog" 400 apart from an expired token or a
+    cloud outage. It stays ``None`` for connection-level failures.
+    """
+
+    def __init__(self, message: str, *, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class BambuCloudAuthError(BambuCloudError):
@@ -408,7 +416,10 @@ class BambuCloudService:
 
             # Include body so a future contract change is self-diagnostic from logs.
             body = (response.text or "")[:200]
-            raise BambuCloudError(f"Failed to get setting detail: {response.status_code} {body}")
+            raise BambuCloudError(
+                f"Failed to get setting detail: {response.status_code} {body}",
+                status_code=response.status_code,
+            )
 
         except httpx.RequestError as e:
             raise BambuCloudError(f"Request failed: {e}")

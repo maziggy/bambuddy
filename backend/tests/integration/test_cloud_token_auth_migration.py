@@ -12,11 +12,14 @@ These tests pin the hand-off in both directions, and — just as importantly —
 pin the two cases where Bambuddy must refuse to guess who owns a credential.
 """
 
+import logging
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes import cloud as cloud_routes
 from backend.app.api.routes.cloud import (
     CLOUD_EMAIL_KEY,
     CLOUD_REGION_KEY,
@@ -26,6 +29,7 @@ from backend.app.api.routes.cloud import (
 from backend.app.core.auth import get_password_hash
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
+from backend.app.services.bambu_cloud import BambuCloudError
 
 
 async def _seed_global_token(db: AsyncSession, token: str = "tok-global", region: str = "china") -> None:
@@ -199,3 +203,75 @@ async def test_disable_auth_with_no_cloud_token_is_a_noop(async_client: AsyncCli
     resp = await async_client.post("/api/v1/auth/disable", headers={"Authorization": f"Bearer {bearer}"})
     assert resp.status_code == 200, resp.text
     assert await _global_rows(db_session) == {}
+
+
+# ---------------------------------------------------------------------------
+# Log-level classification for cloud preset misses (#2530)
+# ---------------------------------------------------------------------------
+
+
+def test_bambu_cloud_error_carries_status_code():
+    """The 400-vs-fault distinction depends on this attribute existing."""
+    from backend.app.services.bambu_cloud import BambuCloudError
+
+    assert BambuCloudError("boom").status_code is None
+    assert BambuCloudError("boom", status_code=400).status_code == 400
+    # Every pre-existing raise site passes a bare message; must not break.
+    assert str(BambuCloudError("Request failed: timeout")) == "Request failed: timeout"
+
+
+class _StubCloud:
+    """Minimal stand-in for BambuCloudService that fails every preset lookup."""
+
+    def __init__(self, error: Exception):
+        self._error = error
+        self.is_authenticated = True
+
+    async def get_setting_detail(self, setting_id: str) -> dict:
+        raise self._error
+
+    async def close(self) -> None:
+        return None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "expected_level"),
+    [
+        (BambuCloudError("missing", status_code=400), logging.DEBUG),
+        (BambuCloudError("unauthorized", status_code=401), logging.WARNING),
+        (BambuCloudError("bad gateway", status_code=502), logging.WARNING),
+        (BambuCloudError("Request failed: timeout"), logging.WARNING),
+    ],
+    ids=["expected-400-miss", "expired-token", "cloud-outage", "transport-failure"],
+)
+async def test_preset_miss_logs_at_debug_but_faults_stay_at_warning(
+    monkeypatch, caplog, db_session: AsyncSession, error: Exception, expected_level: int
+):
+    """A preset the catalog doesn't carry is routine; an expired token is a fault.
+
+    Drives the real ``get_filament_info`` route so the classification is exercised
+    where it lives, not re-derived in the test.
+    """
+    monkeypatch.setattr(cloud_routes, "build_authenticated_cloud", _stub_builder(error))
+    # Phase 1 would otherwise short-circuit the cloud call on a warm cache.
+    monkeypatch.setattr(cloud_routes, "_filament_cache", {})
+
+    with caplog.at_level(logging.DEBUG, logger="backend.app.api.routes.cloud"):
+        result = await cloud_routes.get_filament_info(setting_ids=["GFL05"], db=db_session, current_user=None)
+
+    records = [r for r in caplog.records if "Failed to get cloud preset" in r.getMessage()]
+    assert len(records) == 1, "the miss must be logged exactly once"
+    assert records[0].levelno == expected_level
+    assert "GFL05" in records[0].getMessage()
+    assert "GFSL05" in records[0].getMessage(), "the translated API ID stays in the message"
+
+    # Whatever the level, the endpoint still answers and falls through to Phase 3.
+    assert isinstance(result, dict)
+
+
+def _stub_builder(error: Exception):
+    async def _build(db, user):
+        return _StubCloud(error)
+
+    return _build

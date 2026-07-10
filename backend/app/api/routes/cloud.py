@@ -250,6 +250,69 @@ async def clear_token(db: AsyncSession, user: User | None = None) -> None:
     await db.commit()
 
 
+async def migrate_global_cloud_token_to_user(db: AsyncSession, user: User) -> bool:
+    """Move a globally-stored cloud token onto ``user`` (auth being enabled).
+
+    ``get_stored_token`` reads the global ``Settings`` rows when auth is off and
+    ``User.cloud_token`` when it's on. Enabling auth therefore switches which
+    column the cloud routes consult — without this migration the token linked
+    before setup is stranded in ``Settings``, ``build_authenticated_cloud``
+    returns ``None``, and every ``/cloud/*`` route silently degrades (#2530).
+
+    The global rows are deleted after the copy so the credential isn't left at
+    rest in a table nothing reads any more. Does **not** commit — the caller
+    owns the transaction. Returns True when a token was actually migrated.
+    """
+    token, email, region = await get_stored_token(db, None)
+    if not token:
+        return False
+
+    user.cloud_token = token
+    user.cloud_email = email
+    user.cloud_region = _normalise_region(region)
+
+    result = await db.execute(
+        select(Settings).where(Settings.key.in_([CLOUD_TOKEN_KEY, CLOUD_EMAIL_KEY, CLOUD_REGION_KEY]))
+    )
+    for setting in result.scalars().all():
+        await db.delete(setting)
+    return True
+
+
+async def migrate_user_cloud_token_to_global(db: AsyncSession, user: User) -> bool:
+    """Move ``user``'s cloud token into global storage (auth being disabled).
+
+    The mirror of :func:`migrate_global_cloud_token_to_user`: once auth is off,
+    ``get_stored_token`` stops consulting ``User.cloud_token`` entirely, so the
+    admin who turns auth off would otherwise lose their own cloud link.
+
+    Refuses to overwrite an existing global token — a stale row from a previous
+    no-auth stint is still someone's credential, and clobbering it silently is
+    worse than leaving this admin to re-link. Does **not** commit. Returns True
+    when a token was actually migrated.
+    """
+    if not user.cloud_token:
+        return False
+
+    existing, _, _ = await get_stored_token(db, None)
+    if existing:
+        return False
+
+    for key, value in [
+        (CLOUD_TOKEN_KEY, user.cloud_token),
+        (CLOUD_EMAIL_KEY, user.cloud_email),
+        (CLOUD_REGION_KEY, _normalise_region(user.cloud_region)),
+    ]:
+        if value is None:
+            continue
+        db.add(Settings(key=key, value=value))
+
+    user.cloud_token = None
+    user.cloud_email = None
+    user.cloud_region = None
+    return True
+
+
 def _assert_api_key_can_access_cloud(api_key: APIKey) -> None:
     """Reject API keys that aren't authorised to read cloud data.
 

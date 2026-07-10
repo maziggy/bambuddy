@@ -3596,6 +3596,12 @@ class BambuMQTTClient:
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
+        # Same reasoning as ImplicitFTP_TLS in bambu_ftp.py: create_default_context()
+        # inherits its protocol floor from the OpenSSL build instead of declaring one.
+        # Every Bambu broker measured (X1C, H2D on :8883) speaks TLS 1.2 and refuses
+        # 1.0/1.1/1.3, so this floor is a no-op on the wire and closes the gap on
+        # bare-metal installs whose build allows TLS 1.0.
+        ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
         self._client.tls_set_context(ssl_context)
 
         # Backoff reconnects to avoid tight reconnect loops on unstable brokers.

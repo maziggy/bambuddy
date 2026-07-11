@@ -572,7 +572,7 @@ export default {
       notSupported: 'Drying not supported',
       powerRequired: 'Connect AMS power adapter to enable drying',
       startingDrying: 'Starting drying...',
-      toastStarted: 'Drying started',
+      toastCommandSent: 'Drying command sent',
       toastStopped: 'Drying stopped',
       toastNotStarted: 'The printer accepted the command but the AMS never started drying. Check that the AMS power adapter is connected and that the printer is idle.',
       stoppingDrying: 'Stopping drying...',

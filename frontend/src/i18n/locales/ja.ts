@@ -568,7 +568,7 @@ export default {
       notSupported: '乾燥非対応',
       powerRequired: 'AMS電源アダプターを接続して乾燥を有効にしてください',
       startingDrying: '乾燥を開始しています...',
-      toastStarted: '乾燥を開始しました',
+      toastCommandSent: '乾燥コマンドを送信しました',
       toastStopped: '乾燥を停止しました',
       toastNotStarted: 'プリンターはコマンドを受け付けましたが、AMS は乾燥を開始しませんでした。AMS の電源アダプターが接続されているか、プリンターがアイドル状態かを確認してください。',
       stoppingDrying: '乾燥を停止しています...',

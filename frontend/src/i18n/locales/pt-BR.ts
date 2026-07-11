@@ -569,7 +569,7 @@ export default {
       notSupported: 'Secagem não suportada',
       powerRequired: 'Conecte o adaptador de energia AMS para ativar a secagem',
       startingDrying: 'Iniciando secagem...',
-      toastStarted: 'Secagem iniciada',
+      toastCommandSent: 'Comando de secagem enviado',
       toastStopped: 'Secagem interrompida',
       toastNotStarted: 'A impressora aceitou o comando, mas o AMS não iniciou a secagem. Verifique se o adaptador de energia do AMS está conectado e se a impressora está ociosa.',
       stoppingDrying: 'Parando secagem...',

@@ -2250,7 +2250,11 @@ function PrinterCard({
     onSuccess: (_data, { amsId }) => {
       setDryingPopoverAmsId(null);
       setDryStartWatch({ amsId });
-      showToast(t('printers.drying.toastStarted'), 'success');
+      // "Command sent", not "drying started" — at this point the printer has only
+      // taken the command. The amber countdown badge (dry_time > 0) is what says
+      // the cycle is genuinely live; the watcher below covers the case where it
+      // never appears.
+      showToast(t('printers.drying.toastCommandSent'), 'success');
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
     },
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),

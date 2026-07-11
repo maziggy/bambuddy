@@ -569,7 +569,7 @@ export default {
       notSupported: 'Essiccazione non supportata',
       powerRequired: 'Collegare l\'alimentatore AMS per abilitare l\'asciugatura',
       startingDrying: 'Avvio essiccazione...',
-      toastStarted: 'Essiccazione avviata',
+      toastCommandSent: 'Comando di essiccazione inviato',
       toastStopped: 'Essiccazione interrotta',
       toastNotStarted: 'La stampante ha accettato il comando, ma l\'AMS non ha avviato l\'essiccazione. Verifica che l\'alimentatore dell\'AMS sia collegato e che la stampante sia inattiva.',
       stoppingDrying: 'Arresto essiccazione...',

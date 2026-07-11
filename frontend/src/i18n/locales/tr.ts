@@ -569,7 +569,7 @@ export default {
       notSupported: 'Kurutma desteklenmiyor',
       powerRequired: 'Kurutmayı etkinleştirmek için AMS güç adaptörünü bağlayın',
       startingDrying: 'Kurutma başlatılıyor...',
-      toastStarted: 'Kurutma başlatıldı',
+      toastCommandSent: 'Kurutma komutu gönderildi',
       toastStopped: 'Kurutma durduruldu',
       toastNotStarted: 'Yazıcı komutu kabul etti ancak AMS kurutmayı başlatmadı. AMS güç adaptörünün bağlı olduğundan ve yazıcının boşta olduğundan emin olun.',
       stoppingDrying: 'Kurutma durduruluyor...',

@@ -128,7 +128,7 @@ describe('PrintersPage - AMS drying feedback (#2533)', () => {
     vi.useRealTimers();
   });
 
-  it('confirms the start command with a toast', async () => {
+  it('acknowledges the start command with a toast that claims only that it was sent', async () => {
     const user = userEvent.setup();
     server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json(IDLE)));
 
@@ -136,7 +136,7 @@ describe('PrintersPage - AMS drying feedback (#2533)', () => {
     await startDrying(user);
 
     await waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Drying started', 'success');
+      expect(mockShowToast).toHaveBeenCalledWith('Drying command sent', 'success');
     });
   });
 
@@ -167,7 +167,7 @@ describe('PrintersPage - AMS drying feedback (#2533)', () => {
     await startDrying(user);
 
     await waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Drying started', 'success');
+      expect(mockShowToast).toHaveBeenCalledWith('Drying command sent', 'success');
     });
 
     await vi.advanceTimersByTimeAsync(31_000);
@@ -197,7 +197,7 @@ describe('PrintersPage - AMS drying feedback (#2533)', () => {
     await startDrying(user);
 
     await waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Drying started', 'success');
+      expect(mockShowToast).toHaveBeenCalledWith('Drying command sent', 'success');
     });
 
     await vi.advanceTimersByTimeAsync(31_000);

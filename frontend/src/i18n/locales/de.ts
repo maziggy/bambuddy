@@ -569,7 +569,7 @@ export default {
       notSupported: 'Trocknung nicht unterstützt',
       powerRequired: 'AMS-Netzteil anschließen, um Trocknung zu aktivieren',
       startingDrying: 'Trocknung wird gestartet...',
-      toastStarted: 'Trocknung gestartet',
+      toastCommandSent: 'Trocknungsbefehl gesendet',
       toastStopped: 'Trocknung gestoppt',
       toastNotStarted: 'Der Drucker hat den Befehl angenommen, aber das AMS hat die Trocknung nicht gestartet. Prüfe, ob das AMS-Netzteil angeschlossen ist und der Drucker im Leerlauf ist.',
       stoppingDrying: 'Trocknung wird gestoppt...',

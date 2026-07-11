@@ -569,7 +569,7 @@ export default {
       notSupported: 'Séchage non pris en charge',
       powerRequired: 'Brancher l\'adaptateur secteur AMS pour activer le séchage',
       startingDrying: 'Démarrage du séchage...',
-      toastStarted: 'Séchage démarré',
+      toastCommandSent: 'Commande de séchage envoyée',
       toastStopped: 'Séchage arrêté',
       toastNotStarted: 'L\'imprimante a accepté la commande, mais l\'AMS n\'a pas démarré le séchage. Vérifiez que l\'adaptateur secteur de l\'AMS est branché et que l\'imprimante est inactive.',
       stoppingDrying: 'Arrêt du séchage...',

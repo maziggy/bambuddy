@@ -569,7 +569,7 @@ export default {
       notSupported: '不支持干燥',
       powerRequired: '连接AMS电源适配器以启用干燥',
       startingDrying: '正在启动干燥...',
-      toastStarted: '已开始干燥',
+      toastCommandSent: '已发送干燥命令',
       toastStopped: '已停止干燥',
       toastNotStarted: '打印机已接受命令，但 AMS 未开始干燥。请检查 AMS 电源适配器是否已连接，以及打印机是否处于空闲状态。',
       stoppingDrying: '正在停止干燥...',

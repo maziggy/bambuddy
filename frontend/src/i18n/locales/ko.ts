@@ -532,7 +532,7 @@ export default {
       notSupported: '건조 지원 안 됨',
       powerRequired: '건조를 활성화하려면 AMS 전원 어댑터를 연결하세요',
       startingDrying: '건조 시작 중...',
-      toastStarted: '건조를 시작했습니다',
+      toastCommandSent: '건조 명령을 전송했습니다',
       toastStopped: '건조를 중지했습니다',
       toastNotStarted: '프린터가 명령을 수락했지만 AMS가 건조를 시작하지 않았습니다. AMS 전원 어댑터가 연결되어 있는지, 프린터가 대기 상태인지 확인하십시오.',
       stoppingDrying: '건조 정지 중...',

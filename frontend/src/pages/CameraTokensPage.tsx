@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Copy, Plus, Trash2, AlertTriangle } from 'lucide-react';
-import { api, type LongLivedCameraToken } from '../api/client';
+import { api, type LongLivedCameraToken, type LongLivedTokenScope } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { parseUTCDate } from '../utils/date';
@@ -46,6 +46,7 @@ function CreateTokenForm({ onCreated }: CreateTokenFormProps) {
   const { showToast } = useToast();
   const [name, setName] = useState('');
   const [days, setDays] = useState<number>(DEFAULT_LIFETIME_DAYS);
+  const [scope, setScope] = useState<LongLivedTokenScope>('camera_stream');
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -56,10 +57,12 @@ function CreateTokenForm({ onCreated }: CreateTokenFormProps) {
       const created = await api.createLongLivedCameraToken({
         name: name.trim(),
         expires_in_days: days,
+        scope,
       });
       onCreated(created);
       setName('');
       setDays(DEFAULT_LIFETIME_DAYS);
+      setScope('camera_stream');
       showToast(t('cameraTokens.toast.created', 'Token created'));
     } catch (err) {
       showToast(
@@ -79,7 +82,7 @@ function CreateTokenForm({ onCreated }: CreateTokenFormProps) {
       <h3 className="text-base font-semibold text-white mb-3">
         {t('cameraTokens.create.title', 'Create new token')}
       </h3>
-      <div className="grid gap-3 md:grid-cols-[1fr_140px_auto]">
+      <div className="grid gap-3 md:grid-cols-[1fr_180px_140px_auto]">
         <input
           type="text"
           maxLength={100}
@@ -90,6 +93,15 @@ function CreateTokenForm({ onCreated }: CreateTokenFormProps) {
           className="px-3 py-2 bg-bambu-dark rounded-md text-white border border-bambu-dark-tertiary focus:border-bambu-green focus:outline-none"
           aria-label={t('cameraTokens.create.nameLabel', 'Token name')}
         />
+        <select
+          value={scope}
+          onChange={(e) => setScope(e.target.value as LongLivedTokenScope)}
+          className="px-3 py-2 bg-bambu-dark rounded-md text-white border border-bambu-dark-tertiary focus:border-bambu-green focus:outline-none"
+          aria-label={t('cameraTokens.create.scopeLabel', 'Scope')}
+        >
+          <option value="camera_stream">{t('cameraTokens.scope.camera_stream', 'Camera stream')}</option>
+          <option value="camwall">{t('cameraTokens.scope.camwall', 'Cam Wall')}</option>
+        </select>
         <input
           type="number"
           min={1}
@@ -116,6 +128,17 @@ function CreateTokenForm({ onCreated }: CreateTokenFormProps) {
         </button>
       </div>
       <p className="text-xs text-bambu-gray mt-2">
+        {scope === 'camwall'
+          ? t(
+              'cameraTokens.create.hintCamWall',
+              'A Cam Wall token opens /camwall on a screen with no login — it can see every printer\'s name and state, and their camera streams. It cannot see filenames, addresses or access codes.',
+            )
+          : t(
+              'cameraTokens.create.hintCameraStream',
+              'A camera-stream token can only fetch camera streams and snapshots. Use it for Home Assistant, Frigate, or anything embedding a single camera.',
+            )}
+      </p>
+      <p className="text-xs text-bambu-gray mt-1">
         {t(
           'cameraTokens.create.hint',
           'Maximum lifetime is 365 days. The token value is shown only once on creation — copy it now.',
@@ -186,17 +209,25 @@ function JustCreatedModal({ token, onClose }: JustCreatedModalProps) {
   const { showToast } = useToast();
   const plaintext = token.token ?? '';
 
-  const handleCopy = async () => {
-    if (!plaintext) return;
+  // For a Cam Wall token the useful artefact isn't the token, it's the URL you
+  // paste into the kiosk browser. Build it here so nobody has to assemble it by
+  // hand from the docs.
+  const camWallUrl =
+    token.scope === 'camwall' && plaintext
+      ? `${window.location.origin}/camwall?token=${encodeURIComponent(plaintext)}`
+      : null;
+
+  const copyText = async (value: string) => {
+    if (!value) return;
     try {
       // Modern clipboard API requires a secure context (HTTPS or localhost).
       // Fall back to a hidden textarea + execCommand so users on plain HTTP
       // (LAN deployments) can still copy the token.
       if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(plaintext);
+        await navigator.clipboard.writeText(value);
       } else {
         const ta = document.createElement('textarea');
-        ta.value = plaintext;
+        ta.value = value;
         ta.style.position = 'fixed';
         ta.style.opacity = '0';
         document.body.appendChild(ta);
@@ -236,13 +267,39 @@ function JustCreatedModal({ token, onClose }: JustCreatedModalProps) {
           </code>
           <button
             type="button"
-            onClick={handleCopy}
+            onClick={() => copyText(plaintext)}
             className="flex items-center gap-2 px-3 py-2 bg-bambu-green text-white rounded-md hover:bg-bambu-green/90"
           >
             <Copy className="w-4 h-4" />
             {t('cameraTokens.created.copy', 'Copy')}
           </button>
         </div>
+        {camWallUrl && (
+          <div className="mb-4">
+            <p className="text-sm font-medium text-white mb-1">
+              {t('cameraTokens.created.camWallUrlTitle', 'Cam Wall URL for this display')}
+            </p>
+            <p className="text-xs text-bambu-gray mb-2">
+              {t(
+                'cameraTokens.created.camWallUrlHint',
+                'Open this on the screen. Anyone who can read the URL can watch the wall, so treat it like a key — revoke the token to cut the display off.',
+              )}
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 px-3 py-2 bg-bambu-dark rounded-md text-bambu-green text-xs break-all font-mono select-all">
+                {camWallUrl}
+              </code>
+              <button
+                type="button"
+                onClick={() => copyText(camWallUrl)}
+                className="flex items-center gap-2 px-3 py-2 bg-bambu-green text-white rounded-md hover:bg-bambu-green/90"
+              >
+                <Copy className="w-4 h-4" />
+                {t('cameraTokens.created.copy', 'Copy')}
+              </button>
+            </div>
+          </div>
+        )}
         <div className="flex justify-end">
           <button
             type="button"
@@ -271,6 +328,11 @@ function TokenRow({ token, showOwner, ownerLabel, onRevoke }: TokenRowProps) {
     <tr className="border-b border-bambu-dark-tertiary last:border-b-0">
       <td className="py-3 px-3 text-white">{token.name}</td>
       {showOwner && <td className="py-3 px-3 text-bambu-gray">{ownerLabel}</td>}
+      <td className="py-3 px-3">
+        <span className="rounded bg-bambu-dark-tertiary px-2 py-0.5 text-xs text-bambu-gray">
+          {t(`cameraTokens.scope.${token.scope}`, token.scope)}
+        </span>
+      </td>
       <td className="py-3 px-3 text-bambu-gray font-mono text-xs">{token.lookup_prefix}…</td>
       <td className="py-3 px-3 text-bambu-gray">{formatDate(token.created_at)}</td>
       <td className={`py-3 px-3 ${expired ? 'text-red-700 dark:text-red-400' : 'text-bambu-gray'}`}>
@@ -317,6 +379,7 @@ function TokenTable({ tokens, showOwner, userIdToName, onRevoke, emptyMessage }:
           <tr>
             <th className="py-2 px-3 font-medium">{t('cameraTokens.list.name', 'Name')}</th>
             {showOwner && <th className="py-2 px-3 font-medium">{t('cameraTokens.list.owner', 'Owner')}</th>}
+            <th className="py-2 px-3 font-medium">{t('cameraTokens.list.scope', 'Scope')}</th>
             <th className="py-2 px-3 font-medium">{t('cameraTokens.list.prefix', 'Prefix')}</th>
             <th className="py-2 px-3 font-medium">{t('cameraTokens.list.created', 'Created')}</th>
             <th className="py-2 px-3 font-medium">{t('cameraTokens.list.expires', 'Expires')}</th>

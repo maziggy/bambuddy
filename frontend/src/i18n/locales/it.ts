@@ -196,10 +196,16 @@ export default {
       extraLarge: 'Schede extra grandi',
     },
     pageView: {
+      openCamWallPage: 'Apri il muro telecamere come pagina',
       cards: 'Schede',
       camWall: 'Muro telecamere',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          'Questo link al muro telecamere non è più valido. Il token potrebbe essere scaduto o essere stato revocato.',
+        loadFailed: 'Impossibile caricare le stampanti.',
+      },
       noPrinters: 'Nessuna stampante da mostrare',
       noSignal: 'Nessun segnale',
       live: 'Live',
@@ -569,6 +575,10 @@ export default {
       notSupported: 'Essiccazione non supportata',
       powerRequired: 'Collegare l\'alimentatore AMS per abilitare l\'asciugatura',
       startingDrying: 'Avvio essiccazione...',
+      toastCommandSent: 'Comando di essiccazione inviato',
+      toastStopped: 'Essiccazione interrotta',
+      toastNotStarted: 'La stampante ha accettato il comando, ma l\'AMS non ha avviato l\'essiccazione. Verifica che l\'alimentatore dell\'AMS sia collegato e che la stampante sia inattiva.',
+      screenOnly: 'Su questa stampante l\'essiccazione dell\'AMS può essere comandata solo dallo schermo della stampante (limitazione di Bambu)',
       stoppingDrying: 'Arresto essiccazione...',
       rotateTray: 'Ruota la bobina durante l\'essiccazione',
       rotateUnavailableReason: 'Non disponibile — uno slot di questo AMS è caricato verso la testa di stampa. La bobina è bloccata dal tubo di alimentazione e non può ruotare. Ritrai prima il filamento.',
@@ -5373,7 +5383,12 @@ export default {
     restPowerPath: 'Percorso JSON potenza',
     restPowerMultiplier: 'Moltiplicatore potenza',
     restEnergyUrl: 'URL energia',
-    restEnergyPath: 'Percorso JSON energia',
+    restEnergyPath: 'Percorso JSON energia (oggi)',
+    restEnergyTotalPath: 'Percorso JSON energia (contatore totale)',
+    restEnergyTotalMultiplier: 'Moltiplicatore contatore totale',
+    restEnergyTotalPathHint: 'es. aenergy.total',
+    restEnergyTotalHint:
+      'Molte prese — tutti gli Shelly fra queste — riportano solo un contatore cumulativo che non si azzera mai. Va qui, non nel campo sopra: letto come consumo di oggi non tornerebbe mai a zero a mezzanotte, e Ieri e Totale resterebbero vuoti. Bambuddy ricava Oggi e Ieri da questo valore, il che richiede uno o due giorni di letture. Uno Shelly riporta wattora, quindi usa un moltiplicatore di 0.001.',
     restEnergyMultiplier: 'Moltiplicatore energia',
     restUrlRequired: 'È richiesto almeno un URL (ON o OFF) per le prese REST',
     restHeadersHint: 'es. {"Authorization": "Bearer your-token"}',
@@ -6665,10 +6680,14 @@ export default {
     saveFailed: 'Impossibile salvare le impostazioni di pulizia automatica.',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: 'Flusso della telecamera',
+      camwall: 'Muro telecamere',
+    },
     title: 'Token API telecamera',
     navTitle: 'Token API telecamera',
     description:
-      'Token a lunga durata per incorporare lo stream della telecamera in Home Assistant, Frigate, chioschi o qualsiasi altro strumento che richieda un URL stabile. Ogni token è limitato allo stream della telecamera e può essere revocato in qualsiasi momento.',
+      "Token di lunga durata per incorporare il flusso della telecamera in Home Assistant, Frigate, schermi in modalità chiosco o qualsiasi altro strumento che richieda un indirizzo stabile. L'ambito si sceglie alla creazione; un token può essere revocato in qualsiasi momento.",
     loading: 'Caricamento…',
     confirmRevoke: {
       title: 'Revocare questo token?',
@@ -6677,6 +6696,11 @@ export default {
       confirm: 'Revoca',
     },
     create: {
+      scopeLabel: 'Ambito',
+      hintCameraStream:
+        'Un token del flusso della telecamera può recuperare soltanto flussi e istantanee. Usalo per Home Assistant, Frigate o qualsiasi cosa incorpori una singola telecamera.',
+      hintCamWall:
+        'Un token Muro telecamere apre /camwall su uno schermo senza login. Vede nome e stato di ogni stampante e i relativi flussi della telecamera. Non vede nomi di file, indirizzi o codici di accesso.',
       title: 'Crea nuovo token',
       nameLabel: 'Nome token',
       namePlaceholder: 'es. Home Assistant',
@@ -6686,6 +6710,9 @@ export default {
         'Durata massima 365 giorni. Il valore del token viene mostrato solo alla creazione — copialo ora.',
     },
     created: {
+      camWallUrlTitle: 'Indirizzo del muro telecamere per questo schermo',
+      camWallUrlHint:
+        'Apri questo indirizzo sullo schermo. Chiunque possa leggerlo può guardare il muro, quindi trattalo come una chiave: revoca il token per escludere lo schermo.',
       title: 'Token creato – copialo ora',
       warning:
         'Questa è l\'unica volta in cui questo token sarà visibile. Dopo la chiusura di questa finestra non potrai più visualizzarlo.',
@@ -6693,6 +6720,7 @@ export default {
       dismiss: 'L\'ho salvato',
     },
     list: {
+      scope: 'Ambito',
       myTitle: 'I miei token',
       allTitle: 'Tutti gli utenti (vista admin)',
       empty: 'Nessun token ancora.',

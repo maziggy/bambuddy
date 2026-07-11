@@ -22,6 +22,7 @@ tokens — a leaked permanent token would be irrevocable footgun-by-design).
 from __future__ import annotations
 
 import secrets
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -35,9 +36,20 @@ from backend.app.models.long_lived_token import LongLivedToken
 # (90 days) and the create route enforces this ceiling.
 MAX_TOKEN_LIFETIME_DAYS = 365
 
-# Only V1 scope. Adding "snapshot" or "control" later means adding a value
-# to this tuple and an `if scope == ...` branch in the route, no schema work.
-ALLOWED_SCOPES: frozenset[str] = frozenset({"camera_stream"})
+# Every scope is a separate grant, never implied by another. A token minted for
+# one purpose must not silently widen when a later scope is added.
+#
+#   camera_stream — the MJPEG stream / snapshot endpoints and nothing else
+#                   (#1108). What a Home Assistant or Frigate card needs.
+#   camwall       — those same streams *plus* the read-only tile metadata the
+#                   Cam Wall draws: printer names and print state (#2531).
+#                   Strictly wider than camera_stream, so it gets its own scope
+#                   rather than quietly extending tokens already handed out.
+ALLOWED_SCOPES: frozenset[str] = frozenset({"camera_stream", "camwall"})
+
+# Scopes the camera stream / snapshot endpoints honour. A Cam Wall token has to
+# be able to pull the video its own tiles are showing.
+STREAM_SCOPES: tuple[str, ...] = ("camera_stream", "camwall")
 
 # Don't write to last_used_at more than once per minute per token. MJPEG
 # streams call verify() at most once per fetch (the browser holds the
@@ -142,23 +154,34 @@ async def create_token(
     return CreatedToken(record=record, plaintext=plaintext)
 
 
-async def verify_token(db: AsyncSession, token: str, *, scope: str = "camera_stream") -> LongLivedToken | None:
+async def verify_token(
+    db: AsyncSession,
+    token: str,
+    *,
+    scope: str | Collection[str] = "camera_stream",
+) -> LongLivedToken | None:
     """Validate a token. Returns the matching record on success, None otherwise.
 
-    The bcrypt-style verify is the slow step (intentional — pbkdf2 by design),
-    so we pre-filter by the indexed ``lookup_prefix`` to ensure the verify
-    runs against at most one or two candidate rows.
+    ``scope`` accepts a single scope or a collection of acceptable ones — the
+    stream endpoints pass ``STREAM_SCOPES`` because more than one scope may
+    legitimately reach them. The record must carry one of them; a token is
+    never accepted on the strength of a scope it does not hold.
+
+    The pbkdf2 verify is the slow step (intentional), so we pre-filter by the
+    indexed ``lookup_prefix`` to ensure the verify runs against at most one or
+    two candidate rows.
     """
     parsed = _parse_token(token)
     if parsed is None:
         return None
     lookup_prefix, full_token = parsed
+    scopes = (scope,) if isinstance(scope, str) else tuple(scope)
 
     now = datetime.now(timezone.utc)
     result = await db.execute(
         select(LongLivedToken).where(
             LongLivedToken.lookup_prefix == lookup_prefix,
-            LongLivedToken.scope == scope,
+            LongLivedToken.scope.in_(scopes),
             LongLivedToken.revoked_at.is_(None),
         )
     )

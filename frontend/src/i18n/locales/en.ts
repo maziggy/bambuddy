@@ -196,10 +196,16 @@ export default {
       extraLarge: 'Extra large cards',
     },
     pageView: {
+      openCamWallPage: 'Open cam wall as page',
       cards: 'Cards',
       camWall: 'Cam wall',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          'This Cam Wall link is no longer valid. The token may have expired or been revoked.',
+        loadFailed: 'Could not load the printers.',
+      },
       noPrinters: 'No printers to show',
       noSignal: 'No signal',
       live: 'Live',
@@ -572,6 +578,10 @@ export default {
       notSupported: 'Drying not supported',
       powerRequired: 'Connect AMS power adapter to enable drying',
       startingDrying: 'Starting drying...',
+      toastCommandSent: 'Drying command sent',
+      toastStopped: 'Drying stopped',
+      toastNotStarted: 'The printer accepted the command but the AMS never started drying. Check that the AMS power adapter is connected and that the printer is idle.',
+      screenOnly: 'AMS drying on this printer can only be controlled from the printer\'s own screen (Bambu limitation)',
       stoppingDrying: 'Stopping drying...',
       rotateTray: 'Rotate spool during drying',
       rotateUnavailableReason: 'Unavailable — a slot in this AMS is loaded to the toolhead. The spool is locked by the feed tube and cannot rotate. Retract the filament first.',
@@ -5428,7 +5438,12 @@ export default {
     restPowerPath: 'Power JSON Path',
     restPowerMultiplier: 'Power Multiplier',
     restEnergyUrl: 'Energy URL',
-    restEnergyPath: 'Energy JSON Path',
+    restEnergyPath: 'Energy JSON Path (today)',
+    restEnergyTotalPath: 'Energy JSON Path (lifetime)',
+    restEnergyTotalMultiplier: 'Lifetime Multiplier',
+    restEnergyTotalPathHint: 'e.g. aenergy.total',
+    restEnergyTotalHint:
+      "Many plugs — every Shelly among them — report only a lifetime counter that never resets. It belongs here, not in the field above: read as today's usage it would never reset at midnight, and Yesterday and Total would stay empty. Bambuddy works Today and Yesterday out from it, which takes a day or two of readings to fill in. A Shelly reports watt-hours, so use a multiplier of 0.001.",
     restEnergyMultiplier: 'Energy Multiplier',
     restUrlRequired: 'At least one URL (ON or OFF) is required for REST plugs',
     restHeadersHint: 'e.g. {"Authorization": "Bearer your-token"}',
@@ -6722,10 +6737,14 @@ export default {
     saveFailed: 'Could not save auto-purge settings.',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: 'Camera stream',
+      camwall: 'Cam Wall',
+    },
     title: 'Camera API Tokens',
     navTitle: 'Camera API tokens',
     description:
-      'Long-lived tokens for embedding the camera stream into Home Assistant, Frigate, kiosks, or any other tool that needs a stable URL. Each token is camera-stream-only and can be revoked at any time.',
+      'Long-lived tokens for embedding the camera stream into Home Assistant, Frigate, kiosks, or any other tool that needs a stable URL. Pick the scope when you create one; a token can be revoked at any time.',
     loading: 'Loading…',
     confirmRevoke: {
       title: 'Revoke this token?',
@@ -6734,6 +6753,11 @@ export default {
       confirm: 'Revoke',
     },
     create: {
+      scopeLabel: 'Scope',
+      hintCameraStream:
+        'A camera-stream token can only fetch camera streams and snapshots. Use it for Home Assistant, Frigate, or anything embedding a single camera.',
+      hintCamWall:
+        "A Cam Wall token opens /camwall on a screen with no login. It can see every printer's name and state, and their camera streams. It cannot see filenames, addresses or access codes.",
       title: 'Create new token',
       nameLabel: 'Token name',
       namePlaceholder: 'e.g. Home Assistant',
@@ -6743,6 +6767,9 @@ export default {
         'Maximum lifetime is 365 days. The token value is shown only once on creation — copy it now.',
     },
     created: {
+      camWallUrlTitle: 'Cam Wall URL for this display',
+      camWallUrlHint:
+        'Open this on the screen. Anyone who can read the URL can watch the wall, so treat it like a key — revoke the token to cut the display off.',
       title: 'Token created — copy it now',
       warning:
         'This is the only time this token will be visible. After you close this dialog you can never view it again.',
@@ -6750,6 +6777,7 @@ export default {
       dismiss: "I've saved it",
     },
     list: {
+      scope: 'Scope',
       myTitle: 'My tokens',
       allTitle: 'All users (admin view)',
       empty: 'No tokens yet.',

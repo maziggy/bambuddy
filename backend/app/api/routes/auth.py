@@ -1617,10 +1617,14 @@ async def provision_ldap_user(
 # =============================================================================
 # Long-lived camera-stream tokens (#1108)
 # =============================================================================
-# Camera-only V1. Issue scope: a token a user can paste into Home Assistant /
-# Frigate / a kiosk and have it keep working for days/weeks rather than
-# refreshing the 60-minute ephemeral token. Permission gate: CAMERA_VIEW
-# (same blast radius as the existing 60-min token-mint endpoint).
+# A token a user can paste into Home Assistant / Frigate / a kiosk and have it
+# keep working for days/weeks rather than refreshing the 60-minute ephemeral
+# token. Permission gate: CAMERA_VIEW (same blast radius as the existing 60-min
+# token-mint endpoint).
+#
+# Two scopes, both minted here — see ALLOWED_SCOPES in services/long_lived_tokens
+# for what each one reaches: "camera_stream" (video only) and "camwall" (video
+# plus the Cam Wall's read-only tile metadata, #2531).
 
 
 def _long_lived_token_to_response(record, *, plaintext: str | None = None) -> dict:

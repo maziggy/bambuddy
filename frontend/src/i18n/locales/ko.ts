@@ -183,10 +183,16 @@ export default {
       extraLarge: '아주 큰 카드'
     },
     pageView: {
+      openCamWallPage: '카메라 월을 페이지로 열기',
       cards: '카드',
       camWall: '카메라 월'
     },
     camWall: {
+      page: {
+        tokenRejected:
+          '이 카메라 월 링크는 더 이상 유효하지 않습니다. 토큰이 만료되었거나 취소되었을 수 있습니다.',
+        loadFailed: '프린터를 불러오지 못했습니다.',
+      },
       noPrinters: '표시할 프린터가 없습니다',
       noSignal: '신호 없음',
       live: '라이브',
@@ -532,6 +538,10 @@ export default {
       notSupported: '건조 지원 안 됨',
       powerRequired: '건조를 활성화하려면 AMS 전원 어댑터를 연결하세요',
       startingDrying: '건조 시작 중...',
+      toastCommandSent: '건조 명령을 전송했습니다',
+      toastStopped: '건조를 중지했습니다',
+      toastNotStarted: '프린터가 명령을 수락했지만 AMS가 건조를 시작하지 않았습니다. AMS 전원 어댑터가 연결되어 있는지, 프린터가 대기 상태인지 확인하십시오.',
+      screenOnly: '이 프린터에서는 AMS 건조를 프린터 자체 화면에서만 제어할 수 있습니다 (Bambu 제한 사항)',
       stoppingDrying: '건조 정지 중...',
       rotateTray: '건조 중 스풀 회전',
       rotateUnavailableReason: '사용할 수 없음 — 이 AMS의 슬롯이 툴헤드로 로드되어 있습니다. 스풀이 공급 튜브에 의해 고정되어 회전할 수 없습니다. 먼저 필라멘트를 뺀 후 다시 시도하십시오.'
@@ -5110,7 +5120,12 @@ export default {
     restPowerPath: '전력 JSON 경로',
     restPowerMultiplier: '전력 배수',
     restEnergyUrl: '에너지 URL',
-    restEnergyPath: '에너지 JSON 경로',
+    restEnergyPath: '에너지 JSON 경로 (오늘)',
+    restEnergyTotalPath: '에너지 JSON 경로 (누적값)',
+    restEnergyTotalMultiplier: '누적값 배율',
+    restEnergyTotalPathHint: '예: aenergy.total',
+    restEnergyTotalHint:
+      '많은 플러그가 — Shelly는 모두 — 초기화되지 않는 누적 카운터만 보고합니다. 그 값은 위 항목이 아니라 여기에 입력하세요. 오늘 사용량으로 읽으면 자정에 초기화되지 않고, 어제와 총계는 계속 비어 있게 됩니다. Bambuddy가 누적값에서 오늘과 어제를 계산하며, 이를 위해 하루에서 이틀 치 측정값이 필요합니다. Shelly는 와트시로 보고하므로 배율은 0.001을 사용하세요.',
     restEnergyMultiplier: '에너지 배수',
     restUrlRequired: 'REST 플러그에는 URL(ON 또는 OFF) 중 하나 이상이 필요합니다',
     restHeadersHint: '예: {"Authorization": "Bearer your-token"}',
@@ -6147,9 +6162,14 @@ export default {
     purgeStatsDescription: '활성화되면 일일 정리 작업도 각 삭제된 아카이브를 빠른 통계(필라멘트, 시간, 비용, 에너지)에서 제거합니다. 기본값 비활성화 — 빠른 통계는 기여를 유지하고 파일만 디스크에서 제거됩니다.'
   },
   cameraTokens: {
+    scope: {
+      camera_stream: '카메라 스트림',
+      camwall: '카메라 월',
+    },
     title: '카메라 API 토큰',
     navTitle: '카메라 API 토큰',
-    description: 'Home Assistant, Frigate, 키오스크 또는 안정적인 URL이 필요한 다른 도구에 카메라 스트림을 내장하기 위한 장기 토큰. 각 토큰은 카메라 스트림 전용이며 언제든지 취소할 수 있습니다.',
+    description:
+      'Home Assistant, Frigate, 키오스크 화면 등 안정적인 주소가 필요한 도구에 카메라 스트림을 삽입하기 위한 장기 토큰입니다. 범위는 생성할 때 선택하며, 토큰은 언제든지 취소할 수 있습니다.',
     loading: '불러오는 중…',
     confirmRevoke: {
       title: '이 토큰을 취소하시겠습니까?',
@@ -6158,6 +6178,11 @@ export default {
       confirm: '취소'
     },
     create: {
+      scopeLabel: '범위',
+      hintCameraStream:
+        '카메라 스트림 토큰은 카메라 스트림과 스냅숏만 가져올 수 있습니다. Home Assistant, Frigate 등 카메라 하나를 삽입하는 용도로 사용하세요.',
+      hintCamWall:
+        '카메라 월 토큰은 로그인 없이 화면에서 /camwall을 엽니다. 모든 프린터의 이름과 상태, 카메라 스트림을 볼 수 있습니다. 파일 이름, 주소, 액세스 코드는 볼 수 없습니다.',
       title: '새 토큰 만들기',
       nameLabel: '토큰 이름',
       namePlaceholder: '예: Home Assistant',
@@ -6166,12 +6191,16 @@ export default {
       hint: '최대 수명은 365일입니다. 토큰 값은 생성 시 한 번만 표시됩니다 — 지금 복사하세요.'
     },
     created: {
+      camWallUrlTitle: '이 화면용 카메라 월 주소',
+      camWallUrlHint:
+        '이 주소를 화면에서 여세요. 주소를 읽을 수 있는 사람은 누구나 월을 볼 수 있으므로 열쇠처럼 다루세요. 토큰을 취소하면 해당 화면의 접근이 차단됩니다.',
       title: '토큰 생성됨 — 지금 복사하세요',
       warning: '이 토큰은 이 번만 볼 수 있습니다. 이 대화상자를 닫으면 다시는 볼 수 없습니다.',
       copy: '복사',
       dismiss: '저장했습니다'
     },
     list: {
+      scope: '범위',
       myTitle: '내 토큰',
       allTitle: '모든 사용자 (관리자 보기)',
       empty: '아직 토큰 없음.',

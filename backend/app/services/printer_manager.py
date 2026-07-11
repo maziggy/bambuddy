@@ -209,27 +209,48 @@ _DRYING_MIN_FIRMWARE: dict[str, str] = {
     "O1C2": "01.02.00.00",  # H2C dual-nozzle SSDP model code
     "X1": "01.09.00.00",
     "X1C": "01.09.00.00",
-    "P1P": "01.08.00.00",
-    "P1S": "01.08.00.00",
     "P2S": "01.02.00.00",
     "N7": "01.02.00.00",  # P2S internal model code
 }
 # Models that definitely don't support AMS drying (no AMS 2 Pro / AMS-HT compatibility)
 _DRYING_UNSUPPORTED_MODELS = frozenset({"A1", "A1MINI", "A1-MINI", "A1 MINI", "O1S", "N1", "N2S"})
 
+# Models whose AMS can dry, but only from the printer's own touchscreen. Bambu's P1
+# manual is explicit: "P1S connected AMS drying functions may only be controlled from
+# the P1S screen." The firmware still answers `ams_filament_drying` with
+# result: success and then does nothing — the reporter of #2533 sent it three times
+# on an idle P1S with an AMS 2 Pro and the unit never left dry_status 0. Bambuddy
+# originally listed P1P/P1S here as fw-gated (01.08+, #292); that version is when P1
+# firmware gained AMS 2 Pro *support*, not remote drying, and it was never verified
+# against a live P1. Nothing we can send will start a cycle, so we don't offer to.
+_DRYING_SCREEN_ONLY_MODELS = frozenset({"P1P", "P1S"})
+
+
+def drying_screen_only(model: str | None) -> bool:
+    """True when the model's AMS dries only via the printer's own screen (#2533).
+
+    Distinct from "unsupported": these printers *can* dry, and Bambuddy still shows
+    a cycle started on the printer. They just can't be commanded to start or stop
+    one remotely, so the UI explains that instead of silently dropping the control.
+    """
+    if not model:
+        return False
+    return model.strip().upper() in _DRYING_SCREEN_ONLY_MODELS
+
 
 def supports_drying(model: str | None, firmware: str | None) -> bool:
-    """Check if a printer model supports AMS drying commands.
+    """Check if a printer model accepts remote AMS drying commands.
 
     Known models with confirmed min firmware get version-gated.
-    Known unsupported models are blocked.
+    Known unsupported models, and models that only dry from their own screen,
+    are blocked.
     All other models (H2D Pro, X1E, future models) are allowed —
     the command fails gracefully with result: "fail" if unsupported.
     """
     if not model:
         return False
     model_upper = model.strip().upper()
-    if model_upper in _DRYING_UNSUPPORTED_MODELS:
+    if model_upper in _DRYING_UNSUPPORTED_MODELS or model_upper in _DRYING_SCREEN_ONLY_MODELS:
         return False
     if model_upper in _DRYING_MIN_FIRMWARE:
         return bool(firmware and firmware >= _DRYING_MIN_FIRMWARE[model_upper])
@@ -1263,6 +1284,7 @@ def printer_state_to_dict(
         # AMS drying support
         "supports_drying": supports_drying(model, state.firmware_version),
         "supports_drying_while_printing": supports_drying_while_printing(model, state.firmware_version),
+        "drying_screen_only": drying_screen_only(model),
         # 1-indexed plate number parsed from gcode_file (e.g. /Metadata/plate_2.gcode).
         # Pushed via WebSocket so the printer card picks up plate transitions within
         # a multi-plate 3MF without waiting for the 30 s REST poll (#881 follow-up).

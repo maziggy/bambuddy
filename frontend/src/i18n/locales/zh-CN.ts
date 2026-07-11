@@ -196,10 +196,16 @@ export default {
       extraLarge: '超大卡片',
     },
     pageView: {
+      openCamWallPage: '在独立页面中打开摄像头墙',
       cards: '卡片',
       camWall: '摄像头墙',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          '此摄像头墙链接已失效。令牌可能已过期或被撤销。',
+        loadFailed: '无法加载打印机。',
+      },
       noPrinters: '没有可显示的打印机',
       noSignal: '无信号',
       live: '直播',
@@ -569,6 +575,10 @@ export default {
       notSupported: '不支持干燥',
       powerRequired: '连接AMS电源适配器以启用干燥',
       startingDrying: '正在启动干燥...',
+      toastCommandSent: '已发送干燥命令',
+      toastStopped: '已停止干燥',
+      toastNotStarted: '打印机已接受命令，但 AMS 未开始干燥。请检查 AMS 电源适配器是否已连接，以及打印机是否处于空闲状态。',
+      screenOnly: '此打印机的 AMS 干燥只能在打印机自带的屏幕上操作（Bambu 的限制）',
       stoppingDrying: '正在停止干燥...',
       rotateTray: '干燥时旋转料盘',
       rotateUnavailableReason: '不可用 — 此 AMS 中有插槽已装入打印头。料盘被送料管固定，无法旋转。请先回退耗材。',
@@ -5373,7 +5383,12 @@ export default {
     restPowerPath: '功率 JSON 路径',
     restPowerMultiplier: '功率乘数',
     restEnergyUrl: '能耗URL',
-    restEnergyPath: '能耗 JSON 路径',
+    restEnergyPath: '能耗 JSON 路径（今日）',
+    restEnergyTotalPath: '能耗 JSON 路径（累计值）',
+    restEnergyTotalMultiplier: '累计值倍数',
+    restEnergyTotalPathHint: '例如 aenergy.total',
+    restEnergyTotalHint:
+      '许多插座（包括所有 Shelly）只提供永不归零的累计计数值。该值应填在此处，而不是上面的字段：若当作今日用量读取，它在午夜不会归零，而“昨日”和“总计”会一直为空。Bambuddy 会据此推算“今日”和“昨日”，这需要一到两天的采样数据。Shelly 以瓦时为单位，因此倍数请填 0.001。',
     restEnergyMultiplier: '能耗乘数',
     restUrlRequired: 'REST 插座至少需要一个 URL（ON 或 OFF）',
     restHeadersHint: '例如 {"Authorization": "Bearer your-token"}',
@@ -6664,10 +6679,14 @@ export default {
     saveFailed: '无法保存自动清除设置。',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: '摄像头视频流',
+      camwall: '摄像头墙',
+    },
     title: '摄像头 API 令牌',
     navTitle: '摄像头 API 令牌',
     description:
-      '长期令牌，用于将摄像头流嵌入 Home Assistant、Frigate、信息亭或其他需要稳定 URL 的工具。每个令牌仅限摄像头流，可随时撤销。',
+      '长期令牌，用于将摄像头视频流嵌入 Home Assistant、Frigate、自助展示屏或其他需要稳定网址的工具。权限范围在创建时选择，令牌可随时撤销。',
     loading: '加载中…',
     confirmRevoke: {
       title: '撤销此令牌？',
@@ -6676,6 +6695,11 @@ export default {
       confirm: '撤销',
     },
     create: {
+      scopeLabel: '权限范围',
+      hintCameraStream:
+        '摄像头视频流令牌只能获取摄像头视频流和快照。适用于 Home Assistant、Frigate 或任何嵌入单个摄像头的场景。',
+      hintCamWall:
+        '摄像头墙令牌可在无需登录的屏幕上打开 /camwall，能看到每台打印机的名称和状态以及摄像头视频流，但看不到文件名、地址或访问码。',
       title: '创建新令牌',
       nameLabel: '令牌名称',
       namePlaceholder: '例如 Home Assistant',
@@ -6685,6 +6709,9 @@ export default {
         '最大有效期 365 天。令牌值仅在创建时显示一次 — 请立即复制。',
     },
     created: {
+      camWallUrlTitle: '此屏幕的摄像头墙网址',
+      camWallUrlHint:
+        '在屏幕上打开此网址。任何能看到该网址的人都能观看摄像头墙，请像对待钥匙一样对待它——撤销令牌即可切断该屏幕的访问。',
       title: '令牌已创建 — 立即复制',
       warning:
         '这是此令牌唯一一次可见。关闭此对话框后您将无法再次查看。',
@@ -6692,6 +6719,7 @@ export default {
       dismiss: '我已保存',
     },
     list: {
+      scope: '权限范围',
       myTitle: '我的令牌',
       allTitle: '所有用户（管理员视图）',
       empty: '暂无令牌。',

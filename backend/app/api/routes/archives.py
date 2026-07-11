@@ -1277,6 +1277,13 @@ async def _sum_snapshot_deltas(
     """
     from backend.app.models.smart_plug import SmartPlug
     from backend.app.models.smart_plug_energy_snapshot import SmartPlugEnergySnapshot
+    from backend.app.utils.local_time import to_naive_utc
+
+    # ``recorded_at`` is a naive column holding UTC. Binding an aware datetime
+    # against it raises DataError on asyncpg (SQLite silently drops the offset),
+    # which took the whole date-filtered energy figure down on Postgres.
+    dt_from = to_naive_utc(dt_from)
+    dt_to = to_naive_utc(dt_to)
 
     plug_ids_result = await db.execute(select(SmartPlug.id))
     plug_ids = [row[0] for row in plug_ids_result.all()]

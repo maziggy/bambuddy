@@ -6,6 +6,7 @@ import socket
 import ssl
 import threading
 import time
+import weakref
 from collections.abc import Awaitable, Callable
 from enum import Enum
 from ftplib import FTP, FTP_TLS  # nosec B402
@@ -16,6 +17,32 @@ from typing import TypeVar
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+# Overall upload deadline (#2529). A flat wall-clock cap punishes big files on
+# slow links rather than catching broken ones: a 96 MB 3MF at the ~75 KB/s an A1
+# sustains over WiFi legitimately needs ~20 minutes, and the old flat 600 s
+# declared it dead at ~70 MB. The deadline is therefore derived from the file
+# size against a deliberately pessimistic floor rate. This is a backstop, not the
+# failure detector — a link that has actually died is caught within
+# ``socket_timeout`` by the blocking ``sendall``, long before this fires.
+_UPLOAD_FLOOR_BYTES_PER_SEC = 25 * 1024
+_UPLOAD_MIN_TIMEOUT = 600.0
+
+# How long to give the worker thread to notice the cancel flag, unwind, and
+# delete its partial file. It checks the flag once per CHUNK_SIZE, so on a link
+# slow enough to have hit the deadline this is one chunk plus the delete.
+_UPLOAD_CANCEL_GRACE = 60.0
+
+
+class UploadCancelled(Exception):
+    """Raised inside the upload worker to abort an in-flight transfer.
+
+    ``upload_file`` treats any exception from its progress callback as "stop
+    now": it breaks out of the send loop, deletes the partial file from the
+    printer, and re-raises. That is the only way to stop a transfer — an
+    executor thread cannot be cancelled from the event loop, so a bare
+    ``asyncio.wait_for`` leaves it streaming (see ``upload_file_async``).
+    """
 
 
 class DeleteResult(Enum):
@@ -980,12 +1007,45 @@ async def download_file_try_paths_async(
     return await loop.run_in_executor(None, _download)
 
 
+def _upload_deadline(local_path: Path) -> float:
+    """Derive an upload deadline from the file size (#2529).
+
+    See ``_UPLOAD_FLOOR_BYTES_PER_SEC``. An unstat-able file falls back to the
+    floor timeout — ``upload_file`` will fail on the open() anyway.
+    """
+    try:
+        size = local_path.stat().st_size
+    except OSError:
+        return _UPLOAD_MIN_TIMEOUT
+    return max(_UPLOAD_MIN_TIMEOUT, size / _UPLOAD_FLOOR_BYTES_PER_SEC)
+
+
+# One upload at a time per printer. Two concurrent STOR commands for the same
+# remote path leave a corrupt file on the SD card, and the printer reads as
+# flaky rather than busy (#2529). Held for the duration of a transfer, so a
+# second dispatch to the same printer queues behind the first instead of racing
+# it. Keyed per event loop: an asyncio.Lock binds to the loop that first awaits
+# it, and the test suite runs each case on a fresh loop.
+_upload_locks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, asyncio.Lock]] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _upload_lock(loop: asyncio.AbstractEventLoop, ip_address: str) -> asyncio.Lock:
+    per_loop = _upload_locks.setdefault(loop, {})
+    lock = per_loop.get(ip_address)
+    if lock is None:
+        lock = asyncio.Lock()
+        per_loop[ip_address] = lock
+    return lock
+
+
 async def upload_file_async(
     ip_address: str,
     access_code: str,
     local_path: Path,
     remote_path: str,
-    timeout: float = 600.0,
+    timeout: float | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
     socket_timeout: float | None = None,
     printer_model: str | None = None,
@@ -1000,19 +1060,31 @@ async def upload_file_async(
         access_code: Printer access code
         local_path: Local file path to upload
         remote_path: Remote path on printer
-        timeout: Overall operation timeout (asyncio)
+        timeout: Overall deadline. ``None`` (the default) derives it from the
+            file size — see ``_upload_deadline``. A caller that passes a number
+            gets exactly that, which is what the tests rely on.
         progress_callback: Optional callback for progress updates
         socket_timeout: FTP socket timeout for slow connections (e.g., A1 printers)
         printer_model: Printer model for A1-specific workarounds
     """
     loop = asyncio.get_event_loop()
     is_a1 = printer_model in BambuFTPClient.A1_MODELS if printer_model else False
+    deadline = _upload_deadline(local_path) if timeout is None else timeout
+
+    # Set when the deadline expires. The worker checks it once per chunk.
+    cancel = threading.Event()
+
+    def _guarded_progress(uploaded: int, total: int) -> None:
+        if cancel.is_set():
+            raise UploadCancelled(f"upload of {remote_path} exceeded its {deadline:.0f}s deadline")
+        if progress_callback:
+            progress_callback(uploaded, total)
 
     def _upload(force_prot_c: bool = False) -> bool:
         mode_str = "prot_c" if force_prot_c else "prot_p"
         logger.info(
             f"FTP connecting to {ip_address} for upload (model={printer_model}, "
-            f"mode={mode_str}, socket_timeout={socket_timeout}s)..."
+            f"mode={mode_str}, socket_timeout={socket_timeout}s, deadline={deadline:.0f}s)..."
         )
         client = BambuFTPClient(
             ip_address, access_code, timeout=socket_timeout, printer_model=printer_model, force_prot_c=force_prot_c
@@ -1020,7 +1092,7 @@ async def upload_file_async(
         if client.connect():
             logger.info("FTP connected to %s", ip_address)
             try:
-                result = client.upload_file(local_path, remote_path, progress_callback)
+                result = client.upload_file(local_path, remote_path, _guarded_progress)
                 if result:
                     # Cache the working mode
                     BambuFTPClient.cache_mode(ip_address, mode_str)
@@ -1030,32 +1102,80 @@ async def upload_file_async(
         logger.warning("FTP connection failed to %s", ip_address)
         return False
 
-    try:
+    async def _attempt(force_prot_c: bool) -> bool:
+        """Run one upload attempt, and make a timeout actually stop the transfer.
+
+        ``asyncio.wait_for`` cancels the *future*, never the executor thread
+        behind it. Before #2529 a slow-but-healthy upload that overran the
+        deadline left that thread streaming: it kept pushing bytes, kept firing
+        the progress callback, and the retry above put a *second* STOR of the
+        same file onto the same printer. The reporter's 96 MB job ran four
+        concurrent transfers and never landed. So on timeout we signal the
+        worker (it raises ``UploadCancelled`` from the progress callback, which
+        breaks the send loop and deletes the partial file) and wait for it to
+        actually go.
+        """
+        fut = loop.run_in_executor(None, lambda: _upload(force_prot_c))
+        try:
+            return await asyncio.wait_for(asyncio.shield(fut), timeout=deadline)
+        except TimeoutError:
+            cancel.set()
+            logger.warning(
+                "FTP upload of %s exceeded its %.0fs deadline — cancelling the transfer",
+                remote_path,
+                deadline,
+            )
+            try:
+                await asyncio.wait_for(asyncio.shield(fut), timeout=_UPLOAD_CANCEL_GRACE)
+            except UploadCancelled:
+                logger.info("FTP upload of %s cancelled; partial file removed from the printer", remote_path)
+            except TimeoutError:
+                # The thread is wedged somewhere that never reaches the callback
+                # (a blocked sendall, say). Nothing more we can do from here —
+                # but consume the eventual result so asyncio doesn't log the
+                # future's exception as unretrieved when it is garbage-collected.
+                logger.error(
+                    "FTP upload thread for %s did not stop within %.0fs of the cancel signal",
+                    remote_path,
+                    _UPLOAD_CANCEL_GRACE,
+                )
+                fut.add_done_callback(_swallow_future_result)
+            except Exception as e:
+                logger.warning("FTP upload of %s errored while cancelling: %s", remote_path, e)
+            # Raise rather than return False: a deadline expiry means the link
+            # sustained less than the floor rate for the whole transfer, and a
+            # retry would only spend another full deadline finding that out
+            # again — with check_queue serialized, four of those block the
+            # entire print queue for hours. ``with_ftp_retry`` never retries it.
+            raise UploadCancelled(
+                f"Upload of {remote_path} to {ip_address} exceeded its {deadline:.0f}s deadline "
+                f"(link sustained less than {_UPLOAD_FLOOR_BYTES_PER_SEC // 1024} KB/s)"
+            ) from None
+
+    async with _upload_lock(loop, ip_address):
         # Check if we have a cached mode for this printer
         cached_mode = BambuFTPClient._mode_cache.get(ip_address)
 
         if cached_mode:
             # Use cached mode
-            force_prot_c = cached_mode == "prot_c"
-            return await asyncio.wait_for(loop.run_in_executor(None, lambda: _upload(force_prot_c)), timeout=timeout)
+            return await _attempt(cached_mode == "prot_c")
 
         # No cached mode - try prot_p first
-        result = await asyncio.wait_for(loop.run_in_executor(None, lambda: _upload(False)), timeout=timeout)
-
-        if result:
+        if await _attempt(False):
             return True
 
         # Upload failed - for A1 models, try prot_c fallback
         if is_a1:
             logger.info("FTP upload failed with prot_p for A1 model, trying prot_c fallback...")
-            result = await asyncio.wait_for(loop.run_in_executor(None, lambda: _upload(True)), timeout=timeout)
-            return result
+            return await _attempt(True)
 
         return False
 
-    except TimeoutError:
-        logger.warning("FTP upload timed out after %ss for %s", timeout, remote_path)
-        return False
+
+def _swallow_future_result(fut: asyncio.Future) -> None:
+    """Retrieve a future's exception so asyncio doesn't log it as unhandled."""
+    if not fut.cancelled():
+        fut.exception()
 
 
 async def list_files_async(
@@ -1213,6 +1333,10 @@ async def with_ftp_retry(
 
     Returns:
         Result of the operation, or None if all attempts fail
+
+    ``UploadCancelled`` is never retried, whatever the caller passes: it means
+    the transfer overran its size-derived deadline, so a retry would spend
+    another full deadline reaching the same conclusion (#2529).
     """
     last_error = None
 
@@ -1227,6 +1351,8 @@ async def with_ftp_retry(
             # Operation returned failure indicator
             if attempt > 0:
                 logger.info("%s attempt %s/%s returned failure", operation_name, attempt + 1, max_retries + 1)
+        except UploadCancelled:
+            raise
         except Exception as e:
             if non_retry_exceptions and isinstance(e, non_retry_exceptions):
                 raise

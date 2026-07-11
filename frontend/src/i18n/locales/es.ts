@@ -196,10 +196,16 @@ export default {
       extraLarge: 'Tarjetas extragrandes',
     },
     pageView: {
+      openCamWallPage: 'Abrir el muro de cámaras como página',
       cards: 'Tarjetas',
       camWall: 'Muro de cámaras',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          'Este enlace del muro de cámaras ya no es válido. Es posible que el token haya caducado o se haya revocado.',
+        loadFailed: 'No se han podido cargar las impresoras.',
+      },
       noPrinters: 'No hay impresoras que mostrar',
       noSignal: 'Sin señal',
       live: 'En vivo',
@@ -569,6 +575,10 @@ export default {
       notSupported: 'Secado no compatible',
       powerRequired: 'Conecte el adaptador de corriente del AMS para activar el secado',
       startingDrying: 'Iniciando el secado...',
+      toastCommandSent: 'Comando de secado enviado',
+      toastStopped: 'Secado detenido',
+      toastNotStarted: 'La impresora aceptó el comando, pero el AMS no inició el secado. Comprueba que el adaptador de corriente del AMS esté conectado y que la impresora esté inactiva.',
+      screenOnly: 'En esta impresora, el secado del AMS solo se puede controlar desde la pantalla de la propia impresora (limitación de Bambu)',
       stoppingDrying: 'Deteniendo el secado...',
       rotateTray: 'Girar la bobina durante el secado',
       rotateUnavailableReason: 'No disponible — un slot de este AMS está cargado hacia el cabezal. La bobina está bloqueada por el tubo de alimentación y no puede girar. Retira el filamento primero.',
@@ -5393,7 +5403,12 @@ export default {
     restPowerPath: 'Ruta JSON de la potencia',
     restPowerMultiplier: 'Multiplicador de potencia',
     restEnergyUrl: 'URL de energía',
-    restEnergyPath: 'Ruta JSON de la energía',
+    restEnergyPath: 'Ruta JSON de energía (hoy)',
+    restEnergyTotalPath: 'Ruta JSON de energía (contador total)',
+    restEnergyTotalMultiplier: 'Multiplicador del contador total',
+    restEnergyTotalPathHint: 'p. ej. aenergy.total',
+    restEnergyTotalHint:
+      'Muchos enchufes — todos los Shelly entre ellos — solo informan de un contador acumulado que nunca se reinicia. Va aquí, no en el campo de arriba: leído como el consumo de hoy nunca se pondría a cero a medianoche, y Ayer y Total seguirían vacíos. Bambuddy deduce Hoy y Ayer a partir de él, lo que requiere uno o dos días de lecturas. Un Shelly informa en vatios-hora, así que usa un multiplicador de 0.001.',
     restEnergyMultiplier: 'Multiplicador de energía',
     restUrlRequired: 'Se requiere al menos una URL (de encendido o apagado) para los enchufes REST',
     restHeadersHint: 'p. ej. {"Authorization": "Bearer your-token"}',
@@ -6687,10 +6702,14 @@ export default {
     saveFailed: 'No se pudieron guardar los ajustes de purga automática.',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: 'Transmisión de cámara',
+      camwall: 'Muro de cámaras',
+    },
     title: 'Tokens de API de la cámara',
     navTitle: 'Tokens de API de la cámara',
     description:
-      'Tokens de larga duración para incrustar la transmisión de la cámara en Home Assistant, Frigate, quioscos o cualquier otra herramienta que necesite una URL estable. Cada token es exclusivo de la transmisión de la cámara y se puede revocar en cualquier momento.',
+      'Tokens de larga duración para incrustar la transmisión de la cámara en Home Assistant, Frigate, pantallas en modo quiosco o cualquier otra herramienta que necesite una dirección estable. El alcance se elige al crearlos; un token se puede revocar en cualquier momento.',
     loading: 'Cargando…',
     confirmRevoke: {
       title: '¿Revocar este token?',
@@ -6699,6 +6718,11 @@ export default {
       confirm: 'Revocar',
     },
     create: {
+      scopeLabel: 'Alcance',
+      hintCameraStream:
+        'Un token de transmisión de cámara solo puede obtener transmisiones e instantáneas. Úsalo para Home Assistant, Frigate o cualquier cosa que incruste una sola cámara.',
+      hintCamWall:
+        'Un token de muro de cámaras abre /camwall en una pantalla sin iniciar sesión. Puede ver el nombre y el estado de cada impresora, y sus transmisiones de cámara. No puede ver nombres de archivo, direcciones ni códigos de acceso.',
       title: 'Crear nuevo token',
       nameLabel: 'Nombre del token',
       namePlaceholder: 'p. ej. Home Assistant',
@@ -6708,6 +6732,9 @@ export default {
         'La vida útil máxima es de 365 días. El valor del token se muestra solo una vez al crearlo — cópielo ahora.',
     },
     created: {
+      camWallUrlTitle: 'Dirección del muro de cámaras para esta pantalla',
+      camWallUrlHint:
+        'Abre esta dirección en la pantalla. Cualquiera que pueda leerla puede ver el muro, así que trátala como una llave: revoca el token para dejar la pantalla sin acceso.',
       title: 'Token creado — cópielo ahora',
       warning:
         'Esta es la única vez que este token estará visible. Después de cerrar este diálogo no podrá volver a verlo nunca.',
@@ -6715,6 +6742,7 @@ export default {
       dismiss: 'Lo he guardado',
     },
     list: {
+      scope: 'Alcance',
       myTitle: 'Mis tokens',
       allTitle: 'Todos los usuarios (vista de administración)',
       empty: 'Aún no hay tokens.',

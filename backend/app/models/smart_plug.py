@@ -67,10 +67,18 @@ class SmartPlug(Base):
     rest_power_path: Mapped[str | None] = mapped_column(String(200), nullable=True)  # JSON path for power (watts)
     rest_power_multiplier: Mapped[float] = mapped_column(Float, server_default="1.0")  # Unit conversion for power
     rest_energy_url: Mapped[str | None] = mapped_column(String(500), nullable=True)  # Separate URL for energy data
+    # Energy used *today*, resetting at midnight (kWh after the multiplier).
     rest_energy_path: Mapped[str | None] = mapped_column(String(200), nullable=True)  # JSON path for energy (kWh)
     rest_energy_multiplier: Mapped[float] = mapped_column(
         Float, server_default="1.0"
     )  # Unit conversion (e.g., 0.001 for Wh→kWh)
+    # Lifetime cumulative counter that never resets (#2539). A Shelly exposes only
+    # this one (`aenergy.total`, in Wh); a Tasmota behind a REST bridge exposes
+    # both. Kept separate from rest_energy_path because a cumulative counter read
+    # as "today" is silently wrong all day, and feeds Yesterday / Total / the
+    # hourly snapshots that the Statistics page's date filters run on.
+    rest_energy_total_path: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    rest_energy_total_multiplier: Mapped[float] = mapped_column(Float, server_default="1.0")
 
     # Link to printer (multiple plugs/scripts can be linked to one printer)
     printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id", ondelete="SET NULL"), nullable=True)

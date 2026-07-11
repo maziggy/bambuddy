@@ -196,10 +196,16 @@ export default {
       extraLarge: '超大卡片',
     },
     pageView: {
+      openCamWallPage: '在獨立頁面中開啟攝影機牆',
       cards: '卡片',
       camWall: '攝影機牆',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          '此攝影機牆連結已失效。權杖可能已過期或遭撤銷。',
+        loadFailed: '無法載入印表機。',
+      },
       noPrinters: '沒有可顯示的印表機',
       noSignal: '無訊號',
       live: '直播',
@@ -569,6 +575,10 @@ export default {
       notSupported: '不支援乾燥',
       powerRequired: '連線AMS電源介面卡以啟用乾燥',
       startingDrying: '正在啟動乾燥...',
+      toastCommandSent: '已傳送乾燥命令',
+      toastStopped: '已停止乾燥',
+      toastNotStarted: '印表機已接受命令，但 AMS 未開始乾燥。請檢查 AMS 電源變壓器是否已連接，以及印表機是否處於閒置狀態。',
+      screenOnly: '此印表機的 AMS 乾燥只能在印表機本身的螢幕上操作（Bambu 的限制）',
       stoppingDrying: '正在停止乾燥...',
       rotateTray: '乾燥時旋轉料盤',
       rotateUnavailableReason: '無法使用 — 此 AMS 中有插槽已裝入列印頭。料盤被進料管固定，無法旋轉。請先退回耗材。',
@@ -5373,7 +5383,12 @@ export default {
     restPowerPath: '功率 JSON 路徑',
     restPowerMultiplier: '功率乘數',
     restEnergyUrl: '能耗URL',
-    restEnergyPath: '能耗 JSON 路徑',
+    restEnergyPath: '能耗 JSON 路徑（今日）',
+    restEnergyTotalPath: '能耗 JSON 路徑（累計值）',
+    restEnergyTotalMultiplier: '累計值倍數',
+    restEnergyTotalPathHint: '例如 aenergy.total',
+    restEnergyTotalHint:
+      '許多插座（包括所有 Shelly）只提供永不歸零的累計計數值。該值應填在此處，而非上方欄位：若當作今日用量讀取，它在午夜不會歸零，而「昨日」與「總計」會一直是空的。Bambuddy 會據此推算「今日」與「昨日」，這需要一至兩天的取樣資料。Shelly 以瓦時為單位，因此倍數請填 0.001。',
     restEnergyMultiplier: '能耗乘數',
     restUrlRequired: 'REST 插座至少需要一個 URL（ON 或 OFF）',
     restHeadersHint: '例如：{"Authorization": "Bearer your-token"}',
@@ -6664,10 +6679,14 @@ export default {
     saveFailed: '無法儲存自動清除設定。',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: '攝影機串流',
+      camwall: '攝影機牆',
+    },
     title: '攝影機 API 權杖',
     navTitle: '攝影機 API 權杖',
     description:
-      '長期權杖，用於將攝影機串流嵌入 Home Assistant、Frigate、資訊站或其他需要穩定 URL 的工具。每個權杖僅限攝影機串流，可隨時撤銷。',
+      '長期權杖，用於將攝影機串流嵌入 Home Assistant、Frigate、自助展示螢幕或其他需要穩定網址的工具。權限範圍在建立時選擇，權杖可隨時撤銷。',
     loading: '載入中…',
     confirmRevoke: {
       title: '撤銷此權杖？',
@@ -6676,6 +6695,11 @@ export default {
       confirm: '撤銷',
     },
     create: {
+      scopeLabel: '權限範圍',
+      hintCameraStream:
+        '攝影機串流權杖只能取得攝影機串流與快照。適用於 Home Assistant、Frigate 或任何嵌入單一攝影機的情境。',
+      hintCamWall:
+        '攝影機牆權杖可在無須登入的螢幕上開啟 /camwall，能看到每台印表機的名稱與狀態以及攝影機串流，但看不到檔案名稱、位址或存取碼。',
       title: '建立新權杖',
       nameLabel: '權杖名稱',
       namePlaceholder: '例如 Home Assistant',
@@ -6685,6 +6709,9 @@ export default {
         '最大有效期 365 天。權杖值僅在建立時顯示一次 — 請立即複製。',
     },
     created: {
+      camWallUrlTitle: '此螢幕的攝影機牆網址',
+      camWallUrlHint:
+        '在螢幕上開啟此網址。任何能看到該網址的人都能觀看攝影機牆，請像對待鑰匙一樣對待它——撤銷權杖即可切斷該螢幕的存取。',
       title: '權杖已建立 — 立即複製',
       warning:
         '這是此權杖唯一一次可見。關閉此對話框後您將無法再次查看。',
@@ -6692,6 +6719,7 @@ export default {
       dismiss: '我已儲存',
     },
     list: {
+      scope: '權限範圍',
       myTitle: '我的權杖',
       allTitle: '所有使用者（管理員視圖）',
       empty: '尚無權杖。',

@@ -146,15 +146,18 @@ class TestCalculateNextRun:
         """
         from zoneinfo import ZoneInfoNotFoundError
 
-        from backend.app.services import local_backup as lb_module
+        # The resolver moved to utils/local_time in #2539, when the smart-plug
+        # energy history needed the same local day boundary. local_backup still
+        # calls it, so this still guards the behaviour local_backup depends on.
+        from backend.app.utils import local_time as tz_module
 
         monkeypatch.delenv("TZ", raising=False)
 
         def _always_missing(_key):
             raise ZoneInfoNotFoundError("no tz database on this platform")
 
-        monkeypatch.setattr(lb_module, "ZoneInfo", _always_missing)
-        assert lb_module._local_zone() is timezone.utc
+        monkeypatch.setattr(tz_module, "ZoneInfo", _always_missing)
+        assert tz_module.local_zone() is timezone.utc
 
     def test_dst_spring_forward_gap_does_not_crash(self, monkeypatch):
         """Europe/Berlin spring-forward 2026-03-29 jumps 02:00 → 03:00 local;

@@ -58,6 +58,8 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
   const [restEnergyUrl, setRestEnergyUrl] = useState(plug?.rest_energy_url || '');
   const [restEnergyPath, setRestEnergyPath] = useState(plug?.rest_energy_path || '');
   const [restEnergyMultiplier, setRestEnergyMultiplier] = useState<string>((plug?.rest_energy_multiplier ?? 1).toString());
+  const [restEnergyTotalPath, setRestEnergyTotalPath] = useState(plug?.rest_energy_total_path || '');
+  const [restEnergyTotalMultiplier, setRestEnergyTotalMultiplier] = useState<string>((plug?.rest_energy_total_multiplier ?? 1).toString());
   // HA energy sensor entities (optional)
   const [haPowerEntity, setHaPowerEntity] = useState(plug?.ha_power_entity || '');
   const [haEnergyTodayEntity, setHaEnergyTodayEntity] = useState(plug?.ha_energy_today_entity || '');
@@ -381,6 +383,8 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
       rest_energy_url: plugType === 'rest' ? (restEnergyUrl.trim() || null) : null,
       rest_energy_path: plugType === 'rest' ? (restEnergyPath.trim() || null) : null,
       rest_energy_multiplier: plugType === 'rest' ? (parseFloat(restEnergyMultiplier) || 1) : 1,
+      rest_energy_total_path: plugType === 'rest' ? (restEnergyTotalPath.trim() || null) : null,
+      rest_energy_total_multiplier: plugType === 'rest' ? (parseFloat(restEnergyTotalMultiplier) || 1) : 1,
       username: plugType === 'tasmota' ? (username.trim() || null) : null,
       password: plugType === 'tasmota' ? (password.trim() || null) : null,
       printer_id: printerId,
@@ -1312,9 +1316,35 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                     />
                   </div>
                 </div>
-
                 <p className="text-xs text-bambu-gray">
                   {t('smartPlugs.restEnergyHint')}
+                </p>
+
+                {/* Lifetime counter (#2539) — the only energy figure a Shelly has. */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.restEnergyTotalPath')}</label>
+                    <input
+                      type="text"
+                      value={restEnergyTotalPath}
+                      onChange={(e) => setRestEnergyTotalPath(e.target.value)}
+                      placeholder={t('smartPlugs.restEnergyTotalPathHint')}
+                      className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.restEnergyTotalMultiplier')}</label>
+                    <input
+                      type="text"
+                      value={restEnergyTotalMultiplier}
+                      onChange={(e) => setRestEnergyTotalMultiplier(e.target.value)}
+                      placeholder="1"
+                      className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-bambu-gray">
+                  {t('smartPlugs.restEnergyTotalHint')}
                 </p>
               </div>
 

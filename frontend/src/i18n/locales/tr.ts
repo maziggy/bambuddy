@@ -196,10 +196,16 @@ export default {
       extraLarge: 'Çok büyük kartlar',
     },
     pageView: {
+      openCamWallPage: 'Kamera duvarını sayfa olarak aç',
       cards: 'Kartlar',
       camWall: 'Kamera duvarı',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          'Bu kamera duvarı bağlantısı artık geçerli değil. Belirtecin süresi dolmuş veya belirteç iptal edilmiş olabilir.',
+        loadFailed: 'Yazıcılar yüklenemedi.',
+      },
       noPrinters: 'Gösterilecek yazıcı yok',
       noSignal: 'Sinyal yok',
       live: 'Canlı',
@@ -569,6 +575,10 @@ export default {
       notSupported: 'Kurutma desteklenmiyor',
       powerRequired: 'Kurutmayı etkinleştirmek için AMS güç adaptörünü bağlayın',
       startingDrying: 'Kurutma başlatılıyor...',
+      toastCommandSent: 'Kurutma komutu gönderildi',
+      toastStopped: 'Kurutma durduruldu',
+      toastNotStarted: 'Yazıcı komutu kabul etti ancak AMS kurutmayı başlatmadı. AMS güç adaptörünün bağlı olduğundan ve yazıcının boşta olduğundan emin olun.',
+      screenOnly: 'Bu yazıcıda AMS kurutma yalnızca yazıcının kendi ekranından kontrol edilebilir (Bambu kısıtlaması)',
       stoppingDrying: 'Kurutma durduruluyor...',
       rotateTray: 'Kurutma sırasında makarayı döndür',
       rotateUnavailableReason: 'Kullanılamaz — bu AMS\'nin bir yuvası kafaya doğru yüklenmiş durumda. Makara besleme borusu tarafından kilitlendiği için döndürülemez. Önce filamenti geri çekin.',
@@ -5347,7 +5357,12 @@ export default {
     restPowerPath: 'Güç JSON Yolu',
     restPowerMultiplier: 'Güç Çarpanı',
     restEnergyUrl: 'Enerji URL\'si',
-    restEnergyPath: 'Enerji JSON Yolu',
+    restEnergyPath: 'Enerji JSON yolu (bugün)',
+    restEnergyTotalPath: 'Enerji JSON yolu (toplam sayaç)',
+    restEnergyTotalMultiplier: 'Toplam sayaç çarpanı',
+    restEnergyTotalPathHint: 'örn. aenergy.total',
+    restEnergyTotalHint:
+      "Birçok priz — tüm Shelly'ler dahil — yalnızca hiç sıfırlanmayan bir toplam sayaç bildirir. Bu değer yukarıdaki alana değil, buraya girilmelidir: bugünün tüketimi olarak okunursa gece yarısı sıfırlanmaz, Dün ve Toplam da boş kalır. Bambuddy Bugün ve Dün değerlerini bundan hesaplar; bunun için bir iki günlük ölçüm gerekir. Shelly watt-saat bildirdiğinden çarpan olarak 0.001 kullanın.",
     restEnergyMultiplier: 'Enerji Çarpanı',
     restUrlRequired: 'REST prizleri için en az bir URL (ON veya OFF) gerekli',
     restHeadersHint: 'örn. {"Authorization": "Bearer your-token"}',
@@ -6618,10 +6633,14 @@ export default {
     saveFailed: 'Otomatik temizleme ayarları kaydedilemedi.',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: 'Kamera akışı',
+      camwall: 'Kamera duvarı',
+    },
     title: 'Kamera API Belirteçleri',
     navTitle: 'Kamera API belirteçleri',
     description:
-      'Kamera akışını Home Assistant, Frigate, kiosklar veya kararlı bir URL\'ye ihtiyaç duyan başka herhangi bir araca gömmek için uzun ömürlü belirteçler. Her belirteç yalnızca kamera akışı içindir ve herhangi bir zamanda iptal edilebilir.',
+      'Kamera akışını Home Assistant, Frigate, kiosk ekranları veya sabit bir adres gerektiren başka araçlara gömmek için uzun ömürlü belirteçler. Kapsam oluşturma sırasında seçilir; belirteç istediğiniz zaman iptal edilebilir.',
     loading: 'Yükleniyor…',
     confirmRevoke: {
       title: 'Bu belirteç iptal edilsin mi?',
@@ -6630,6 +6649,11 @@ export default {
       confirm: 'İptal Et',
     },
     create: {
+      scopeLabel: 'Kapsam',
+      hintCameraStream:
+        'Kamera akışı belirteci yalnızca kamera akışlarını ve anlık görüntüleri alabilir. Home Assistant, Frigate veya tek bir kamerayı gömen her şey için kullanın.',
+      hintCamWall:
+        'Kamera duvarı belirteci, oturum açmadan bir ekranda /camwall adresini açar. Her yazıcının adını ve durumunu, ayrıca kamera akışlarını görebilir. Dosya adlarını, adresleri veya erişim kodlarını göremez.',
       title: 'Yeni belirteç oluştur',
       nameLabel: 'Belirteç adı',
       namePlaceholder: 'örn. Home Assistant',
@@ -6639,6 +6663,9 @@ export default {
         'Maksimum ömür 365 gün. Belirteç değeri oluşturmada yalnızca bir kez gösterilir — şimdi kopyalayın.',
     },
     created: {
+      camWallUrlTitle: 'Bu ekran için kamera duvarı adresi',
+      camWallUrlHint:
+        'Bu adresi ekranda açın. Adresi okuyabilen herkes duvarı izleyebilir, bu yüzden onu bir anahtar gibi görün; ekranın erişimini kesmek için belirteci iptal edin.',
       title: 'Belirteç oluşturuldu — şimdi kopyalayın',
       warning:
         'Bu, bu belirtecin görünür olacağı tek seferdir. Bu iletişim kutusunu kapattıktan sonra onu bir daha asla görüntüleyemezsiniz.',
@@ -6646,6 +6673,7 @@ export default {
       dismiss: 'Kaydettim',
     },
     list: {
+      scope: 'Kapsam',
       myTitle: 'Belirteçlerim',
       allTitle: 'Tüm kullanıcılar (yönetici görünümü)',
       empty: 'Henüz belirteç yok.',

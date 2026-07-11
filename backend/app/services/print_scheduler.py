@@ -24,6 +24,7 @@ from backend.app.models.smart_plug import SmartPlug
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 from backend.app.services.bambu_ftp import (
+    UploadCancelled,
     cache_3mf_download,
     delete_file_async,
     get_ftp_retry_settings,
@@ -2797,6 +2798,10 @@ class PrintScheduler:
 
         progress_bridge = _UploadProgressBridge(toast_uid, item.id)
 
+        # A deadline expiry gets its own message: "check your SD card" is the
+        # wrong advice for a link that was simply too slow to finish (#2529).
+        upload_error: str | None = None
+
         try:
             if ftp_retry_enabled:
                 uploaded = await with_ftp_retry(
@@ -2822,6 +2827,13 @@ class PrintScheduler:
                     printer_model=printer.model,
                     progress_callback=progress_bridge,
                 )
+        except UploadCancelled as e:
+            uploaded = False
+            upload_error = (
+                "Upload was too slow to finish and was cancelled. The printer's connection could not sustain "
+                "the transfer — check its Wi-Fi signal, or move it closer to the access point."
+            )
+            logger.error("Queue item %s: upload deadline exceeded: %s", item.id, e)
         except Exception as e:
             uploaded = False
             logger.error("Queue item %s: FTP error: %s (type: %s)", item.id, e, type(e).__name__)
@@ -2831,7 +2843,7 @@ class PrintScheduler:
             injected_path.unlink(missing_ok=True)
 
         if not uploaded:
-            error_msg = (
+            error_msg = upload_error or (
                 "Failed to upload file to printer. Check if SD card is inserted and properly formatted (FAT32/exFAT). "
                 "See server logs for detailed diagnostics."
             )

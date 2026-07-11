@@ -342,11 +342,6 @@ export function UsersPage() {
                     </td>
                     <td className="px-6 py-4 text-sm">
                       <div className="flex flex-wrap gap-1">
-                        {user.is_admin && (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300">
-                            {t('users.admin')}
-                          </span>
-                        )}
                         {user.groups?.map(group => (
                           <span
                             key={group.id}
@@ -363,7 +358,7 @@ export function UsersPage() {
                             {group.name}
                           </span>
                         ))}
-                        {(!user.groups || user.groups.length === 0) && !user.is_admin && (
+                        {(!user.groups || user.groups.length === 0) && (
                           <span className="text-bambu-gray">{t('users.noGroups')}</span>
                         )}
                       </div>

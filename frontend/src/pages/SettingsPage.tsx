@@ -5689,11 +5689,6 @@ export function SettingsPage() {
                         <div>
                           <p className="text-white font-medium text-lg">{user.username}</p>
                           <div className="flex flex-wrap gap-1 mt-2">
-                            {user.is_admin && (
-                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300">
-                                {t('settings.admin')}
-                              </span>
-                            )}
                             {user.groups?.map(group => (
                               <span
                                 key={group.id}
@@ -5756,11 +5751,6 @@ export function SettingsPage() {
                                 {userItem.auth_source === 'ldap' && (
                                   <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300">
                                     LDAP
-                                  </span>
-                                )}
-                                {userItem.is_admin && (
-                                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300">
-                                    {t('settings.admin')}
                                   </span>
                                 )}
                                 {userItem.groups?.map(group => (

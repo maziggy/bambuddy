@@ -108,6 +108,35 @@ describe('SettingsPage', () => {
         expect(screen.getByText('API Keys')).toBeInTheDocument();
       });
     });
+
+    it('shows Administrators group without a duplicate Admin pill', async () => {
+      const adminUser = {
+        id: 1,
+        username: 'alice',
+        role: 'admin',
+        is_active: true,
+        is_admin: true,
+        auth_source: 'local',
+        groups: [{ id: 1, name: 'Administrators' }],
+        permissions: ['users:read', 'groups:read', 'settings:read'],
+        created_at: '2026-01-01T00:00:00Z',
+      };
+
+      window.history.replaceState({}, '', '/settings?tab=users');
+      server.use(
+        http.get('/api/v1/auth/status', () =>
+          HttpResponse.json({ auth_enabled: true, requires_setup: false }),
+        ),
+        http.get('/api/v1/auth/me', () => HttpResponse.json(adminUser)),
+        http.get('/api/v1/users/', () => HttpResponse.json([adminUser])),
+      );
+      setAuthToken('test-token');
+
+      render(<SettingsPage />);
+
+      await screen.findAllByText('Administrators');
+      expect(screen.queryByText('Admin')).not.toBeInTheDocument();
+    });
   });
 
   describe('general settings', () => {

@@ -875,6 +875,12 @@ function getEmptySlotKind(tray: { tray_type?: string | null; state?: number | nu
   return (tray?.state === 9 || tray?.state === 10) ? 'physical' : 'reset';
 }
 
+// How long to wait for an AMS to report a live drying cycle after the printer
+// acked the start command (#2533). Firmware moves to DryStatus 1 (Checking)
+// within a couple of seconds; 30s covers the slowest observed push cadence
+// without leaving the user waiting on a verdict.
+const DRY_START_CONFIRM_MS = 30_000;
+
 
 function CoverImage({
   url,
@@ -1843,6 +1849,10 @@ function PrinterCard({
   const [dryingDuration, setDryingDuration] = useState(4);
   const [dryingRotateTray, setDryingRotateTray] = useState(false);
   const [dryingPopoverPos, setDryingPopoverPos] = useState<{ top: number; left: number } | null>(null);
+  // Which AMS we are waiting on to actually enter a drying cycle (#2533). Held as
+  // an object rather than a bare id so restarting drying on the SAME unit produces
+  // a new identity and rearms the timeout below.
+  const [dryStartWatch, setDryStartWatch] = useState<{ amsId: number } | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [isDropUploading, setIsDropUploading] = useState(false);
   const printerActionsMenuRef = useRef<HTMLDivElement>(null);
@@ -2056,6 +2066,29 @@ function PrinterCard({
   }, [status?.ams]);
   const amsData = (status?.ams && status.ams.length > 0) ? status.ams : cachedAmsData.current;
 
+  // Confirm a drying cycle actually started (#2533). Firmware answers
+  // ams_filament_drying with result=success even when it then silently declines,
+  // and P1-family firmware never publishes dry_sf_reason — so the server-side
+  // reason guard is blind there and the card just sits unchanged. Watch the unit
+  // after the ack: leaving DryStatus 0 means the cycle is live, staying there
+  // means the printer took the command and dropped it.
+  useEffect(() => {
+    if (!dryStartWatch) return;
+    const unit = amsData.find(a => a.id === dryStartWatch.amsId);
+    if (unit && (unit.dry_time > 0 || unit.dry_status > 0)) setDryStartWatch(null);
+  }, [dryStartWatch, amsData]);
+
+  // Deps deliberately exclude amsData: status pushes arrive continuously and would
+  // otherwise rearm the timeout on every frame, so it would never elapse.
+  useEffect(() => {
+    if (!dryStartWatch) return;
+    const timer = setTimeout(() => {
+      setDryStartWatch(null);
+      showToast(t('printers.drying.toastNotStarted'), 'error');
+    }, DRY_START_CONFIRM_MS);
+    return () => clearTimeout(timer);
+  }, [dryStartWatch, showToast, t]);
+
   // Cache tray_now to prevent flickering when undefined values come in
   // Valid tray IDs: 0-253 for AMS, 254 for external spool
   // tray_now=255 means "no tray loaded" (Bambu protocol sentinel) — never active
@@ -2214,8 +2247,10 @@ function PrinterCard({
   const startDryingMutation = useMutation({
     mutationFn: ({ amsId, temp, duration, filament, rotateTray }: { amsId: number; temp: number; duration: number; filament: string; rotateTray: boolean }) =>
       api.startDrying(printer.id, amsId, temp, duration, filament, rotateTray),
-    onSuccess: () => {
+    onSuccess: (_data, { amsId }) => {
       setDryingPopoverAmsId(null);
+      setDryStartWatch({ amsId });
+      showToast(t('printers.drying.toastStarted'), 'success');
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
     },
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
@@ -2224,6 +2259,8 @@ function PrinterCard({
   const stopDryingMutation = useMutation({
     mutationFn: (amsId: number) => api.stopDrying(printer.id, amsId),
     onSuccess: () => {
+      setDryStartWatch(null);
+      showToast(t('printers.drying.toastStopped'), 'success');
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
     },
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
@@ -6462,6 +6499,7 @@ function PrinterCard({
                     }
                   }}
                   disabled={startDryingMutation.isPending}
+                  data-testid="drying-start-confirm"
                   className="w-full py-1.5 bg-bambu-green hover:bg-bambu-green/80 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
                 >
                   {startDryingMutation.isPending ? t('printers.drying.startingDrying') : t('printers.drying.start')}

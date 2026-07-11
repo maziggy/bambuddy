@@ -196,10 +196,16 @@ export default {
       extraLarge: 'Schede extra grandi',
     },
     pageView: {
+      openCamWallPage: 'Apri il muro telecamere come pagina',
       cards: 'Schede',
       camWall: 'Muro telecamere',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          'Questo link al muro telecamere non è più valido. Il token potrebbe essere scaduto o essere stato revocato.',
+        loadFailed: 'Impossibile caricare le stampanti.',
+      },
       noPrinters: 'Nessuna stampante da mostrare',
       noSignal: 'Nessun segnale',
       live: 'Live',
@@ -6624,10 +6630,14 @@ export default {
     saveFailed: 'Impossibile salvare le impostazioni di pulizia automatica.',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: 'Flusso della telecamera',
+      camwall: 'Muro telecamere',
+    },
     title: 'Token API telecamera',
     navTitle: 'Token API telecamera',
     description:
-      'Token a lunga durata per incorporare lo stream della telecamera in Home Assistant, Frigate, chioschi o qualsiasi altro strumento che richieda un URL stabile. Ogni token è limitato allo stream della telecamera e può essere revocato in qualsiasi momento.',
+      "Token di lunga durata per incorporare il flusso della telecamera in Home Assistant, Frigate, schermi in modalità chiosco o qualsiasi altro strumento che richieda un indirizzo stabile. L'ambito si sceglie alla creazione; un token può essere revocato in qualsiasi momento.",
     loading: 'Caricamento…',
     confirmRevoke: {
       title: 'Revocare questo token?',
@@ -6636,6 +6646,11 @@ export default {
       confirm: 'Revoca',
     },
     create: {
+      scopeLabel: 'Ambito',
+      hintCameraStream:
+        'Un token del flusso della telecamera può recuperare soltanto flussi e istantanee. Usalo per Home Assistant, Frigate o qualsiasi cosa incorpori una singola telecamera.',
+      hintCamWall:
+        'Un token Muro telecamere apre /camwall su uno schermo senza login. Vede nome e stato di ogni stampante e i relativi flussi della telecamera. Non vede nomi di file, indirizzi o codici di accesso.',
       title: 'Crea nuovo token',
       nameLabel: 'Nome token',
       namePlaceholder: 'es. Home Assistant',
@@ -6645,6 +6660,9 @@ export default {
         'Durata massima 365 giorni. Il valore del token viene mostrato solo alla creazione — copialo ora.',
     },
     created: {
+      camWallUrlTitle: 'Indirizzo del muro telecamere per questo schermo',
+      camWallUrlHint:
+        'Apri questo indirizzo sullo schermo. Chiunque possa leggerlo può guardare il muro, quindi trattalo come una chiave: revoca il token per escludere lo schermo.',
       title: 'Token creato – copialo ora',
       warning:
         'Questa è l\'unica volta in cui questo token sarà visibile. Dopo la chiusura di questa finestra non potrai più visualizzarlo.',
@@ -6652,6 +6670,7 @@ export default {
       dismiss: 'L\'ho salvato',
     },
     list: {
+      scope: 'Ambito',
       myTitle: 'I miei token',
       allTitle: 'Tutti gli utenti (vista admin)',
       empty: 'Nessun token ancora.',

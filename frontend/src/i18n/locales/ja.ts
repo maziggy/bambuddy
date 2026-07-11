@@ -195,10 +195,16 @@ export default {
       extraLarge: '特大',
     },
     pageView: {
+      openCamWallPage: 'カメラウォールをページとして開く',
       cards: 'カード',
       camWall: 'カメラウォール',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          'このカメラウォールのリンクは無効です。トークンの有効期限が切れたか、取り消された可能性があります。',
+        loadFailed: 'プリンターを読み込めませんでした。',
+      },
       noPrinters: '表示するプリンターがありません',
       noSignal: '信号なし',
       live: 'ライブ',
@@ -6636,10 +6642,14 @@ export default {
     saveFailed: '自動削除設定を保存できませんでした。',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: 'カメラストリーム',
+      camwall: 'カメラウォール',
+    },
     title: 'カメラAPIトークン',
     navTitle: 'カメラAPIトークン',
     description:
-      'Home Assistant、Frigate、キオスク、その他安定したURLが必要なツールにカメラストリームを埋め込むための長期トークン。各トークンはカメラストリーム専用で、いつでも取り消し可能。',
+      'Home Assistant、Frigate、キオスク画面など、安定した URL を必要とするツールにカメラ映像を埋め込むための長期トークンです。スコープは作成時に選択し、トークンはいつでも取り消せます。',
     loading: '読み込み中…',
     confirmRevoke: {
       title: 'このトークンを取り消しますか？',
@@ -6648,6 +6658,11 @@ export default {
       confirm: '取り消し',
     },
     create: {
+      scopeLabel: 'スコープ',
+      hintCameraStream:
+        'カメラストリームトークンで取得できるのは、カメラの映像とスナップショットだけです。Home Assistant や Frigate など、単一のカメラを埋め込む用途に使用してください。',
+      hintCamWall:
+        'カメラウォールトークンは、ログインなしの画面で /camwall を開きます。各プリンターの名前と状態、そしてカメラ映像を見ることができます。ファイル名、アドレス、アクセスコードは見えません。',
       title: '新しいトークンを作成',
       nameLabel: 'トークン名',
       namePlaceholder: '例：Home Assistant',
@@ -6657,6 +6672,9 @@ export default {
         '最大有効期間は365日。トークン値は作成時に一度だけ表示されます — 今すぐコピーしてください。',
     },
     created: {
+      camWallUrlTitle: 'この画面用のカメラウォール URL',
+      camWallUrlHint:
+        'この URL を画面で開いてください。URL を読める人は誰でもウォールを見られるため、鍵と同じように扱ってください。トークンを取り消すと、その画面は遮断されます。',
       title: 'トークンを作成しました – 今すぐコピー',
       warning:
         'このトークンが表示されるのは今回限りです。このダイアログを閉じると二度と表示できません。',
@@ -6664,6 +6682,7 @@ export default {
       dismiss: '保存しました',
     },
     list: {
+      scope: 'スコープ',
       myTitle: 'マイトークン',
       allTitle: '全ユーザー（管理者ビュー）',
       empty: 'トークンはまだありません。',

@@ -196,10 +196,16 @@ export default {
       extraLarge: '超大卡片',
     },
     pageView: {
+      openCamWallPage: '在獨立頁面中開啟攝影機牆',
       cards: '卡片',
       camWall: '攝影機牆',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          '此攝影機牆連結已失效。權杖可能已過期或遭撤銷。',
+        loadFailed: '無法載入印表機。',
+      },
       noPrinters: '沒有可顯示的印表機',
       noSignal: '無訊號',
       live: '直播',
@@ -6623,10 +6629,14 @@ export default {
     saveFailed: '無法儲存自動清除設定。',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: '攝影機串流',
+      camwall: '攝影機牆',
+    },
     title: '攝影機 API 權杖',
     navTitle: '攝影機 API 權杖',
     description:
-      '長期權杖，用於將攝影機串流嵌入 Home Assistant、Frigate、資訊站或其他需要穩定 URL 的工具。每個權杖僅限攝影機串流，可隨時撤銷。',
+      '長期權杖，用於將攝影機串流嵌入 Home Assistant、Frigate、自助展示螢幕或其他需要穩定網址的工具。權限範圍在建立時選擇，權杖可隨時撤銷。',
     loading: '載入中…',
     confirmRevoke: {
       title: '撤銷此權杖？',
@@ -6635,6 +6645,11 @@ export default {
       confirm: '撤銷',
     },
     create: {
+      scopeLabel: '權限範圍',
+      hintCameraStream:
+        '攝影機串流權杖只能取得攝影機串流與快照。適用於 Home Assistant、Frigate 或任何嵌入單一攝影機的情境。',
+      hintCamWall:
+        '攝影機牆權杖可在無須登入的螢幕上開啟 /camwall，能看到每台印表機的名稱與狀態以及攝影機串流，但看不到檔案名稱、位址或存取碼。',
       title: '建立新權杖',
       nameLabel: '權杖名稱',
       namePlaceholder: '例如 Home Assistant',
@@ -6644,6 +6659,9 @@ export default {
         '最大有效期 365 天。權杖值僅在建立時顯示一次 — 請立即複製。',
     },
     created: {
+      camWallUrlTitle: '此螢幕的攝影機牆網址',
+      camWallUrlHint:
+        '在螢幕上開啟此網址。任何能看到該網址的人都能觀看攝影機牆，請像對待鑰匙一樣對待它——撤銷權杖即可切斷該螢幕的存取。',
       title: '權杖已建立 — 立即複製',
       warning:
         '這是此權杖唯一一次可見。關閉此對話框後您將無法再次查看。',
@@ -6651,6 +6669,7 @@ export default {
       dismiss: '我已儲存',
     },
     list: {
+      scope: '權限範圍',
       myTitle: '我的權杖',
       allTitle: '所有使用者（管理員視圖）',
       empty: '尚無權杖。',

@@ -196,10 +196,16 @@ export default {
       extraLarge: 'Extra large cards',
     },
     pageView: {
+      openCamWallPage: 'Open cam wall as page',
       cards: 'Cards',
       camWall: 'Cam wall',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          'This Cam Wall link is no longer valid. The token may have expired or been revoked.',
+        loadFailed: 'Could not load the printers.',
+      },
       noPrinters: 'No printers to show',
       noSignal: 'No signal',
       live: 'Live',
@@ -6681,10 +6687,14 @@ export default {
     saveFailed: 'Could not save auto-purge settings.',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: 'Camera stream',
+      camwall: 'Cam Wall',
+    },
     title: 'Camera API Tokens',
     navTitle: 'Camera API tokens',
     description:
-      'Long-lived tokens for embedding the camera stream into Home Assistant, Frigate, kiosks, or any other tool that needs a stable URL. Each token is camera-stream-only and can be revoked at any time.',
+      'Long-lived tokens for embedding the camera stream into Home Assistant, Frigate, kiosks, or any other tool that needs a stable URL. Pick the scope when you create one; a token can be revoked at any time.',
     loading: 'Loading…',
     confirmRevoke: {
       title: 'Revoke this token?',
@@ -6693,6 +6703,11 @@ export default {
       confirm: 'Revoke',
     },
     create: {
+      scopeLabel: 'Scope',
+      hintCameraStream:
+        'A camera-stream token can only fetch camera streams and snapshots. Use it for Home Assistant, Frigate, or anything embedding a single camera.',
+      hintCamWall:
+        "A Cam Wall token opens /camwall on a screen with no login. It can see every printer's name and state, and their camera streams. It cannot see filenames, addresses or access codes.",
       title: 'Create new token',
       nameLabel: 'Token name',
       namePlaceholder: 'e.g. Home Assistant',
@@ -6702,6 +6717,9 @@ export default {
         'Maximum lifetime is 365 days. The token value is shown only once on creation — copy it now.',
     },
     created: {
+      camWallUrlTitle: 'Cam Wall URL for this display',
+      camWallUrlHint:
+        'Open this on the screen. Anyone who can read the URL can watch the wall, so treat it like a key — revoke the token to cut the display off.',
       title: 'Token created — copy it now',
       warning:
         'This is the only time this token will be visible. After you close this dialog you can never view it again.',
@@ -6709,6 +6727,7 @@ export default {
       dismiss: "I've saved it",
     },
     list: {
+      scope: 'Scope',
       myTitle: 'My tokens',
       allTitle: 'All users (admin view)',
       empty: 'No tokens yet.',

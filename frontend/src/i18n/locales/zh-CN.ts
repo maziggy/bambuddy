@@ -196,10 +196,16 @@ export default {
       extraLarge: '超大卡片',
     },
     pageView: {
+      openCamWallPage: '在独立页面中打开摄像头墙',
       cards: '卡片',
       camWall: '摄像头墙',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          '此摄像头墙链接已失效。令牌可能已过期或被撤销。',
+        loadFailed: '无法加载打印机。',
+      },
       noPrinters: '没有可显示的打印机',
       noSignal: '无信号',
       live: '直播',
@@ -6623,10 +6629,14 @@ export default {
     saveFailed: '无法保存自动清除设置。',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: '摄像头视频流',
+      camwall: '摄像头墙',
+    },
     title: '摄像头 API 令牌',
     navTitle: '摄像头 API 令牌',
     description:
-      '长期令牌，用于将摄像头流嵌入 Home Assistant、Frigate、信息亭或其他需要稳定 URL 的工具。每个令牌仅限摄像头流，可随时撤销。',
+      '长期令牌，用于将摄像头视频流嵌入 Home Assistant、Frigate、自助展示屏或其他需要稳定网址的工具。权限范围在创建时选择，令牌可随时撤销。',
     loading: '加载中…',
     confirmRevoke: {
       title: '撤销此令牌？',
@@ -6635,6 +6645,11 @@ export default {
       confirm: '撤销',
     },
     create: {
+      scopeLabel: '权限范围',
+      hintCameraStream:
+        '摄像头视频流令牌只能获取摄像头视频流和快照。适用于 Home Assistant、Frigate 或任何嵌入单个摄像头的场景。',
+      hintCamWall:
+        '摄像头墙令牌可在无需登录的屏幕上打开 /camwall，能看到每台打印机的名称和状态以及摄像头视频流，但看不到文件名、地址或访问码。',
       title: '创建新令牌',
       nameLabel: '令牌名称',
       namePlaceholder: '例如 Home Assistant',
@@ -6644,6 +6659,9 @@ export default {
         '最大有效期 365 天。令牌值仅在创建时显示一次 — 请立即复制。',
     },
     created: {
+      camWallUrlTitle: '此屏幕的摄像头墙网址',
+      camWallUrlHint:
+        '在屏幕上打开此网址。任何能看到该网址的人都能观看摄像头墙，请像对待钥匙一样对待它——撤销令牌即可切断该屏幕的访问。',
       title: '令牌已创建 — 立即复制',
       warning:
         '这是此令牌唯一一次可见。关闭此对话框后您将无法再次查看。',
@@ -6651,6 +6669,7 @@ export default {
       dismiss: '我已保存',
     },
     list: {
+      scope: '权限范围',
       myTitle: '我的令牌',
       allTitle: '所有用户（管理员视图）',
       empty: '暂无令牌。',

@@ -84,9 +84,11 @@ import {
   LineChart as LineChartIcon,
   LayoutGrid,
   MonitorPlay,
+  ExternalLink,
 } from 'lucide-react';
 
-import { useNavigate } from 'react-router-dom';
+// Aliased: lucide-react already exports a `Link` icon into this module.
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withStreamToken, ApiError } from '../api/client';
 import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
 import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
@@ -8461,6 +8463,20 @@ export function PrintersPage() {
           {inMenu && <span>{t('printers.pageView.camWall')}</span>}
         </button>
       </div>
+
+      {/* Cam Wall on its own URL (#2531) — the linkable/bookmarkable form of the
+          view, and the page a kiosk token points at. Only offered once the wall
+          is the active view, so it doesn't compete with the toggle above. */}
+      {pageView === 'camwall' && hasPermission('camera:view') && (
+        <RouterLink
+          to="/camwall"
+          className={`flex h-8 items-center gap-1 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-2 text-xs font-medium text-white transition-colors hover:bg-bambu-dark-tertiary ${inMenu ? 'w-full justify-center' : ''}`}
+          title={t('printers.pageView.openCamWallPage')}
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+          {inMenu && <span>{t('printers.pageView.openCamWallPage')}</span>}
+        </RouterLink>
+      )}
 
       {/* Card size selector */}
       <div className={`flex h-8 items-center bg-bambu-dark rounded-lg border border-bambu-dark-tertiary ${pageView === 'camwall' ? 'opacity-40 pointer-events-none' : ''} ${inMenu ? 'w-full' : ''}`}>

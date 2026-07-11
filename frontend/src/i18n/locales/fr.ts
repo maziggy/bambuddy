@@ -196,10 +196,16 @@ export default {
       extraLarge: 'Très grandes cartes',
     },
     pageView: {
+      openCamWallPage: 'Ouvrir le mur de caméras en pleine page',
       cards: 'Cartes',
       camWall: 'Mur de caméras',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          "Ce lien du mur de caméras n'est plus valide. Le jeton a peut-être expiré ou été révoqué.",
+        loadFailed: 'Impossible de charger les imprimantes.',
+      },
       noPrinters: 'Aucune imprimante à afficher',
       noSignal: 'Aucun signal',
       live: 'En direct',
@@ -6625,10 +6631,14 @@ export default {
     saveFailed: 'Impossible d\'enregistrer les paramètres de purge automatique.',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: 'Flux de caméra',
+      camwall: 'Mur de caméras',
+    },
     title: 'Jetons API caméra',
     navTitle: 'Jetons API caméra',
     description:
-      'Jetons longue durée pour intégrer le flux caméra dans Home Assistant, Frigate, kiosques ou tout autre outil nécessitant une URL stable. Chaque jeton est limité au flux caméra et peut être révoqué à tout moment.',
+      'Jetons de longue durée pour intégrer le flux de caméra dans Home Assistant, Frigate, des écrans en mode kiosque ou tout autre outil nécessitant une adresse stable. La portée se choisit à la création ; un jeton peut être révoqué à tout moment.',
     loading: 'Chargement…',
     confirmRevoke: {
       title: 'Révoquer ce jeton ?',
@@ -6637,6 +6647,11 @@ export default {
       confirm: 'Révoquer',
     },
     create: {
+      scopeLabel: 'Portée',
+      hintCameraStream:
+        'Un jeton de flux de caméra ne peut récupérer que des flux et des instantanés. À utiliser pour Home Assistant, Frigate ou tout ce qui intègre une seule caméra.',
+      hintCamWall:
+        "Un jeton Mur de caméras ouvre /camwall sur un écran sans connexion. Il voit le nom et l'état de chaque imprimante, ainsi que leurs flux de caméra. Il ne voit ni les noms de fichiers, ni les adresses, ni les codes d'accès.",
       title: 'Créer un nouveau jeton',
       nameLabel: 'Nom du jeton',
       namePlaceholder: 'par ex. Home Assistant',
@@ -6646,6 +6661,9 @@ export default {
         'Durée de vie maximale 365 jours. La valeur du jeton n\'est affichée qu\'une seule fois — copiez-la maintenant.',
     },
     created: {
+      camWallUrlTitle: 'Adresse du mur de caméras pour cet écran',
+      camWallUrlHint:
+        "Ouvrez cette adresse sur l'écran. Quiconque peut lire l'adresse peut regarder le mur : traitez-la comme une clé. Révoquez le jeton pour couper l'écran.",
       title: 'Jeton créé – copiez-le maintenant',
       warning:
         'C\'est la seule fois où ce jeton sera visible. Après la fermeture de ce dialogue, vous ne pourrez plus jamais le voir.',
@@ -6653,6 +6671,7 @@ export default {
       dismiss: 'Je l\'ai enregistré',
     },
     list: {
+      scope: 'Portée',
       myTitle: 'Mes jetons',
       allTitle: 'Tous les utilisateurs (vue admin)',
       empty: 'Aucun jeton pour le moment.',

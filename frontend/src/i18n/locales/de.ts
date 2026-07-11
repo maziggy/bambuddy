@@ -196,10 +196,16 @@ export default {
       extraLarge: 'Extra große Karten',
     },
     pageView: {
+      openCamWallPage: 'Kamera-Wand als Seite öffnen',
       cards: 'Karten',
       camWall: 'Kamera-Wand',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          'Dieser Kamera-Wand-Link ist nicht mehr gültig. Das Token ist möglicherweise abgelaufen oder wurde widerrufen.',
+        loadFailed: 'Die Drucker konnten nicht geladen werden.',
+      },
       noPrinters: 'Keine Drucker anzuzeigen',
       noSignal: 'Kein Signal',
       live: 'Live',
@@ -6637,10 +6643,14 @@ export default {
     saveFailed: 'Einstellungen konnten nicht gespeichert werden.',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: 'Kamera-Stream',
+      camwall: 'Kamera-Wand',
+    },
     title: 'Kamera-API-Tokens',
     navTitle: 'Kamera-API-Tokens',
     description:
-      'Langlebige Tokens zum Einbetten des Kamerastreams in Home Assistant, Frigate, Kioske oder andere Tools, die eine stabile URL benötigen. Jeder Token ist nur für den Kamerastream und kann jederzeit widerrufen werden.',
+      'Langlebige Tokens, um den Kamera-Stream in Home Assistant, Frigate, Kiosk-Bildschirme oder jedes andere Werkzeug einzubinden, das eine stabile Adresse braucht. Der Geltungsbereich wird beim Erstellen gewählt; ein Token lässt sich jederzeit widerrufen.',
     loading: 'Laden…',
     confirmRevoke: {
       title: 'Dieses Token widerrufen?',
@@ -6649,6 +6659,11 @@ export default {
       confirm: 'Widerrufen',
     },
     create: {
+      scopeLabel: 'Geltungsbereich',
+      hintCameraStream:
+        'Ein Kamera-Stream-Token kann ausschließlich Kamera-Streams und Schnappschüsse abrufen. Geeignet für Home Assistant, Frigate oder alles, was eine einzelne Kamera einbettet.',
+      hintCamWall:
+        'Ein Kamera-Wand-Token öffnet /camwall auf einem Bildschirm ohne Anmeldung. Es sieht Name und Status jedes Druckers sowie deren Kamera-Streams. Dateinamen, Adressen und Zugangscodes sieht es nicht.',
       title: 'Neues Token erstellen',
       nameLabel: 'Token-Name',
       namePlaceholder: 'z. B. Home Assistant',
@@ -6658,6 +6673,9 @@ export default {
         'Maximale Lebensdauer 365 Tage. Der Token-Wert wird nur einmal bei der Erstellung angezeigt – jetzt kopieren.',
     },
     created: {
+      camWallUrlTitle: 'Kamera-Wand-Adresse für diesen Bildschirm',
+      camWallUrlHint:
+        'Diese Adresse auf dem Bildschirm öffnen. Wer die Adresse lesen kann, kann die Kamera-Wand sehen — behandeln Sie sie wie einen Schlüssel. Widerrufen Sie das Token, um den Bildschirm abzuschalten.',
       title: 'Token erstellt – jetzt kopieren',
       warning:
         'Dies ist das einzige Mal, dass dieser Token sichtbar ist. Nach dem Schließen dieses Dialogs können Sie ihn nie wieder anzeigen.',
@@ -6665,6 +6683,7 @@ export default {
       dismiss: 'Ich habe es gespeichert',
     },
     list: {
+      scope: 'Geltungsbereich',
       myTitle: 'Meine Tokens',
       allTitle: 'Alle Benutzer (Admin-Ansicht)',
       empty: 'Noch keine Tokens.',

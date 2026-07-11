@@ -196,10 +196,16 @@ export default {
       extraLarge: 'Cartões extra grandes',
     },
     pageView: {
+      openCamWallPage: 'Abrir o mural de câmeras como página',
       cards: 'Cartões',
       camWall: 'Mural de câmeras',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          'Este link do mural de câmeras não é mais válido. O token pode ter expirado ou sido revogado.',
+        loadFailed: 'Não foi possível carregar as impressoras.',
+      },
       noPrinters: 'Nenhuma impressora para exibir',
       noSignal: 'Sem sinal',
       live: 'Ao vivo',
@@ -6624,10 +6630,14 @@ export default {
     saveFailed: 'Não foi possível salvar as configurações de limpeza automática.',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: 'Transmissão da câmera',
+      camwall: 'Mural de câmeras',
+    },
     title: 'Tokens da API de câmera',
     navTitle: 'Tokens da API de câmera',
     description:
-      'Tokens de longa duração para incorporar o stream da câmera no Home Assistant, Frigate, quiosques ou qualquer outra ferramenta que precise de URL estável. Cada token é apenas para stream de câmera e pode ser revogado a qualquer momento.',
+      'Tokens de longa duração para incorporar a transmissão da câmera no Home Assistant, no Frigate, em telas em modo quiosque ou em qualquer outra ferramenta que precise de um endereço estável. O escopo é escolhido na criação; um token pode ser revogado a qualquer momento.',
     loading: 'Carregando…',
     confirmRevoke: {
       title: 'Revogar este token?',
@@ -6636,6 +6646,11 @@ export default {
       confirm: 'Revogar',
     },
     create: {
+      scopeLabel: 'Escopo',
+      hintCameraStream:
+        'Um token de transmissão da câmera só consegue buscar transmissões e instantâneos. Use-o no Home Assistant, no Frigate ou em qualquer coisa que incorpore uma única câmera.',
+      hintCamWall:
+        'Um token do mural de câmeras abre /camwall em uma tela sem login. Ele vê o nome e o estado de cada impressora e as transmissões das câmeras. Não vê nomes de arquivo, endereços nem códigos de acesso.',
       title: 'Criar novo token',
       nameLabel: 'Nome do token',
       namePlaceholder: 'ex. Home Assistant',
@@ -6645,6 +6660,9 @@ export default {
         'Tempo de vida máximo 365 dias. O valor do token é exibido apenas na criação — copie agora.',
     },
     created: {
+      camWallUrlTitle: 'Endereço do mural de câmeras para esta tela',
+      camWallUrlHint:
+        'Abra este endereço na tela. Qualquer pessoa que consiga lê-lo pode assistir ao painel, então trate-o como uma chave: revogue o token para cortar o acesso da tela.',
       title: 'Token criado – copie agora',
       warning:
         'Esta é a única vez que este token será visível. Após fechar este diálogo, você nunca poderá vê-lo novamente.',
@@ -6652,6 +6670,7 @@ export default {
       dismiss: 'Eu salvei',
     },
     list: {
+      scope: 'Escopo',
       myTitle: 'Meus tokens',
       allTitle: 'Todos os usuários (visão admin)',
       empty: 'Nenhum token ainda.',

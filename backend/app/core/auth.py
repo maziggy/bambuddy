@@ -700,9 +700,27 @@ async def verify_camera_stream_token(token: str) -> bool:
 
         # Long-lived path. Imported lazily so the auth module stays importable
         # at startup before the long_lived_tokens model is registered.
+        from backend.app.services.long_lived_tokens import STREAM_SCOPES, verify_token as verify_long_lived
+
+        record = await verify_long_lived(db, token, scope=STREAM_SCOPES)
+        return record is not None
+
+
+async def verify_camwall_token(token: str) -> bool:
+    """Verify a Cam Wall token (#2531). Reusable — does not consume it.
+
+    Deliberately narrower than :func:`verify_camera_stream_token`: only the
+    long-lived ``camwall`` scope passes. The 60-minute ephemeral token belongs
+    to a logged-in browser, which already reaches the wall's metadata through
+    the ordinary printers API and has no need of this endpoint; and a
+    ``camera_stream`` token was handed out for video alone, so it must not
+    acquire the ability to enumerate printers by name just because a new
+    feature shipped.
+    """
+    async with async_session() as db:
         from backend.app.services.long_lived_tokens import verify_token as verify_long_lived
 
-        record = await verify_long_lived(db, token, scope="camera_stream")
+        record = await verify_long_lived(db, token, scope="camwall")
         return record is not None
 
 
@@ -1671,6 +1689,29 @@ def require_camera_stream_token_if_auth_enabled():
 
 
 RequireCameraStreamTokenIfAuthEnabled = Depends(require_camera_stream_token_if_auth_enabled())
+
+
+def require_camwall_token_if_auth_enabled():
+    """Dependency that validates a Cam Wall token query param when auth is enabled.
+
+    Used by the read-only Cam Wall feed (#2531), which a kiosk browser loads
+    with the token in the URL because it has no login session to carry a JWT.
+    """
+
+    async def checker(token: str | None = None) -> None:
+        async with async_session() as db:
+            if not await is_auth_enabled(db):
+                return  # Auth disabled, allow access
+        if not token or not await verify_camwall_token(token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Valid Cam Wall token required. Create one under Settings > API Keys with the 'Cam Wall' scope.",
+            )
+
+    return checker
+
+
+RequireCamWallTokenIfAuthEnabled = Depends(require_camwall_token_if_auth_enabled())
 
 
 def require_ownership_permission(

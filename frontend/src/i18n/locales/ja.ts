@@ -571,6 +571,7 @@ export default {
       toastCommandSent: '乾燥コマンドを送信しました',
       toastStopped: '乾燥を停止しました',
       toastNotStarted: 'プリンターはコマンドを受け付けましたが、AMS は乾燥を開始しませんでした。AMS の電源アダプターが接続されているか、プリンターがアイドル状態かを確認してください。',
+      screenOnly: 'このプリンターでは、AMS の乾燥はプリンター本体の画面からのみ操作できます (Bambu の仕様上の制限)',
       stoppingDrying: '乾燥を停止しています...',
       rotateTray: '乾燥中にスプールを回転',
       rotateUnavailableReason: '利用不可 — このAMSのスロットがツールヘッドにロードされています。スプールが供給チューブで固定されているため回転できません。先にフィラメントを引き戻してください。',

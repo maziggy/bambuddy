@@ -572,6 +572,7 @@ export default {
       toastCommandSent: 'Kurutma komutu gönderildi',
       toastStopped: 'Kurutma durduruldu',
       toastNotStarted: 'Yazıcı komutu kabul etti ancak AMS kurutmayı başlatmadı. AMS güç adaptörünün bağlı olduğundan ve yazıcının boşta olduğundan emin olun.',
+      screenOnly: 'Bu yazıcıda AMS kurutma yalnızca yazıcının kendi ekranından kontrol edilebilir (Bambu kısıtlaması)',
       stoppingDrying: 'Kurutma durduruluyor...',
       rotateTray: 'Kurutma sırasında makarayı döndür',
       rotateUnavailableReason: 'Kullanılamaz — bu AMS\'nin bir yuvası kafaya doğru yüklenmiş durumda. Makara besleme borusu tarafından kilitlendiği için döndürülemez. Önce filamenti geri çekin.',

@@ -4549,10 +4549,12 @@ function PrinterCard({
                                       />
                                     </div>
                                   )}
-                                  {/* Drying button — only for AMS 2 Pro (n3f) and AMS-HT (n3s) */}
-                                  {status.supports_drying && (ams.module_type === 'n3f' || ams.module_type === 'n3s') && hasPermission('printers:control') && (
+                                  {/* Drying button — only for AMS 2 Pro (n3f) and AMS-HT (n3s).
+                                      Screen-only models (P1 series) keep the control but can't
+                                      be commanded: it stays disabled and says why (#2533). */}
+                                  {(status.supports_drying || status.drying_screen_only) && (ams.module_type === 'n3f' || ams.module_type === 'n3s') && hasPermission('printers:control') && (
                                     <button
-                                      disabled={!!(ams.dry_sf_reason?.length && ams.dry_time === 0)}
+                                      disabled={status.drying_screen_only || !!(ams.dry_sf_reason?.length && ams.dry_time === 0)}
                                       onClick={(e) => {
                                         if (ams.dry_time > 0) {
                                           stopDryingMutation.mutate(ams.id);
@@ -4576,11 +4578,11 @@ function PrinterCard({
                                       className={`ml-1 flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-colors ${
                                         ams.dry_time > 0
                                           ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400'
-                                          : ams.dry_sf_reason?.length
+                                          : status.drying_screen_only || ams.dry_sf_reason?.length
                                             ? 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
                                             : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark/80'
                                       }`}
-                                      title={ams.dry_time > 0 ? t('printers.drying.stop') : ams.dry_sf_reason?.length ? t('printers.drying.powerRequired') : t('printers.drying.start')}
+                                      title={status.drying_screen_only ? t('printers.drying.screenOnly') : ams.dry_time > 0 ? t('printers.drying.stop') : ams.dry_sf_reason?.length ? t('printers.drying.powerRequired') : t('printers.drying.start')}
                                     >
                                       <Flame className="w-3 h-3" />
                                     </button>
@@ -4605,14 +4607,18 @@ function PrinterCard({
                                       : `${ams.dry_time}m`
                                   })}
                                 </span>
-                                <button
-                                  onClick={() => stopDryingMutation.mutate(ams.id)}
-                                  disabled={stopDryingMutation.isPending}
-                                  className="ml-auto text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 transition-colors disabled:opacity-50"
-                                  title={t('printers.drying.stop')}
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
+                                {/* A cycle on a screen-only model was started at the printer
+                                    and can only be stopped there (#2533). */}
+                                {!status.drying_screen_only && (
+                                  <button
+                                    onClick={() => stopDryingMutation.mutate(ams.id)}
+                                    disabled={stopDryingMutation.isPending}
+                                    className="ml-auto text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 transition-colors disabled:opacity-50"
+                                    title={t('printers.drying.stop')}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                )}
                               </div>
                             )}
                             {/* Slots grid: 4 columns - always render 4 slots */}
@@ -5036,9 +5042,10 @@ function PrinterCard({
                                 )}
                               </div>
                               {/* Drying button for HT AMS */}
-                              {status.supports_drying && (ams.module_type === 'n3f' || ams.module_type === 'n3s') && hasPermission('printers:control') && (
+                              {(status.supports_drying || status.drying_screen_only) && (ams.module_type === 'n3f' || ams.module_type === 'n3s') && hasPermission('printers:control') && (
                                 <div className="relative ml-auto">
                                   <button
+                                    disabled={status.drying_screen_only}
                                     onClick={(e) => {
                                       if (ams.dry_time > 0) {
                                         stopDryingMutation.mutate(ams.id);
@@ -5062,9 +5069,11 @@ function PrinterCard({
                                     className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-colors ${
                                       ams.dry_time > 0
                                         ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400'
-                                        : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark/80'
+                                        : status.drying_screen_only
+                                          ? 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
+                                          : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark/80'
                                     }`}
-                                    title={ams.dry_time > 0 ? t('printers.drying.stop') : t('printers.drying.start')}
+                                    title={status.drying_screen_only ? t('printers.drying.screenOnly') : ams.dry_time > 0 ? t('printers.drying.stop') : t('printers.drying.start')}
                                   >
                                     <Flame className="w-3 h-3" />
                                   </button>
@@ -5085,14 +5094,16 @@ function PrinterCard({
                                     ? `${Math.floor(ams.dry_time / 60)}h ${ams.dry_time % 60}m`
                                     : `${ams.dry_time}m`}
                                 </span>
-                                <button
-                                  onClick={() => stopDryingMutation.mutate(ams.id)}
-                                  disabled={stopDryingMutation.isPending}
-                                  className="ml-auto text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 transition-colors disabled:opacity-50 shrink-0"
-                                  title={t('printers.drying.stop')}
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
+                                {!status.drying_screen_only && (
+                                  <button
+                                    onClick={() => stopDryingMutation.mutate(ams.id)}
+                                    disabled={stopDryingMutation.isPending}
+                                    className="ml-auto text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 transition-colors disabled:opacity-50 shrink-0"
+                                    title={t('printers.drying.stop')}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                )}
                               </div>
                             )}
                             {/* Row 2: Slot (left) + Stats (right stacked) */}

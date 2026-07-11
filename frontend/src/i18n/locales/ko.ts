@@ -535,6 +535,7 @@ export default {
       toastCommandSent: '건조 명령을 전송했습니다',
       toastStopped: '건조를 중지했습니다',
       toastNotStarted: '프린터가 명령을 수락했지만 AMS가 건조를 시작하지 않았습니다. AMS 전원 어댑터가 연결되어 있는지, 프린터가 대기 상태인지 확인하십시오.',
+      screenOnly: '이 프린터에서는 AMS 건조를 프린터 자체 화면에서만 제어할 수 있습니다 (Bambu 제한 사항)',
       stoppingDrying: '건조 정지 중...',
       rotateTray: '건조 중 스풀 회전',
       rotateUnavailableReason: '사용할 수 없음 — 이 AMS의 슬롯이 툴헤드로 로드되어 있습니다. 스풀이 공급 튜브에 의해 고정되어 회전할 수 없습니다. 먼저 필라멘트를 뺀 후 다시 시도하십시오.'

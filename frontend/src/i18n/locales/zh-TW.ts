@@ -572,6 +572,7 @@ export default {
       toastCommandSent: '已傳送乾燥命令',
       toastStopped: '已停止乾燥',
       toastNotStarted: '印表機已接受命令，但 AMS 未開始乾燥。請檢查 AMS 電源變壓器是否已連接，以及印表機是否處於閒置狀態。',
+      screenOnly: '此印表機的 AMS 乾燥只能在印表機本身的螢幕上操作（Bambu 的限制）',
       stoppingDrying: '正在停止乾燥...',
       rotateTray: '乾燥時旋轉料盤',
       rotateUnavailableReason: '無法使用 — 此 AMS 中有插槽已裝入列印頭。料盤被進料管固定，無法旋轉。請先退回耗材。',

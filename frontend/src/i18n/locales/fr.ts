@@ -572,6 +572,7 @@ export default {
       toastCommandSent: 'Commande de séchage envoyée',
       toastStopped: 'Séchage arrêté',
       toastNotStarted: 'L\'imprimante a accepté la commande, mais l\'AMS n\'a pas démarré le séchage. Vérifiez que l\'adaptateur secteur de l\'AMS est branché et que l\'imprimante est inactive.',
+      screenOnly: 'Sur cette imprimante, le séchage de l\'AMS ne peut être commandé que depuis l\'écran de l\'imprimante (limitation de Bambu)',
       stoppingDrying: 'Arrêt du séchage...',
       rotateTray: 'Tourner la bobine pendant le séchage',
       rotateUnavailableReason: 'Indisponible — un emplacement de cet AMS est chargé vers la tête d\'impression. La bobine est bloquée par le tube d\'alimentation et ne peut pas tourner. Rétractez d\'abord le filament.',

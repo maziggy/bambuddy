@@ -526,6 +526,8 @@ export interface PrinterStatus {
   awaiting_plate_clear: boolean;
   // AMS drying support
   supports_drying: boolean;
+  // The AMS can dry, but only from the printer's own screen (P1 series, #2533).
+  drying_screen_only?: boolean;
   // Active chamber heater (responds to M141). True only for H2C/H2D/H2DPro/H2S/X2D.
   supports_chamber_heater?: boolean;
 }

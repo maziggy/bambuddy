@@ -572,6 +572,7 @@ export default {
       toastCommandSent: 'Comando de secado enviado',
       toastStopped: 'Secado detenido',
       toastNotStarted: 'La impresora aceptó el comando, pero el AMS no inició el secado. Comprueba que el adaptador de corriente del AMS esté conectado y que la impresora esté inactiva.',
+      screenOnly: 'En esta impresora, el secado del AMS solo se puede controlar desde la pantalla de la propia impresora (limitación de Bambu)',
       stoppingDrying: 'Deteniendo el secado...',
       rotateTray: 'Girar la bobina durante el secado',
       rotateUnavailableReason: 'No disponible — un slot de este AMS está cargado hacia el cabezal. La bobina está bloqueada por el tubo de alimentación y no puede girar. Retira el filamento primero.',

@@ -572,6 +572,7 @@ export default {
       toastCommandSent: 'Comando de secagem enviado',
       toastStopped: 'Secagem interrompida',
       toastNotStarted: 'A impressora aceitou o comando, mas o AMS não iniciou a secagem. Verifique se o adaptador de energia do AMS está conectado e se a impressora está ociosa.',
+      screenOnly: 'Nesta impressora, a secagem do AMS só pode ser controlada pela tela da própria impressora (limitação da Bambu)',
       stoppingDrying: 'Parando secagem...',
       rotateTray: 'Girar o carretel durante a secagem',
       rotateUnavailableReason: 'Indisponível — um slot deste AMS está carregado em direção ao cabeçote. O carretel está travado pelo tubo de alimentação e não pode girar. Retraia o filamento primeiro.',

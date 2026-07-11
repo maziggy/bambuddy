@@ -572,6 +572,7 @@ export default {
       toastCommandSent: 'Comando di essiccazione inviato',
       toastStopped: 'Essiccazione interrotta',
       toastNotStarted: 'La stampante ha accettato il comando, ma l\'AMS non ha avviato l\'essiccazione. Verifica che l\'alimentatore dell\'AMS sia collegato e che la stampante sia inattiva.',
+      screenOnly: 'Su questa stampante l\'essiccazione dell\'AMS può essere comandata solo dallo schermo della stampante (limitazione di Bambu)',
       stoppingDrying: 'Arresto essiccazione...',
       rotateTray: 'Ruota la bobina durante l\'essiccazione',
       rotateUnavailableReason: 'Non disponibile — uno slot di questo AMS è caricato verso la testa di stampa. La bobina è bloccata dal tubo di alimentazione e non può ruotare. Ritrai prima il filamento.',

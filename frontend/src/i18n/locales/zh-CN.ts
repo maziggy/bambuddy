@@ -572,6 +572,7 @@ export default {
       toastCommandSent: '已发送干燥命令',
       toastStopped: '已停止干燥',
       toastNotStarted: '打印机已接受命令，但 AMS 未开始干燥。请检查 AMS 电源适配器是否已连接，以及打印机是否处于空闲状态。',
+      screenOnly: '此打印机的 AMS 干燥只能在打印机自带的屏幕上操作（Bambu 的限制）',
       stoppingDrying: '正在停止干燥...',
       rotateTray: '干燥时旋转料盘',
       rotateUnavailableReason: '不可用 — 此 AMS 中有插槽已装入打印头。料盘被送料管固定，无法旋转。请先回退耗材。',

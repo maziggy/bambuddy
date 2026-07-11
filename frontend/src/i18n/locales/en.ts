@@ -575,6 +575,7 @@ export default {
       toastCommandSent: 'Drying command sent',
       toastStopped: 'Drying stopped',
       toastNotStarted: 'The printer accepted the command but the AMS never started drying. Check that the AMS power adapter is connected and that the printer is idle.',
+      screenOnly: 'AMS drying on this printer can only be controlled from the printer\'s own screen (Bambu limitation)',
       stoppingDrying: 'Stopping drying...',
       rotateTray: 'Rotate spool during drying',
       rotateUnavailableReason: 'Unavailable — a slot in this AMS is loaded to the toolhead. The spool is locked by the feed tube and cannot rotate. Retract the filament first.',

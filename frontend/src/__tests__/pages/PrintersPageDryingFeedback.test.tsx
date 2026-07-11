@@ -6,6 +6,12 @@
  * and Bambuddy treated the MQTT ack as proof the cycle had begun. These tests
  * cover the toast and the post-ack watcher that catches a printer which takes
  * the command and drops it.
+ *
+ * The reporter's own printer is now handled further up: Bambu's P1 manual says
+ * P1-series AMS drying is screen-only, so the card no longer offers to command
+ * it (last describe block). The watcher stays for any other firmware that acks
+ * and declines — on the models we *can* command, the ack is still all we have,
+ * because the `dry_sf_reason` refusal array only exists on some of them.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
@@ -23,11 +29,11 @@ vi.mock('../../contexts/ToastContext', async (importOriginal) => {
 
 const mockPrinter = {
   id: 1,
-  name: 'P1S',
+  name: 'X1C',
   ip_address: '192.168.1.100',
   serial_number: '01P00A000000001',
   access_code: '12345678',
-  model: 'P1S',
+  model: 'X1C',
   enabled: true,
   nozzle_diameter: 0.4,
   nozzle_type: 'stainless_steel',
@@ -55,8 +61,11 @@ const baseTray = {
   state: 3,
 };
 
-/** AMS 2 Pro (n3f) on an idle printer — the reporter's hardware. */
-function makeStatus(dry: { dry_time: number; dry_status: number }) {
+/** AMS 2 Pro (n3f) on an idle printer that accepts remote drying commands. */
+function makeStatus(
+  dry: { dry_time: number; dry_status: number },
+  caps: { supports_drying?: boolean; drying_screen_only?: boolean } = {},
+) {
   return {
     connected: true,
     state: 'IDLE',
@@ -68,7 +77,8 @@ function makeStatus(dry: { dry_time: number; dry_status: number }) {
     filename: null,
     wifi_signal: -29,
     speed_level: 2,
-    supports_drying: true,
+    supports_drying: caps.supports_drying ?? true,
+    drying_screen_only: caps.drying_screen_only ?? false,
     vt_tray: [],
     ams: [
       {
@@ -95,6 +105,19 @@ function makeStatus(dry: { dry_time: number; dry_status: number }) {
 
 const IDLE = makeStatus({ dry_time: 0, dry_status: 0 });
 const DRYING = makeStatus({ dry_time: 720, dry_status: 2 });
+
+/** A P1: the AMS dries, but only from the printer's own screen. */
+const SCREEN_ONLY = makeStatus(
+  { dry_time: 0, dry_status: 0 },
+  { supports_drying: false, drying_screen_only: true },
+);
+const SCREEN_ONLY_DRYING = makeStatus(
+  { dry_time: 720, dry_status: 2 },
+  { supports_drying: false, drying_screen_only: true },
+);
+
+const SCREEN_ONLY_TITLE =
+  "AMS drying on this printer can only be controlled from the printer's own screen (Bambu limitation)";
 
 /**
  * Open the drying popover and press Start. The card renders the AMS in two
@@ -203,5 +226,41 @@ describe('PrintersPage - AMS drying feedback (#2533)', () => {
     await vi.advanceTimersByTimeAsync(31_000);
 
     expect(mockShowToast).not.toHaveBeenCalledWith(expect.stringContaining('never started drying'), 'error');
+  });
+});
+
+describe('PrintersPage - screen-only AMS drying (#2533)', () => {
+  beforeEach(() => {
+    mockShowToast.mockClear();
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([mockPrinter])),
+      http.get('/api/v1/queue/', () => HttpResponse.json([])),
+    );
+  });
+
+  it('keeps the drying control visible but disabled, and says why', async () => {
+    const user = userEvent.setup();
+    server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json(SCREEN_ONLY)));
+
+    render(<PrintersPage />);
+
+    // Present, so the user learns the AMS *can* dry and where to do it — silently
+    // dropping the button would just look like the feature vanished.
+    const buttons = await screen.findAllByTitle(SCREEN_ONLY_TITLE);
+    expect(buttons[0]).toBeDisabled();
+
+    await user.click(buttons[0]);
+    expect(screen.queryByTestId('drying-start-confirm')).not.toBeInTheDocument();
+  });
+
+  it('shows a cycle started at the printer, without offering to stop it', async () => {
+    server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json(SCREEN_ONLY_DRYING)));
+
+    render(<PrintersPage />);
+
+    // The countdown is pure observation and still works.
+    expect((await screen.findAllByText(/12h 0m/)).length).toBeGreaterThan(0);
+    // Stop is a command, and a P1 ignores it exactly as it ignores start.
+    expect(screen.queryByTitle('Stop Drying')).not.toBeInTheDocument();
   });
 });

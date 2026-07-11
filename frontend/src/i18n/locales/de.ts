@@ -572,6 +572,7 @@ export default {
       toastCommandSent: 'Trocknungsbefehl gesendet',
       toastStopped: 'Trocknung gestoppt',
       toastNotStarted: 'Der Drucker hat den Befehl angenommen, aber das AMS hat die Trocknung nicht gestartet. Prüfe, ob das AMS-Netzteil angeschlossen ist und der Drucker im Leerlauf ist.',
+      screenOnly: 'Die AMS-Trocknung kann bei diesem Drucker nur am Bildschirm des Druckers selbst gesteuert werden (Einschränkung von Bambu)',
       stoppingDrying: 'Trocknung wird gestoppt...',
       rotateTray: 'Spule während der Trocknung drehen',
       rotateUnavailableReason: 'Nicht verfügbar — in diesem AMS ist ein Slot zum Druckkopf hin geladen. Die Spule ist durch den Zuführschlauch blockiert und kann nicht rotieren. Filament zuerst zurückziehen.',

@@ -1855,6 +1855,10 @@ export interface SmartPlug {
   rest_energy_url: string | null;
   rest_energy_path: string | null;
   rest_energy_multiplier: number;
+  // Lifetime counter, separate from the daily one (#2539). A Shelly reports only
+  // this; Today and Yesterday are derived from its hourly snapshots.
+  rest_energy_total_path: string | null;
+  rest_energy_total_multiplier: number;
   printer_id: number | null;
   enabled: boolean;
   auto_on: boolean;
@@ -1929,6 +1933,8 @@ export interface SmartPlugCreate {
   rest_energy_url?: string | null;
   rest_energy_path?: string | null;
   rest_energy_multiplier?: number;
+  rest_energy_total_path?: string | null;
+  rest_energy_total_multiplier?: number;
   printer_id?: number | null;
   enabled?: boolean;
   auto_on?: boolean;
@@ -1995,6 +2001,8 @@ export interface SmartPlugUpdate {
   rest_energy_url?: string | null;
   rest_energy_path?: string | null;
   rest_energy_multiplier?: number;
+  rest_energy_total_path?: string | null;
+  rest_energy_total_multiplier?: number;
   printer_id?: number | null;
   enabled?: boolean;
   auto_on?: boolean;

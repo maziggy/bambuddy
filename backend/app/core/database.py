@@ -2143,6 +2143,14 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN rest_energy_url VARCHAR(500)")
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN rest_energy_multiplier REAL DEFAULT 1.0")
 
+    # Migration (#2539): a REST plug's lifetime energy counter, separate from its
+    # today counter. Devices differ in which they expose — a Shelly reports only
+    # a cumulative `aenergy.total`, a Tasmota behind a REST bridge reports both —
+    # and conflating the two made the cumulative value read as "today", so it
+    # never reset at midnight and "Total" stayed empty forever.
+    await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN rest_energy_total_path VARCHAR(200)")
+    await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN rest_energy_total_multiplier REAL DEFAULT 1.0")
+
     # Migration: Add batch_id column to print_queue for batch grouping
     try:
         async with conn.begin_nested():

@@ -5338,7 +5338,12 @@ export default {
     restPowerPath: '功率 JSON 路徑',
     restPowerMultiplier: '功率乘數',
     restEnergyUrl: '能耗URL',
-    restEnergyPath: '能耗 JSON 路徑',
+    restEnergyPath: '能耗 JSON 路徑（今日）',
+    restEnergyTotalPath: '能耗 JSON 路徑（累計值）',
+    restEnergyTotalMultiplier: '累計值倍數',
+    restEnergyTotalPathHint: '例如 aenergy.total',
+    restEnergyTotalHint:
+      '許多插座（包括所有 Shelly）只提供永不歸零的累計計數值。該值應填在此處，而非上方欄位：若當作今日用量讀取，它在午夜不會歸零，而「昨日」與「總計」會一直是空的。Bambuddy 會據此推算「今日」與「昨日」，這需要一至兩天的取樣資料。Shelly 以瓦時為單位，因此倍數請填 0.001。',
     restEnergyMultiplier: '能耗乘數',
     restUrlRequired: 'REST 插座至少需要一個 URL（ON 或 OFF）',
     restHeadersHint: '例如：{"Authorization": "Bearer your-token"}',

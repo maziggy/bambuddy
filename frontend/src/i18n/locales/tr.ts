@@ -5312,7 +5312,12 @@ export default {
     restPowerPath: 'Güç JSON Yolu',
     restPowerMultiplier: 'Güç Çarpanı',
     restEnergyUrl: 'Enerji URL\'si',
-    restEnergyPath: 'Enerji JSON Yolu',
+    restEnergyPath: 'Enerji JSON yolu (bugün)',
+    restEnergyTotalPath: 'Enerji JSON yolu (toplam sayaç)',
+    restEnergyTotalMultiplier: 'Toplam sayaç çarpanı',
+    restEnergyTotalPathHint: 'örn. aenergy.total',
+    restEnergyTotalHint:
+      "Birçok priz — tüm Shelly'ler dahil — yalnızca hiç sıfırlanmayan bir toplam sayaç bildirir. Bu değer yukarıdaki alana değil, buraya girilmelidir: bugünün tüketimi olarak okunursa gece yarısı sıfırlanmaz, Dün ve Toplam da boş kalır. Bambuddy Bugün ve Dün değerlerini bundan hesaplar; bunun için bir iki günlük ölçüm gerekir. Shelly watt-saat bildirdiğinden çarpan olarak 0.001 kullanın.",
     restEnergyMultiplier: 'Enerji Çarpanı',
     restUrlRequired: 'REST prizleri için en az bir URL (ON veya OFF) gerekli',
     restHeadersHint: 'örn. {"Authorization": "Bearer your-token"}',

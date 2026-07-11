@@ -5350,7 +5350,12 @@ export default {
     restPowerPath: '電力JSONパス',
     restPowerMultiplier: '電力乗数',
     restEnergyUrl: 'エネルギーURL',
-    restEnergyPath: '電力量JSONパス',
+    restEnergyPath: 'エネルギーの JSON パス (今日)',
+    restEnergyTotalPath: 'エネルギーの JSON パス (積算値)',
+    restEnergyTotalMultiplier: '積算値の乗数',
+    restEnergyTotalPathHint: '例: aenergy.total',
+    restEnergyTotalHint:
+      '多くのスマートプラグ (Shelly はすべて) は、リセットされない積算カウンターしか返しません。その値は上の欄ではなく、ここに入力してください。今日の使用量として読むと深夜にリセットされず、昨日と合計は空のままになります。Bambuddy は積算値から今日と昨日を算出しますが、そのためには 1〜2 日分の測定値が必要です。Shelly はワット時で返すため、乗数には 0.001 を指定してください。',
     restEnergyMultiplier: 'エネルギー乗数',
     restUrlRequired: 'RESTプラグには少なくとも1つのURL（ONまたはOFF）が必要',
     restHeadersHint: '例: {"Authorization": "Bearer your-token"}',

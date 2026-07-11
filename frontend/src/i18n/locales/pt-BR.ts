@@ -5338,7 +5338,12 @@ export default {
     restPowerPath: 'Caminho JSON de energia',
     restPowerMultiplier: 'Multiplicador de potência',
     restEnergyUrl: 'URL de energia',
-    restEnergyPath: 'Caminho JSON de energia',
+    restEnergyPath: 'Caminho JSON de energia (hoje)',
+    restEnergyTotalPath: 'Caminho JSON de energia (contador total)',
+    restEnergyTotalMultiplier: 'Multiplicador do contador total',
+    restEnergyTotalPathHint: 'ex.: aenergy.total',
+    restEnergyTotalHint:
+      'Muitas tomadas — todos os Shelly entre elas — informam apenas um contador acumulado que nunca é zerado. Ele vai aqui, não no campo acima: lido como o consumo de hoje, ele nunca voltaria a zero à meia-noite, e Ontem e Total ficariam vazios. O Bambuddy calcula Hoje e Ontem a partir dele, o que exige um ou dois dias de leituras. Um Shelly informa em watt-hora, então use um multiplicador de 0.001.',
     restEnergyMultiplier: 'Multiplicador de energia',
     restUrlRequired: 'Ao menos uma URL (ON ou OFF) é necessária para tomadas REST',
     restHeadersHint: 'ex. {"Authorization": "Bearer your-token"}',

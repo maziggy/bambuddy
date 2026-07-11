@@ -5075,7 +5075,12 @@ export default {
     restPowerPath: '전력 JSON 경로',
     restPowerMultiplier: '전력 배수',
     restEnergyUrl: '에너지 URL',
-    restEnergyPath: '에너지 JSON 경로',
+    restEnergyPath: '에너지 JSON 경로 (오늘)',
+    restEnergyTotalPath: '에너지 JSON 경로 (누적값)',
+    restEnergyTotalMultiplier: '누적값 배율',
+    restEnergyTotalPathHint: '예: aenergy.total',
+    restEnergyTotalHint:
+      '많은 플러그가 — Shelly는 모두 — 초기화되지 않는 누적 카운터만 보고합니다. 그 값은 위 항목이 아니라 여기에 입력하세요. 오늘 사용량으로 읽으면 자정에 초기화되지 않고, 어제와 총계는 계속 비어 있게 됩니다. Bambuddy가 누적값에서 오늘과 어제를 계산하며, 이를 위해 하루에서 이틀 치 측정값이 필요합니다. Shelly는 와트시로 보고하므로 배율은 0.001을 사용하세요.',
     restEnergyMultiplier: '에너지 배수',
     restUrlRequired: 'REST 플러그에는 URL(ON 또는 OFF) 중 하나 이상이 필요합니다',
     restHeadersHint: '예: {"Authorization": "Bearer your-token"}',

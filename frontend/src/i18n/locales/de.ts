@@ -5349,7 +5349,12 @@ export default {
     restPowerPath: 'JSON-Pfad für Leistung',
     restPowerMultiplier: 'Power Multiplikator',
     restEnergyUrl: 'Energie URL',
-    restEnergyPath: 'JSON-Pfad für Energie',
+    restEnergyPath: 'JSON-Pfad für Energie (heute)',
+    restEnergyTotalPath: 'JSON-Pfad für Energie (Gesamtzähler)',
+    restEnergyTotalMultiplier: 'Multiplikator Gesamtzähler',
+    restEnergyTotalPathHint: 'z.B. aenergy.total',
+    restEnergyTotalHint:
+      'Viele Steckdosen — darunter alle Shellys — liefern nur einen Gesamtzähler, der nie zurückgesetzt wird. Er gehört hierher, nicht in das Feld darüber: als Tagesverbrauch gelesen würde er um Mitternacht nie zurückspringen, und Gestern und Gesamt blieben leer. Bambuddy errechnet Heute und Gestern daraus, wofür ein bis zwei Tage an Messwerten nötig sind. Ein Shelly liefert Wattstunden, also Multiplikator 0.001 verwenden.',
     restEnergyMultiplier: 'Energie Multiplikator',
     restUrlRequired: 'Mindestens eine URL (ON oder OFF) ist für REST-Steckdosen erforderlich',
     restHeadersHint: 'z. B. {"Authorization": "Bearer your-token"}',

@@ -5393,7 +5393,12 @@ export default {
     restPowerPath: 'Power JSON Path',
     restPowerMultiplier: 'Power Multiplier',
     restEnergyUrl: 'Energy URL',
-    restEnergyPath: 'Energy JSON Path',
+    restEnergyPath: 'Energy JSON Path (today)',
+    restEnergyTotalPath: 'Energy JSON Path (lifetime)',
+    restEnergyTotalMultiplier: 'Lifetime Multiplier',
+    restEnergyTotalPathHint: 'e.g. aenergy.total',
+    restEnergyTotalHint:
+      "Many plugs — every Shelly among them — report only a lifetime counter that never resets. It belongs here, not in the field above: read as today's usage it would never reset at midnight, and Yesterday and Total would stay empty. Bambuddy works Today and Yesterday out from it, which takes a day or two of readings to fill in. A Shelly reports watt-hours, so use a multiplier of 0.001.",
     restEnergyMultiplier: 'Energy Multiplier',
     restUrlRequired: 'At least one URL (ON or OFF) is required for REST plugs',
     restHeadersHint: 'e.g. {"Authorization": "Bearer your-token"}',

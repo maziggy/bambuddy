@@ -592,9 +592,15 @@ Environment="LOG_DIR=$LOG_DIR"
 Environment="TZ=$TIMEZONE"
 
 # --loop asyncio required: uvloop can truncate VP FTP uploads (#1896)
-ExecStart=$INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host $BIND_ADDRESS --port $PORT --loop asyncio
+# --timeout-graceful-shutdown required: uvicorn otherwise waits forever for
+# in-flight requests, and an MJPEG camera stream never completes — one open
+# camera tile hangs the stop until systemd SIGKILLs, skipping the WAL
+# checkpoint and the MQTT / virtual-printer teardown.
+ExecStart=$INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host $BIND_ADDRESS --port $PORT --loop asyncio --timeout-graceful-shutdown 5
 Restart=on-failure
 RestartSec=5
+# Backstop only — uvicorn bounds its own wait at 5s and teardown takes ~1-2s.
+TimeoutStopSec=30
 StandardOutput=journal
 StandardError=journal
 
@@ -660,6 +666,11 @@ create_launchd_service() {
         <!-- the loop asyncio flag below is required: uvloop can truncate VP FTP uploads, #1896 -->
         <string>--loop</string>
         <string>asyncio</string>
+        <!-- required: uvicorn otherwise waits forever for in-flight requests, and an
+             MJPEG camera stream never completes — one open camera tile hangs the stop
+             until launchd SIGKILLs, skipping the WAL checkpoint and MQTT teardown -->
+        <string>--timeout-graceful-shutdown</string>
+        <string>5</string>
     </array>
     <key>WorkingDirectory</key>
     <string>$INSTALL_PATH</string>

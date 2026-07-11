@@ -106,6 +106,7 @@ from backend.app.services.printer_manager import (
     parse_plate_id,
     printer_manager,
     printer_state_to_dict,
+    resolve_plate_id,
 )
 from backend.app.services.smart_plug_manager import smart_plug_manager
 from backend.app.services.spool_assignment_notifications import (
@@ -2300,19 +2301,28 @@ def _load_objects_from_archive(archive, printer_id: int, logger) -> None:
     try:
         from backend.app.services.archive import extract_printable_objects_from_3mf
 
+        client = printer_manager.get_client(printer_id)
+        if not client:
+            return
+
         file_path = app_settings.base_dir / archive.file_path
         if file_path.is_file() and str(file_path).endswith(".3mf"):
             with open(file_path, "rb") as f:
                 threemf_data = f.read()
-            # Extract with positions for UI overlay
-            printable_objects, bbox_all = extract_printable_objects_from_3mf(threemf_data, include_positions=True)
+            # Extract with positions for UI overlay, scoped to the plate that
+            # is printing — resolve_plate_id is the same resolver /cover uses,
+            # so the object list can't disagree with the thumbnail it is drawn
+            # over (#2522).
+            printable_objects, bbox_all = extract_printable_objects_from_3mf(
+                threemf_data,
+                plate_number=resolve_plate_id(client.state),
+                include_positions=True,
+            )
             if printable_objects:
-                client = printer_manager.get_client(printer_id)
-                if client:
-                    client.state.printable_objects = printable_objects
-                    client.state.printable_objects_bbox_all = bbox_all
-                    client.state.skipped_objects = []
-                    logger.info("Loaded %s printable objects for printer %s", len(printable_objects), printer_id)
+                client.state.printable_objects = printable_objects
+                client.state.printable_objects_bbox_all = bbox_all
+                client.state.skipped_objects = []
+                logger.info("Loaded %s printable objects for printer %s", len(printable_objects), printer_id)
     except Exception as e:
         logger.debug("Failed to extract printable objects from archive: %s", e)
 
@@ -3351,16 +3361,20 @@ async def on_print_start(printer_id: int, data: dict):
                 try:
                     from backend.app.services.archive import extract_printable_objects_from_3mf
 
-                    with open(temp_path, "rb") as f:
-                        threemf_data = f.read()
-                    # Extract with positions for UI overlay
-                    printable_objects, bbox_all = extract_printable_objects_from_3mf(
-                        threemf_data, include_positions=True
-                    )
-                    if printable_objects:
-                        # Store objects in printer state
-                        client = printer_manager.get_client(printer_id)
-                        if client:
+                    client = printer_manager.get_client(printer_id)
+                    if client:
+                        with open(temp_path, "rb") as f:
+                            threemf_data = f.read()
+                        # Extract with positions for UI overlay, scoped to the
+                        # plate that is printing — an all-plates 3MF carries
+                        # every plate's objects (#2522).
+                        printable_objects, bbox_all = extract_printable_objects_from_3mf(
+                            threemf_data,
+                            plate_number=resolve_plate_id(client.state),
+                            include_positions=True,
+                        )
+                        if printable_objects:
+                            # Store objects in printer state
                             client.state.printable_objects = printable_objects
                             client.state.printable_objects_bbox_all = bbox_all
                             client.state.skipped_objects = []  # Reset skipped objects for new print

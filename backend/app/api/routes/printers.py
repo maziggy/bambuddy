@@ -3362,7 +3362,14 @@ async def get_printable_objects(
                 if downloaded and temp_path.exists():
                     with open(temp_path, "rb") as f:
                         data = f.read()
-                    objects, bbox_all = extract_printable_objects_from_3mf(data, include_positions=True)
+                    # Scope to the running plate: an all-plates 3MF lists every
+                    # plate's objects, and offering plate 1's while the printer
+                    # runs plate 2 makes every skip a misfire (#2522).
+                    objects, bbox_all = extract_printable_objects_from_3mf(
+                        data,
+                        plate_number=resolve_plate_id(client.state),
+                        include_positions=True,
+                    )
                     if objects:
                         client.state.printable_objects = objects
                         client.state.printable_objects_bbox_all = bbox_all

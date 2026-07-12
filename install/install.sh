@@ -571,6 +571,33 @@ create_systemd_service() {
         protect_home="read-only"
     fi
 
+    # This function overwrites /etc/systemd/system/bambuddy.service outright. Any
+    # ReadWritePaths the operator added by hand — a NAS share for Scheduled
+    # Backups, typically — used to disappear with it, and the next backup failed
+    # with EROFS ("Read-only file system"), which reads like a permission problem
+    # and is not one (issue #2544). Back the old unit up and carry those paths
+    # forward.
+    local existing_unit="/etc/systemd/system/bambuddy.service"
+    local extra_rw=""
+    if [[ -f "$existing_unit" ]]; then
+        local backup_unit="${existing_unit}.bak-$(date +%Y%m%d-%H%M%S)"
+        sudo cp "$existing_unit" "$backup_unit"
+        log_info "Existing service backed up to $backup_unit"
+
+        local prev_rw
+        prev_rw=$(sudo grep -hE '^ReadWritePaths=' "$existing_unit" 2>/dev/null | sed 's/^ReadWritePaths=//' || true)
+        local p
+        for p in $prev_rw; do
+            case "$p" in
+                "$DATA_DIR" | "$LOG_DIR" | "$INSTALL_PATH") continue ;;
+            esac
+            extra_rw+=" $p"
+        done
+        if [[ -n "$extra_rw" ]]; then
+            log_info "Keeping custom writable paths from the previous service:$extra_rw"
+        fi
+    fi
+
     cat > /tmp/bambuddy.service << EOF
 [Unit]
 Description=BamBuddy - Bambu Lab Print Management
@@ -612,7 +639,16 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=$protect_home
-ReadWritePaths=$DATA_DIR $LOG_DIR $INSTALL_PATH
+# ProtectSystem=strict makes EVERY path outside the ones below read-only for this
+# service — including a NAS share you mounted yourself and can write to from your
+# own shell. If you point Scheduled Backups at such a directory, add it here, or
+# better in a drop-in that survives a reinstall (#2544):
+#
+#   sudo systemctl edit bambuddy
+#   [Service]
+#   ReadWritePaths=/mnt/your-nas-share
+#
+ReadWritePaths=$DATA_DIR $LOG_DIR $INSTALL_PATH$extra_rw
 
 [Install]
 WantedBy=multi-user.target

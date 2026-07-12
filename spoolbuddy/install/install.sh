@@ -756,6 +756,30 @@ create_bambuddy_directories() {
 create_bambuddy_service() {
     info "Creating Bambuddy systemd service..."
 
+    # Overwriting the unit used to silently drop any ReadWritePaths the operator
+    # had added — a NAS share for Scheduled Backups, typically — after which the
+    # backups failed with EROFS, which looks like a permission problem and is not
+    # one (issue #2544). Back the old unit up and carry those paths forward.
+    local existing_unit="/etc/systemd/system/bambuddy.service"
+    local extra_rw=""
+    if [[ -f "$existing_unit" ]]; then
+        local backup_unit="${existing_unit}.bak-$(date +%Y%m%d-%H%M%S)"
+        cp "$existing_unit" "$backup_unit"
+        info "Existing service backed up to $backup_unit"
+
+        local prev_rw p
+        prev_rw=$(grep -hE '^ReadWritePaths=' "$existing_unit" 2>/dev/null | sed 's/^ReadWritePaths=//' || true)
+        for p in $prev_rw; do
+            case "$p" in
+                "$INSTALL_PATH/data" | "$INSTALL_PATH/logs" | "$INSTALL_PATH") continue ;;
+            esac
+            extra_rw+=" $p"
+        done
+        if [[ -n "$extra_rw" ]]; then
+            info "Keeping custom writable paths from the previous service:$extra_rw"
+        fi
+    fi
+
     cat > /etc/systemd/system/bambuddy.service << EOF
 [Unit]
 Description=Bambuddy - Bambu Lab Print Management
@@ -788,7 +812,10 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=$INSTALL_PATH/data $INSTALL_PATH/logs $INSTALL_PATH
+# ProtectSystem=strict makes every path outside the ones below read-only for this
+# service. To back up to a NAS share, add it here or in a drop-in that survives a
+# reinstall: sudo systemctl edit bambuddy → [Service] → ReadWritePaths=/mnt/share
+ReadWritePaths=$INSTALL_PATH/data $INSTALL_PATH/logs $INSTALL_PATH$extra_rw
 
 [Install]
 WantedBy=multi-user.target

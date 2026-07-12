@@ -4830,6 +4830,20 @@ export default {
     backupSize: 'Tamanho',
     localTimeHint: 'Horário local ({{tz}})',
     defaultPathLabel: 'Padrão:',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'O Bambuddy não consegue gravar neste diretório',
+      howToFix: 'Como corrigir:',
+      sandboxed: 'O serviço do Bambuddy não consegue gravar em {{path}}. Sua unit do systemd roda com ProtectSystem=strict, o que torna todo diretório fora dos diretórios de instalação, dados e logs somente leitura para o serviço - mesmo um em que você consegue gravar pelo seu próprio shell.',
+      read_only: '{{path}} está em um sistema de arquivos somente leitura.',
+      permission_denied: 'O Bambuddy não tem permissão para gravar em {{path}}. Verifique o dono e as permissões do diretório.',
+      no_space: 'O sistema de arquivos que contém {{path}} está cheio.',
+      not_a_directory: '{{path}} existe, mas não é um diretório.',
+      missing: '{{path}} não existe e não pôde ser criado.',
+      error: 'O Bambuddy não consegue gravar em {{path}}.',
+      ephemeralTitle: 'Estes backups não sobrevivem à recriação do contêiner',
+      container_ephemeral: '{{path}} está dentro do contêiner do Bambuddy, não no host. Backups gravados ali são perdidos quando o contêiner é recriado. Monte o diretório do host:',
+    },
 
     // Category labels
     categories: {

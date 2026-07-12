@@ -4818,6 +4818,20 @@ export default {
     backupSize: 'Boyut',
     localTimeHint: 'Yerel saat ({{tz}})',
     defaultPathLabel: 'Varsayılan:',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'Bambuddy bu dizine yazamıyor',
+      howToFix: 'Nasıl düzeltilir:',
+      sandboxed: 'Bambuddy servisi {{path}} dizinine yazamıyor. systemd birimi ProtectSystem=strict ile çalıştığı için kurulum, veri ve günlük dizinleri dışındaki her dizin servis açısından salt okunurdur - kendi kabuğunuzdan yazabildiğiniz bir dizin olsa bile.',
+      read_only: '{{path}} salt okunur bir dosya sisteminde.',
+      permission_denied: 'Bambuddy\'nin {{path}} dizinine yazma izni yok. Dizinin sahibini ve izinlerini kontrol edin.',
+      no_space: '{{path}} dizinini barındıran dosya sistemi dolu.',
+      not_a_directory: '{{path}} var ancak bir dizin değil.',
+      missing: '{{path}} yok ve oluşturulamadı.',
+      error: 'Bambuddy {{path}} dizinine yazamıyor.',
+      ephemeralTitle: 'Bu yedekler kapsayıcı yeniden oluşturulduğunda kaybolur',
+      container_ephemeral: '{{path}} ana makinede değil, Bambuddy kapsayıcısının içinde. Oraya yazılan yedekler kapsayıcı yeniden oluşturulduğunda kaybolur. Dizini ana makineden bağlayın:',
+    },
 
     categories: {
       settings: 'Ayarlar',

@@ -29,6 +29,7 @@ import type {
   GitHubBackupTriggerResponse,
   GitProviderType,
   LocalBackupFile,
+  LocalBackupPathCheck,
   LocalBackupStatus,
   ScheduleType,
   CloudAuthStatus,
@@ -173,6 +174,18 @@ export function GitHubBackupSettings() {
     refetchInterval: 30000,
   });
 
+  // Probes the output directory with a real write (#2544). A directory the
+  // service cannot write to — a NAS share outside the systemd unit's
+  // ReadWritePaths, typically — otherwise only surfaces as a failed backup at
+  // 03:00, for however many nights it takes someone to notice. Refetched
+  // explicitly when the path changes or a backup runs, not polled: it writes.
+  const { data: localBackupPathCheck, refetch: refetchLocalPathCheck } = useQuery<LocalBackupPathCheck>({
+    queryKey: ['local-backup-path-check'],
+    queryFn: api.checkLocalBackupPath,
+    enabled: localBackupStatus?.enabled === true,
+    refetchOnWindowFocus: false,
+  });
+
   // Sync local path state from server
   useEffect(() => {
     if (localBackupStatus?.path !== undefined) {
@@ -190,6 +203,7 @@ export function GitHubBackupSettings() {
       }
       refetchLocalStatus();
       refetchLocalBackups();
+      refetchLocalPathCheck();
     },
     onError: () => showToast(t('backup.scheduledBackupFailed'), 'error'),
   });
@@ -1239,6 +1253,7 @@ export function GitHubBackupSettings() {
                       }
                       refetchLocalStatus();
                       refetchLocalBackups();
+                      refetchLocalPathCheck();
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -1250,6 +1265,57 @@ export function GitHubBackupSettings() {
                       : <>{t('backup.defaultPathLabel')} <code className="text-bambu-gray">{localBackupStatus?.default_path || '...'}</code></>
                     }
                   </p>
+
+                  {/* The directory cannot be written to — say why, and how to fix it (#2544) */}
+                  {localBackupPathCheck && !localBackupPathCheck.writable && (
+                    <div className="mt-2 p-3 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30">
+                      <div className="flex items-start gap-2 text-sm">
+                        <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                        <div className="min-w-0 text-red-800 dark:text-red-200">
+                          <p className="font-medium">{t('backup.pathCheck.title')}</p>
+                          <p className="mt-1 text-red-800/80 dark:text-red-200/80">
+                            {t(`backup.pathCheck.${localBackupPathCheck.code}`, {
+                              path: localBackupPathCheck.path,
+                              defaultValue: localBackupPathCheck.message,
+                            })}
+                          </p>
+                          {localBackupPathCheck.remedy && (
+                            <>
+                              <p className="mt-2 font-medium">{t('backup.pathCheck.howToFix')}</p>
+                              <pre className="mt-1 p-2 rounded bg-black/10 dark:bg-black/40 text-xs whitespace-pre-wrap break-words">
+                                {localBackupPathCheck.remedy}
+                              </pre>
+                            </>
+                          )}
+                          {localBackupPathCheck.detail && (
+                            <p className="mt-2 text-xs text-red-800/60 dark:text-red-200/60 break-words">
+                              {localBackupPathCheck.detail}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Writable, but only inside the container — the backups die with it */}
+                  {localBackupPathCheck?.writable && localBackupPathCheck.warning === 'container_ephemeral' && (
+                    <div className="mt-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-500/30">
+                      <div className="flex items-start gap-2 text-sm">
+                        <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+                        <div className="min-w-0 text-yellow-800 dark:text-yellow-200">
+                          <p className="font-medium">{t('backup.pathCheck.ephemeralTitle')}</p>
+                          <p className="mt-1 text-yellow-800/80 dark:text-yellow-200/80">
+                            {t('backup.pathCheck.container_ephemeral', { path: localBackupPathCheck.path })}
+                          </p>
+                          {localBackupPathCheck.remedy && (
+                            <pre className="mt-1 p-2 rounded bg-black/10 dark:bg-black/40 text-xs whitespace-pre-wrap break-words">
+                              {localBackupPathCheck.remedy}
+                            </pre>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Status + Run Now */}

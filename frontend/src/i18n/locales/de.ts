@@ -4797,6 +4797,20 @@ export default {
     backupSize: 'Größe',
     localTimeHint: 'Ortszeit ({{tz}})',
     defaultPathLabel: 'Standard:',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'Bambuddy kann nicht in dieses Verzeichnis schreiben',
+      howToFix: 'So beheben Sie das:',
+      sandboxed: 'Der Bambuddy-Dienst kann nicht nach {{path}} schreiben. Seine systemd-Unit läuft mit ProtectSystem=strict, wodurch jedes Verzeichnis außerhalb der Installations-, Daten- und Log-Verzeichnisse für den Dienst schreibgeschützt ist - auch eines, in das Sie aus Ihrer eigenen Shell schreiben können.',
+      read_only: '{{path}} liegt auf einem schreibgeschützten Dateisystem.',
+      permission_denied: 'Bambuddy darf nicht nach {{path}} schreiben. Prüfen Sie Eigentümer und Rechte des Verzeichnisses.',
+      no_space: 'Das Dateisystem, auf dem {{path}} liegt, ist voll.',
+      not_a_directory: '{{path}} existiert, ist aber kein Verzeichnis.',
+      missing: '{{path}} existiert nicht und konnte nicht angelegt werden.',
+      error: 'Bambuddy kann nicht nach {{path}} schreiben.',
+      ephemeralTitle: 'Diese Backups überleben einen Container-Neustart nicht',
+      container_ephemeral: '{{path}} liegt im Bambuddy-Container, nicht auf dem Host. Dort geschriebene Backups gehen verloren, sobald der Container neu erstellt wird. Binden Sie das Verzeichnis vom Host ein:',
+    },
 
     // Category labels
     categories: {

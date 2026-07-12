@@ -39,6 +39,20 @@ async def get_status(
     }
 
 
+@router.get("/path-check")
+async def check_path(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_BACKUP),
+):
+    """Check that the configured output directory can actually be written to.
+
+    Writes and removes a probe file. A path the service cannot write to — a NAS
+    share outside the systemd unit's ReadWritePaths, say — otherwise only shows
+    up as a failed backup hours later (#2544).
+    """
+    settings = await local_backup_service._load_settings()
+    return local_backup_service.check_path(settings["path"])
+
+
 @router.post("/run")
 async def trigger_backup(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_BACKUP),

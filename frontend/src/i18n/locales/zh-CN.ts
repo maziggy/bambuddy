@@ -4785,6 +4785,20 @@ export default {
     backupSize: '大小',
     localTimeHint: '本地时间 ({{tz}})',
     defaultPathLabel: '默认：',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'Bambuddy 无法写入该目录',
+      howToFix: '解决方法：',
+      sandboxed: 'Bambuddy 服务无法写入 {{path}}。它的 systemd 单元以 ProtectSystem=strict 运行，因此除安装、数据和日志目录之外的所有目录对服务而言都是只读的，即使你自己的 shell 可以写入也一样。',
+      read_only: '{{path}} 位于只读文件系统上。',
+      permission_denied: 'Bambuddy 无权写入 {{path}}。请检查该目录的属主和权限。',
+      no_space: '{{path}} 所在的文件系统已满。',
+      not_a_directory: '{{path}} 存在，但不是目录。',
+      missing: '{{path}} 不存在且无法创建。',
+      error: 'Bambuddy 无法写入 {{path}}。',
+      ephemeralTitle: '这些备份在容器重建后会丢失',
+      container_ephemeral: '{{path}} 位于 Bambuddy 容器内部，而不是宿主机上。写入其中的备份会在容器重建时丢失。请从宿主机挂载该目录：',
+    },
 
     // Category labels
     categories: {

@@ -4805,6 +4805,20 @@ export default {
     backupSize: 'Tamaño',
     localTimeHint: 'Hora local ({{tz}})',
     defaultPathLabel: 'Predeterminada:',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'Bambuddy no puede escribir en este directorio',
+      howToFix: 'Cómo solucionarlo:',
+      sandboxed: 'El servicio de Bambuddy no puede escribir en {{path}}. Su unidad de systemd se ejecuta con ProtectSystem=strict, lo que hace que todo directorio fuera de los de instalación, datos y registros sea de solo lectura para el servicio, incluso uno en el que usted sí puede escribir desde su propia shell.',
+      read_only: '{{path}} está en un sistema de archivos de solo lectura.',
+      permission_denied: 'Bambuddy no tiene permiso para escribir en {{path}}. Compruebe el propietario y los permisos del directorio.',
+      no_space: 'El sistema de archivos que contiene {{path}} está lleno.',
+      not_a_directory: '{{path}} existe pero no es un directorio.',
+      missing: '{{path}} no existe y no se pudo crear.',
+      error: 'Bambuddy no puede escribir en {{path}}.',
+      ephemeralTitle: 'Estas copias de seguridad no sobrevivirán a la recreación del contenedor',
+      container_ephemeral: '{{path}} está dentro del contenedor de Bambuddy, no en el host. Las copias escritas ahí se pierden cuando se recrea el contenedor. Monte el directorio desde el host:',
+    },
 
     // Category labels
     categories: {

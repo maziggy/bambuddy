@@ -4849,7 +4849,7 @@ class BambuMQTTClient:
                 }
             }
             self._client.publish(self.topic_publish, json.dumps(command), qos=1)
-        logger.info("[%s] Set chamber lights %s (seq=%s)", self.serial_number, "on" if on else "off", self._sequence_id)
+        logger.info("[%s] Set chamber lights %s (seq=%s)", self.serial_number, mode, self._sequence_id)
         return True
 
     def select_extruder(self, extruder: int) -> bool:

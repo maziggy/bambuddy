@@ -25,7 +25,6 @@ class TestEndpointAuthenticationEnforcement:
             defaults = {
                 "username": "testuser",
                 "password_hash": bcrypt.hash("testpass123"),
-                "is_admin": False,
             }
             defaults.update(kwargs)
 
@@ -48,7 +47,7 @@ class TestEndpointAuthenticationEnforcement:
         result = await db_session.execute(select(Group).where(Group.name == "Administrators"))
         admin_group = result.scalar_one_or_none()
 
-        user = await user_factory(username="admin", is_admin=True)
+        user = await user_factory(username="admin")
         if admin_group:
             user.groups.append(admin_group)
             await db_session.commit()

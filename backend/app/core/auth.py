@@ -1120,7 +1120,7 @@ async def require_auth_if_enabled(
 
 
 def require_role(required_role: str):
-    """Dependency factory for role-based access control."""
+    """Deprecated dependency factory for legacy role-based access control."""
 
     async def role_checker(current_user: Annotated[User, Depends(get_current_user)]) -> User:
         if current_user.role != required_role:
@@ -1133,8 +1133,22 @@ def require_role(required_role: str):
     return role_checker
 
 
+def require_admin():
+    """Dependency factory that requires Administrators-group membership."""
+
+    async def admin_checker(current_user: Annotated[User, Depends(get_current_user)]) -> User:
+        if not current_user.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Requires admin role",
+            )
+        return current_user
+
+    return admin_checker
+
+
 def require_admin_if_auth_enabled():
-    """Dependency factory that requires admin role if auth is enabled.
+    """Dependency factory that requires admin group membership if auth is enabled.
 
     GHSA-r2qv follow-up (audit pattern P3): explicitly fail-closed for API
     keys. The previous implementation chained on ``require_auth_if_enabled``
@@ -1144,15 +1158,12 @@ def require_admin_if_auth_enabled():
     dep, any API key with no scope flags set would have satisfied an
     admin requirement. The dep distinguishes the two cases by consulting
     ``is_auth_enabled`` directly and rejecting API-keyed requests with
-    403. "Admin" requires a user-identity role, which API keys do not
-    carry.
+    403. "Admin" requires Administrators-group membership on a user
+    identity. API keys do not carry group membership.
 
-    Admin semantics: uses ``User.is_admin`` (``role == "admin"`` OR
-    Administrators-group membership) so a default-install operator who
-    was made admin by being added to Administrators rather than by
-    flipping the legacy role column passes. Earlier this check looked
-    only at ``role`` and would have locked group-only admins out of the
-    user-management routes once those routes started requiring it.
+    Admin semantics: uses ``User.is_admin`` (Administrators-group
+    membership). API keys can still be granted specific permissions, but
+    cannot satisfy user-admin-only gates.
     """
 
     async def admin_checker(
@@ -1163,7 +1174,7 @@ def require_admin_if_auth_enabled():
             if not await is_auth_enabled(db):
                 return None  # Auth disabled — no role to check.
 
-            # Reject API-keyed requests up front: admin is a user-role
+            # Reject API-keyed requests up front: admin is a user-group
             # concept, not a key-scope concept. The right path for
             # admin-equivalent API-key access is a specific Permission
             # (e.g. SETTINGS_UPDATE) gated by the allowlist, not the
@@ -1171,7 +1182,7 @@ def require_admin_if_auth_enabled():
             if x_api_key or (credentials and credentials.credentials.startswith("bb_")):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Admin operations require a user role; API keys cannot be admins",
+                    detail="Admin operations require a user identity; API keys cannot be admins",
                 )
 
             # Standard JWT path: validate and require admin role.
@@ -1366,12 +1377,12 @@ def check_printer_access(api_key: APIKey, printer_id: int) -> None:
 
 # Convenience dependencies - these are functions that return Depends objects
 def RequireAdmin():
-    """Dependency that requires admin role."""
-    return Depends(require_role("admin"))
+    """Dependency that requires Administrators-group membership."""
+    return Depends(require_admin())
 
 
 def RequireAdminIfAuthEnabled():
-    """Dependency that requires admin role if auth is enabled."""
+    """Dependency that requires Administrators-group membership if auth is enabled."""
     return Depends(require_admin_if_auth_enabled())
 
 

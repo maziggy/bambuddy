@@ -37,7 +37,6 @@ export function UsersPage() {
     password: '',
     email: '',
     confirmPassword: '',
-    role: 'user',
     group_ids: [],
   });
 
@@ -60,12 +59,12 @@ export function UsersPage() {
         if (showCreateModal) {
           setShowCreateModal(false);
           setBasicCreateTab('local');
-          setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+          setFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
         }
         if (showEditModal) {
           setShowEditModal(false);
           setEditingUserId(null);
-          setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+          setFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
         }
       }
     };
@@ -91,7 +90,7 @@ export function UsersPage() {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       setShowCreateModal(false);
-      setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+      setFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
       showToast(t('users.toast.created'));
     },
     onError: (error: Error) => {
@@ -106,7 +105,7 @@ export function UsersPage() {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       setShowEditModal(false);
       setEditingUserId(null);
-      setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+      setFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
       showToast(t('users.toast.updated'));
     },
     onError: (error: Error) => {
@@ -196,7 +195,6 @@ export function UsersPage() {
       username: formData.username,
       password: advancedAuthEnabled ? undefined : formData.password,
       email: formData.email || undefined,
-      role: formData.role,
       group_ids: formData.group_ids.length > 0 ? formData.group_ids : undefined,
     });
   };
@@ -217,7 +215,6 @@ export function UsersPage() {
       username: formData.username || undefined,
       password: formData.password || undefined,
       email: formData.email || undefined,
-      role: formData.role,
       group_ids: formData.group_ids,
     };
     // Remove password if empty
@@ -242,7 +239,6 @@ export function UsersPage() {
       password: '',
       email: user.email || '',
       confirmPassword: '',
-      role: user.role,
       group_ids: user.groups?.map(g => g.id) || [],
     });
     setShowEditModal(true);
@@ -251,7 +247,7 @@ export function UsersPage() {
   const closeEditModal = () => {
     setShowEditModal(false);
     setEditingUserId(null);
-    setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+    setFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
   };
 
   const toggleGroup = (groupId: number) => {
@@ -302,7 +298,7 @@ export function UsersPage() {
         <Button
           onClick={() => {
             setShowCreateModal(true);
-            setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+            setFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
           }}
         >
           <Plus className="w-4 h-4" />
@@ -420,7 +416,7 @@ export function UsersPage() {
           onClick={() => {
             setShowCreateModal(false);
             setBasicCreateTab('local');
-            setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+            setFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
           }}
         >
           <Card
@@ -439,7 +435,7 @@ export function UsersPage() {
                   onClick={() => {
                     setShowCreateModal(false);
                     setBasicCreateTab('local');
-                    setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+                    setFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
                   }}
                 >
                   <X className="w-5 h-5" />
@@ -488,7 +484,7 @@ export function UsersPage() {
                     onSuccess={(user) => {
                       setShowCreateModal(false);
                       setBasicCreateTab('local');
-                      setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+                      setFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
                       showToast(t('users.toast.ldapProvisioned', { username: user.username }));
                     }}
                   />
@@ -498,7 +494,7 @@ export function UsersPage() {
                       onClick={() => {
                         setShowCreateModal(false);
                         setBasicCreateTab('local');
-                        setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+                        setFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
                       }}
                     >
                       {t('users.modal.cancel')}
@@ -589,7 +585,7 @@ export function UsersPage() {
                   variant="secondary"
                   onClick={() => {
                     setShowCreateModal(false);
-                    setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+                    setFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
                   }}
                 >
                   {t('users.modal.cancel')}
@@ -626,7 +622,7 @@ export function UsersPage() {
           groups={groups}
           onClose={() => {
             setShowCreateModal(false);
-            setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+            setFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
           }}
           onCreate={handleCreate}
           isCreating={createMutation.isPending}
@@ -634,7 +630,7 @@ export function UsersPage() {
           ldapEnabled={ldapStatus?.ldap_enabled}
           onLdapProvisioned={(user) => {
             setShowCreateModal(false);
-            setFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+            setFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
             showToast(t('users.toast.ldapProvisioned', { username: user.username }));
           }}
         />

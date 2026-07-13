@@ -45,6 +45,15 @@ from backend.app.services.email_service import (
 router = APIRouter(prefix="/users", tags=["users"])
 
 
+async def _get_administrators_group(db: AsyncSession) -> Group | None:
+    result = await db.execute(select(Group).where(Group.name == "Administrators").options(selectinload(Group.users)))
+    return result.scalar_one_or_none()
+
+
+def _active_admin_user_ids(admin_group: Group | None) -> set[int]:
+    return {u.id for u in (admin_group.users if admin_group else []) if u.is_active}
+
+
 def _user_to_response(user: User) -> UserResponse:
     """Convert a User model to UserResponse schema."""
     return UserResponse(
@@ -111,13 +120,6 @@ async def create_user(
             detail="Username already exists",
         )
 
-    # Validate role
-    if user_data.role not in ["admin", "user"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Role must be 'admin' or 'user'",
-        )
-
     # Advanced auth validation
     if advanced_auth_enabled:
         if not user_data.email:
@@ -148,7 +150,7 @@ async def create_user(
         username=user_data.username,
         email=user_data.email,
         password_hash=get_password_hash(password),
-        role=user_data.role,
+        role="user",
         is_active=True,
     )
 
@@ -222,35 +224,15 @@ async def update_user(
             detail="User not found",
         )
 
-    # Prevent deactivating the last admin
-    if user_data.is_active is False and user.is_admin:
-        # Count admins by role or Administrators group membership
-        admin_count_result = await db.execute(select(User).where(User.role == "admin", User.is_active.is_(True)))
-        role_admins = admin_count_result.scalars().all()
+    admin_group = await _get_administrators_group(db)
+    active_admin_ids = _active_admin_user_ids(admin_group)
 
-        # Also check for users in Administrators group
-        admin_group_result = await db.execute(
-            select(Group).where(Group.name == "Administrators").options(selectinload(Group.users))
-        )
-        admin_group = admin_group_result.scalar_one_or_none()
-        group_admins = [u for u in (admin_group.users if admin_group else []) if u.is_active]
-
-        # Combine unique admins
-        all_admins = {u.id for u in role_admins} | {u.id for u in group_admins}
-        if len(all_admins) <= 1 and user.id in all_admins:
+    # Prevent deactivating the last active Administrators-group user.
+    if user_data.is_active is False and user.id in active_admin_ids:
+        if len(active_admin_ids) <= 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot deactivate the last admin user",
-            )
-
-    # Prevent changing role of last admin
-    if user_data.role and user_data.role != "admin" and user.role == "admin":
-        admin_count_result = await db.execute(select(User).where(User.role == "admin", User.is_active.is_(True)))
-        admin_count = len(admin_count_result.scalars().all())
-        if admin_count <= 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot change role of the last admin user",
             )
 
     if user_data.username is not None:
@@ -285,14 +267,6 @@ async def update_user(
             )
         user.password_hash = get_password_hash(user_data.password)
 
-    if user_data.role is not None:
-        if user_data.role not in ["admin", "user"]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Role must be 'admin' or 'user'",
-            )
-        user.role = user_data.role
-
     if user_data.is_active is not None:
         user.is_active = user_data.is_active
 
@@ -305,6 +279,13 @@ async def update_user(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="One or more group IDs are invalid",
             )
+        new_group_ids = {g.id for g in groups}
+        if admin_group and user.id in active_admin_ids and admin_group.id not in new_group_ids:
+            if len(active_admin_ids) <= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot remove the last admin user from Administrators",
+                )
         user.groups = list(groups)
 
     await db.commit()
@@ -378,22 +359,12 @@ async def delete_user(
             detail="User not found",
         )
 
-    # Prevent deleting the last admin
-    if user.is_admin:
-        # Count admins by role or Administrators group membership
-        admin_count_result = await db.execute(select(User).where(User.role == "admin", User.id != user_id))
-        other_role_admins = admin_count_result.scalars().all()
-
-        # Also check for users in Administrators group
-        admin_group_result = await db.execute(
-            select(Group).where(Group.name == "Administrators").options(selectinload(Group.users))
-        )
-        admin_group = admin_group_result.scalar_one_or_none()
-        other_group_admins = [u for u in (admin_group.users if admin_group else []) if u.id != user_id and u.is_active]
-
-        # Combine unique admins
-        all_other_admins = {u.id for u in other_role_admins} | {u.id for u in other_group_admins}
-        if len(all_other_admins) == 0:
+    # Prevent deleting the last active Administrators-group user.
+    admin_group = await _get_administrators_group(db)
+    active_admin_ids = _active_admin_user_ids(admin_group)
+    if user.id in active_admin_ids:
+        other_admin_ids = active_admin_ids - {user.id}
+        if not other_admin_ids:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot delete the last admin user",

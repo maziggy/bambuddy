@@ -303,13 +303,13 @@ async def test_admin_cannot_strip_administrators_group_permissions(async_client:
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_admin_can_still_perform_user_role_change(async_client: AsyncClient, db_session):
+async def test_admin_role_payload_is_ignored(async_client: AsyncClient, db_session):
     admin_token = await _setup_admin(async_client)
     headers = {"Authorization": f"Bearer {admin_token}"}
     target = await async_client.post(
         "/api/v1/users/",
         headers=headers,
-        json={"username": "promoteme", "password": _FIXTURE_PW, "role": "user"},
+        json={"username": "promoteme", "password": _FIXTURE_PW},
     )
     tid = target.json()["id"]
 
@@ -319,7 +319,8 @@ async def test_admin_can_still_perform_user_role_change(async_client: AsyncClien
         json={"role": "admin"},
     )
     assert resp.status_code == 200
-    assert resp.json()["role"] == "admin"
+    assert resp.json()["role"] == "user"
+    assert resp.json()["is_admin"] is False
 
 
 @pytest.mark.asyncio
@@ -329,8 +330,8 @@ async def test_administrators_group_member_passes_admin_gate(async_client: Async
     rather than the legacy ``role`` column must pass the admin gate. The
     canonical signal is ``User.is_admin``, not ``role == 'admin'``.
 
-    Uses a write endpoint (PATCH /users/{id} {role}) since the admin gate
-    lives on writes only — reads stay at ``USERS_READ`` so operator UIs
+    Uses a write endpoint since the admin gate lives on writes only — reads
+    stay at ``USERS_READ`` so operator UIs
     (Stats filter-by-user, Archives Print Log, File Manager username
     autocomplete) keep working for non-admin operators who hold the
     read permission via a custom group."""
@@ -342,7 +343,7 @@ async def test_administrators_group_member_passes_admin_gate(async_client: Async
     user_resp = await async_client.post(
         "/api/v1/users/",
         headers=headers,
-        json={"username": "groupadmin", "password": _FIXTURE_PW, "role": "user"},
+        json={"username": "groupadmin", "password": _FIXTURE_PW},
     )
     uid = user_resp.json()["id"]
     add = await async_client.post(f"/api/v1/groups/{admin_gid}/users/{uid}", headers=headers)

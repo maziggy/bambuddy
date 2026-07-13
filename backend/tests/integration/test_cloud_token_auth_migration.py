@@ -27,6 +27,7 @@ from backend.app.api.routes.cloud import (
     get_stored_token,
 )
 from backend.app.core.auth import get_password_hash
+from backend.app.models.group import Group
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.services.bambu_cloud import BambuCloudError
@@ -53,12 +54,14 @@ async def _global_rows(db: AsyncSession) -> dict[str, str]:
 
 
 async def _make_admin(db: AsyncSession, username: str) -> User:
+    admin_group = (await db.execute(select(Group).where(Group.name == "Administrators"))).scalar_one()
     user = User(
         username=username,
         password_hash=get_password_hash("AdminPass1!"),
-        role="admin",
+        role="user",
         is_active=True,
     )
+    user.groups.append(admin_group)
     db.add(user)
     await db.commit()
     await db.refresh(user)
@@ -81,7 +84,7 @@ async def test_setup_migrates_global_token_to_created_admin(async_client: AsyncC
     )
     assert resp.status_code == 200, resp.text
 
-    admin = (await db_session.execute(select(User).where(User.role == "admin"))).scalar_one()
+    admin = (await db_session.execute(select(User).where(User.username == "admin"))).scalar_one()
     token, email, region = await get_stored_token(db_session, admin)
     assert token == "tok-global"
     assert email == "owner@example.com"
@@ -158,7 +161,7 @@ async def _admin_bearer(async_client: AsyncClient, username: str = "admin") -> s
 @pytest.mark.asyncio
 async def test_disable_auth_migrates_admin_token_to_global(async_client: AsyncClient, db_session: AsyncSession):
     bearer = await _admin_bearer(async_client)
-    admin = (await db_session.execute(select(User).where(User.role == "admin"))).scalar_one()
+    admin = (await db_session.execute(select(User).where(User.username == "admin"))).scalar_one()
     admin.cloud_token = "tok-user"
     admin.cloud_email = "user@example.com"
     admin.cloud_region = "china"
@@ -183,7 +186,7 @@ async def test_disable_auth_migrates_admin_token_to_global(async_client: AsyncCl
 async def test_disable_auth_does_not_clobber_existing_global_token(async_client: AsyncClient, db_session: AsyncSession):
     """A stale global row is still somebody's credential — refuse rather than overwrite."""
     bearer = await _admin_bearer(async_client)
-    admin = (await db_session.execute(select(User).where(User.role == "admin"))).scalar_one()
+    admin = (await db_session.execute(select(User).where(User.username == "admin"))).scalar_one()
     admin.cloud_token = "tok-user"
     await db_session.commit()
     await _seed_global_token(db_session, token="tok-preexisting")

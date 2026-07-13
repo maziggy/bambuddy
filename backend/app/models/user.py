@@ -18,7 +18,7 @@ class User(Base):
 
     Users can belong to multiple groups, and their permissions are additive
     across all groups. The legacy 'role' field is kept for backward compatibility
-    but is_admin property now also considers group membership.
+    but authorization is based on group membership.
     """
 
     __tablename__ = "users"
@@ -78,14 +78,7 @@ class User(Base):
 
     @property
     def is_admin(self) -> bool:
-        """Check if user is an admin.
-
-        Returns True if:
-        - User has legacy role='admin', OR
-        - User belongs to the Administrators group
-        """
-        if self.role == "admin":
-            return True
+        """Check if user belongs to the canonical Administrators group."""
         return any(g.name == "Administrators" for g in self.groups)
 
     def get_permissions(self) -> set[str]:

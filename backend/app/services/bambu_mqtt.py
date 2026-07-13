@@ -18,6 +18,7 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 import paho.mqtt.client as mqtt
 
@@ -449,6 +450,31 @@ STAGE_NAMES = {
 def get_stage_name(stage: int) -> str:
     """Get human-readable stage name from stage number."""
     return STAGE_NAMES.get(stage, f"Unknown stage ({stage})")
+
+
+def require_connection(info: str = None, default: Any = False):
+    """Decorator: guard a method behind an active MQTT connection.
+ 
+    If self._client is falsy or self.state.connected is False, logs a
+    warning and returns False (or specified default) without calling
+    the wrapped method.
+ 
+    Args:
+        action: Human-readable description for the log message,
+                e.g. "skip objects", "send G-code". Will default
+                to a decorated function name if None.
+    """
+    import functools
+    def decorator(func):
+        log_info = info if info else func.__name__
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            if not self._client or not self.state.connected:
+                logger.warning("[%s] not connected for [%s]", self.serial_number, log_info)
+                return default
+            return func(self, *args, **kwargs)
+        return wrapper
+    return decorator
 
 
 class BambuMQTTClient:
@@ -3419,6 +3445,7 @@ class BambuMQTTClient:
             message = {"pushing": {"command": "pushall"}}
             self._client.publish(self.topic_publish, json.dumps(message), qos=1)
 
+    @require_connection()
     def _probe_developer_mode(self):
         """Probe developer mode by sending an ams_filament_setting for the external slot.
 
@@ -3432,8 +3459,6 @@ class BambuMQTTClient:
         when the command succeeds. If there's no external slot data yet, we send a
         reset (empty filament) which is also safe.
         """
-        if not self._client or not self.state.connected:
-            return
         self._dev_mode_probed = True
         self._dev_mode_probe_time = time.monotonic()
         self._sequence_id += 1
@@ -3500,6 +3525,7 @@ class BambuMQTTClient:
             logger.debug("[%s] Requesting firmware version info", self.serial_number)
             self._client.publish(self.topic_publish, json.dumps(message), qos=1)
 
+    @require_connection()
     def request_status_update(self) -> bool:
         """Request a full status update from the printer (public API).
 
@@ -3509,9 +3535,6 @@ class BambuMQTTClient:
         Returns:
             True if the request was sent, False if not connected.
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] request_status_update: not connected", self.serial_number)
-            return False
         logger.debug("[%s] Requesting status update (pushall)", self.serial_number)
         self._request_push_all()
         # Note: get_accessories returns stale nozzle data on H2D.
@@ -3835,15 +3858,15 @@ class BambuMQTTClient:
                 )
             return False
 
+    @require_connection()
     def stop_print(self) -> bool:
         """Stop the current print job."""
-        if self._client and self.state.connected:
-            command = {"print": {"command": "stop", "sequence_id": "0"}}
-            self._client.publish(self.topic_publish, json.dumps(command), qos=1)
-            logger.info("[%s] Sent stop print command", self.serial_number)
-            return True
-        return False
+        command = {"print": {"command": "stop", "sequence_id": "0"}}
+        self._client.publish(self.topic_publish, json.dumps(command), qos=1)
+        logger.info("[%s] Sent stop print command", self.serial_number)
+        return True
 
+    @require_connection()
     def set_xcam_option(
         self, module_name: str, enabled: bool, print_halt: bool = True, sensitivity: str = "medium"
     ) -> bool:
@@ -3859,8 +3882,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False if not connected
         """
-        if not self._client or not self.state.connected:
-            return False
 
         # auto_recovery_step_loss uses a different command format (print.print_option)
         if module_name == "auto_recovery_step_loss":
@@ -3940,6 +3961,7 @@ class BambuMQTTClient:
 
         return True
 
+    @require_connection()
     def _set_print_option(self, option_name: str, enabled: bool) -> bool:
         """Set a print option using the print.print_option command.
 
@@ -3957,8 +3979,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False if not connected
         """
-        if not self._client or not self.state.connected:
-            return False
 
         self._sequence_id += 1
 
@@ -3994,6 +4014,7 @@ class BambuMQTTClient:
         """
         return self._set_print_option("auto_switch_filament", enabled)
 
+    @require_connection()
     def start_calibration(
         self,
         bed_leveling: bool = False,
@@ -4014,8 +4035,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False if not connected
         """
-        if not self._client or not self.state.connected:
-            return False
 
         # Build calibration bitmask based on OrcaSlicer DeviceManager.cpp
         # Bit 0: xcam_cali (not exposed in UI)
@@ -4072,20 +4091,20 @@ class BambuMQTTClient:
             self._client = None
             self.state.connected = False
 
+    @require_connection()
     def send_command(self, command: dict):
         """Send a command to the printer."""
-        if self._client and self.state.connected:
-            # Log outgoing message if logging is enabled
-            if self._logging_enabled:
-                self._message_log.append(
-                    MQTTLogEntry(
-                        timestamp=datetime.now(timezone.utc).isoformat(),
-                        topic=self.topic_publish,
-                        direction="out",
-                        payload=command,
-                    )
+        # Log outgoing message if logging is enabled
+        if self._logging_enabled:
+            self._message_log.append(
+                MQTTLogEntry(
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    topic=self.topic_publish,
+                    direction="out",
+                    payload=command,
                 )
-            self._client.publish(self.topic_publish, json.dumps(command), qos=1)
+            )
+        self._client.publish(self.topic_publish, json.dumps(command), qos=1)
 
     def enable_logging(self, enabled: bool = True):
         """Enable or disable MQTT message logging."""
@@ -4357,6 +4376,7 @@ class BambuMQTTClient:
         logger.error("[%s] Failed to get K-profiles after %s attempts", self.serial_number, max_retries)
         return []
 
+    @require_connection()
     def set_kprofile(
         self,
         filament_id: str,
@@ -4385,9 +4405,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot set K-profile: not connected", self.serial_number)
-            return False
 
         self._sequence_id += 1
 
@@ -4437,6 +4454,7 @@ class BambuMQTTClient:
         self._client.publish(self.topic_publish, command_json, qos=1)
         return True
 
+    @require_connection()
     def set_kprofiles_batch(
         self,
         profiles: list[dict],
@@ -4452,9 +4470,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot set K-profiles batch: not connected", self.serial_number)
-            return False
 
         import random
 
@@ -4505,6 +4520,7 @@ class BambuMQTTClient:
         self._client.publish(self.topic_publish, command_json, qos=1)
         return True
 
+    @require_connection()
     def delete_kprofile(
         self,
         cali_idx: int,
@@ -4527,9 +4543,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot delete K-profile: not connected", self.serial_number)
-            return False
 
         self._sequence_id += 1
 
@@ -4584,33 +4597,27 @@ class BambuMQTTClient:
     # Printer Control Commands
     # =========================================================================
 
+    @require_connection()
     def pause_print(self) -> bool:
         """Pause the current print job."""
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot pause print: not connected", self.serial_number)
-            return False
 
         command = {"print": {"command": "pause", "sequence_id": "0"}}
         self._client.publish(self.topic_publish, json.dumps(command), qos=1)
         logger.info("[%s] Sent pause print command", self.serial_number)
         return True
 
+    @require_connection()
     def resume_print(self) -> bool:
         """Resume a paused print job."""
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot resume print: not connected", self.serial_number)
-            return False
 
         command = {"print": {"command": "resume", "sequence_id": "0"}}
         self._client.publish(self.topic_publish, json.dumps(command), qos=1)
         logger.info("[%s] Sent resume print command", self.serial_number)
         return True
 
+    @require_connection()
     def clear_hms_errors(self) -> bool:
         """Clear HMS/print errors on the printer and locally."""
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot clear HMS errors: not connected", self.serial_number)
-            return False
 
         command = {"print": {"command": "clean_print_error", "sequence_id": "0"}}
         self._client.publish(self.topic_publish, json.dumps(command), qos=1)
@@ -4618,6 +4625,7 @@ class BambuMQTTClient:
         logger.info("[%s] Sent clear HMS errors command", self.serial_number)
         return True
 
+    @require_connection()
     def skip_objects(self, object_ids: list[int]) -> bool:
         """Skip specific objects during a print.
 
@@ -4630,9 +4638,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot skip objects: not connected", self.serial_number)
-            return False
 
         if self.state.state != "RUNNING" and self.state.state != "PAUSE":
             logger.warning(
@@ -4663,6 +4668,7 @@ class BambuMQTTClient:
 
         return True
 
+    @require_connection()
     def send_gcode(self, gcode: str) -> bool:
         """Send G-code command(s) to the printer.
 
@@ -4674,9 +4680,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot send G-code: not connected", self.serial_number)
-            return False
 
         self._sequence_id += 1
         command = {"print": {"command": "gcode_line", "param": gcode, "sequence_id": str(self._sequence_id)}}
@@ -4740,6 +4743,7 @@ class BambuMQTTClient:
             )
         return result
 
+    @require_connection()
     def set_print_speed(self, mode: int) -> bool:
         """Set the print speed mode.
 
@@ -4749,9 +4753,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot set print speed: not connected", self.serial_number)
-            return False
 
         if mode not in (1, 2, 3, 4):
             logger.warning("[%s] Invalid speed mode: %s", self.serial_number, mode)
@@ -4791,6 +4792,7 @@ class BambuMQTTClient:
         """Set chamber fan speed (0-255)."""
         return self.set_fan_speed(3, speed)
 
+    @require_connection()
     def set_airduct_mode(self, mode: str) -> bool:
         """Set air conditioning mode (cooling or heating).
 
@@ -4803,9 +4805,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot set airduct mode: not connected", self.serial_number)
-            return False
 
         self._sequence_id += 1
         mode_id = 0 if mode == "cooling" else 1
@@ -4819,6 +4818,7 @@ class BambuMQTTClient:
         )
         return True
 
+    @require_connection()
     def set_chamber_light(self, on: bool) -> bool:
         """Turn chamber light on or off.
 
@@ -4828,10 +4828,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot set chamber light: not connected", self.serial_number)
-            return False
-
         mode = "on" if on else "off"
         # Control both chamber lights (some printers like H2D have two)
         for led_node in ["chamber_light", "chamber_light2"]:
@@ -4852,6 +4848,7 @@ class BambuMQTTClient:
         logger.info("[%s] Set chamber lights %s (seq=%s)", self.serial_number, mode, self._sequence_id)
         return True
 
+    @require_connection()
     def select_extruder(self, extruder: int) -> bool:
         """Select the active extruder for dual-nozzle printers (H2D).
 
@@ -4863,10 +4860,6 @@ class BambuMQTTClient:
         """
         if extruder not in (0, 1):
             logger.warning("[%s] Invalid extruder: %s", self.serial_number, extruder)
-            return False
-
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot switch extruder: not connected", self.serial_number)
             return False
 
         # H2D extruder switching via select_extruder command
@@ -4933,6 +4926,7 @@ class BambuMQTTClient:
         """
         return self.send_gcode("M17")
 
+    @require_connection()
     def ams_load_filament(self, tray_id: int, extruder_id: int | None = None) -> bool:
         """Load filament from a specific AMS tray.
 
@@ -4945,9 +4939,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot load filament: not connected", self.serial_number)
-            return False
 
         # Build the ams_change_filament command. Encoding differs by target type:
         #   - AMS slots (0..15): slot_id is the local slot, curr/tar_temp = -1.
@@ -5001,15 +4992,13 @@ class BambuMQTTClient:
 
         return True
 
+    @require_connection()
     def ams_unload_filament(self) -> bool:
         """Unload the currently loaded filament.
 
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot unload filament: not connected", self.serial_number)
-            return False
 
         # Get the currently loaded tray info
         tray_now = self.state.tray_now
@@ -5055,6 +5044,7 @@ class BambuMQTTClient:
 
         return True
 
+    @require_connection()
     def ams_control(self, action: str) -> bool:
         """Control AMS operations.
 
@@ -5064,9 +5054,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot control AMS: not connected", self.serial_number)
-            return False
 
         if action not in ("resume", "reset", "pause"):
             logger.warning("[%s] Invalid AMS action: %s", self.serial_number, action)
@@ -5077,6 +5064,7 @@ class BambuMQTTClient:
         logger.info("[%s] AMS control: %s", self.serial_number, action)
         return True
 
+    @require_connection(default = (False, "Printer not connected"))
     def ams_refresh_tray(self, ams_id: int, tray_id: int) -> tuple[bool, str]:
         """Trigger RFID re-read for a specific AMS tray.
 
@@ -5087,9 +5075,6 @@ class BambuMQTTClient:
         Returns:
             Tuple of (success, message)
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot refresh AMS tray: not connected", self.serial_number)
-            return False, "Printer not connected"
 
         # Check if filament is currently loaded (tray_now != 255)
         # RFID refresh requires the AMS to move filament, which can't happen if one is loaded
@@ -5115,6 +5100,7 @@ class BambuMQTTClient:
 
         return True, f"Refreshing AMS {ams_id} tray {tray_id}"
 
+    @require_connection()
     def ams_set_filament_setting(
         self,
         ams_id: int,
@@ -5145,9 +5131,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot set AMS filament setting: not connected", self.serial_number)
-            return False
 
         # Calculate mqtt IDs based on AMS type.
         # External-spool convention verified against a BambuStudio→X1C packet capture
@@ -5210,6 +5193,7 @@ class BambuMQTTClient:
         self._last_ams_cmd_time = time.monotonic()
         return True
 
+    @require_connection()
     def reset_ams_slot(self, ams_id: int, tray_id: int) -> bool:
         """Reset an AMS slot to empty/unconfigured state.
 
@@ -5220,9 +5204,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot reset AMS slot: not connected", self.serial_number)
-            return False
 
         # Calculate mqtt IDs based on AMS type — same convention as
         # ams_set_filament_setting above. See its comment for the #1279 capture rationale.
@@ -5270,6 +5251,7 @@ class BambuMQTTClient:
         self._last_ams_cmd_time = time.monotonic()
         return True
 
+    @require_connection()
     def extrusion_cali_sel(
         self,
         ams_id: int,
@@ -5296,9 +5278,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot set calibration: not connected", self.serial_number)
-            return False
 
         # Calculate mqtt IDs based on AMS type.
         # IMPORTANT: extrusion_cali_sel uses GLOBAL tray_id (unlike ams_filament_setting
@@ -5351,6 +5330,7 @@ class BambuMQTTClient:
         self._client.publish(self.topic_publish, command_json, qos=1)
         return True
 
+    @require_connection()
     def extrusion_cali_set(
         self,
         tray_id: int,
@@ -5379,9 +5359,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot set K value: not connected", self.serial_number)
-            return False
 
         nozzle_id = f"HS00-{nozzle_diameter}"
 
@@ -5414,6 +5391,7 @@ class BambuMQTTClient:
         self._client.publish(self.topic_publish, command_json, qos=1)
         return True
 
+    @require_connection()
     def set_timelapse(self, enable: bool) -> bool:
         """Enable or disable timelapse recording.
 
@@ -5423,9 +5401,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot set timelapse: not connected", self.serial_number)
-            return False
 
         command = {"pushing": {"command": "pushall", "sequence_id": "0"}}
         # First send the timelapse setting
@@ -5438,6 +5413,7 @@ class BambuMQTTClient:
         logger.info("[%s] Set timelapse %s", self.serial_number, "enabled" if enable else "disabled")
         return True
 
+    @require_connection()
     def set_liveview(self, enable: bool) -> bool:
         """Enable or disable live view / camera streaming.
 
@@ -5447,9 +5423,6 @@ class BambuMQTTClient:
         Returns:
             True if command was sent, False otherwise
         """
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot set liveview: not connected", self.serial_number)
-            return False
 
         command = {
             "xcam": {"command": "ipcam_record_set", "control": "enable" if enable else "disable", "sequence_id": "0"}
@@ -5461,6 +5434,7 @@ class BambuMQTTClient:
         logger.info("[%s] Set liveview %s", self.serial_number, "enabled" if enable else "disabled")
         return True
 
+    @require_connection()
     def execute_hms_action(self, print_error: str, action: str, job_id: str | None = None) -> bool:
         """Dispatch the user's choice from the HMS-error modal as a printer command.
 
@@ -5484,10 +5458,6 @@ class BambuMQTTClient:
         Returns False when the MQTT client is offline or when `action` is unknown
         so the route surfaces it as a 4xx rather than a silent no-op.
         """
-
-        if not self._client or not self.state.connected:
-            logger.warning("[%s] Cannot execute HMS action: not connected", self.serial_number)
-            return False
 
         # Always re-push the full state after a command so the modal's underlying
         # status query reflects the new error list (or absence) on the next tick.

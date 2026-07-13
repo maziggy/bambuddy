@@ -4551,6 +4551,7 @@ export default {
     selectPlate: 'Selecionar Placa',
     filamentMapping: 'Mapeamento de Filamento',
     plateN: 'Placa {{n}}',
+    plateFilamentsUnreadable: 'Não foi possível ler os filamentos de uma placa selecionada, portanto ela não pode ser mapeada. Desmarque-a para enfileirar as demais.',
     totalCost: 'Custo total:',
     slotRemainingShort: ' - {{grams}}g rest.',
     printSettings: 'Configurações de Impressão',

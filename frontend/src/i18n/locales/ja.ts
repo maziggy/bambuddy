@@ -4563,6 +4563,7 @@ export default {
     selectPlate: 'プレートを選択',
     filamentMapping: 'フィラメントマッピング',
     plateN: 'プレート {{n}}',
+    plateFilamentsUnreadable: '選択したプレートのフィラメントを読み取れなかったため、割り当てできません。そのプレートの選択を解除すると、残りをキューに追加できます。',
     totalCost: '合計コスト:',
     slotRemainingShort: ' - 残{{grams}}g',
     printSettings: '印刷設定',

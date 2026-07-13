@@ -4335,6 +4335,7 @@ export default {
     selectPlate: '플레이트 선택',
     filamentMapping: '필라멘트 매핑',
     plateN: '플레이트 {{n}}',
+    plateFilamentsUnreadable: '선택한 플레이트의 필라멘트를 읽을 수 없어 매핑할 수 없습니다. 해당 플레이트를 선택 해제하면 나머지를 대기열에 추가할 수 있습니다.',
     totalCost: '총 비용:',
     slotRemainingShort: ' - {{grams}}g 남음',
     printSettings: '인쇄 설정',

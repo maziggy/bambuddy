@@ -4541,6 +4541,7 @@ export default {
     selectPlate: 'Plaka Seç',
     filamentMapping: 'Filament Eşlemesi',
     plateN: 'Plaka {{n}}',
+    plateFilamentsUnreadable: 'Seçili bir plakanın filamentleri okunamadı, bu yüzden eşleştirilemiyor. Diğerlerini kuyruğa almak için o plakanın seçimini kaldırın.',
     totalCost: 'Toplam maliyet:',
     slotRemainingShort: ' - {{grams}}g kaldı',
     printSettings: 'Baskı Ayarları',

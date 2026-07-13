@@ -4571,6 +4571,7 @@ export default {
     selectPlate: 'Seleccionar cama',
     filamentMapping: 'Mapeo de filamentos',
     plateN: 'Cama {{n}}',
+    plateFilamentsUnreadable: 'No se han podido leer los filamentos de una cama seleccionada, por lo que no se puede asignar. Deselecciónala para encolar las demás.',
     totalCost: 'Coste total:',
     slotRemainingShort: ' - quedan {{grams}} g',
     printSettings: 'Ajustes de impresión',

@@ -4563,6 +4563,7 @@ export default {
     selectPlate: 'Platte auswählen',
     filamentMapping: 'Filamentzuordnung',
     plateN: 'Platte {{n}}',
+    plateFilamentsUnreadable: 'Die Filamente einer ausgewählten Platte konnten nicht gelesen werden, sie lässt sich daher nicht zuordnen. Wähle sie ab, um die anderen einzureihen.',
     totalCost: 'Gesamtkosten:',
     slotRemainingShort: ' - {{grams}}g übrig',
     printSettings: 'Druckeinstellungen',

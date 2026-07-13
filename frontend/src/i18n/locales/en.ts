@@ -4606,6 +4606,7 @@ export default {
     selectPlate: 'Select Plate',
     filamentMapping: 'Filament Mapping',
     plateN: 'Plate {{n}}',
+    plateFilamentsUnreadable: 'The filaments of a selected plate could not be read, so it can\'t be mapped. Deselect it to queue the others.',
     totalCost: 'Total cost:',
     slotRemainingShort: ' - {{grams}}g left',
     printSettings: 'Print Settings',

@@ -4551,6 +4551,7 @@ export default {
     selectPlate: '選擇板',
     filamentMapping: '耗材對應',
     plateN: '板 {{n}}',
+    plateFilamentsUnreadable: '無法讀取所選盤的耗材資訊，因此無法進行對應。取消選取該盤即可將其餘盤加入佇列。',
     totalCost: '總成本：',
     slotRemainingShort: ' - 剩餘 {{grams}}g',
     printSettings: '列印設定',

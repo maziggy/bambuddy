@@ -4552,6 +4552,7 @@ export default {
     selectPlate: 'Choisir le plateau',
     filamentMapping: 'Mapping Filament',
     plateN: 'Plateau {{n}}',
+    plateFilamentsUnreadable: 'Les filaments d\'un plateau sélectionné n\'ont pas pu être lus, il est donc impossible de l\'affecter. Désélectionnez-le pour mettre les autres en file.',
     totalCost: 'Coût total :',
     slotRemainingShort: ' - {{grams}}g rest.',
     printSettings: 'Réglages d\'impression',

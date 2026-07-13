@@ -4551,6 +4551,7 @@ export default {
     selectPlate: '选择板',
     filamentMapping: '耗材映射',
     plateN: '板 {{n}}',
+    plateFilamentsUnreadable: '无法读取所选盘的耗材信息，因此无法进行映射。取消选择该盘即可将其余盘加入队列。',
     totalCost: '总成本：',
     slotRemainingShort: ' - 剩余 {{grams}}g',
     printSettings: '打印设置',

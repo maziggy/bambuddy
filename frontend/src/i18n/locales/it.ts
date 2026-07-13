@@ -4551,6 +4551,7 @@ export default {
     selectPlate: 'Seleziona piatto',
     filamentMapping: 'Mappatura filamento',
     plateN: 'Piatto {{n}}',
+    plateFilamentsUnreadable: 'Non è stato possibile leggere i filamenti di un piatto selezionato, quindi non può essere assegnato. Deselezionalo per accodare gli altri.',
     totalCost: 'Costo totale:',
     slotRemainingShort: ' - {{grams}}g rim.',
     printSettings: 'Impostazioni stampa',

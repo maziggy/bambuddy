@@ -4562,6 +4562,7 @@ export default {
     selectPrinter: 'プリンターを選択',
     selectPlate: 'プレートを選択',
     filamentMapping: 'フィラメントマッピング',
+    plateN: 'プレート {{n}}',
     totalCost: '合計コスト:',
     slotRemainingShort: ' - 残{{grams}}g',
     printSettings: '印刷設定',

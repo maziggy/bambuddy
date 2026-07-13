@@ -4605,6 +4605,7 @@ export default {
     selectPrinter: 'Select Printer',
     selectPlate: 'Select Plate',
     filamentMapping: 'Filament Mapping',
+    plateN: 'Plate {{n}}',
     totalCost: 'Total cost:',
     slotRemainingShort: ' - {{grams}}g left',
     printSettings: 'Print Settings',

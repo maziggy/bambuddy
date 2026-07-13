@@ -4562,6 +4562,7 @@ export default {
     selectPrinter: 'Drucker auswählen',
     selectPlate: 'Platte auswählen',
     filamentMapping: 'Filamentzuordnung',
+    plateN: 'Platte {{n}}',
     totalCost: 'Gesamtkosten:',
     slotRemainingShort: ' - {{grams}}g übrig',
     printSettings: 'Druckeinstellungen',

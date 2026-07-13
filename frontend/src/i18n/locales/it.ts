@@ -4550,6 +4550,7 @@ export default {
     selectPrinter: 'Seleziona stampante',
     selectPlate: 'Seleziona piatto',
     filamentMapping: 'Mappatura filamento',
+    plateN: 'Piatto {{n}}',
     totalCost: 'Costo totale:',
     slotRemainingShort: ' - {{grams}}g rim.',
     printSettings: 'Impostazioni stampa',

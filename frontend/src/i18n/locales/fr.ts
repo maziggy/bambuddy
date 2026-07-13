@@ -4551,6 +4551,7 @@ export default {
     selectPrinter: 'Choisir l\'imprimante',
     selectPlate: 'Choisir le plateau',
     filamentMapping: 'Mapping Filament',
+    plateN: 'Plateau {{n}}',
     totalCost: 'Coût total :',
     slotRemainingShort: ' - {{grams}}g rest.',
     printSettings: 'Réglages d\'impression',

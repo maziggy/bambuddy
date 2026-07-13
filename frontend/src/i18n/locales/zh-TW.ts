@@ -4550,6 +4550,7 @@ export default {
     selectPrinter: '選擇印表機',
     selectPlate: '選擇板',
     filamentMapping: '耗材對應',
+    plateN: '板 {{n}}',
     totalCost: '總成本：',
     slotRemainingShort: ' - 剩餘 {{grams}}g',
     printSettings: '列印設定',

@@ -4540,6 +4540,7 @@ export default {
     selectPrinter: 'Yazıcı Seç',
     selectPlate: 'Plaka Seç',
     filamentMapping: 'Filament Eşlemesi',
+    plateN: 'Plaka {{n}}',
     totalCost: 'Toplam maliyet:',
     slotRemainingShort: ' - {{grams}}g kaldı',
     printSettings: 'Baskı Ayarları',

@@ -218,6 +218,10 @@ export interface FilamentMappingProps {
   forceColorMatch?: Record<number, boolean>;
   /** Called when a slot's force-color-match checkbox is toggled. */
   onForceColorMatchChange?: (slotId: number, value: boolean) => void;
+  /** Names the plate this panel maps, when one panel is rendered per selected
+   *  plate. Each plate prints its own subset of the file's slots and gets its
+   *  own AMS mapping, so the panels have to be told apart. */
+  plateLabel?: string;
 }
 
 /**

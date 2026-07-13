@@ -4334,6 +4334,7 @@ export default {
     selectPrinter: '프린터 선택',
     selectPlate: '플레이트 선택',
     filamentMapping: '필라멘트 매핑',
+    plateN: '플레이트 {{n}}',
     totalCost: '총 비용:',
     slotRemainingShort: ' - {{grams}}g 남음',
     printSettings: '인쇄 설정',

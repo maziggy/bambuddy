@@ -4570,6 +4570,7 @@ export default {
     selectPrinter: 'Seleccionar impresora',
     selectPlate: 'Seleccionar cama',
     filamentMapping: 'Mapeo de filamentos',
+    plateN: 'Cama {{n}}',
     totalCost: 'Coste total:',
     slotRemainingShort: ' - quedan {{grams}} g',
     printSettings: 'Ajustes de impresión',

@@ -7,10 +7,16 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import type React from 'react';
+import { screen, waitFor, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter } from 'react-router-dom';
 import { render } from '../utils';
 import { PrintModal } from '../../components/PrintModal';
+import { AuthProvider } from '../../contexts/AuthContext';
+import { ThemeProvider } from '../../contexts/ThemeContext';
+import { ToastProvider } from '../../contexts/ToastContext';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import type { PrintQueueItem } from '../../api/client';
@@ -1551,5 +1557,178 @@ describe('PrintModal', () => {
       // Either omitted entirely or explicitly undefined — both interpret as "keep file"
       expect(capturedBody?.cleanup_library_after_dispatch).toBeUndefined();
     });
+  });
+});
+
+
+describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
+  const mockOnClose = vi.fn();
+
+  // These tests deliberately do NOT use the shared `render` from '../utils': its
+  // QueryClient sets `gcTime: 0`, which evicts a query the instant it loses its
+  // observer. The whole-file filament requirements are fetched on open and then
+  // orphaned when a plate is auto-selected, so under gcTime:0 they vanish and the
+  // modal simply sends no mapping — the bug cannot reproduce. A real browser keeps
+  // that entry for 5 minutes and hands the union straight back when the user picks
+  // a second plate, which is what got mapped onto every plate. Same providers,
+  // production cache behaviour.
+  const render = (ui: React.ReactElement) => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    return rtlRender(
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AuthProvider>
+            <ThemeProvider>
+              <ToastProvider>{ui}</ToastProvider>
+            </ThemeProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+  };
+
+  // Two plates, each printing one red object, but on different slots of the same
+  // file. The printer has exactly one red spool (tray 0) and one black (tray 1).
+  // Matching the union of both plates makes slot 1 claim the red tray and drops
+  // slot 2 onto the black one — so plate 2 would print in the wrong colour.
+  const PLATES = {
+    is_multi_plate: true,
+    plates: [
+      { index: 1, name: 'Plate 1', has_thumbnail: false, thumbnail_url: null, objects: ['A'], filaments: [{ type: 'PLA', color: '#FF0000' }], print_time_seconds: 1800, filament_used_grams: 50 },
+      { index: 2, name: 'Plate 2', has_thumbnail: false, thumbnail_url: null, objects: ['B'], filaments: [{ type: 'PLA', color: '#FF0000' }], print_time_seconds: 1800, filament_used_grams: 50 },
+    ],
+  };
+
+  const SLOT_1_RED = { slot_id: 1, type: 'PLA', color: '#FF0000', tray_info_idx: '', used_grams: 50 };
+  const SLOT_2_RED = { slot_id: 2, type: 'PLA', color: '#FF0000', tray_info_idx: '', used_grams: 50 };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json(mockPrinters)),
+      http.get('/api/v1/archives/:id/plates', () => HttpResponse.json(PLATES)),
+      // The endpoint is plate-aware: no plate_id yields the whole-file union.
+      http.get('/api/v1/archives/:id/filament-requirements', ({ request }) => {
+        const plateId = new URL(request.url).searchParams.get('plate_id');
+        if (plateId === '1') return HttpResponse.json({ filaments: [SLOT_1_RED] });
+        if (plateId === '2') return HttpResponse.json({ filaments: [SLOT_2_RED] });
+        return HttpResponse.json({ filaments: [SLOT_1_RED, SLOT_2_RED] });
+      }),
+      http.get('/api/v1/printers/:id/status', () =>
+        HttpResponse.json({
+          connected: true,
+          state: 'IDLE',
+          ams: [{ id: 0, tray: [
+            { id: 0, tray_type: 'PLA', tray_color: 'FF0000' },
+            { id: 1, tray_type: 'PLA', tray_color: '000000' },
+          ] }],
+          vt_tray: [],
+        }),
+      ),
+      http.get('/api/v1/printers/:id/assignments', () => HttpResponse.json([])),
+      http.post('/api/v1/queue/', () => HttpResponse.json({ id: 1, status: 'pending' })),
+    );
+  });
+
+  const selectBothPlates = async (user: ReturnType<typeof userEvent.setup>) => {
+    await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+    await user.click(screen.getByText('X1 Carbon'));
+    await waitFor(() => expect(screen.getByText('Plate 2')).toBeInTheDocument());
+    await user.click(screen.getByText('Plate 2')); // Plate 1 is auto-selected
+  };
+
+  it('shows one mapping panel per selected plate, named after the plate', async () => {
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
+
+    await selectBothPlates(user);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Filament Mapping — Plate 1/)).toBeInTheDocument();
+      expect(screen.getByText(/Filament Mapping — Plate 2/)).toBeInTheDocument();
+    });
+  });
+
+  it('sends each plate the mapping for its own slots, not the whole-file union', async () => {
+    const queued: { plate_id: number; ams_mapping: number[] | null }[] = [];
+    server.use(
+      http.post('/api/v1/queue/', async ({ request }) => {
+        queued.push((await request.json()) as { plate_id: number; ams_mapping: number[] | null });
+        return HttpResponse.json({ id: queued.length, status: 'pending' });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
+
+    await selectBothPlates(user);
+    await waitFor(() => expect(screen.getByText(/Filament Mapping — Plate 2/)).toBeInTheDocument());
+
+    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+    await waitFor(() => expect(queued.length).toBe(2));
+
+    const plate1 = queued.find((q) => q.plate_id === 1);
+    const plate2 = queued.find((q) => q.plate_id === 2);
+    // Plate 1 prints slot 1 from the red tray.
+    expect(plate1?.ams_mapping).toEqual([0]);
+    // Plate 2 prints slot 2 from the SAME red tray — slot 1 is not its business.
+    // The union mapping would have been [0, 1], sending this plate to the black tray.
+    expect(plate2?.ams_mapping).toEqual([-1, 0]);
+  });
+
+  it('sends no mapping when several plates fan out across several printers', async () => {
+    // A tray id is meaningless on a different printer, so the first printer's
+    // mapping must not be handed to the second. The scheduler maps each plate
+    // against the printer it actually dispatches to.
+    const queued: { printer_id: number; ams_mapping?: number[] | null }[] = [];
+    server.use(
+      http.post('/api/v1/queue/', async ({ request }) => {
+        queued.push((await request.json()) as { printer_id: number; ams_mapping?: number[] | null });
+        return HttpResponse.json({ id: queued.length, status: 'pending' });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
+
+    await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+    await user.click(screen.getByText('X1 Carbon'));
+    await user.click(screen.getByText('P1S'));
+    await waitFor(() => expect(screen.getByText('Plate 2')).toBeInTheDocument());
+    await user.click(screen.getByText('Plate 2'));
+
+    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+    await waitFor(() => expect(queued.length).toBe(4)); // 2 plates x 2 printers
+    queued.forEach((q) => expect(q.ams_mapping ?? null).toBeNull());
+  });
+
+  it('sends no mapping for a model-assigned multi-plate job, leaving it to the scheduler', async () => {
+    const queued: { ams_mapping?: number[] | null }[] = [];
+    server.use(
+      http.post('/api/v1/queue/', async ({ request }) => {
+        queued.push((await request.json()) as { ams_mapping?: number[] | null });
+        return HttpResponse.json({ id: queued.length, status: 'pending' });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
+
+    // "Any model" mode: no printer is chosen, so there is no AMS to map onto and
+    // the scheduler computes the mapping per plate once it picks one.
+    await waitFor(() => expect(screen.getByText('Plate 2')).toBeInTheDocument());
+    await user.click(screen.getByText('Plate 2'));
+    await user.click(screen.getByRole('button', { name: /any model/i }));
+    await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument());
+    await user.selectOptions(screen.getByRole('combobox'), 'X1C');
+
+    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+    await waitFor(() => expect(queued.length).toBe(2));
+    queued.forEach((q) => expect(q.ams_mapping ?? null).toBeNull());
   });
 });

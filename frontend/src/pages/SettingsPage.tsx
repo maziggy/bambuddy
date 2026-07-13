@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Workflow } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, Workflow } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatDateOnly } from '../utils/date';
 import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
 import { checkPasswordComplexity } from '../utils/password';
+import { fleetAudience, sponsorHref } from '../utils/fleetAudience';
 import { PRESET_CATEGORIES, parsePresetTriple } from '../utils/temperatureFanPresets';
 import { PreheatFilamentTargetsEditor } from '../components/PreheatFilamentTargetsEditor';
 import type { APIKey, AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse } from '../api/client';
@@ -427,6 +428,9 @@ export function SettingsPage() {
     queryKey: ['printers'],
     queryFn: api.getPrinters,
   });
+
+  // A business-sized fleet gets the commercial ask instead of the donation ask.
+  const sponsorAudience = fleetAudience(printers?.length ?? 0);
 
   const { data: notificationTemplates, isLoading: templatesLoading } = useQuery({
     queryKey: ['notification-templates'],
@@ -1504,30 +1508,41 @@ export function SettingsPage() {
       <div className="flex-1 min-w-0">
       {activeTab === 'general' && (
       <>
-      {/* Sponsor banner — prominent independence callout */}
+      {/* Sponsor banner — independence callout, or the commercial ask on a
+          business-sized fleet (see utils/fleetAudience). */}
       <a
-        href="https://bambuddy.cool/sponsors.html?from=app-settings"
+        href={sponsorHref(sponsorAudience, 'app-settings')}
         target="_blank"
         rel="noopener noreferrer"
         className="group block mb-4 lg:mb-6 rounded-xl border border-bambu-green/30 bg-gradient-to-br from-bambu-green/15 via-bambu-green/5 to-transparent hover:border-bambu-green/50 hover:from-bambu-green/20 transition-colors"
       >
         <div className="flex flex-col md:flex-row items-start md:items-center gap-4 p-4 md:p-5">
           <div className="p-3 rounded-lg bg-bambu-green/20 text-bambu-green flex-shrink-0">
-            <Heart className="w-6 h-6" />
+            {sponsorAudience === 'business' ? <Briefcase className="w-6 h-6" /> : <Heart className="w-6 h-6" />}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-base font-semibold text-white">
-              {t('sponsors.sectionTitle', 'Independent & community-funded')}
+              {sponsorAudience === 'business'
+                ? t('sponsors.businessTitle', 'Bambuddy for business')
+                : t('sponsors.sectionTitle', 'Independent & community-funded')}
             </p>
             <p className="text-sm text-bambu-gray mt-0.5">
-              {t(
-                'sponsors.tagline',
-                'Bambuddy is free and stays that way because people choose to support it. No VC, no cloud lock-in.'
-              )}
+              {sponsorAudience === 'business'
+                ? t(
+                    'sponsors.businessTagline',
+                    "You're running {{count}} printers. Priority support, commercial licensing and invoicing are available for teams and print farms.",
+                    { count: printers?.length ?? 0 }
+                  )
+                : t(
+                    'sponsors.tagline',
+                    'Bambuddy is free and stays that way because people choose to support it. No VC, no cloud lock-in.'
+                  )}
             </p>
           </div>
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-bambu-green/20 text-bambu-green group-hover:bg-bambu-green/30 text-sm font-medium whitespace-nowrap self-start md:self-auto">
-            {t('sponsors.viewSupporters', 'View supporters')}
+            {sponsorAudience === 'business'
+              ? t('sponsors.businessCta', 'Bambuddy for business')
+              : t('sponsors.viewSupporters', 'View supporters')}
             <ExternalLink className="w-4 h-4" />
           </div>
         </div>

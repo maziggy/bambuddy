@@ -3937,6 +3937,10 @@ export default {
     toastArchives: '{{count}} stampe archiviate con Bambuddy. Scopri chi lo mantiene indipendente.',
     toastAnniversary: 'Un anno con Bambuddy! Scopri chi mantiene il progetto indipendente.',
     toastVersionUpdate: 'Aggiornato a v{{version}}. Bambuddy resta gratuito grazie a chi lo sostiene.',
+    toastBusiness: 'Usi Bambuddy su {{count}} stampanti? Esiste un piano di supporto per i team: correzioni prioritarie, fatturazione e un contatto diretto con il manutentore.',
+    businessCta: 'Bambuddy per le aziende',
+    businessTitle: 'Bambuddy per le aziende',
+    businessTagline: 'Stai gestendo {{count}} stampanti. Supporto prioritario, licenze commerciali e fatturazione sono disponibili per team e farm di stampa.',
   },
 
   // Library (K Profiles)

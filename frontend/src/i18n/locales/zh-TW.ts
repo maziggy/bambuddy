@@ -3937,6 +3937,10 @@ export default {
     toastArchives: '用 Bambuddy 封存了 {{count}} 次列印。看看是誰讓它保持獨立。',
     toastAnniversary: '與 Bambuddy 相伴一年了！看看是誰讓專案保持獨立。',
     toastVersionUpdate: '已更新至 v{{version}}。Bambuddy 之所以免費，要感謝支持者。',
+    toastBusiness: '您正在 {{count}} 台印表機上執行 Bambuddy？我們為團隊提供支援方案：優先修復、開立發票，以及與維護者的直接聯繫管道。',
+    businessCta: 'Bambuddy 商業版',
+    businessTitle: 'Bambuddy 商業版',
+    businessTagline: '您正在管理 {{count}} 台印表機。我們為團隊和列印農場提供優先支援、商業授權與發票開立。',
   },
 
   // Library (K Profiles)

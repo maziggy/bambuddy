@@ -923,6 +923,9 @@ export interface ProjectListItem {
   target_count: number | null;  // Target number of plates/print jobs
   target_parts_count: number | null;  // Target number of parts/objects
   budget: number | null;
+  tags: string | null;  // #2536 — the shared edit dialog seeds itself from this
+  due_date: string | null;  // #2536
+  priority: string;  // #2536
   created_at: string;
   archive_count: number;  // Number of print jobs (plates)
   total_items: number;  // Sum of quantities (total items printed, including failed)
@@ -958,8 +961,8 @@ export interface ProjectUpdate {
   target_count?: number;
   target_parts_count?: number;
   notes?: string;
-  tags?: string;
-  due_date?: string;
+  tags?: string | null;  // #2536 — explicit null clears the tags
+  due_date?: string | null;  // #2536 — explicit null clears the due date
   priority?: string;
   budget?: number | null;
   parent_id?: number;
@@ -2626,6 +2629,21 @@ export interface LocalBackupFile {
   filename: string;
   size: number;
   created_at: string;
+}
+
+/** Result of writing a probe file into the configured backup directory (#2544). */
+export interface LocalBackupPathCheck {
+  writable: boolean;
+  path: string;
+  /** 'ok' | 'sandboxed' | 'read_only' | 'permission_denied' | 'no_space' | 'not_a_directory' | 'missing' | 'error' */
+  code: string;
+  /** Raw OS error, shown as-is under the translated explanation. */
+  detail: string | null;
+  /** Copy-pasteable fix (systemd drop-in, compose snippet) — not translated. */
+  remedy: string | null;
+  message: string;
+  /** 'container_ephemeral' — writable, but the backups die with the container. */
+  warning: string | null;
 }
 
 export interface ObicoDetectionEvent {
@@ -6348,6 +6366,9 @@ export const api = {
 
   triggerLocalBackup: () =>
     request<{ success: boolean; message: string; filename?: string }>('/local-backup/run', { method: 'POST' }),
+
+  checkLocalBackupPath: () =>
+    request<LocalBackupPathCheck>('/local-backup/path-check'),
 
   getLocalBackups: () =>
     request<LocalBackupFile[]>('/local-backup/backups'),

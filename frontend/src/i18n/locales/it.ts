@@ -4550,6 +4550,8 @@ export default {
     selectPrinter: 'Seleziona stampante',
     selectPlate: 'Seleziona piatto',
     filamentMapping: 'Mappatura filamento',
+    plateN: 'Piatto {{n}}',
+    plateFilamentsUnreadable: 'Non è stato possibile leggere i filamenti di un piatto selezionato, quindi non può essere assegnato. Deselezionalo per accodare gli altri.',
     totalCost: 'Costo totale:',
     slotRemainingShort: ' - {{grams}}g rim.',
     printSettings: 'Impostazioni stampa',
@@ -4785,6 +4787,20 @@ export default {
     backupSize: 'Dimensione',
     localTimeHint: 'Ora locale ({{tz}})',
     defaultPathLabel: 'Predefinito:',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'Bambuddy non riesce a scrivere in questa directory',
+      howToFix: 'Come risolvere:',
+      sandboxed: 'Il servizio Bambuddy non riesce a scrivere in {{path}}. La sua unit systemd usa ProtectSystem=strict, che rende ogni directory al di fuori di quelle di installazione, dati e log di sola lettura per il servizio - anche una in cui puoi scrivere dalla tua shell.',
+      read_only: '{{path}} si trova su un filesystem di sola lettura.',
+      permission_denied: 'Bambuddy non ha il permesso di scrivere in {{path}}. Controlla proprietario e permessi della directory.',
+      no_space: 'Il filesystem che contiene {{path}} è pieno.',
+      not_a_directory: '{{path}} esiste ma non è una directory.',
+      missing: '{{path}} non esiste e non è stato possibile crearla.',
+      error: 'Bambuddy non riesce a scrivere in {{path}}.',
+      ephemeralTitle: 'Questi backup non sopravvivono alla ricreazione del container',
+      container_ephemeral: '{{path}} si trova dentro il container Bambuddy, non sull\'host. I backup scritti lì vanno persi quando il container viene ricreato. Monta la directory dall\'host:',
+    },
 
     // Category labels
     categories: {

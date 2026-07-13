@@ -70,6 +70,19 @@ ProtectSystem=strict
 # under /home (issue #1685). Default is the safer read-only; flip to true if
 # your INSTALL_PATH is outside /home (e.g. /opt/bambuddy).
 ProtectHome=read-only
+#
+# ProtectSystem=strict mounts EVERYTHING outside these three paths read-only for
+# this service — including a NAS share you have mounted yourself and can write to
+# from your own shell. Writes there fail with EROFS ("Read-only file system"),
+# which looks like a permission problem but is not one (issue #2544).
+#
+# So if you point Scheduled Backups at a directory outside the install, data and
+# log dirs, add it here — or better, in a drop-in that survives a reinstall:
+#
+#   sudo systemctl edit bambuddy
+#   [Service]
+#   ReadWritePaths=/mnt/your-nas-share
+#
 ReadWritePaths=DATA_DIR LOG_DIR INSTALL_PATH
 
 [Install]

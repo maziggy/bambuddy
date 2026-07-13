@@ -4605,6 +4605,8 @@ export default {
     selectPrinter: 'Select Printer',
     selectPlate: 'Select Plate',
     filamentMapping: 'Filament Mapping',
+    plateN: 'Plate {{n}}',
+    plateFilamentsUnreadable: 'The filaments of a selected plate could not be read, so it can\'t be mapped. Deselect it to queue the others.',
     totalCost: 'Total cost:',
     slotRemainingShort: ' - {{grams}}g left',
     printSettings: 'Print Settings',
@@ -4840,6 +4842,20 @@ export default {
     backupSize: 'Size',
     localTimeHint: 'Local time ({{tz}})',
     defaultPathLabel: 'Default:',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'Bambuddy cannot write to this directory',
+      howToFix: 'How to fix:',
+      sandboxed: 'The Bambuddy service cannot write to {{path}}. Its systemd unit runs with ProtectSystem=strict, which makes every directory outside the install, data and log directories read-only for the service - even one you can write to from your own shell.',
+      read_only: '{{path}} is on a read-only filesystem.',
+      permission_denied: 'Bambuddy is not allowed to write to {{path}}. Check the directory owner and permissions.',
+      no_space: 'The filesystem holding {{path}} is full.',
+      not_a_directory: '{{path}} exists but is not a directory.',
+      missing: '{{path}} does not exist and could not be created.',
+      error: 'Bambuddy cannot write to {{path}}.',
+      ephemeralTitle: 'These backups will not survive a container restart',
+      container_ephemeral: '{{path}} is inside the Bambuddy container, not on the host. Backups written there are lost when the container is recreated. Mount the directory from the host:',
+    },
 
     // Category labels
     categories: {

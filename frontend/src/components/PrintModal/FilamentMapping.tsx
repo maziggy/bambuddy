@@ -23,6 +23,7 @@ export function FilamentMapping({
   defaultExpanded = false,
   forceColorMatch,
   onForceColorMatchChange,
+  plateLabel,
 }: FilamentMappingProps & { defaultExpanded?: boolean }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -192,7 +193,7 @@ export function FilamentMapping({
         className="flex items-center gap-2 text-sm text-bambu-gray hover:text-white transition-colors w-full"
       >
         <Circle className="w-4 h-4" fill={statusColor} stroke="none" />
-        <span>{t('printModal.filamentMapping')}</span>
+        <span>{plateLabel ? `${t('printModal.filamentMapping')} — ${plateLabel}` : t('printModal.filamentMapping')}</span>
         {hasTypeMismatch ? (
           <span className="text-xs text-orange-700 dark:text-orange-400">(Type not found)</span>
         ) : hasColorMismatch ? (

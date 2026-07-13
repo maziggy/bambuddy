@@ -4562,6 +4562,8 @@ export default {
     selectPrinter: 'プリンターを選択',
     selectPlate: 'プレートを選択',
     filamentMapping: 'フィラメントマッピング',
+    plateN: 'プレート {{n}}',
+    plateFilamentsUnreadable: '選択したプレートのフィラメントを読み取れなかったため、割り当てできません。そのプレートの選択を解除すると、残りをキューに追加できます。',
     totalCost: '合計コスト:',
     slotRemainingShort: ' - 残{{grams}}g',
     printSettings: '印刷設定',
@@ -4797,6 +4799,20 @@ export default {
     backupSize: 'サイズ',
     localTimeHint: '現地時刻 ({{tz}})',
     defaultPathLabel: 'デフォルト:',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'Bambuddy はこのディレクトリに書き込めません',
+      howToFix: '対処方法:',
+      sandboxed: 'Bambuddy サービスは {{path}} に書き込めません。systemd ユニットが ProtectSystem=strict で動作しているため、インストール・データ・ログの各ディレクトリ以外はすべてサービスから読み取り専用になります。自分のシェルからは書き込める場所であっても同様です。',
+      read_only: '{{path}} は読み取り専用のファイルシステム上にあります。',
+      permission_denied: 'Bambuddy には {{path}} への書き込み権限がありません。ディレクトリの所有者とパーミッションを確認してください。',
+      no_space: '{{path}} があるファイルシステムに空き容量がありません。',
+      not_a_directory: '{{path}} は存在しますが、ディレクトリではありません。',
+      missing: '{{path}} は存在せず、作成もできませんでした。',
+      error: 'Bambuddy は {{path}} に書き込めません。',
+      ephemeralTitle: 'これらのバックアップはコンテナの再作成で失われます',
+      container_ephemeral: '{{path}} はホストではなく Bambuddy コンテナ内にあります。そこに書き込まれたバックアップはコンテナを再作成すると失われます。ホスト側のディレクトリをマウントしてください:',
+    },
 
     // Category labels
     categories: {

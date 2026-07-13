@@ -440,6 +440,77 @@ async def _migrate_normalize_printer_ids(conn) -> None:
             await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids::text = '[]'"))
 
 
+async def _migrate_scope_force_color_overrides_to_plate(conn) -> None:
+    """Re-scope queue items that carry another plate's filament overrides (#2551).
+
+    Queueing several plates of one 3MF used to store the union of every selected
+    plate's overrides on each item, so a ``force_color_match`` plate printing one
+    colour sat at Waiting until a printer had the whole batch's palette loaded.
+    The write paths now narrow to the plate, but items queued before the fix would
+    stay stuck until the user deleted and re-added them by hand — with a waiting
+    reason that gives no hint as to why. Repair them here instead.
+
+    Only pending items are touched: a printing or finished item's overrides are a
+    record of what it dispatched with, not an instruction. An item whose plate we
+    cannot read keeps every override, per ``overrides_for_plate``. Idempotent —
+    an already-scoped item narrows to itself and is not rewritten.
+    """
+    import json
+    from pathlib import Path
+
+    from sqlalchemy import text
+
+    from backend.app.services.filament_requirements import overrides_for_plate
+
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT q.id, q.plate_id, q.filament_overrides, "
+                "a.file_path AS archive_path, l.file_path AS library_path "
+                "FROM print_queue q "
+                "LEFT JOIN print_archives a ON a.id = q.archive_id "
+                "LEFT JOIN library_files l ON l.id = q.library_file_id "
+                "WHERE q.status = 'pending' "
+                "AND q.plate_id IS NOT NULL "
+                "AND q.filament_overrides IS NOT NULL"
+            )
+        )
+    ).fetchall()
+
+    repaired = 0
+    for row in rows:
+        try:
+            overrides = json.loads(row.filament_overrides)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(overrides, list) or not overrides:
+            continue
+
+        stored_path = row.archive_path or row.library_path
+        if not stored_path:
+            continue
+        path = Path(stored_path)
+        if not path.is_absolute():
+            path = settings.base_dir / stored_path
+
+        scoped = overrides_for_plate(overrides, path, row.plate_id)
+        if len(scoped) == len(overrides):
+            continue
+
+        async with conn.begin_nested():
+            await conn.execute(
+                text("UPDATE print_queue SET filament_overrides = :overrides WHERE id = :id"),
+                {"overrides": json.dumps(scoped) if scoped else None, "id": row.id},
+            )
+        repaired += 1
+
+    if repaired:
+        logger.info(
+            "Re-scoped the filament overrides of %d queued item(s) to the plate they print (#2551)",
+            repaired,
+        )
+
+
 async def _migrate_drop_library_print_name(conn) -> None:
     """Strip the embedded 3MF Title (``print_name``) from library file metadata (#1489).
 
@@ -3179,6 +3250,10 @@ async def run_migrations(conn):
     # Data migration: drop the embedded 3MF Title (`print_name`) from library
     # file metadata so the FileManager displays the filename, not the title (#1489).
     await _migrate_drop_library_print_name(conn)
+
+    # Data migration: queue items written before #2551 carry every selected plate's
+    # filament overrides, so a force-colour plate waits on colours it never prints.
+    await _migrate_scope_force_color_overrides_to_plate(conn)
 
     # Backfill NULL print_archives.created_at — older rows (and rows imported
     # via the SQLite ↔ Postgres cross-DB restore path) can land with NULL

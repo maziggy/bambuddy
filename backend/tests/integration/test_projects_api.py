@@ -1298,3 +1298,98 @@ class TestProjectExportImport:
         assert response.status_code == 200, response.text
         data = response.json()
         assert data["name"] == "nested-ok"
+
+
+class TestProjectListEditableFields:
+    """Tests for #2536 — the project list payload must carry every field the
+    shared edit dialog renders. The dialog is opened from both the project list
+    and the project detail page and seeds itself from whichever project object it
+    is handed, so a field missing from the list payload shows up blank there and
+    is saved back over the stored value."""
+
+    @pytest.fixture
+    async def project_factory(self, db_session):
+        async def _create(**kwargs):
+            from backend.app.models.project import Project
+
+            defaults = {"name": "Editable Fields Project", "color": "#123456"}
+            defaults.update(kwargs)
+            project = Project(**defaults)
+            db_session.add(project)
+            await db_session.commit()
+            await db_session.refresh(project)
+            return project
+
+        return _create
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_list_carries_the_fields_the_edit_dialog_renders(self, async_client: AsyncClient, project_factory):
+        """The list view is where the reporter saw an empty tags field."""
+        from datetime import datetime
+
+        await project_factory(
+            name="Tagged Project",
+            tags="prototype,client-work",
+            due_date=datetime(2026, 8, 1, 12, 0, 0),
+            priority="high",
+            target_parts_count=7,
+        )
+
+        response = await async_client.get("/api/v1/projects/")
+        assert response.status_code == 200
+        item = next(p for p in response.json() if p["name"] == "Tagged Project")
+
+        assert item["tags"] == "prototype,client-work"
+        assert item["due_date"].startswith("2026-08-01")
+        assert item["priority"] == "high"
+        assert item["target_parts_count"] == 7
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_template_list_carries_them_too(self, async_client: AsyncClient, project_factory):
+        """Templates feed the same dialog, so they need the same payload."""
+        await project_factory(
+            name="Tagged Template",
+            is_template=True,
+            tags="reusable",
+            priority="urgent",
+            target_parts_count=3,
+        )
+
+        response = await async_client.get("/api/v1/projects/templates")
+        assert response.status_code == 200
+        item = next(p for p in response.json() if p["name"] == "Tagged Template")
+
+        assert item["tags"] == "reusable"
+        assert item["priority"] == "urgent"
+        assert item["target_parts_count"] == 3
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_priority_survives_an_edit_that_does_not_touch_it(self, async_client: AsyncClient, project_factory):
+        """A save from the list view used to submit the default priority over a
+        stored 'high' — the dialog never received the real one."""
+        project = await project_factory(name="Important", priority="high", tags="keep-me")
+
+        response = await async_client.patch(f"/api/v1/projects/{project.id}", json={"name": "Still Important"})
+        assert response.status_code == 200
+
+        result = response.json()
+        assert result["priority"] == "high"
+        assert result["tags"] == "keep-me"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_explicit_null_clears_tags_and_due_date(self, async_client: AsyncClient, project_factory):
+        """Emptying the field in the dialog has to actually remove the value."""
+        from datetime import datetime
+
+        project = await project_factory(name="Clearable", tags="obsolete", due_date=datetime(2026, 8, 1, 12, 0, 0))
+
+        response = await async_client.patch(f"/api/v1/projects/{project.id}", json={"tags": None, "due_date": None})
+        assert response.status_code == 200
+
+        result = response.json()
+        assert result["tags"] is None
+        assert result["due_date"] is None

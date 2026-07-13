@@ -2807,3 +2807,260 @@ class TestReorderEndpoint:
         await db_session.refresh(item2)
         assert item1.position == 2
         assert item2.position == 1
+
+
+class TestForceColorOverridesAreScopedToThePlate:
+    """Queueing several plates of one 3MF must not make each plate wait on the
+    colours of its siblings (#2551).
+
+    The print dialog builds one override list from every selected plate and posts
+    that same list with each plate's item, so the API is what has to keep only the
+    slots the plate prints -- a ``force_color_match`` entry blocks dispatch until
+    the printer has that exact colour loaded.
+    """
+
+    THREE_PLATES = """<?xml version="1.0" encoding="UTF-8"?>
+    <config>
+        <plate>
+            <metadata key="index" value="1"/>
+            <filament id="1" used_g="50.0" type="PLA" color="#0B2C7A"/>
+        </plate>
+        <plate>
+            <metadata key="index" value="2"/>
+            <filament id="2" used_g="40.0" type="PLA" color="#9B9EA0"/>
+        </plate>
+        <plate>
+            <metadata key="index" value="3"/>
+            <filament id="3" used_g="30.0" type="PLA" color="#F4EE2A"/>
+        </plate>
+    </config>
+    """
+
+    # What the dialog posts for every plate: the union of all three plates'
+    # filaments, each one force-matched.
+    ALL_THREE_COLORS = [
+        {"slot_id": 1, "type": "PLA", "color": "#0B2C7A", "color_name": "Army Blue", "force_color_match": True},
+        {"slot_id": 2, "type": "PLA", "color": "#9B9EA0", "color_name": "Ash Grey", "force_color_match": True},
+        {"slot_id": 3, "type": "PLA", "color": "#F4EE2A", "color_name": "Sunshine Yellow", "force_color_match": True},
+    ]
+
+    @pytest.fixture
+    async def multi_plate_archive(self, db_session, tmp_path):
+        """An archive whose 3MF really exists on disk, one colour per plate."""
+        import zipfile
+
+        from backend.app.models.archive import PrintArchive
+
+        file_path = tmp_path / "three_plates.gcode.3mf"
+        with zipfile.ZipFile(file_path, "w") as zf:
+            zf.writestr("Metadata/slice_info.config", self.THREE_PLATES)
+
+        archive = PrintArchive(
+            filename="three_plates.gcode.3mf",
+            print_name="Three Plates",
+            file_path=str(file_path),
+            file_size=file_path.stat().st_size,
+            content_hash="platehash0001",
+            status="completed",
+        )
+        db_session.add(archive)
+        await db_session.commit()
+        await db_session.refresh(archive)
+        return archive
+
+    @pytest.fixture
+    async def x1c(self, db_session):
+        from backend.app.models.printer import Printer
+
+        printer = Printer(
+            name="Force Color X1C",
+            ip_address="192.168.1.210",
+            serial_number="FORCECOLOR01",
+            access_code="12345678",
+            model="X1C",
+        )
+        db_session.add(printer)
+        await db_session.commit()
+        await db_session.refresh(printer)
+        return printer
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_each_plate_keeps_only_the_colour_it_prints(
+        self, async_client: AsyncClient, multi_plate_archive, x1c
+    ):
+        """The bug: plate 1 prints Army Blue only, but was stored demanding all three."""
+        stored = {}
+        for plate_id in (1, 2, 3):
+            response = await async_client.post(
+                "/api/v1/queue/",
+                json={
+                    "target_model": "X1C",
+                    "archive_id": multi_plate_archive.id,
+                    "plate_id": plate_id,
+                    "filament_overrides": self.ALL_THREE_COLORS,
+                },
+            )
+            assert response.status_code == 200
+            stored[plate_id] = response.json()["filament_overrides"]
+
+        assert [o["color_name"] for o in stored[1]] == ["Army Blue"]
+        assert [o["color_name"] for o in stored[2]] == ["Ash Grey"]
+        assert [o["color_name"] for o in stored[3]] == ["Sunshine Yellow"]
+        # The slot each entry maps to has to survive narrowing untouched, or the
+        # dispatch-time AMS mapping would key the override onto the wrong slot.
+        assert [o["slot_id"] for o in stored[2]] == [2]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_whole_file_queue_keeps_every_colour(self, async_client: AsyncClient, multi_plate_archive, x1c):
+        """No plate_id means the job prints the whole file, so every colour is needed."""
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "target_model": "X1C",
+                "archive_id": multi_plate_archive.id,
+                "filament_overrides": self.ALL_THREE_COLORS,
+            },
+        )
+        assert response.status_code == 200
+        assert len(response.json()["filament_overrides"]) == 3
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unreadable_3mf_keeps_every_colour(self, async_client: AsyncClient, db_session, tmp_path, x1c):
+        """When the plate's slots can't be read, keep the overrides rather than drop them.
+
+        An item waiting on a colour it doesn't need is visible and fixable; one that
+        silently lost its forced colour would dispatch in the wrong filament.
+        """
+        from backend.app.models.archive import PrintArchive
+
+        file_path = tmp_path / "not_a_zip.gcode.3mf"
+        file_path.write_text("this is not a 3mf")
+        archive = PrintArchive(
+            filename="not_a_zip.gcode.3mf",
+            print_name="Corrupt",
+            file_path=str(file_path),
+            file_size=file_path.stat().st_size,
+            content_hash="platehash0002",
+            status="completed",
+        )
+        db_session.add(archive)
+        await db_session.commit()
+        await db_session.refresh(archive)
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "target_model": "X1C",
+                "archive_id": archive.id,
+                "plate_id": 1,
+                "filament_overrides": self.ALL_THREE_COLORS,
+            },
+        )
+        assert response.status_code == 200
+        assert len(response.json()["filament_overrides"]) == 3
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_required_types_stay_scoped_to_the_plate(self, async_client: AsyncClient, db_session, tmp_path, x1c):
+        """Override types are merged into required_filament_types, so a shared list
+        also widened the type gate -- a PLA-only plate demanded PETG as well."""
+        import zipfile
+
+        from backend.app.models.archive import PrintArchive
+
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="index" value="1"/>
+                <filament id="1" used_g="50.0" type="PLA" color="#0B2C7A"/>
+            </plate>
+            <plate>
+                <metadata key="index" value="2"/>
+                <filament id="2" used_g="40.0" type="PETG" color="#9B9EA0"/>
+            </plate>
+        </config>
+        """
+        file_path = tmp_path / "mixed_types.gcode.3mf"
+        with zipfile.ZipFile(file_path, "w") as zf:
+            zf.writestr("Metadata/slice_info.config", xml)
+        archive = PrintArchive(
+            filename="mixed_types.gcode.3mf",
+            print_name="Mixed",
+            file_path=str(file_path),
+            file_size=file_path.stat().st_size,
+            content_hash="platehash0003",
+            status="completed",
+        )
+        db_session.add(archive)
+        await db_session.commit()
+        await db_session.refresh(archive)
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={
+                "target_model": "X1C",
+                "archive_id": archive.id,
+                "plate_id": 1,
+                "filament_overrides": [
+                    {"slot_id": 1, "type": "PLA", "color": "#0B2C7A", "force_color_match": True},
+                    {"slot_id": 2, "type": "PETG", "color": "#9B9EA0", "force_color_match": True},
+                ],
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["required_filament_types"] == ["PLA"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_editing_an_item_narrows_the_overrides_too(
+        self, async_client: AsyncClient, db_session, multi_plate_archive, x1c
+    ):
+        """The edit dialog posts the same shared list, so PATCH narrows it as well."""
+        from backend.app.models.print_queue import PrintQueueItem
+
+        item = PrintQueueItem(
+            target_model="X1C",
+            archive_id=multi_plate_archive.id,
+            plate_id=2,
+            status="pending",
+            position=1,
+        )
+        db_session.add(item)
+        await db_session.commit()
+        await db_session.refresh(item)
+
+        response = await async_client.patch(
+            f"/api/v1/queue/{item.id}",
+            json={"filament_overrides": self.ALL_THREE_COLORS},
+        )
+        assert response.status_code == 200
+        assert [o["color_name"] for o in response.json()["filament_overrides"]] == ["Ash Grey"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_editing_the_plate_renarrows_against_the_new_plate(
+        self, async_client: AsyncClient, db_session, multi_plate_archive, x1c
+    ):
+        """Moving an item to another plate must re-scope its colours to that plate."""
+        from backend.app.models.print_queue import PrintQueueItem
+
+        item = PrintQueueItem(
+            target_model="X1C",
+            archive_id=multi_plate_archive.id,
+            plate_id=1,
+            status="pending",
+            position=1,
+        )
+        db_session.add(item)
+        await db_session.commit()
+        await db_session.refresh(item)
+
+        response = await async_client.patch(
+            f"/api/v1/queue/{item.id}",
+            json={"plate_id": 3, "filament_overrides": self.ALL_THREE_COLORS},
+        )
+        assert response.status_code == 200
+        assert [o["color_name"] for o in response.json()["filament_overrides"]] == ["Sunshine Yellow"]

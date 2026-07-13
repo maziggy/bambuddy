@@ -3988,6 +3988,10 @@ export default {
     toastArchives: '{{count}} prints archived with Bambuddy. See who keeps it independent.',
     toastAnniversary: 'One year with Bambuddy! See who keeps the project independent.',
     toastVersionUpdate: 'Updated to v{{version}}. Bambuddy stays free thanks to its supporters.',
+    toastBusiness: "Running Bambuddy on {{count}} printers? There's a support plan for teams — priority fixes, invoicing, and a direct line to the maintainer.",
+    businessCta: 'Bambuddy for business',
+    businessTitle: 'Bambuddy for business',
+    businessTagline: "You're running {{count}} printers. Priority support, commercial licensing and invoicing are available for teams and print farms.",
   },
 
   // Library (K Profiles)
@@ -4650,6 +4654,8 @@ export default {
     selectPrinter: 'Select Printer',
     selectPlate: 'Select Plate',
     filamentMapping: 'Filament Mapping',
+    plateN: 'Plate {{n}}',
+    plateFilamentsUnreadable: 'The filaments of a selected plate could not be read, so it can\'t be mapped. Deselect it to queue the others.',
     totalCost: 'Total cost:',
     slotRemainingShort: ' - {{grams}}g left',
     printSettings: 'Print Settings',

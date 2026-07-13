@@ -3947,6 +3947,10 @@ export default {
     toastArchives: '{{count}} stampe archiviate con Bambuddy. Scopri chi lo mantiene indipendente.',
     toastAnniversary: 'Un anno con Bambuddy! Scopri chi mantiene il progetto indipendente.',
     toastVersionUpdate: 'Aggiornato a v{{version}}. Bambuddy resta gratuito grazie a chi lo sostiene.',
+    toastBusiness: 'Usi Bambuddy su {{count}} stampanti? Esiste un piano di supporto per i team: correzioni prioritarie, fatturazione e un contatto diretto con il manutentore.',
+    businessCta: 'Bambuddy per le aziende',
+    businessTitle: 'Bambuddy per le aziende',
+    businessTagline: 'Stai gestendo {{count}} stampanti. Supporto prioritario, licenze commerciali e fatturazione sono disponibili per team e farm di stampa.',
   },
 
   // Library (K Profiles)
@@ -4595,6 +4599,8 @@ export default {
     selectPrinter: 'Seleziona stampante',
     selectPlate: 'Seleziona piatto',
     filamentMapping: 'Mappatura filamento',
+    plateN: 'Piatto {{n}}',
+    plateFilamentsUnreadable: 'Non è stato possibile leggere i filamenti di un piatto selezionato, quindi non può essere assegnato. Deselezionalo per accodare gli altri.',
     totalCost: 'Costo totale:',
     slotRemainingShort: ' - {{grams}}g rim.',
     printSettings: 'Impostazioni stampa',

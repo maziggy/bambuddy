@@ -3959,6 +3959,10 @@ export default {
     toastArchives: '{{count}}件の印刷をBambuddyでアーカイブしました。独立を支えてくれている方々をご覧ください。',
     toastAnniversary: 'Bambuddyとの1周年です！プロジェクトを支えてくれている方々をご覧ください。',
     toastVersionUpdate: 'v{{version}}にアップデートされました。Bambuddyは支援者のおかげで無料で提供されています。',
+    toastBusiness: '{{count}}台のプリンターでBambuddyを運用中ですね。チーム向けのサポートプランがあります（優先対応、請求書発行、開発者への直接窓口）。',
+    businessCta: 'ビジネス向けBambuddy',
+    businessTitle: 'ビジネス向けBambuddy',
+    businessTagline: '{{count}}台のプリンターを運用中です。チームやプリントファーム向けに、優先サポート、商用ライセンス、請求書発行をご用意しています。',
   },
 
   // Library (K Profiles)
@@ -4607,6 +4611,8 @@ export default {
     selectPrinter: 'プリンターを選択',
     selectPlate: 'プレートを選択',
     filamentMapping: 'フィラメントマッピング',
+    plateN: 'プレート {{n}}',
+    plateFilamentsUnreadable: '選択したプレートのフィラメントを読み取れなかったため、割り当てできません。そのプレートの選択を解除すると、残りをキューに追加できます。',
     totalCost: '合計コスト:',
     slotRemainingShort: ' - 残{{grams}}g',
     printSettings: '印刷設定',

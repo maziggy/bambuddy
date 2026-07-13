@@ -3947,6 +3947,10 @@ export default {
     toastArchives: '用 Bambuddy 归档了 {{count}} 次打印。看看是谁让它保持独立。',
     toastAnniversary: '与 Bambuddy 相伴一年了！看看是谁让项目保持独立。',
     toastVersionUpdate: '已更新至 v{{version}}。Bambuddy 之所以免费，离不开支持者。',
+    toastBusiness: '您正在 {{count}} 台打印机上运行 Bambuddy？我们为团队提供支持方案：优先修复、开具发票，以及与维护者的直接沟通渠道。',
+    businessCta: 'Bambuddy 商业版',
+    businessTitle: 'Bambuddy 商业版',
+    businessTagline: '您正在管理 {{count}} 台打印机。我们为团队和打印农场提供优先支持、商业授权和发票开具。',
   },
 
   // Library (K Profiles)
@@ -4595,6 +4599,8 @@ export default {
     selectPrinter: '选择打印机',
     selectPlate: '选择板',
     filamentMapping: '耗材映射',
+    plateN: '板 {{n}}',
+    plateFilamentsUnreadable: '无法读取所选盘的耗材信息，因此无法进行映射。取消选择该盘即可将其余盘加入队列。',
     totalCost: '总成本：',
     slotRemainingShort: ' - 剩余 {{grams}}g',
     printSettings: '打印设置',

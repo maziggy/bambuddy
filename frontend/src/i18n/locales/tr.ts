@@ -3949,6 +3949,10 @@ export default {
     toastArchives: '{{count}} baskı Bambuddy ile arşivlendi. Bağımsız kalmasını sağlayanları gör.',
     toastAnniversary: 'Bambuddy ile bir yılı doldurdun! Projeyi bağımsız tutanları gör.',
     toastVersionUpdate: 'v{{version}} sürümüne güncellendi. Bambuddy, destekçileri sayesinde ücretsiz kalıyor.',
+    toastBusiness: "Bambuddy'yi {{count}} yazıcıda mı çalıştırıyorsunuz? Ekipler için bir destek planı var: öncelikli düzeltmeler, faturalandırma ve geliştiriciye doğrudan erişim.",
+    businessCta: 'Kurumsal Bambuddy',
+    businessTitle: 'Kurumsal Bambuddy',
+    businessTagline: '{{count}} yazıcı çalıştırıyorsunuz. Ekipler ve baskı çiftlikleri için öncelikli destek, ticari lisanslama ve faturalandırma mevcut.',
   },
 
   // Kütüphane (K Profilleri)
@@ -4585,6 +4589,8 @@ export default {
     selectPrinter: 'Yazıcı Seç',
     selectPlate: 'Plaka Seç',
     filamentMapping: 'Filament Eşlemesi',
+    plateN: 'Plaka {{n}}',
+    plateFilamentsUnreadable: 'Seçili bir plakanın filamentleri okunamadı, bu yüzden eşleştirilemiyor. Diğerlerini kuyruğa almak için o plakanın seçimini kaldırın.',
     totalCost: 'Toplam maliyet:',
     slotRemainingShort: ' - {{grams}}g kaldı',
     printSettings: 'Baskı Ayarları',

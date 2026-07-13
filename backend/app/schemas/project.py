@@ -151,6 +151,13 @@ class ProjectListResponse(BaseModel):
     target_count: int | None
     target_parts_count: int | None = None
     budget: float | None = None
+    # The edit dialog is shared with the project detail page and seeds its fields
+    # from whichever project object it is handed, so the list payload has to carry
+    # everything the dialog edits — otherwise a save from the list view submits a
+    # blank tags field and a default priority over the stored values (#2536).
+    tags: str | None = None
+    due_date: datetime | None = None
+    priority: str = "normal"
     created_at: datetime
     # Quick stats
     archive_count: int = 0  # Number of print jobs

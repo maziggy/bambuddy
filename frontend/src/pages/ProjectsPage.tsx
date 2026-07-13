@@ -62,9 +62,9 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
   const [targetCount, setTargetCount] = useState(project?.target_count?.toString() || '');
   const [targetPartsCount, setTargetPartsCount] = useState(project?.target_parts_count?.toString() || '');
   const [status, setStatus] = useState(project?.status || 'active');
-  const [tags, setTags] = useState((project as ProjectListItem & { tags?: string })?.tags || '');
-  const [dueDate, setDueDate] = useState((project as ProjectListItem & { due_date?: string })?.due_date?.split('T')[0] || '');
-  const [priority, setPriority] = useState((project as ProjectListItem & { priority?: string })?.priority || 'normal');
+  const [tags, setTags] = useState(project?.tags || '');
+  const [dueDate, setDueDate] = useState(project?.due_date?.split('T')[0] || '');
+  const [priority, setPriority] = useState(project?.priority || 'normal');
   const [budget, setBudget] = useState(project?.budget?.toString() || '');
   const [url, setUrl] = useState(project?.url || '');
   const [urlError, setUrlError] = useState<string | null>(null);
@@ -120,13 +120,14 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
       color,
       target_count: targetCount ? parseInt(targetCount, 10) : undefined,
       target_parts_count: targetPartsCount ? parseInt(targetPartsCount, 10) : undefined,
-      tags: tags.trim() || undefined,
-      due_date: dueDate || undefined,
+      // Null clears the stored value on edit; undefined omits the key on create.
+      // Sending undefined on edit would make an emptied field un-clearable.
+      tags: project ? (tags.trim() || null) : (tags.trim() || undefined),
+      due_date: project ? (dueDate || null) : (dueDate || undefined),
       priority,
       budget: budget.trim() ? parseFloat(budget) : null,
       // Pydantic accepts null to clear the URL; an empty string would fail the
-      // http(s) prefix validator. Use undefined for create (omit) and null for
-      // edit-with-cleared-value.
+      // http(s) prefix validator.
       url: project ? (trimmedUrl || null) : (trimmedUrl || undefined),
       ...(project && { status }),
     });

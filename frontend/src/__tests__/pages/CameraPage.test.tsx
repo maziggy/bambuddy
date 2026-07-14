@@ -177,13 +177,58 @@ describe('CameraPage', () => {
       });
     });
 
-    it('renders image src immediately when auth is disabled (no token required)', async () => {
+    it('does not fire a tokenless stream request when auth is disabled (#2521)', async () => {
+      // The stream-token query runs whether or not auth is enabled, and this page
+      // subscribes to it. So the src used to be rendered on the first pass with no
+      // token, and swapped once the token landed. Changing img.src makes the
+      // browser abort the in-flight request and issue a second one — and with auth
+      // disabled no token is required, so BOTH reached the backend and attached to
+      // the camera fan-out. Every page load put two viewers on a printer that
+      // allows one socket, then abandoned one of them.
+      let resolveToken!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        resolveToken = resolve;
+      });
+
+      server.use(
+        http.post('*/api/v1/printers/camera/stream-token', async () => {
+          await gate;
+          return HttpResponse.json({ token: 'tok-xyz' });
+        })
+      );
+
+      renderCameraPage(1);
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      // Token still in flight: the <img> must not already be pulling the stream.
+      const early = (document.querySelector('img') as HTMLImageElement | null)?.getAttribute('src') || '';
+      expect(early).not.toContain('/camera/stream');
+
+      resolveToken();
+
+      // The first — and only — stream URL the browser ever sees is the tokened one.
+      await waitFor(() => {
+        const src = (document.querySelector('img') as HTMLImageElement | null)?.getAttribute('src') || '';
+        expect(src).toContain('/api/v1/printers/1/camera/stream');
+        expect(src).toContain('token=tok-xyz');
+      });
+    });
+
+    it('still streams when auth is disabled and the token endpoint fails', async () => {
+      // Waiting for the token must not become a way to never render at all: an
+      // auth-disabled backend doesn't need one. Once the query settles — even
+      // unsuccessfully — the stream loads.
+      server.use(
+        http.post('*/api/v1/printers/camera/stream-token', () => new HttpResponse(null, { status: 500 }))
+      );
+
       renderCameraPage(1);
 
       await waitFor(() => {
         const src = (document.querySelector('img') as HTMLImageElement | null)?.getAttribute('src') || '';
-        expect(src).toContain(`/api/v1/printers/1/camera/stream`);
-        expect(src).not.toContain('token=');
+        expect(src).toContain('/api/v1/printers/1/camera/stream');
       });
     });
   });

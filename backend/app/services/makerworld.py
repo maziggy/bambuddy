@@ -20,9 +20,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import ssl
+from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import urlparse
 
+import certifi
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -58,6 +61,18 @@ _CLIENT_HEADERS = {
     "Referer": "https://makerworld.com/",
 }
 
+# Shown whenever Bambu rejects the stored bearer. Bambu's own 401 body is
+# ``{"code":4,"error":"Please login.","message":""}`` and we used to forward that
+# string verbatim, which surfaced as a "Please login." toast on a UI that was
+# simultaneously reporting the user as connected — maximally confusing, and it
+# named no page to go to. Say what happened and where to fix it. Bambu Cloud
+# sign-in lives on the Profiles page (ProfilesPage.tsx, "Cloud Profiles" tab);
+# there is no Settings → Bambu Cloud page, which is what the old fallback text
+# told people to look for.
+_SIGN_IN_EXPIRED_MESSAGE = (
+    "Your Bambu Cloud sign-in has expired. Open the Profiles page and sign in to Bambu Cloud again."
+)
+
 _MODEL_ID_RE = re.compile(r"/models/(\d+)")
 _PROFILE_ID_RE = re.compile(r"#profileId[-=](\d+)")
 _MAX_3MF_BYTES = 200 * 1024 * 1024  # 200 MB hard cap
@@ -75,6 +90,27 @@ _IMAGE_EXT_TO_MIME = {
 _REFUSED_THUMBNAIL_MIMES = ("text/html", "text/plain", "application/json")
 
 _shared_http_client: httpx.AsyncClient | None = None
+
+
+def _s3_ssl_context() -> ssl.SSLContext:
+    """Build the TLS context used for the S3 presigned download (#2562).
+
+    ``urllib.request`` verifies against the *OS* trust store, while httpx —
+    every other network call in Bambuddy — verifies against the bundled
+    ``certifi`` CA bundle. On Windows those two disagree: Python's
+    ``ssl.load_default_certs()`` only enumerates the roots already cached in
+    the Windows ROOT store, and Windows populates that store lazily via
+    CryptoAPI's auto-update, which Python never triggers. If the Amazon root
+    signing the S3 chain isn't cached on that machine yet, verification fails
+    with ``unable to get local issuer certificate`` — even though the
+    api.bambulab.com calls that preceded it (httpx) succeeded.
+
+    Pinning urllib to certifi makes the S3 hop trust exactly what the rest of
+    the app already trusts. Built per call rather than at import so a certifi
+    refresh doesn't require a restart; construction is cheap relative to the
+    download that follows.
+    """
+    return ssl.create_default_context(cafile=certifi.where())
 
 
 def set_shared_http_client(client: httpx.AsyncClient | None) -> None:
@@ -127,7 +163,7 @@ async def _download_s3_urllib(url: str, filename_fallback: str) -> tuple[bytes, 
     Runs the blocking urllib call in a thread executor so we don't stall
     the event loop.
     """
-    from urllib.request import HTTPRedirectHandler, Request, build_opener
+    from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
     # Don't follow redirects: the host allowlist above is only enforced on
     # the initial URL. A 302 from S3 to any other host would otherwise
@@ -136,7 +172,9 @@ async def _download_s3_urllib(url: str, filename_fallback: str) -> tuple[bytes, 
         def redirect_request(self, *args, **kwargs):  # type: ignore[override]
             return None
 
-    opener = build_opener(_NoRedirect)
+    # HTTPSHandler swaps only the TLS context — the URL still reaches the
+    # transport verbatim, which is what the S3 signature depends on.
+    opener = build_opener(_NoRedirect, HTTPSHandler(context=_s3_ssl_context()))
 
     def _blocking_fetch() -> bytes:
         req = Request(url, headers={"User-Agent": _CLIENT_HEADERS["User-Agent"]})
@@ -195,7 +233,13 @@ class MakerWorldService:
         self,
         client: httpx.AsyncClient | None = None,
         auth_token: str | None = None,
+        on_auth_failure: Callable[[], Awaitable[None]] | None = None,
     ):
+        # Fired when Bambu rejects the stored token (401). MakerWorld runs on the
+        # same Bambu Cloud bearer as everything else, so a rejection here means
+        # the credential is dead app-wide — see ``build_authenticated_cloud``.
+        self._on_auth_failure = on_auth_failure
+        self._auth_failure_reported = False
         if client is not None:
             self._client = client
             self._owns_client = False
@@ -210,6 +254,16 @@ class MakerWorldService:
     async def close(self) -> None:
         if self._owns_client:
             await self._client.aclose()
+
+    async def _note_auth_failure(self) -> None:
+        """Record that Bambu rejected the token we sent. Best-effort, once."""
+        if self._on_auth_failure is None or self._auth_failure_reported:
+            return
+        self._auth_failure_reported = True
+        try:
+            await self._on_auth_failure()
+        except Exception:
+            logger.exception("Failed to record Bambu Cloud auth failure from MakerWorld")
 
     def _headers(self) -> dict[str, str]:
         headers = dict(_CLIENT_HEADERS)
@@ -249,8 +303,13 @@ class MakerWorldService:
         # because the UI remedy is completely different: 401 → re-login,
         # 403 → user has to go to MakerWorld and meet the access requirement.
         if response.status_code == 401:
-            upstream = _extract_upstream_error(response)
-            raise MakerWorldAuthError(upstream or f"MakerWorld rejected the Bambu Cloud token for {path}")
+            if self._auth_token:
+                # We sent a token and Bambu refused it — the credential is dead,
+                # not merely absent. Record that before raising so the rest of the
+                # app stops claiming the user is connected.
+                await self._note_auth_failure()
+                raise MakerWorldAuthError(_SIGN_IN_EXPIRED_MESSAGE)
+            raise MakerWorldAuthError(f"Signing in to Bambu Cloud is required for {path}")
         if response.status_code == 403:
             upstream = _extract_upstream_error(response)
             raise MakerWorldForbiddenError(
@@ -410,10 +469,8 @@ class MakerWorldService:
             raise MakerWorldUnavailableError(f"Bambu Lab API request failed: {exc}") from exc
 
         if response.status_code == 401:
-            upstream = _extract_upstream_error(response)
-            raise MakerWorldAuthError(
-                upstream or "Bambu Lab rejected the token — sign in again in Settings → Bambu Cloud"
-            )
+            await self._note_auth_failure()
+            raise MakerWorldAuthError(_SIGN_IN_EXPIRED_MESSAGE)
         if response.status_code == 403:
             upstream = _extract_upstream_error(response)
             raise MakerWorldForbiddenError(upstream or f"Bambu Lab refused access to profile {profile_id}")

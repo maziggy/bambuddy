@@ -109,3 +109,7 @@ class MakerWorldStatus(BaseModel):
 
     has_cloud_token: bool = Field(description="Whether the caller's account has a stored Bambu Cloud token")
     can_download: bool = Field(description="Shortcut: has_cloud_token AND it looks valid. Downloads require it.")
+    sign_in_expired: bool = Field(
+        default=False,
+        description="A token is stored but Bambu has rejected it — the user must sign in to Bambu Cloud again.",
+    )

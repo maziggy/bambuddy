@@ -69,8 +69,30 @@ class TestStatus:
         resp = await async_client.get("/api/v1/makerworld/status")
         assert resp.status_code == 200
         body = resp.json()
-        # Fresh in-memory DB has no stored token, so can_download must be false
-        assert body == {"has_cloud_token": False, "can_download": False}
+        # Fresh in-memory DB has no stored token, so can_download must be false.
+        # sign_in_expired is False, not True: there is no sign-in to have expired.
+        assert body == {"has_cloud_token": False, "can_download": False, "sign_in_expired": False}
+
+    @pytest.mark.asyncio
+    async def test_rejected_token_blocks_download_and_reports_expired(self, async_client, db_session):
+        """A token Bambu has already rejected downloads nothing. ``can_download``
+        used to be a bare alias for ``has_cloud_token``, so the import button
+        stayed live against a dead credential and the user only found out via a
+        401 toast."""
+        from backend.app.api.routes.cloud import CLOUD_TOKEN_INVALID_KEY, CLOUD_TOKEN_KEY
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key=CLOUD_TOKEN_KEY, value="dead-token"))
+        db_session.add(Settings(key=CLOUD_TOKEN_INVALID_KEY, value="2026-07-14T07:00:00+00:00"))
+        await db_session.commit()
+
+        resp = await async_client.get("/api/v1/makerworld/status")
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "has_cloud_token": True,
+            "can_download": False,
+            "sign_in_expired": True,
+        }
 
 
 class TestResolve:

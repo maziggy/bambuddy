@@ -21,7 +21,12 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.routes.cloud import get_stored_token, resolve_api_key_cloud_owner
+from backend.app.api.routes.cloud import (
+    get_stored_token,
+    is_cloud_token_invalid,
+    mark_cloud_token_invalid,
+    resolve_api_key_cloud_owner,
+)
 from backend.app.api.routes.library import save_3mf_bytes_to_library
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
@@ -58,10 +63,16 @@ async def _build_service(db: AsyncSession, user: User | None) -> MakerWorldServi
     stored Bambu Cloud bearer token when available.
 
     Mirrors ``cloud.build_authenticated_cloud`` — the token is entirely
-    optional; anonymous calls (metadata, URL resolution) still work.
+    optional; anonymous calls (metadata, URL resolution) still work — and,
+    like it, records a rejected token so the whole app agrees the sign-in is
+    dead rather than each feature failing on its own.
     """
     token, _email, _region = await get_stored_token(db, user)
-    return MakerWorldService(auth_token=token)
+    user_id = user.id if user is not None else None
+    return MakerWorldService(
+        auth_token=token,
+        on_auth_failure=lambda: mark_cloud_token_invalid(user_id),
+    )
 
 
 def _canonical_url(model_id: int, profile_id: int | None = None) -> str:
@@ -156,7 +167,16 @@ async def get_status(
     cloud_token_user = current_user or api_key_cloud_owner
     token, _email, _region = await get_stored_token(db, cloud_token_user)
     has_token = bool(token)
-    return MakerWorldStatus(has_cloud_token=has_token, can_download=has_token)
+    # A token Bambu has already rejected downloads nothing. ``can_download``
+    # used to be a bare alias for ``has_cloud_token``, so the import button
+    # stayed enabled against a dead credential and the user found out via a
+    # 401 toast (#2562 follow-up).
+    expired = has_token and await is_cloud_token_invalid(db, cloud_token_user)
+    return MakerWorldStatus(
+        has_cloud_token=has_token,
+        can_download=has_token and not expired,
+        sign_in_expired=expired,
+    )
 
 
 @router.post("/resolve", response_model=MakerWorldResolvedModel)

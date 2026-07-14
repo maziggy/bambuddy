@@ -38,6 +38,10 @@ class CloudAuthStatus(BaseModel):
     is_authenticated: bool
     email: str | None = None
     region: Region | None = None
+    # True when a token is stored but Bambu no longer accepts it. Both this and
+    # "never signed in" render the login form, but only this one warrants
+    # telling the user why it came back.
+    sign_in_expired: bool = False
 
 
 class CloudTokenRequest(BaseModel):

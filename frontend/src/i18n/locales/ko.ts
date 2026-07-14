@@ -3164,6 +3164,8 @@ export default {
       noSearchResults: '검색어와 일치하는 프리셋이 없습니다'
     },
     connectedAs: '연결된 계정',
+    signInExpiredTitle: 'Bambu 클라우드 로그인이 만료되었습니다',
+    signInExpiredBody: 'Bambu Lab이 저장된 토큰을 더 이상 허용하지 않습니다. 클라우드 프로필, MakerWorld 가져오기, 펌웨어 확인을 복구하려면 다시 로그인하세요.',
     logout: '로그아웃',
     noLogoutPermission: '로그아웃 권한이 없습니다',
     failedToLoad: '프로필 불러오기 실패',
@@ -5968,6 +5970,8 @@ export default {
     resolveButton: '확인',
     signInRequiredTitle: '다운로드하려면 Bambu 클라우드 로그인 필요',
     signInRequiredBody: '익명으로 모델 세부 정보를 탐색할 수 있지만 MakerWorld는 3MF 파일을 다운로드하려면 Bambu 클라우드 계정이 필요합니다.',
+    signInExpiredTitle: 'Bambu 클라우드 로그인이 만료되었습니다',
+    signInExpiredBody: 'Bambuddy에는 여전히 로그인되어 있지만 Bambu Lab이 저장된 토큰을 더 이상 허용하지 않아 다운로드가 실패합니다. Bambu 클라우드에 다시 로그인하세요.',
     openCloudSettings: '클라우드 설정 열기',
     untitledModel: '제목 없는 모델',
     byCreator: '{{name}} 제작',

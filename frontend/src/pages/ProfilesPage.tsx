@@ -2959,6 +2959,20 @@ export function ProfilesPage() {
             </div>
           )}
 
+          {/* A stored token Bambu has stopped accepting logs the user out of the
+              cloud without them doing anything, so the login form reappearing
+              needs an explanation — otherwise it reads as Bambuddy losing the
+              session for no reason. */}
+          {status?.sign_in_expired && (
+            <div className="flex items-start gap-3 p-3 mb-6 rounded-lg border border-yellow-500/40 bg-yellow-500/10">
+              <AlertTriangle className="w-5 h-5 shrink-0 text-yellow-400 mt-0.5" />
+              <div className="text-sm">
+                <p className="text-white font-medium">{t('profiles.signInExpiredTitle')}</p>
+                <p className="text-bambu-gray">{t('profiles.signInExpiredBody')}</p>
+              </div>
+            </div>
+          )}
+
           {!status?.is_authenticated ? (
             <LoginForm onSuccess={handleLoginSuccess} t={t} />
           ) : settingsLoading ? (

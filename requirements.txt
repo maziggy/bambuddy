@@ -113,6 +113,13 @@ idna>=3.15
 # HTTP client (used for OIDC token exchange)
 httpx>=0.26.0
 
+# CA bundle. Already a transitive dep of httpx, but services/makerworld.py
+# imports it directly to pin the S3 presigned download's urllib opener to the
+# same trust store httpx uses — the Windows OS store lacks the Amazon root
+# until CryptoAPI lazily caches it (#2562). Declared explicitly so a future
+# httpx release that drops certifi can't silently break that import.
+certifi>=2024.2.2
+
 # HTTP client with browser TLS-fingerprint impersonation. Used only for
 # the bambulab.com firmware-download page in services/firmware_check.py:
 # Bambu's Cloudflare WAF gates the page behind a JA3/TLS-fingerprint

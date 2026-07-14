@@ -288,8 +288,8 @@ if app_settings.log_to_file:
     log_file = app_settings.log_dir / "bambuddy.log"
     file_handler = RotatingFileHandler(
         log_file,
-        maxBytes=5 * 1024 * 1024,  # 5MB
-        backupCount=3,
+        maxBytes=app_settings.log_max_bytes,
+        backupCount=app_settings.log_backup_count,
         encoding="utf-8",
     )
     file_handler.setLevel(log_level)

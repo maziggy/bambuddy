@@ -127,6 +127,15 @@ class _UploadProgressBridge:
 # briefly in SLICING between PREPARE and RUNNING while parsing the g-code.
 _ACTIVE_PRINT_STATES: frozenset[str] = frozenset({"PREPARE", "SLICING", "RUNNING", "PAUSE"})
 
+# How many times the start-watchdog may revert an item to 'pending' before it
+# gives up and fails the row instead (#2555). Each attempt costs a full 3MF
+# re-upload plus the watchdog's wait, so a wedged printer left to retry forever
+# both never recovers and starves the other printers of dispatch slots. Three
+# is chosen to clear the transient causes the watchdog already recovers from —
+# a lost MQTT publish on a half-broken session (#887/#936) is fixed by the
+# force-reconnect on the very next attempt — while still bounding the loop.
+DISPATCH_MAX_ATTEMPTS = 3
+
 # Filament type equivalence groups — types within the same group are
 # interchangeable on the printer side (Bambu Lab firmware treats them as compatible).
 _FILAMENT_TYPE_GROUPS: list[list[str]] = [
@@ -329,6 +338,46 @@ class PrintScheduler:
             # Log skip reasons once per queue check (not per item)
             skip_reasons: dict[str, int] = {}
 
+            # Items selected for dispatch in this pass, one per printer. The
+            # loop below only *decides* — the uploads happen afterwards, in
+            # parallel (#2555). See _dispatch_selected().
+            dispatch_ids: list[int] = []
+
+            # Library rows queued with `cleanup_library_after_dispatch` (the
+            # printer-card "upload and print" flow) are CONSUMED by the dispatch
+            # that prints them: the row is deleted and the 3MF is unlinked from
+            # disk. That was safe only because dispatch was serial. Run two of
+            # them against the same row at once and the second DELETE matches no
+            # row (StaleDataError), and the winner's unlink can pull the file out
+            # from under the loser's in-flight upload.
+            #
+            # Only the cleanup flag mutates the row. An ordinary library print
+            # just reads it, so the common fan-out — one file, many printers,
+            # which is exactly the reporter's workload — still goes out fully in
+            # parallel. Narrow the guard to the mutating case; do not serialise
+            # the case the whole fix exists for.
+            dispatch_libs: set[int] = set()
+            consumed_libs: set[int] = set()
+
+            def _library_row_conflict(candidate: PrintQueueItem) -> bool:
+                """True if dispatching `candidate` now would race another item's cleanup."""
+                lib_id = candidate.library_file_id
+                if lib_id is None:
+                    return False
+                if candidate.cleanup_library_after_dispatch:
+                    # We would delete a row someone else in this pass is reading.
+                    return lib_id in dispatch_libs
+                # Someone else in this pass will delete the row out from under us.
+                return lib_id in consumed_libs
+
+            def _claim_library_row(candidate: PrintQueueItem) -> None:
+                lib_id = candidate.library_file_id
+                if lib_id is None:
+                    return
+                dispatch_libs.add(lib_id)
+                if candidate.cleanup_library_after_dispatch:
+                    consumed_libs.add(lib_id)
+
             for item in items:
                 # Check scheduled time first (scheduled_time is stored in UTC from ISO string)
                 if item.scheduled_time:
@@ -442,8 +491,20 @@ class PrintScheduler:
                     if await self._block_on_filament_deficit(db, item):
                         continue
 
-                    # Start the print
-                    await self._start_print(db, item)
+                    # Hold this item back for the next pass rather than racing
+                    # another dispatch over the same transient library row. The
+                    # printer is still marked busy so a later item does not jump
+                    # its place in this printer's queue.
+                    if _library_row_conflict(item):
+                        skip_reasons["library_row_in_use"] = skip_reasons.get("library_row_in_use", 0) + 1
+                        busy_printers.add(item.printer_id)
+                        continue
+
+                    # Queue the dispatch instead of running it here — see
+                    # _dispatch_selected(). busy_printers still gets the printer
+                    # immediately, so nothing else in this pass can target it.
+                    _claim_library_row(item)
+                    dispatch_ids.append(item.id)
                     busy_printers.add(item.printer_id)
 
                     # SJF starvation guard: mark items that were jumped
@@ -517,6 +578,20 @@ class PrintScheduler:
                             )
 
                     if printer_id:
+                        # Before claiming the printer: hold back rather than race
+                        # another dispatch over the same transient library row.
+                        # Checked here so a held item does not get a printer
+                        # assigned and then sit on it. See _library_row_conflict().
+                        #
+                        # No busy_printers.add() here, unlike the fixed-printer
+                        # branch above: that one protects its printer's own queue
+                        # ordering, but this item was never assigned to `printer_id`
+                        # — the matcher merely offered it. Marking it busy would
+                        # strand an idle printer for the rest of the pass.
+                        if _library_row_conflict(item):
+                            skip_reasons["library_row_in_use"] = skip_reasons.get("library_row_in_use", 0) + 1
+                            continue
+
                         # Check condition (previous print success) before assigning
                         if item.require_previous_success:
                             if not await self._check_previous_success(db, item):
@@ -569,7 +644,8 @@ class PrintScheduler:
                         if await self._block_on_filament_deficit(db, item):
                             continue
 
-                        await self._start_print(db, item)
+                        _claim_library_row(item)
+                        dispatch_ids.append(item.id)
                         busy_printers.add(printer_id)
 
                         # SJF starvation guard: mark model-based items that were jumped
@@ -591,7 +667,10 @@ class PrintScheduler:
                                     other.been_jumped = True
                             await db.commit()
 
-            # Log summary of skip reasons (helps diagnose why queue items aren't starting)
+            # Log the decisions BEFORE dispatching. The dispatch below blocks for
+            # as long as the slowest upload takes (minutes on a big 3MF), and a
+            # skip summary that only lands after the transfers have finished is
+            # useless for working out why an item did not go out.
             if skip_reasons:
                 logger.info("Queue skip summary: %s", skip_reasons)
             if busy_printers:
@@ -609,8 +688,88 @@ class PrintScheduler:
                         awaiting,
                     )
 
+            # Read the concurrency limit BEFORE the commit below, not inside
+            # _dispatch_selected(). A SELECT on this session after the commit
+            # implicitly opens a fresh transaction that nothing then closes, and
+            # it would stay open for the whole dispatch — minutes of "idle in
+            # transaction" on Postgres (pinned MVCC snapshot, vacuum blocked),
+            # and on SQLite a pinned WAL read snapshot that stops the WAL being
+            # checkpointed while every dispatch is writing to it.
+            upload_limit = max(1, await self._get_int_setting(db, "queue_max_concurrent_uploads", default=4))
+
+            # Selection is done; every decision above is recorded on `db`
+            # (model-based printer assignment, computed ams_mapping). Flush it
+            # before the dispatch tasks open their own sessions, or they will
+            # read a row that still says printer_id=None. This also releases the
+            # connection back to the pool for the duration of the dispatch.
+            await db.commit()
+
+            if dispatch_ids:
+                await self._dispatch_selected(dispatch_ids, upload_limit)
+
             # Auto-drying: start drying on idle printers that have no pending queue items
             await self._check_auto_drying(db, items, busy_printers, require_plate_clear=require_plate_clear)
+
+    async def _dispatch_selected(self, item_ids: list[int], limit: int) -> None:
+        """Upload and start every item selected by this queue pass, in parallel.
+
+        Dispatch used to happen inline in the selection loop: ``await
+        _start_print(db, item)`` for each item in turn. Since ``_start_print``
+        performs the FTP upload, that serialized every printer behind every
+        other printer's transfer — even though the printers are entirely
+        independent machines. A Bambu printer's FTP server sustains ~150 KB/s
+        (its own SD write is the bottleneck, not the network), so a 41 MB 3MF
+        takes ~4 minutes. The reporter's 19-printer farm therefore needed ~80
+        minutes before the last printer received its file, and the queue looked
+        like it was starting prints "one by one, very slowly" (#2555).
+
+        Uploads to *different* printers contend for nothing, so they run
+        concurrently here, bounded by ``queue_max_concurrent_uploads``. The
+        bound exists because the printers are independent but the host is not:
+        each in-flight upload holds a thread in the FTP pool, a TLS session and
+        a file handle.
+
+        This is awaited before ``check_queue`` returns, which preserves the
+        invariant the rest of the scheduler is built on: a pass never overlaps
+        with the next one. It matters more than it looks — ``_start_print``
+        flips the row pending -> printing only *after* the upload finishes, so
+        a pass that returned early while uploads were still in flight would let
+        the next pass re-dispatch the very same still-pending rows.
+
+        ``limit`` is read by the caller, on the caller's session, before it
+        commits — reading it here would leave that session idle-in-transaction
+        for the whole dispatch. This function deliberately takes no session.
+        """
+        sem = asyncio.Semaphore(limit)
+
+        async def _one(item_id: int) -> None:
+            # Its own session: these run concurrently, and an AsyncSession is not
+            # safe to share across tasks. It also keeps a slow upload from pinning
+            # the caller's session (and, on SQLite, its transaction) open for the
+            # duration.
+            async with sem, async_session() as item_db:
+                item = await item_db.get(PrintQueueItem, item_id)
+                if not item:
+                    logger.info("Queue item %s vanished before dispatch — skipping", item_id)
+                    return
+                await self._start_print(item_db, item)
+
+        logger.info(
+            "Dispatching %d queue item(s) with up to %d concurrent upload(s): %s",
+            len(item_ids),
+            limit,
+            item_ids,
+        )
+        results = await asyncio.gather(*(_one(i) for i in item_ids), return_exceptions=True)
+
+        # gather() with return_exceptions keeps one printer's failure from
+        # cancelling its siblings' in-flight uploads. _start_print already
+        # handles its own failure modes and marks the item failed; anything
+        # arriving here is unexpected, so log it loudly rather than letting
+        # gather swallow it.
+        for item_id, result in zip(item_ids, results, strict=True):
+            if isinstance(result, BaseException):
+                logger.error("Queue item %s: dispatch raised %s: %s", item_id, type(result).__name__, result)
 
     async def _find_idle_printer_for_model(
         self,
@@ -2421,6 +2580,46 @@ class PrintScheduler:
         result = await db.execute(select(Printer).where(Printer.id == printer_id))
         return result.scalar_one_or_none()
 
+    async def _notify_dispatch_gave_up(
+        self,
+        queue_item_id: int,
+        printer_id: int,
+        created_by_id: int | None,
+    ) -> None:
+        """Tell the user the queue item was failed after exhausting its dispatch retries.
+
+        Called from the watchdog, which is a background task with no session of
+        its own — hence the fresh one here. Best-effort throughout: the row is
+        already marked failed and that is the load-bearing part; a notification
+        provider being down must not resurrect the retry loop we just stopped.
+        """
+        try:
+            async with async_session() as db:
+                item = await db.get(PrintQueueItem, queue_item_id)
+                if not item:
+                    return
+                job_name = await self._get_job_name(db, item)
+                printer = await self._get_printer(db, printer_id)
+                await notification_service.on_queue_job_failed(
+                    job_name=job_name,
+                    printer_id=printer_id,
+                    printer_name=printer.name if printer else "Unknown",
+                    reason="Printer accepted the file but never started printing",
+                    db=db,
+                )
+        except Exception as e:
+            logger.warning("Queue item %s: give-up notification failed: %s", queue_item_id, e)
+
+        try:
+            await ws_manager.send_queue_item_failed(
+                user_id=created_by_id,
+                queue_item_id=queue_item_id,
+                printer_id=printer_id,
+                reason="never_started",
+            )
+        except Exception:
+            pass  # toast is best-effort
+
     async def _block_on_filament_deficit(
         self,
         db: AsyncSession,
@@ -3063,12 +3262,24 @@ class PrintScheduler:
                     name=f"watchdog-print-start-{item.id}",
                 )
 
-            # Get estimated time for notification
+            # Get estimated time for notification.
+            #
+            # This used to fall back to `library_file.print_time_seconds`, a column
+            # LibraryFile does not have — the print time it knows about lives in
+            # `file_metadata`. So a library print whose archive carried no parseable
+            # print time (a plain .gcode, or a 3MF the parser could not read) raised
+            # AttributeError right here, *after* the printer had already been sent
+            # the job: the started-notification never fired, and the exception
+            # unwound the whole queue pass, so every other printer still waiting to
+            # be dispatched on that tick silently missed its turn.
+            #
+            # The queue item caches the print time at creation ("Cached from
+            # archive/library"), which is the value this was reaching for.
             estimated_time = None
             if archive and archive.print_time_seconds:
                 estimated_time = archive.print_time_seconds
-            elif library_file and library_file.print_time_seconds:
-                estimated_time = library_file.print_time_seconds
+            elif item.print_time_seconds:
+                estimated_time = item.print_time_seconds
 
             # Send job started notification
             await notification_service.on_queue_job_started(
@@ -3241,8 +3452,10 @@ class PrintScheduler:
         # Drop the in-memory hold so the retry isn't blocked by it.
         scheduler._release_dispatch_hold(printer_id)
 
-        # Three outcomes from the revert attempt, each routed differently:
+        # Four outcomes from the revert attempt, each routed differently:
         #   "reverted":          row flipped from printing -> pending, run recovery
+        #   "gave_up":           same, but the retry budget is spent — row failed
+        #                        rather than pending, so it stops going round again
         #   "already_moved_on":  item.status != 'printing' (completed/cancelled by
         #                        on_print_complete or user). Skip recovery entirely
         #                        — the print clearly landed somewhere even if the
@@ -3250,12 +3463,30 @@ class PrintScheduler:
         #   "revert_failed":     SQLite contention exhausted retries. Still run
         #                        recovery so the MQTT session gets a fresh client_id
         #                        on the half-broken-session path.
+        #
+        # The retry budget (#2555): reverting to 'pending' hands the item straight
+        # back to the next queue pass, which re-uploads the whole 3MF and waits out
+        # the watchdog again. For a printer that is genuinely wedged that loop never
+        # ends — the reporter had one printer "since this morning still not launch"
+        # — and each lap also consumes an upload slot that the other printers in the
+        # farm are waiting on. Retrying is right; retrying forever is not.
         async def _do_revert(db):
             item = await db.get(PrintQueueItem, queue_item_id)
             if not item or item.status != "printing":
                 return "already_moved_on"
-            item.status = "pending"
+            item.dispatch_attempts = (item.dispatch_attempts or 0) + 1
             item.started_at = None
+            if item.dispatch_attempts >= DISPATCH_MAX_ATTEMPTS:
+                item.status = "failed"
+                item.error_message = (
+                    f"The printer accepted the file but never started printing, after "
+                    f"{item.dispatch_attempts} attempts. Check the printer's screen for a "
+                    f"prompt or error, confirm its SD card is readable, and start the job again."
+                )
+                item.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+                return "gave_up"
+            item.status = "pending"
             await db.commit()
             return "reverted"
 
@@ -3279,7 +3510,18 @@ class PrintScheduler:
             return
 
         total_timeout = timeout + (phase_b_timeout if landed_on_subtask else 0.0)
-        if revert_outcome == "reverted":
+        if revert_outcome == "gave_up":
+            logger.error(
+                "Queue item %s: printer %d never started the print after %d dispatch "
+                "attempts (last one waited %.0fs) — marking the item failed instead of "
+                "re-uploading it again (#2555)",
+                queue_item_id,
+                printer_id,
+                DISPATCH_MAX_ATTEMPTS,
+                total_timeout,
+            )
+            await scheduler._notify_dispatch_gave_up(queue_item_id, printer_id, created_by_id)
+        elif revert_outcome == "reverted":
             if landed_on_subtask:
                 logger.warning(
                     "Queue item %s: printer %d accepted project_file (subtask_id "

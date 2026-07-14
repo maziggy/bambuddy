@@ -8,6 +8,7 @@ import threading
 import time
 import weakref
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 from ftplib import FTP, FTP_TLS  # nosec B402
 from io import BytesIO
@@ -17,6 +18,32 @@ from typing import TypeVar
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+# Every FTP call below is blocking ftplib work handed to a thread. They used to
+# run on asyncio's *default* executor, which is sized min(32, cpu_count + 4) —
+# six threads on a 2-core NAS — and is shared with every other ``to_thread`` /
+# ``run_in_executor`` caller in the app. That was survivable only because the
+# scheduler uploaded to exactly one printer at a time. Dispatching to several
+# printers at once (#2555) would park one thread per in-flight upload for
+# minutes at a stretch (a 41 MB 3MF at the ~150 KB/s a Bambu printer sustains
+# takes ~4 min), starving the default pool and stalling unrelated work.
+#
+# A dedicated pool keeps that blast radius inside the FTP layer: the scheduler's
+# own concurrency cap is what limits parallel uploads, and it can never exhaust
+# the executor everything else depends on. Threads are created lazily, so an
+# idle pool costs nothing.
+#
+# Sized well above `queue_max_concurrent_uploads` (max 16), because uploads are
+# not the only traffic here: SD browsing, timelapse/recording listing, cover
+# downloads, deletes and storage checks all run through this pool too, and on a
+# farm they fan out across every printer at once. The pool's work queue is
+# unbounded, so exceeding it does not fail — it queues. But `asyncio.wait_for`
+# starts its clock at submission, not at thread start, so a task that sits in the
+# queue can burn its whole timeout without ever running, and `list_files_async`
+# reports a timeout as an empty listing — a silent "this printer has no files".
+# Keep the headroom.
+_FTP_MAX_WORKERS = 48
+_ftp_executor = ThreadPoolExecutor(max_workers=_FTP_MAX_WORKERS, thread_name_prefix="bambu-ftp")
 
 # Overall upload deadline (#2529). A flat wall-clock cap punishes big files on
 # slow links rather than catching broken ones: a 96 MB 3MF at the ~75 KB/s an A1
@@ -919,7 +946,7 @@ async def download_file_async(
         done = threading.Event()
         try:
             return await asyncio.wait_for(
-                loop.run_in_executor(None, _download, force_prot_c, completion, done), timeout=timeout
+                loop.run_in_executor(_ftp_executor, _download, force_prot_c, completion, done), timeout=timeout
             )
         except TimeoutError:
             # Slow WiFi links commonly overshoot ftp_timeout by 10–30 s without
@@ -932,6 +959,12 @@ async def download_file_async(
             # floor so artificially small test timeouts still give zombies a
             # realistic window to finish.
             grace = max(min(timeout, 30.0), 0.5)
+            # Deliberately the DEFAULT executor, not `_ftp_executor`: this thread
+            # blocks waiting on `_download`, which is itself an `_ftp_executor`
+            # worker. Parking waiters in the same bounded pool as the workers they
+            # wait for is how you build a deadlock — with enough concurrent
+            # timeouts the waiters would occupy every slot and the downloads they
+            # are waiting for could never be scheduled.
             await loop.run_in_executor(None, done.wait, grace)
             if completion["success"] and local_path.exists() and local_path.stat().st_size > 0:
                 logger.info(
@@ -1004,7 +1037,7 @@ async def download_file_try_paths_async(
         finally:
             client.disconnect()
 
-    return await loop.run_in_executor(None, _download)
+    return await loop.run_in_executor(_ftp_executor, _download)
 
 
 def _upload_deadline(local_path: Path) -> float:
@@ -1115,7 +1148,7 @@ async def upload_file_async(
         breaks the send loop and deletes the partial file) and wait for it to
         actually go.
         """
-        fut = loop.run_in_executor(None, lambda: _upload(force_prot_c))
+        fut = loop.run_in_executor(_ftp_executor, lambda: _upload(force_prot_c))
         try:
             return await asyncio.wait_for(asyncio.shield(fut), timeout=deadline)
         except TimeoutError:
@@ -1204,7 +1237,7 @@ async def list_files_async(
         return []
 
     try:
-        return await asyncio.wait_for(loop.run_in_executor(None, _list), timeout=timeout)
+        return await asyncio.wait_for(loop.run_in_executor(_ftp_executor, _list), timeout=timeout)
     except TimeoutError:
         logger.warning("FTP list_files timed out after %ss for %s", timeout, path)
         return []
@@ -1238,7 +1271,7 @@ async def delete_file_async(
                 client.disconnect()
         return DeleteResult.FAILED
 
-    return await loop.run_in_executor(None, _delete)
+    return await loop.run_in_executor(_ftp_executor, _delete)
 
 
 async def download_file_bytes_async(
@@ -1265,7 +1298,7 @@ async def download_file_bytes_async(
                 client.disconnect()
         return None
 
-    return await loop.run_in_executor(None, _download)
+    return await loop.run_in_executor(_ftp_executor, _download)
 
 
 async def get_storage_info_async(
@@ -1291,7 +1324,7 @@ async def get_storage_info_async(
                 client.disconnect()
         return None
 
-    return await loop.run_in_executor(None, _get_storage)
+    return await loop.run_in_executor(_ftp_executor, _get_storage)
 
 
 async def get_ftp_retry_settings() -> tuple[bool, int, float, float]:

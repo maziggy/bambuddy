@@ -83,7 +83,12 @@ async def test_nothing_derivable_before_the_first_midnight(db_session):
     plug = await _plug(db_session)
     now = datetime.now(timezone.utc)
     # Snapshot taken this morning, after midnight — no baseline for the day.
-    await _snapshot(db_session, plug.id, now - timedelta(minutes=30), 102.0)
+    # Anchored to local_day_start rather than wall-clock `now`, like every other
+    # snapshot in this file: `now - 30min` is only "after local midnight" if the
+    # test happens to run more than 30 minutes past it. Berlin is UTC+2 in
+    # summer, so its midnight lands at 22:00 UTC — a wall-clock offset here goes
+    # from "usually fine" to "fails for half an hour every single day".
+    await _snapshot(db_session, plug.id, local_day_start(now) + timedelta(minutes=30), 102.0)
 
     today, yesterday = await derive_today_yesterday(db_session, plug.id, live_total_kwh=103.5)
 

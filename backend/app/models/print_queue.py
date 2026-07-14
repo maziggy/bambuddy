@@ -65,6 +65,14 @@ class PrintQueueItem(Base):
     # Auto-print G-code injection (#422)
     gcode_injection: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # How many times the start-watchdog has reverted this item from 'printing'
+    # back to 'pending' (#2555). A printer that accepts project_file but never
+    # starts (#1678) used to be retried forever: upload, wait out the watchdog,
+    # revert, upload again — burning a full 3MF transfer per cycle and, with
+    # the queue dispatching serially, dragging every other printer's start time
+    # out with it. The counter bounds that loop; see DISPATCH_MAX_ATTEMPTS.
+    dispatch_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
     # H2C dual-nozzle-rack slicer pick preservation (#1780). BambuStudio's
     # project_file MQTT command for rack-swap-capable models (O1C2 today)
     # carries per-filament physical nozzle position IDs in `nozzle_mapping`,

@@ -1250,6 +1250,10 @@ export interface AppSettings {
   require_plate_clear: boolean;
   // Shortest job first scheduling
   queue_shortest_first: boolean;
+  // How many printers the queue may upload to at once (#2555). 1 restores the
+  // old strictly-serial behaviour, where every printer waited out every other
+  // printer's transfer.
+  queue_max_concurrent_uploads: number;
   // Preheat / heat-soak before queued prints (#1468). Master toggle is the
   // default for new queue items; per-item PrintQueueItem.preheat_override can
   // flip the decision per print. Chamber target derives from the loaded AMS
@@ -1304,6 +1308,8 @@ export interface CloudAuthStatus {
   is_authenticated: boolean;
   email: string | null;
   region?: 'global' | 'china' | null;
+  /** A token is stored but Bambu no longer accepts it — tell the user why the login form is back. */
+  sign_in_expired?: boolean;
 }
 
 export interface CloudLoginResponse {
@@ -1365,6 +1371,8 @@ export interface OrcaProfileDetail {
 export interface MakerworldStatus {
   has_cloud_token: boolean;
   can_download: boolean;
+  /** A token is stored but Bambu rejected it — downloads will fail until the user signs in again. */
+  sign_in_expired?: boolean;
 }
 
 export interface MakerworldResolvedModel {

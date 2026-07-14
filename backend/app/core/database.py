@@ -3247,6 +3247,16 @@ async def run_migrations(conn):
     else:
         await _safe_execute(conn, "ALTER TABLE users ADD COLUMN IF NOT EXISTS orca_cloud_pending_at TIMESTAMP")
 
+    # Migration: record when Bambu rejects a stored cloud token. Until now the
+    # only state we kept was the token string itself, so a dead credential was
+    # indistinguishable from a live one and the UI reported "connected" forever
+    # while every cloud call 401'd. DATETIME is SQLite-only — Postgres uses
+    # TIMESTAMP, so the column is dialect-branched per project convention.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_token_invalid_at DATETIME")
+    else:
+        await _safe_execute(conn, "ALTER TABLE users ADD COLUMN IF NOT EXISTS cloud_token_invalid_at TIMESTAMP")
+
     # Data migration: drop the embedded 3MF Title (`print_name`) from library
     # file metadata so the FileManager displays the filename, not the title (#1489).
     await _migrate_drop_library_print_name(conn)
@@ -3413,6 +3423,16 @@ async def run_migrations(conn):
         await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN is_autologin BOOLEAN DEFAULT 0")
     else:
         await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN is_autologin BOOLEAN DEFAULT false")
+
+    # Migration: Add dispatch_attempts to print_queue (#2555). Counts the times
+    # the start-watchdog reverted the row from 'printing' back to 'pending' so a
+    # printer that never actually starts stops being retried forever. INTEGER
+    # DEFAULT 0 is spelled identically on SQLite and Postgres — no dialect branch.
+    # Verified on both dialects: ADD COLUMN ... DEFAULT 0 backfills existing rows,
+    # so no separate UPDATE is needed (and _safe_execute is DDL-only — see its
+    # docstring). The scheduler reads it as `(item.dispatch_attempts or 0) + 1`
+    # regardless, so even a NULL row could not disable the retry cap.
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN dispatch_attempts INTEGER DEFAULT 0")
 
     # Migration: Disambiguate the four ``user_print_*`` notification template
     # names by appending " Email" (#1792). See ``_migrate_rename_user_print_template_names``.

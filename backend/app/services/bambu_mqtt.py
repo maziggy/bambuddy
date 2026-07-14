@@ -493,6 +493,8 @@ class BambuMQTTClient:
         self.serial_number = serial_number
         self.access_code = access_code
         self.model = model
+        # Last value logged by _debug_on_change(), keyed by log site. See there.
+        self._debug_last: dict[str, object] = {}
         self.on_state_change = on_state_change
         self.on_print_start = on_print_start
         self.on_print_complete = on_print_complete
@@ -1001,6 +1003,46 @@ class BambuMQTTClient:
                     json.dumps(print_data),
                 )
 
+    def _debug_on_change(self, key: str, value: object, msg: str, *args: object) -> None:
+        """``logger.debug``, but only when ``value`` differs from the last call for ``key``.
+
+        The state dumps in the push_status handler fire whenever their field is
+        *present* in the frame — and a full push_status carries every field, so
+        they fire on every frame regardless of whether anything changed. Several
+        even say "updated" or "changes" in their own comment while doing nothing
+        of the sort.
+
+        On one printer that is ~1.5 lines/s and nobody noticed. On the 19-printer
+        farm in #2555 it is ~100 lines/s, which fills the 5 MB log inside five
+        minutes: the reporter enabled debug logging as asked and the support
+        bundle came back holding under five minutes of history, almost none of it
+        about the queue problem we were chasing. 27,727 of its 29,830 lines were
+        these dumps.
+
+        Deduplicating on the value keeps every transition — which is the only part
+        anyone reads these lines for — and drops the steady-state repetition.
+        ``value`` must capture everything interpolated into ``msg``, or a change
+        will be swallowed; pass a tuple when the message renders several fields.
+        """
+        if not logger.isEnabledFor(logging.DEBUG):
+            # Debug logging is toggled at RUNTIME (POST /support/debug-logging),
+            # and these clients outlive the toggle. Letting INFO-level frames warm
+            # the cache would be self-defeating: the operator turns debug on
+            # precisely to see the printer's current state, and a cache already
+            # holding every steady-state value would suppress that baseline until
+            # something happened to change. On an idle printer the bundle would
+            # come back with none of these lines at all.
+            #
+            # So while debug is off we record nothing and drop whatever we had.
+            # Every enable then starts cold and dumps a full baseline on the next
+            # frame, exactly as it did before this method existed.
+            self._debug_last.clear()
+            return
+        if self._debug_last.get(key) == value:
+            return
+        self._debug_last[key] = value
+        logger.debug(msg, *args)
+
     def _process_message(self, payload: dict):
         """Process incoming MQTT message from printer."""
         # Handle top-level AMS data (comes outside of "print" key)
@@ -1165,9 +1207,14 @@ class BambuMQTTClient:
                 self.state.ams_status_main = (self.state.ams_status >> 8) & 0xFF
 
                 # Log when ams_status changes (for filament change tracking debug)
-                logger.debug(
-                    f"[{self.serial_number}] ams_status: {self.state.ams_status} "
-                    f"(main={self.state.ams_status_main}, sub={self.state.ams_status_sub})"
+                self._debug_on_change(
+                    "ams_status:print",
+                    self.state.ams_status,
+                    "[%s] ams_status: %s (main=%s, sub=%s)",
+                    self.serial_number,
+                    self.state.ams_status,
+                    self.state.ams_status_main,
+                    self.state.ams_status_sub,
                 )
 
             # Check for command responses
@@ -1639,7 +1686,13 @@ class BambuMQTTClient:
             # Log all AMS dict fields to debug tray_now for H2D dual-nozzle
             non_list_fields = {k: v for k, v in ams_data.items() if k != "ams"}
             if non_list_fields:
-                logger.debug("[%s] AMS dict fields: %s", self.serial_number, non_list_fields)
+                self._debug_on_change(
+                    "ams_dict_fields",
+                    non_list_fields,
+                    "[%s] AMS dict fields: %s",
+                    self.serial_number,
+                    non_list_fields,
+                )
 
             # IMPORTANT: Parse ams_status FIRST before tray_now, so we have fresh status
             # when checking if we're in filament change mode for tray_now disambiguation
@@ -1655,9 +1708,14 @@ class BambuMQTTClient:
                 # Compute main and sub status
                 self.state.ams_status_sub = self.state.ams_status & 0xFF
                 self.state.ams_status_main = (self.state.ams_status >> 8) & 0xFF
-                logger.debug(
-                    f"[{self.serial_number}] ams_status: {self.state.ams_status} "
-                    f"(main={self.state.ams_status_main}, sub={self.state.ams_status_sub})"
+                self._debug_on_change(
+                    "ams_status:ams",
+                    self.state.ams_status,
+                    "[%s] ams_status: %s (main=%s, sub=%s)",
+                    self.serial_number,
+                    self.state.ams_status,
+                    self.state.ams_status_main,
+                    self.state.ams_status_sub,
                 )
 
             # Parse tray_now from AMS dict - this is the currently loaded tray global ID
@@ -1878,7 +1936,13 @@ class BambuMQTTClient:
                         )
                     self.state.last_loaded_tray = self.state.tray_now
 
-                logger.debug("[%s] tray_now updated: %s", self.serial_number, self.state.tray_now)
+                self._debug_on_change(
+                    "tray_now",
+                    self.state.tray_now,
+                    "[%s] tray_now updated: %s",
+                    self.serial_number,
+                    self.state.tray_now,
+                )
 
             # NOTE: ams_status is parsed BEFORE tray_now (see above) to ensure correct
             # state when checking filament change mode for H2D disambiguation
@@ -2029,7 +2093,14 @@ class BambuMQTTClient:
         self._apply_ams_version_cache(merged_ams)
         # Update timestamp for RFID refresh detection (frontend can detect "new data arrived")
         self.state.last_ams_update = time.time()
-        logger.debug("[%s] Merged AMS data: %s new units, %s total", self.serial_number, len(ams_list), len(merged_ams))
+        self._debug_on_change(
+            "merged_ams",
+            (len(ams_list), len(merged_ams)),
+            "[%s] Merged AMS data: %s new units, %s total",
+            self.serial_number,
+            len(ams_list),
+            len(merged_ams),
+        )
 
         # Extract ams_extruder_map from each AMS unit's info field
         # BambuStudio DevFilaSystem.cpp parses info as hex string:
@@ -2055,7 +2126,15 @@ class BambuMQTTClient:
                         # 0xE = uninitialized AMS, skip
                         continue
                     ams_extruder_map[str(ams_id)] = extruder_id
-                    logger.debug(f"[{self.serial_number}] AMS {ams_id} info=0x{info} -> extruder {extruder_id}")
+                    self._debug_on_change(
+                        f"ams_info:{ams_id}",
+                        (info, extruder_id),
+                        "[%s] AMS %s info=0x%s -> extruder %s",
+                        self.serial_number,
+                        ams_id,
+                        info,
+                        extruder_id,
+                    )
                 except (ValueError, TypeError):
                     pass  # Skip AMS units with unparseable info bitmask values
         if ams_extruder_map:
@@ -2378,8 +2457,13 @@ class BambuMQTTClient:
                     state_val = ext_data["state"]
                     # Extract bits 12-14 (3 bits) for switch state
                     switch_state = (state_val >> 12) & 0x7
-                    logger.debug(
-                        f"[{self.serial_number}] device.extruder.state={state_val} (switch_state bits 12-14: {switch_state})"
+                    self._debug_on_change(
+                        "extruder_state",
+                        state_val,
+                        "[%s] device.extruder.state=%s (switch_state bits 12-14: %s)",
+                        self.serial_number,
+                        state_val,
+                        switch_state,
                     )
                 # Log 'cur' field if present (might indicate current/active extruder)
                 if "cur" in ext_data:
@@ -2521,7 +2605,13 @@ class BambuMQTTClient:
                         # Valid direct temperature - heater is OFF
                         temps["chamber"] = float(info_temp)
                         temps["chamber_target"] = 0.0  # Direct value means heater off
-                        logger.debug("[%s] info.temp direct: %s°C (heater OFF)", self.serial_number, info_temp)
+                        self._debug_on_change(
+                            "info_temp_direct",
+                            info_temp,
+                            "[%s] info.temp direct: %s°C (heater OFF)",
+                            self.serial_number,
+                            info_temp,
+                        )
             # H2D series: Dual extruder temps are in device.extruder.info array
             # Temperature values are encoded as fixed-point (value / 65536 = °C)
             if "device" in data and isinstance(data["device"], dict):
@@ -2656,7 +2746,13 @@ class BambuMQTTClient:
 
                 # Log ctc_info contents for debugging
                 if ctc_info:
-                    logger.debug("[%s] ctc_info keys: %s", self.serial_number, list(ctc_info.keys()))
+                    self._debug_on_change(
+                        "ctc_info_keys",
+                        tuple(ctc_info.keys()),
+                        "[%s] ctc_info keys: %s",
+                        self.serial_number,
+                        list(ctc_info.keys()),
+                    )
 
                 # FIRST: Parse explicit ctc.info.target if available - this is the authoritative target
                 # (what the slicer shows). This OVERRIDES any previously decoded target.
@@ -2737,14 +2833,31 @@ class BambuMQTTClient:
                     target = self.state.temperatures.get("chamber_target", 0)
 
                 self.state.temperatures["chamber_heating"] = target > 0 and current < target
-                logger.debug(
-                    f"[{self.serial_number}] Chamber heating calculated: target={target}, current={current}, heating={self.state.temperatures['chamber_heating']}, respect_local={respect_local}"
+                self._debug_on_change(
+                    "chamber_heating",
+                    (target, current, self.state.temperatures["chamber_heating"], respect_local),
+                    "[%s] Chamber heating calculated: target=%s, current=%s, heating=%s, respect_local=%s",
+                    self.serial_number,
+                    target,
+                    current,
+                    self.state.temperatures["chamber_heating"],
+                    respect_local,
                 )
 
             # Debug: log chamber value if it was updated
             if "chamber" in temps:
-                logger.debug(
-                    f"[{self.serial_number}] Chamber temp updated to: {self.state.temperatures.get('chamber')}, target: {self.state.temperatures.get('chamber_target')}, heating: {self.state.temperatures.get('chamber_heating')}"
+                self._debug_on_change(
+                    "chamber_temp",
+                    (
+                        self.state.temperatures.get("chamber"),
+                        self.state.temperatures.get("chamber_target"),
+                        self.state.temperatures.get("chamber_heating"),
+                    ),
+                    "[%s] Chamber temp updated to: %s, target: %s, heating: %s",
+                    self.serial_number,
+                    self.state.temperatures.get("chamber"),
+                    self.state.temperatures.get("chamber_target"),
+                    self.state.temperatures.get("chamber_heating"),
                 )
 
             # Calculate nozzle_heating for single nozzle printers (not set by H2D parsing)
@@ -2958,7 +3071,7 @@ class BambuMQTTClient:
         # Parse ipcam/live view status
         if "ipcam" in data:
             ipcam_data = data["ipcam"]
-            logger.debug("[%s] ipcam field: %s", self.serial_number, ipcam_data)
+            self._debug_on_change("ipcam", ipcam_data, "[%s] ipcam field: %s", self.serial_number, ipcam_data)
             if isinstance(ipcam_data, dict):
                 # Check ipcam_record field for live view status
                 self.state.ipcam = ipcam_data.get("ipcam_record") == "enable"
@@ -2980,7 +3093,9 @@ class BambuMQTTClient:
         # Parse WiFi signal strength (dBm)
         if "wifi_signal" in data:
             wifi_signal = data["wifi_signal"]
-            logger.debug("[%s] wifi_signal received: %s", self.serial_number, wifi_signal)
+            self._debug_on_change(
+                "wifi_signal", wifi_signal, "[%s] wifi_signal received: %s", self.serial_number, wifi_signal
+            )
             if isinstance(wifi_signal, (int, float)):
                 self.state.wifi_signal = int(wifi_signal)
             elif isinstance(wifi_signal, str):

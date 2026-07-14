@@ -31,7 +31,7 @@ export function CameraPage() {
   // arrives. useStreamTokenSync (mounted in App) already owns the fetch; this
   // useQuery call dedupes via the shared key and just reads the cached value.
   useStreamTokenSync();
-  const { data: streamTokenData } = useQuery({
+  const { data: streamTokenData, isPending: streamTokenPending } = useQuery({
     queryKey: ['camera-stream-token', user?.id ?? null],
     queryFn: () => api.getCameraStreamToken(),
     enabled: authEnabled ? !!user : true,
@@ -617,7 +617,17 @@ export function CameraPage() {
   // the token directly from the reactive query value instead of relying on the
   // module-level cache in withStreamToken(), because that cache is updated in a
   // useEffect that runs after render.
-  const waitingForStreamToken = authEnabled && !streamTokenValue;
+  //
+  // We also wait when auth is *disabled* (#2521). The token query runs either
+  // way, and this page subscribes to it — so the first render produced a src
+  // with no token, the token landed, and the re-render CHANGED img.src. The
+  // browser aborts the in-flight request and issues a second one. With auth off
+  // no token is required, so *both* reached the backend and attached to the
+  // fan-out: every page load added two viewers and abandoned one of them. Wait
+  // for the query to settle and there is one src, one request, one viewer.
+  // Falling through once it has settled without a token keeps an auth-disabled
+  // install working even if the token endpoint fails — it doesn't need one.
+  const waitingForStreamToken = !streamTokenValue && (authEnabled || streamTokenPending);
   const appendToken = (url: string) =>
     streamTokenValue ? `${url}&token=${encodeURIComponent(streamTokenValue)}` : withStreamToken(url);
   const currentUrl = transitioning || waitingForStreamToken

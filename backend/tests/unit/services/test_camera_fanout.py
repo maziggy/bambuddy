@@ -445,3 +445,142 @@ async def test_successor_pump_times_out_if_predecessor_wedges(monkeypatch):
     # After the bounded wait elapses the pump dials and delivers a frame.
     assert await asyncio.wait_for(queue.get(), timeout=1.0) == b"x"
     await shutdown_broadcaster("p1")
+
+
+# ---------------------------------------------------------------------------
+# The printer only has ONE camera socket (#2521)
+# ---------------------------------------------------------------------------
+
+
+def _socket_counting_factory(state: dict, *, close_delay: float = 0.05):
+    """Upstream factory that models a real TCP socket to the printer.
+
+    Records the peak number of simultaneously-open sockets. A chamber-image cam
+    (P1/A1, port 6000) accepts exactly one connection: when a second overlaps,
+    the printer keeps feeding the first and the newcomer never sees a frame —
+    until the printer's TCP keepalive reaps the orphan, ~20 minutes later.
+    """
+
+    async def factory(disconnect: asyncio.Event) -> AsyncGenerator[bytes, None]:
+        await asyncio.sleep(0.01)  # dial + TLS handshake
+        state["open"] += 1
+        state["peak"] = max(state["peak"], state["open"])
+        try:
+            while not disconnect.is_set():
+                await asyncio.sleep(0.01)
+                yield b"frame"
+        finally:
+            await asyncio.sleep(close_delay)  # TCP close is not instantaneous
+            state["open"] -= 1
+
+    return factory
+
+
+async def test_stop_then_restream_never_opens_two_sockets():
+    """A page reload fires POST /camera/stop and GET /camera/stream at the same
+    time. ``shutdown_broadcaster`` used to *pop* the broadcaster out of the
+    registry and only then await its teardown, so a stream request landing in
+    that window found an empty slot, minted a broadcaster with no predecessor,
+    and dialled the printer while the old socket was still closing (#2521).
+    """
+    state = {"open": 0, "peak": 0}
+    factory = _socket_counting_factory(state)
+
+    bc1 = await get_or_create_broadcaster("p1", factory)
+    queue = await bc1.subscribe()
+    assert await asyncio.wait_for(queue.get(), timeout=1.0) == b"frame"
+    await bc1.unsubscribe(queue)
+
+    async def viewer_unmount_stop():
+        await shutdown_broadcaster("p1")
+
+    async def reloaded_page_streams():
+        await asyncio.sleep(0.005)  # lands a hair after the stop
+        bc = await get_or_create_broadcaster("p1", factory)
+        q = await bc.subscribe()
+        return await asyncio.wait_for(q.get(), timeout=2.0)
+
+    _stop_result, frame = await asyncio.gather(viewer_unmount_stop(), reloaded_page_streams())
+
+    assert frame == b"frame", "the reloaded page's viewer never received a frame"
+    assert state["peak"] == 1, (
+        f"opened {state['peak']} concurrent sockets to a printer that allows one — "
+        "the new stream dialled before the old socket closed"
+    )
+    await shutdown_broadcaster("p1")
+
+
+async def test_shutdown_broadcaster_leaves_a_chainable_predecessor():
+    """The stopped broadcaster must stay findable in the registry: that is what
+    lets the next viewer's pump chain behind its socket close."""
+    state = {"open": 0, "peak": 0}
+    factory = _socket_counting_factory(state)
+
+    bc1 = await get_or_create_broadcaster("p1", factory)
+    await bc1.subscribe()
+    await shutdown_broadcaster("p1")
+
+    assert camera_fanout._broadcasters.get("p1") is bc1, (  # noqa: SLF001
+        "the stopped broadcaster was removed from the registry — a successor "
+        "created now would have predecessor=None and dial immediately"
+    )
+    bc2 = await get_or_create_broadcaster("p1", factory)
+    assert bc2._predecessor is bc1  # noqa: SLF001 — white-box: the chain is the fix
+    await shutdown_broadcaster("p1")
+
+
+async def test_shutdown_broadcaster_is_idempotent():
+    """/camera/stop can fire twice (unmount + beforeunload). The second call
+    must report nothing was running rather than tearing down a live successor."""
+    factory = _make_factory([b"x"] * 1000, delay=0.02)
+    bc = await get_or_create_broadcaster("p1", factory)
+    await bc.subscribe()
+
+    assert await shutdown_broadcaster("p1") is True
+    assert await shutdown_broadcaster("p1") is False
+    assert await shutdown_broadcaster("never-existed") is False
+
+
+async def test_stopped_broadcaster_reports_no_subscribers():
+    """/camera/stop's reference-count guard must not see the corpse's leftovers."""
+    from backend.app.services.camera_fanout import get_subscriber_count
+
+    factory = _make_factory([b"x"] * 1000, delay=0.02)
+    bc = await get_or_create_broadcaster("p1", factory)
+    await bc.subscribe()
+    assert get_subscriber_count("p1") == 1
+
+    await shutdown_broadcaster("p1")
+    assert get_subscriber_count("p1") == 0, "a stopped broadcaster still reported subscribers"
+
+
+async def test_subscriber_with_no_frames_detaches_promptly():
+    """A viewer that goes away while the stream is black must stop being counted.
+
+    The disconnect check only ran after a chunk was yielded, or on a 30 s idle
+    timeout — so a client that left during a black stream stayed *counted* as a
+    subscriber for up to half a minute. /camera/stop trusts that count to decide
+    whether to tear the upstream down, so a phantom subscriber could make it
+    skip teardown entirely (#2521).
+    """
+
+    async def silent_factory(disconnect: asyncio.Event) -> AsyncGenerator[bytes, None]:
+        await disconnect.wait()  # connected, but the printer sends nothing
+        return
+        yield  # pragma: no cover — makes this an async generator
+
+    bc = MjpegBroadcaster("p1", silent_factory)
+    queue = await bc.subscribe()
+    assert bc.subscriber_count == 1
+
+    async def is_disconnected() -> bool:
+        return True  # the browser aborted the request
+
+    async def drain():
+        async for _chunk in iter_subscriber(bc, queue, is_disconnected=is_disconnected):
+            pass
+
+    # Must notice well inside the old 30 s idle timeout.
+    await asyncio.wait_for(drain(), timeout=3.0)
+    assert bc.subscriber_count == 0
+    await bc.force_shutdown()

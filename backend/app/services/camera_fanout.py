@@ -40,6 +40,13 @@ _SUBSCRIBER_QUEUE_SIZE = 4
 # subscriber's read loop can break out cleanly instead of hanging on get().
 _UPSTREAM_GONE = b""
 
+# How often a subscriber that isn't receiving frames re-checks whether its
+# client is still connected. Only pays a cost when the stream is *not* producing
+# frames — the normal path returns from queue.get() as soon as a frame lands and
+# checks after the yield. Kept short because the subscriber count derived from
+# it is what /camera/stop uses to decide whether to tear the upstream down.
+_DISCONNECT_POLL_SECONDS = 1.0
+
 UpstreamFactory = Callable[[asyncio.Event], AsyncGenerator[bytes, None]]
 
 
@@ -279,11 +286,30 @@ async def get_or_create_broadcaster(key: str, factory: UpstreamFactory) -> Mjpeg
 
 
 async def shutdown_broadcaster(key: str) -> bool:
-    """Force-shutdown the broadcaster for `key`. Returns True if one was running."""
+    """Force-shutdown the broadcaster for `key`. Returns True if one was running.
+
+    The stopped broadcaster stays in the registry on purpose. It used to be
+    popped *before* ``force_shutdown()`` was awaited, which vacated the slot
+    while the upstream socket was still closing: a ``/camera/stream`` request
+    landing in that window found nothing, minted a broadcaster with
+    ``predecessor=None``, and dialled the printer immediately. That is exactly
+    the two-sockets-at-once overlap the predecessor gate exists to prevent —
+    the gate only engages when the stopped broadcaster is still *findable*, and
+    popping it here bypassed the gate in the one case it was written for. A page
+    reload fires ``/camera/stop`` and the new stream request concurrently, so a
+    single-connection cam (chamber-image port 6000) ended up with an orphaned
+    socket that the printer kept feeding, starving the live viewer until the
+    printer's TCP keepalive reaped it ~20 min later (#2521).
+
+    Leaving it in place is safe: ``get_or_create_broadcaster`` replaces a stopped
+    entry (chaining the successor behind its teardown), ``get_subscriber_count``
+    reports 0 for it, and ``active_broadcaster_keys`` filters it out. There is at
+    most one entry per printer, and it is overwritten by the next viewer.
+    """
     async with _registry_lock:
-        bc = _broadcasters.pop(key, None)
-    if bc is None:
-        return False
+        bc = _broadcasters.get(key)
+        if bc is None or bc.stopped:
+            return False
     await bc.force_shutdown()
     return True
 
@@ -338,10 +364,16 @@ async def iter_subscriber(
     try:
         while True:
             try:
-                chunk = await asyncio.wait_for(queue.get(), timeout=30.0)
+                chunk = await asyncio.wait_for(queue.get(), timeout=_DISCONNECT_POLL_SECONDS)
             except asyncio.TimeoutError:
-                # No frame in 30s — check whether the client is still there.
-                # If yes, keep waiting; if no, bail out.
+                # No frame this tick — is the client still there? This used to
+                # wait 30 s before asking, and the disconnect check after a yield
+                # only fires when frames are actually flowing. So a viewer that
+                # went away while the stream was black stayed *counted* as a
+                # subscriber for up to half a minute — and ``/camera/stop``
+                # trusts that count to decide whether to tear the upstream down,
+                # so a phantom subscriber could make it skip teardown entirely
+                # (#2521). Poll often enough that the count means something.
                 if is_disconnected is not None and await is_disconnected():
                     break
                 continue

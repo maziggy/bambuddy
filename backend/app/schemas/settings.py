@@ -326,6 +326,16 @@ class AppSettings(BaseModel):
         default=False,
         description="Shortest Job First — scheduler prioritizes shorter print jobs over longer ones",
     )
+    queue_max_concurrent_uploads: int = Field(
+        default=4,
+        ge=1,
+        le=16,
+        description=(
+            "How many printers the queue may upload to at the same time. Printers are independent "
+            "machines, so raising this starts a multi-printer batch proportionally sooner; each "
+            "concurrent upload costs one connection and one thread on the Bambuddy host."
+        ),
+    )
 
     # Preheat / heat-soak before queued prints (#1468). The scheduler stage runs
     # BEFORE FTP upload. Three hardware tiers behave differently:
@@ -553,6 +563,7 @@ class AppSettingsUpdate(BaseModel):
     stagger_interval_minutes: int | None = Field(default=None, ge=1, le=60)
     require_plate_clear: bool | None = None
     queue_shortest_first: bool | None = None
+    queue_max_concurrent_uploads: int | None = Field(default=None, ge=1, le=16)
     preheat_enabled: bool | None = None
     preheat_filament_targets: str | None = None
     preheat_max_wait_seconds: int | None = Field(default=None, ge=60, le=3600)

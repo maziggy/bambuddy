@@ -1,0 +1,200 @@
+2026-07-14 16:03:27,551 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -45dBm
+2026-07-14 16:03:27,626 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:27,626 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -40dBm
+2026-07-14 16:03:27,643 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:27,643 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-07-14 16:03:28,910 DEBUG [backend.app.services.bambu_ftp] [-] FTP server welcome: 220 BBL-P003 FTP Server
+2026-07-14 16:03:28,911 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-07-14 16:03:29,558 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:29,558 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -42dBm
+2026-07-14 16:03:29,561 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:29,562 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-07-14 16:03:29,640 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:29,641 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-14 16:03:29,658 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:29,659 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-14 16:03:29,733 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /25pcsTSHolder_inv_2x.gcode.3mf: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1032)
+2026-07-14 16:03:31,563 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:31,654 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:31,654 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -42dBm
+2026-07-14 16:03:31,673 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:31,673 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -42dBm
+2026-07-14 16:03:32,524 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:32,524 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -44dBm
+2026-07-14 16:03:33,573 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:33,574 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-07-14 16:03:33,588 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:33,589 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-07-14 16:03:33,669 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:33,670 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -43dBm
+2026-07-14 16:03:33,689 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:33,689 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -45dBm
+2026-07-14 16:03:33,753 INFO [backend.app.api.routes.camera] [0a3969f5] Camera viewer detached from printer-1 (subscribers=0)
+2026-07-14 16:03:33,778 INFO [backend.app.api.routes.camera] [82bd3ed7] Chamber image stream cancelled (stream_id=1-fanout)
+2026-07-14 16:03:33,783 INFO [backend.app.api.routes.camera] [82bd3ed7] Chamber image stream stopped for [IP] (stream_id=1-fanout)
+2026-07-14 16:03:33,783 INFO [backend.app.api.routes.camera] [dd04be2c] Shut down camera fan-out broadcaster for printer 1
+2026-07-14 16:03:33,784 INFO [backend.app.api.routes.camera] [dd04be2c] Stopped 0 camera stream(s) for printer 1
+2026-07-14 16:03:33,785 INFO [uvicorn.access] [-] [IP]:19325 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-07-14 16:03:33,870 INFO [backend.app.api.routes.camera] [9dfc5c68] Using chamber image protocol for A1
+2026-07-14 16:03:33,870 INFO [backend.app.api.routes.camera] [9dfc5c68] Camera viewer attached to printer-1 (subscribers=1)
+2026-07-14 16:03:33,871 INFO [backend.app.api.routes.camera] [9dfc5c68] Starting chamber image stream for [IP] (stream_id=1-fanout, model=A1)
+2026-07-14 16:03:34,531 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:34,531 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -42dBm
+2026-07-14 16:03:34,632 INFO [backend.app.services.camera] [9dfc5c68] Chamber image: connected to [IP]:6000
+2026-07-14 16:03:35,579 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:35,579 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-07-14 16:03:35,598 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:35,599 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -42dBm
+2026-07-14 16:03:35,695 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:35,696 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -40dBm
+2026-07-14 16:03:35,712 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:35,714 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-14 16:03:36,541 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:36,542 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-14 16:03:37,589 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:37,590 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -44dBm
+2026-07-14 16:03:37,604 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:37,605 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -45dBm
+2026-07-14 16:03:37,700 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:37,701 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -42dBm
+2026-07-14 16:03:37,723 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:38,547 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:38,548 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -40dBm
+2026-07-14 16:03:39,175 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: added 30s, total=51905s (14.42h)
+2026-07-14 16:03:39,190 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: added 60s, total=34369s (9.55h)
+2026-07-14 16:03:39,205 DEBUG [backend.app.main] [-] Updated runtime for 2 printer(s)
+2026-07-14 16:03:39,595 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:39,596 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -45dBm
+2026-07-14 16:03:39,614 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:39,615 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -42dBm
+2026-07-14 16:03:39,715 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:39,730 WARNING [backend.app.api.routes.printers] [f61fe5cb] FTP download attempt 2 failed: , retrying...
+2026-07-14 16:03:40,520 DEBUG [backend.app.services.bambu_ftp] [-] FTP connected, logging in as bblp
+2026-07-14 16:03:40,555 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:40,556 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-14 16:03:40,732 DEBUG [backend.app.services.bambu_ftp] [-] FTP connecting to [IP]:990 (timeout=30s, model=A1, prot_c=False, cap_tls_v1_2=False)
+2026-07-14 16:03:40,741 DEBUG [backend.app.main] [-] Recorded 18 printer sensor history entries
+2026-07-14 16:03:41,602 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:41,603 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-07-14 16:03:41,616 DEBUG [backend.app.services.bambu_ftp] [-] FTP logged in, setting prot_p (protected) and passive mode
+2026-07-14 16:03:41,621 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:41,621 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -40dBm
+2026-07-14 16:03:41,731 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:41,732 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-14 16:03:41,738 DEBUG [backend.app.services.bambu_ftp] [-] FTP server welcome: 220 BBL-P003 FTP Server
+2026-07-14 16:03:41,738 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-07-14 16:03:41,936 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /25pcsTSHolder_inv_2x.gcode.3mf: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1032)
+2026-07-14 16:03:42,562 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:42,562 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -40dBm
+2026-07-14 16:03:42,678 INFO [backend.app.services.camera] [2f5d207d] Capturing camera frame bytes from [IP] using chamber image protocol (model: A1)
+2026-07-14 16:03:43,614 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:43,614 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-07-14 16:03:43,750 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:43,750 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -40dBm
+2026-07-14 16:03:43,761 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:43,924 INFO [backend.app.api.routes.camera] [9dfc5c68] Camera viewer detached from printer-1 (subscribers=0)
+2026-07-14 16:03:43,941 INFO [backend.app.api.routes.camera] [0b278cbd] Using chamber image protocol for A1
+2026-07-14 16:03:43,942 INFO [backend.app.api.routes.camera] [0b278cbd] Camera viewer attached to printer-1 (subscribers=1)
+2026-07-14 16:03:45,632 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:45,633 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-14 16:03:45,762 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:45,762 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -39dBm
+2026-07-14 16:03:46,574 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:46,575 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -43dBm
+2026-07-14 16:03:47,625 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:47,625 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -49dBm
+2026-07-14 16:03:47,637 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:47,788 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:47,789 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -40dBm
+2026-07-14 16:03:48,485 DEBUG [backend.app.api.routes.printers] [aba7415c] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-14 16:03:48,486 DEBUG [backend.app.api.routes.printers] [aba7415c] Using tray_now directly as global ID: 255
+2026-07-14 16:03:48,492 DEBUG [backend.app.api.routes.printers] [8386c671] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-14 16:03:48,493 DEBUG [backend.app.api.routes.printers] [8386c671] Using tray_now directly as global ID: 254
+2026-07-14 16:03:48,581 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:49,113 DEBUG [backend.app.api.routes.printers] [bdb49337] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-14 16:03:49,113 DEBUG [backend.app.api.routes.printers] [bdb49337] Using tray_now directly as global ID: 254
+2026-07-14 16:03:49,634 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:49,635 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-07-14 16:03:49,647 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:49,648 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -42dBm
+2026-07-14 16:03:49,779 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:49,780 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-14 16:03:49,803 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:49,803 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-14 16:03:50,028 DEBUG [backend.app.api.routes.printers] [39321123] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-14 16:03:50,028 DEBUG [backend.app.api.routes.printers] [39321123] Using tray_now directly as global ID: 255
+2026-07-14 16:03:50,589 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:50,590 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -44dBm
+2026-07-14 16:03:51,640 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:51,640 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -45dBm
+2026-07-14 16:03:51,651 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:51,652 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-14 16:03:51,815 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:51,816 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -42dBm
+2026-07-14 16:03:51,871 DEBUG [backend.app.api.routes.printers] [d5936f0c] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-14 16:03:51,871 DEBUG [backend.app.api.routes.printers] [d5936f0c] Using tray_now directly as global ID: 254
+2026-07-14 16:03:51,900 WARNING [backend.app.api.routes.printers] [b7128513] FTP download attempt 1 failed: , retrying...
+2026-07-14 16:03:52,401 DEBUG [backend.app.services.bambu_ftp] [-] FTP connecting to [IP]:990 (timeout=30s, model=A1, prot_c=False, cap_tls_v1_2=False)
+2026-07-14 16:03:52,679 DEBUG [backend.app.services.bambu_ftp] [-] FTP connected, logging in as bblp
+2026-07-14 16:03:52,802 WARNING [backend.app.services.bambu_ftp] [-] FTP connection timed out to [IP]: timed out
+2026-07-14 16:03:52,805 WARNING [backend.app.services.bambu_ftp] [-] FTP download timed out after 30.0s (plus 30.0s grace) for /cache/25pcsTSHolder_inv_2x.gcode.3mf
+2026-07-14 16:03:52,806 INFO [backend.app.services.bambu_ftp] [-] Download 3MF from /cache/25pcsTSHolder_inv_2x.gcode.3mf will retry in 2.0s...
+2026-07-14 16:03:53,650 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:53,650 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-07-14 16:03:53,658 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:53,659 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-07-14 16:03:53,761 DEBUG [backend.app.services.bambu_ftp] [-] FTP logged in, setting prot_p (protected) and passive mode
+2026-07-14 16:03:53,807 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:53,832 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:53,833 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-14 16:03:53,886 DEBUG [backend.app.services.bambu_ftp] [-] FTP server welcome: 220 BBL-P003 FTP Server
+2026-07-14 16:03:53,886 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=A1, prot_c=False)
+2026-07-14 16:03:54,085 INFO [backend.app.services.bambu_ftp] [-] FTP download failed for /25pcsTSHolder_inv_2x.gcode.3mf: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1032)
+2026-07-14 16:03:54,600 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:54,600 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-14 16:03:54,807 DEBUG [backend.app.services.bambu_ftp] [-] FTP connecting to [IP]:990 (timeout=30.0s, model=A1, prot_c=False, cap_tls_v1_2=False)
+2026-07-14 16:03:55,659 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:55,659 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -49dBm
+2026-07-14 16:03:55,667 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:55,668 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-14 16:03:55,825 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:55,825 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -40dBm
+2026-07-14 16:03:55,991 INFO [backend.app.api.routes.camera] [0b278cbd] Camera viewer detached from printer-1 (subscribers=0)
+2026-07-14 16:03:56,008 INFO [backend.app.api.routes.camera] [3a9b5838] Using chamber image protocol for A1
+2026-07-14 16:03:56,008 INFO [backend.app.api.routes.camera] [3a9b5838] Camera viewer attached to printer-1 (subscribers=1)
+2026-07-14 16:03:56,609 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:56,610 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -44dBm
+2026-07-14 16:03:57,672 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:57,673 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-07-14 16:03:57,677 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:57,678 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-07-14 16:03:57,837 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:57,838 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-14 16:03:58,459 ERROR [backend.app.services.camera] [2f5d207d] Chamber image: connection timeout to [IP]:6000
+2026-07-14 16:03:58,461 INFO [uvicorn.access] [-] [IP]:18625 - "POST /api/v1/printers/1/camera/diagnose HTTP/1.1" 200
+2026-07-14 16:03:58,617 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:58,618 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-14 16:03:59,684 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:59,685 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -45dBm
+2026-07-14 16:03:59,855 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:59,869 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:03:59,870 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -46dBm
+2026-07-14 16:04:00,627 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:04:00,628 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -44dBm
+2026-07-14 16:04:01,680 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:04:01,681 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -47dBm
+2026-07-14 16:04:01,693 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:04:01,694 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -42dBm
+2026-07-14 16:04:01,871 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:04:01,872 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -42dBm
+2026-07-14 16:04:01,884 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:04:01,885 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-14 16:04:01,991 WARNING [backend.app.services.print_scheduler] [-] Queue item 15: printer 3 accepted project_file (subtask_id advanced) but never transitioned to an active state within 270s — printer wedged post-acceptance; reverted to 'pending' for retry (#1678)
+2026-07-14 16:04:02,629 INFO [backend.app.api.routes.camera] [3a9b5838] Camera viewer detached from printer-1 (subscribers=0)
+2026-07-14 16:04:02,636 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-14 16:04:02,637 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -45dBm
+2026-07-14 16:04:02,711 INFO [backend.app.api.routes.camera] [9dfc5c68] Chamber image stream cancelled (stream_id=1-fanout)
+2026-07-14 16:04:02,717 INFO [backend.app.api.routes.camera] [9dfc5c68] Chamber image stream stopped for [IP] (stream_id=1-fanout)
+2026-07-14 16:04:02,718 INFO [backend.app.api.routes.camera] [36f99250] Shut down camera fan-out broadcaster for printer 1
+2026-07-14 16:04:02,718 INFO [backend.app.api.routes.camera] [36f99250] Stopped 0 camera stream(s) for printer 1
+2026-07-14 16:04:02,720 INFO [uvicorn.access] [-] [IP]:31652 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200

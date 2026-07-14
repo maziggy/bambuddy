@@ -63,6 +63,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@TriadX1](https://github.com/TriadX1)
 - [@hazzardr](https://github.com/hazzardr)
 - [@Shihchiun](https://github.com/Shihchiun)
+- [@kycrna](https://github.com/kycrna)
 
 ---
 

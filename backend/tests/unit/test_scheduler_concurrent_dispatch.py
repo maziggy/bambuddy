@@ -177,7 +177,7 @@ async def _run_check_queue(ctx, upload, job_started=None):
     with ExitStack() as stack:
         for patcher in patches:
             stack.enter_context(patcher)
-        await scheduler.check_queue()
+        return await scheduler.check_queue()
 
 
 async def _statuses(ctx):
@@ -267,6 +267,30 @@ async def test_one_failing_upload_does_not_cancel_the_others(farm):
     assert [s for i, s in enumerate(statuses) if i != 1] == ["printing"] * 3, (
         "the other three printers must have started despite the failure"
     )
+
+
+@pytest.mark.asyncio
+async def test_check_queue_reports_it_dispatched(farm):
+    """A productive pass returns True so ``run()`` re-checks quickly (#2555).
+
+    The fast re-tick is what stops a draining batch from stalling 30 s behind
+    the idle sleep every time a printer frees up.
+    """
+    ctx = await farm(3, max_concurrent=3)
+
+    dispatched = await _run_check_queue(ctx, _UploadRecorder())
+
+    assert dispatched is True, "check_queue dispatched 3 items but did not report it"
+
+
+@pytest.mark.asyncio
+async def test_check_queue_reports_nothing_dispatched_when_empty(farm):
+    """An empty queue returns False so ``run()`` falls back to the idle interval."""
+    ctx = await farm(0, max_concurrent=3)
+
+    dispatched = await _run_check_queue(ctx, _UploadRecorder())
+
+    assert dispatched is False, "an empty pass must not trigger a fast re-tick"
 
 
 @pytest.mark.asyncio

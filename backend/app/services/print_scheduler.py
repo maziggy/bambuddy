@@ -217,6 +217,17 @@ class PrintScheduler:
     def __init__(self):
         self._running = False
         self._check_interval = 30  # seconds
+        # After a pass that actually dispatched something, loop again almost
+        # immediately instead of sleeping the full interval (#2555). A dispatch
+        # changes printer state — a batch launch fans out over several passes as
+        # printers free up, a wedged head-of-line job reverts to pending, an
+        # upload slot opens — and the next batch of ready work should not have to
+        # wait 30 s behind an idle sleep. When a pass dispatches nothing (all
+        # pending items are behind printers that are genuinely busy printing),
+        # there is nothing to react to, so we fall back to the normal interval;
+        # that also means this can never tight-loop, since fast ticks only
+        # continue while dispatches keep happening and the queue is draining.
+        self._fast_check_interval = 3  # seconds
         self._power_on_wait_time = 180  # seconds to wait for printer after power on (3 min)
         self._power_on_check_interval = 10  # seconds between connection checks
         # Track which printers are currently auto-drying (printer_id -> start timestamp)
@@ -246,20 +257,27 @@ class PrintScheduler:
         logger.info("Print scheduler started")
 
         while self._running:
+            dispatched = False
             try:
-                await self.check_queue()
+                dispatched = await self.check_queue()
             except Exception as e:
                 logger.error("Scheduler error: %s", e)
 
-            await asyncio.sleep(self._check_interval)
+            # Re-check quickly after a productive pass so a draining batch does
+            # not stall behind the idle interval; otherwise sleep normally (#2555).
+            await asyncio.sleep(self._fast_check_interval if dispatched else self._check_interval)
 
     def stop(self):
         """Stop the scheduler."""
         self._running = False
         logger.info("Print scheduler stopped")
 
-    async def check_queue(self):
-        """Check for prints ready to start."""
+    async def check_queue(self) -> bool:
+        """Check for prints ready to start.
+
+        Returns True if this pass dispatched at least one item, so the caller
+        can loop again quickly instead of sleeping the full interval (#2555).
+        """
         async with async_session() as db:
             # Check if shortest-job-first scheduling is enabled
             sjf_enabled = await self._get_bool_setting(db, "queue_shortest_first")
@@ -300,7 +318,7 @@ class PrintScheduler:
             if not items:
                 # No pending items — still check auto-drying on idle printers
                 await self._check_auto_drying(db, [], set(), require_plate_clear=require_plate_clear)
-                return
+                return False
 
             logger.info(
                 "Queue check: found %d pending items: %s",
@@ -709,6 +727,8 @@ class PrintScheduler:
 
             # Auto-drying: start drying on idle printers that have no pending queue items
             await self._check_auto_drying(db, items, busy_printers, require_plate_clear=require_plate_clear)
+
+            return bool(dispatch_ids)
 
     async def _dispatch_selected(self, item_ids: list[int], limit: int) -> None:
         """Upload and start every item selected by this queue pass, in parallel.

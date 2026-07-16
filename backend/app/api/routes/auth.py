@@ -189,9 +189,15 @@ async def set_advanced_auth_enabled(db: AsyncSession, enabled: bool) -> None:
 
 async def set_auth_enabled(db: AsyncSession, enabled: bool) -> None:
     """Set authentication enabled status."""
+    from backend.app.core.auth import invalidate_auth_enabled_cache
     from backend.app.core.db_dialect import upsert_setting
 
     await upsert_setting(db, Settings, "auth_enabled", "true" if enabled else "false")
+    # Drop the cached auth-enabled flag so the change takes effect immediately
+    # instead of after the TTL (issue #2572). Safe pre-commit: only enabled=True
+    # is ever cached, and the newly-enabled True isn't visible to other sessions
+    # until this transaction commits, so no stale value can be re-cached here.
+    invalidate_auth_enabled_cache()
     # Note: Don't commit here - let get_db handle it or commit explicitly in the route
 
 

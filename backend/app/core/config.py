@@ -74,6 +74,17 @@ class Settings(BaseSettings):
     log_dir: Path = _log_dir
     database_url: str = _external_db_url or f"sqlite+aiosqlite:///{_db_path}"
 
+    # Database connection pool sizing. ``None`` = use the built-in, dialect-aware
+    # default (PostgreSQL: pool_size 20 + max_overflow 80; SQLite: 20 + 200).
+    # Large PostgreSQL printer farms can raise these via the DB_POOL_SIZE /
+    # DB_MAX_OVERFLOW / DB_POOL_TIMEOUT / DB_POOL_RECYCLE env vars (issue #2572).
+    # Make sure PostgreSQL ``max_connections`` comfortably exceeds
+    # (pool_size + max_overflow) x number of app worker processes.
+    db_pool_size: int | None = Field(default=None, gt=0)
+    db_max_overflow: int | None = Field(default=None, ge=0)
+    db_pool_timeout: int | None = Field(default=None, gt=0)
+    db_pool_recycle: int | None = Field(default=None, gt=0)
+
     # Logging
     log_level: str = "INFO"  # Override with LOG_LEVEL env var or DEBUG=true
     log_to_file: bool = True  # Set to false to disable file logging

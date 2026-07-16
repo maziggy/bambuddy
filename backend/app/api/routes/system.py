@@ -606,6 +606,24 @@ async def get_system_health(
     return await asyncio.to_thread(scan_logs, sensitive_strings=sensitive_strings)
 
 
+@router.get("/db-pool")
+async def get_db_pool(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SYSTEM_READ),
+):
+    """Live database connection-pool gauges for large-farm diagnostics (#2572).
+
+    Reports the resolved pool configuration plus current checked-out /
+    checked-in / overflow counts. Deliberately takes no DB session — reading
+    the pool's own counters must not itself consume a connection, so this stays
+    truthful even when the pool is saturated. On a healthy install ``checked_out``
+    sits well below ``config.pool_size + config.max_overflow``; sustained
+    saturation points at connections held across slow I/O (see #2572).
+    """
+    from backend.app.core.database import get_pool_status
+
+    return get_pool_status()
+
+
 @router.get("/appliance")
 async def get_appliance_defaults():
     """Expose appliance-set state for the SPA's bootstrap surface.

@@ -12,6 +12,7 @@ from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core import database
 from backend.app.core.auth import (
     RequireCameraStreamTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
@@ -609,7 +610,6 @@ async def camera_stream(
     printer_id: int,
     request: Request,
     fps: int = 10,
-    db: AsyncSession = Depends(get_db),
     _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Stream live video from printer camera as MJPEG.
@@ -628,7 +628,22 @@ async def camera_stream(
         printer_id: Printer ID
         fps: Target frames per second (default: 10, max: 30)
     """
-    printer = await get_printer_or_404(printer_id, db)
+    # Fetch the printer in a short-lived session so the pooled DB connection is
+    # released BEFORE we start streaming. A live MJPEG stream runs for as long
+    # as the browser tab stays open (potentially hours); holding the
+    # Depends(get_db) session across it pinned one pooled connection per open
+    # camera tab per printer — a top contributor to pool exhaustion on large
+    # farms (issue #2572). expire_on_commit=False keeps the printer's already-
+    # loaded columns readable after the session closes, and everything below
+    # reads only scalar attributes (model, ip_address, access_code,
+    # external_camera_*) — no lazy loads.
+    #
+    # Reference async_session via the module (not a top-level import binding) so
+    # the session maker is looked up at call time — that keeps it in sync with
+    # reinitialize_database() and lets the test harness's patch of
+    # backend.app.core.database.async_session take effect here.
+    async with database.async_session() as db:
+        printer = await get_printer_or_404(printer_id, db)
 
     # Check for external camera first
     if printer.external_camera_enabled and printer.external_camera_url:

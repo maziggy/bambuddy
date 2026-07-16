@@ -570,6 +570,10 @@ class BambuMQTTClient:
         self._raw_message_handlers: list[Callable[[str, bytes], None]] = []
         self._disconnection_event: threading.Event | None = None
         self._previous_ams_hash: str | None = None  # Track AMS changes
+        # Track external-spool (vt_tray) identity changes separately: the AMS
+        # hash above covers only AMS units, so an external-spool-only filament
+        # swap would never re-trigger inventory reconciliation (#2575).
+        self._previous_vt_tray_hash: str | None = None
 
         # Cache AMS firmware/SN from get_version in case it arrives before AMS status
         # Key: ams_id (int). Value: {'sw_ver': str, 'sn': str}
@@ -1188,6 +1192,14 @@ class BambuMQTTClient:
                         vt_tray = [vt_tray]
                     self.state.raw_data["vt_tray"] = vt_tray
 
+            # The regular AMS change-hash (in _handle_ams_data) only sees AMS
+            # units, and _handle_ams_data runs before this block — so a change
+            # to the external spool alone (e.g. swapping generic TPU for generic
+            # ABS on the printer) never re-triggers on_ams_change, leaving a
+            # stale inventory assignment on the ams_id=255 slot (#2575). Detect
+            # external-spool identity changes here and fire the same callback.
+            self._maybe_trigger_external_spool_change()
+
             # Parse ams_status directly from print data (NOT from print.ams)
             # ams_status is a combined value: lower 8 bits = sub status, bits 8-15 = main status
             # Main status: 0=idle, 1=filament_change, 2=rfid_identifying, 3=assist, 4=calibration
@@ -1668,6 +1680,39 @@ class BambuMQTTClient:
         if len(candidates) == 1:
             return candidates.pop()
         return None
+
+    def _maybe_trigger_external_spool_change(self):
+        """Fire on_ams_change when the external spool (vt_tray) identity changes.
+
+        The AMS change-hash in _handle_ams_data is built only from AMS units, so
+        an external-spool-only filament swap would otherwise never re-run the
+        inventory reconciliation that unlinks a stale ams_id=255 assignment
+        (#2575). The reconciliation reads vt_tray from live status itself, so we
+        just need to re-fire the callback with the current merged AMS data.
+        """
+        import hashlib
+
+        vt_tray = self.state.raw_data.get("vt_tray")
+        if not isinstance(vt_tray, list):
+            return
+        # Identity fields only — deliberately exclude `remain` so a print's
+        # steadily-dropping fill percentage doesn't fire on every MQTT push.
+        fp_parts = [
+            f"{vt.get('id')}:{vt.get('tray_type')}:{vt.get('tray_color')}:"
+            f"{vt.get('tag_uid')}:{vt.get('tray_uuid')}:{vt.get('tray_info_idx')}"
+            for vt in vt_tray
+            if isinstance(vt, dict)
+        ]
+        vt_hash = hashlib.md5(":".join(fp_parts).encode(), usedforsecurity=False).hexdigest()
+        if vt_hash == self._previous_vt_tray_hash:
+            return
+        self._previous_vt_tray_hash = vt_hash
+        if self.on_ams_change:
+            logger.debug(
+                "[%s] External spool (vt_tray) changed, triggering sync callback",
+                self.serial_number,
+            )
+            self.on_ams_change(self.state.raw_data.get("ams") or [])
 
     def _handle_ams_data(self, ams_data):
         """Handle AMS data changes for Spoolman integration.

@@ -4873,152 +4873,160 @@ async def on_print_complete(printer_id: int, data: dict):
 
             from backend.app.api.routes.camera import _active_chamber_streams, _active_streams, get_buffered_frame
 
+            # Read phase: settings + printer + archive in a short session, released
+            # BEFORE the capture pipeline below. The capture (timelapse last-frame,
+            # stage-22 wait, external-camera grab, or a fresh RTSP shot) can take
+            # tens of seconds; holding this session across it pinned one pooled
+            # connection idle-in-transaction per finishing print (issue #2572).
             async with async_session() as db:
                 from backend.app.api.routes.settings import get_setting
+                from backend.app.models.archive import PrintArchive
+                from backend.app.models.printer import Printer
 
                 capture_enabled = await get_setting(db, "capture_finish_photo")
+                if capture_enabled is not None and capture_enabled.lower() != "true":
+                    return None
+                if not archive_id:
+                    return None
 
-                if capture_enabled is None or capture_enabled.lower() == "true":
-                    from backend.app.models.printer import Printer
+                printer = (await db.execute(select(Printer).where(Printer.id == printer_id))).scalar_one_or_none()
+                archive = (
+                    await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
+                ).scalar_one_or_none()
 
-                    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-                    printer = result.scalar_one_or_none()
+            if not printer or not archive:
+                return None
 
-                    if printer and archive_id:
-                        from backend.app.models.archive import PrintArchive
+            import uuid
+            from datetime import datetime
+            from pathlib import Path
 
-                        result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-                        archive = result.scalar_one_or_none()
+            if archive.file_path:
+                archive_dir = app_settings.base_dir / Path(archive.file_path).parent
+            else:
+                logger.warning("[PHOTO-BG] Archive %s has no file_path, using fallback dir", archive_id)
+                archive_dir = app_settings.archive_dir / str(archive.id)
+            photo_filename = None
 
-                        if archive:
-                            import uuid
-                            from datetime import datetime
-                            from pathlib import Path
+            # Prefer the timelapse last-frame source when a timelapse was
+            # recording — it captures the moment after the toolhead parks
+            # but before the bed drops, which the live-camera grab below
+            # would miss (#1397). Skipped for external cameras (those have
+            # their own framing and don't see a Bambu timelapse). Only
+            # runs when the USER explicitly enabled timelapse for this
+            # print — #1721 removed Bambuddy's force-on at dispatch
+            # because it caused per-layer nozzle parking on Smooth-mode
+            # slicer profiles.
+            prefer_timelapse_source = bool(data.get("timelapse_was_active")) and not (
+                printer.external_camera_enabled and printer.external_camera_url
+            )
 
-                            if archive.file_path:
-                                archive_dir = app_settings.base_dir / Path(archive.file_path).parent
-                            else:
-                                logger.warning("[PHOTO-BG] Archive %s has no file_path, using fallback dir", archive_id)
-                                archive_dir = app_settings.archive_dir / str(archive.id)
-                            photo_filename = None
+            if prefer_timelapse_source:
+                photo_filename = await _capture_finish_photo_from_timelapse(
+                    archive_id=archive_id,
+                    archive_dir=archive_dir,
+                )
 
-                            # Prefer the timelapse last-frame source when a timelapse was
-                            # recording — it captures the moment after the toolhead parks
-                            # but before the bed drops, which the live-camera grab below
-                            # would miss (#1397). Skipped for external cameras (those have
-                            # their own framing and don't see a Bambu timelapse). Only
-                            # runs when the USER explicitly enabled timelapse for this
-                            # print — #1721 removed Bambuddy's force-on at dispatch
-                            # because it caused per-layer nozzle parking on Smooth-mode
-                            # slicer profiles.
-                            prefer_timelapse_source = bool(data.get("timelapse_was_active")) and not (
-                                printer.external_camera_enabled and printer.external_camera_url
-                            )
+            # #1721: replacement framing path — on_finish_photo_moment
+            # pre-captured a frame at the stage-22 / FINISH edge (toolhead
+            # parked, bed not yet dropped) and cached the JPEG bytes in
+            # _stage22_finish_frames. Consume them now so the saved photo
+            # has the better framing instead of the post-bed-drop angle
+            # the live-camera fallback below would give.
+            if not photo_filename:
+                # #1790: on the FINISH-state fallback path the producer
+                # task is dispatched back-to-back with this consumer, so
+                # a bare pop would race past with an empty result and
+                # the RTSP fallback below would collide with the
+                # producer's still-in-flight grab (single-client RTSP
+                # on Bambu printers). Wait for the producer to finish
+                # or give up before touching the cache.
+                in_flight = _stage22_finish_in_flight.pop(printer_id, None)
+                if in_flight is not None:
+                    try:
+                        await asyncio.wait_for(in_flight.wait(), timeout=20.0)
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "[PHOTO-BG] timed out waiting for stage-22 producer for printer %s — proceeding to fallback",
+                            printer_id,
+                        )
+                cached_frame = _stage22_finish_frames.pop(printer_id, None)
+                if cached_frame:
+                    photos_dir = archive_dir / "photos"
+                    photos_dir.mkdir(parents=True, exist_ok=True)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
+                    photo_path = photos_dir / photo_filename
+                    await asyncio.to_thread(photo_path.write_bytes, cached_frame)
+                    logger.info(
+                        "[PHOTO-BG] Saved stage-22 pre-captured frame: %s (%d bytes)",
+                        photo_filename,
+                        len(cached_frame),
+                    )
 
-                            if prefer_timelapse_source:
-                                photo_filename = await _capture_finish_photo_from_timelapse(
-                                    archive_id=archive_id,
-                                    archive_dir=archive_dir,
-                                )
+            # Fallback chain: external camera → buffered live frame →
+            # fresh RTSP capture. Only runs if the timelapse path above
+            # didn't already produce a photo.
+            if not photo_filename:
+                if printer.external_camera_enabled and printer.external_camera_url:
+                    logger.info("[PHOTO-BG] Using external camera")
+                    from backend.app.services.external_camera import capture_frame
 
-                            # #1721: replacement framing path — on_finish_photo_moment
-                            # pre-captured a frame at the stage-22 / FINISH edge (toolhead
-                            # parked, bed not yet dropped) and cached the JPEG bytes in
-                            # _stage22_finish_frames. Consume them now so the saved photo
-                            # has the better framing instead of the post-bed-drop angle
-                            # the live-camera fallback below would give.
-                            if not photo_filename:
-                                # #1790: on the FINISH-state fallback path the producer
-                                # task is dispatched back-to-back with this consumer, so
-                                # a bare pop would race past with an empty result and
-                                # the RTSP fallback below would collide with the
-                                # producer's still-in-flight grab (single-client RTSP
-                                # on Bambu printers). Wait for the producer to finish
-                                # or give up before touching the cache.
-                                in_flight = _stage22_finish_in_flight.pop(printer_id, None)
-                                if in_flight is not None:
-                                    try:
-                                        await asyncio.wait_for(in_flight.wait(), timeout=20.0)
-                                    except asyncio.TimeoutError:
-                                        logger.warning(
-                                            "[PHOTO-BG] timed out waiting for stage-22 producer for printer %s — proceeding to fallback",
-                                            printer_id,
-                                        )
-                                cached_frame = _stage22_finish_frames.pop(printer_id, None)
-                                if cached_frame:
-                                    photos_dir = archive_dir / "photos"
-                                    photos_dir.mkdir(parents=True, exist_ok=True)
-                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                    photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
-                                    photo_path = photos_dir / photo_filename
-                                    await asyncio.to_thread(photo_path.write_bytes, cached_frame)
-                                    logger.info(
-                                        "[PHOTO-BG] Saved stage-22 pre-captured frame: %s (%d bytes)",
-                                        photo_filename,
-                                        len(cached_frame),
-                                    )
+                    frame_data = await capture_frame(
+                        printer.external_camera_url,
+                        printer.external_camera_type or "mjpeg",
+                        snapshot_url=printer.external_camera_snapshot_url,
+                    )
+                    if frame_data:
+                        photos_dir = archive_dir / "photos"
+                        photos_dir.mkdir(parents=True, exist_ok=True)
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
+                        photo_path = photos_dir / photo_filename
+                        await asyncio.to_thread(photo_path.write_bytes, frame_data)
+                        logger.info("[PHOTO-BG] Saved external camera frame: %s", photo_filename)
+                else:
+                    # Check if camera stream is active - use buffered frame to avoid freeze
+                    # Check both RTSP streams (_active_streams) and chamber image streams (_active_chamber_streams)
+                    active_for_printer = [k for k in _active_streams if k.startswith(f"{printer_id}-")]
+                    active_chamber_for_printer = [k for k in _active_chamber_streams if k.startswith(f"{printer_id}-")]
+                    buffered_frame = get_buffered_frame(printer_id)
 
-                            # Fallback chain: external camera → buffered live frame →
-                            # fresh RTSP capture. Only runs if the timelapse path above
-                            # didn't already produce a photo.
-                            if not photo_filename:
-                                if printer.external_camera_enabled and printer.external_camera_url:
-                                    logger.info("[PHOTO-BG] Using external camera")
-                                    from backend.app.services.external_camera import capture_frame
+                    if (active_for_printer or active_chamber_for_printer) and buffered_frame:
+                        # Use frame from active stream
+                        logger.info("[PHOTO-BG] Using buffered frame from active stream")
+                        photos_dir = archive_dir / "photos"
+                        photos_dir.mkdir(parents=True, exist_ok=True)
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
+                        photo_path = photos_dir / photo_filename
+                        await asyncio.to_thread(photo_path.write_bytes, buffered_frame)
+                        logger.info("[PHOTO-BG] Saved buffered frame: %s", photo_filename)
+                    else:
+                        # No active stream - capture new frame
+                        from backend.app.services.camera import capture_finish_photo
 
-                                    frame_data = await capture_frame(
-                                        printer.external_camera_url,
-                                        printer.external_camera_type or "mjpeg",
-                                        snapshot_url=printer.external_camera_snapshot_url,
-                                    )
-                                    if frame_data:
-                                        photos_dir = archive_dir / "photos"
-                                        photos_dir.mkdir(parents=True, exist_ok=True)
-                                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                        photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
-                                        photo_path = photos_dir / photo_filename
-                                        await asyncio.to_thread(photo_path.write_bytes, frame_data)
-                                        logger.info("[PHOTO-BG] Saved external camera frame: %s", photo_filename)
-                                else:
-                                    # Check if camera stream is active - use buffered frame to avoid freeze
-                                    # Check both RTSP streams (_active_streams) and chamber image streams (_active_chamber_streams)
-                                    active_for_printer = [k for k in _active_streams if k.startswith(f"{printer_id}-")]
-                                    active_chamber_for_printer = [
-                                        k for k in _active_chamber_streams if k.startswith(f"{printer_id}-")
-                                    ]
-                                    buffered_frame = get_buffered_frame(printer_id)
+                        photo_filename = await capture_finish_photo(
+                            printer_id=printer_id,
+                            ip_address=printer.ip_address,
+                            access_code=printer.access_code,
+                            model=printer.model,
+                            archive_dir=archive_dir,
+                        )
 
-                                    if (active_for_printer or active_chamber_for_printer) and buffered_frame:
-                                        # Use frame from active stream
-                                        logger.info("[PHOTO-BG] Using buffered frame from active stream")
-                                        photos_dir = archive_dir / "photos"
-                                        photos_dir.mkdir(parents=True, exist_ok=True)
-                                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                        photo_filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
-                                        photo_path = photos_dir / photo_filename
-                                        await asyncio.to_thread(photo_path.write_bytes, buffered_frame)
-                                        logger.info("[PHOTO-BG] Saved buffered frame: %s", photo_filename)
-                                    else:
-                                        # No active stream - capture new frame
-                                        from backend.app.services.camera import capture_finish_photo
+            # Write phase: attach the photo in a fresh short-lived session.
+            if photo_filename:
+                async with async_session() as db:
+                    from backend.app.models.archive import PrintArchive
 
-                                        photo_filename = await capture_finish_photo(
-                                            printer_id=printer_id,
-                                            ip_address=printer.ip_address,
-                                            access_code=printer.access_code,
-                                            model=printer.model,
-                                            archive_dir=archive_dir,
-                                        )
-
-                            if photo_filename:
-                                photos = archive.photos or []
-                                photos.append(photo_filename)
-                                archive.photos = photos
-                                await db.commit()
-                                logger.info("[PHOTO-BG] Saved: %s", photo_filename)
-
-                            if photo_filename:
-                                return photo_filename
+                    arch = await db.get(PrintArchive, archive_id)
+                    if arch is not None:
+                        photos = arch.photos or []
+                        photos.append(photo_filename)
+                        arch.photos = photos
+                        await db.commit()
+                logger.info("[PHOTO-BG] Saved: %s", photo_filename)
+                return photo_filename
             return None
         except Exception as e:
             logger.warning("[PHOTO-BG] Failed: %s", e)

@@ -36,12 +36,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # which the user mounts in via docker-compose when they want to enable the
 # Tailscale integration for virtual printers. Without the socket mount, the
 # binary is harmless — the code logs a hint and falls back to self-signed.
-RUN curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg \
-        -o /usr/share/keyrings/tailscale-archive-keyring.gpg \
-    && curl -fsSL https://pkgs.tailscale.com/stable/debian/trixie.tailscale-keyring.list \
-        -o /etc/apt/sources.list.d/tailscale.list \
-    && apt-get update && apt-get install -y --no-install-recommends tailscale \
-    && rm -rf /var/lib/apt/lists/*
+#
+# The Tailscale package server occasionally returns 504; since the CLI is
+# optional (the code falls back to self-signed without it), a fetch failure must
+# not fail the whole image build. Retry a few times for transient blips, and on
+# sustained failure continue building without the CLI (cleaning up the partial
+# apt source so later `apt-get update` layers stay valid) rather than aborting.
+RUN set -eux; \
+    if curl -fsSL --retry 5 --retry-connrefused --retry-delay 3 \
+            https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg \
+            -o /usr/share/keyrings/tailscale-archive-keyring.gpg \
+       && curl -fsSL --retry 5 --retry-connrefused --retry-delay 3 \
+            https://pkgs.tailscale.com/stable/debian/trixie.tailscale-keyring.list \
+            -o /etc/apt/sources.list.d/tailscale.list \
+       && apt-get update \
+       && apt-get install -y --no-install-recommends tailscale; then \
+        echo "Tailscale CLI installed."; \
+    else \
+        echo "WARNING: Tailscale package server unavailable; building without the Tailscale CLI (optional integration)."; \
+        rm -f /etc/apt/sources.list.d/tailscale.list /usr/share/keyrings/tailscale-archive-keyring.gpg; \
+    fi; \
+    rm -rf /var/lib/apt/lists/*
 
 # Allow binding to privileged ports (e.g. 990/FTPS) as non-root user.
 # File capabilities are more reliable than Docker cap_add with user: directive,

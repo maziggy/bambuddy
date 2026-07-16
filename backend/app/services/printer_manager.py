@@ -1320,9 +1320,36 @@ printer_manager = PrinterManager()
 
 
 async def init_printer_connections(db: AsyncSession):
-    """Initialize connections to all active printers."""
+    """Initialize connections to all active printers.
+
+    Connections are started concurrently. ``connect_printer()`` is non-blocking
+    apart from a fixed 1-second settle wait — ``BambuMQTTClient.connect()`` only
+    calls ``connect_async()`` + ``loop_start()``, so the handshake happens on a
+    background thread and the coroutine's only real cost is that ``sleep(1)``. A
+    serial loop therefore spent one whole second per printer inside the FastAPI
+    lifespan *before* the ASGI server begins serving: on a large farm that was
+    ~100s of dead air before port 8000 responded (issue #2572, reporter's
+    93-printer farm). Gathering overlaps the settle waits so the whole step takes
+    ~1s regardless of fleet size. Exceptions are isolated per printer with
+    ``return_exceptions=True`` so one unreachable row can't abort the rest — or
+    startup itself, which the old serial loop's un-caught await would have done.
+
+    All columns ``connect_printer`` reads are eagerly loaded by the SELECT above
+    and touched synchronously before its trailing ``await``, so no concurrent
+    lazy-load is triggered on the shared session.
+    """
     result = await db.execute(select(Printer).where(Printer.is_active.is_(True)))
     printers = result.scalars().all()
 
-    for printer in printers:
-        await printer_manager.connect_printer(printer)
+    outcomes = await asyncio.gather(
+        *(printer_manager.connect_printer(printer) for printer in printers),
+        return_exceptions=True,
+    )
+    for printer, outcome in zip(printers, outcomes, strict=True):
+        if isinstance(outcome, Exception):
+            logger.warning(
+                "Failed to connect printer %s (%s) at startup: %s",
+                printer.id,
+                printer.name,
+                outcome,
+            )

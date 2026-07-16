@@ -1151,6 +1151,37 @@ class TestExtractPlateMetadataFrom3mf:
         assert len(cached.filament_usage) == 2
         assert all(f["used_g"] > 0 for f in cached.filament_usage)
 
+    def test_non_numeric_filament_id_is_skipped_not_raised(self, tmp_path):
+        # A garbage filament id (or used_g) must be silently skipped, exactly as
+        # the legacy helpers did — a raise here would 500 the queue listing that
+        # calls this per row. Guards both the plate-specific and plate_id=None paths.
+        from backend.app.utils.threemf_tools import (
+            extract_filament_usage_from_3mf,
+            extract_plate_metadata_from_3mf,
+        )
+
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+            <plate>
+                <metadata key="index" value="1"/>
+                <metadata key="prediction" value="3600"/>
+                <filament id="abc" used_g="5.0" type="PLA" color="#FFFFFF"/>
+                <filament id="1" used_g="10.0" type="PLA" color="#FF0000"/>
+                <filament id="2" used_g="bad" type="PLA" color="#00FF00"/>
+            </plate>
+        </config>
+        """
+        file_path = self._write(tmp_path, xml_content)
+
+        meta = extract_plate_metadata_from_3mf(file_path, plate_id=1)
+        assert [f["slot_id"] for f in meta.filament_usage] == [1]
+        assert meta.filament_used_grams == 10.0
+        assert meta.print_time_seconds == 3600
+
+        # plate_id=None path (collects all filaments in the file) must skip too.
+        none_result = extract_filament_usage_from_3mf(file_path, plate_id=None)
+        assert [f["slot_id"] for f in none_result] == [1]
+
     def test_missing_file_returns_empty_and_is_not_cached(self, tmp_path):
         from unittest.mock import patch
 

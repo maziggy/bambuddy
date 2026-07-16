@@ -3554,10 +3554,14 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
         await asyncio.sleep(delay)
 
         try:
-            async with async_session() as db:
-                from backend.app.models.printer import Printer
-                from backend.app.services.bambu_ftp import download_file_bytes_async
+            from backend.app.models.printer import Printer
+            from backend.app.services.bambu_ftp import download_file_bytes_async
 
+            # Read phase: fetch archive + printer in a short session and release
+            # the pooled connection BEFORE the FTP list/download below. Holding it
+            # across the FTP round-trips left one connection idle-in-transaction per
+            # in-flight scan — ×4 retries, per completed print (issue #2572).
+            async with async_session() as db:
                 service = ArchiveService(db)
                 archive = await service.get_archive(archive_id)
 
@@ -3574,46 +3578,49 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
                     logger.warning("[TIMELAPSE] Printer not found for archive %s, stopping retries", archive_id)
                     return
 
-                video_files, found_path = await _list_timelapse_videos(printer)
+            # I/O phase (no DB connection held): FTP list + download.
+            video_files, found_path = await _list_timelapse_videos(printer)
 
-                if not video_files:
-                    logger.info("[TIMELAPSE] Attempt %s: No video files found, will retry", attempt)
-                    continue
+            if not video_files:
+                logger.info("[TIMELAPSE] Attempt %s: No video files found, will retry", attempt)
+                continue
 
-                logger.info("[TIMELAPSE] Attempt %s: Found %s video files in %s", attempt, len(video_files), found_path)
-                for f in video_files[:5]:
-                    logger.info("[TIMELAPSE]   - %s", f.get("name"))
+            logger.info("[TIMELAPSE] Attempt %s: Found %s video files in %s", attempt, len(video_files), found_path)
+            for f in video_files[:5]:
+                logger.info("[TIMELAPSE]   - %s", f.get("name"))
 
-                # Find files that are NEW (not in baseline snapshot)
-                new_files = [f for f in video_files if f.get("name", "") not in baseline_names]
+            # Find files that are NEW (not in baseline snapshot)
+            new_files = [f for f in video_files if f.get("name", "") not in baseline_names]
 
-                if new_files:
-                    # Pick the first new file (there should typically be exactly one)
-                    target = new_files[0]
-                    file_name = target.get("name")
-                    remote_path = target.get("path") or f"/timelapse/{file_name}"
-                    logger.info(
-                        "[TIMELAPSE] Attempt %s: New file detected: %s (downloading for archive %s)",
-                        attempt,
-                        file_name,
-                        archive_id,
-                    )
+            if new_files:
+                # Pick the first new file (there should typically be exactly one)
+                target = new_files[0]
+                file_name = target.get("name")
+                remote_path = target.get("path") or f"/timelapse/{file_name}"
+                logger.info(
+                    "[TIMELAPSE] Attempt %s: New file detected: %s (downloading for archive %s)",
+                    attempt,
+                    file_name,
+                    archive_id,
+                )
 
-                    timelapse_data = await download_file_bytes_async(
-                        printer.ip_address, printer.access_code, remote_path, printer_model=printer.model
-                    )
-                    if timelapse_data:
-                        success = await service.attach_timelapse(archive_id, timelapse_data, file_name)
-                        if success:
-                            logger.info("[TIMELAPSE] Successfully attached timelapse to archive %s", archive_id)
-                            await ws_manager.send_archive_updated({"id": archive_id, "timelapse_attached": True})
-                            return
-                        else:
-                            logger.warning("[TIMELAPSE] Failed to attach timelapse to archive %s", archive_id)
+                timelapse_data = await download_file_bytes_async(
+                    printer.ip_address, printer.access_code, remote_path, printer_model=printer.model
+                )
+                if timelapse_data:
+                    # Write phase: attach in a fresh short-lived session.
+                    async with async_session() as db:
+                        success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, file_name)
+                    if success:
+                        logger.info("[TIMELAPSE] Successfully attached timelapse to archive %s", archive_id)
+                        await ws_manager.send_archive_updated({"id": archive_id, "timelapse_attached": True})
+                        return
                     else:
-                        logger.warning("[TIMELAPSE] Attempt %s: Failed to download new file, will retry", attempt)
+                        logger.warning("[TIMELAPSE] Failed to attach timelapse to archive %s", archive_id)
                 else:
-                    logger.info("[TIMELAPSE] Attempt %s: No new files since baseline, will retry", attempt)
+                    logger.warning("[TIMELAPSE] Attempt %s: Failed to download new file, will retry", attempt)
+            else:
+                logger.info("[TIMELAPSE] Attempt %s: No new files since baseline, will retry", attempt)
 
         except Exception as e:
             logger.warning("[TIMELAPSE] Attempt %s failed with error: %s", attempt, e)
@@ -3622,10 +3629,11 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
     if base_name:
         logger.info("[TIMELAPSE] Retries exhausted, trying name-match fallback for '%s'", base_name)
         try:
-            async with async_session() as db:
-                from backend.app.models.printer import Printer
-                from backend.app.services.bambu_ftp import download_file_bytes_async
+            from backend.app.models.printer import Printer
+            from backend.app.services.bambu_ftp import download_file_bytes_async
 
+            # Read phase: short session, released before the FTP work (issue #2572).
+            async with async_session() as db:
                 service = ArchiveService(db)
                 archive = await service.get_archive(archive_id)
                 if not archive or archive.timelapse_path:
@@ -3636,25 +3644,26 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
                 if not printer:
                     return
 
-                video_files, found_path = await _list_timelapse_videos(printer)
-                for f in video_files:
-                    fname = f.get("name", "")
-                    if base_name.lower() in fname.lower():
-                        remote_path = f.get("path") or f"/timelapse/{fname}"
-                        logger.info("[TIMELAPSE] Name-match fallback: '%s' matches '%s'", base_name, fname)
+            # I/O phase (no DB connection held): FTP list + download.
+            video_files, found_path = await _list_timelapse_videos(printer)
+            for f in video_files:
+                fname = f.get("name", "")
+                if base_name.lower() in fname.lower():
+                    remote_path = f.get("path") or f"/timelapse/{fname}"
+                    logger.info("[TIMELAPSE] Name-match fallback: '%s' matches '%s'", base_name, fname)
 
-                        timelapse_data = await download_file_bytes_async(
-                            printer.ip_address, printer.access_code, remote_path, printer_model=printer.model
-                        )
-                        if timelapse_data:
-                            success = await service.attach_timelapse(archive_id, timelapse_data, fname)
-                            if success:
-                                logger.info(
-                                    "[TIMELAPSE] Name-match fallback attached timelapse to archive %s", archive_id
-                                )
-                                await ws_manager.send_archive_updated({"id": archive_id, "timelapse_attached": True})
-                                return
-                        break  # Only try the first name match
+                    timelapse_data = await download_file_bytes_async(
+                        printer.ip_address, printer.access_code, remote_path, printer_model=printer.model
+                    )
+                    if timelapse_data:
+                        # Write phase: attach in a fresh short-lived session.
+                        async with async_session() as db:
+                            success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, fname)
+                        if success:
+                            logger.info("[TIMELAPSE] Name-match fallback attached timelapse to archive %s", archive_id)
+                            await ws_manager.send_archive_updated({"id": archive_id, "timelapse_attached": True})
+                            return
+                    break  # Only try the first name match
 
         except Exception as e:
             logger.warning("[TIMELAPSE] Name-match fallback failed: %s", e)

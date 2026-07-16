@@ -8,6 +8,7 @@ from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core import database
 from backend.app.core.auth import (
     RequireCameraStreamTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
@@ -952,7 +953,6 @@ def clear_cover_cache(printer_id: int) -> None:
 async def get_printer_cover(
     printer_id: int,
     view: str | None = None,
-    db: AsyncSession = Depends(get_db),
     _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Get the cover image for the current print job.
@@ -961,8 +961,21 @@ async def get_printer_cover(
         view: Optional view type. Use "top" for top-down build plate view (useful for skip objects).
               Default returns angled 3D perspective view.
     """
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
+    # Fetch the printer in a short-lived session and release the pooled DB
+    # connection BEFORE the FTP download below. Previously this route took its
+    # row via Depends(get_db), whose session stays open for the whole request —
+    # so a 3MF cover download (up to 8 paths × 3 retries with backoff, minutes
+    # under FTP contention) pinned one pooled connection idle-in-transaction the
+    # entire time (issue #2572). db is used only for this one SELECT; everything
+    # after reads already-loaded printer.* scalars (expire_on_commit=False keeps
+    # them readable), printer_manager, and FTP/zip — no lazy loads.
+    #
+    # Reference async_session via the module so the maker is looked up at call
+    # time — keeps it in sync with reinitialize_database() and lets the test
+    # harness's patch of backend.app.core.database.async_session take effect.
+    async with database.async_session() as db:
+        result = await db.execute(select(Printer).where(Printer.id == printer_id))
+        printer = result.scalar_one_or_none()
     if not printer:
         raise HTTPException(404, "Printer not found")
 

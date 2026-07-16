@@ -571,6 +571,32 @@ class TestPrintersAPI:
     # ========================================================================
 
 
+class TestCoverPoolHygiene:
+    """Regression guard for the /cover DB-connection leak (issue #2572)."""
+
+    def test_cover_does_not_hold_a_get_db_session(self):
+        """The cover endpoint must NOT take a ``Depends(get_db)`` session.
+
+        ``get_db`` is a ``yield`` dependency, so its session stays open for the
+        whole request — including the 3MF cover download (up to 8 remote paths ×
+        retries with backoff, minutes under FTP contention), pinning one pooled
+        DB connection ``idle in transaction`` the entire time. The endpoint
+        fetches the printer in a short-lived ``async with async_session()`` and
+        releases the connection before the FTP work. If someone re-adds a
+        ``Depends(get_db)`` param, this fails.
+        """
+        import inspect
+
+        from backend.app.api.routes.printers import get_db, get_printer_cover
+
+        for name, param in inspect.signature(get_printer_cover).parameters.items():
+            dependency = getattr(param.default, "dependency", None)
+            assert dependency is not get_db, (
+                f"get_printer_cover re-introduced a get_db-held session via parameter {name!r} — "
+                "it would stay open for the entire FTP cover download (issue #2572)"
+            )
+
+
 class TestPrinterDataIntegrity:
     """Tests for printer data integrity."""
 

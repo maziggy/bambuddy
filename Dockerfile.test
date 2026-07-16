@@ -49,7 +49,7 @@ HEALTHCHECK NONE
 # -n auto adapts to the host's vCPU count instead of hard-coding 30 —
 # on a 2-vCPU CI / VM runner, -n 30 spawns 30 Python processes fighting
 # for 2 cores, which is mostly IPC + import-thrash overhead.
-CMD ["pytest", "backend/tests/", "--tb=short", "-p", "no:cacheprovider", "-n", "30"]
+CMD ["pytest", "backend/tests/", "--tb=short", "-p", "no:cacheprovider", "-n", "auto"]
 
 # -------------------------------------------
 # Frontend test stage

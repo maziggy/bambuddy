@@ -1272,3 +1272,148 @@ class TestReadIDORClosure(TestOwnershipPermissionsSetup):
         # change auth-enable/disable behavior. Pin not-404 to avoid masking a
         # regression where auth-disabled callers would lose access.
         assert response.status_code in (200, 401)
+
+
+# Every archive WRITE sub-resource route: (id, http method, path suffix, request kwargs).
+# The ownership gate (_ensure_archive_visible) fires immediately after the fetch,
+# before any resource-specific logic, so a not-owned / ownerless row 404s regardless
+# of whether the timelapse / photo / source / f3d actually exists. Upload routes still
+# need a body so FastAPI reaches the handler instead of 422-ing on the missing File(...).
+_WRITE_SUBRESOURCE_ROUTES = [
+    ("favorite", "post", "/favorite", {}),
+    ("timelapse_delete", "delete", "/timelapse", {}),
+    ("photo_upload", "post", "/photos", {"files": {"file": ("x.jpg", b"\x89PNG\r\n\x1a\n", "image/jpeg")}}),
+    ("photo_delete", "delete", "/photos/nonexistent.jpg", {}),
+    ("project_page", "patch", "/project-page", {"json": {"title": "hijacked"}}),
+    ("source_upload", "post", "/source", {"files": {"file": ("x.3mf", b"PK\x03\x04", "application/octet-stream")}}),
+    ("source_delete", "delete", "/source", {}),
+    ("f3d_upload", "post", "/f3d", {"files": {"file": ("x.f3d", b"f3d-bytes", "application/octet-stream")}}),
+    ("f3d_delete", "delete", "/f3d", {}),
+]
+
+
+class TestWriteSubResourceIDORClosure(TestOwnershipPermissionsSetup):
+    """Regression tests for the archive write SUB-RESOURCE IDOR.
+
+    The read sub-resource routes were closed under maziggy/bambuddy-security #2
+    via ``_ensure_archive_visible``, but the *write* sub-resource routes
+    (favorite, timelapse, photos, project-page, source, f3d) were left gating
+    on the bare ``RequirePermissionIfAuthEnabled(ARCHIVES_*_OWN)`` scope and
+    fetched the row by id only — never comparing ``created_by_id`` to the
+    caller. An operator holding only ``ARCHIVES_*_OWN`` (or an API key with
+    ``can_manage_archives``) could delete/overwrite files on ANY user's
+    archive, most severely rewriting the project-page metadata inside another
+    user's ``.3mf`` on disk. Each route is now gated by
+    ``require_ownership_permission`` + ``_ensure_archive_visible`` → 404 (not
+    403, to stay non-enumerable and match the read side) on a not-owned or
+    ownerless row.
+    """
+
+    @pytest.mark.parametrize(
+        "name,method,suffix,kwargs",
+        _WRITE_SUBRESOURCE_ROUTES,
+        ids=[r[0] for r in _WRITE_SUBRESOURCE_ROUTES],
+    )
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_write_others_archive_subresource(
+        self,
+        async_client: AsyncClient,
+        auth_setup,
+        archive_factory,
+        printer_factory,
+        db_session,
+        name,
+        method,
+        suffix,
+        kwargs,
+    ):
+        """SECURITY.md rule 4: right credentials, wrong ownership → 404.
+
+        operator1 (ARCHIVES_*_OWN) targeting a route on admin's archive.
+        """
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            print_name="Admin's Archive",
+            created_by_id=auth_setup["admin_user"]["id"],
+        )
+        response = await getattr(async_client, method)(
+            f"/api/v1/archives/{archive.id}{suffix}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            **kwargs,
+        )
+        assert response.status_code == 404, f"{name}: expected 404, got {response.status_code}"
+
+    @pytest.mark.parametrize(
+        "name,method,suffix,kwargs",
+        _WRITE_SUBRESOURCE_ROUTES,
+        ids=[r[0] for r in _WRITE_SUBRESOURCE_ROUTES],
+    )
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_write_ownerless_archive_subresource(
+        self,
+        async_client: AsyncClient,
+        auth_setup,
+        archive_factory,
+        printer_factory,
+        db_session,
+        name,
+        method,
+        suffix,
+        kwargs,
+    ):
+        """Ownerless rows (created_by_id = null, legacy data) require *_ALL — an
+        operator with only *_OWN has no 'I own this' claim, so fail closed → 404."""
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            print_name="Ownerless Archive",
+            created_by_id=None,
+        )
+        response = await getattr(async_client, method)(
+            f"/api/v1/archives/{archive.id}{suffix}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            **kwargs,
+        )
+        assert response.status_code == 404, f"{name}: expected 404, got {response.status_code}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_can_favorite_own_archive(
+        self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        """Positive control: the owner still gets through the new gate. Favorite
+        is the one write sub-resource that needs no pre-existing file, so it
+        cleanly proves the *_OWN happy path returns 200 (not a false 404)."""
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            print_name="Operator's Own",
+            created_by_id=auth_setup["operator_user"]["id"],
+        )
+        response = await async_client.post(
+            f"/api/v1/archives/{archive.id}/favorite",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["is_favorite"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_can_favorite_any_archive(
+        self, async_client: AsyncClient, auth_setup, archive_factory, printer_factory, db_session
+    ):
+        """Positive control for the *_ALL path: admin can act on a user's archive."""
+        printer = await printer_factory()
+        archive = await archive_factory(
+            printer.id,
+            print_name="Operator's Own",
+            created_by_id=auth_setup["operator_user"]["id"],
+        )
+        response = await async_client.post(
+            f"/api/v1/archives/{archive.id}/favorite",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+        )
+        assert response.status_code == 200

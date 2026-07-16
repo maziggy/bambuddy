@@ -1835,7 +1835,6 @@ function PrinterCard({
   const [showBedJogMenu, setShowBedJogMenu] = useState<number | null>(null);
   const [statusControlMenu, setStatusControlMenu] = useState<string | null>(null);
   const [bedJogStep, setBedJogStep] = useState<number>(10);
-  const [showNotHomedModal, setShowNotHomedModal] = useState<null | { distance: number }>(null);
   const [showResumeConfirm, setShowResumeConfirm] = useState(false);
   const [showSkipObjectsModal, setShowSkipObjectsModal] = useState(false);
   const [showUploadForPrint, setShowUploadForPrint] = useState(false);
@@ -2506,8 +2505,8 @@ function PrinterCard({
   });
 
   const bedJogMutation = useMutation({
-    mutationFn: ({ distance, force }: { distance: number; force?: boolean }) =>
-      api.bedJog(printer.id, distance, force ?? false),
+    mutationFn: ({ distance }: { distance: number }) =>
+      api.bedJog(printer.id, distance),
     onError: (error: Error) =>
       showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
   });
@@ -2529,11 +2528,6 @@ function PrinterCard({
   const homeAxesMutation = useMutation({
     mutationFn: (axes: 'z' | 'xy' | 'all') => api.homeAxes(printer.id, axes),
     onSuccess: () => {
-      // Flip the session-scoped "warned" flag so the next bed-jog click doesn't re-prompt
-      // the not-homed modal. The flag is the same one "Move anyway" sets; after a successful
-      // auto-home request the printer is (or will shortly be) in a known-homed state, so
-      // prompting again in the same session is noise — #1052 follow-up.
-      try { sessionStorage.setItem(`bambuddy.bedJog.warned.${printer.id}`, '1'); } catch { /* ignore */ }
       showToast(t('printers.bedJog.homingStarted'));
     },
     onError: (error: Error) =>
@@ -4150,16 +4144,10 @@ function PrinterCard({
                         const jogButtonClass = 'flex h-8 w-8 items-center justify-center rounded bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 transition-colors hover:bg-indigo-200 dark:hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50';
                         const requestZJog = (direction: 1 | -1) => {
                           const signed = direction * bedJogStep * (bambuIsPlateBelow ? 1 : -1);
-                          const warnedKey = `bambuddy.bedJog.warned.${printer.id}`;
-                          const warned = (() => {
-                            try { return sessionStorage.getItem(warnedKey) === '1'; }
-                            catch { return false; }
-                          })();
-                          if (warned) {
-                            bedJogMutation.mutate({ distance: signed, force: true });
-                          } else {
-                            setShowNotHomedModal({ distance: signed });
-                          }
+                          // The jog never disables the soft endstops (#2579), so it's always
+                          // safe: the firmware clamps the move at the travel limit, or refuses
+                          // it if the printer isn't homed. No not-homed bypass to gate.
+                          bedJogMutation.mutate({ distance: signed });
                         };
                         const requestXyJog = (x: number, y: number) => {
                           xyJogMutation.mutate({ x, y });
@@ -4187,6 +4175,15 @@ function PrinterCard({
                                 <div className="absolute bottom-full left-0 mb-1 z-50 flex w-[216px] flex-col overflow-hidden rounded-xl border border-bambu-dark-tertiary bg-bambu-dark-secondary shadow-2xl">
                                   <div className="shrink-0 px-3 py-2.5 text-center text-sm font-medium text-white">
                                     {t('printers.bedJog.title')}
+                                  </div>
+                                  <div className="h-px bg-bambu-dark-tertiary" />
+                                  {/* #2579: Bambu firmware does not enforce soft endstops on
+                                      G-code sent over MQTT, so manual moves can drive past the
+                                      travel limits and cause a collision. Not fixable from our
+                                      side — warn prominently. */}
+                                  <div className="flex items-start gap-1.5 bg-yellow-500/10 px-3 py-2 text-[11px] leading-snug text-yellow-700 dark:text-yellow-400">
+                                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                    <span>{t('printers.bedJog.limitWarning')}</span>
                                   </div>
                                   <div className="h-px bg-bambu-dark-tertiary" />
                                   <div className="flex justify-center px-3 py-2.5">
@@ -6174,53 +6171,6 @@ function PrinterCard({
           }}
           onCancel={() => setShowResumeConfirm(false)}
         />
-      )}
-
-      {/* Bed Jog — not-homed warning (Studio-style) */}
-      {showNotHomedModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl w-full max-w-sm p-5">
-            <div className="flex items-start gap-3 mb-4">
-              <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
-              <div>
-                <h3 className="text-sm font-semibold text-white mb-1">
-                  {t('printers.bedJog.notHomedTitle')}
-                </h3>
-                <p className="text-xs text-bambu-gray leading-relaxed">
-                  {t('printers.bedJog.notHomedMessage')}
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={() => {
-                  homeAxesMutation.mutate('all');
-                  setShowNotHomedModal(null);
-                }}
-                className="w-full px-3 py-2 rounded-lg text-xs font-medium bg-bambu-green/20 text-bambu-green hover:bg-bambu-green/30 transition-colors"
-              >
-                {t('printers.bedJog.homeZ')}
-              </button>
-              <button
-                onClick={() => {
-                  const d = showNotHomedModal.distance;
-                  try { sessionStorage.setItem(`bambuddy.bedJog.warned.${printer.id}`, '1'); } catch { /* ignore */ }
-                  bedJogMutation.mutate({ distance: d, force: true });
-                  setShowNotHomedModal(null);
-                }}
-                className="w-full px-3 py-2 rounded-lg text-xs font-medium bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 transition-colors"
-              >
-                {t('printers.bedJog.moveAnyway')}
-              </button>
-              <button
-                onClick={() => setShowNotHomedModal(null)}
-                className="w-full px-3 py-2 rounded-lg text-xs font-medium bg-bambu-dark text-bambu-gray hover:bg-bambu-dark-tertiary transition-colors"
-              >
-                {t('common.cancel')}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* Skip Objects Modal */}

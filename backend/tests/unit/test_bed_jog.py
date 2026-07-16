@@ -50,36 +50,38 @@ class TestBedJogAPI:
             assert response.status_code == 500
 
     @pytest.mark.asyncio
-    async def test_bed_jog_success_without_force(self, async_client: AsyncClient, printer_factory):
-        """When force=false the M211 guard lines must not be emitted."""
+    async def test_bed_jog_emits_bare_move_and_never_touches_m211(self, async_client: AsyncClient, printer_factory):
+        """A jog must be a bare relative move — no M211 at all — exactly what the
+        printer's touchscreen sends, which the firmware clamps at the travel
+        limit. Touching M211 is what broke it (#2579)."""
         printer = await printer_factory(name="P1")
         mock_client = MagicMock()
         mock_client.send_gcode.return_value = True
         with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
             mock_pm.get_client.return_value = mock_client
-            response = await async_client.post(f"/api/v1/printers/{printer.id}/bed-jog?distance=10&force=false")
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/bed-jog?distance=10")
             assert response.status_code == 200
             sent_gcode = mock_client.send_gcode.call_args[0][0]
-            assert "G91" in sent_gcode
-            assert "G1 Z10.00" in sent_gcode
-            assert "G90" in sent_gcode
-            assert "M211" not in sent_gcode
+            assert "M211" not in sent_gcode, f"must not touch M211, got: {sent_gcode!r}"
+            assert sent_gcode.splitlines() == ["G91", "G1 Z10.00 F600", "G90"]
 
     @pytest.mark.asyncio
-    async def test_bed_jog_success_with_force(self, async_client: AsyncClient, printer_factory):
-        """force=true must wrap the move in M211 S0 / M211 S1."""
-        printer = await printer_factory(name="P1")
+    async def test_bed_jog_never_touches_m211_even_with_stray_force(self, async_client: AsyncClient, printer_factory):
+        """#2579 core regression: the endpoint must NEVER emit any M211. A stray
+        ?force=true from an old client is ignored (FastAPI drops the unknown
+        param) and the move stays a bare relative move — no M211 S0 (the disable
+        that drove the nozzle into the bed) and no M211 S1 either.
+        """
+        printer = await printer_factory(name="H2C", model="H2C")
         mock_client = MagicMock()
         mock_client.send_gcode.return_value = True
         with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
             mock_pm.get_client.return_value = mock_client
-            response = await async_client.post(f"/api/v1/printers/{printer.id}/bed-jog?distance=-5&force=true")
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/bed-jog?distance=50&force=true")
             assert response.status_code == 200
             sent_gcode = mock_client.send_gcode.call_args[0][0]
-            lines = sent_gcode.splitlines()
-            assert lines[0] == "M211 S0"
-            assert lines[-1] == "M211 S1"
-            assert "G1 Z-5.00" in sent_gcode
+            assert "M211" not in sent_gcode, f"must never touch M211, got: {sent_gcode!r}"
+            assert "G1 Z50.00" in sent_gcode
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("model", ["X1C", "P1S", "H2D", "H2S", "H2C", "P2S"])

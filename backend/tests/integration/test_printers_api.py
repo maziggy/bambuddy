@@ -3780,7 +3780,7 @@ class TestXYJogAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_success_x_only_emits_relative_gcode(self, async_client: AsyncClient, printer_factory):
-        """X-only jog should emit G91/G90 wrapping and only include the X axis."""
+        """X-only jog is a bare relative move (no M211), wraps in G91/G90, X only."""
         printer = await printer_factory(name="P", model="X1C")
         mock_client = MagicMock()
         mock_client.send_gcode.return_value = True
@@ -3789,6 +3789,8 @@ class TestXYJogAPI:
             response = await async_client.post(f"/api/v1/printers/{printer.id}/xy-jog?x=10&y=0")
         assert response.status_code == 200
         sent = mock_client.send_gcode.call_args.args[0]
+        # Never touch M211 — bare move, exactly like the touchscreen (#2579).
+        assert "M211" not in sent
         assert sent.startswith("G91\n")
         assert sent.endswith("\nG90")
         assert "X10.00" in sent

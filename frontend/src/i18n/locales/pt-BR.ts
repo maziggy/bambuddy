@@ -422,6 +422,7 @@ export default {
       unload: 'Descarregar',
     },
     bedJog: {
+      limitWarning: 'Os limites de curso não são aplicados durante movimentos manuais — um bug do firmware da Bambu ignora os fins de curso por software em comandos remotos. Mova com cuidado para evitar colisões.',
       title: 'Controles de movimento',
       bed: 'Mesa',
       step: 'Passo (mm)',

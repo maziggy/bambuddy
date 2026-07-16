@@ -425,6 +425,7 @@ export default {
       unload: 'Unload',
     },
     bedJog: {
+      limitWarning: 'Travel limits are not enforced during manual moves — a Bambu firmware bug ignores software endstops for remote commands. Move carefully to avoid a collision.',
       title: 'Jog Controls',
       bed: 'Bed',
       step: 'Step (mm)',

@@ -392,6 +392,7 @@ export default {
       unload: '언로드'
     },
     bedJog: {
+      limitWarning: '수동 이동 중에는 이동 한계가 적용되지 않습니다. Bambu 펌웨어 버그로 인해 원격 명령에서는 소프트웨어 엔드스톱이 무시됩니다. 충돌하지 않도록 주의해서 이동하세요.',
       title: '조그 컨트롤',
       bed: '베드',
       step: '이동 거리 (mm)',

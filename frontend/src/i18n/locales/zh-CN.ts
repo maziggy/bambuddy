@@ -422,6 +422,7 @@ export default {
       unload: '卸载',
     },
     bedJog: {
+      limitWarning: '手动移动时不会强制执行行程限位——Bambu 固件存在缺陷，远程指令会忽略软件限位。请小心移动以避免碰撞。',
       title: '点动控制',
       bed: '热床',
       step: '步长 (mm)',

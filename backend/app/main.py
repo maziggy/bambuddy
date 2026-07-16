@@ -2436,6 +2436,14 @@ async def on_print_start(printer_id: int, data: dict):
         )
         if printer and printer.plate_detection_enabled:
             logger.info("[PLATE CHECK] ENTERING plate detection code for printer %s", printer_id)
+            # Release the pooled DB connection before the plate-detection camera
+            # work (a 2.5s light-settle sleep + FTP/camera capture). Only the
+            # printer SELECT has run so far — nothing to persist — so this commit
+            # is a data-noop that ends the read transaction and returns the
+            # connection to the pool during the I/O (issue #2572). expire_on_commit
+            # =False keeps printer.* readable; on_plate_not_empty (rare) and the
+            # archive lookups below re-acquire a fresh connection on next execute.
+            await db.commit()
             try:
                 from backend.app.services.plate_detection import check_plate_empty
 
@@ -2958,6 +2966,18 @@ async def on_print_start(printer_id: int, data: dict):
         possible_names = [x for x in possible_names if not (x in seen or seen.add(x))]
 
         logger.info("Trying filenames: %s", possible_names)
+
+        # Release the pooled DB connection before the 3MF FTP download. Reaching
+        # here means none of the expected-/existing-archive write branches ran
+        # (they all return earlier) — only SELECTs have executed on this path, so
+        # this commit persists nothing; it ends the read transaction so the
+        # connection returns to the pool during the download. That download tries
+        # up to five remote paths per candidate filename with retry/backoff and
+        # can run for minutes under FTP contention; holding the session across it
+        # pinned one pooled connection idle-in-transaction (issue #2572). No DB
+        # work runs during the download — the new-archive writes below re-acquire
+        # a fresh connection, and expire_on_commit=False keeps printer.* readable.
+        await db.commit()
 
         # Try to find and download the 3MF file
         temp_path = None

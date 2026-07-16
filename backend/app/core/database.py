@@ -23,54 +23,12 @@ def _set_sqlite_pragmas(dbapi_conn, connection_record):
     cursor.close()
 
 
-# Resolved connection-pool configuration, captured at engine creation so
-# /system/db-pool can report it without re-deriving the dialect defaults.
-_pool_config: dict = {}
-
-
-def _resolve_pool_kwargs() -> dict:
-    """Build the pool kwargs for ``create_async_engine`` (issue #2572).
-
-    Dialect-aware defaults, each overridable via env (``DB_POOL_SIZE`` etc.):
-      - PostgreSQL: pool_size 20 + max_overflow 80, ``pool_pre_ping`` (recover
-        server-dropped connections instead of erroring the request) and
-        ``pool_recycle`` 1800s. The old hard-coded 10 + 20 exhausted on large
-        farms while printer callbacks held connections.
-      - SQLite: pool_size 20 + max_overflow 200 (unchanged); no pre-ping /
-        recycle — the connection is a local file, not a server socket.
-    """
-    if is_sqlite():
-        pool_size = settings.db_pool_size if settings.db_pool_size is not None else 20
-        max_overflow = settings.db_max_overflow if settings.db_max_overflow is not None else 200
-        kwargs = {"pool_size": pool_size, "max_overflow": max_overflow}
-    else:
-        pool_size = settings.db_pool_size if settings.db_pool_size is not None else 20
-        max_overflow = settings.db_max_overflow if settings.db_max_overflow is not None else 80
-        kwargs = {
-            "pool_size": pool_size,
-            "max_overflow": max_overflow,
-            "pool_pre_ping": True,
-            "pool_recycle": settings.db_pool_recycle if settings.db_pool_recycle is not None else 1800,
-        }
-    if settings.db_pool_timeout is not None:
-        kwargs["pool_timeout"] = settings.db_pool_timeout
-    return kwargs
-
-
 def _create_engine():
     """Create the async engine with dialect-appropriate settings."""
-    kwargs = _resolve_pool_kwargs()
-
-    global _pool_config
-    _pool_config = {
-        "pool_size": kwargs["pool_size"],
-        "max_overflow": kwargs["max_overflow"],
-        # SQLAlchemy's own defaults when we don't pass the kwarg.
-        "pool_timeout": kwargs.get("pool_timeout", 30),
-        "pool_recycle": kwargs.get("pool_recycle", -1),
-        "pool_pre_ping": kwargs.get("pool_pre_ping", False),
-    }
-
+    if is_sqlite():
+        kwargs = {"pool_size": 20, "max_overflow": 200}
+    else:
+        kwargs = {"pool_size": 10, "max_overflow": 20}
     eng = create_async_engine(
         settings.database_url,
         echo=settings.debug,
@@ -119,36 +77,6 @@ async_session = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
-
-
-def get_pool_status() -> dict:
-    """Snapshot the DB connection pool for diagnostics (issue #2572).
-
-    Returns the resolved configuration plus live gauges (checked-out /
-    checked-in / overflow). Reads the pool's own counters — it does NOT
-    check out a connection, so it stays truthful even when the pool is
-    exhausted. Gauges a given pool implementation doesn't expose come back
-    as ``None`` rather than raising.
-    """
-    pool = engine.sync_engine.pool
-    gauges: dict = {}
-    for key, method_name in (
-        ("current_size", "size"),
-        ("checked_out", "checkedout"),
-        ("checked_in", "checkedin"),
-        ("overflow", "overflow"),
-    ):
-        method = getattr(pool, method_name, None)
-        try:
-            gauges[key] = method() if callable(method) else None
-        except Exception:
-            # A gauge should never take down the diagnostics endpoint.
-            gauges[key] = None
-    return {
-        "dialect": "sqlite" if is_sqlite() else "postgresql",
-        "config": dict(_pool_config),
-        **gauges,
-    }
 
 
 async def run_with_retry(fn, *, max_attempts: int = 3, label: str = ""):

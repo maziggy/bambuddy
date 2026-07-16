@@ -493,19 +493,23 @@ def _parse_plate_metadata_uncached(file_path: Path, plate_id: int | None) -> Pla
         out: list[dict] = []
         for f in plate_elem.findall("filament"):
             filament_id = f.get("id")
+            # Both the used_g float() and the id int() must stay inside the guard:
+            # a non-numeric id or used_g is silently skipped (matches the legacy
+            # helpers, which tolerated garbage rows rather than raising — a raise
+            # here would 500 the whole queue listing).
             try:
                 used_amount = float(f.get("used_g", "0"))
+                if filament_id:
+                    out.append(
+                        {
+                            "slot_id": int(filament_id),
+                            "used_g": used_amount,
+                            "type": f.get("type", ""),
+                            "color": f.get("color", ""),
+                        }
+                    )
             except (ValueError, TypeError):
                 continue
-            if filament_id:
-                out.append(
-                    {
-                        "slot_id": int(filament_id),
-                        "used_g": used_amount,
-                        "type": f.get("type", ""),
-                        "color": f.get("color", ""),
-                    }
-                )
         return out
 
     print_time: int | None = None
@@ -539,19 +543,20 @@ def _parse_plate_metadata_uncached(file_path: Path, plate_id: int | None) -> Pla
         # Legacy plate_id=None usage: every filament in the file, not just plate 1.
         for f in root.findall(".//filament"):
             filament_id = f.get("id")
+            # int()/float() both guarded — a garbage id/used_g row is skipped, not raised.
             try:
                 used_amount = float(f.get("used_g", "0"))
+                if filament_id:
+                    filament_usage.append(
+                        {
+                            "slot_id": int(filament_id),
+                            "used_g": used_amount,
+                            "type": f.get("type", ""),
+                            "color": f.get("color", ""),
+                        }
+                    )
             except (ValueError, TypeError):
                 continue
-            if filament_id:
-                filament_usage.append(
-                    {
-                        "slot_id": int(filament_id),
-                        "used_g": used_amount,
-                        "type": f.get("type", ""),
-                        "color": f.get("color", ""),
-                    }
-                )
 
     return PlateMetadata(
         print_time_seconds=print_time,

@@ -63,11 +63,11 @@ export function ConfirmModal({
 
   const variantStyles = {
     danger: {
-      icon: 'text-red-400',
+      icon: 'text-red-600 dark:text-red-400',
       button: 'bg-red-500 hover:bg-red-600',
     },
     warning: {
-      icon: 'text-yellow-400',
+      icon: 'text-yellow-600 dark:text-yellow-400',
       button: 'bg-yellow-500 hover:bg-yellow-600 text-black',
     },
     default: {

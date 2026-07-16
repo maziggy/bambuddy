@@ -70,11 +70,11 @@ interface APIResponse {
 }
 
 const METHOD_COLORS: Record<string, string> = {
-  get: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  post: 'bg-green-500/20 text-green-400 border-green-500/30',
-  put: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  patch: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  delete: 'bg-red-500/20 text-red-400 border-red-500/30',
+  get: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 border-blue-300 dark:border-blue-500/30',
+  post: 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 border-green-300 dark:border-green-500/30',
+  put: 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border-yellow-300 dark:border-yellow-500/30',
+  patch: 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400 border-orange-300 dark:border-orange-500/30',
+  delete: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 border-red-300 dark:border-red-500/30',
 };
 
 function resolveRef(schema: OpenAPISchema, ref: string): SchemaSpec {
@@ -340,7 +340,7 @@ function EndpointItem({ path, method, spec, schema, apiKey }: EndpointItemProps)
                   <div key={param.name} className="flex items-center gap-2">
                     <label className="text-sm text-bambu-gray w-32 flex-shrink-0">
                       {param.name}
-                      {param.required && <span className="text-red-400 ml-1">*</span>}
+                      {param.required && <span className="text-red-700 dark:text-red-400 ml-1">*</span>}
                     </label>
                     <input
                       type="text"
@@ -364,7 +364,7 @@ function EndpointItem({ path, method, spec, schema, apiKey }: EndpointItemProps)
                   <div key={param.name} className="flex items-center gap-2">
                     <label className="text-sm text-bambu-gray w-32 flex-shrink-0">
                       {param.name}
-                      {param.required && <span className="text-red-400 ml-1">*</span>}
+                      {param.required && <span className="text-red-700 dark:text-red-400 ml-1">*</span>}
                     </label>
                     {param.schema?.enum ? (
                       <select
@@ -417,7 +417,7 @@ function EndpointItem({ path, method, spec, schema, apiKey }: EndpointItemProps)
               Execute
             </Button>
             {missingParams.length > 0 && (
-              <span className="text-xs text-yellow-400 flex items-center gap-1">
+              <span className="text-xs text-yellow-700 dark:text-yellow-400 flex items-center gap-1">
                 <AlertCircle className="w-3 h-3" />
                 Fill in: {missingParams.join(', ')}
               </span>
@@ -432,10 +432,10 @@ function EndpointItem({ path, method, spec, schema, apiKey }: EndpointItemProps)
                   Response
                   <span className={`px-2 py-0.5 text-xs rounded ${
                     response.status >= 200 && response.status < 300
-                      ? 'bg-green-500/20 text-green-400'
+                      ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400'
                       : response.status >= 400
-                        ? 'bg-red-500/20 text-red-400'
-                        : 'bg-yellow-500/20 text-yellow-400'
+                        ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400'
+                        : 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400'
                   }`}>
                     {response.status} {response.statusText}
                   </span>
@@ -443,7 +443,7 @@ function EndpointItem({ path, method, spec, schema, apiKey }: EndpointItemProps)
                 </h4>
                 <Button variant="secondary" size="sm" onClick={copyResponse}>
                   {copied ? (
-                    <CheckCircle className="w-3 h-3 text-green-400" />
+                    <CheckCircle className="w-3 h-3 text-green-600 dark:text-green-400" />
                   ) : (
                     <Copy className="w-3 h-3" />
                   )}
@@ -501,7 +501,7 @@ export function APIBrowser({ apiKey = '' }: APIBrowserProps) {
     return (
       <Card>
         <CardContent className="py-8">
-          <div className="text-center text-red-400">
+          <div className="text-center text-red-700 dark:text-red-400">
             <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-50" />
             <p>Failed to load API schema</p>
             <p className="text-sm text-bambu-gray mt-1">{error}</p>

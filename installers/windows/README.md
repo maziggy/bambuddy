@@ -10,7 +10,7 @@ service. No Python or Node installation required on the target machine.
 - **Data target:** `C:\ProgramData\Bambuddy\data\` (preserved on uninstall by default)
 - **Logs target:** `C:\ProgramData\Bambuddy\logs\`
 - **Service:** registered via NSSM, runs as `LocalSystem`, autostart on boot
-- **Service command:** `python.exe -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000`
+- **Service command:** `python.exe -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --loop asyncio` (`--loop asyncio` avoids a uvloop TLS bug that can truncate VP FTP uploads, #1896)
 - **Bundled binaries:** Python 3.13 embeddable, NSSM, ffmpeg static build
 
 Browser is the UI. Start Menu shortcut opens `http://localhost:8000`.

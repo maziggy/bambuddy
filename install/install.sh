@@ -332,6 +332,26 @@ create_user() {
     log_success "Service user created"
 }
 
+# Ensure a directory exists and is owned by the current user. Used on macOS so
+# the install tree stays user-owned (git/venv/npm never touch a root-owned dir).
+# Only elevates when the target's parent is root-owned (e.g. /opt); a path under
+# $HOME is created without any sudo prompt.
+ensure_user_owned_dir() {
+    local dir="$1"
+
+    if [[ -d "$dir" ]] && [[ -w "$dir" ]]; then
+        return
+    fi
+
+    if mkdir -p "$dir" 2>/dev/null; then
+        return
+    fi
+
+    log_info "Creating $dir (requires your password)..."
+    sudo mkdir -p "$dir"
+    sudo chown "$(id -un):$(id -gn)" "$dir"
+}
+
 download_bambuddy() {
     log_info "Downloading BamBuddy..."
 
@@ -343,7 +363,23 @@ download_bambuddy() {
         exit 1
     fi
 
-    if [[ -d "$INSTALL_PATH/.git" ]]; then
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        # macOS has no service user — the whole install runs as the current user.
+        # Create the target user-owned (elevating only if its parent is root-owned,
+        # e.g. /opt), then clone/update without sudo so the venv/frontend the user
+        # builds next aren't fighting a root-owned tree.
+        ensure_user_owned_dir "$INSTALL_PATH"
+        if [[ -d "$INSTALL_PATH/.git" ]]; then
+            log_info "Existing installation found, updating..."
+            git config --global --add safe.directory "$INSTALL_PATH" 2>/dev/null || true
+            cd "$INSTALL_PATH"
+            git fetch origin
+            git checkout "$BRANCH" 2>/dev/null || git checkout -b "$BRANCH" "origin/$BRANCH"
+            git reset --hard "origin/$BRANCH"
+        else
+            git clone --branch "$BRANCH" https://github.com/maziggy/bambuddy.git "$INSTALL_PATH"
+        fi
+    elif [[ -d "$INSTALL_PATH/.git" ]]; then
         log_info "Existing installation found, updating..."
         # Add safe.directory to avoid "dubious ownership" error when running as root
         git config --global --add safe.directory "$INSTALL_PATH" 2>/dev/null || true
@@ -472,9 +508,12 @@ build_frontend() {
 create_directories() {
     log_info "Creating data directories..."
 
-    sudo mkdir -p "$DATA_DIR" "$LOG_DIR"
-
-    if [[ "$OS_TYPE" != "macos" ]]; then
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        # Rootless: DATA_DIR/LOG_DIR default under the user-owned install path.
+        ensure_user_owned_dir "$DATA_DIR"
+        ensure_user_owned_dir "$LOG_DIR"
+    else
+        sudo mkdir -p "$DATA_DIR" "$LOG_DIR"
         sudo chown -R "$SERVICE_USER:$SERVICE_USER" "$DATA_DIR" "$LOG_DIR"
     fi
 
@@ -503,11 +542,15 @@ LOG_LEVEL=$LOG_LEVEL
 LOG_TO_FILE=true
 EOF
 
-    sudo mv /tmp/bambuddy.env "$env_file"
-    if [[ "$OS_TYPE" != "macos" ]]; then
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        # Rootless: install path is user-owned, so write it directly.
+        mv /tmp/bambuddy.env "$env_file"
+        chmod 600 "$env_file"
+    else
+        sudo mv /tmp/bambuddy.env "$env_file"
         sudo chown "$SERVICE_USER:$SERVICE_USER" "$env_file"
+        sudo chmod 600 "$env_file"
     fi
-    sudo chmod 600 "$env_file"
 
     log_success "Environment file created at $env_file"
 }
@@ -526,6 +569,33 @@ create_systemd_service() {
     local protect_home="true"
     if [[ "$INSTALL_PATH" == /home/* ]]; then
         protect_home="read-only"
+    fi
+
+    # This function overwrites /etc/systemd/system/bambuddy.service outright. Any
+    # ReadWritePaths the operator added by hand — a NAS share for Scheduled
+    # Backups, typically — used to disappear with it, and the next backup failed
+    # with EROFS ("Read-only file system"), which reads like a permission problem
+    # and is not one (issue #2544). Back the old unit up and carry those paths
+    # forward.
+    local existing_unit="/etc/systemd/system/bambuddy.service"
+    local extra_rw=""
+    if [[ -f "$existing_unit" ]]; then
+        local backup_unit="${existing_unit}.bak-$(date +%Y%m%d-%H%M%S)"
+        sudo cp "$existing_unit" "$backup_unit"
+        log_info "Existing service backed up to $backup_unit"
+
+        local prev_rw
+        prev_rw=$(sudo grep -hE '^ReadWritePaths=' "$existing_unit" 2>/dev/null | sed 's/^ReadWritePaths=//' || true)
+        local p
+        for p in $prev_rw; do
+            case "$p" in
+                "$DATA_DIR" | "$LOG_DIR" | "$INSTALL_PATH") continue ;;
+            esac
+            extra_rw+=" $p"
+        done
+        if [[ -n "$extra_rw" ]]; then
+            log_info "Keeping custom writable paths from the previous service:$extra_rw"
+        fi
     fi
 
     cat > /tmp/bambuddy.service << EOF
@@ -548,9 +618,16 @@ Environment="DATA_DIR=$DATA_DIR"
 Environment="LOG_DIR=$LOG_DIR"
 Environment="TZ=$TIMEZONE"
 
-ExecStart=$INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host $BIND_ADDRESS --port $PORT
+# --loop asyncio required: uvloop can truncate VP FTP uploads (#1896)
+# --timeout-graceful-shutdown required: uvicorn otherwise waits forever for
+# in-flight requests, and an MJPEG camera stream never completes — one open
+# camera tile hangs the stop until systemd SIGKILLs, skipping the WAL
+# checkpoint and the MQTT / virtual-printer teardown.
+ExecStart=$INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host $BIND_ADDRESS --port $PORT --loop asyncio --timeout-graceful-shutdown 5
 Restart=on-failure
 RestartSec=5
+# Backstop only — uvicorn bounds its own wait at 5s and teardown takes ~1-2s.
+TimeoutStopSec=30
 StandardOutput=journal
 StandardError=journal
 
@@ -562,7 +639,16 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=$protect_home
-ReadWritePaths=$DATA_DIR $LOG_DIR $INSTALL_PATH
+# ProtectSystem=strict makes EVERY path outside the ones below read-only for this
+# service — including a NAS share you mounted yourself and can write to from your
+# own shell. If you point Scheduled Backups at such a directory, add it here, or
+# better in a drop-in that survives a reinstall (#2544):
+#
+#   sudo systemctl edit bambuddy
+#   [Service]
+#   ReadWritePaths=/mnt/your-nas-share
+#
+ReadWritePaths=$DATA_DIR $LOG_DIR $INSTALL_PATH$extra_rw
 
 [Install]
 WantedBy=multi-user.target
@@ -613,6 +699,14 @@ create_launchd_service() {
         <string>$BIND_ADDRESS</string>
         <string>--port</string>
         <string>$PORT</string>
+        <!-- the loop asyncio flag below is required: uvloop can truncate VP FTP uploads, #1896 -->
+        <string>--loop</string>
+        <string>asyncio</string>
+        <!-- required: uvicorn otherwise waits forever for in-flight requests, and an
+             MJPEG camera stream never completes — one open camera tile hangs the stop
+             until launchd SIGKILLs, skipping the WAL checkpoint and MQTT teardown -->
+        <string>--timeout-graceful-shutdown</string>
+        <string>5</string>
     </array>
     <key>WorkingDirectory</key>
     <string>$INSTALL_PATH</string>
@@ -840,6 +934,27 @@ main() {
     log_info "Detecting system..."
     detect_os
     log_success "Detected: $OS_TYPE (package manager: $PKG_MANAGER)"
+
+    # macOS must run rootless. Homebrew hard-refuses to run as root, and a venv
+    # / node_modules created by root can't be managed by the launchd agent (which
+    # runs as the user). Bail early with an actionable message instead of dying
+    # halfway through on "brew: running as root is not supported".
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        if [[ "$EUID" -eq 0 ]]; then
+            log_error "Don't run the macOS installer with sudo."
+            log_info  "Homebrew, the Python venv, and the launchd agent must all be created as your"
+            log_info  "normal user. Re-run without sudo (the script elevates only when it truly needs to):"
+            echo ""
+            echo "    ./install.sh"
+            echo ""
+            exit 1
+        fi
+        # /opt requires sudo to create and would leave a root-owned tree; default
+        # macOS installs to a user-owned location so the whole flow stays rootless.
+        if [[ "$DEFAULT_INSTALL_PATH" == "/opt/bambuddy" ]]; then
+            DEFAULT_INSTALL_PATH="$HOME/bambuddy"
+        fi
+    fi
 
     # Check/install Python
     if ! detect_python; then

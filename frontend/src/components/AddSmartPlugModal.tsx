@@ -58,6 +58,8 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
   const [restEnergyUrl, setRestEnergyUrl] = useState(plug?.rest_energy_url || '');
   const [restEnergyPath, setRestEnergyPath] = useState(plug?.rest_energy_path || '');
   const [restEnergyMultiplier, setRestEnergyMultiplier] = useState<string>((plug?.rest_energy_multiplier ?? 1).toString());
+  const [restEnergyTotalPath, setRestEnergyTotalPath] = useState(plug?.rest_energy_total_path || '');
+  const [restEnergyTotalMultiplier, setRestEnergyTotalMultiplier] = useState<string>((plug?.rest_energy_total_multiplier ?? 1).toString());
   // HA energy sensor entities (optional)
   const [haPowerEntity, setHaPowerEntity] = useState(plug?.ha_power_entity || '');
   const [haEnergyTodayEntity, setHaEnergyTodayEntity] = useState(plug?.ha_energy_today_entity || '');
@@ -381,6 +383,8 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
       rest_energy_url: plugType === 'rest' ? (restEnergyUrl.trim() || null) : null,
       rest_energy_path: plugType === 'rest' ? (restEnergyPath.trim() || null) : null,
       rest_energy_multiplier: plugType === 'rest' ? (parseFloat(restEnergyMultiplier) || 1) : 1,
+      rest_energy_total_path: plugType === 'rest' ? (restEnergyTotalPath.trim() || null) : null,
+      rest_energy_total_multiplier: plugType === 'rest' ? (parseFloat(restEnergyTotalMultiplier) || 1) : 1,
       username: plugType === 'tasmota' ? (username.trim() || null) : null,
       password: plugType === 'tasmota' ? (password.trim() || null) : null,
       printer_id: printerId,
@@ -431,7 +435,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
           {error && (
-            <div className="p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-sm text-red-400">
+            <div className="p-3 bg-red-100 dark:bg-red-500/20 border border-red-400 dark:border-red-500/50 rounded-lg text-sm text-red-700 dark:text-red-400">
               {error}
             </div>
           )}
@@ -585,7 +589,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               {/* HA not configured */}
               {!haConfigured && (
                 <div className="space-y-3">
-                  <div className="p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-lg text-sm text-yellow-400">
+                  <div className="p-3 bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-400 dark:border-yellow-500/50 rounded-lg text-sm text-yellow-700 dark:text-yellow-400">
                     {t('smartPlugs.haNotConfigured')}{' '}
                     <span className="font-medium">{t('smartPlugs.haSettingsPath')}</span>
                   </div>
@@ -612,7 +616,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                   )}
 
                   {haEntitiesError && (
-                    <div className="p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-sm text-red-400">
+                    <div className="p-3 bg-red-100 dark:bg-red-500/20 border border-red-400 dark:border-red-500/50 rounded-lg text-sm text-red-700 dark:text-red-400">
                       {t('smartPlugs.failedToLoadEntities', { error: (haEntitiesError as Error).message })}
                     </div>
                   )}
@@ -988,7 +992,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
             <div className="space-y-3">
               {/* MQTT broker not configured */}
               {!settings?.mqtt_broker && (
-                <div className="p-3 bg-yellow-500/20 border border-yellow-500/50 rounded-lg text-sm text-yellow-400">
+                <div className="p-3 bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-400 dark:border-yellow-500/50 rounded-lg text-sm text-yellow-700 dark:text-yellow-400">
                   {t('smartPlugs.mqttNotConfigured')}{' '}
                   <span className="font-medium">{t('smartPlugs.mqttSettingsPath')}</span>
                   {' '}{t('smartPlugs.mqttNotConfiguredSuffix')}
@@ -998,7 +1002,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               {/* MQTT broker configured - show fields */}
               {settings?.mqtt_broker && (
                 <>
-                  <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-sm text-blue-300">
+                  <div className="p-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-300 dark:border-blue-500/30 rounded-lg text-sm text-blue-700 dark:text-blue-300">
                     <p className="font-medium mb-1">{t('smartPlugs.monitorOnly')}</p>
                     <p className="text-xs opacity-80">
                       {t('smartPlugs.mqttMonitorOnlyDescription')}
@@ -1312,9 +1316,35 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                     />
                   </div>
                 </div>
-
                 <p className="text-xs text-bambu-gray">
                   {t('smartPlugs.restEnergyHint')}
+                </p>
+
+                {/* Lifetime counter (#2539) — the only energy figure a Shelly has. */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.restEnergyTotalPath')}</label>
+                    <input
+                      type="text"
+                      value={restEnergyTotalPath}
+                      onChange={(e) => setRestEnergyTotalPath(e.target.value)}
+                      placeholder={t('smartPlugs.restEnergyTotalPathHint')}
+                      className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-bambu-gray mb-1">{t('smartPlugs.restEnergyTotalMultiplier')}</label>
+                    <input
+                      type="text"
+                      value={restEnergyTotalMultiplier}
+                      onChange={(e) => setRestEnergyTotalMultiplier(e.target.value)}
+                      placeholder="1"
+                      className="w-full px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white placeholder-bambu-gray focus:border-bambu-green focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-bambu-gray">
+                  {t('smartPlugs.restEnergyTotalHint')}
                 </p>
               </div>
 
@@ -1346,7 +1376,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
                 </div>
               )}
               {testResult && (
-                <div className={`flex items-center gap-2 text-sm ${testResult.success ? 'text-green-400' : 'text-red-400'}`}>
+                <div className={`flex items-center gap-2 text-sm ${testResult.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
                   {testResult.success ? <CheckCircle className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
                   {testResult.success ? t('smartPlugs.connectionSuccess') : t('smartPlugs.addSmartPlug.connectionFailed')}
                 </div>
@@ -1391,7 +1421,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
             <div className={`p-3 rounded-lg flex items-center gap-2 ${
               testResult.success
                 ? 'bg-bambu-green/20 border border-bambu-green/50 text-bambu-green'
-                : 'bg-red-500/20 border border-red-500/50 text-red-400'
+                : 'bg-red-100 dark:bg-red-500/20 border border-red-400 dark:border-red-500/50 text-red-700 dark:text-red-400'
             }`}>
               {testResult.success ? (
                 <>

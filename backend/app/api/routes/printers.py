@@ -50,6 +50,7 @@ from backend.app.services.bambu_ftp import (
 )
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
 from backend.app.services.printer_manager import (
+    drying_screen_only,
     get_derived_status_name,
     printer_manager,
     resolve_plate_id,
@@ -535,6 +536,7 @@ async def get_printer_status(
                         drying_temp=tray_data.get("drying_temp"),
                         drying_time=tray_data.get("drying_time"),
                         state=tray_data.get("state"),
+                        exists=tray_data.get("exists"),
                     )
                 )
             # Prefer humidity_raw (percentage) over humidity (index 1-5)
@@ -778,6 +780,7 @@ async def get_printer_status(
         awaiting_plate_clear=printer_manager.is_awaiting_plate_clear(printer_id),
         supports_drying=supports_drying(printer.model, state.firmware_version),
         supports_drying_while_printing=supports_drying_while_printing(printer.model, state.firmware_version),
+        drying_screen_only=drying_screen_only(printer.model),
         supports_chamber_heater=supports_chamber_heater(printer.model),
         current_archive_id=current_archive_id,
         current_plate_id=current_plate_id,
@@ -1755,6 +1758,11 @@ async def clear_mqtt_logs(
 # AMS Drying Endpoints
 # ============================================
 
+# The P1 firmware acks `ams_filament_drying` with result: success and then ignores it
+# — Bambu's own P1 manual says drying "may only be controlled from the P1S screen"
+# (#2533). Refuse the command rather than let the caller believe it landed.
+_DRYING_SCREEN_ONLY_DETAIL = "This printer only supports AMS drying from its own screen"
+
 
 @router.post("/{printer_id}/drying/start")
 async def start_drying(
@@ -1776,6 +1784,8 @@ async def start_drying(
     # Server-side guard: reject if this model/firmware doesn't support drying
     live_state = printer_manager.get_status(printer_id)
     firmware = live_state.firmware_version if live_state else None
+    if drying_screen_only(printer.model):
+        raise HTTPException(400, _DRYING_SCREEN_ONLY_DETAIL)
     if not supports_drying(printer.model, firmware):
         raise HTTPException(400, "Drying not supported for this printer model or firmware version")
 
@@ -1847,6 +1857,11 @@ async def stop_drying(
     printer = result.scalar_one_or_none()
     if not printer:
         raise HTTPException(404, "Printer not found")
+
+    # Screen-only models ignore stop just as they ignore start — a cycle running on a
+    # P1S was started at the printer and has to be ended there too (#2533).
+    if drying_screen_only(printer.model):
+        raise HTTPException(400, _DRYING_SCREEN_ONLY_DETAIL)
 
     success = printer_manager.send_drying_command(printer_id, ams_id, temp=0, duration=0, mode=0)
     if not success:
@@ -3111,16 +3126,29 @@ async def bed_jog(
             "translates this into the right G-code Z sign per printer model."
         ),
     ),
-    force: bool = Query(False, description="If true, bypass soft endstops via M211 (for use when Z is not homed)"),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     db: AsyncSession = Depends(get_db),
 ):
     """Adjust the nozzle-bed gap by a relative distance.
 
-    Emits a short G-code sequence via MQTT. When ``force`` is true the soft
-    endstops are disabled for the duration of the move, matching the
-    "ignore and move anyway" option Bambu Studio offers when the printer
-    is not homed.
+    Emits a short G-code sequence via MQTT.
+
+    Soft-endstop policy (#2579). The printer's software travel limits are the
+    only thing between a jog button and a bed crash — on Bambu machines the
+    physical endstops are homing-only (there is no runtime limit switch in the
+    travel path), so once they are disabled nothing stops the move. The old
+    code disabled them (``M211 S0``) around every forced jog, and the UI sent
+    ``force`` on every jog, so the limits were off on every bed move — that is
+    what let a jog drive the nozzle into the bed on all models (#2579). This
+    endpoint now emits a **bare relative move and never touches ``M211`` at
+    all** — byte-for-byte what the printer's own touchscreen jog sends, which
+    stops at the travel limit. Bambuddy no longer disables the firmware's soft
+    endstops, and it no longer sends ``M211 S1`` either: that was an unverified
+    attempt to re-enable a printer left disabled by an older build, and on real
+    hardware the jog moved past the limit *with* it. If a printer still jogs
+    past its limits, its endstops were disabled at the firmware level by the old
+    build — power-cycle it once to restore them; from then on Bambuddy leaves
+    them alone.
 
     Direction handling: on bed-on-Z printers (X1 / P1 / H2 family) the bed
     is the Z-axis, and Bambu's home convention puts Z=0 at the top with
@@ -3147,12 +3175,10 @@ async def bed_jog(
 
     gcode_distance = -distance if is_bed_slinger(printer.model) else distance
 
-    lines = []
-    if force:
-        lines.append("M211 S0")
-    lines += ["G91", f"G1 Z{gcode_distance:.2f} F600", "G90"]
-    if force:
-        lines.append("M211 S1")
+    # Bare relative move — exactly what the touchscreen sends. Never touch M211
+    # (#2579): the firmware keeps its soft endstops on by default and clamps the
+    # move at the travel limit.
+    lines = ["G91", f"G1 Z{gcode_distance:.2f} F600", "G90"]
 
     if not client.send_gcode("\n".join(lines)):
         raise HTTPException(500, "Failed to send bed-jog command")
@@ -3187,6 +3213,9 @@ async def xy_jog(
     if y:
         axes.append(f"Y{y:.2f}")
 
+    # Bare relative move — never touch M211 (#2579). The firmware keeps its soft
+    # endstops on by default and clamps the move at the travel limit; a printer
+    # left disabled by an older build is recovered with a power cycle.
     if not client.send_gcode("\n".join(["G91", f"G1 {' '.join(axes)} F6000", "G90"])):
         raise HTTPException(500, "Failed to send XY jog command")
 
@@ -3361,7 +3390,14 @@ async def get_printable_objects(
                 if downloaded and temp_path.exists():
                     with open(temp_path, "rb") as f:
                         data = f.read()
-                    objects, bbox_all = extract_printable_objects_from_3mf(data, include_positions=True)
+                    # Scope to the running plate: an all-plates 3MF lists every
+                    # plate's objects, and offering plate 1's while the printer
+                    # runs plate 2 makes every skip a misfire (#2522).
+                    objects, bbox_all = extract_printable_objects_from_3mf(
+                        data,
+                        plate_number=resolve_plate_id(client.state),
+                        include_positions=True,
+                    )
                     if objects:
                         client.state.printable_objects = objects
                         client.state.printable_objects_bbox_all = bbox_all
@@ -3824,14 +3860,17 @@ async def execute_hms_action(
     # command. publish() success is NOT the same as printer-ack: Bambu's
     # firmware silently rejects malformed HMS commands at QoS 1 (the broker
     # ACKs the publish, but the printer drops it). Verified end-to-end against
-    # a live H2D — see #1830 §(3). We sample (gcode_state, hms_errors length)
-    # because every accepted HMS action mutates at least one of them.
+    # a live H2D — see #1830 §(3).
     #
-    # PrinterState.state carries the MQTT `gcode_state` value verbatim (see
-    # bambu_mqtt.py line 2144); the raw `print_error` int isn't preserved on
-    # state, only the derived HMSError entries are.
-    pre_gcode = client.state.state
-    pre_hms_count = len(client.state.hms_errors)
+    # We probe `_last_message_time` (bumped on every MQTT push) rather than a
+    # (gcode_state, hms_errors-length) diff. The old diff missed the
+    # wrong-plate IGNORE_RESUME case where the printer briefly resumes and
+    # re-pauses with the same fault inside the 2.5s window: both fields
+    # round-trip to their pre-publish values → false 502 even though the
+    # firmware fully ack'd the resume. Every accepted command triggers a
+    # pushall response within ~100-500ms, so a fresh inbound message after
+    # the publish is the robust ack signal.
+    pre_last_message = client._last_message_time
 
     success = client.execute_hms_action(body.print_error, body.action, body.job_id)
     if not success:
@@ -3845,12 +3884,12 @@ async def execute_hms_action(
     # coroutine is awaiting.
     await asyncio.sleep(HMS_ACTION_ACK_WAIT_SECONDS)
 
-    acked = client.state.state != pre_gcode or len(client.state.hms_errors) != pre_hms_count
+    acked = client._last_message_time > pre_last_message
     if not acked:
-        # Publish succeeded but the printer's state didn't move. Almost always
-        # firmware-side silent rejection (err mismatch, command/state mismatch).
-        # 502 makes it visible at the UI instead of the 200-but-broken loop
-        # #1830 reported.
+        # Publish succeeded but the printer sent nothing back. Almost always
+        # firmware-side silent rejection (err mismatch, command/state mismatch)
+        # or a dropped MQTT route. 502 makes it visible at the UI instead of
+        # the 200-but-broken loop #1830 reported.
         raise HTTPException(502, "Printer did not acknowledge HMS action within 2.5s")
 
     return {"success": True, "message": "HMS action executed"}

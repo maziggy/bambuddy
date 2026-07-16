@@ -1770,24 +1770,26 @@ class TestExecuteHMSActionAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_execute_hms_action_success(self, async_client: AsyncClient, printer_factory):
-        """200 happy path — dispatcher returns True AND printer state moves
-        within the ack-wait window. The state delta is the firmware's only
-        proof that the command landed (publish success is necessary but not
-        sufficient; see #1830 §(3))."""
+        """200 happy path — dispatcher returns True AND the printer pushes at
+        least one MQTT message into the ack-wait window. A fresh inbound
+        message is the firmware's proof that the command landed (publish
+        success is necessary but not sufficient; see #1830 §(3))."""
         printer = await printer_factory(name="Test Printer")
 
         mock_client = MagicMock()
-        # Pre-action state — paused with a fault.
+        # Pre-action state — paused with a fault, last message arrived at t=0.
         mock_client.state.state = "PAUSE"
         mock_client.state.print_error = 0x05008051
         mock_client.state.hms_errors = [object()]
+        mock_client._last_message_time = 100.0
 
         def _act(*_a, **_kw):
-            # Simulate the printer accepting the command and clearing the fault
-            # by the time the ack-wait expires.
-            mock_client.state.state = "FAILED"
-            mock_client.state.print_error = 0
-            mock_client.state.hms_errors = []
+            # Simulate the printer pushing a status update within the ack-wait
+            # window. The pushall that follows every command is what produces
+            # this — the actual state fields don't have to move (#1869: a
+            # wrong-plate IGNORE_RESUME re-pauses with the same fault but the
+            # printer DID push back).
+            mock_client._last_message_time = 100.5
             return True
 
         mock_client.execute_hms_action.side_effect = _act
@@ -1830,8 +1832,8 @@ class TestExecuteHMSActionAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_execute_hms_action_no_printer_ack_returns_502(self, async_client: AsyncClient, printer_factory):
-        """502 when publish succeeded but printer state didn't move within the
-        ack-wait window. This is the silent-rejection failure mode #1830
+        """502 when publish succeeded but no MQTT message arrives back within
+        the ack-wait window. This is the silent-rejection failure mode #1830
         identifies: the broker ACKs the publish at QoS 1 but the firmware
         drops the command (err mismatch, wrong shape, state mismatch).
         Surfacing this as 502 instead of 200 stops the UI from claiming
@@ -1842,8 +1844,9 @@ class TestExecuteHMSActionAPI:
         mock_client.state.state = "PAUSE"
         mock_client.state.print_error = 0x05008051
         mock_client.state.hms_errors = [object()]
+        mock_client._last_message_time = 100.0
         mock_client.execute_hms_action.return_value = True  # publish "succeeded"
-        # Crucially: state does NOT change → ack-wait detects no movement.
+        # Crucially: _last_message_time does NOT advance → no inbound push.
 
         with (
             patch("backend.app.api.routes.printers.printer_manager") as mock_pm,
@@ -1860,6 +1863,49 @@ class TestExecuteHMSActionAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_execute_hms_action_ignore_resume_repauses_within_window_still_acks(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        """200 when the printer ack'd the command but immediately re-paused
+        with the same fault — e.g. wrong-plate IGNORE_RESUME (#1869). The
+        previous (gcode_state, hms_errors-len) diff produced a false 502
+        because both fields round-tripped to their pre-publish values inside
+        the ack window. Probing `_last_message_time` survives the round-trip
+        because the printer's status push lands regardless of the eventual
+        state."""
+        printer = await printer_factory(name="Test Printer")
+
+        mock_client = MagicMock()
+        mock_client.state.state = "PAUSE"
+        mock_client.state.print_error = 0x05008051
+        mock_client.state.hms_errors = [object()]
+        mock_client._last_message_time = 100.0
+
+        def _act(*_a, **_kw):
+            # Printer ack'd, briefly resumed, re-detected the wrong plate, and
+            # re-paused with the same fault. Net diff on state fields is zero,
+            # but a fresh status push DID arrive.
+            mock_client._last_message_time = 100.4
+            mock_client.state.state = "PAUSE"  # round-tripped
+            mock_client.state.hms_errors = [object()]  # same length
+            return True
+
+        mock_client.execute_hms_action.side_effect = _act
+
+        with (
+            patch("backend.app.api.routes.printers.printer_manager") as mock_pm,
+            patch("backend.app.api.routes.printers.HMS_ACTION_ACK_WAIT_SECONDS", 0.01),
+        ):
+            mock_pm.get_client.return_value = mock_client
+
+            body = {"print_error": "05008051", "action": "IGNORE_RESUME", "job_id": None}
+            response = await async_client.post(f"/api/v1/printers/{printer.id}/hms/execute-action", json=body)
+
+            assert response.status_code == 200
+            assert response.json()["success"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_execute_hms_action_accepts_16_char_full_code(self, async_client: AsyncClient, printer_factory):
         """200 for a 16-char full_code (hms[]-array-sourced fault). The
         schema's relaxed pattern allows both 8-char (print_error) and
@@ -1870,9 +1916,10 @@ class TestExecuteHMSActionAPI:
         mock_client.state.state = "RUNNING"
         mock_client.state.print_error = 0
         mock_client.state.hms_errors = [object()]
+        mock_client._last_message_time = 100.0
 
         def _act(*_a, **_kw):
-            mock_client.state.hms_errors = []
+            mock_client._last_message_time = 100.4
             return True
 
         mock_client.execute_hms_action.side_effect = _act
@@ -3733,7 +3780,7 @@ class TestXYJogAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_success_x_only_emits_relative_gcode(self, async_client: AsyncClient, printer_factory):
-        """X-only jog should emit G91/G90 wrapping and only include the X axis."""
+        """X-only jog is a bare relative move (no M211), wraps in G91/G90, X only."""
         printer = await printer_factory(name="P", model="X1C")
         mock_client = MagicMock()
         mock_client.send_gcode.return_value = True
@@ -3742,6 +3789,8 @@ class TestXYJogAPI:
             response = await async_client.post(f"/api/v1/printers/{printer.id}/xy-jog?x=10&y=0")
         assert response.status_code == 200
         sent = mock_client.send_gcode.call_args.args[0]
+        # Never touch M211 — bare move, exactly like the touchscreen (#2579).
+        assert "M211" not in sent
         assert sent.startswith("G91\n")
         assert sent.endswith("\nG90")
         assert "X10.00" in sent

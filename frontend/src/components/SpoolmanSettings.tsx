@@ -345,18 +345,18 @@ export function SpoolmanSettings() {
         {localEnabled && (
           <div className="space-y-4">
             {/* Info banner about sync requirements */}
-            <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+            <div className="p-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-300 dark:border-blue-500/30 rounded-lg">
               <div className="flex gap-2">
-                <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
-                <div className="text-xs text-blue-300">
+                <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                <div className="text-xs text-blue-700 dark:text-blue-300">
                   <p className="font-medium mb-1">{t('settings.howSyncWorks')}</p>
-                  <ul className="list-disc list-inside space-y-0.5 text-blue-300/80">
+                  <ul className="list-disc list-inside space-y-0.5 text-blue-700/90 dark:text-blue-300/80">
                     <li>{t('settings.syncInfoRfidOnly')}</li>
                     <li>{t('settings.syncInfoAutoCreate')}</li>
                     <li>{t('settings.syncInfoThirdPartySkipped')}</li>
                   </ul>
                   <p className="font-medium mt-2 mb-1">{t('settings.linkingExistingSpools')}</p>
-                  <p className="text-blue-300/80">
+                  <p className="text-blue-700/90 dark:text-blue-300/80">
                     {t('settings.linkingExistingSpoolsDesc')}
                   </p>
                 </div>
@@ -495,7 +495,7 @@ export function SpoolmanSettings() {
 
               {/* Error display */}
               {(connectMutation.isError || disconnectMutation.isError) && (
-                <div className="mb-3 p-2 bg-red-500/20 border border-red-500/50 rounded text-sm text-red-400">
+                <div className="mb-3 p-2 bg-red-100 dark:bg-red-500/20 border border-red-300 dark:border-red-500/50 rounded text-sm text-red-700 dark:text-red-400">
                   {((connectMutation.error || disconnectMutation.error) as Error).message}
                 </div>
               )}
@@ -576,8 +576,8 @@ export function SpoolmanSettings() {
                   <div
                     className={`p-2 rounded text-sm ${
                       syncResult.success
-                        ? 'bg-green-500/20 border border-green-500/50 text-green-400'
-                        : 'bg-yellow-500/20 border border-yellow-500/50 text-yellow-400'
+                        ? 'bg-green-100 dark:bg-green-500/20 border border-green-300 dark:border-green-500/50 text-green-700 dark:text-green-400'
+                        : 'bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-300 dark:border-yellow-500/50 text-yellow-700 dark:text-yellow-400'
                     }`}
                   >
                     {syncResult.success
@@ -587,8 +587,8 @@ export function SpoolmanSettings() {
 
                   {/* Skipped spools */}
                   {syncResult.skipped_count > 0 && (
-                    <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded text-sm">
-                      <div className="flex items-center justify-between text-amber-400 mb-1">
+                    <div className="p-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 rounded text-sm">
+                      <div className="flex items-center justify-between text-amber-700 dark:text-amber-400 mb-1">
                         <div className="flex items-center gap-1.5">
                           <AlertTriangle className="w-3.5 h-3.5" />
                           <span className="font-medium">
@@ -598,13 +598,13 @@ export function SpoolmanSettings() {
                         {syncResult.skipped_count > 5 && (
                           <button
                             onClick={() => setShowAllSkipped(!showAllSkipped)}
-                            className="text-xs text-amber-400 hover:text-amber-300 underline"
+                            className="text-xs text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 underline"
                           >
                             {showAllSkipped ? 'Show less' : 'Show all'}
                           </button>
                         )}
                       </div>
-                      <ul className="text-xs text-amber-300/80 space-y-0.5">
+                      <ul className="text-xs text-amber-700/90 dark:text-amber-300/80 space-y-0.5">
                         {(showAllSkipped ? syncResult.skipped : syncResult.skipped.slice(0, 5)).map((s, i) => (
                           <li key={i} className="flex items-center gap-2">
                             {s.color && (
@@ -614,11 +614,11 @@ export function SpoolmanSettings() {
                               />
                             )}
                             <span>{s.location}</span>
-                            <span className="text-amber-300/60">- {s.reason}</span>
+                            <span className="text-amber-700/70 dark:text-amber-300/60">- {s.reason}</span>
                           </li>
                         ))}
                         {!showAllSkipped && syncResult.skipped_count > 5 && (
-                          <li className="text-amber-300/60 italic">
+                          <li className="text-amber-700/70 dark:text-amber-300/60 italic">
                             ...and {syncResult.skipped_count - 5} more
                           </li>
                         )}
@@ -628,9 +628,9 @@ export function SpoolmanSettings() {
 
                   {/* Errors */}
                   {syncResult.errors.length > 0 && (
-                    <div className="p-2 bg-red-500/10 border border-red-500/30 rounded text-sm">
-                      <div className="text-red-400 font-medium mb-1">Errors:</div>
-                      <ul className="text-xs text-red-300/80 space-y-0.5">
+                    <div className="p-2 bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30 rounded text-sm">
+                      <div className="text-red-700 dark:text-red-400 font-medium mb-1">Errors:</div>
+                      <ul className="text-xs text-red-700/90 dark:text-red-300/80 space-y-0.5">
                         {syncResult.errors.map((err, i) => (
                           <li key={i}>{err}</li>
                         ))}

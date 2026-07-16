@@ -196,10 +196,16 @@ export default {
       extraLarge: 'Tarjetas extragrandes',
     },
     pageView: {
+      openCamWallPage: 'Abrir el muro de cámaras como página',
       cards: 'Tarjetas',
       camWall: 'Muro de cámaras',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          'Este enlace del muro de cámaras ya no es válido. Es posible que el token haya caducado o se haya revocado.',
+        loadFailed: 'No se han podido cargar las impresoras.',
+      },
       noPrinters: 'No hay impresoras que mostrar',
       noSignal: 'Sin señal',
       live: 'En vivo',
@@ -416,6 +422,7 @@ export default {
       unload: 'Descargar',
     },
     bedJog: {
+      limitWarning: 'Los límites de recorrido no se aplican en los movimientos manuales: un error del firmware de Bambu ignora los finales de carrera por software en los comandos remotos. Muévelo con cuidado para evitar colisiones.',
       title: 'Controles de movimiento',
       bed: 'Cama',
       step: 'Paso (mm)',
@@ -569,6 +576,10 @@ export default {
       notSupported: 'Secado no compatible',
       powerRequired: 'Conecte el adaptador de corriente del AMS para activar el secado',
       startingDrying: 'Iniciando el secado...',
+      toastCommandSent: 'Comando de secado enviado',
+      toastStopped: 'Secado detenido',
+      toastNotStarted: 'La impresora aceptó el comando, pero el AMS no inició el secado. Comprueba que el adaptador de corriente del AMS esté conectado y que la impresora esté inactiva.',
+      screenOnly: 'En esta impresora, el secado del AMS solo se puede controlar desde la pantalla de la propia impresora (limitación de Bambu)',
       stoppingDrying: 'Deteniendo el secado...',
       rotateTray: 'Girar la bobina durante el secado',
       rotateUnavailableReason: 'No disponible — un slot de este AMS está cargado hacia el cabezal. La bobina está bloqueada por el tubo de alimentación y no puede girar. Retira el filamento primero.',
@@ -1991,6 +2002,15 @@ export default {
     manageLibraryDescription: 'Subir, renombrar y eliminar archivos de la biblioteca; importar modelos desde MakerWorld',
     manageInventory: 'Gestionar inventario',
     manageInventoryDescription: 'Crear, actualizar y eliminar bobinas y registros de inventario. Necesario para los quioscos SpoolBuddy (escaneo NFC, lecturas de balanza, comandos del sistema del quiosco).',
+    manageMaintenance: 'Gestionar mantenimiento',
+    manageMaintenanceDescription: 'Registrar mantenimientos completados, restablecer contadores, editar intervalos y gestionar el catálogo de tipos de mantenimiento. Ideal para automatizaciones de Home Assistant que registran "limpié la boquilla" sin conceder un control más amplio de la impresora.',
+    manageArchives: 'Gestionar archivos de impresión',
+    manageArchivesDescription: 'Editar y eliminar archivos de impresión, incluida la eliminación de impresiones antiguas. No incluye la purga de su contribución a las estadísticas. Ideal para automatizaciones que depuran el historial de impresión.',
+    manageProjects: 'Gestionar proyectos',
+    manageProjectsDescription: 'Crear, actualizar y eliminar proyectos, y añadirles archivos de impresión. Ideal para automatizaciones que organizan las impresiones en proyectos.',
+    maintenanceBadge: 'Mantenimiento',
+    archivesBadge: 'Archivos',
+    projectsBadge: 'Proyectos',
     libraryBadge: 'Biblioteca',
     inventoryBadge: 'Inventario',
     cloudAccess: 'Permitir el acceso a la nube',
@@ -2059,8 +2079,31 @@ export default {
     tempFanPresetsChamber: 'Temperatura de la cámara',
     tempFanPresetsFan: 'Velocidad del ventilador',
     tempFanPresetsReset: 'Restablecer valores predeterminados',
+    concurrentUploadsTitle: 'Subidas simultáneas',
+    concurrentUploadsDescription: 'Cuántas impresoras pueden recibir archivos de la cola al mismo tiempo. Las impresoras reciben los archivos lentamente (una impresión grande puede tardar varios minutos) y cada una espera su turno, así que en una granja grande subir este valor evita que la última impresora de un lote tenga que esperar a que terminen todas las transferencias anteriores. Bájalo si tu red o el host de Bambuddy tienen problemas con transferencias en paralelo.',
+    concurrentUploadsLabel: 'Impresoras atendidas a la vez',
+    concurrentUploadsHelp: '1 envía a una impresora cada vez (el comportamiento anterior). El valor predeterminado es 4.',
     staggeredStart: 'Inicio escalonado',
     staggeredStartDescription: 'Tamaño de grupo e intervalo predeterminados al escalonar los inicios de lotes en varias impresoras. Se pueden anular por lote en la ventana de impresión.',
+    preheatTitle: 'Precalentamiento y Heat Soak',
+    preheatDescription: 'Calienta la cama (y la cámara, si es compatible) y mantiene la temperatura antes de iniciar cada impresión en cola. Útil para filamentos técnicos (PA, ABS) en impresoras sin calentador activo de cámara — la cama calienta la cámara por radiación mientras corre el temporizador de soak. La temperatura objetivo de la cama se lee del archivo de impresión; el comportamiento de la cámara depende del modelo de impresora.',
+    preheatEnabled: 'Activar precalentamiento y soak',
+    preheatEnabledDesc: 'Si está desactivado, las impresiones en cola se inician de inmediato. Cada elemento puede anular por impresión.',
+    preheatFilamentTargetsLabel: 'Objetivo de cámara por filamento (°C)',
+    preheatFilamentTargetsHint: 'Bambuddy elige el objetivo más alto entre los slots AMS cargados; las impresiones solo PLA derivan 0 y omiten la fase de cámara automáticamente.',
+    preheatFilamentTargetsReset: 'Restablecer valores predeterminados',
+    preheatFilamentTargetsDefaultRow: 'Otros / sin asignar',
+    preheatMaxWait: 'Espera máx. (segundos)',
+    preheatMaxWaitHelp: 'Tope de la fase de calentamiento de cámara antes de pasar al soak.',
+    preheatSoak: 'Soak (segundos)',
+    preheatSoakHelp: 'Tiempo de retención tras alcanzar el objetivo o caducar la espera máx.',
+    preheatHardwareTitle: 'Comportamiento por impresora:',
+    preheatHardwareDetail: 'H2C/H2D/H2D Pro/H2S/X2D/X1E calientan activamente la cámara vía M141. X1C/P2S leen la temperatura pero solo calientan la cámara por radiación de la cama. P1S/P1P/A1/A1 Mini no tienen sensor de cámara — solo aplica el temporizador de soak.',
+    preheatPerItemDesc: 'Calienta la cama y la cámara antes de iniciar esta impresión. Por defecto usa el interruptor global de Ajustes → Workflow.',
+    preheatOverride_inherit: 'Heredar',
+    preheatOverride_on: 'Activado',
+    preheatOverride_off: 'Desactivado',
+    preheatTargetOverride: 'Sobrescribir objetivo de cámara (°C, vacío = por filamento)',
     plateClear: 'Confirmación de cama despejada',
     requirePlateClear: 'Requerir confirmación de cama despejada',
     requirePlateClearDescription: 'Cuando está activado, el planificador espera la confirmación de cama despejada por impresora antes de iniciar impresiones en cola en impresoras con trabajos finalizados. Desactivar esto también oculta la insignia de estado de la cama y el botón "Marcar cama como despejada" en las tarjetas de impresora.',
@@ -3099,6 +3142,7 @@ export default {
       clearAll: 'Borrar todo',
       permissionsSelected: '{{count}} seleccionados',
       noResults: 'Ningún permiso coincide con su búsqueda',
+      websocketHint: 'Necesario para las actualizaciones en vivo. Sin este permiso, la interfaz recurre al sondeo periódico.',
     },
   },
 
@@ -3300,6 +3344,8 @@ export default {
       },
     },
     connectedAs: 'Conectado como',
+    signInExpiredTitle: 'La sesión de Bambu Cloud ha caducado',
+    signInExpiredBody: 'Bambu Lab ya no acepta el token almacenado. Inicie sesión de nuevo para restaurar los perfiles en la nube, las importaciones de MakerWorld y las comprobaciones de firmware.',
     logout: 'Cerrar sesión',
     noLogoutPermission: 'No tiene permiso para cerrar sesión',
     failedToLoad: 'Error al cargar los perfiles',
@@ -3556,6 +3602,9 @@ export default {
     searchSubfoldersHint: 'Incluyendo subcarpetas',
     readme: {
       truncated: 'Truncado',
+      show: 'Mostrar README',
+      hide: 'Ocultar README',
+      label: 'README',
     },
     tags: {
       title: 'Etiquetas',
@@ -3910,6 +3959,10 @@ export default {
     toastArchives: '{{count}} impresiones archivadas con Bambuddy. Mira quién lo mantiene independiente.',
     toastAnniversary: '¡Un año con Bambuddy! Mira quién mantiene el proyecto independiente.',
     toastVersionUpdate: 'Actualizado a v{{version}}. Bambuddy sigue siendo gratuito gracias a quienes lo apoyan.',
+    toastBusiness: '¿Usas Bambuddy en {{count}} impresoras? Existe un plan de soporte para equipos: correcciones prioritarias, facturación y contacto directo con el responsable del proyecto.',
+    businessCta: 'Bambuddy para empresas',
+    businessTitle: 'Bambuddy para empresas',
+    businessTagline: 'Estás gestionando {{count}} impresoras. Hay soporte prioritario, licencias comerciales y facturación disponibles para equipos y granjas de impresión.',
   },
 
   // Library (K Profiles)
@@ -4165,6 +4218,8 @@ export default {
       title: 'Imprimir etiquetas de bobinas',
       selectedCount: '{{count}} seleccionadas',
       pickSpools: 'Elija para qué bobinas imprimir etiquetas:',
+      monochrome: 'Monocromo (impresora en blanco y negro)',
+      monochromeHint: 'Elimina la muestra de color y amplía el texto',
       searchPlaceholder: 'Buscar nombre, marca o n.º de ID',
       filterByMaterial: 'Material:',
       allMaterials: 'Todos',
@@ -4526,6 +4581,8 @@ export default {
     selectPrinter: 'Seleccionar impresora',
     selectPlate: 'Seleccionar cama',
     filamentMapping: 'Mapeo de filamentos',
+    plateN: 'Cama {{n}}',
+    plateFilamentsUnreadable: 'No se han podido leer los filamentos de una cama seleccionada, por lo que no se puede asignar. Deselecciónala para encolar las demás.',
     totalCost: 'Coste total:',
     slotRemainingShort: ' - quedan {{grams}} g',
     printSettings: 'Ajustes de impresión',
@@ -4761,6 +4818,20 @@ export default {
     backupSize: 'Tamaño',
     localTimeHint: 'Hora local ({{tz}})',
     defaultPathLabel: 'Predeterminada:',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'Bambuddy no puede escribir en este directorio',
+      howToFix: 'Cómo solucionarlo:',
+      sandboxed: 'El servicio de Bambuddy no puede escribir en {{path}}. Su unidad de systemd se ejecuta con ProtectSystem=strict, lo que hace que todo directorio fuera de los de instalación, datos y registros sea de solo lectura para el servicio, incluso uno en el que usted sí puede escribir desde su propia shell.',
+      read_only: '{{path}} está en un sistema de archivos de solo lectura.',
+      permission_denied: 'Bambuddy no tiene permiso para escribir en {{path}}. Compruebe el propietario y los permisos del directorio.',
+      no_space: 'El sistema de archivos que contiene {{path}} está lleno.',
+      not_a_directory: '{{path}} existe pero no es un directorio.',
+      missing: '{{path}} no existe y no se pudo crear.',
+      error: 'Bambuddy no puede escribir en {{path}}.',
+      ephemeralTitle: 'Estas copias de seguridad no sobrevivirán a la recreación del contenedor',
+      container_ephemeral: '{{path}} está dentro del contenedor de Bambuddy, no en el host. Las copias escritas ahí se pierden cuando se recrea el contenedor. Monte el directorio desde el host:',
+    },
 
     // Category labels
     categories: {
@@ -5314,7 +5385,12 @@ export default {
     restPowerPath: 'Ruta JSON de la potencia',
     restPowerMultiplier: 'Multiplicador de potencia',
     restEnergyUrl: 'URL de energía',
-    restEnergyPath: 'Ruta JSON de la energía',
+    restEnergyPath: 'Ruta JSON de energía (hoy)',
+    restEnergyTotalPath: 'Ruta JSON de energía (contador total)',
+    restEnergyTotalMultiplier: 'Multiplicador del contador total',
+    restEnergyTotalPathHint: 'p. ej. aenergy.total',
+    restEnergyTotalHint:
+      'Muchos enchufes — todos los Shelly entre ellos — solo informan de un contador acumulado que nunca se reinicia. Va aquí, no en el campo de arriba: leído como el consumo de hoy nunca se pondría a cero a medianoche, y Ayer y Total seguirían vacíos. Bambuddy deduce Hoy y Ayer a partir de él, lo que requiere uno o dos días de lecturas. Un Shelly informa en vatios-hora, así que usa un multiplicador de 0.001.',
     restEnergyMultiplier: 'Multiplicador de energía',
     restUrlRequired: 'Se requiere al menos una URL (de encendido o apagado) para los enchufes REST',
     restHeadersHint: 'p. ej. {"Authorization": "Bearer your-token"}',
@@ -6213,6 +6289,7 @@ export default {
         pass: 'La impresora informa que esta opción está activada — los archivos enviados se guardarán en la tarjeta SD y los archivos tendrán miniaturas y metadatos del slicer.',
         fail: 'La impresora informa que esta opción está desactivada. Active "Almacenar archivos enviados en almacenamiento externo" — en firmware reciente (P2S 01.02 / Bambu Studio 2.6+) el conmutador está en los Ajustes de Impresión de la impresora; en versiones anteriores está en la pestaña Dispositivo de Bambu Studio / OrcaSlicer. Sin esta opción, cada impresión archivada queda sin miniatura ni metadatos del slicer.',
         skip: 'No comprobado — se necesita una conexión MQTT activa. En slicers más antiguos donde este ajuste solo existe en el slicer, la impresora no lo reporta, así que esta comprobación pasa aunque la opción esté desactivada — verifique el paso 4 de la instalación manualmente.',
+        skip_unsupported_model: 'Este modelo tiene ranura SD pero no hay forma de activar la opción — el firmware actual de la serie P1 no muestra el interruptor en Bambu Studio y la impresora no tiene pantalla. Aquí no hay nada que arreglar; a las impresiones archivadas pueden faltarles miniaturas y metadatos del slicer hasta que Bambu Lab lo admita por firmware.',
       },
       port_rtsps: {
         title: 'Puerto de la cámara ({{protocol}} {{port}})',
@@ -6434,6 +6511,8 @@ export default {
     resolveButton: 'Resolver',
     signInRequiredTitle: 'Se requiere iniciar sesión en Bambu Cloud para descargar',
     signInRequiredBody: 'Puede explorar los detalles del modelo de forma anónima, pero MakerWorld requiere una cuenta de Bambu Cloud para descargar archivos 3MF.',
+    signInExpiredTitle: 'La sesión de Bambu Cloud ha caducado',
+    signInExpiredBody: 'Sigue conectado a Bambuddy, pero Bambu Lab ha dejado de aceptar el token almacenado, por lo que las descargas fallarán. Inicie sesión de nuevo en Bambu Cloud.',
     openCloudSettings: 'Abrir los ajustes de la nube',
     untitledModel: 'Modelo sin título',
     byCreator: 'de {{name}}',
@@ -6607,10 +6686,14 @@ export default {
     saveFailed: 'No se pudieron guardar los ajustes de purga automática.',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: 'Transmisión de cámara',
+      camwall: 'Muro de cámaras',
+    },
     title: 'Tokens de API de la cámara',
     navTitle: 'Tokens de API de la cámara',
     description:
-      'Tokens de larga duración para incrustar la transmisión de la cámara en Home Assistant, Frigate, quioscos o cualquier otra herramienta que necesite una URL estable. Cada token es exclusivo de la transmisión de la cámara y se puede revocar en cualquier momento.',
+      'Tokens de larga duración para incrustar la transmisión de la cámara en Home Assistant, Frigate, pantallas en modo quiosco o cualquier otra herramienta que necesite una dirección estable. El alcance se elige al crearlos; un token se puede revocar en cualquier momento.',
     loading: 'Cargando…',
     confirmRevoke: {
       title: '¿Revocar este token?',
@@ -6619,6 +6702,11 @@ export default {
       confirm: 'Revocar',
     },
     create: {
+      scopeLabel: 'Alcance',
+      hintCameraStream:
+        'Un token de transmisión de cámara solo puede obtener transmisiones e instantáneas. Úsalo para Home Assistant, Frigate o cualquier cosa que incruste una sola cámara.',
+      hintCamWall:
+        'Un token de muro de cámaras abre /camwall en una pantalla sin iniciar sesión. Puede ver el nombre y el estado de cada impresora, y sus transmisiones de cámara. No puede ver nombres de archivo, direcciones ni códigos de acceso.',
       title: 'Crear nuevo token',
       nameLabel: 'Nombre del token',
       namePlaceholder: 'p. ej. Home Assistant',
@@ -6628,6 +6716,9 @@ export default {
         'La vida útil máxima es de 365 días. El valor del token se muestra solo una vez al crearlo — cópielo ahora.',
     },
     created: {
+      camWallUrlTitle: 'Dirección del muro de cámaras para esta pantalla',
+      camWallUrlHint:
+        'Abre esta dirección en la pantalla. Cualquiera que pueda leerla puede ver el muro, así que trátala como una llave: revoca el token para dejar la pantalla sin acceso.',
       title: 'Token creado — cópielo ahora',
       warning:
         'Esta es la única vez que este token estará visible. Después de cerrar este diálogo no podrá volver a verlo nunca.',
@@ -6635,6 +6726,7 @@ export default {
       dismiss: 'Lo he guardado',
     },
     list: {
+      scope: 'Alcance',
       myTitle: 'Mis tokens',
       allTitle: 'Todos los usuarios (vista de administración)',
       empty: 'Aún no hay tokens.',

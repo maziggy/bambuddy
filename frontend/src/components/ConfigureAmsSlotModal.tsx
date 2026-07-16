@@ -1163,7 +1163,7 @@ export function ConfigureAmsSlotModal({
               {/* Left column: Filament preset list (takes full height) */}
               <div className="w-1/2 flex flex-col min-h-0">
                 <label className="block text-sm text-bambu-gray mb-2">
-                  {t('configureAmsSlot.filamentProfile')} <span className="text-red-400">*</span>
+                  {t('configureAmsSlot.filamentProfile')} <span className="text-red-600 dark:text-red-400">*</span>
                 </label>
                 <input
                   type="text"
@@ -1195,12 +1195,12 @@ export function ConfigureAmsSlotModal({
                           <span className="text-white text-sm truncate group-hover:whitespace-normal group-hover:break-all" title={preset.name}>{preset.name}</span>
                           <div className="flex items-center gap-1 flex-shrink-0">
                             {preset.source === 'local' && (
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400">
                                 {t('profiles.localProfiles.badge')}
                               </span>
                             )}
                             {preset.source === 'orca_cloud' && (
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400">
                                 {t('configureAmsSlot.orcaCloud')}
                               </span>
                             )}
@@ -1210,7 +1210,7 @@ export function ConfigureAmsSlotModal({
                               </span>
                             )}
                             {preset.source === 'builtin' && (
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400">
                                 {t('configureAmsSlot.builtin')}
                               </span>
                             )}
@@ -1258,7 +1258,7 @@ export function ConfigureAmsSlotModal({
                       {t('configureAmsSlot.noMatchingKProfiles')}
                     </p>
                   ) : (
-                    <span className="inline-block text-xs px-2 py-1 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                    <span className="inline-block text-xs px-2 py-1 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-500/30">
                       {t('configureAmsSlot.selectFilamentFirst')}
                     </span>
                   )}
@@ -1402,7 +1402,7 @@ export function ConfigureAmsSlotModal({
               {/* Filament Profile Select */}
               <div>
                 <label className="block text-sm text-bambu-gray mb-2">
-                  {t('configureAmsSlot.filamentProfile')} <span className="text-red-400">*</span>
+                  {t('configureAmsSlot.filamentProfile')} <span className="text-red-600 dark:text-red-400">*</span>
                 </label>
                 <div className="relative">
                   <input
@@ -1435,12 +1435,12 @@ export function ConfigureAmsSlotModal({
                             <span className="text-white text-sm truncate group-hover:whitespace-normal group-hover:break-all" title={preset.name}>{preset.name}</span>
                             <div className="flex items-center gap-1 flex-shrink-0">
                               {preset.source === 'local' && (
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400">
                                   {t('profiles.localProfiles.badge')}
                                 </span>
                               )}
                               {preset.source === 'orca_cloud' && (
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400">
                                   {t('configureAmsSlot.orcaCloud')}
                                 </span>
                               )}
@@ -1450,7 +1450,7 @@ export function ConfigureAmsSlotModal({
                                 </span>
                               )}
                               {preset.source === 'builtin' && (
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400">
                                   {t('configureAmsSlot.builtin')}
                                 </span>
                               )}
@@ -1497,7 +1497,7 @@ export function ConfigureAmsSlotModal({
                     {t('configureAmsSlot.noMatchingKProfiles')}
                   </p>
                 ) : (
-                  <span className="inline-block text-xs px-2 py-1 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  <span className="inline-block text-xs px-2 py-1 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-500/30">
                     {t('configureAmsSlot.selectFilamentFirst')}
                   </span>
                 )}
@@ -1653,7 +1653,7 @@ export function ConfigureAmsSlotModal({
             variant="secondary"
             onClick={() => resetMutation.mutate()}
             disabled={resetMutation.isPending || configureMutation.isPending}
-            className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+            className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10"
           >
             {resetMutation.isPending ? (
               <>
@@ -1693,7 +1693,7 @@ export function ConfigureAmsSlotModal({
 
         {/* Error */}
         {(configureMutation.isError || resetMutation.isError) && (
-          <div className="mx-4 mb-4 p-2 bg-red-500/20 border border-red-500/50 rounded text-sm text-red-400">
+          <div className="mx-4 mb-4 p-2 bg-red-100 dark:bg-red-500/20 border border-red-300 dark:border-red-500/50 rounded text-sm text-red-700 dark:text-red-400">
             {(configureMutation.error as Error)?.message || (resetMutation.error as Error)?.message}
           </div>
         )}

@@ -35,32 +35,6 @@ _SENSITIVE_FIELDS_FOR_API_KEY = (
 )
 
 
-def _sqlalchemy_type_to_sqlite_type(type_repr: str) -> str:
-    """Map a SQLAlchemy column type's ``str()`` to a SQLite-native column type.
-
-    Used by ``create_backup_zip`` to reconstruct a portable SQLite database
-    file from PostgreSQL data. Falling through to TEXT for binary columns
-    corrupts non-UTF8 bytes — the BLOB branch is the #1333 regression guard
-    for OIDC icon BLOBs.
-
-    Extracted as a pure helper so it can be unit-tested without spinning up
-    the full FastAPI app + backup pipeline.
-    """
-    type_str = type_repr.upper()
-    if "INT" in type_str:
-        return "INTEGER"
-    if "FLOAT" in type_str or "REAL" in type_str or "NUMERIC" in type_str:
-        return "REAL"
-    if "BOOL" in type_str:
-        return "BOOLEAN"
-    if "BLOB" in type_str or "BYTEA" in type_str or "BINARY" in type_str:
-        # OIDC icon BLOB column (#1333) — without this branch the column
-        # was created as TEXT and non-UTF8 bytes were corrupted during the
-        # PG→SQLite-ZIP backup round trip.
-        return "BLOB"
-    return "TEXT"
-
-
 async def get_setting(db: AsyncSession, key: str) -> str | None:
     """Get a single setting value by key."""
     result = await db.execute(select(Settings).where(Settings.key == key))
@@ -140,6 +114,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "ldap_enabled",
             "ldap_auto_provision",
             "local_login_enabled",
+            "preheat_enabled",
         ]:
             settings_dict[setting.key] = setting.value.lower() == "true"
         elif setting.key in [
@@ -165,6 +140,9 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "forecast_global_lead_time_days",
             "session_max_hours",
             "pipeline_max_copies",
+            "preheat_max_wait_seconds",
+            "preheat_soak_seconds",
+            "queue_max_concurrent_uploads",
         ]:
             settings_dict[setting.key] = int(setting.value)
         elif setting.key == "default_printer_id":
@@ -579,25 +557,31 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             import json
             import sqlite3
 
+            from sqlalchemy import create_engine as create_sync_engine
+
             from backend.app.core.database import Base, engine
 
             backup_db_path = temp_path / "bambuddy.db"
-            dst = sqlite3.connect(str(backup_db_path))
             metadata = Base.metadata
 
-            # Create tables in SQLite backup (simplified — just column names and types)
-            for table in metadata.sorted_tables:
-                cols = []
-                pk_cols = [col.name for col in table.columns if col.primary_key]
-                for col in table.columns:
-                    col_type = _sqlalchemy_type_to_sqlite_type(str(col.type))
-                    # Only inline PRIMARY KEY for single-column PKs
-                    pk = " PRIMARY KEY" if col.primary_key and len(pk_cols) == 1 else ""
-                    cols.append(f"{col.name} {col_type}{pk}")
-                # Add composite primary key constraint if needed
-                if len(pk_cols) > 1:
-                    cols.append(f"PRIMARY KEY ({', '.join(pk_cols)})")
-                dst.execute(f"CREATE TABLE IF NOT EXISTS {table.name} ({', '.join(cols)})")  # noqa: S608
+            # Build the portable SQLite schema with SQLAlchemy's own DDL rather
+            # than a hand-rolled CREATE TABLE. metadata.create_all() emits the
+            # exact schema a native SQLite install gets — NOT NULL, DEFAULT
+            # (server_default=func.now() → CURRENT_TIMESTAMP), foreign keys,
+            # unique constraints and indexes. The previous name+type-only
+            # rebuild dropped all of these, so a Postgres→SQLite restore left
+            # server_default columns (e.g. spoolbuddy_devices.created_at) with
+            # no DEFAULT — SQLAlchemy omits such columns on INSERT and the DB
+            # then wrote NULL, which 500'd on the next read (#2526). Using the
+            # real DDL also keeps the #1333 BLOB guard: LargeBinary still
+            # renders as BLOB, so OIDC icon bytes survive the round trip.
+            schema_engine = create_sync_engine(f"sqlite:///{backup_db_path}")
+            try:
+                metadata.create_all(schema_engine)
+            finally:
+                schema_engine.dispose()
+
+            dst = sqlite3.connect(str(backup_db_path))
 
             # Export data from Postgres to SQLite
             async with engine.connect() as conn:

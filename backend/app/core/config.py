@@ -3,10 +3,11 @@ import os
 import re as _re
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 # Application version - single source of truth
-APP_VERSION = "0.2.5b2"
+APP_VERSION = "1.2.5b2"
 GITHUB_REPO = "maziggy/bambuddy"
 BUG_REPORT_RELAY_URL = os.environ.get("BUG_REPORT_RELAY_URL", "https://bambuddy.cool/api/bug-report")
 
@@ -76,6 +77,13 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"  # Override with LOG_LEVEL env var or DEBUG=true
     log_to_file: bool = True  # Set to false to disable file logging
+    # Rotation for bambuddy.log. Read by main.py (which owns the handler) and by
+    # the support bundle (which harvests the backups as well as the live file);
+    # they must agree on the backup count or the bundle silently skips history.
+    # Bounded: RotatingFileHandler treats maxBytes=0 as "never rotate", so a
+    # zero/negative override would grow the log without limit.
+    log_max_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
+    log_backup_count: int = Field(default=3, ge=0)
 
     # API
     api_prefix: str = "/api/v1"

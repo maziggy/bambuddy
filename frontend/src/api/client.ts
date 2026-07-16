@@ -287,19 +287,41 @@ export interface SystemHealthResult {
   };
 }
 
-// Long-lived camera-stream tokens (#1108). The `token` field is populated
-// only on the create response — listing endpoints set it to null because
-// the plaintext value is shown to the user exactly once.
+// Long-lived camera tokens (#1108). The `token` field is populated only on the
+// create response — listing endpoints set it to null because the plaintext
+// value is shown to the user exactly once.
+//
+// 'camera_stream' reaches the video endpoints only. 'camwall' additionally
+// reaches the read-only Cam Wall feed, which names the printers (#2531), so it
+// is a separate scope rather than a widening of tokens already in the wild.
+export type LongLivedTokenScope = 'camera_stream' | 'camwall';
+
 export interface LongLivedCameraToken {
   id: number;
   user_id: number;
   name: string;
-  scope: 'camera_stream';
+  scope: LongLivedTokenScope;
   lookup_prefix: string;
   created_at: string;
   expires_at: string;
   last_used_at: string | null;
   token: string | null;
+}
+
+// One row of the token-authenticated Cam Wall feed (#2531). Deliberately
+// smaller than PrinterStatus: no serial, no IP, no print filename — a kiosk URL
+// is not a secret, so the payload behind it must not be either.
+export interface CamWallPrinter {
+  id: number;
+  name: string;
+  camera_rotation: number;
+  connected: boolean;
+  state: string | null;
+  progress: number | null;
+  remaining_time: number | null;
+  layer_num: number | null;
+  total_layers: number | null;
+  hms_errors: HMSError[];
 }
 
 // Printer types
@@ -365,6 +387,7 @@ export interface AMSTray {
   drying_temp: number | null;      // RFID-recommended drying temp
   drying_time: number | null;      // RFID-recommended drying time (hours)
   state: number | null;            // AMS tray state: 9=empty, 10=spool present not loaded, 11=loaded
+  exists?: boolean | null;         // Firmware tray_exist_bits: spool physically present (non-RFID → "?" not "Empty", #2527)
 }
 
 export interface AMSUnit {
@@ -470,7 +493,7 @@ export interface PrinterStatus {
   ipcam: boolean;  // Live view enabled
   wifi_signal: number | null;  // WiFi signal strength in dBm
   wired_network: boolean;  // Ethernet connection detected
-  door_open: boolean;  // Enclosure door open (X1/P1S/P2S/H2*)
+  door_open: boolean;  // Enclosure door open (models with a door sensor: X1/X1C/X1E/X2D/P2S/H2*)
   nozzles: NozzleInfo[];  // Nozzle hardware info (index 0=left/primary, 1=right)
   nozzle_rack: NozzleRackSlot[];  // H2C 6-nozzle tool-changer rack
   print_options: PrintOptions | null;  // AI detection and print options
@@ -525,6 +548,8 @@ export interface PrinterStatus {
   awaiting_plate_clear: boolean;
   // AMS drying support
   supports_drying: boolean;
+  // The AMS can dry, but only from the printer's own screen (P1 series, #2533).
+  drying_screen_only?: boolean;
   // Active chamber heater (responds to M141). True only for H2C/H2D/H2DPro/H2S/X2D.
   supports_chamber_heater?: boolean;
 }
@@ -898,6 +923,9 @@ export interface ProjectListItem {
   target_count: number | null;  // Target number of plates/print jobs
   target_parts_count: number | null;  // Target number of parts/objects
   budget: number | null;
+  tags: string | null;  // #2536 — the shared edit dialog seeds itself from this
+  due_date: string | null;  // #2536
+  priority: string;  // #2536
   created_at: string;
   archive_count: number;  // Number of print jobs (plates)
   total_items: number;  // Sum of quantities (total items printed, including failed)
@@ -933,8 +961,8 @@ export interface ProjectUpdate {
   target_count?: number;
   target_parts_count?: number;
   notes?: string;
-  tags?: string;
-  due_date?: string;
+  tags?: string | null;  // #2536 — explicit null clears the tags
+  due_date?: string | null;  // #2536 — explicit null clears the due date
   priority?: string;
   budget?: number | null;
   parent_id?: number;
@@ -1048,6 +1076,9 @@ export interface APIKey {
   can_read_status: boolean;
   can_manage_library: boolean;
   can_manage_inventory: boolean;
+  can_manage_maintenance: boolean;
+  can_manage_archives: boolean;
+  can_manage_projects: boolean;
   can_access_cloud: boolean;
   can_update_energy_cost: boolean;
   printer_ids: number[] | null;
@@ -1064,6 +1095,9 @@ export interface APIKeyCreate {
   can_read_status?: boolean;
   can_manage_library?: boolean;
   can_manage_inventory?: boolean;
+  can_manage_maintenance?: boolean;
+  can_manage_archives?: boolean;
+  can_manage_projects?: boolean;
   can_access_cloud?: boolean;
   can_update_energy_cost?: boolean;
   printer_ids?: number[] | null;
@@ -1081,6 +1115,9 @@ export interface APIKeyUpdate {
   can_read_status?: boolean;
   can_manage_library?: boolean;
   can_manage_inventory?: boolean;
+  can_manage_maintenance?: boolean;
+  can_manage_archives?: boolean;
+  can_manage_projects?: boolean;
   can_access_cloud?: boolean;
   can_update_energy_cost?: boolean;
   printer_ids?: number[] | null;
@@ -1210,6 +1247,19 @@ export interface AppSettings {
   require_plate_clear: boolean;
   // Shortest job first scheduling
   queue_shortest_first: boolean;
+  // How many printers the queue may upload to at once (#2555). 1 restores the
+  // old strictly-serial behaviour, where every printer waited out every other
+  // printer's transfer.
+  queue_max_concurrent_uploads: number;
+  // Preheat / heat-soak before queued prints (#1468). Master toggle is the
+  // default for new queue items; per-item PrintQueueItem.preheat_override can
+  // flip the decision per print. Chamber target derives from the loaded AMS
+  // filament types via preheat_filament_targets (JSON map of type → °C, max
+  // across loaded slots); the per-item override field bypasses derivation.
+  preheat_enabled: boolean;
+  preheat_filament_targets: string;
+  preheat_max_wait_seconds: number;
+  preheat_soak_seconds: number;
   // User-configurable presets for the printer-card popovers (JSON arrays of 3 ints).
   // Empty string = use built-in defaults.
   nozzle_temp_presets: string;
@@ -1255,6 +1305,8 @@ export interface CloudAuthStatus {
   is_authenticated: boolean;
   email: string | null;
   region?: 'global' | 'china' | null;
+  /** A token is stored but Bambu no longer accepts it — tell the user why the login form is back. */
+  sign_in_expired?: boolean;
 }
 
 export interface CloudLoginResponse {
@@ -1316,6 +1368,8 @@ export interface OrcaProfileDetail {
 export interface MakerworldStatus {
   has_cloud_token: boolean;
   can_download: boolean;
+  /** A token is stored but Bambu rejected it — downloads will fail until the user signs in again. */
+  sign_in_expired?: boolean;
 }
 
 export interface MakerworldResolvedModel {
@@ -1812,6 +1866,10 @@ export interface SmartPlug {
   rest_energy_url: string | null;
   rest_energy_path: string | null;
   rest_energy_multiplier: number;
+  // Lifetime counter, separate from the daily one (#2539). A Shelly reports only
+  // this; Today and Yesterday are derived from its hourly snapshots.
+  rest_energy_total_path: string | null;
+  rest_energy_total_multiplier: number;
   printer_id: number | null;
   enabled: boolean;
   auto_on: boolean;
@@ -1886,6 +1944,8 @@ export interface SmartPlugCreate {
   rest_energy_url?: string | null;
   rest_energy_path?: string | null;
   rest_energy_multiplier?: number;
+  rest_energy_total_path?: string | null;
+  rest_energy_total_multiplier?: number;
   printer_id?: number | null;
   enabled?: boolean;
   auto_on?: boolean;
@@ -1952,6 +2012,8 @@ export interface SmartPlugUpdate {
   rest_energy_url?: string | null;
   rest_energy_path?: string | null;
   rest_energy_multiplier?: number;
+  rest_energy_total_path?: string | null;
+  rest_energy_total_multiplier?: number;
   printer_id?: number | null;
   enabled?: boolean;
   auto_on?: boolean;
@@ -2076,6 +2138,8 @@ export interface PrintQueueItem {
   timelapse: boolean;
   use_ams: boolean;
   nozzle_offset_cali: boolean;
+  preheat_override: 'inherit' | 'on' | 'off';
+  preheat_chamber_target_override: number | null;
   status: 'pending' | 'printing' | 'completed' | 'failed' | 'skipped' | 'cancelled';
   started_at: string | null;
   completed_at: string | null;
@@ -2151,6 +2215,8 @@ export interface PrintQueueItemCreate {
   timelapse?: boolean;
   use_ams?: boolean;
   nozzle_offset_cali?: boolean;
+  preheat_override?: 'inherit' | 'on' | 'off';
+  preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
   gcode_injection?: boolean;
   // Batch: create multiple copies (creates a batch if > 1)
@@ -2193,6 +2259,8 @@ export interface PrintQueueItemUpdate {
   timelapse?: boolean;
   use_ams?: boolean;
   nozzle_offset_cali?: boolean;
+  preheat_override?: 'inherit' | 'on' | 'off';
+  preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
   gcode_injection?: boolean;
 }
@@ -2212,6 +2280,8 @@ export interface PrintQueueBulkUpdate {
   timelapse?: boolean;
   use_ams?: boolean;
   nozzle_offset_cali?: boolean;
+  preheat_override?: 'inherit' | 'on' | 'off';
+  preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
   gcode_injection?: boolean;
 }
@@ -2567,6 +2637,21 @@ export interface LocalBackupFile {
   filename: string;
   size: number;
   created_at: string;
+}
+
+/** Result of writing a probe file into the configured backup directory (#2544). */
+export interface LocalBackupPathCheck {
+  writable: boolean;
+  path: string;
+  /** 'ok' | 'sandboxed' | 'read_only' | 'permission_denied' | 'no_space' | 'not_a_directory' | 'missing' | 'error' */
+  code: string;
+  /** Raw OS error, shown as-is under the translated explanation. */
+  detail: string | null;
+  /** Copy-pasteable fix (systemd drop-in, compose snippet) — not translated. */
+  remedy: string | null;
+  message: string;
+  /** 'container_ephemeral' — writable, but the backups die with the container. */
+  warning: string | null;
 }
 
 export interface ObicoDetectionEvent {
@@ -3774,9 +3859,9 @@ export const api = {
     }),
 
   // Bed (Z-axis) jog
-  bedJog: (printerId: number, distance: number, force: boolean = false) =>
+  bedJog: (printerId: number, distance: number) =>
     request<{ success: boolean; message: string }>(
-      `/printers/${printerId}/bed-jog?distance=${distance}&force=${force}`,
+      `/printers/${printerId}/bed-jog?distance=${distance}`,
       { method: 'POST' }
     ),
   xyJog: (printerId: number, x: number, y: number) =>
@@ -5325,7 +5410,7 @@ export const api = {
   // ── Spool label printing (#809) ──────────────────────────────────────────
   // Both endpoints return application/pdf. Frontend opens the resulting Blob
   // in a new tab so the user can print or save from the browser's PDF viewer.
-  printSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate }): Promise<Blob> => {
+  printSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate; monochrome?: boolean }): Promise<Blob> => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
     const response = await fetch(`${API_BASE}/inventory/labels`, {
@@ -5339,7 +5424,7 @@ export const api = {
     }
     return response.blob();
   },
-  printSpoolmanSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate }): Promise<Blob> => {
+  printSpoolmanSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate; monochrome?: boolean }): Promise<Blob> => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
     const response = await fetch(`${API_BASE}/spoolman/labels`, {
@@ -5616,11 +5701,15 @@ export const api = {
   getWebSocketToken: () =>
     request<{ token: string }>('/auth/ws-token', { method: 'POST' }),
 
-  // Long-lived camera-stream tokens (#1108)
-  createLongLivedCameraToken: (payload: { name: string; expires_in_days: number }) =>
+  // Long-lived camera tokens (#1108, #2531)
+  createLongLivedCameraToken: (payload: {
+    name: string;
+    expires_in_days: number;
+    scope?: LongLivedTokenScope;
+  }) =>
     request<LongLivedCameraToken>('/auth/tokens', {
       method: 'POST',
-      body: JSON.stringify({ ...payload, scope: 'camera_stream' }),
+      body: JSON.stringify({ scope: 'camera_stream', ...payload }),
     }),
   listMyLongLivedCameraTokens: () =>
     request<LongLivedCameraToken[]>('/auth/tokens'),
@@ -5630,6 +5719,12 @@ export const api = {
     request<LongLivedCameraToken[]>(`/auth/tokens?user_id=${userId}`),
   revokeLongLivedCameraToken: (tokenId: number) =>
     request<void>(`/auth/tokens/${tokenId}`, { method: 'DELETE' }),
+  // Token-authenticated Cam Wall feed (#2531). `token` is omitted only when
+  // auth is disabled, where the backend gate is a no-op anyway.
+  getCamWallPrinters: (token?: string) =>
+    request<CamWallPrinter[]>(
+      token ? `/camwall/printers?token=${encodeURIComponent(token)}` : '/camwall/printers',
+    ),
   getCameraStreamUrl: (printerId: number, fps = 10) =>
     withStreamToken(`${API_BASE}/printers/${printerId}/camera/stream?fps=${fps}`),
   getCameraSnapshotUrl: (printerId: number) =>
@@ -6279,6 +6374,9 @@ export const api = {
 
   triggerLocalBackup: () =>
     request<{ success: boolean; message: string; filename?: string }>('/local-backup/run', { method: 'POST' }),
+
+  checkLocalBackupPath: () =>
+    request<LocalBackupPathCheck>('/local-backup/path-check'),
 
   getLocalBackups: () =>
     request<LocalBackupFile[]>('/local-backup/backups'),

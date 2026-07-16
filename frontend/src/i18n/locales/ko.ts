@@ -183,10 +183,16 @@ export default {
       extraLarge: '아주 큰 카드'
     },
     pageView: {
+      openCamWallPage: '카메라 월을 페이지로 열기',
       cards: '카드',
       camWall: '카메라 월'
     },
     camWall: {
+      page: {
+        tokenRejected:
+          '이 카메라 월 링크는 더 이상 유효하지 않습니다. 토큰이 만료되었거나 취소되었을 수 있습니다.',
+        loadFailed: '프린터를 불러오지 못했습니다.',
+      },
       noPrinters: '표시할 프린터가 없습니다',
       noSignal: '신호 없음',
       live: '라이브',
@@ -386,6 +392,7 @@ export default {
       unload: '언로드'
     },
     bedJog: {
+      limitWarning: '수동 이동 중에는 이동 한계가 적용되지 않습니다. Bambu 펌웨어 버그로 인해 원격 명령에서는 소프트웨어 엔드스톱이 무시됩니다. 충돌하지 않도록 주의해서 이동하세요.',
       title: '조그 컨트롤',
       bed: '베드',
       step: '이동 거리 (mm)',
@@ -532,6 +539,10 @@ export default {
       notSupported: '건조 지원 안 됨',
       powerRequired: '건조를 활성화하려면 AMS 전원 어댑터를 연결하세요',
       startingDrying: '건조 시작 중...',
+      toastCommandSent: '건조 명령을 전송했습니다',
+      toastStopped: '건조를 중지했습니다',
+      toastNotStarted: '프린터가 명령을 수락했지만 AMS가 건조를 시작하지 않았습니다. AMS 전원 어댑터가 연결되어 있는지, 프린터가 대기 상태인지 확인하십시오.',
+      screenOnly: '이 프린터에서는 AMS 건조를 프린터 자체 화면에서만 제어할 수 있습니다 (Bambu 제한 사항)',
       stoppingDrying: '건조 정지 중...',
       rotateTray: '건조 중 스풀 회전',
       rotateUnavailableReason: '사용할 수 없음 — 이 AMS의 슬롯이 툴헤드로 로드되어 있습니다. 스풀이 공급 튜브에 의해 고정되어 회전할 수 없습니다. 먼저 필라멘트를 뺀 후 다시 시도하십시오.'
@@ -1873,6 +1884,15 @@ export default {
     manageLibraryDescription: '라이브러리 파일 업로드, 이름 변경 및 삭제; MakerWorld에서 모델 가져오기',
     manageInventory: '재고 관리',
     manageInventoryDescription: '스풀 및 재고 레코드 생성, 업데이트 및 삭제. SpoolBuddy 키오스크(NFC 스캔, 저울 측정값, 키오스크 시스템 명령)에 필요합니다.',
+    manageMaintenance: '유지보수 관리',
+    manageMaintenanceDescription: '완료된 유지보수 기록, 카운터 재설정, 주기 편집, 유지보수 유형 카탈로그 관리. 프린터 제어를 더 광범위하게 허용하지 않고 "노즐을 청소했다"를 기록하는 Home Assistant 자동화에 적합합니다.',
+    manageArchives: '아카이브 관리',
+    manageArchivesDescription: '오래된 출력물 제거를 포함하여 출력 아카이브를 편집하고 삭제합니다. 통계 기여 항목의 제거는 포함되지 않습니다. 출력 기록을 정리하는 자동화에 적합합니다.',
+    manageProjects: '프로젝트 관리',
+    manageProjectsDescription: '프로젝트를 생성, 업데이트, 삭제하고 프로젝트에 아카이브를 추가합니다. 출력물을 프로젝트로 정리하는 자동화에 적합합니다.',
+    maintenanceBadge: '유지보수',
+    archivesBadge: '아카이브',
+    projectsBadge: '프로젝트',
     libraryBadge: '라이브러리',
     inventoryBadge: '재고',
     cloudAccess: '클라우드 접근 허용',
@@ -1937,8 +1957,31 @@ export default {
     tempFanPresetsChamber: '챔버 온도',
     tempFanPresetsFan: '팬 속도',
     tempFanPresetsReset: '기본값으로 재설정',
+    concurrentUploadsTitle: '동시 업로드',
+    concurrentUploadsDescription: '대기열이 동시에 파일을 보낼 수 있는 프린터 수입니다. 프린터는 파일을 느리게 받으며(큰 출력물은 몇 분이 걸릴 수 있습니다) 각 프린터는 자기 차례를 기다립니다. 따라서 프린터가 많은 환경에서는 이 값을 높이면 배치의 마지막 프린터가 앞선 모든 전송이 끝나기를 기다리지 않아도 됩니다. 네트워크나 Bambuddy 호스트가 병렬 전송을 버거워하면 값을 낮추세요.',
+    concurrentUploadsLabel: '동시에 전송할 프린터 수',
+    concurrentUploadsHelp: '1이면 한 번에 한 대씩 전송합니다(기존 동작). 기본값은 4입니다.',
     staggeredStart: '엇갈린 시작',
     staggeredStartDescription: '다중 프린터 일괄 시작 시 기본 그룹 크기 및 간격. 인쇄 모달에서 배치별로 재정의할 수 있습니다.',
+    preheatTitle: '예열 & 히트 소크',
+    preheatDescription: '대기열의 각 인쇄가 시작되기 전에 베드(및 지원되는 경우 챔버)를 가열하고 온도를 유지합니다. 챔버 능동 가열이 없는 프린터에서 엔지니어링 필라멘트(PA, ABS) 인쇄에 유용합니다. 소크 타이머가 진행되는 동안 베드 복사열로 챔버가 데워집니다. 베드 목표 온도는 인쇄 파일에서 읽어오며 챔버 동작은 프린터 모델에 따라 다릅니다.',
+    preheatEnabled: '예열 & 소크 활성화',
+    preheatEnabledDesc: '꺼짐일 경우 대기열 인쇄가 즉시 시작됩니다. 각 항목은 인쇄별로 재정의할 수 있습니다.',
+    preheatFilamentTargetsLabel: '필라멘트별 챔버 목표 (°C)',
+    preheatFilamentTargetsHint: 'Bambuddy는 로드된 AMS 슬롯 중 가장 높은 목표를 선택합니다. PLA만 사용하는 인쇄는 0으로 도출되어 챔버 단계를 자동으로 건너뜁니다.',
+    preheatFilamentTargetsReset: '기본값으로 재설정',
+    preheatFilamentTargetsDefaultRow: '기타 / 미매핑',
+    preheatMaxWait: '최대 대기 (초)',
+    preheatMaxWaitHelp: '소크로 전환되기 전 챔버 가열 단계의 상한.',
+    preheatSoak: '소크 (초)',
+    preheatSoakHelp: '목표 도달 또는 최대 대기 경과 후 유지 시간.',
+    preheatHardwareTitle: '프린터별 동작:',
+    preheatHardwareDetail: 'H2C/H2D/H2D Pro/H2S/X2D/X1E는 M141으로 챔버를 능동적으로 가열합니다. X1C/P2S는 챔버 온도를 읽지만 베드 복사열로만 가열됩니다. P1S/P1P/A1/A1 Mini는 챔버 센서가 없어 소크 타이머만 적용됩니다.',
+    preheatPerItemDesc: '이 인쇄가 시작되기 전에 베드와 챔버를 가열합니다. 기본적으로 설정 → 워크플로의 전역 토글을 사용합니다.',
+    preheatOverride_inherit: '상속',
+    preheatOverride_on: '켜기',
+    preheatOverride_off: '끄기',
+    preheatTargetOverride: '챔버 목표 재정의 (°C, 비우면 필라멘트 기본값)',
     plateClear: '플레이트 비움 확인',
     requirePlateClear: '플레이트 비움 확인 필요',
     requirePlateClearDescription: '활성화하면 스케줄러가 완료된 작업이 있는 프린터에서 대기 중인 인쇄를 시작하기 전에 프린터별 플레이트 비움 확인을 기다립니다.',
@@ -2926,7 +2969,8 @@ export default {
       selectAll: '모두 선택',
       clearAll: '모두 해제',
       permissionsSelected: '{{count}}개 선택됨',
-      noResults: '검색과 일치하는 권한이 없습니다'
+      noResults: '검색과 일치하는 권한이 없습니다',
+      websocketHint: '실시간 업데이트에 필요합니다. 이 권한이 없으면 인터페이스는 주기적 폴링으로 대체됩니다.'
     }
   },
   users: {
@@ -3121,6 +3165,8 @@ export default {
       noSearchResults: '검색어와 일치하는 프리셋이 없습니다'
     },
     connectedAs: '연결된 계정',
+    signInExpiredTitle: 'Bambu 클라우드 로그인이 만료되었습니다',
+    signInExpiredBody: 'Bambu Lab이 저장된 토큰을 더 이상 허용하지 않습니다. 클라우드 프로필, MakerWorld 가져오기, 펌웨어 확인을 복구하려면 다시 로그인하세요.',
     logout: '로그아웃',
     noLogoutPermission: '로그아웃 권한이 없습니다',
     failedToLoad: '프로필 불러오기 실패',
@@ -3365,6 +3411,9 @@ export default {
     searchSubfoldersHint: '하위 폴더 포함',
     readme: {
       truncated: '잘림',
+      show: 'README 표시',
+      hide: 'README 숨기기',
+      label: 'README',
     },
     tags: {
       title: '태그',
@@ -3703,7 +3752,11 @@ export default {
     toastCost: 'Bambuddy로 {{total}}만큼의 필라멘트를 추적했습니다. 프로젝트를 독립적으로 유지하는 사람들을 만나보세요.',
     toastArchives: 'Bambuddy로 {{count}}회 인쇄를 아카이브했습니다. 독립성을 지지하는 사람들을 만나보세요.',
     toastAnniversary: 'Bambuddy와 함께한 지 1년입니다! 프로젝트를 독립적으로 유지하는 사람들을 만나보세요.',
-    toastVersionUpdate: 'v{{version}}로 업데이트되었습니다. Bambuddy는 후원자 덕분에 무료로 유지됩니다.'
+    toastVersionUpdate: 'v{{version}}로 업데이트되었습니다. Bambuddy는 후원자 덕분에 무료로 유지됩니다.',
+    toastBusiness: '프린터 {{count}}대에서 Bambuddy를 운영 중이신가요? 팀을 위한 지원 플랜이 있습니다. 우선 수정, 인보이스 발행, 메인테이너와의 직접 소통을 제공합니다.',
+    businessCta: '비즈니스용 Bambuddy',
+    businessTitle: '비즈니스용 Bambuddy',
+    businessTagline: '프린터 {{count}}대를 운영 중입니다. 팀과 프린트 팜을 위한 우선 지원, 상용 라이선스, 인보이스 발행을 제공합니다.',
   },
   library: {
     title: '필라멘트 라이브러리',
@@ -3951,6 +4004,8 @@ export default {
       title: '스풀 라벨 인쇄',
       selectedCount: '{{count}}개 선택됨',
       pickSpools: '라벨을 인쇄할 스풀 선택:',
+      monochrome: '흑백 (흑백 프린터)',
+      monochromeHint: '색상 견본을 제거하고 텍스트를 넓힙니다',
       searchPlaceholder: '이름, 브랜드 또는 #ID 검색',
       filterByMaterial: '재료:',
       allMaterials: '전체',
@@ -4290,6 +4345,8 @@ export default {
     selectPrinter: '프린터 선택',
     selectPlate: '플레이트 선택',
     filamentMapping: '필라멘트 매핑',
+    plateN: '플레이트 {{n}}',
+    plateFilamentsUnreadable: '선택한 플레이트의 필라멘트를 읽을 수 없어 매핑할 수 없습니다. 해당 플레이트를 선택 해제하면 나머지를 대기열에 추가할 수 있습니다.',
     totalCost: '총 비용:',
     slotRemainingShort: ' - {{grams}}g 남음',
     printSettings: '인쇄 설정',
@@ -4510,6 +4567,20 @@ export default {
     backupSize: '크기',
     localTimeHint: '현지 시간 ({{tz}})',
     defaultPathLabel: '기본값:',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'Bambuddy가 이 디렉터리에 쓸 수 없습니다',
+      howToFix: '해결 방법:',
+      sandboxed: 'Bambuddy 서비스가 {{path}}에 쓸 수 없습니다. systemd 유닛이 ProtectSystem=strict로 실행되어 설치·데이터·로그 디렉터리를 제외한 모든 디렉터리가 서비스에서는 읽기 전용입니다. 사용자 셸에서는 쓸 수 있는 디렉터리라도 마찬가지입니다.',
+      read_only: '{{path}}이(가) 읽기 전용 파일 시스템에 있습니다.',
+      permission_denied: 'Bambuddy에 {{path}} 쓰기 권한이 없습니다. 디렉터리 소유자와 권한을 확인하세요.',
+      no_space: '{{path}}이(가) 있는 파일 시스템에 남은 공간이 없습니다.',
+      not_a_directory: '{{path}}이(가) 존재하지만 디렉터리가 아닙니다.',
+      missing: '{{path}}이(가) 존재하지 않으며 생성할 수도 없습니다.',
+      error: 'Bambuddy가 {{path}}에 쓸 수 없습니다.',
+      ephemeralTitle: '이 백업은 컨테이너를 다시 만들면 사라집니다',
+      container_ephemeral: '{{path}}은(는) 호스트가 아니라 Bambuddy 컨테이너 내부에 있습니다. 여기에 기록된 백업은 컨테이너를 재생성하면 사라집니다. 호스트의 디렉터리를 마운트하세요:',
+    },
     categories: {
       settings: '설정',
       notification_providers: '알림 제공자',
@@ -5031,7 +5102,12 @@ export default {
     restPowerPath: '전력 JSON 경로',
     restPowerMultiplier: '전력 배수',
     restEnergyUrl: '에너지 URL',
-    restEnergyPath: '에너지 JSON 경로',
+    restEnergyPath: '에너지 JSON 경로 (오늘)',
+    restEnergyTotalPath: '에너지 JSON 경로 (누적값)',
+    restEnergyTotalMultiplier: '누적값 배율',
+    restEnergyTotalPathHint: '예: aenergy.total',
+    restEnergyTotalHint:
+      '많은 플러그가 — Shelly는 모두 — 초기화되지 않는 누적 카운터만 보고합니다. 그 값은 위 항목이 아니라 여기에 입력하세요. 오늘 사용량으로 읽으면 자정에 초기화되지 않고, 어제와 총계는 계속 비어 있게 됩니다. Bambuddy가 누적값에서 오늘과 어제를 계산하며, 이를 위해 하루에서 이틀 치 측정값이 필요합니다. Shelly는 와트시로 보고하므로 배율은 0.001을 사용하세요.',
     restEnergyMultiplier: '에너지 배수',
     restUrlRequired: 'REST 플러그에는 URL(ON 또는 OFF) 중 하나 이상이 필요합니다',
     restHeadersHint: '예: {"Authorization": "Bearer your-token"}',
@@ -5895,6 +5971,8 @@ export default {
     resolveButton: '확인',
     signInRequiredTitle: '다운로드하려면 Bambu 클라우드 로그인 필요',
     signInRequiredBody: '익명으로 모델 세부 정보를 탐색할 수 있지만 MakerWorld는 3MF 파일을 다운로드하려면 Bambu 클라우드 계정이 필요합니다.',
+    signInExpiredTitle: 'Bambu 클라우드 로그인이 만료되었습니다',
+    signInExpiredBody: 'Bambuddy에는 여전히 로그인되어 있지만 Bambu Lab이 저장된 토큰을 더 이상 허용하지 않아 다운로드가 실패합니다. Bambu 클라우드에 다시 로그인하세요.',
     openCloudSettings: '클라우드 설정 열기',
     untitledModel: '제목 없는 모델',
     byCreator: '{{name}} 제작',
@@ -6068,9 +6146,14 @@ export default {
     purgeStatsDescription: '활성화되면 일일 정리 작업도 각 삭제된 아카이브를 빠른 통계(필라멘트, 시간, 비용, 에너지)에서 제거합니다. 기본값 비활성화 — 빠른 통계는 기여를 유지하고 파일만 디스크에서 제거됩니다.'
   },
   cameraTokens: {
+    scope: {
+      camera_stream: '카메라 스트림',
+      camwall: '카메라 월',
+    },
     title: '카메라 API 토큰',
     navTitle: '카메라 API 토큰',
-    description: 'Home Assistant, Frigate, 키오스크 또는 안정적인 URL이 필요한 다른 도구에 카메라 스트림을 내장하기 위한 장기 토큰. 각 토큰은 카메라 스트림 전용이며 언제든지 취소할 수 있습니다.',
+    description:
+      'Home Assistant, Frigate, 키오스크 화면 등 안정적인 주소가 필요한 도구에 카메라 스트림을 삽입하기 위한 장기 토큰입니다. 범위는 생성할 때 선택하며, 토큰은 언제든지 취소할 수 있습니다.',
     loading: '불러오는 중…',
     confirmRevoke: {
       title: '이 토큰을 취소하시겠습니까?',
@@ -6079,6 +6162,11 @@ export default {
       confirm: '취소'
     },
     create: {
+      scopeLabel: '범위',
+      hintCameraStream:
+        '카메라 스트림 토큰은 카메라 스트림과 스냅숏만 가져올 수 있습니다. Home Assistant, Frigate 등 카메라 하나를 삽입하는 용도로 사용하세요.',
+      hintCamWall:
+        '카메라 월 토큰은 로그인 없이 화면에서 /camwall을 엽니다. 모든 프린터의 이름과 상태, 카메라 스트림을 볼 수 있습니다. 파일 이름, 주소, 액세스 코드는 볼 수 없습니다.',
       title: '새 토큰 만들기',
       nameLabel: '토큰 이름',
       namePlaceholder: '예: Home Assistant',
@@ -6087,12 +6175,16 @@ export default {
       hint: '최대 수명은 365일입니다. 토큰 값은 생성 시 한 번만 표시됩니다 — 지금 복사하세요.'
     },
     created: {
+      camWallUrlTitle: '이 화면용 카메라 월 주소',
+      camWallUrlHint:
+        '이 주소를 화면에서 여세요. 주소를 읽을 수 있는 사람은 누구나 월을 볼 수 있으므로 열쇠처럼 다루세요. 토큰을 취소하면 해당 화면의 접근이 차단됩니다.',
       title: '토큰 생성됨 — 지금 복사하세요',
       warning: '이 토큰은 이 번만 볼 수 있습니다. 이 대화상자를 닫으면 다시는 볼 수 없습니다.',
       copy: '복사',
       dismiss: '저장했습니다'
     },
     list: {
+      scope: '범위',
       myTitle: '내 토큰',
       allTitle: '모든 사용자 (관리자 보기)',
       empty: '아직 토큰 없음.',
@@ -6251,7 +6343,8 @@ export default {
         title: '전송된 파일을 외부 저장소에 저장 (설치 단계 4)',
         pass: '프린터가 이 옵션이 켜져 있다고 보고합니다 — 전송된 파일이 SD 카드에 저장되며 아카이브에 썸네일과 슬라이서 메타데이터가 포함됩니다.',
         fail: '프린터가 이 옵션이 꺼져 있다고 보고합니다. "전송된 파일을 외부 저장소에 저장"을 활성화하세요 — 최신 펌웨어 (P2S 01.02 / Bambu Studio 2.6 이상)에서는 프린터의 인쇄 설정에 토글이 있고, 이전 버전에서는 Bambu Studio / OrcaSlicer의 장치 탭에 있습니다. 이 옵션이 없으면 아카이브된 모든 인쇄물에 썸네일과 슬라이서 메타데이터가 없습니다.',
-        skip: '확인되지 않음 — 활성 MQTT 연결이 필요합니다. 이 설정이 슬라이서에만 존재하는 이전 슬라이서에서는 프린터가 보고하지 않으므로, 옵션이 꺼져 있어도 이 검사는 통과합니다 — 설치 단계 4를 수동으로 확인하세요.'
+        skip: '확인되지 않음 — 활성 MQTT 연결이 필요합니다. 이 설정이 슬라이서에만 존재하는 이전 슬라이서에서는 프린터가 보고하지 않으므로, 옵션이 꺼져 있어도 이 검사는 통과합니다 — 설치 단계 4를 수동으로 확인하세요.',
+        skip_unsupported_model: '이 모델에는 SD 슬롯이 있지만 옵션을 켤 방법이 없습니다 — 현재 P1 시리즈 펌웨어는 Bambu Studio에 토글을 표시하지 않으며 프린터에 화면도 없습니다. 여기서 고칠 것은 없습니다. Bambu Lab이 펌웨어로 지원할 때까지 보관된 출력물에는 썸네일과 슬라이서 메타데이터가 없을 수 있습니다.'
       },
       port_rtsps: {
         title: '카메라 포트 ({{protocol}} {{port}})',

@@ -146,15 +146,18 @@ class TestCalculateNextRun:
         """
         from zoneinfo import ZoneInfoNotFoundError
 
-        from backend.app.services import local_backup as lb_module
+        # The resolver moved to utils/local_time in #2539, when the smart-plug
+        # energy history needed the same local day boundary. local_backup still
+        # calls it, so this still guards the behaviour local_backup depends on.
+        from backend.app.utils import local_time as tz_module
 
         monkeypatch.delenv("TZ", raising=False)
 
         def _always_missing(_key):
             raise ZoneInfoNotFoundError("no tz database on this platform")
 
-        monkeypatch.setattr(lb_module, "ZoneInfo", _always_missing)
-        assert lb_module._local_zone() is timezone.utc
+        monkeypatch.setattr(tz_module, "ZoneInfo", _always_missing)
+        assert tz_module.local_zone() is timezone.utc
 
     def test_dst_spring_forward_gap_does_not_crash(self, monkeypatch):
         """Europe/Berlin spring-forward 2026-03-29 jumps 02:00 → 03:00 local;
@@ -324,3 +327,77 @@ class TestGetStatus:
         assert status["last_backup_at"] is None
         assert status["last_status"] is None
         assert status["next_run"] is None
+
+
+class TestRunBackupDiagnosis:
+    """A failed backup has to name its cause, not just quote errno (#2544).
+
+    ``[Errno 30] Read-only file system`` reads like a broken NAS mount. It is
+    usually our own systemd unit: ProtectSystem=strict makes every path outside
+    the install / data / log dirs read-only for the service, while the operator's
+    shell writes to that same NAS share happily.
+    """
+
+    @pytest.mark.asyncio
+    async def test_read_only_output_dir_is_diagnosed_as_the_sandbox(self, tmp_path, monkeypatch):
+        from backend.app.services import backup_path as backup_path_module
+
+        monkeypatch.setattr(backup_path_module, "systemd_unit_name", lambda: "bambuddy.service")
+
+        service = LocalBackupService()
+        settings = {"path": str(tmp_path / "nasbackup"), "retention": 5}
+
+        with patch(
+            "backend.app.api.routes.settings.create_backup_zip",
+            side_effect=OSError(30, "Read-only file system"),
+        ):
+            result = await service.run_backup(settings)
+
+        assert result["success"] is False
+        assert result["diagnosis"]["code"] == "sandboxed"
+        assert "ProtectSystem=strict" in result["message"]
+        assert "ReadWritePaths=" in result["diagnosis"]["remedy"]
+        # And the status the UI polls carries the same explanation, not the errno.
+        assert "ProtectSystem=strict" in service.get_status()["last_message"]
+
+    @pytest.mark.asyncio
+    async def test_a_non_os_failure_still_reports_plainly(self, tmp_path):
+        service = LocalBackupService()
+        settings = {"path": str(tmp_path), "retention": 5}
+
+        with patch(
+            "backend.app.api.routes.settings.create_backup_zip",
+            side_effect=ValueError("database is locked"),
+        ):
+            result = await service.run_backup(settings)
+
+        assert result["success"] is False
+        assert "database is locked" in result["message"]
+        assert "diagnosis" not in result
+
+
+class TestCheckPath:
+    """The path is probed when it is saved, not first exercised at 03:00."""
+
+    def test_writable_path_reports_ok(self, tmp_path):
+        service = LocalBackupService()
+        result = service.check_path(str(tmp_path / "backups"))
+        assert result["writable"] is True
+        assert result["code"] == "ok"
+
+    def test_unwritable_path_reports_the_remedy(self, tmp_path, monkeypatch):
+        from backend.app.services import backup_path as backup_path_module
+
+        monkeypatch.setattr(backup_path_module, "systemd_unit_name", lambda: "bambuddy.service")
+
+        def refuse(*_args, **_kwargs):
+            raise OSError(30, "Read-only file system")
+
+        monkeypatch.setattr(backup_path_module.tempfile, "NamedTemporaryFile", refuse)
+
+        service = LocalBackupService()
+        result = service.check_path(str(tmp_path))
+
+        assert result["writable"] is False
+        assert result["code"] == "sandboxed"
+        assert str(tmp_path) in result["remedy"]

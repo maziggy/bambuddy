@@ -10,6 +10,7 @@ import pytest
 
 from backend.app.services.printer_manager import (
     PrinterManager,
+    drying_screen_only,
     get_derived_status_name,
     has_stg_cur_idle_bug,
     init_printer_connections,
@@ -475,6 +476,46 @@ class TestPrinterManager:
         result = await manager.wait_for_cooldown(1, target_temp=50)
 
         assert result is True
+
+    # ========================================================================
+    # Tests for is_print_active (#1890)
+    # ========================================================================
+
+    @pytest.mark.parametrize(
+        "state,expected",
+        [
+            ("RUNNING", True),
+            ("PAUSE", True),
+            ("PREPARE", True),
+            ("SLICING", True),
+            ("FINISH", False),
+            ("IDLE", False),
+            ("FAILED", False),
+            ("unknown", False),
+        ],
+    )
+    def test_is_print_active_state_matrix(self, manager, mock_client, state, expected):
+        """A job-loaded state is 'active'; idle/terminal states are not."""
+        mock_client.state.connected = True
+        mock_client.state.state = state
+        mock_client.check_staleness.return_value = True
+        manager._clients[1] = mock_client
+
+        assert manager.is_print_active(1) is expected
+
+    def test_is_print_active_false_when_disconnected(self, manager, mock_client):
+        """Even in RUNNING, a disconnected printer is not treated as active —
+        we fail safe (no active print) only for the 'nothing printing' cases."""
+        mock_client.state.connected = False
+        mock_client.state.state = "RUNNING"
+        mock_client.check_staleness.return_value = False
+        manager._clients[1] = mock_client
+
+        assert manager.is_print_active(1) is False
+
+    def test_is_print_active_false_for_unknown_printer(self, manager):
+        """Unknown printer id → not active (no client)."""
+        assert manager.is_print_active(999) is False
 
     # ========================================================================
     # Tests for logging methods
@@ -1450,7 +1491,6 @@ class TestSupportsDrying:
     def test_known_supported_with_firmware(self):
         """Verify known models with sufficient firmware return True."""
         assert supports_drying("X1C", "01.09.00.00") is True
-        assert supports_drying("P1S", "01.08.00.00") is True
         assert supports_drying("H2D", "01.02.30.00") is True
         assert supports_drying("H2S", "01.02.00.00") is True
         assert supports_drying("H2C", "01.02.00.00") is True
@@ -1462,7 +1502,6 @@ class TestSupportsDrying:
     def test_known_supported_old_firmware(self):
         """Verify known models with old firmware return False."""
         assert supports_drying("X1C", "01.08.00.00") is False
-        assert supports_drying("P1S", "01.07.00.00") is False
         assert supports_drying("H2S", "01.01.00.00") is False
         assert supports_drying("H2C", "01.01.99.99") is False
         assert supports_drying("O1C", "01.01.99.99") is False
@@ -1503,6 +1542,32 @@ class TestSupportsDrying:
         assert supports_drying("x1c", "01.09.00.00") is True
         assert supports_drying("p2s", "01.02.00.00") is True
         assert supports_drying("a1", "99.99.99.99") is False
+
+
+class TestDryingScreenOnly:
+    """P1-series AMS drying is screen-only (#2533).
+
+    Bambu's P1 manual: "P1S connected AMS drying functions may only be controlled
+    from the P1S screen." The firmware acks `ams_filament_drying` with
+    result: success and then does nothing — so no command we send can ever start a
+    cycle, whatever the firmware version.
+    """
+
+    @pytest.mark.parametrize("model", ["P1S", "P1P", "p1s", " p1p "])
+    def test_screen_only_models_reject_remote_drying(self, model):
+        assert drying_screen_only(model) is True
+        # Not firmware-gated: even the newest firmware won't take the command.
+        assert supports_drying(model, "99.99.99.99") is False
+
+    @pytest.mark.parametrize("model", ["X1C", "P2S", "H2D", "A1", None])
+    def test_other_models_are_not_screen_only(self, model):
+        assert drying_screen_only(model) is False
+
+    def test_screen_only_is_not_the_same_as_unsupported(self):
+        # The A1 has no drying-capable AMS at all; the P1S does, it just can't be
+        # driven remotely. The UI needs to tell those two apart.
+        assert drying_screen_only("A1") is False
+        assert supports_drying("A1", "99.99.99.99") is False
 
 
 class TestSupportsDryingWhilePrinting:

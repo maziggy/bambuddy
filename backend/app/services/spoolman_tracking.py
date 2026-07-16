@@ -471,6 +471,7 @@ async def _report_spool_usage_for_slots(
     printer_serial: str = "",
     printer_id: int | None = None,
     slot_colors_out: dict[int, str] | None = None,
+    slot_materials_out: dict[int, str] | None = None,
 ) -> int:
     """Report usage to Spoolman for a list of (slot_id, grams) pairs.
 
@@ -511,10 +512,12 @@ async def _report_spool_usage_for_slots(
 
         spool_id_to_use: int | None = None
         resolution_path = ""
-        # color_hex of the resolved spool's filament, for the #1494 archive
-        # colour rewrite. The tag path already has the full spool object;
-        # the slot-assignment path only yields an id and is fetched below.
+        # color_hex + material of the resolved spool's filament, for the #1494
+        # archive colour rewrite and the #2563 type rewrite. The tag path
+        # already has the full spool object; the slot-assignment path only
+        # yields an id and is fetched below.
         spool_color_hex: str | None = None
+        spool_material: str | None = None
 
         spool_tag = _resolve_spool_tag(tray_info, printer_serial, global_tray_id)
         if spool_tag:
@@ -523,6 +526,7 @@ async def _report_spool_usage_for_slots(
                 spool_id_to_use = spool["id"]
                 resolution_path = "tag"
                 spool_color_hex = (spool.get("filament") or {}).get("color_hex")
+                spool_material = (spool.get("filament") or {}).get("material")
 
         if spool_id_to_use is None and printer_id is not None:
             ams_id, tray_id = _global_tray_id_to_ams_slot(global_tray_id)
@@ -538,19 +542,27 @@ async def _report_spool_usage_for_slots(
             )
             continue
 
-        # Record the spool's filament colour for the archive rewrite (#1494).
-        # The slot-assignment path resolved only an id, so fetch the spool.
-        # Strictly best-effort: a colour-fetch failure must never abort the
-        # weight reporting for the remaining slots, so the catch is broad.
-        if slot_colors_out is not None:
-            if spool_color_hex is None:
+        # Record the spool's filament colour + material for the archive
+        # rewrites (#1494, #2563). The slot-assignment path resolved only an
+        # id, so fetch the spool once for whichever value is still missing.
+        # Strictly best-effort: a fetch failure must never abort the weight
+        # reporting for the remaining slots, so the catch is broad.
+        if slot_colors_out is not None or slot_materials_out is not None:
+            need_color = slot_colors_out is not None and spool_color_hex is None
+            need_material = slot_materials_out is not None and spool_material is None
+            if need_color or need_material:
                 try:
-                    full_spool = await client.get_spool(spool_id_to_use)
-                    spool_color_hex = (full_spool.get("filament") or {}).get("color_hex")
-                except Exception as exc:  # noqa: BLE001 — colour is non-critical
-                    logger.debug("[SPOOLMAN] Slot %s: could not fetch spool colour: %s", slot_id, exc)
-            if spool_color_hex:
+                    _fil = (await client.get_spool(spool_id_to_use)).get("filament") or {}
+                    if need_color:
+                        spool_color_hex = _fil.get("color_hex")
+                    if need_material:
+                        spool_material = _fil.get("material")
+                except Exception as exc:  # noqa: BLE001 — colour/material are non-critical
+                    logger.debug("[SPOOLMAN] Slot %s: could not fetch spool filament: %s", slot_id, exc)
+            if slot_colors_out is not None and spool_color_hex:
                 slot_colors_out[slot_id] = spool_color_hex
+            if slot_materials_out is not None and spool_material:
+                slot_materials_out[slot_id] = spool_material
 
         try:
             await client.use_spool(spool_id_to_use, grams_used)
@@ -567,6 +579,146 @@ async def _report_spool_usage_for_slots(
             logger.warning("[SPOOLMAN] Failed to record usage for spool %s: %s", spool_id_to_use, exc)
 
     return spools_updated
+
+
+async def _report_spool_usage_split_by_tray_changes(
+    client,
+    filament_usage: list[dict],
+    tray_changes: list[tuple[int, int]],
+    ams_trays: dict[int, dict],
+    layer_usage: dict[int, dict[int, float]] | None,
+    filament_properties: dict | None,
+    total_layers: int,
+    last_layer_num: int,
+    method_label: str,
+    printer_serial: str,
+    printer_id: int,
+    slot_colors_out: dict[int, str] | None = None,
+    slot_materials_out: dict[int, str] | None = None,
+) -> tuple[int, set[int]]:
+    """Split each slot's grams across ``tray_changes`` and charge per-segment.
+
+    Mirrors ``usage_tracker`` Path 1's tray-switch branch so Spoolman and
+    the internal Spool inventory attribute mid-print AMS-backup switches
+    identically (#1793 — reporter's origin spool was over-charged the
+    whole print because this path didn't exist). ``compute_tray_split_grams``
+    holds the shared segment-math; this function wraps the per-segment
+    spool resolution + ``use_spool`` sink for the Spoolman side.
+
+    Returns ``(spools_updated, handled_global_tray_ids)`` — the caller
+    passes ``handled_global_tray_ids`` into the remain-delta fallback so
+    a tray attributed here is not double-charged there.
+    """
+    from backend.app.utils.tray_split import compute_tray_split_grams
+
+    spools_updated = 0
+    handled_global_tray_ids: set[int] = set()
+
+    for usage in filament_usage:
+        slot_id = usage.get("slot_id", 0)
+        total_weight = usage.get("used_g", 0)
+        if total_weight <= 0 or slot_id <= 0:
+            continue
+
+        props = (filament_properties or {}).get(str(slot_id)) or (filament_properties or {}).get(slot_id) or {}
+        segments = compute_tray_split_grams(
+            tray_changes=tray_changes,
+            total_weight=float(total_weight),
+            slot_id=slot_id,
+            layer_usage=layer_usage,
+            density=float(props.get("density", 1.24)),
+            diameter=float(props.get("diameter", 1.75)),
+            total_layers=total_layers,
+            last_layer_num=last_layer_num,
+        )
+
+        for seg_idx, tray_global, segment_grams in segments:
+            if segment_grams <= 0:
+                continue
+
+            # Mark this tray as handled BEFORE the resolution attempt so
+            # remain-delta doesn't double-charge it, even if we fail to
+            # find a spool below. Matches usage_tracker behaviour: the
+            # tray was physically fed from during this print, whether or
+            # not Spoolman happens to have a matching row.
+            handled_global_tray_ids.add(tray_global)
+
+            tray_info = ams_trays.get(tray_global) or {}
+            spool_id_to_use: int | None = None
+            resolution_path = ""
+            spool_color_hex: str | None = None
+            spool_material: str | None = None
+
+            spool_tag = _resolve_spool_tag(tray_info, printer_serial, tray_global) if tray_info else ""
+            if spool_tag:
+                spool = await client.find_spool_by_tag(spool_tag)
+                if spool:
+                    spool_id_to_use = spool["id"]
+                    resolution_path = "tag"
+                    spool_color_hex = (spool.get("filament") or {}).get("color_hex")
+                    spool_material = (spool.get("filament") or {}).get("material")
+
+            if spool_id_to_use is None:
+                seg_ams_id, seg_tray_id = _global_tray_id_to_ams_slot(tray_global)
+                spool_id_to_use = await _resolve_spool_id_via_slot_assignment(printer_id, seg_ams_id, seg_tray_id)
+                if spool_id_to_use is not None:
+                    resolution_path = "slot-assignment"
+
+            if spool_id_to_use is None:
+                logger.info(
+                    "[SPOOLMAN] Split slot %s seg %s tray=%d: no spool resolved — %.2fg lost from split accounting",
+                    slot_id,
+                    seg_idx,
+                    tray_global,
+                    segment_grams,
+                )
+                continue
+
+            # Colour (#1494) + material (#2563) rewrite — first segment for a
+            # slot wins. The UI displays a single colour/type per slot, so
+            # later segments on the same slot don't overwrite (a backup swap
+            # can differ but the archive card stays consistent with the origin).
+            need_color = slot_colors_out is not None and slot_id not in slot_colors_out and spool_color_hex is None
+            need_material = (
+                slot_materials_out is not None and slot_id not in slot_materials_out and spool_material is None
+            )
+            if need_color or need_material:
+                try:
+                    _fil = (await client.get_spool(spool_id_to_use)).get("filament") or {}
+                    if need_color:
+                        spool_color_hex = _fil.get("color_hex")
+                    if need_material:
+                        spool_material = _fil.get("material")
+                except Exception as exc:  # noqa: BLE001 — colour/material are non-critical
+                    logger.debug("[SPOOLMAN] Split slot %s: could not fetch spool filament: %s", slot_id, exc)
+            if slot_colors_out is not None and slot_id not in slot_colors_out and spool_color_hex:
+                slot_colors_out[slot_id] = spool_color_hex
+            if slot_materials_out is not None and slot_id not in slot_materials_out and spool_material:
+                slot_materials_out[slot_id] = spool_material
+
+            try:
+                await client.use_spool(spool_id_to_use, round(segment_grams, 2))
+                logger.info(
+                    "[SPOOLMAN] %s: slot %s seg %s tray=%d: %.2fg -> spool %s (via %s)",
+                    method_label,
+                    slot_id,
+                    seg_idx,
+                    tray_global,
+                    segment_grams,
+                    spool_id_to_use,
+                    resolution_path,
+                )
+                spools_updated += 1
+            except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
+                logger.warning(
+                    "[SPOOLMAN] Split slot %s seg %s: failed to record usage for spool %s: %s",
+                    slot_id,
+                    seg_idx,
+                    spool_id_to_use,
+                    exc,
+                )
+
+    return spools_updated, handled_global_tray_ids
 
 
 async def _report_partial_usage(
@@ -789,6 +941,13 @@ async def report_usage(printer_id: int, archive_id: int):
         ams_trays = {int(k): v for k, v in (tracking.ams_trays or {}).items()}
         slot_to_tray = tracking.slot_to_tray
         tray_remain_start = tracking.tray_remain_start or {}
+        # ``layer_usage`` and ``filament_properties`` were added later than
+        # the base tracking fields; use ``getattr`` so tests that stub
+        # ``tracking`` as a lightweight SimpleNamespace stay valid, and
+        # historic ORM rows loaded without these columns can't AttributeError
+        # on read.
+        layer_usage_raw = getattr(tracking, "layer_usage", None) or {}
+        filament_properties = getattr(tracking, "filament_properties", None) or {}
         printer_serial = await _get_printer_serial(printer_id)
 
         # Delete tracking row (we're done with it)
@@ -809,29 +968,107 @@ async def report_usage(printer_id: int, archive_id: int):
             logger.warning("[SPOOLMAN] Not reachable for usage reporting")
             return
 
+        # Consult the live printer state for the tray-change log written by
+        # ``bambu_mqtt.py`` on every mid-print ``tray_now`` change (#957).
+        # When there's more than one entry, the print traversed >1 AMS tray
+        # and the split path attributes each segment to the tray that was
+        # loaded at the time — matches the internal Spool inventory writer
+        # in ``usage_tracker.py``. Without this, an AMS-backup runout switch
+        # charges the whole slot to the origin spool and pushes it past
+        # ``initial_weight`` (#1793).
+        #
+        # Split only for SINGLE-slot prints — same gate as
+        # ``usage_tracker.py:1002``. Multi-slot (multi-colour) prints
+        # naturally cycle trays for every colour change, so splitting each
+        # slot's grams across ALL tray_change_log entries would attribute
+        # slot 1's grams to the segments where slot 2's tray was loaded and
+        # vice versa. Multi-slot prints fall through to the existing
+        # single-tray path (which uses the stable ``slot_to_tray`` mapping).
+        nonzero_slots = [u for u in filament_usage if u.get("used_g", 0) > 0]
+        tray_changes: list[tuple[int, int]] = []
+        _state = None
+        if len(nonzero_slots) == 1:
+            from backend.app.services.printer_manager import printer_manager as _pm
+
+            _state = _pm.get_status(printer_id)
+            if _state is not None:
+                tray_changes = list(getattr(_state, "tray_change_log", []) or [])
+        _total_layers = int(getattr(_state, "total_layers", 0) or 0) if _state else 0
+        _current_layer = int(getattr(_state, "layer_num", 0) or 0) if _state else 0
+        # For the linear-fallback denominator when total_layers is 0 (P1S
+        # firmware resets it at print end). At completion the current layer
+        # is the print's last valid layer.
+        _layer_denom_hint = _total_layers or _current_layer
+
         slot_colors: dict[int, str] = {}
+        slot_materials: dict[int, str] = {}
         handled_global_tray_ids: set[int] = set()
         spools_updated = 0
 
         # --- Path 1: 3MF per-slot estimates -----------------------------
         if filament_usage:
-            logger.info("[SPOOLMAN] Reporting per-filament usage for archive %s", archive_id)
-            usage_items = [(u.get("slot_id", 0), u.get("used_g", 0)) for u in filament_usage]
-            spools_updated = await _report_spool_usage_for_slots(
-                client,
-                usage_items,
-                ams_trays,
-                slot_to_tray,
-                f"Archive {archive_id}",
-                printer_serial,
-                printer_id=printer_id,
-                slot_colors_out=slot_colors,
-            )
-            # Track which physical slots the 3MF path already covered so
-            # Path 2 doesn't double-charge them.
-            for u in filament_usage:
-                slot_id = u.get("slot_id", 0)
-                handled_global_tray_ids.add(_resolve_global_tray_id(slot_id, slot_to_tray, ams_trays))
+            if len(tray_changes) > 1:
+                # Tray-split path — attribute per-segment to the tray that
+                # was loaded at that time.
+                logger.info(
+                    "[SPOOLMAN] Reporting per-filament usage for archive %s with tray-split "
+                    "(tray_change_log=%s, denom_layers=%d)",
+                    archive_id,
+                    tray_changes,
+                    _layer_denom_hint,
+                )
+                # ``tracking.layer_usage`` was serialized to JSON so int keys
+                # come back as strings. Restore them for the split math.
+                layer_usage = None
+                if layer_usage_raw:
+                    try:
+                        layer_usage = {
+                            int(layer): {int(fid): mm for fid, mm in filaments.items()}
+                            for layer, filaments in layer_usage_raw.items()
+                        }
+                    except (TypeError, ValueError, AttributeError):
+                        # AttributeError catches ``inner.items()`` when the
+                        # inner value isn't dict-shaped (corrupt JSON row).
+                        # Missing gcode falls through to the linear-ratio
+                        # branch inside ``compute_tray_split_grams`` — still
+                        # gives a correct split, just less precise.
+                        layer_usage = None
+                split_updated, split_handled = await _report_spool_usage_split_by_tray_changes(
+                    client,
+                    filament_usage,
+                    tray_changes,
+                    ams_trays,
+                    layer_usage,
+                    filament_properties,
+                    _total_layers,
+                    _layer_denom_hint,
+                    f"Archive {archive_id}",
+                    printer_serial,
+                    printer_id=printer_id,
+                    slot_colors_out=slot_colors,
+                    slot_materials_out=slot_materials,
+                )
+                spools_updated += split_updated
+                handled_global_tray_ids |= split_handled
+            else:
+                logger.info("[SPOOLMAN] Reporting per-filament usage for archive %s", archive_id)
+                usage_items = [(u.get("slot_id", 0), u.get("used_g", 0)) for u in filament_usage]
+                spools_updated = await _report_spool_usage_for_slots(
+                    client,
+                    usage_items,
+                    ams_trays,
+                    slot_to_tray,
+                    f"Archive {archive_id}",
+                    printer_serial,
+                    printer_id=printer_id,
+                    slot_colors_out=slot_colors,
+                    slot_materials_out=slot_materials,
+                )
+                # Track which physical slots the 3MF path already covered so
+                # Path 2 doesn't double-charge them.
+                for u in filament_usage:
+                    slot_id = u.get("slot_id", 0)
+                    handled_global_tray_ids.add(_resolve_global_tray_id(slot_id, slot_to_tray, ams_trays))
 
         # --- Path 2: AMS remain%-delta for slots 3MF didn't cover -------
         # Triggered for no-3MF "Untitled" prints (#1820) AND for partial
@@ -849,6 +1086,7 @@ async def report_usage(printer_id: int, archive_id: int):
                 handled_global_tray_ids=handled_global_tray_ids,
                 archive_id=archive_id,
                 slot_colors_out=slot_colors,
+                slot_materials_out=slot_materials,
             )
             spools_updated += fallback_updates
 
@@ -862,6 +1100,10 @@ async def report_usage(printer_id: int, archive_id: int):
         # value (#1494) — mirrors the built-in inventory path in usage_tracker.
         await _apply_spool_colors_to_archive(db, archive_id, filament_usage, slot_colors)
 
+        # Same for the material: a slot mapped to a differently-typed spool than
+        # it was sliced for otherwise records the sliced type (#2563).
+        await _apply_spool_types_to_archive(db, archive_id, filament_usage, slot_materials)
+
 
 async def _report_remain_delta_for_slots(
     client,
@@ -872,6 +1114,7 @@ async def _report_remain_delta_for_slots(
     handled_global_tray_ids: set[int],
     archive_id: int,
     slot_colors_out: dict[int, str] | None = None,
+    slot_materials_out: dict[int, str] | None = None,
 ) -> int:
     """AMS remain%-delta path: write ``(start - current) * filament.weight``
     grams to Spoolman for slots the 3MF path didn't cover.
@@ -956,15 +1199,19 @@ async def _report_remain_delta_for_slots(
             continue
 
         spools_updated += 1
+        # No 3MF slot_id for this path — use the AMS slot key so the maps can
+        # still be inspected by callers if needed. The archive rewrites
+        # (#1494 colour, #2563 type) key on 3MF slot_ids, so remain-delta-only
+        # prints intentionally don't participate (matches usage_tracker's
+        # slot_id=None).
         if slot_colors_out is not None:
             color = filament.get("color_hex")
             if color:
-                # No 3MF slot_id for this path — use the AMS slot key so the
-                # colour map can still be inspected by callers if needed.
-                # The archive-colour rewrite (#1494) keys on 3MF slot_ids so
-                # remain-delta-only prints intentionally don't participate
-                # in that rewrite (matches usage_tracker's slot_id=None).
                 slot_colors_out[-(global_tray_id + 1)] = color
+        if slot_materials_out is not None:
+            material = filament.get("material")
+            if material:
+                slot_materials_out[-(global_tray_id + 1)] = material
         logger.info(
             "[SPOOLMAN] Archive %s AMS%d-T%d: %.2fg via remain-delta (%d%% of %.0fg) -> spool %s",
             archive_id,
@@ -1018,4 +1265,45 @@ async def _apply_spool_colors_to_archive(
             joined,
         )
         archive.filament_color = joined
+        await db.commit()
+
+
+async def _apply_spool_types_to_archive(
+    db,
+    archive_id: int,
+    filament_usage: list[dict],
+    slot_materials: dict[int, str],
+) -> None:
+    """Overwrite an archive's ``filament_type`` with the materials of the
+    Spoolman spools that fed the print (#2563).
+
+    All-or-nothing, exactly like the colour path and the built-in inventory
+    path: the type is only rewritten when every used slot resolved to a spool
+    that carries a material, so a partial match never drops slots from the
+    archive or the material statistics.
+    """
+    if not slot_materials:
+        return
+
+    from backend.app.models.archive import PrintArchive
+    from backend.app.services.usage_tracker import _archive_types_from_spools
+
+    results = [{"slot_id": sid, "material": material} for sid, material in slot_materials.items()]
+    types = _archive_types_from_spools(filament_usage, results)
+    if not types:
+        return
+
+    archive = (await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))).scalar_one_or_none()
+    if archive is None:
+        return
+
+    joined = ",".join(types)
+    if joined != archive.filament_type:
+        logger.info(
+            "[SPOOLMAN] Archive %s filament_type %r -> %r (from Spoolman spools)",
+            archive_id,
+            archive.filament_type,
+            joined,
+        )
+        archive.filament_type = joined
         await db.commit()

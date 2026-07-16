@@ -66,7 +66,7 @@ type TFunction = (key: string, options?: Record<string, unknown>) => string;
 function StatusBadge({ status, t }: { status: string; t: TFunction }) {
   const colors = {
     active: 'bg-bambu-green/20 text-bambu-green',
-    completed: 'bg-blue-500/20 text-blue-400',
+    completed: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400',
     archived: 'bg-bambu-gray/20 text-bambu-gray',
   };
   const color = colors[status as keyof typeof colors] || colors.active;
@@ -172,9 +172,9 @@ function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
 function PriorityBadge({ priority, t }: { priority: string; t: TFunction }) {
   const config = {
     low: { color: 'bg-gray-500/20 text-gray-400', label: t('projectDetail.priority.low') },
-    normal: { color: 'bg-blue-500/20 text-blue-400', label: t('projectDetail.priority.normal') },
-    high: { color: 'bg-orange-500/20 text-orange-400', label: t('projectDetail.priority.high') },
-    urgent: { color: 'bg-red-500/20 text-red-400', label: t('projectDetail.priority.urgent') },
+    normal: { color: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400', label: t('projectDetail.priority.normal') },
+    high: { color: 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400', label: t('projectDetail.priority.high') },
+    urgent: { color: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400', label: t('projectDetail.priority.urgent') },
   };
   const { color, label } = config[priority as keyof typeof config] || config.normal;
 
@@ -193,9 +193,9 @@ function getDueDateStatus(dateString: string | null, t: TFunction): { color: str
   const now = new Date();
   const diffDays = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-  if (diffDays < 0) return { color: 'text-red-400', label: t('projectDetail.dueDate.overdue') };
-  if (diffDays === 0) return { color: 'text-orange-400', label: t('projectDetail.dueDate.today') };
-  if (diffDays <= 3) return { color: 'text-yellow-400', label: t('projectDetail.dueDate.daysLeft', { count: diffDays }) };
+  if (diffDays < 0) return { color: 'text-red-700 dark:text-red-400', label: t('projectDetail.dueDate.overdue') };
+  if (diffDays === 0) return { color: 'text-orange-700 dark:text-orange-400', label: t('projectDetail.dueDate.today') };
+  if (diffDays <= 3) return { color: 'text-yellow-700 dark:text-yellow-400', label: t('projectDetail.dueDate.daysLeft', { count: diffDays }) };
   return { color: 'text-bambu-gray', label: t('projectDetail.dueDate.daysLeft', { count: diffDays }) };
 }
 
@@ -627,13 +627,13 @@ export function ProjectDetailPage() {
             icon={Clock}
             label={t('projectDetail.stats.printTime')}
             value={formatDurationFromHours(stats.total_print_time_hours)}
-            color="text-yellow-400"
+            color="text-yellow-600 dark:text-yellow-400"
           />
           <StatCard
             icon={Printer}
             label={t('projectDetail.stats.filamentUsed')}
             value={formatFilament(stats.total_filament_grams)}
-            color="text-purple-400"
+            color="text-purple-600 dark:text-purple-400"
           />
         </div>
       )}
@@ -692,7 +692,7 @@ export function ProjectDetailPage() {
                     <p className="text-sm text-bambu-gray">
                       {t('projectDetail.cost.total')}: <span className="text-white font-semibold">{currency}{project.budget.toFixed(2)}</span>
                     </p>
-                    <p className={`text-sm ${remaining >= 0 ? 'text-bambu-green' : 'text-red-400'}`}>
+                    <p className={`text-sm ${remaining >= 0 ? 'text-bambu-green' : 'text-red-700 dark:text-red-400'}`}>
                       {t('projectDetail.cost.remaining')}: <span className="font-semibold">{currency}{remaining.toFixed(2)}</span>
                     </p>
                   </div>
@@ -727,7 +727,7 @@ export function ProjectDetailPage() {
                     <span className={`text-xs px-2 py-0.5 rounded ${
                       child.status === 'completed' ? 'bg-status-ok/20 text-status-ok' :
                       child.status === 'archived' ? 'bg-bambu-gray/20 text-bambu-gray' :
-                      'bg-blue-500/20 text-blue-400'
+                      'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
                     }`}>
                       {child.status}
                     </span>
@@ -946,7 +946,7 @@ export function ProjectDetailPage() {
                                 </p>
                                 <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
                                   file.file_type === '3mf' ? 'bg-bambu-green/20 text-bambu-green'
-                                  : (file.file_type === 'gcode' || file.file_type === 'gcode.3mf') ? 'bg-blue-500/20 text-blue-400'
+                                  : (file.file_type === 'gcode' || file.file_type === 'gcode.3mf') ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
                                   : 'bg-bambu-gray/20 text-bambu-gray'
                                 }`}>
                                   {file.file_type.toUpperCase()}
@@ -1221,7 +1221,7 @@ export function ProjectDetailPage() {
                             href={item.sourcing_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-1 mt-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                            className="flex items-center gap-1 mt-1 text-xs text-blue-700 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <ExternalLink className="w-3 h-3 shrink-0" />
@@ -1286,7 +1286,7 @@ export function ProjectDetailPage() {
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
                     event.event_type === 'print_completed' ? 'bg-status-ok/20 text-status-ok' :
                     event.event_type === 'print_failed' ? 'bg-status-error/20 text-status-error' :
-                    event.event_type === 'print_started' ? 'bg-yellow-500/20 text-yellow-400' :
+                    event.event_type === 'print_started' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400' :
                     'bg-bambu-dark-tertiary text-bambu-gray'
                   }`}>
                     {event.event_type === 'print_completed' && <CheckCircle className="w-4 h-4" />}
@@ -1351,7 +1351,7 @@ export function ProjectDetailPage() {
             </div>
             <div className="flex items-center gap-4 text-sm">
               {stats.in_progress_prints > 0 && (
-                <span className="text-yellow-400">
+                <span className="text-yellow-700 dark:text-yellow-400">
                   {t('projectDetail.queue.printing', { count: stats.in_progress_prints })}
                 </span>
               )}

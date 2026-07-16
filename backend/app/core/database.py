@@ -439,6 +439,77 @@ async def _migrate_normalize_printer_ids(conn) -> None:
             await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids::text = '[]'"))
 
 
+async def _migrate_scope_force_color_overrides_to_plate(conn) -> None:
+    """Re-scope queue items that carry another plate's filament overrides (#2551).
+
+    Queueing several plates of one 3MF used to store the union of every selected
+    plate's overrides on each item, so a ``force_color_match`` plate printing one
+    colour sat at Waiting until a printer had the whole batch's palette loaded.
+    The write paths now narrow to the plate, but items queued before the fix would
+    stay stuck until the user deleted and re-added them by hand — with a waiting
+    reason that gives no hint as to why. Repair them here instead.
+
+    Only pending items are touched: a printing or finished item's overrides are a
+    record of what it dispatched with, not an instruction. An item whose plate we
+    cannot read keeps every override, per ``overrides_for_plate``. Idempotent —
+    an already-scoped item narrows to itself and is not rewritten.
+    """
+    import json
+    from pathlib import Path
+
+    from sqlalchemy import text
+
+    from backend.app.services.filament_requirements import overrides_for_plate
+
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT q.id, q.plate_id, q.filament_overrides, "
+                "a.file_path AS archive_path, l.file_path AS library_path "
+                "FROM print_queue q "
+                "LEFT JOIN print_archives a ON a.id = q.archive_id "
+                "LEFT JOIN library_files l ON l.id = q.library_file_id "
+                "WHERE q.status = 'pending' "
+                "AND q.plate_id IS NOT NULL "
+                "AND q.filament_overrides IS NOT NULL"
+            )
+        )
+    ).fetchall()
+
+    repaired = 0
+    for row in rows:
+        try:
+            overrides = json.loads(row.filament_overrides)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(overrides, list) or not overrides:
+            continue
+
+        stored_path = row.archive_path or row.library_path
+        if not stored_path:
+            continue
+        path = Path(stored_path)
+        if not path.is_absolute():
+            path = settings.base_dir / stored_path
+
+        scoped = overrides_for_plate(overrides, path, row.plate_id)
+        if len(scoped) == len(overrides):
+            continue
+
+        async with conn.begin_nested():
+            await conn.execute(
+                text("UPDATE print_queue SET filament_overrides = :overrides WHERE id = :id"),
+                {"overrides": json.dumps(scoped) if scoped else None, "id": row.id},
+            )
+        repaired += 1
+
+    if repaired:
+        logger.info(
+            "Re-scoped the filament overrides of %d queued item(s) to the plate they print (#2551)",
+            repaired,
+        )
+
+
 async def _migrate_drop_library_print_name(conn) -> None:
     """Strip the embedded 3MF Title (``print_name``) from library file metadata (#1489).
 
@@ -1177,6 +1248,21 @@ async def run_migrations(conn):
         await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN nozzle_offset_cali BOOLEAN DEFAULT 1")
     else:
         await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN nozzle_offset_cali BOOLEAN DEFAULT TRUE")
+
+    # Migration: Per-item preheat / heat-soak override (#1468). preheat_override
+    # is one of {inherit, on, off} — 'inherit' falls back to the global
+    # preheat_enabled setting; 'on' / 'off' force the decision. The chamber
+    # target column overrides the filament-map derivation when not null.
+    # Existing rows default to 'inherit' + NULL so behaviour is unchanged for
+    # in-flight queues.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE print_queue ADD COLUMN preheat_override VARCHAR(10) DEFAULT 'inherit'",
+    )
+    await _safe_execute(
+        conn,
+        "ALTER TABLE print_queue ADD COLUMN preheat_chamber_target_override INTEGER",
+    )
 
     # Migration: Add library_file_id column to print_queue and make archive_id nullable
     # This allows queue items to reference library files directly (archive created at print start)
@@ -2128,6 +2214,14 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN rest_energy_url VARCHAR(500)")
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN rest_energy_multiplier REAL DEFAULT 1.0")
 
+    # Migration (#2539): a REST plug's lifetime energy counter, separate from its
+    # today counter. Devices differ in which they expose — a Shelly reports only
+    # a cumulative `aenergy.total`, a Tasmota behind a REST bridge reports both —
+    # and conflating the two made the cumulative value read as "today", so it
+    # never reset at midnight and "Total" stayed empty forever.
+    await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN rest_energy_total_path VARCHAR(200)")
+    await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN rest_energy_total_multiplier REAL DEFAULT 1.0")
+
     # Migration: Add batch_id column to print_queue for batch grouping
     try:
         async with conn.begin_nested():
@@ -2507,6 +2601,63 @@ async def run_migrations(conn):
     if not column_existed:
         async with conn.begin_nested():
             await conn.execute(text("UPDATE api_keys SET can_manage_inventory = can_queue"))
+
+    # #1832 follow-up: carve maintenance CRUD out of the admin denylist so
+    # HA-style automations can log "cleaned nozzle" via API key. Distinct
+    # from the two backfills above: MAINTENANCE_CREATE / _UPDATE / _DELETE
+    # were EXPLICITLY denied for every API key under the pre-migration model
+    # (they were on ``_APIKEY_DENIED_PERMISSIONS``), so no existing
+    # integration relies on them. Column default TRUE matches the "safe,
+    # on-by-default" pattern for keys created via the UI going forward;
+    # existing rows backfill to FALSE so the upgrade path does not silently
+    # widen scope for keys created before this flag existed. Users opt in
+    # via Settings → API Keys per key.
+    column_existed = await _api_keys_column_exists(conn, "can_manage_maintenance")
+    await _safe_execute(
+        conn,
+        "ALTER TABLE api_keys ADD COLUMN can_manage_maintenance BOOLEAN DEFAULT TRUE",
+    )
+    if not column_existed:
+        async with conn.begin_nested():
+            await conn.execute(text("UPDATE api_keys SET can_manage_maintenance = FALSE"))
+
+    # #1888: carve archive CRUD (create/update/delete — NOT purge) out of the
+    # admin denylist so automations can prune old prints via API key. Same
+    # shape and reasoning as can_manage_maintenance above: ARCHIVES_CREATE /
+    # _UPDATE_* / _DELETE_* were EXPLICITLY denied for every API key under the
+    # pre-migration model (they were on ``_APIKEY_DENIED_PERMISSIONS``), so no
+    # existing integration relies on them. Column default TRUE for keys created
+    # via the UI going forward; existing rows backfill to FALSE so the upgrade
+    # path does not silently widen scope for keys created before this flag
+    # existed. Users opt in via Settings → API Keys per key. BOOLEAN is valid
+    # on both SQLite and Postgres, so no dialect branch is needed.
+    column_existed = await _api_keys_column_exists(conn, "can_manage_archives")
+    await _safe_execute(
+        conn,
+        "ALTER TABLE api_keys ADD COLUMN can_manage_archives BOOLEAN DEFAULT TRUE",
+    )
+    if not column_existed:
+        async with conn.begin_nested():
+            await conn.execute(text("UPDATE api_keys SET can_manage_archives = FALSE"))
+
+    # #1893: carve project CRUD + membership (create/update/delete, add-archives)
+    # out of the admin denylist so automations can manage projects via API key.
+    # Identical shape and reasoning to can_manage_archives above: PROJECTS_CREATE
+    # / _UPDATE / _DELETE were EXPLICITLY denied for every API key under the
+    # pre-migration model (they were on ``_APIKEY_DENIED_PERMISSIONS``), so no
+    # existing integration relies on them. Column default TRUE for keys created
+    # via the UI going forward; existing rows backfill to FALSE so the upgrade
+    # path does not silently widen scope for keys created before this flag
+    # existed. Users opt in via Settings → API Keys per key. BOOLEAN is valid on
+    # both SQLite and Postgres, so no dialect branch is needed.
+    column_existed = await _api_keys_column_exists(conn, "can_manage_projects")
+    await _safe_execute(
+        conn,
+        "ALTER TABLE api_keys ADD COLUMN can_manage_projects BOOLEAN DEFAULT TRUE",
+    )
+    if not column_existed:
+        async with conn.begin_nested():
+            await conn.execute(text("UPDATE api_keys SET can_manage_projects = FALSE"))
 
     # Migration: Soft-delete column for trash bin (Issue #1008). Indexed so the
     # sweeper's "SELECT ... WHERE deleted_at < cutoff" and the trash list's
@@ -3095,9 +3246,23 @@ async def run_migrations(conn):
     else:
         await _safe_execute(conn, "ALTER TABLE users ADD COLUMN IF NOT EXISTS orca_cloud_pending_at TIMESTAMP")
 
+    # Migration: record when Bambu rejects a stored cloud token. Until now the
+    # only state we kept was the token string itself, so a dead credential was
+    # indistinguishable from a live one and the UI reported "connected" forever
+    # while every cloud call 401'd. DATETIME is SQLite-only — Postgres uses
+    # TIMESTAMP, so the column is dialect-branched per project convention.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_token_invalid_at DATETIME")
+    else:
+        await _safe_execute(conn, "ALTER TABLE users ADD COLUMN IF NOT EXISTS cloud_token_invalid_at TIMESTAMP")
+
     # Data migration: drop the embedded 3MF Title (`print_name`) from library
     # file metadata so the FileManager displays the filename, not the title (#1489).
     await _migrate_drop_library_print_name(conn)
+
+    # Data migration: queue items written before #2551 carry every selected plate's
+    # filament overrides, so a force-colour plate waits on colours it never prints.
+    await _migrate_scope_force_color_overrides_to_plate(conn)
 
     # Backfill NULL print_archives.created_at — older rows (and rows imported
     # via the SQLite ↔ Postgres cross-DB restore path) can land with NULL
@@ -3257,6 +3422,16 @@ async def run_migrations(conn):
         await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN is_autologin BOOLEAN DEFAULT 0")
     else:
         await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN is_autologin BOOLEAN DEFAULT false")
+
+    # Migration: Add dispatch_attempts to print_queue (#2555). Counts the times
+    # the start-watchdog reverted the row from 'printing' back to 'pending' so a
+    # printer that never actually starts stops being retried forever. INTEGER
+    # DEFAULT 0 is spelled identically on SQLite and Postgres — no dialect branch.
+    # Verified on both dialects: ADD COLUMN ... DEFAULT 0 backfills existing rows,
+    # so no separate UPDATE is needed (and _safe_execute is DDL-only — see its
+    # docstring). The scheduler reads it as `(item.dispatch_attempts or 0) + 1`
+    # regardless, so even a NULL row could not disable the retry cap.
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN dispatch_attempts INTEGER DEFAULT 0")
 
     # Migration: Disambiguate the four ``user_print_*`` notification template
     # names by appending " Email" (#1792). See ``_migrate_rename_user_print_template_names``.

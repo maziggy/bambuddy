@@ -49,15 +49,17 @@ logger = logging.getLogger(__name__)
 # entries also satisfy "not in the allowlist", so they fail closed regardless.
 #
 # Mapping rationale (see wiki/features/api-keys.md):
-#   can_read_status     → every ``*_READ`` + camera + stats + system + websocket
-#   can_queue           → queue write ops + archive reprint
-#   can_control_printer → physical printer + smart-plug control
-#   can_manage_library  → library upload/own + MakerWorld import (separate
-#                         trust level from queue management, hence its own flag)
-#   admin-only          → unmapped (default-deny); covers all create/update/
-#                         delete of admin resources, settings writes, user/
-#                         group/api-key/backup admin ops, discovery scan,
-#                         cloud auth, library ALL-ownership perms, purges
+#   can_read_status       → every ``*_READ`` + camera + stats + system + websocket
+#   can_queue             → queue write ops + archive reprint
+#   can_control_printer   → physical printer + smart-plug control
+#   can_manage_library    → library upload/own + MakerWorld import (separate
+#                           trust level from queue management, hence its own flag)
+#   can_manage_inventory  → spool/catalog/forecast writes + SpoolBuddy kiosk writes
+#   can_manage_maintenance→ per-printer maintenance log/reset + type-catalog CRUD
+#   admin-only            → unmapped (default-deny); covers all create/update/
+#                           delete of admin resources, settings writes, user/
+#                           group/api-key/backup admin ops, discovery scan,
+#                           cloud auth, library ALL-ownership perms, purges
 _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     # can_read_status — read-only access to status, history, and configuration
     Permission.PRINTERS_READ: "can_read_status",
@@ -138,6 +140,44 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     Permission.INVENTORY_UPDATE: "can_manage_inventory",
     Permission.INVENTORY_DELETE: "can_manage_inventory",
     Permission.INVENTORY_FORECAST_WRITE: "can_manage_inventory",
+    # can_manage_maintenance — carved out of the admin denylist so HA-style
+    # automations can log "cleaned nozzle" / reset a maintenance counter via
+    # `POST /maintenance/items/{item_id}/perform` without granting broader
+    # printer control or settings write (#1832 follow-up). Also covers the
+    # per-printer maintenance CRUD (assign/remove items, edit intervals) and
+    # the type-catalog CRUD — the type catalog is a config surface (system
+    # types are auto-seeded, custom types are user-defined), so grouping it
+    # with the item writes matches the operator mental model of "keys that
+    # log maintenance can also manage what gets tracked." MAINTENANCE_READ
+    # stays under can_read_status.
+    Permission.MAINTENANCE_CREATE: "can_manage_maintenance",
+    Permission.MAINTENANCE_UPDATE: "can_manage_maintenance",
+    Permission.MAINTENANCE_DELETE: "can_manage_maintenance",
+    # can_manage_archives — print-history curation. Carved out of the admin
+    # denylist so automations can prune old prints via API key (#1888): the
+    # archive delete/update routes gate on
+    # ``require_ownership_permission(ARCHIVES_*_ALL, ARCHIVES_*_OWN)``, which
+    # resolves the ALL permission for API keys (no per-row ownership identity,
+    # same as can_queue / can_manage_library), so OWN and ALL map to the same
+    # scope. ARCHIVES_PURGE stays admin-only (see denylist) as a genuinely
+    # destructive op that drops the stats contribution, mirroring LIBRARY_PURGE.
+    # ARCHIVES_REPRINT_* stays under can_queue (it enqueues a print).
+    Permission.ARCHIVES_CREATE: "can_manage_archives",
+    Permission.ARCHIVES_UPDATE_OWN: "can_manage_archives",
+    Permission.ARCHIVES_UPDATE_ALL: "can_manage_archives",
+    Permission.ARCHIVES_DELETE_OWN: "can_manage_archives",
+    Permission.ARCHIVES_DELETE_ALL: "can_manage_archives",
+    # can_manage_projects — project curation. Carved out of the admin denylist
+    # so automations can create projects and batch-add archives via API key
+    # (#1893). The project mutation routes gate on plain
+    # ``RequirePermissionIfAuthEnabled(Permission.PROJECTS_*)`` (no OWN/ALL
+    # ownership split — projects have no per-row ownership permission), so the
+    # three CRUD permissions map directly to the one scope. Membership edits
+    # (e.g. add-archives-to-project) gate on PROJECTS_UPDATE, so they're covered.
+    # PROJECTS_READ stays under can_read_status (unchanged).
+    Permission.PROJECTS_CREATE: "can_manage_projects",
+    Permission.PROJECTS_UPDATE: "can_manage_projects",
+    Permission.PROJECTS_DELETE: "can_manage_projects",
     # can_access_cloud — narrow opt-in scope, gated by the router-level
     # ``_cloud_api_key_gate`` and additionally enforced here so the route-
     # level ``cloud_caller(Permission.CLOUD_AUTH)`` dep also fails closed
@@ -185,11 +225,13 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
         Permission.PRINTERS_CREATE,
         Permission.PRINTERS_UPDATE,
         Permission.PRINTERS_DELETE,
-        Permission.ARCHIVES_CREATE,
-        Permission.ARCHIVES_UPDATE_OWN,
-        Permission.ARCHIVES_UPDATE_ALL,
-        Permission.ARCHIVES_DELETE_OWN,
-        Permission.ARCHIVES_DELETE_ALL,
+        # ARCHIVES_CREATE / _UPDATE_OWN / _UPDATE_ALL / _DELETE_OWN /
+        # _DELETE_ALL moved to the allowlist under `can_manage_archives`
+        # (#1888) — split between allow/deny made the whole archive-management
+        # surface unreachable for API keys via `require_ownership_permission`
+        # (same regression class as the library/maintenance carve-outs in
+        # #1832). ARCHIVES_PURGE stays denied as a genuinely destructive op
+        # that drops the print's stats contribution.
         Permission.ARCHIVES_PURGE,
         # LIBRARY_UPDATE_ALL / LIBRARY_DELETE_ALL moved to the allowlist
         # under `can_manage_library` (#1832) — split between allow/deny made
@@ -197,15 +239,15 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
         # `require_ownership_permission`. Purge stays denied as a genuinely
         # destructive op.
         Permission.LIBRARY_PURGE,
-        Permission.PROJECTS_CREATE,
-        Permission.PROJECTS_UPDATE,
-        Permission.PROJECTS_DELETE,
+        # PROJECTS_CREATE / _UPDATE / _DELETE moved to the allowlist under
+        # `can_manage_projects` (#1893) — they were denied for every API key,
+        # making the project-management surface (create, add-archives, delete)
+        # unreachable, same regression class as the archives/library carve-outs.
         Permission.FILAMENTS_CREATE,
         Permission.FILAMENTS_UPDATE,
         Permission.FILAMENTS_DELETE,
-        Permission.MAINTENANCE_CREATE,
-        Permission.MAINTENANCE_UPDATE,
-        Permission.MAINTENANCE_DELETE,
+        # MAINTENANCE_CREATE / MAINTENANCE_UPDATE / MAINTENANCE_DELETE moved
+        # to the allowlist under `can_manage_maintenance` (#1832 follow-up).
         Permission.KPROFILES_CREATE,
         Permission.KPROFILES_UPDATE,
         Permission.KPROFILES_DELETE,
@@ -658,9 +700,27 @@ async def verify_camera_stream_token(token: str) -> bool:
 
         # Long-lived path. Imported lazily so the auth module stays importable
         # at startup before the long_lived_tokens model is registered.
+        from backend.app.services.long_lived_tokens import STREAM_SCOPES, verify_token as verify_long_lived
+
+        record = await verify_long_lived(db, token, scope=STREAM_SCOPES)
+        return record is not None
+
+
+async def verify_camwall_token(token: str) -> bool:
+    """Verify a Cam Wall token (#2531). Reusable — does not consume it.
+
+    Deliberately narrower than :func:`verify_camera_stream_token`: only the
+    long-lived ``camwall`` scope passes. The 60-minute ephemeral token belongs
+    to a logged-in browser, which already reaches the wall's metadata through
+    the ordinary printers API and has no need of this endpoint; and a
+    ``camera_stream`` token was handed out for video alone, so it must not
+    acquire the ability to enumerate printers by name just because a new
+    feature shipped.
+    """
+    async with async_session() as db:
         from backend.app.services.long_lived_tokens import verify_token as verify_long_lived
 
-        record = await verify_long_lived(db, token, scope="camera_stream")
+        record = await verify_long_lived(db, token, scope="camwall")
         return record is not None
 
 
@@ -1629,6 +1689,29 @@ def require_camera_stream_token_if_auth_enabled():
 
 
 RequireCameraStreamTokenIfAuthEnabled = Depends(require_camera_stream_token_if_auth_enabled())
+
+
+def require_camwall_token_if_auth_enabled():
+    """Dependency that validates a Cam Wall token query param when auth is enabled.
+
+    Used by the read-only Cam Wall feed (#2531), which a kiosk browser loads
+    with the token in the URL because it has no login session to carry a JWT.
+    """
+
+    async def checker(token: str | None = None) -> None:
+        async with async_session() as db:
+            if not await is_auth_enabled(db):
+                return  # Auth disabled, allow access
+        if not token or not await verify_camwall_token(token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Valid Cam Wall token required. Create one under Settings > API Keys with the 'Cam Wall' scope.",
+            )
+
+    return checker
+
+
+RequireCamWallTokenIfAuthEnabled = Depends(require_camwall_token_if_auth_enabled())
 
 
 def require_ownership_permission(

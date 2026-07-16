@@ -294,7 +294,7 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: Renam
               )}
             </div>
             {filenameError && (
-              <p className="mt-1 text-xs text-red-400">{filenameError}</p>
+              <p className="mt-1 text-xs text-red-700 dark:text-red-400">{filenameError}</p>
             )}
           </div>
           <div className="flex justify-end gap-2 pt-2">
@@ -593,7 +593,7 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
           <div className="w-4.5" />
         )}
         {isExternal ? (
-          <FolderSymlink className="w-4 h-4 text-purple-400 flex-shrink-0" />
+          <FolderSymlink className="w-4 h-4 text-purple-600 dark:text-purple-400 flex-shrink-0" />
         ) : (
           <FolderOpen className="w-4 h-4 text-bambu-green flex-shrink-0" />
         )}
@@ -602,7 +602,7 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
         {isLinked && (
           <button
             onClick={(e) => { e.stopPropagation(); onLink(folder); }}
-            className="flex-shrink-0 flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors"
+            className="flex-shrink-0 flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-500/30 transition-colors"
             title={`${folder.project_name ? `Project: ${folder.project_name}` : `Archive: ${folder.archive_name}`} (click to change)`}
           >
             <Link2 className="w-3 h-3" />
@@ -616,7 +616,7 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
         {/* Read-only indicator for external folders */}
         {isExternal && folder.external_readonly && (
           <span title={t('fileManager.readOnly')}>
-            <Lock className="w-3 h-3 text-amber-400 flex-shrink-0" />
+            <Lock className="w-3 h-3 text-amber-600 dark:text-amber-400 flex-shrink-0" />
           </span>
         )}
         {folder.file_count > 0 && (
@@ -668,7 +668,7 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
                 </button>
                 <button
                   className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
-                    hasPermission('library:delete_all') ? 'text-red-400 hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
+                    hasPermission('library:delete_all') ? 'text-red-700 dark:text-red-400 hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
                   }`}
                   onClick={() => { if (hasPermission('library:delete_all')) { onDelete(folder.id); setShowActions(false); } }}
                   disabled={!hasPermission('library:delete_all')}
@@ -932,7 +932,7 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
               )}
               <button
                 className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
-                  canModify('library', 'delete', file.created_by_id) ? 'text-red-400 hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
+                  canModify('library', 'delete', file.created_by_id) ? 'text-red-700 dark:text-red-400 hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
                 }`}
                 onClick={() => { if (canModify('library', 'delete', file.created_by_id)) { onDelete(file.id); setShowActions(false); } }}
                 disabled={!canModify('library', 'delete', file.created_by_id)}
@@ -1723,12 +1723,12 @@ export function FileManagerPage() {
             <span className="text-white font-medium">{stats.total_files}</span>
           </div>
           <div className="flex items-center gap-2 text-sm">
-            <FolderOpen className="w-4 h-4 text-blue-400" />
+            <FolderOpen className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             <span className="text-bambu-gray">{t('fileManager.folders')}:</span>
             <span className="text-white font-medium">{stats.total_folders}</span>
           </div>
           <div className="flex items-center gap-2 text-sm">
-            <HardDrive className="w-4 h-4 text-amber-400" />
+            <HardDrive className="w-4 h-4 text-amber-600 dark:text-amber-400" />
             <span className="text-bambu-gray">{t('fileManager.size')}:</span>
             <span className="text-white font-medium">{formatFileSize(stats.total_size_bytes)}</span>
           </div>
@@ -1909,7 +1909,7 @@ export function FileManagerPage() {
                   setTopLevelView('external');
                 }}
               >
-                <FolderSymlink className="w-4 h-4 text-purple-400" />
+                <FolderSymlink className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                 <span className="text-sm">{t('fileManager.allExternal')}</span>
               </div>
             )}
@@ -1935,11 +1935,13 @@ export function FileManagerPage() {
           </div>
         </div>
 
-        {/* Files area */}
+        {/* Files area + README rail (#2520 item 2). On wide screens the
+            README docks as a collapsible right-hand column (rendered after
+            the files column, below) so it no longer steals vertical space
+            from the file list; on narrow screens it stacks above the list
+            via `order-first` and the page itself scrolls. */}
+        <div className="flex-1 flex flex-col lg:flex-row min-w-0 min-h-0 gap-4 lg:gap-6">
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          {/* Markdown description panel (#1268) — auto-hides if the folder
-              has no README/description.md so non-users pay no UI cost. */}
-          {selectedFolderId !== null && <FolderReadmePanel folderId={selectedFolderId} />}
           {/* Tag filter rail (#1268). Lists every catalog tag as a togglable
               chip — active chips are filled green and show an X, inactive
               chips are outlined and toggle ON when clicked. Clicking an active
@@ -1983,13 +1985,13 @@ export function FileManagerPage() {
           )}
           {/* External folder info bar */}
           {selectedFolder?.is_external && (
-            <div className="flex items-center gap-3 mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
-              <FolderSymlink className="w-5 h-5 text-purple-400 flex-shrink-0" />
+            <div className="flex items-center gap-3 mb-4 p-3 bg-purple-50 dark:bg-purple-500/10 border border-purple-300 dark:border-purple-500/30 rounded-lg">
+              <FolderSymlink className="w-5 h-5 text-purple-600 dark:text-purple-400 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-purple-300">{t('fileManager.externalFolder')}</span>
+                  <span className="text-sm font-medium text-purple-700 dark:text-purple-300">{t('fileManager.externalFolder')}</span>
                   {selectedFolder.external_readonly && (
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 flex items-center gap-1">
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 flex items-center gap-1">
                       <Lock className="w-3 h-3" />
                       {t('fileManager.readOnly')}
                     </span>
@@ -2398,8 +2400,8 @@ export function FileManagerPage() {
                     <div>
                       <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
                         file.file_type === '3mf' ? 'bg-bambu-green/20 text-bambu-green'
-                        : (file.file_type === 'gcode' || file.file_type === 'gcode.3mf') ? 'bg-blue-500/20 text-blue-400'
-                        : file.file_type === 'stl' ? 'bg-purple-500/20 text-purple-400'
+                        : (file.file_type === 'gcode' || file.file_type === 'gcode.3mf') ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
+                        : file.file_type === 'stl' ? 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400'
                         : 'bg-bambu-gray/20 text-bambu-gray'
                       }`}>
                         {file.file_type.toUpperCase()}
@@ -2542,7 +2544,7 @@ export function FileManagerPage() {
                         onClick={() => canModify('library', 'delete', file.created_by_id) && setDeleteConfirm({ type: 'file', id: file.id })}
                         className={`p-1.5 rounded transition-colors ${
                           canModify('library', 'delete', file.created_by_id)
-                            ? 'hover:bg-bambu-dark text-bambu-gray hover:text-red-400'
+                            ? 'hover:bg-bambu-dark text-bambu-gray hover:text-red-700 dark:hover:text-red-400'
                             : 'text-bambu-gray/50 cursor-not-allowed'
                         }`}
                         title={canModify('library', 'delete', file.created_by_id) ? t('common.delete') : t('fileManager.noPermissionDeleteFile')}
@@ -2556,6 +2558,10 @@ export function FileManagerPage() {
               </div>
             </div>
           )}
+        </div>
+          {/* README rail — collapsible right column on lg+, stacks on top
+              on mobile. See the files-area wrapper comment above (#2520). */}
+          {selectedFolderId !== null && <FolderReadmePanel folderId={selectedFolderId} />}
         </div>
       </div>
 

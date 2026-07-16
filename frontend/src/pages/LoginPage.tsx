@@ -113,7 +113,7 @@ export function LoginPage() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { t } = useTranslation();
-  const { login, loginWithToken } = useAuth();
+  const { login, loginWithToken, user, loading } = useAuth();
   const { showToast } = useToast();
   const { mode } = useTheme();
 
@@ -174,6 +174,22 @@ export function LoginPage() {
   // we skip the redirect and render the normal page, surfacing a banner
   // so the user understands why autologin didn't kick in.
   const [autologinFailed, setAutologinFailed] = useState(false);
+
+  // #1889: redirect already-authenticated visitors away from /login. Without
+  // this, a valid session that lands directly on /login (e.g. the browser
+  // address bar autocompletes the origin to its most-visited path) renders the
+  // credentials form even though the token is live and every request succeeds —
+  // making Bambuddy look like it "never stays logged in". Gate on the
+  // credentials step so we don't interrupt the 2FA / OIDC-callback branches,
+  // which navigate themselves after loginWithToken. Send to '/' rather than
+  // resolvePostLoginRedirect() to avoid consuming the OIDC redirect stash: an
+  // already-authed direct visit has no pending redirect to honour.
+  useEffect(() => {
+    if (!loading && user && step === 'credentials') {
+      navigate('/', { replace: true });
+    }
+  }, [loading, user, step, navigate]);
+
   const autologinAttemptedRef = useRef(false);
   useEffect(() => {
     if (autologinAttemptedRef.current) return;
@@ -704,7 +720,7 @@ export function LoginPage() {
         </div>
 
         {showAutologinBanner && (
-          <div className="mt-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          <div className="mt-6 rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
             {t('login.autologinFailed')}
           </div>
         )}

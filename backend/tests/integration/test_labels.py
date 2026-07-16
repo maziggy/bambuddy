@@ -129,9 +129,9 @@ class TestLocalInventoryLabels:
 
         original = labels_module.render_labels
 
-        def _capture(template, data_list):
+        def _capture(template, data_list, **kwargs):
             captured["ids"] = [d.spool_id for d in data_list]
-            return original(template, data_list)
+            return original(template, data_list, **kwargs)
 
         with patch.object(labels_module, "render_labels", side_effect=_capture):
             resp = await async_client.post(

@@ -209,6 +209,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - Queue Only mode (stage without auto-start)
 - Clear plate confirmation between queued prints (can be disabled in settings for farm workflows)
 - Auto-print G-code injection (per-model start/end snippets for Farmloop, SwapMod, AutoClear, Printflow 3D — toggle per queue item)
+- **Preheat & Heat Soak before queued prints** — Heat the bed (and the chamber, on supported printers) and hold at temperature between FTP upload and print start. Per-print Inherit / On / Off override in the Print Options panel; per-filament chamber-target map under Settings → Workflow so PA wants 50°C, ABS 45°C, PETG-CF 40°C, PLA 0°C (skips chamber phase automatically). Hardware-aware: H-series / X2D / X1E actively heat the chamber via M141; X1C / P2S rely on bed radiation with a chamber-sensor wait; P1S / P1P / A1 family have no chamber sensor so only the soak timer applies. The cooling/heating airduct flap on H-series / X2D / P2S auto-switches to match the resolved chamber target — preheat for ABS opens nothing and recirculates warm air; preheat for PLA opens the exhaust and vents — so engineering filaments actually reach target instead of fighting the open flap, and PLA prints don't inherit a previously-hot recirculation. M191 (wait-for-chamber-temp) isn't honoured by Bambu firmware, so doing this at the orchestration layer is the only place it works
 - Smart plug integration (Tasmota, Home Assistant, MQTT, REST/Webhook)
 - REST smart plugs: Control any device with an HTTP API (openHAB, ioBroker, FHEM, Node-RED) with separate power/energy URLs and unit multipliers
 - MQTT smart plugs: Subscribe to Zigbee2MQTT, Shelly, or any MQTT topic for energy monitoring
@@ -372,7 +373,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 
 ## 📸 Screenshots
 
-> **Refreshed printer card in 0.2.5b2** — tighter layout, popovers for all controls (temperature setpoints, fan speeds, jog), and a bottom-aligned power row. The screenshots below predate the refresh.
+> **Refreshed printer card in 1.2.5b2** — tighter layout, popovers for all controls (temperature setpoints, fan speeds, jog), and a bottom-aligned power row. The screenshots below predate the refresh.
 
 <details>
 <summary><strong>Click to expand screenshots</strong></summary>
@@ -664,8 +665,8 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Run
-uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+# Run (--loop asyncio avoids a uvloop TLS bug that can truncate VP FTP uploads)
+uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --loop asyncio
 ```
 
 Open **http://localhost:8000** and add your printer!

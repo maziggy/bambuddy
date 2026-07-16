@@ -756,6 +756,30 @@ create_bambuddy_directories() {
 create_bambuddy_service() {
     info "Creating Bambuddy systemd service..."
 
+    # Overwriting the unit used to silently drop any ReadWritePaths the operator
+    # had added — a NAS share for Scheduled Backups, typically — after which the
+    # backups failed with EROFS, which looks like a permission problem and is not
+    # one (issue #2544). Back the old unit up and carry those paths forward.
+    local existing_unit="/etc/systemd/system/bambuddy.service"
+    local extra_rw=""
+    if [[ -f "$existing_unit" ]]; then
+        local backup_unit="${existing_unit}.bak-$(date +%Y%m%d-%H%M%S)"
+        cp "$existing_unit" "$backup_unit"
+        info "Existing service backed up to $backup_unit"
+
+        local prev_rw p
+        prev_rw=$(grep -hE '^ReadWritePaths=' "$existing_unit" 2>/dev/null | sed 's/^ReadWritePaths=//' || true)
+        for p in $prev_rw; do
+            case "$p" in
+                "$INSTALL_PATH/data" | "$INSTALL_PATH/logs" | "$INSTALL_PATH") continue ;;
+            esac
+            extra_rw+=" $p"
+        done
+        if [[ -n "$extra_rw" ]]; then
+            info "Keeping custom writable paths from the previous service:$extra_rw"
+        fi
+    fi
+
     cat > /etc/systemd/system/bambuddy.service << EOF
 [Unit]
 Description=Bambuddy - Bambu Lab Print Management
@@ -770,9 +794,17 @@ WorkingDirectory=$INSTALL_PATH
 EnvironmentFile=$INSTALL_PATH/.env
 Environment="DATA_DIR=$INSTALL_PATH/data"
 Environment="LOG_DIR=$INSTALL_PATH/logs"
-ExecStart=$INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port $BAMBUDDY_PORT
+# --loop asyncio required: uvloop can truncate VP FTP uploads (#1896)
+# --timeout-graceful-shutdown required: uvicorn otherwise waits forever for
+# in-flight requests, and an MJPEG camera stream never completes — one open
+# camera tile hangs the stop until systemd SIGKILLs, skipping the WAL
+# checkpoint and the MQTT / virtual-printer teardown. A kiosk sitting on the
+# printers page holds exactly such a stream open, so this bites every reboot.
+ExecStart=$INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port $BAMBUDDY_PORT --loop asyncio --timeout-graceful-shutdown 5
 Restart=on-failure
 RestartSec=5
+# Backstop only — uvicorn bounds its own wait at 5s and teardown takes ~1-2s.
+TimeoutStopSec=30
 StandardOutput=journal
 StandardError=journal
 
@@ -780,7 +812,10 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=$INSTALL_PATH/data $INSTALL_PATH/logs $INSTALL_PATH
+# ProtectSystem=strict makes every path outside the ones below read-only for this
+# service. To back up to a NAS share, add it here or in a drop-in that survives a
+# reinstall: sudo systemctl edit bambuddy → [Service] → ReadWritePaths=/mnt/share
+ReadWritePaths=$INSTALL_PATH/data $INSTALL_PATH/logs $INSTALL_PATH$extra_rw
 
 [Install]
 WantedBy=multi-user.target

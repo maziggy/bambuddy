@@ -7,6 +7,8 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  buildAmsMapping,
+  buildFilamentComparison,
   buildLoadedFilaments,
   computeAmsMapping,
 } from '../../hooks/useFilamentMapping';
@@ -1189,5 +1191,55 @@ describe('effectivePreferLowest gate (#1766)', () => {
     const gated = effectivePreferLowest(true, false);
     const result = computeAmsMapping(reqs, status, gated);
     expect(result).toEqual([0]); // First match wins; the 5%-remain spool is NOT selected.
+  });
+});
+
+describe('per-plate mapping vs. the whole-file union (#2551 follow-up)', () => {
+  // The multi-plate case that made this necessary: two plates, each printing one
+  // red object, but on different slots of the same file. The printer has exactly
+  // one red spool.
+  const PLATE_1 = { filaments: [{ slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10 }] };
+  const PLATE_2 = { filaments: [{ slot_id: 2, type: 'PLA', color: '#FF0000', used_grams: 10 }] };
+  const WHOLE_FILE_UNION = {
+    filaments: [
+      { slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10 },
+      { slot_id: 2, type: 'PLA', color: '#FF0000', used_grams: 10 },
+    ],
+  };
+
+  const printer = createPrinterStatus([
+    {
+      id: 0,
+      tray: [
+        { id: 0, tray_type: 'PLA', tray_color: 'FF0000' }, // the only red — global tray 0
+        { id: 1, tray_type: 'PLA', tray_color: '000000' }, // black — global tray 1
+      ],
+    },
+  ]);
+
+  const mapPlate = (reqs: { filaments: { slot_id: number; type: string; color: string; used_grams: number }[] }) =>
+    buildAmsMapping(buildFilamentComparison(reqs, buildLoadedFilaments(printer), {}));
+
+  it('maps each plate to the red tray, because each plate is its own print', () => {
+    expect(mapPlate(PLATE_1)).toEqual([0]);
+    // Slot 1 is unused by this plate, so it stays -1; slot 2 takes the red tray.
+    expect(mapPlate(PLATE_2)).toEqual([-1, 0]);
+  });
+
+  it('the union starves the second slot — which is what a shared mapping sent', () => {
+    // Tray assignment is stateful: slot 1 claims the red tray, so slot 2 falls
+    // through to a type-only match on the BLACK tray. Sending this to plate 2
+    // prints it in black. This is the mapping the modal used to post for every
+    // plate of a multi-plate submission.
+    expect(mapPlate(WHOLE_FILE_UNION)).toEqual([0, 1]);
+  });
+
+  it('a manual override on one plate does not leak into another', () => {
+    const loaded = buildLoadedFilaments(printer);
+    // The user pins plate 2's slot 2 to the black tray by hand.
+    const plate2 = buildAmsMapping(buildFilamentComparison(PLATE_2, loaded, { 2: 1 }));
+    expect(plate2).toEqual([-1, 1]);
+    // Plate 1 is mapped from its own (empty) override set and still gets red.
+    expect(buildAmsMapping(buildFilamentComparison(PLATE_1, loaded, {}))).toEqual([0]);
   });
 });

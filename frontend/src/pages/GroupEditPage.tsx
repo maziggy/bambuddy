@@ -176,7 +176,7 @@ export function GroupEditPage() {
 
       {/* System group warning */}
       {isEditing && groupData?.is_system && (
-        <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 text-sm">
+        <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-500/20 text-yellow-700 dark:text-yellow-400 text-sm">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           {t('groups.form.systemGroupWarning')}
         </div>
@@ -282,9 +282,16 @@ export function GroupEditPage() {
                         type="checkbox"
                         checked={permissions.includes(perm.value)}
                         onChange={() => togglePermission(perm.value)}
-                        className="w-4 h-4 rounded border-bambu-gray text-bambu-green focus:ring-bambu-green focus:ring-offset-0 bg-bambu-dark-secondary"
+                        className="w-4 h-4 shrink-0 rounded border-bambu-gray text-bambu-green focus:ring-bambu-green focus:ring-offset-0 bg-bambu-dark-secondary"
                       />
-                      <span className="text-sm text-bambu-gray">{perm.label}</span>
+                      <span className="flex flex-col">
+                        <span className="text-sm text-bambu-gray">{perm.label}</span>
+                        {perm.value === 'websocket:connect' && (
+                          <span className="text-xs text-bambu-gray/60">
+                            {t('groups.editor.websocketHint')}
+                          </span>
+                        )}
+                      </span>
                     </label>
                   ))}
                 </div>

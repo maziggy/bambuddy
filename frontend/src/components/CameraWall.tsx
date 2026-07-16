@@ -4,17 +4,51 @@ import { useQueries } from '@tanstack/react-query';
 import { Settings as SettingsIcon } from 'lucide-react';
 import { CameraTile, type CameraTileMode, type CameraTileStatusMode } from './CameraTile';
 import { filterKnownHMSErrors } from './HMSErrorModal';
-import { api, type Printer, type PrinterStatus } from '../api/client';
+import { api, type PrinterStatus } from '../api/client';
+
+// The wall only ever reads these three fields off a printer, so it asks for no
+// more than that. Printer[] satisfies this structurally, and so does the
+// smaller payload the token-authenticated kiosk feed returns (#2531) — which
+// deliberately carries neither serial number nor IP.
+export interface CameraWallPrinter {
+  id: number;
+  name: string;
+  camera_rotation?: number;
+}
+
+// What a tile draws from a printer's status. PrinterStatus satisfies it; so
+// does CamWallPrinter, which is how the kiosk page feeds the same component
+// without the JWT-gated per-printer status endpoint.
+export interface CameraWallStatus {
+  connected?: boolean;
+  state?: string | null;
+  progress?: number | null;
+  remaining_time?: number | null;
+  layer_num?: number | null;
+  total_layers?: number | null;
+  subtask_name?: string | null;
+  gcode_file?: string | null;
+  hms_errors?: PrinterStatus['hms_errors'];
+}
 
 interface CameraWallProps {
-  printers: Printer[];
+  printers: CameraWallPrinter[];
   maxLive: number;
   snapshotIntervalSec: number;
   statusMode: CameraTileStatusMode;
-  onTileClick: (printerId: number, printerName: string) => void;
   onChangeMaxLive: (next: number) => void;
   onChangeSnapshotIntervalSec: (next: number) => void;
   onChangeStatusMode: (next: CameraTileStatusMode) => void;
+  // Omitted on a kiosk wall: a TV has no pointer, and click-through would open
+  // a page the wall's token cannot authenticate. Tiles render inert instead.
+  onTileClick?: (printerId: number, printerName: string) => void;
+  // Supplied by the kiosk page, which polls one feed for the whole wall. When
+  // absent the component fetches per-printer status itself, reusing the
+  // ['printerStatus', id] cache the printer cards already populate.
+  statuses?: Map<number, CameraWallStatus | undefined>;
+  // Kiosk walls hide the settings popover — the knobs come from the URL, and
+  // there is nobody standing at the screen to turn them.
+  showSettings?: boolean;
 }
 
 const MIN_MAX_LIVE = 1;
@@ -32,26 +66,33 @@ export function CameraWall({
   onChangeMaxLive,
   onChangeSnapshotIntervalSec,
   onChangeStatusMode,
+  statuses,
+  showSettings: settingsEnabled = true,
 }: CameraWallProps) {
   const { t } = useTranslation();
   const tileRefs = useRef<Map<number, HTMLDivElement | null>>(new Map());
 
   // Reuses the same ['printerStatus', id] cache that each PrinterCard
-  // populates, so flipping between Cards and Cam Wall is instant.
+  // populates, so flipping between Cards and Cam Wall is instant. Skipped
+  // entirely when the caller already has the statuses — the kiosk page polls
+  // one feed for the whole wall, and its token cannot reach this endpoint.
+  const ownQueries = statuses ? [] : printers;
   const statusQueries = useQueries({
-    queries: printers.map((p) => ({
+    queries: ownQueries.map((p) => ({
       queryKey: ['printerStatus', p.id],
       queryFn: () => api.getPrinterStatus(p.id),
       staleTime: 5000,
     })),
   });
-  const statusByPrinter = useMemo(() => {
-    const map = new Map<number, PrinterStatus | undefined>();
-    printers.forEach((p, i) => {
+  const fetchedStatuses = useMemo(() => {
+    const map = new Map<number, CameraWallStatus | undefined>();
+    ownQueries.forEach((p, i) => {
       map.set(p.id, statusQueries[i]?.data);
     });
     return map;
-  }, [printers, statusQueries]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printers, statusQueries, statuses]);
+  const statusByPrinter = statuses ?? fetchedStatuses;
   const [visibleIds, setVisibleIds] = useState<Set<number>>(() => new Set());
   const [showSettings, setShowSettings] = useState(false);
   const settingsRef = useRef<HTMLDivElement | null>(null);
@@ -135,6 +176,9 @@ export function CameraWall({
             total: printers.length,
           })}
         </span>
+        {/* Not merely hidden — a kiosk wall must not carry a focusable control
+            it cannot act on. CSS-hiding would leave it tabbable. */}
+        {settingsEnabled && (
         <div className="relative" ref={settingsRef}>
           <button
             type="button"
@@ -224,6 +268,7 @@ export function CameraWall({
             </div>
           )}
         </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -258,7 +303,7 @@ export function CameraWall({
                 hmsErrorCount={
                   filterKnownHMSErrors(statusByPrinter.get(p.id)?.hms_errors ?? []).length
                 }
-                onClick={() => onTileClick(p.id, p.name)}
+                onClick={onTileClick ? () => onTileClick(p.id, p.name) : undefined}
               />
             </div>
           );

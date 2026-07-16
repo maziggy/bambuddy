@@ -122,6 +122,51 @@ def supports_chamber_heater(model: str | None) -> bool:
     return model.strip().upper() in CHAMBER_HEATER_MODELS
 
 
+# Models with a cooling / heating airduct flap. Same set as the frontend
+# PrintersPage airduct-toggle whitelist (P2S, X2D, H2D, H2C, H2S, H2D Pro).
+# X1E has a chamber heater but NO airduct flap — the warm-air recirculation
+# happens via the fixed front-door inlet, so no `set_airduct` command is
+# needed (and the firmware ignores it). P2S has an airduct but no heater —
+# the flap manages chamber airflow even without an active heater. The
+# intersection (chamber heater AND airduct) is what the preheat stage cares
+# about: when M141 fires we also need to assert heating mode, otherwise the
+# default cooling mode actively fights the chamber heater.
+CHAMBER_AIRDUCT_MODELS = frozenset(
+    [
+        # Display names
+        "P2S",
+        "X2D",
+        "H2C",
+        "H2D",
+        "H2DPRO",
+        "H2S",
+        # Internal codes (from MQTT/SSDP)
+        "N7",  # P2S
+        "N6",  # X2D
+        "O1C",  # H2C
+        "O1C2",  # H2C dual-nozzle variant
+        "O1D",  # H2D
+        "O1E",  # H2D Pro
+        "O2D",  # H2D Pro alternate code
+        "O1S",  # H2S
+    ]
+)
+
+
+def supports_airduct(model: str | None) -> bool:
+    """Check if a printer model has a cooling / heating airduct mode toggle.
+
+    Mirrors the frontend PrintersPage `['P2S', 'X2D', 'H2D', 'H2C', 'H2S']`
+    + H2D Pro whitelist. Distinct from `supports_chamber_heater` — P2S has
+    the airduct toggle but no active heater, and X1E has the heater but no
+    airduct. The preheat stage cares about the intersection (heater AND
+    airduct) so it can flip the flap to heating before energising M141.
+    """
+    if not model:
+        return False
+    return model.strip().upper() in CHAMBER_AIRDUCT_MODELS
+
+
 def has_stg_cur_idle_bug(model: str | None) -> bool:
     """Check if a printer model may incorrectly report stg_cur=0 when idle.
 
@@ -164,27 +209,48 @@ _DRYING_MIN_FIRMWARE: dict[str, str] = {
     "O1C2": "01.02.00.00",  # H2C dual-nozzle SSDP model code
     "X1": "01.09.00.00",
     "X1C": "01.09.00.00",
-    "P1P": "01.08.00.00",
-    "P1S": "01.08.00.00",
     "P2S": "01.02.00.00",
     "N7": "01.02.00.00",  # P2S internal model code
 }
 # Models that definitely don't support AMS drying (no AMS 2 Pro / AMS-HT compatibility)
 _DRYING_UNSUPPORTED_MODELS = frozenset({"A1", "A1MINI", "A1-MINI", "A1 MINI", "O1S", "N1", "N2S"})
 
+# Models whose AMS can dry, but only from the printer's own touchscreen. Bambu's P1
+# manual is explicit: "P1S connected AMS drying functions may only be controlled from
+# the P1S screen." The firmware still answers `ams_filament_drying` with
+# result: success and then does nothing — the reporter of #2533 sent it three times
+# on an idle P1S with an AMS 2 Pro and the unit never left dry_status 0. Bambuddy
+# originally listed P1P/P1S here as fw-gated (01.08+, #292); that version is when P1
+# firmware gained AMS 2 Pro *support*, not remote drying, and it was never verified
+# against a live P1. Nothing we can send will start a cycle, so we don't offer to.
+_DRYING_SCREEN_ONLY_MODELS = frozenset({"P1P", "P1S"})
+
+
+def drying_screen_only(model: str | None) -> bool:
+    """True when the model's AMS dries only via the printer's own screen (#2533).
+
+    Distinct from "unsupported": these printers *can* dry, and Bambuddy still shows
+    a cycle started on the printer. They just can't be commanded to start or stop
+    one remotely, so the UI explains that instead of silently dropping the control.
+    """
+    if not model:
+        return False
+    return model.strip().upper() in _DRYING_SCREEN_ONLY_MODELS
+
 
 def supports_drying(model: str | None, firmware: str | None) -> bool:
-    """Check if a printer model supports AMS drying commands.
+    """Check if a printer model accepts remote AMS drying commands.
 
     Known models with confirmed min firmware get version-gated.
-    Known unsupported models are blocked.
+    Known unsupported models, and models that only dry from their own screen,
+    are blocked.
     All other models (H2D Pro, X1E, future models) are allowed —
     the command fails gracefully with result: "fail" if unsupported.
     """
     if not model:
         return False
     model_upper = model.strip().upper()
-    if model_upper in _DRYING_UNSUPPORTED_MODELS:
+    if model_upper in _DRYING_UNSUPPORTED_MODELS or model_upper in _DRYING_SCREEN_ONLY_MODELS:
         return False
     if model_upper in _DRYING_MIN_FIRMWARE:
         return bool(firmware and firmware >= _DRYING_MIN_FIRMWARE[model_upper])
@@ -556,6 +622,24 @@ class PrinterManager:
             client.check_staleness()
             return client.state
         return None
+
+    # Gcode states in which a job is loaded / in progress and cutting power
+    # would ruin the print. PAUSE is included on purpose — a paused print is
+    # still loaded on the bed. Used by the smart-plug auto-off guard (#1890) so
+    # a re-print started from the touchscreen isn't killed mid-print.
+    ACTIVE_PRINT_STATES = ("RUNNING", "PAUSE", "PREPARE", "SLICING")
+
+    def is_print_active(self, printer_id: int) -> bool:
+        """True when the printer currently has a print loaded / in progress.
+
+        Returns False when disconnected or in any idle/terminal state
+        (IDLE / FINISH / FAILED / unknown), so callers fail *open* only for
+        the safe "nothing is printing" case. #1890.
+        """
+        state = self.get_status(printer_id)
+        if not state or not state.connected:
+            return False
+        return state.state in self.ACTIVE_PRINT_STATES
 
     def get_model(self, printer_id: int) -> str | None:
         """Get the cached model for a printer."""
@@ -1200,6 +1284,7 @@ def printer_state_to_dict(
         # AMS drying support
         "supports_drying": supports_drying(model, state.firmware_version),
         "supports_drying_while_printing": supports_drying_while_printing(model, state.firmware_version),
+        "drying_screen_only": drying_screen_only(model),
         # 1-indexed plate number parsed from gcode_file (e.g. /Metadata/plate_2.gcode).
         # Pushed via WebSocket so the printer card picks up plate transitions within
         # a multi-plate 3MF without waiting for the 30 s REST poll (#881 follow-up).

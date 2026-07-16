@@ -303,7 +303,7 @@ describe('SettingsPage', () => {
 
       expect(localStorage.setItem).toHaveBeenCalledWith(
         SIDEBAR_ORDER_KEY,
-        JSON.stringify(['ext-7', 'printers', 'inventory', 'archives', 'queue', 'projects', 'files', 'makerworld', 'profiles', 'maintenance', 'stats', 'settings']),
+        JSON.stringify(['ext-7', 'printers', 'inventory', 'archives', 'queue', 'projects', 'files', 'makerworld', 'profiles', 'maintenance', 'stats', 'notifications', 'settings']),
       );
     });
 
@@ -345,7 +345,7 @@ describe('SettingsPage', () => {
       expect(localStorage.setItem).toHaveBeenCalledWith(SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY, JSON.stringify([]));
       expect(localStorage.setItem).toHaveBeenCalledWith(
         SIDEBAR_ORDER_KEY,
-        JSON.stringify(['printers', 'inventory', 'archives', 'queue', 'projects', 'files', 'makerworld', 'profiles', 'maintenance', 'stats', 'settings', 'ext-7']),
+        JSON.stringify(['printers', 'inventory', 'archives', 'queue', 'projects', 'files', 'makerworld', 'profiles', 'maintenance', 'stats', 'notifications', 'settings', 'ext-7']),
       );
 
       const settingsRow = screen.getAllByText('Settings')
@@ -416,6 +416,7 @@ describe('SettingsPage', () => {
           'profiles',
           'maintenance',
           'stats',
+          'notifications',
           'settings',
         ],
         hiddenSystemItemIds: ['stats'],
@@ -1340,5 +1341,59 @@ describe('SettingsPage', () => {
         expect(window.location.search).toContain('sub=pipelines');
       });
     });
+  });
+});
+
+/**
+ * Sponsor banner on Settings -> General.
+ *
+ * Below the fleet threshold it makes the community/donation ask; at or above it
+ * the same slot makes the commercial ask and points at business.html. A print
+ * farm asked to chip in $5 is a wasted impression, and a hobbyist pitched a
+ * support contract is an annoyed user — so both directions are pinned.
+ */
+describe('SettingsPage — sponsor banner audience', () => {
+  beforeEach(() => {
+    // BrowserRouter shares window.location across tests and the banner only
+    // renders on the General tab — without this reset a prior test's ?tab=queue
+    // leaks in and the banner never mounts.
+    window.history.replaceState({}, '', '/');
+  });
+
+  const fleet = (count: number) =>
+    server.use(
+      http.get('/api/v1/printers/', () =>
+        HttpResponse.json(
+          Array.from({ length: count }, (_, i) => ({
+            id: i + 1,
+            name: `Printer ${i + 1}`,
+            serial_number: `SN${i + 1}`,
+            ip_address: '192.168.1.10',
+            model: 'X1C',
+            is_active: true,
+          })),
+        ),
+      ),
+    );
+
+  it('shows the community ask for a small fleet', async () => {
+    fleet(2);
+    render(<SettingsPage />);
+
+    const banner = await screen.findByRole('link', { name: /Independent & community-funded/i });
+    expect(banner).toHaveAttribute('href', 'https://bambuddy.cool/sponsors.html?from=app-settings');
+    expect(screen.queryByText(/Bambuddy for business/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the commercial ask for a business-sized fleet', async () => {
+    fleet(6);
+    render(<SettingsPage />);
+
+    const banner = await screen.findByRole('link', { name: /Bambuddy for business/i });
+    expect(banner).toHaveAttribute('href', 'https://bambuddy.cool/business.html?from=app-settings');
+    // The donation copy is replaced, not merely supplemented.
+    expect(screen.queryByText(/Independent & community-funded/i)).not.toBeInTheDocument();
+    // The ask names the fleet back to them.
+    expect(screen.getByText(/6 printers/i)).toBeInTheDocument();
   });
 });

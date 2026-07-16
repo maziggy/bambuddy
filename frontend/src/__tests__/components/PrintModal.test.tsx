@@ -7,10 +7,16 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import type React from 'react';
+import { screen, waitFor, render as rtlRender } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter } from 'react-router-dom';
 import { render } from '../utils';
 import { PrintModal } from '../../components/PrintModal';
+import { AuthProvider } from '../../contexts/AuthContext';
+import { ThemeProvider } from '../../contexts/ThemeContext';
+import { ToastProvider } from '../../contexts/ToastContext';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import type { PrintQueueItem } from '../../api/client';
@@ -1197,6 +1203,52 @@ describe('PrintModal', () => {
       expect(queueCalls[0].quantity).toBe(3);
     });
 
+    it('quantity 1 + snippets configured: checkbox toggles cleanly (#1852)', async () => {
+      // The previous reset effect in PrintModal/index.tsx silently flipped
+      // gcodeInjection back to false whenever effectiveQuantity <= 1 in create
+      // mode, so a single print with snippets configured couldn't tick the
+      // checkbox — every click visibly un-ticked itself within the next render.
+      // The scheduler reads item.gcode_injection per queue item regardless of
+      // batch size, so quantity 1 must be allowed too.
+      const queueCalls: Record<string, unknown>[] = [];
+      server.use(
+        withSnippets(),
+        http.post('/api/v1/queue/', async ({ request }) => {
+          queueCalls.push((await request.json()) as Record<string, unknown>);
+          return HttpResponse.json({ id: queueCalls.length, status: 'pending' });
+        }),
+      );
+
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="create"
+          archiveId={1}
+          archiveName="Benchy"
+          initialSelectedPrinterIds={[1]}
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      // Quantity stays at default (1) — this is the OP's exact scenario.
+      const checkbox = (await screen.findByLabelText(/inject auto-print/i)) as HTMLInputElement;
+      expect(checkbox.checked).toBe(false);
+
+      await user.click(checkbox);
+      // CRITICAL: after the click the checkbox must stay checked. Under the
+      // pre-fix reset effect, the parent state would flip back to false within
+      // a render and the displayed `checked` attribute would track it.
+      await waitFor(() => expect(checkbox.checked).toBe(true));
+
+      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+      await waitFor(() => expect(queueCalls.length).toBe(1));
+      // The injection flag actually reaches the API — pre-fix the parent reset
+      // would have stripped it before submit.
+      expect(queueCalls[0].gcode_injection).toBe(true);
+    });
+
     it('injection OFF queues all copies through the scheduler path', async () => {
       const queueCalls: Record<string, unknown>[] = [];
       server.use(
@@ -1505,5 +1557,434 @@ describe('PrintModal', () => {
       // Either omitted entirely or explicitly undefined — both interpret as "keep file"
       expect(capturedBody?.cleanup_library_after_dispatch).toBeUndefined();
     });
+  });
+});
+
+
+describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
+  const mockOnClose = vi.fn();
+
+  // These tests deliberately do NOT use the shared `render` from '../utils': its
+  // QueryClient sets `gcTime: 0`, which evicts a query the instant it loses its
+  // observer. The whole-file filament requirements are fetched on open and then
+  // orphaned when a plate is auto-selected, so under gcTime:0 they vanish and the
+  // modal simply sends no mapping — the bug cannot reproduce. A real browser keeps
+  // that entry for 5 minutes and hands the union straight back when the user picks
+  // a second plate, which is what got mapped onto every plate. Same providers,
+  // production cache behaviour.
+  const render = (ui: React.ReactElement) => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    return rtlRender(
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AuthProvider>
+            <ThemeProvider>
+              <ToastProvider>{ui}</ToastProvider>
+            </ThemeProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+  };
+
+  // Two plates, each printing one red object, but on different slots of the same
+  // file. The printer has exactly one red spool (tray 0) and one black (tray 1).
+  // Matching the union of both plates makes slot 1 claim the red tray and drops
+  // slot 2 onto the black one — so plate 2 would print in the wrong colour.
+  const PLATES = {
+    is_multi_plate: true,
+    plates: [
+      { index: 1, name: 'Plate 1', has_thumbnail: false, thumbnail_url: null, objects: ['A'], filaments: [{ type: 'PLA', color: '#FF0000' }], print_time_seconds: 1800, filament_used_grams: 50 },
+      { index: 2, name: 'Plate 2', has_thumbnail: false, thumbnail_url: null, objects: ['B'], filaments: [{ type: 'PLA', color: '#FF0000' }], print_time_seconds: 1800, filament_used_grams: 50 },
+    ],
+  };
+
+  const SLOT_1_RED = { slot_id: 1, type: 'PLA', color: '#FF0000', tray_info_idx: '', used_grams: 50 };
+  const SLOT_2_RED = { slot_id: 2, type: 'PLA', color: '#FF0000', tray_info_idx: '', used_grams: 50 };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json(mockPrinters)),
+      http.get('/api/v1/archives/:id/plates', () => HttpResponse.json(PLATES)),
+      // The endpoint is plate-aware: no plate_id yields the whole-file union.
+      http.get('/api/v1/archives/:id/filament-requirements', ({ request }) => {
+        const plateId = new URL(request.url).searchParams.get('plate_id');
+        if (plateId === '1') return HttpResponse.json({ filaments: [SLOT_1_RED] });
+        if (plateId === '2') return HttpResponse.json({ filaments: [SLOT_2_RED] });
+        return HttpResponse.json({ filaments: [SLOT_1_RED, SLOT_2_RED] });
+      }),
+      http.get('/api/v1/printers/:id/status', () =>
+        HttpResponse.json({
+          connected: true,
+          state: 'IDLE',
+          ams: [{ id: 0, tray: [
+            { id: 0, tray_type: 'PLA', tray_color: 'FF0000' },
+            { id: 1, tray_type: 'PLA', tray_color: '000000' },
+          ] }],
+          vt_tray: [],
+        }),
+      ),
+      http.get('/api/v1/printers/:id/assignments', () => HttpResponse.json([])),
+      http.post('/api/v1/queue/', () => HttpResponse.json({ id: 1, status: 'pending' })),
+    );
+  });
+
+  const selectBothPlates = async (user: ReturnType<typeof userEvent.setup>) => {
+    await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+    await user.click(screen.getByText('X1 Carbon'));
+    await waitFor(() => expect(screen.getByText('Plate 2')).toBeInTheDocument());
+    await user.click(screen.getByText('Plate 2')); // Plate 1 is auto-selected
+  };
+
+  it('shows one mapping panel per selected plate, named after the plate', async () => {
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
+
+    await selectBothPlates(user);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Filament Mapping — Plate 1/)).toBeInTheDocument();
+      expect(screen.getByText(/Filament Mapping — Plate 2/)).toBeInTheDocument();
+    });
+  });
+
+  it('sends each plate the mapping for its own slots, not the whole-file union', async () => {
+    const queued: { plate_id: number; ams_mapping: number[] | null }[] = [];
+    server.use(
+      http.post('/api/v1/queue/', async ({ request }) => {
+        queued.push((await request.json()) as { plate_id: number; ams_mapping: number[] | null });
+        return HttpResponse.json({ id: queued.length, status: 'pending' });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
+
+    await selectBothPlates(user);
+    await waitFor(() => expect(screen.getByText(/Filament Mapping — Plate 2/)).toBeInTheDocument());
+
+    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+    await waitFor(() => expect(queued.length).toBe(2));
+
+    const plate1 = queued.find((q) => q.plate_id === 1);
+    const plate2 = queued.find((q) => q.plate_id === 2);
+    // Plate 1 prints slot 1 from the red tray.
+    expect(plate1?.ams_mapping).toEqual([0]);
+    // Plate 2 prints slot 2 from the SAME red tray — slot 1 is not its business.
+    // The union mapping would have been [0, 1], sending this plate to the black tray.
+    expect(plate2?.ams_mapping).toEqual([-1, 0]);
+  });
+
+  it('sends no mapping when several plates fan out across several printers', async () => {
+    // A tray id is meaningless on a different printer, so the first printer's
+    // mapping must not be handed to the second. The scheduler maps each plate
+    // against the printer it actually dispatches to.
+    const queued: { printer_id: number; ams_mapping?: number[] | null }[] = [];
+    server.use(
+      http.post('/api/v1/queue/', async ({ request }) => {
+        queued.push((await request.json()) as { printer_id: number; ams_mapping?: number[] | null });
+        return HttpResponse.json({ id: queued.length, status: 'pending' });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
+
+    await waitFor(() => expect(screen.getByText('X1 Carbon')).toBeInTheDocument());
+    await user.click(screen.getByText('X1 Carbon'));
+    await user.click(screen.getByText('P1S'));
+    await waitFor(() => expect(screen.getByText('Plate 2')).toBeInTheDocument());
+    await user.click(screen.getByText('Plate 2'));
+
+    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+    await waitFor(() => expect(queued.length).toBe(4)); // 2 plates x 2 printers
+    queued.forEach((q) => expect(q.ams_mapping ?? null).toBeNull());
+  });
+
+  it('sends no mapping for a model-assigned multi-plate job, leaving it to the scheduler', async () => {
+    const queued: { ams_mapping?: number[] | null }[] = [];
+    server.use(
+      http.post('/api/v1/queue/', async ({ request }) => {
+        queued.push((await request.json()) as { ams_mapping?: number[] | null });
+        return HttpResponse.json({ id: queued.length, status: 'pending' });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
+
+    // "Any model" mode: no printer is chosen, so there is no AMS to map onto and
+    // the scheduler computes the mapping per plate once it picks one.
+    await waitFor(() => expect(screen.getByText('Plate 2')).toBeInTheDocument());
+    await user.click(screen.getByText('Plate 2'));
+    await user.click(screen.getByRole('button', { name: /any model/i }));
+    await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument());
+    await user.selectOptions(screen.getByRole('combobox'), 'X1C');
+
+    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+    await waitFor(() => expect(queued.length).toBe(2));
+    queued.forEach((q) => expect(q.ams_mapping ?? null).toBeNull());
+  });
+
+  it('drops a plate\'s manual tray overrides when the printer changes', async () => {
+    // A manual override holds a global tray id, which names a different spool on a
+    // different printer. Carrying plate 1's "slot 1 -> tray 1" from the X1C over to
+    // the P1S would dispatch a tray the user never picked.
+    const queued: { plate_id: number; ams_mapping: number[] | null }[] = [];
+    server.use(
+      http.post('/api/v1/queue/', async ({ request }) => {
+        queued.push((await request.json()) as { plate_id: number; ams_mapping: number[] | null });
+        return HttpResponse.json({ id: queued.length, status: 'pending' });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
+
+    await selectBothPlates(user);
+    await waitFor(() => expect(screen.getByText(/Filament Mapping — Plate 1/)).toBeInTheDocument());
+
+    // Force plate 1's slot 1 onto the black tray (1) instead of the auto-matched red (0).
+    await user.click(screen.getByText(/Filament Mapping — Plate 1/));
+    const traySelects = await waitFor(() => {
+      const found = screen.getAllByRole('combobox').filter((el) =>
+        Array.from((el as HTMLSelectElement).options).some((o) => o.value === '1'),
+      );
+      if (found.length === 0) throw new Error('no tray select rendered');
+      return found;
+    });
+    await user.selectOptions(traySelects[0], '1');
+
+    // Now move the job to the other printer.
+    await user.click(screen.getByText('X1 Carbon')); // deselect
+    await user.click(screen.getByText('P1S'));
+
+    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+    await waitFor(() => expect(queued.length).toBe(2));
+
+    // Plate 1 auto-matches red (tray 0) on the new printer. Tray 1 is the stale pick.
+    const plate1 = queued.find((q) => q.plate_id === 1);
+    expect(plate1?.ams_mapping).toEqual([0]);
+  });
+
+  it('sums what the plates draw from one spool before warning about it', async () => {
+    // Both plates map to the same red tray. 60 g left covers either plate on its
+    // own (40 g), but not both — the check has to add them up, not test them
+    // one at a time.
+    server.use(
+      http.get('/api/v1/archives/:id/filament-requirements', ({ request }) => {
+        const plateId = new URL(request.url).searchParams.get('plate_id');
+        if (plateId === '1') return HttpResponse.json({ filaments: [{ ...SLOT_1_RED, used_grams: 40 }] });
+        if (plateId === '2') return HttpResponse.json({ filaments: [{ ...SLOT_2_RED, used_grams: 40 }] });
+        return HttpResponse.json({ filaments: [SLOT_1_RED, SLOT_2_RED] });
+      }),
+      http.get('/api/v1/inventory/assignments', () =>
+        HttpResponse.json([
+          {
+            id: 1, spool_id: 1, printer_id: 1, printer_name: 'X1 Carbon', ams_id: 0, tray_id: 0,
+            fingerprint_color: null, fingerprint_type: null, configured: true,
+            spool: { id: 1, label_weight: 1000, weight_used: 940 },
+          },
+        ]),
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
+
+    await selectBothPlates(user);
+    await waitFor(() => expect(screen.getByText(/Filament Mapping — Plate 2/)).toBeInTheDocument());
+
+    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+    // 80 g needed from a spool with 60 g left → the acknowledgement dialog, not a
+    // silent queue.
+    await waitFor(() => expect(screen.getByText(/Not enough filament/i)).toBeInTheDocument());
+    expect(screen.getByText(/needs 80g, remaining 60g/i)).toBeInTheDocument();
+  });
+
+  it('holds the Print button until every selected plate has answered', async () => {
+    // A plate whose filaments cannot be read has no mapping and no forced colours;
+    // queueing it anyway prints it in whatever happens to be loaded.
+    server.use(
+      http.get('/api/v1/archives/:id/filament-requirements', ({ request }) => {
+        const plateId = new URL(request.url).searchParams.get('plate_id');
+        if (plateId === '1') return HttpResponse.json({ filaments: [SLOT_1_RED] });
+        if (plateId === '2') return new HttpResponse(null, { status: 500 });
+        return HttpResponse.json({ filaments: [SLOT_1_RED, SLOT_2_RED] });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
+
+    await selectBothPlates(user);
+
+    await waitFor(() =>
+      expect(document.querySelector('button[type="submit"]')).toBeDisabled(),
+    );
+    expect(screen.getByText(/could not be read/i)).toBeInTheDocument();
+
+    // Deselecting the unreadable plate frees the rest of the job.
+    await user.click(screen.getByText('Plate 2'));
+    await waitFor(() =>
+      expect(document.querySelector('button[type="submit"]')).not.toBeDisabled(),
+    );
+  });
+});
+
+describe('PrintModal — per-plate filament override in model mode (#2552)', () => {
+  const mockOnClose = vi.fn();
+
+  // The reporter's trigger — "only after the file was previously queued or printed"
+  // — is really "only once the plates query is warm in the cache". On a cold cache
+  // the plates data is undefined for the first render, so the whole-file filament
+  // requirements are fetched and left behind; the override panel then rendered from
+  // that union. On a warm cache the modal knows it is multi-plate from the first
+  // render, the whole-file query never runs, and the panel disappeared entirely.
+  // Both states are exercised here, and neither may depend on the cache.
+  const renderWithCache = (ui: React.ReactElement, prewarm?: (qc: QueryClient) => void) => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    prewarm?.(queryClient);
+    return rtlRender(
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AuthProvider>
+            <ThemeProvider>
+              <ToastProvider>{ui}</ToastProvider>
+            </ThemeProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+  };
+
+  // Plate 1 prints slot 1 (red), plate 2 prints slot 2 (blue). Nothing is shared.
+  const PLATES = {
+    is_multi_plate: true,
+    plates: [
+      { index: 1, name: 'Plate 1', has_thumbnail: false, thumbnail_url: null, objects: ['A'], filaments: [{ type: 'PLA', color: '#FF0000' }], print_time_seconds: 1800, filament_used_grams: 50 },
+      { index: 2, name: 'Plate 2', has_thumbnail: false, thumbnail_url: null, objects: ['B'], filaments: [{ type: 'PLA', color: '#0000FF' }], print_time_seconds: 1800, filament_used_grams: 50 },
+    ],
+  };
+
+  const SLOT_1_RED = { slot_id: 1, type: 'PLA', color: '#FF0000', tray_info_idx: '', used_grams: 50 };
+  const SLOT_2_BLUE = { slot_id: 2, type: 'PLA', color: '#0000FF', tray_info_idx: '', used_grams: 50 };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json(mockPrinters)),
+      http.get('/api/v1/archives/:id/plates', () => HttpResponse.json(PLATES)),
+      http.get('/api/v1/archives/:id/filament-requirements', ({ request }) => {
+        const plateId = new URL(request.url).searchParams.get('plate_id');
+        if (plateId === '1') return HttpResponse.json({ filaments: [SLOT_1_RED] });
+        if (plateId === '2') return HttpResponse.json({ filaments: [SLOT_2_BLUE] });
+        return HttpResponse.json({ filaments: [SLOT_1_RED, SLOT_2_BLUE] });
+      }),
+      http.get('/api/v1/printers/available-filaments', () =>
+        HttpResponse.json([
+          { type: 'PLA', color: '#FF0000', tray_info_idx: 'GFA00', tray_sub_brands: 'PLA Basic', extruder_id: null },
+          { type: 'PLA', color: '#00FF00', tray_info_idx: 'GFA00', tray_sub_brands: 'PLA Basic', extruder_id: null },
+        ]),
+      ),
+      http.post('/api/v1/queue/', () => HttpResponse.json({ id: 1, status: 'pending' })),
+    );
+  });
+
+  const selectAnyX1CAndBothPlates = async (user: ReturnType<typeof userEvent.setup>) => {
+    await waitFor(() => expect(screen.getByText('Plate 2')).toBeInTheDocument());
+    await user.click(screen.getByText('Plate 2')); // Plate 1 is auto-selected
+    await user.click(screen.getByRole('button', { name: /any model/i }));
+    // Switching to model mode pre-selects the first model, so the override panels
+    // are already up; the target-model select is the one offering the models.
+    const modelSelect = await waitFor(() => {
+      const select = screen
+        .getAllByRole('combobox')
+        .find((el) => (el as HTMLSelectElement).options[0]?.value === '' && (el as HTMLSelectElement).options[0]?.text === 'Select a model...');
+      if (!select) throw new Error('target model select not rendered');
+      return select as HTMLSelectElement;
+    });
+    await user.selectOptions(modelSelect, 'X1C');
+  };
+
+  it('shows one override panel per selected plate even when the plates query is already cached', async () => {
+    const user = userEvent.setup();
+    renderWithCache(
+      <PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />,
+      // The file has been opened before: the plates are known on the first render,
+      // so the whole-file requirements query never runs. This is the state in which
+      // the override section used to vanish for a multi-plate selection.
+      (qc) => qc.setQueryData(['archive-plates', 1], PLATES),
+    );
+
+    await selectAnyX1CAndBothPlates(user);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Filament Override — Plate 1/)).toBeInTheDocument();
+      expect(screen.getByText(/Filament Override — Plate 2/)).toBeInTheDocument();
+    });
+  });
+
+  it('shows the same per-plate panels on a cold cache', async () => {
+    const user = userEvent.setup();
+    renderWithCache(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
+
+    await selectAnyX1CAndBothPlates(user);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Filament Override — Plate 1/)).toBeInTheDocument();
+      expect(screen.getByText(/Filament Override — Plate 2/)).toBeInTheDocument();
+    });
+    // Not the whole-file union in a single unnamed panel.
+    expect(screen.queryByText('Filament Override')).not.toBeInTheDocument();
+  });
+
+  it('sends each plate only the overrides for the slots it prints', async () => {
+    type Queued = {
+      plate_id: number;
+      filament_overrides?: Array<{ slot_id: number; force_color_match: boolean }> | null;
+    };
+    const queued: Queued[] = [];
+    server.use(
+      http.post('/api/v1/queue/', async ({ request }) => {
+        queued.push((await request.json()) as Queued);
+        return HttpResponse.json({ id: queued.length, status: 'pending' });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithCache(
+      <PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />,
+      (qc) => qc.setQueryData(['archive-plates', 1], PLATES),
+    );
+
+    await selectAnyX1CAndBothPlates(user);
+    await waitFor(() => expect(screen.getByText(/Filament Override — Plate 2/)).toBeInTheDocument());
+
+    // Force the colour on plate 2's only slot. Plate 1 does not print slot 2 and
+    // must not be held back waiting for a blue spool it never uses (#2551).
+    const forceBoxes = screen.getAllByRole('checkbox', { name: /force color match/i });
+    expect(forceBoxes).toHaveLength(2); // one slot per plate
+    await user.click(forceBoxes[1]);
+
+    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+    await waitFor(() => expect(queued.length).toBe(2));
+
+    const plate1 = queued.find((q) => q.plate_id === 1);
+    const plate2 = queued.find((q) => q.plate_id === 2);
+    expect(plate1?.filament_overrides ?? null).toBeNull();
+    expect(plate2?.filament_overrides).toEqual([
+      expect.objectContaining({ slot_id: 2, force_color_match: true }),
+    ]);
   });
 });

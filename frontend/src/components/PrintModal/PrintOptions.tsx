@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Settings, ChevronDown, ChevronUp } from 'lucide-react';
+import { Settings, ChevronDown, ChevronUp, Flame } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { PrintOptionsProps, PrintOptions as PrintOptionsType } from './types';
+import type { PrintOptionsProps, PrintOptions as PrintOptionsType, PreheatOverride } from './types';
 
 type OptionConfig = {
   key: keyof PrintOptionsType;
@@ -41,6 +41,29 @@ export function PrintOptionsPanel({
     onChange({ ...options, [key]: !options[key] });
   };
 
+  const handlePreheatOverride = (next: PreheatOverride) => {
+    onChange({
+      ...options,
+      preheat_override: next,
+      // Clearing override→off also clears the chamber-target override so the
+      // backend doesn't carry a stale value if the user re-enables later.
+      ...(next === 'off' ? { preheat_chamber_target_override: null } : {}),
+    });
+  };
+
+  const handlePreheatTarget = (raw: string) => {
+    if (raw === '') {
+      onChange({ ...options, preheat_chamber_target_override: null });
+      return;
+    }
+    const parsed = parseInt(raw, 10);
+    if (Number.isNaN(parsed)) return;
+    onChange({
+      ...options,
+      preheat_chamber_target_override: Math.max(0, Math.min(60, parsed)),
+    });
+  };
+
   return (
     <div className="mb-4">
       <button
@@ -66,18 +89,66 @@ export function PrintOptionsPanel({
               </div>
               <div
                 className={`relative w-10 h-5 rounded-full transition-colors ${
-                  options[key] ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+                  options[key as 'bed_levelling'] ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
                 }`}
                 onClick={() => handleToggle(key)}
               >
                 <div
                   className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                    options[key] ? 'translate-x-5' : 'translate-x-0.5'
+                    options[key as 'bed_levelling'] ? 'translate-x-5' : 'translate-x-0.5'
                   }`}
                 />
               </div>
             </label>
           ))}
+
+          {/* Preheat / heat-soak per-item override (#1468). Defaults to
+              'inherit' which means the global Settings → Workflow toggle
+              decides. Forcing 'on' or 'off' overrides per-print; the chamber
+              target override (optional °C input, visible when not 'off')
+              bypasses the per-filament-type derivation. */}
+          <div className="pt-2 mt-1 border-t border-bambu-dark-tertiary/60">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Flame className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span className="text-sm text-white">{t('settings.preheatTitle', 'Preheat & Heat Soak')}</span>
+            </div>
+            <p className="text-xs text-bambu-gray mb-2">
+              {t('settings.preheatPerItemDesc', 'Heat the bed and chamber before this print starts. Defaults to the global Settings → Workflow toggle.')}
+            </p>
+            <div className="flex gap-1.5 mb-2">
+              {(['inherit', 'on', 'off'] as PreheatOverride[]).map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => handlePreheatOverride(opt)}
+                  className={`flex-1 px-2 py-1.5 text-xs rounded transition-colors ${
+                    options.preheat_override === opt
+                      ? 'bg-bambu-green text-white'
+                      : 'bg-bambu-dark-tertiary text-bambu-gray hover:text-white'
+                  }`}
+                >
+                  {t(`settings.preheatOverride_${opt}`, opt === 'inherit' ? 'Inherit' : opt === 'on' ? 'On' : 'Off')}
+                </button>
+              ))}
+            </div>
+            {options.preheat_override !== 'off' && (
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-bambu-gray flex-1">
+                  {t('settings.preheatTargetOverride', 'Chamber target override (°C, blank = filament default)')}
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={60}
+                  step={1}
+                  value={options.preheat_chamber_target_override ?? ''}
+                  onChange={(e) => handlePreheatTarget(e.target.value)}
+                  placeholder="—"
+                  className="w-16 px-2 py-1 bg-bambu-dark-tertiary border border-bambu-dark-tertiary rounded text-white text-xs text-right focus:outline-none focus:border-bambu-green"
+                />
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

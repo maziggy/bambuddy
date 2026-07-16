@@ -35,7 +35,7 @@ export function PlateSelector({
         <Layers className="w-4 h-4 text-bambu-gray" />
         <span className="text-sm text-bambu-gray">Select Plate{multiSelect ? 's' : ''} to Print</span>
         {selectedPlates.size === 0 && (
-          <span className="text-xs text-orange-400 flex items-center gap-1">
+          <span className="text-xs text-orange-700 dark:text-orange-400 flex items-center gap-1">
             <AlertTriangle className="w-3 h-3" />
             Selection required
           </span>

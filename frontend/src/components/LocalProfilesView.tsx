@@ -127,7 +127,7 @@ function PresetCard({
               {vendor && (
                 <span className="text-xs text-bambu-gray">{vendor}</span>
               )}
-              <span className="text-xs px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400">
                 {t('profiles.localProfiles.badge')}
               </span>
             </div>
@@ -138,7 +138,7 @@ function PresetCard({
             {hasPermission('settings:update') && (
               <button
                 onClick={() => onDelete(preset.id)}
-                className="p-1 text-bambu-gray hover:text-red-400 transition-colors"
+                className="p-1 text-bambu-gray hover:text-red-600 dark:hover:text-red-400 transition-colors"
                 title={t('profiles.localProfiles.delete')}
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -443,7 +443,7 @@ export function LocalProfilesView() {
           {processes.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <Layers className="w-4 h-4 text-blue-400" />
+                <Layers className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 <h3 className="text-sm font-medium text-white">
                   {t('profiles.localProfiles.process')}
                 </h3>
@@ -467,7 +467,7 @@ export function LocalProfilesView() {
           {printers.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <Settings2 className="w-4 h-4 text-orange-400" />
+                <Settings2 className="w-4 h-4 text-orange-600 dark:text-orange-400" />
                 <h3 className="text-sm font-medium text-white">
                   {t('profiles.localProfiles.printer')}
                 </h3>
@@ -494,7 +494,7 @@ export function LocalProfilesView() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg p-6 max-w-sm mx-4">
             <div className="flex items-center gap-2 mb-3">
-              <AlertCircle className="w-5 h-5 text-red-400" />
+              <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
               <h3 className="text-white font-medium">{t('profiles.localProfiles.deleteConfirmTitle')}</h3>
             </div>
             <p className="text-sm text-bambu-gray mb-4">{t('profiles.localProfiles.deleteConfirm')}</p>

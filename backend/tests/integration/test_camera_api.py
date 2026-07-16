@@ -811,3 +811,29 @@ class TestCameraAPI:
         assert response.status_code == 200
         result = response.json()
         assert result["cameras"] == []
+
+
+class TestCameraStreamPoolHygiene:
+    """Regression guard for the camera-stream DB-connection leak (issue #2572)."""
+
+    def test_camera_stream_does_not_hold_a_get_db_session(self):
+        """The MJPEG stream endpoint must NOT take a ``Depends(get_db)`` session.
+
+        ``get_db`` is a ``yield`` dependency, so its session stays open until the
+        response body is fully consumed — for a live MJPEG stream that is the
+        whole time the browser tab is open (hours), pinning one pooled DB
+        connection per open camera tab per printer. The endpoint fetches the
+        printer in a short-lived ``async with async_session()`` instead and
+        releases the connection before streaming. If someone re-adds a
+        ``Depends(get_db)`` param, this fails.
+        """
+        import inspect
+
+        from backend.app.api.routes.camera import camera_stream, get_db
+
+        for name, param in inspect.signature(camera_stream).parameters.items():
+            dependency = getattr(param.default, "dependency", None)
+            assert dependency is not get_db, (
+                f"camera_stream re-introduced a get_db-held session via parameter {name!r} — "
+                "it would stay open for the entire stream (issue #2572)"
+            )

@@ -17,13 +17,20 @@ import { useSliceJobTracker } from '../contexts/SliceJobTrackerContext';
 import { useToast } from '../contexts/ToastContext';
 import { PlatePickerModal } from './PlatePickerModal';
 import type { PlateFilament } from '../types/plates';
-import { normalizeColorForCompare, colorsAreSimilar } from '../utils/amsHelpers';
 import {
   presetCompatibility,
   buildCompatibilityIndex,
   EMPTY_COMPATIBILITY_INDEX,
   type PrinterCompatibilityIndex,
 } from '../utils/slicerPrinterMatch';
+import {
+  findPreset,
+  findPresetByName,
+  pickDefault,
+  pickFilamentForSlot,
+  pickProcessDefault,
+  type Slot,
+} from '../utils/slicePresetPicker';
 
 export type SliceSource =
   | { kind: 'libraryFile'; id: number; filename: string }
@@ -32,136 +39,6 @@ export type SliceSource =
 interface SliceModalProps {
   source: SliceSource;
   onClose: () => void;
-}
-
-type Slot = 'printer' | 'process' | 'filament';
-
-// Lookup priority: local → orca_cloud → cloud → standard. Local imports
-// outrank everything else because the user explicitly imported them for
-// this install; Orca Cloud comes next; Bambu Cloud after that; standard
-// (bundled) is the final fallback. The backend does NOT dedup tiers —
-// every group renders its full set so the user can pick a same-named
-// preset from a lower-priority source if they want to override the
-// auto-pick.
-const SLICE_MODAL_TIER_ORDER = ['local', 'orca_cloud', 'cloud', 'standard'] as const;
-
-function pickDefault(by: UnifiedPresetsResponse, slot: Slot): PresetRef | null {
-  for (const tier of SLICE_MODAL_TIER_ORDER) {
-    const list = by[tier][slot];
-    if (list.length > 0) {
-      return { source: list[0].source, id: list[0].id };
-    }
-  }
-  return null;
-}
-
-// Resolve a PresetRef back to its UnifiedPreset within the named slot, or
-// null if it no longer resolves (e.g. the preset was deleted between the
-// listing fetch and selection).
-function findPreset(
-  by: UnifiedPresetsResponse,
-  ref: PresetRef | null,
-  slot: Slot,
-): UnifiedPreset | null {
-  if (!ref) return null;
-  return by[ref.source][slot].find((p) => p.id === ref.id) ?? null;
-}
-
-// Find a preset by exact name across tiers (local → cloud → standard). Used
-// to honour the printer / process preset names a 3MF was prepared with.
-function findPresetByName(
-  by: UnifiedPresetsResponse,
-  slot: Slot,
-  name: string | null | undefined,
-): PresetRef | null {
-  if (!name) return null;
-  for (const tier of SLICE_MODAL_TIER_ORDER) {
-    const p = by[tier][slot].find((x) => x.name === name);
-    if (p) return { source: p.source, id: p.id };
-  }
-  return null;
-}
-
-// Process default: honour the process preset the 3MF was prepared with
-// (preferredName) when it's available and not incompatible with the selected
-// printer; otherwise the first preset compatible with the printer in tier
-// order, then the first whose compatibility is merely unknown, then plain
-// priority. Keeps the pre-pick honest with both the embedded config and the
-// printer filter instead of blindly taking list[0] (#1325).
-function pickProcessDefault(
-  by: UnifiedPresetsResponse,
-  printerName: string | null,
-  compatIndex: PrinterCompatibilityIndex,
-  preferredName?: string | null,
-): PresetRef | null {
-  const preferred = findPresetByName(by, 'process', preferredName);
-  if (preferred) {
-    const p = findPreset(by, preferred, 'process');
-    if (p && presetCompatibility(p, 'process', printerName, compatIndex) !== 'mismatch') {
-      return preferred;
-    }
-  }
-  for (const wanted of ['match', 'unknown'] as const) {
-    for (const tier of SLICE_MODAL_TIER_ORDER) {
-      for (const p of by[tier].process) {
-        if (presetCompatibility(p, 'process', printerName, compatIndex) === wanted) {
-          return { source: p.source, id: p.id };
-        }
-      }
-    }
-  }
-  return pickDefault(by, 'process');
-}
-
-const TIER_BONUS: Record<PresetSource, number> = {
-  local: 1.75,
-  orca_cloud: 1.5,
-  cloud: 1.0,
-  standard: 0.5,
-};
-
-function pickFilamentForSlot(
-  by: UnifiedPresetsResponse,
-  required: { type: string; color: string },
-  printerName: string | null,
-  compatIndex: PrinterCompatibilityIndex,
-): PresetRef | null {
-  // Score every filament preset against the plate slot's required (type,
-  // colour) and pick the highest. Mirrors the AMS slot-mapping match in the
-  // print/schedule modal: type match dominates, exact-colour-match bumps over
-  // similar-colour-match, and a small per-tier bonus breaks ties so cloud
-  // user customisations win over standard bundled fallbacks of equal merit.
-  const reqType = required.type.trim().toUpperCase();
-  const reqColor = normalizeColorForCompare(required.color);
-
-  let best: { ref: PresetRef; score: number } | null = null;
-  for (const tier of SLICE_MODAL_TIER_ORDER) {
-    for (const p of by[tier].filament) {
-      let score = 0;
-      const presetType = (p.filament_type ?? '').trim().toUpperCase();
-      const presetColor = normalizeColorForCompare(p.filament_colour ?? '');
-      if (reqType && presetType && reqType === presetType) score += 10;
-      if (reqColor && presetColor) {
-        if (presetColor === reqColor) score += 5;
-        else if (colorsAreSimilar(p.filament_colour ?? '', required.color)) score += 2;
-      }
-      score += TIER_BONUS[tier];
-      // Demote printer-incompatible filaments (#1325): a penalty rather than a
-      // hard skip so the pick still degrades gracefully if every filament
-      // mismatches the selected printer.
-      if (presetCompatibility(p, 'filament', printerName, compatIndex) === 'mismatch') {
-        score -= 100;
-      }
-      if (best == null || score > best.score) {
-        best = { ref: { source: p.source, id: p.id }, score };
-      }
-    }
-  }
-  // Fall back to plain priority pick if every preset scored 0+tier (i.e. no
-  // metadata matched). The fallback is exactly the single-color default —
-  // first preset in the highest-priority non-empty tier.
-  if (best == null) return pickDefault(by, 'filament');
-  return best.ref;
 }
 
 function toRefValue(ref: PresetRef | null): string {
@@ -680,7 +557,7 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
           )}
 
           {presetsQuery.isError && (
-            <div className="text-sm text-red-400" role="alert">
+            <div className="text-sm text-red-700 dark:text-red-400" role="alert">
               {t(
                 'slice.presetsLoadFailed',
                 'Failed to load presets. Open Settings → Profiles to import them, or sign in to Bambu Cloud.',
@@ -910,7 +787,7 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
           )}
 
           {errorMessage && (
-            <div className="text-sm text-red-400 bg-red-900/20 border border-red-900/40 rounded p-2" role="alert">
+            <div className="text-sm text-red-700 dark:text-red-400 bg-red-900/20 border border-red-900/40 rounded p-2" role="alert">
               {errorMessage}
             </div>
           )}
@@ -1015,7 +892,7 @@ function CloudStatusBanner({
 
   const tones: Record<'expired' | 'unreachable', { tone: string; icon: typeof Cloud }> = {
     expired: {
-      tone: 'border-amber-700/40 bg-amber-900/20 text-amber-200',
+      tone: 'border-amber-300 dark:border-amber-700/40 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200',
       icon: CloudOff,
     },
     unreachable: {

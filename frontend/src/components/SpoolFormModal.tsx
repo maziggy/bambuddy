@@ -817,7 +817,7 @@ export function SpoolFormModal({
         {mode === 'create' && (
           <div className="flex items-center justify-between px-4 py-2 border-b border-bambu-dark-tertiary flex-shrink-0">
             <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-amber-400" />
+              <Zap className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               <span className="text-sm text-white">{t('inventory.quickAdd')}</span>
             </div>
             <button
@@ -880,7 +880,7 @@ export function SpoolFormModal({
               {spoolmanMode && !isEditing && (
                 <div>
                   {filamentsError ? (
-                    <p className="text-sm text-red-400 px-1">{t('inventory.spoolmanCatalogLoadFailed')}</p>
+                    <p className="text-sm text-red-700 dark:text-red-400 px-1">{t('inventory.spoolmanCatalogLoadFailed')}</p>
                   ) : (
                     <SpoolmanFilamentPicker
                       filaments={spoolmanFilaments}

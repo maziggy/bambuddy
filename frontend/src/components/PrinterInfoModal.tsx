@@ -86,7 +86,7 @@ export function PrinterInfoModal({ printer, status, totalPrintHours, onClose }: 
       <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${
         status?.connected
           ? 'bg-bambu-green/20 text-bambu-green'
-          : 'bg-red-500/20 text-red-400'
+          : 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400'
       }`}>
         <span className={`w-1.5 h-1.5 rounded-full ${status?.connected ? 'bg-bambu-green' : 'bg-red-400'}`} />
         {status?.connected ? t('printers.status.available') : t('printers.status.offline')}

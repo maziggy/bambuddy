@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.app.services.spoolman_tracking import (
+    _apply_spool_types_to_archive,
     _get_fallback_spool_tag,
     _global_tray_id_to_ams_slot,
     _hash_serial_to_hex32,
@@ -272,3 +273,48 @@ class TestStorePrintData:
         # plate_id=2 must be passed as the second positional arg
         assert extract_mock.call_count == 1
         assert extract_mock.call_args.args[1] == 2
+
+
+class TestApplySpoolTypesToArchive:
+    """_apply_spool_types_to_archive() rewrites the archive's filament_type
+    from the resolved Spoolman spools' materials (#2563)."""
+
+    @staticmethod
+    async def _make_archive(db, filament_type):
+        from backend.app.models.archive import PrintArchive
+
+        archive = PrintArchive(
+            filename="job.gcode.3mf",
+            file_path="archive/job.3mf",
+            file_size=1,
+            filament_type=filament_type,
+        )
+        db.add(archive)
+        await db.commit()
+        await db.refresh(archive)
+        return archive
+
+    @pytest.mark.asyncio
+    async def test_overwrites_sliced_type_with_spool_material(self, db_session):
+        """PLA-sliced job mapped to a PETG Spoolman spool → recorded as PETG."""
+        archive = await self._make_archive(db_session, "PLA")
+        usage = [{"slot_id": 1, "used_g": 2.9}]
+        await _apply_spool_types_to_archive(db_session, archive.id, usage, {1: "PETG"})
+        await db_session.refresh(archive)
+        assert archive.filament_type == "PETG"
+
+    @pytest.mark.asyncio
+    async def test_partial_match_leaves_type_untouched(self, db_session):
+        """All-or-nothing: an unmatched used slot means no rewrite."""
+        archive = await self._make_archive(db_session, "PLA,PLA")
+        usage = [{"slot_id": 1, "used_g": 5.0}, {"slot_id": 2, "used_g": 3.0}]
+        await _apply_spool_types_to_archive(db_session, archive.id, usage, {1: "PETG"})
+        await db_session.refresh(archive)
+        assert archive.filament_type == "PLA,PLA"
+
+    @pytest.mark.asyncio
+    async def test_empty_materials_is_noop(self, db_session):
+        archive = await self._make_archive(db_session, "PLA")
+        await _apply_spool_types_to_archive(db_session, archive.id, [{"slot_id": 1, "used_g": 2.9}], {})
+        await db_session.refresh(archive)
+        assert archive.filament_type == "PLA"

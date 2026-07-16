@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import socket
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,7 +16,10 @@ from backend.app.services.virtual_printer.mqtt_bridge import (
     _resolve_host_interface_for_target,
     _resolve_target_to_ipv4,
 )
-from backend.app.services.virtual_printer.mqtt_server import SimpleMQTTServer
+from backend.app.services.virtual_printer.mqtt_server import (
+    _UPLOAD_SETTLE_SECONDS,
+    SimpleMQTTServer,
+)
 
 H2D_SERIAL = "0948BB540200427"
 VP_SERIAL = "09400A391800003"
@@ -1093,18 +1097,22 @@ class TestForwardToPrinter:
 # ---------------------------------------------------------------------------
 
 
+def _capture_published(server: SimpleMQTTServer) -> list:
+    """Wrap _publish_to_report to capture (topic, payload_dict)."""
+    published: list = []
+
+    async def _capture(writer, payload, serial="", log_event=True):
+        published.append((serial or server.serial, payload))
+
+    server._publish_to_report = _capture  # type: ignore[assignment]
+    return published
+
+
 class TestStatusReportCachedAsBase:
     """`_send_status_report` sends near-byte-identical real data when bridge cache exists."""
 
     def _capture_published(self, server: SimpleMQTTServer):
-        """Wrap _publish_to_report to capture (topic, payload_dict)."""
-        published: list = []
-
-        async def _capture(writer, payload, serial="", log_event=True):
-            published.append((serial or server.serial, payload))
-
-        server._publish_to_report = _capture  # type: ignore[assignment]
-        return published
+        return _capture_published(server)
 
     @pytest.mark.asyncio
     async def test_uses_real_cache_when_bridge_active(self):
@@ -1227,47 +1235,180 @@ class TestStatusReportCachedAsBase:
         assert payload["print"]["gcode_state"] == "PREPARE"
         assert payload["print"]["gcode_file"] == "foo.3mf"
 
+
+# ---------------------------------------------------------------------------
+# Live print progress (#1887 / #1558)
+# ---------------------------------------------------------------------------
+
+
+def _printing_cache(**overrides) -> dict:
+    """Bridge cache for a target printer that is mid-print."""
+    cache = {
+        "command": "push_status",
+        "msg": 0,
+        "gcode_state": "RUNNING",
+        "gcode_file": "Metadata/plate_1.gcode",
+        "subtask_name": "benchy",
+        "mc_print_stage": "2",
+        "mc_percent": 47,
+        "mc_remaining_time": 3600,
+        "stg": [1, 2, 3],
+        "stg_cur": 14,
+        "layer_num": 120,
+        "total_layer_num": 250,
+        "print_error": 0,
+    }
+    cache.update(overrides)
+    return cache
+
+
+class TestLiveProgressMirror:
+    """The VP mirrors the target printer's progress without ever looking busy.
+
+    Both slicers gate the Device-tab progress panel and the Send button on the
+    same predicate — `MachineObject::is_in_printing()`, i.e. gcode_state in
+    {RUNNING, PAUSE, SLICING, PREPARE}. Reporting the printer's real state
+    shows progress but blocks Send for as long as it prints (#1558); zeroing
+    everything keeps Send alive but shows nothing (#1887). FINISH is the one
+    state that does both: StatusPanel renders on `is_in_printing() ||
+    print_status == "FINISH"`, while SelectMachineDialog only blocks on
+    `is_in_printing()`.
+    """
+
     @pytest.mark.asyncio
-    async def test_live_progress_fields_zeroed_in_cached_branch(self):
-        """#1558: when the real target printer is mid-print, the cached
-        push_status carries live values for mc_percent / stg_cur / layer_num /
-        etc. BambuStudio's Send pre-flight reads any of these as "VP busy"
-        even when gcode_state above is forced to IDLE — blocking Send while
-        the target prints. The cached branch must override these to the same
-        idle values the synthetic stub uses.
-        """
+    async def test_progress_mirrored_while_target_prints(self):
+        """#1887: the numbers the slicer needs come straight from the cache."""
         server = _make_server()
         bridge = MagicMock()
-        # Real printer mid-print state: gcode_state may be RUNNING upstream,
-        # but the VP's own _gcode_state is IDLE (Send is requesting a
-        # new upload, the VP isn't running anything).
-        bridge.get_latest_print_state.return_value = {
-            "command": "push_status",
-            "msg": 0,
-            "gcode_state": "RUNNING",
-            "mc_print_stage": "2",
-            "mc_percent": 47,
-            "mc_remaining_time": 3600,
-            "stg": [1, 2, 3],
-            "stg_cur": 14,
-            "layer_num": 120,
-            "total_layer_num": 250,
-            "print_error": 0,
-        }
+        bridge.get_latest_print_state.return_value = _printing_cache()
         server.set_bridge(bridge)
-        published = self._capture_published(server)
+        published = _capture_published(server)
 
         await server._send_status_report(MagicMock())
         _serial, payload = published[0]
-        # Every live-progress field must reflect "idle / VP isn't busy".
+        assert payload["print"]["mc_print_stage"] == "2"
+        assert payload["print"]["mc_percent"] == 47
+        assert payload["print"]["mc_remaining_time"] == 3600
+        assert payload["print"]["stg"] == [1, 2, 3]
+        assert payload["print"]["stg_cur"] == 14
+        assert payload["print"]["layer_num"] == 120
+        assert payload["print"]["total_layer_num"] == 250
+        # The job the printer is really running, not the VP's last upload.
+        assert payload["print"]["subtask_name"] == "benchy"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("target_state", ["RUNNING", "PAUSE"])
+    async def test_mirror_never_reports_a_printing_gcode_state(self, target_state):
+        """#1558 guard: any state in `is_in_printing()` disables the Send button.
+
+        This is the assertion that keeps the mirror honest — it may show the
+        printer's numbers, but it must never claim the VP itself is printing.
+        """
+        server = _make_server()
+        bridge = MagicMock()
+        bridge.get_latest_print_state.return_value = _printing_cache(gcode_state=target_state)
+        server.set_bridge(bridge)
+        published = _capture_published(server)
+
+        await server._send_status_report(MagicMock())
+        _serial, payload = published[0]
+        assert payload["print"]["gcode_state"] == "FINISH"
+        assert payload["print"]["gcode_state"] not in ("RUNNING", "PAUSE", "SLICING", "PREPARE")
+
+    @pytest.mark.asyncio
+    async def test_progress_zeroed_while_target_idle(self):
+        """Nothing to mirror — the VP's own upload state owns the report."""
+        server = _make_server()
+        server.set_gcode_state("FINISH", filename="foo.3mf", prepare_percent="100")
+        server._state_changed_at = time.monotonic() - 60  # settled long ago
+        bridge = MagicMock()
+        bridge.get_latest_print_state.return_value = _printing_cache(gcode_state="IDLE", mc_percent=0, layer_num=0)
+        server.set_bridge(bridge)
+        published = _capture_published(server)
+
+        await server._send_status_report(MagicMock())
+        _serial, payload = published[0]
+        assert payload["print"]["gcode_state"] == "FINISH"  # the VP's own, not mirrored
+        assert payload["print"]["subtask_name"] == "foo"
         assert payload["print"]["mc_print_stage"] == ""
-        assert payload["print"]["mc_percent"] == 0
-        assert payload["print"]["mc_remaining_time"] == 0
         assert payload["print"]["stg"] == []
-        assert payload["print"]["stg_cur"] == 0
-        assert payload["print"]["layer_num"] == 0
         assert payload["print"]["total_layer_num"] == 0
+
+    @pytest.mark.asyncio
+    async def test_progress_zeroed_while_upload_in_flight(self):
+        """A job being handed over outranks the mirror.
+
+        The slicer is watching its own PREPARE → FINISH cycle here; feeding it
+        the printer's progress mid-handshake would contradict the PREPARE it is
+        waiting on.
+        """
+        server = _make_server()
+        server.set_gcode_state("PREPARE", filename="bar.3mf", prepare_percent="0")
+        bridge = MagicMock()
+        bridge.get_latest_print_state.return_value = _printing_cache()
+        server.set_bridge(bridge)
+        published = _capture_published(server)
+
+        await server._send_status_report(MagicMock())
+        _serial, payload = published[0]
+        assert payload["print"]["gcode_state"] == "PREPARE"
+        assert payload["print"]["gcode_file"] == "bar.3mf"
+        assert payload["print"]["subtask_name"] == "bar"
+        assert payload["print"]["mc_percent"] == 0
+        assert payload["print"]["layer_num"] == 0
+
+    @pytest.mark.asyncio
+    async def test_upload_settle_window_keeps_the_slicers_own_filename(self):
+        """#1658: the send modal releases on FINISH carrying the name it uploaded.
+
+        Swapping in the printer's filename while that handshake is still in
+        flight wedges the slicer at "Downloading", so the mirror waits.
+        """
+        server = _make_server()
+        bridge = MagicMock()
+        bridge.get_latest_print_state.return_value = _printing_cache()
+        server.set_bridge(bridge)
+        published = _capture_published(server)
+
+        server.set_gcode_state("FINISH", filename="bar.3mf", prepare_percent="100")
+        await server._send_status_report(MagicMock())
+        _serial, payload = published[0]
+        assert payload["print"]["subtask_name"] == "bar"
+        assert payload["print"]["mc_percent"] == 0
+
+    @pytest.mark.asyncio
+    async def test_mirror_resumes_once_the_upload_has_settled(self):
+        """Same VP as above, once the slicer has had its FINISH."""
+        server = _make_server()
+        bridge = MagicMock()
+        bridge.get_latest_print_state.return_value = _printing_cache()
+        server.set_bridge(bridge)
+        published = _capture_published(server)
+
+        server.set_gcode_state("FINISH", filename="bar.3mf", prepare_percent="100")
+        server._state_changed_at = time.monotonic() - _UPLOAD_SETTLE_SECONDS - 1
+        await server._send_status_report(MagicMock())
+        _serial, payload = published[0]
+        assert payload["print"]["subtask_name"] == "benchy"
+        assert payload["print"]["mc_percent"] == 47
+
+    @pytest.mark.asyncio
+    async def test_print_error_never_mirrored(self):
+        """A fault on the printer must not raise a modal error dialog in the slicer.
+
+        The VP is not the machine that threw it — Bambuddy's own printer card
+        reports the fault.
+        """
+        server = _make_server()
+        bridge = MagicMock()
+        bridge.get_latest_print_state.return_value = _printing_cache(print_error=515)
+        server.set_bridge(bridge)
+        published = _capture_published(server)
+
+        await server._send_status_report(MagicMock())
+        _serial, payload = published[0]
         assert payload["print"]["print_error"] == 0
+        assert payload["print"]["mc_percent"] == 47  # the rest still mirrors
 
 
 # ---------------------------------------------------------------------------
@@ -1565,7 +1706,7 @@ class TestBindAddressAutoResolve:
     async def test_rewrite_arms_via_auto_resolved_host_ip(self):
         """When bind_address is 0.0.0.0, fall back to the host interface in
         the target printer's subnet and rewrite to that IP."""
-        server = _make_server(bind_address="0.0.0.0")
+        server = _make_server(bind_address="0.0.0.0")  # nosec B104
         bridge = _make_bridge(server)
         with patch(
             "backend.app.services.virtual_printer.mqtt_bridge._resolve_host_interface_for_target",
@@ -1680,7 +1821,7 @@ class TestNotArmedDiagnosticLogging:
         assert "no ip_address" in not_armed[0].getMessage()
 
     def test_no_matching_host_interface_logs_specific_reason(self, caplog):
-        server = _make_server(bind_address="0.0.0.0")
+        server = _make_server(bind_address="0.0.0.0")  # nosec B104
         bridge = _make_bridge(server)
         with (
             patch(

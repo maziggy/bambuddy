@@ -78,11 +78,11 @@ async def test_attach_timelapse_rejects_absolute_filename(tmp_path: Path, monkey
     result = await service.attach_timelapse(
         archive_id=1,
         timelapse_data=b"x",
-        filename="/tmp/owned_via_absolute",
+        filename="/tmp/owned_via_absolute",  # nosec B108
     )
 
     assert result is False
-    assert not Path("/tmp/owned_via_absolute").exists()
+    assert not Path("/tmp/owned_via_absolute").exists()  # nosec B108
 
 
 @pytest.mark.asyncio

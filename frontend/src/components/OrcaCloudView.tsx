@@ -387,10 +387,10 @@ function PasteCard({
             <p className="text-base text-white pt-0.5">{t('profiles.orcaCloud.paste.step1')}</p>
           </li>
           <li className="flex gap-3">
-            <span className="flex-shrink-0 w-7 h-7 rounded-full bg-amber-500/20 text-amber-400 text-sm font-bold flex items-center justify-center">2</span>
+            <span className="flex-shrink-0 w-7 h-7 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-sm font-bold flex items-center justify-center">2</span>
             <div className="flex-1 p-3 bg-amber-500/10 border border-amber-500/40 rounded">
               <div className="flex items-start gap-2">
-                <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
                 <p className="text-base text-white font-medium">{t('profiles.orcaCloud.paste.step2')}</p>
               </div>
             </div>
@@ -426,7 +426,7 @@ function PasteCard({
             disabled={isFinishing}
           />
           {pasteError && (
-            <p className="mt-2 text-sm text-red-400 flex items-center gap-2">
+            <p className="mt-2 text-sm text-red-700 dark:text-red-400 flex items-center gap-2">
               <AlertCircle className="w-4 h-4" />
               {pasteError}
             </p>
@@ -499,7 +499,7 @@ function PasswordCard({
             />
           </div>
           {passwordError && (
-            <p className="text-sm text-red-400 flex items-center gap-2">
+            <p className="text-sm text-red-700 dark:text-red-400 flex items-center gap-2">
               <AlertCircle className="w-4 h-4" />
               {passwordError}
             </p>

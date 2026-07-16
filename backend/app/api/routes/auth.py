@@ -295,6 +295,38 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
                         detail="Failed to create admin user",
                     )
 
+        if request.auth_enabled:
+            # Enabling auth flips cloud-credential storage from the global
+            # Settings rows to User.cloud_token. Carry any token linked while
+            # auth was off across to the owning admin, or /cloud/* silently
+            # degrades to local presets with no indication anything broke
+            # (#2530). Only migrate when there is exactly one obvious owner:
+            # handing another admin's session a Bambu credential is not a
+            # guess worth making.
+            from backend.app.api.routes.cloud import (
+                get_stored_token,
+                migrate_global_cloud_token_to_user,
+            )
+
+            if admin_created:
+                cloud_owner = admin_user
+            elif len(existing_admin_users) == 1:
+                cloud_owner = existing_admin_users[0]
+            else:
+                cloud_owner = None
+
+            if cloud_owner is not None:
+                if await migrate_global_cloud_token_to_user(db, cloud_owner):
+                    logger.info("Migrated global Bambu Cloud credentials to admin '%s'", cloud_owner.username)
+            else:
+                global_token, _, _ = await get_stored_token(db, None)
+                if global_token:
+                    logger.warning(
+                        "A Bambu Cloud account is linked globally but %s admins exist; "
+                        "leaving it unassigned. Re-link the account from Settings after login.",
+                        len(existing_admin_users),
+                    )
+
         # Set auth enabled and mark setup as completed
         await set_auth_enabled(db, request.auth_enabled)
         await set_setup_completed(db, True)
@@ -349,6 +381,14 @@ async def disable_auth(
         )
 
     try:
+        # Mirror of the migration in setup_auth: with auth off the cloud routes
+        # read the global Settings rows and never look at User.cloud_token, so
+        # hand this admin's credential over rather than stranding it (#2530).
+        from backend.app.api.routes.cloud import migrate_user_cloud_token_to_global
+
+        if await migrate_user_cloud_token_to_global(db, user):
+            logger.info("Migrated Bambu Cloud credentials from admin '%s' to global storage", user.username)
+
         await set_auth_enabled(db, False)
         await db.commit()
         logger.info("Authentication disabled by admin user: %s", user.username)
@@ -1577,10 +1617,14 @@ async def provision_ldap_user(
 # =============================================================================
 # Long-lived camera-stream tokens (#1108)
 # =============================================================================
-# Camera-only V1. Issue scope: a token a user can paste into Home Assistant /
-# Frigate / a kiosk and have it keep working for days/weeks rather than
-# refreshing the 60-minute ephemeral token. Permission gate: CAMERA_VIEW
-# (same blast radius as the existing 60-min token-mint endpoint).
+# A token a user can paste into Home Assistant / Frigate / a kiosk and have it
+# keep working for days/weeks rather than refreshing the 60-minute ephemeral
+# token. Permission gate: CAMERA_VIEW (same blast radius as the existing 60-min
+# token-mint endpoint).
+#
+# Two scopes, both minted here — see ALLOWED_SCOPES in services/long_lived_tokens
+# for what each one reaches: "camera_stream" (video only) and "camwall" (video
+# plus the Cam Wall's read-only tile metadata, #2531).
 
 
 def _long_lived_token_to_response(record, *, plaintext: str | None = None) -> dict:

@@ -174,7 +174,7 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
           )}
 
           {error && (
-            <div className="text-red-400 text-center py-12">
+            <div className="text-red-700 dark:text-red-400 text-center py-12">
               Failed to load project page data
             </div>
           )}

@@ -219,7 +219,7 @@ export function ScheduleOptionsPanel({
             </div>
           </div>
           {(!isDateValid || !isTimeValid) && (
-            <p className="mt-1 text-xs text-red-400">
+            <p className="mt-1 text-xs text-red-700 dark:text-red-400">
               {t('printModal.invalidDateTime')}
             </p>
           )}

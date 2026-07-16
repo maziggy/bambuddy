@@ -187,7 +187,7 @@ export function BatchTagModal({ selectedIds, existingTags, onClose }: BatchTagMo
                     <span
                       key={tag}
                       className={`px-2 py-1 rounded text-sm flex items-center gap-1 ${
-                        mode === 'add' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                        mode === 'add' ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400' : 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400'
                       }`}
                     >
                       {tag}

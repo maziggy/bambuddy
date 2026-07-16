@@ -53,9 +53,9 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
               : (isReachable ? (isOn ? 'bg-bambu-green/20' : 'bg-bambu-dark') : 'bg-red-500/20')
           }`}>
             {isMqtt ? (
-              <Radio className={`w-4 h-4 ${isReachable ? 'text-teal-400' : 'text-red-400'}`} />
+              <Radio className={`w-4 h-4 ${isReachable ? 'text-teal-600 dark:text-teal-400' : 'text-red-600 dark:text-red-400'}`} />
             ) : (
-              <Plug className={`w-4 h-4 ${isReachable ? (isOn ? 'text-bambu-green' : 'text-bambu-gray') : 'text-red-400'}`} />
+              <Plug className={`w-4 h-4 ${isReachable ? (isOn ? 'text-bambu-green' : 'text-bambu-gray') : 'text-red-600 dark:text-red-400'}`} />
             )}
           </div>
           <div>
@@ -67,8 +67,8 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
                 /* MQTT plugs show power and monitor-only indicator */
                 isReachable ? (
                   <>
-                    <Zap className="w-3 h-3 text-teal-400" />
-                    <span className="text-teal-400">{Math.round(status?.energy?.power ?? 0)}W</span>
+                    <Zap className="w-3 h-3 text-teal-600 dark:text-teal-400" />
+                    <span className="text-teal-700 dark:text-teal-400">{Math.round(status?.energy?.power ?? 0)}W</span>
                     <span className="text-bambu-gray mx-1">|</span>
                     <Eye className="w-3 h-3 text-bambu-gray" />
                     <span className="text-bambu-gray">Monitor</span>
@@ -86,8 +86,8 @@ function SwitchItem({ plug }: { plug: SmartPlug }) {
                   {status?.energy?.power !== null && status?.energy?.power !== undefined && (
                     <>
                       <span className="text-bambu-gray mx-1">|</span>
-                      <Zap className="w-3 h-3 text-yellow-400" />
-                      <span className="text-yellow-400">{Math.round(status.energy.power)}W</span>
+                      <Zap className="w-3 h-3 text-yellow-600 dark:text-yellow-400" />
+                      <span className="text-yellow-700 dark:text-yellow-400">{Math.round(status.energy.power)}W</span>
                     </>
                   )}
                 </>

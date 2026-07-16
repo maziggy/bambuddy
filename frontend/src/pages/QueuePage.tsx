@@ -85,7 +85,7 @@ function StatusBadge({ status, waitingReason, printerState, t }: { status: Print
   // Special case: pending with waiting_reason shows as "Waiting"
   if (status === 'pending' && waitingReason) {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border text-purple-400 bg-purple-400/10 border-purple-400/20">
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-400/10 border-purple-200 dark:border-purple-400/20">
         <Clock className="w-3.5 h-3.5" />
         {t('queue.status.waiting')}
       </span>
@@ -95,7 +95,7 @@ function StatusBadge({ status, waitingReason, printerState, t }: { status: Print
   // Special case: printing but printer is paused
   if (status === 'printing' && printerState === 'PAUSE') {
     return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border text-yellow-400 bg-yellow-400/10 border-yellow-400/20">
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-400/10 border-yellow-200 dark:border-yellow-400/20">
         <Pause className="w-3.5 h-3.5" />
         {t('queue.status.paused')}
       </span>
@@ -104,10 +104,10 @@ function StatusBadge({ status, waitingReason, printerState, t }: { status: Print
 
   const config = {
     pending: { icon: Clock, color: 'text-status-warning bg-status-warning/10 border-status-warning/20', label: t('queue.status.pending') },
-    printing: { icon: Play, color: 'text-blue-400 bg-blue-400/10 border-blue-400/20', label: t('queue.status.printing') },
+    printing: { icon: Play, color: 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-400/10 border-blue-200 dark:border-blue-400/20', label: t('queue.status.printing') },
     completed: { icon: CheckCircle, color: 'text-status-ok bg-status-ok/10 border-status-ok/20', label: t('queue.status.completed') },
     failed: { icon: XCircle, color: 'text-status-error bg-status-error/10 border-status-error/20', label: t('queue.status.failed') },
-    skipped: { icon: SkipForward, color: 'text-orange-400 bg-orange-400/10 border-orange-400/20', label: t('queue.status.skipped') },
+    skipped: { icon: SkipForward, color: 'text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-400/10 border-orange-200 dark:border-orange-400/20', label: t('queue.status.skipped') },
     cancelled: { icon: X, color: 'text-gray-400 bg-gray-400/10 border-gray-400/20', label: t('queue.status.cancelled') },
   };
 
@@ -284,7 +284,7 @@ function TriStateToggle({
         <button
           onClick={() => onChange(false)}
           disabled={disabled}
-          className={`px-2 py-1 text-xs rounded ${value === false ? 'bg-red-500/20 text-red-400' : 'text-bambu-gray hover:text-white'} disabled:cursor-not-allowed`}
+          className={`px-2 py-1 text-xs rounded ${value === false ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400' : 'text-bambu-gray hover:text-white'} disabled:cursor-not-allowed`}
         >
           {t('common.off')}
         </button>
@@ -504,14 +504,14 @@ function SortableQueueItem({
               </Link>
             ) : null}
             {item.batch_name && (
-              <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] sm:text-xs bg-cyan-500/20 text-cyan-300 rounded border border-cyan-500/30">
+              <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] sm:text-xs bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 rounded border border-cyan-300 dark:border-cyan-500/30">
                 {item.batch_name}
               </span>
             )}
           </div>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm text-bambu-gray">
-            <span className={`flex items-center gap-1 sm:gap-1.5 ${item.printer_id === null && !item.target_model ? 'text-orange-400' : ''} ${item.target_model && !item.printer_id ? 'text-blue-400' : ''}`}>
+            <span className={`flex items-center gap-1 sm:gap-1.5 ${item.printer_id === null && !item.target_model ? 'text-orange-700 dark:text-orange-400' : ''} ${item.target_model && !item.printer_id ? 'text-blue-700 dark:text-blue-400' : ''}`}>
               <Printer className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               <span className="truncate max-w-[120px] sm:max-w-none">
               {item.target_model && !item.printer_id
@@ -567,24 +567,24 @@ function SortableQueueItem({
           {/* Options badges */}
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-1.5 sm:mt-2">
             {item.manual_start && (
-              <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-purple-500/10 text-purple-400 rounded-full border border-purple-500/20 flex items-center gap-1">
+              <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 rounded-full border border-purple-200 dark:border-purple-500/20 flex items-center gap-1">
                 <Hand className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                 {t('queue.badges.staged')}
               </span>
             )}
             {item.require_previous_success && (
-              <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-orange-500/10 text-orange-400 rounded-full border border-orange-500/20">
+              <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400 rounded-full border border-orange-200 dark:border-orange-500/20">
                 {t('queue.badges.requiresPrevious')}
               </span>
             )}
             {item.auto_off_after && (
-              <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded-full border border-blue-500/20 flex items-center gap-1">
+              <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 rounded-full border border-blue-200 dark:border-blue-500/20 flex items-center gap-1">
                 <Power className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                 {t('queue.badges.autoPowerOff')}
               </span>
             )}
             {item.gcode_injection && (
-              <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20 flex items-center gap-1">
+              <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 rounded-full border border-emerald-200 dark:border-emerald-500/20 flex items-center gap-1">
                 <Code className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                 {t('queue.badges.gcodeInjection')}
               </span>
@@ -638,7 +638,7 @@ function SortableQueueItem({
 
           {/* Waiting reason for model-based assignments */}
           {item.waiting_reason && item.status === 'pending' && (
-            <p className="text-[10px] sm:text-xs text-purple-400 mt-1.5 sm:mt-2 flex items-start gap-1">
+            <p className="text-[10px] sm:text-xs text-purple-700 dark:text-purple-400 mt-1.5 sm:mt-2 flex items-start gap-1">
               <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
               <span>{item.waiting_reason}</span>
             </p>
@@ -647,7 +647,7 @@ function SortableQueueItem({
           {/* Filament-short flag from the dispatch pre-flight (#1496). */}
           {item.filament_short && item.status === 'pending' && (
             <p
-              className="text-[10px] sm:text-xs text-yellow-400 mt-1.5 sm:mt-2 flex items-start gap-1"
+              className="text-[10px] sm:text-xs text-yellow-700 dark:text-yellow-400 mt-1.5 sm:mt-2 flex items-start gap-1"
               title={t('queue.filamentShort.rowTooltip')}
             >
               <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
@@ -657,7 +657,7 @@ function SortableQueueItem({
 
           {/* Error message */}
           {item.error_message && (
-            <p className="text-[10px] sm:text-xs text-red-400 mt-1.5 sm:mt-2 flex items-center gap-1">
+            <p className="text-[10px] sm:text-xs text-red-700 dark:text-red-400 mt-1.5 sm:mt-2 flex items-center gap-1">
               <AlertCircle className="w-3 h-3" />
               {item.error_message}
             </p>
@@ -676,7 +676,7 @@ function SortableQueueItem({
                 onClick={onStop}
                 disabled={!canModify('queue', 'update', item.created_by_id)}
                 title={!canModify('queue', 'update', item.created_by_id) ? t('queue.permissions.noStopPrint') : t('queue.actions.stopPrint')}
-                className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-1.5 sm:p-2"
+                className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 p-1.5 sm:p-2"
               >
                 <StopCircle className="w-4 h-4" />
               </Button>
@@ -711,7 +711,7 @@ function SortableQueueItem({
                   onClick={onCancel}
                   disabled={!canModify('queue', 'delete', item.created_by_id)}
                   title={!canModify('queue', 'delete', item.created_by_id) ? t('queue.permissions.noCancel') : t('common.cancel')}
-                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-1.5 sm:p-2"
+                  className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 p-1.5 sm:p-2"
                 >
                   <X className="w-4 h-4" />
                 </Button>
@@ -914,15 +914,15 @@ function SortableBatchRow({
         </button>
         <div className="w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0 bg-bambu-dark rounded-lg flex items-center justify-center">
           {collapsed ? (
-            <Package className="w-5 h-5 text-cyan-300" />
+            <Package className="w-5 h-5 text-cyan-700 dark:text-cyan-300" />
           ) : (
-            <PackageOpen className="w-5 h-5 text-cyan-300" />
+            <PackageOpen className="w-5 h-5 text-cyan-700 dark:text-cyan-300" />
           )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <p className="text-sm sm:text-base text-white font-medium truncate">{batchRow.batchName}</p>
-            <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] sm:text-xs bg-cyan-500/15 text-cyan-300 rounded border border-cyan-500/30">
+            <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] sm:text-xs bg-cyan-100 dark:bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 rounded border border-cyan-300 dark:border-cyan-500/30">
               {t('queue.batch.label', { count: agg.count })}
             </span>
           </div>
@@ -940,7 +940,7 @@ function SortableBatchRow({
               </span>
             )}
             {pendingChildren > 0 && rollupStatus === 'pending' && (
-              <span className="flex items-center gap-1 sm:gap-1.5 text-yellow-400">
+              <span className="flex items-center gap-1 sm:gap-1.5 text-yellow-700 dark:text-yellow-400">
                 <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 {t('queue.batch.pendingCount', { count: pendingChildren })}
               </span>
@@ -954,7 +954,7 @@ function SortableBatchRow({
               size="sm"
               onClick={onUngroup}
               title={t('queue.batch.ungroup')}
-              className="text-cyan-300 hover:text-cyan-200 hover:bg-cyan-500/10 p-1.5 sm:p-2"
+              className="text-cyan-700 dark:text-cyan-300 hover:text-cyan-900 dark:hover:text-cyan-200 hover:bg-cyan-50 dark:hover:bg-cyan-500/10 p-1.5 sm:p-2"
             >
               <Ungroup className="w-4 h-4" />
             </Button>
@@ -1133,28 +1133,28 @@ function HistorySection({
                   <ChevronDown className="w-4 h-4 text-bambu-gray shrink-0" />
                 )}
                 {collapsed ? (
-                  <Package className="w-5 h-5 text-cyan-300 shrink-0" />
+                  <Package className="w-5 h-5 text-cyan-700 dark:text-cyan-300 shrink-0" />
                 ) : (
-                  <PackageOpen className="w-5 h-5 text-cyan-300 shrink-0" />
+                  <PackageOpen className="w-5 h-5 text-cyan-700 dark:text-cyan-300 shrink-0" />
                 )}
                 <span className="text-sm text-white font-medium truncate min-w-0 flex-1">
                   {row.batchName}
                 </span>
                 <div className="flex items-center gap-2 text-xs text-bambu-gray shrink-0">
                   {completed > 0 && (
-                    <span className="flex items-center gap-1 text-emerald-400">
+                    <span className="flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
                       <CheckCircle className="w-3 h-3" />
                       {completed}
                     </span>
                   )}
                   {failed > 0 && (
-                    <span className="flex items-center gap-1 text-red-400">
+                    <span className="flex items-center gap-1 text-red-700 dark:text-red-400">
                       <XCircle className="w-3 h-3" />
                       {failed}
                     </span>
                   )}
                   {skipped > 0 && (
-                    <span className="flex items-center gap-1 text-orange-400">
+                    <span className="flex items-center gap-1 text-orange-700 dark:text-orange-400">
                       <SkipForward className="w-3 h-3" />
                       {skipped}
                     </span>
@@ -1972,17 +1972,17 @@ export function QueuePage() {
           {gateBlockedPrinters.map(({ printerId, printerName, skippedCount }) => (
             <div
               key={printerId}
-              className="flex items-center gap-3 px-4 py-3 bg-orange-500/10 border border-orange-500/30 rounded-lg"
+              className="flex items-center gap-3 px-4 py-3 bg-orange-50 dark:bg-orange-500/10 border border-orange-300 dark:border-orange-500/30 rounded-lg"
             >
-              <AlertCircle className="w-5 h-5 text-orange-400 flex-shrink-0" />
+              <AlertCircle className="w-5 h-5 text-orange-600 dark:text-orange-400 flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <div className="text-sm text-orange-200">
+                <div className="text-sm text-orange-800 dark:text-orange-200">
                   {t('queue.resumeAfterFailure.banner', {
                     printer: printerName,
                     count: skippedCount,
                   })}
                 </div>
-                <div className="text-xs text-orange-200/70 mt-0.5">
+                <div className="text-xs text-orange-800/80 dark:text-orange-200/70 mt-0.5">
                   {t('queue.resumeAfterFailure.bannerHint')}
                 </div>
               </div>
@@ -1990,7 +1990,7 @@ export function QueuePage() {
                 onClick={() =>
                   setResumeConfirm({ printerId, printerName, skippedCount })
                 }
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 text-orange-100 text-sm rounded-md border border-orange-500/40 transition-colors flex-shrink-0"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-100 dark:bg-orange-500/20 hover:bg-orange-200 dark:hover:bg-orange-500/30 text-orange-900 dark:text-orange-100 text-sm rounded-md border border-orange-300 dark:border-orange-500/40 transition-colors flex-shrink-0"
               >
                 <PlayCircle className="w-4 h-4" />
                 {t('queue.resumeAfterFailure.button')}
@@ -2195,7 +2195,7 @@ export function QueuePage() {
             <div>
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
                 <h2 className="text-base sm:text-lg font-semibold text-white flex items-center gap-2">
-                  <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-400" />
+                  <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-600 dark:text-yellow-400" />
                   {t('queue.sections.queued')}
                   <span className="text-xs sm:text-sm font-normal text-bambu-gray">
                     ({t('queue.itemCount', { count: pendingItems.length })})
@@ -2253,7 +2253,7 @@ export function QueuePage() {
                         variant="ghost"
                         size="sm"
                         onClick={() => setGroupBatchModal(true)}
-                        className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-cyan-300 hover:text-cyan-200"
+                        className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-cyan-700 dark:text-cyan-300 hover:text-cyan-900 dark:hover:text-cyan-200"
                         title={t('queue.batch.groupAsBatch')}
                       >
                         <Package className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -2275,7 +2275,7 @@ export function QueuePage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => bulkCancelMutation.mutate(selectedItems)}
-                      className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-red-400 hover:text-red-300"
+                      className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                       disabled={bulkCancelMutation.isPending || !hasAnyPermission('queue:delete_own', 'queue:delete_all')}
                       title={!hasAnyPermission('queue:delete_own', 'queue:delete_all') ? t('queue.permissions.noCancelItems') : t('queue.bulkEdit.cancelSelected')}
                     >
@@ -2325,7 +2325,7 @@ export function QueuePage() {
                         return (
                           <div key={bucket.key}>
                             <div className="flex items-center gap-3 px-3 py-2 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-t-lg">
-                              <Printer className={`w-4 h-4 ${bucket.isUnassigned ? 'text-orange-400' : bucket.targetModel ? 'text-blue-400' : 'text-bambu-green'}`} />
+                              <Printer className={`w-4 h-4 ${bucket.isUnassigned ? 'text-orange-600 dark:text-orange-400' : bucket.targetModel ? 'text-blue-600 dark:text-blue-400' : 'text-bambu-green'}`} />
                               <span className="font-semibold text-white text-sm">{bucket.label}</span>
                               <span className="text-xs text-bambu-gray flex flex-wrap gap-x-3">
                                 <span>{t('queue.itemCount', { count: agg.count })}</span>
@@ -2371,7 +2371,7 @@ export function QueuePage() {
                       const name = siblings[0].batch_name || t('queue.batch.defaultName');
                       return (
                         <div className="flex items-center gap-3 px-3 py-2 bg-bambu-dark-secondary border-2 border-cyan-400 rounded-lg shadow-2xl">
-                          <Package className="w-4 h-4 text-cyan-300" />
+                          <Package className="w-4 h-4 text-cyan-700 dark:text-cyan-300" />
                           <span className="text-sm text-white font-medium">
                             {t('queue.dragGhost.batch', {
                               defaultValue: '{{name}} ({{count}} copies)',
@@ -2386,7 +2386,7 @@ export function QueuePage() {
                     if (typeof activeDragId === 'number' && selectedItems.includes(activeDragId) && selectedItems.length > 1) {
                       return (
                         <div className="flex items-center gap-3 px-3 py-2 bg-bambu-dark-secondary border-2 border-cyan-400 rounded-lg shadow-2xl">
-                          <Package className="w-4 h-4 text-cyan-300" />
+                          <Package className="w-4 h-4 text-cyan-700 dark:text-cyan-300" />
                           <span className="text-sm text-white font-medium">
                             {t('queue.dragGhost.multiCount', { count: selectedItems.length })}
                           </span>
@@ -2582,7 +2582,7 @@ function GroupBatchModal({ itemCount, defaultName, isSaving, onSave, onClose, t 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl p-6 w-full max-w-md">
         <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
-          <Package className="w-5 h-5 text-cyan-300" />
+          <Package className="w-5 h-5 text-cyan-700 dark:text-cyan-300" />
           {t('queue.batch.groupAsBatch')}
         </h3>
         <p className="text-sm text-bambu-gray mb-4">

@@ -48,7 +48,7 @@ export function PrinterQueueWidget({ printerId, printerModel, loadedFilamentType
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0 flex-1">
-          <Calendar className="w-5 h-5 text-yellow-400 flex-shrink-0" />
+          <Calendar className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
           <div className="min-w-0 flex-1">
             <p className="text-xs text-bambu-gray">{t('queue.nextInQueue')}</p>
             <p className="text-sm text-white truncate">
@@ -62,7 +62,7 @@ export function PrinterQueueWidget({ printerId, printerModel, loadedFilamentType
             {nextItem?.scheduled_time ? formatRelativeTime(nextItem.scheduled_time, 'system', t) : t('time.waiting')}
           </span>
           {totalPending > 1 && (
-            <span className="text-xs px-1.5 py-0.5 bg-yellow-400/20 text-yellow-400 rounded">
+            <span className="text-xs px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-400/20 text-yellow-700 dark:text-yellow-400 rounded">
               +{totalPending - 1}
             </span>
           )}

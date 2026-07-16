@@ -461,6 +461,39 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
             await proxy_server.wait_closed()
 
 
+def _transcode_to_jpeg(data: bytes) -> bytes | None:
+    """Decode an arbitrary still image (PNG/WebP/BMP/GIF/...) and re-encode as JPEG.
+
+    Some camera/proxy snapshot endpoints serve stills as PNG or WebP rather than
+    JPEG. A browser opened directly at the URL renders those fine, but our MJPEG
+    ``multipart/x-mixed-replace`` stream hard-labels every part
+    ``Content-Type: image/jpeg`` — so a non-JPEG payload makes the browser reject
+    the frame and drop the whole stream ("connection lost", #1902). Transcoding to
+    JPEG keeps the stream genuinely MJPEG and also keeps the JPEG-only downstream
+    (plate detection, Obico, finish photo) working.
+
+    Returns None if the bytes are not a decodable image (e.g. an HTML error page)
+    or if the imaging libraries are unavailable — callers fall back to the raw
+    bytes so behaviour is never worse than before.
+    """
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return None
+    try:
+        img = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if img is None:
+            return None
+        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        if not ok:
+            return None
+        return buf.tobytes()
+    except Exception as e:  # cv2 raises cv2.error (a subclass of Exception) on bad input
+        logger.debug("Snapshot transcode to JPEG failed: %s", e)
+        return None
+
+
 async def _capture_snapshot(url: str, timeout: int) -> bytes | None:
     """Fetch snapshot from HTTP URL.
 
@@ -484,20 +517,40 @@ async def _capture_snapshot(url: str, timeout: int) -> bytes | None:
                 return None
 
             data = await response.read()
-
-            # Validate it looks like JPEG
-            if not data.startswith(b"\xff\xd8"):
-                logger.warning("Snapshot does not appear to be JPEG")
-                # Still return it - might be valid with different header
-
-            return data
-
     except TimeoutError:
         logger.warning("Snapshot capture timed out after %ss", timeout)
         return None
     except (aiohttp.ClientError, OSError) as e:
         logger.error("Snapshot capture failed: %s", e)
         return None
+
+    # Fast path: already JPEG (SOI marker), stream it as-is (no decode/re-encode).
+    if data.startswith(b"\xff\xd8"):
+        return data
+
+    # Not JPEG. Many snapshot endpoints serve PNG/WebP/BMP — transcode to JPEG so
+    # the browser's MJPEG stream (and JPEG-only downstream) keep working instead of
+    # dropping the connection (#1902). Run off the event loop: cv2 decode/encode is
+    # CPU-bound and this can be polled at up to 15 fps while a camera view is open.
+    transcoded = await asyncio.to_thread(_transcode_to_jpeg, data)
+    if transcoded is not None:
+        logger.debug(
+            "Transcoded non-JPEG snapshot (%d bytes, header %s) to JPEG",
+            len(data),
+            data[:4].hex(),
+        )
+        return transcoded
+
+    # Couldn't decode it as an image at all — most likely not an image response
+    # (HTML error page, auth redirect, wrong URL). Return the raw bytes as a last
+    # resort (unchanged behaviour) but log enough to debug.
+    logger.warning(
+        "External camera snapshot is not a decodable image "
+        "(%d bytes, header %s) — verify the camera URL returns an image",
+        len(data),
+        data[:4].hex(),
+    )
+    return data
 
 
 async def test_connection(url: str, camera_type: str) -> dict:

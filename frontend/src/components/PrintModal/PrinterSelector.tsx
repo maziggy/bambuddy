@@ -171,8 +171,8 @@ function InlineMappingEditor({
               status === 'match'
                 ? 'border-bambu-green/50 text-bambu-green'
                 : status === 'type_only'
-                ? 'border-yellow-400/50 text-yellow-400'
-                : 'border-orange-400/50 text-orange-400'
+                ? 'border-yellow-500 dark:border-yellow-400/50 text-yellow-700 dark:text-yellow-400'
+                : 'border-orange-500 dark:border-orange-400/50 text-orange-700 dark:text-orange-400'
             } ${isManual ? 'ring-1 ring-blue-400/50' : ''}`}
             title={isManual ? 'Manually selected' : 'Auto-matched'}
           >
@@ -190,11 +190,11 @@ function InlineMappingEditor({
             <Check className="w-3 h-3 text-bambu-green" />
           ) : status === 'type_only' ? (
             <span title="Same type, different color">
-              <AlertTriangle className="w-3 h-3 text-yellow-400" />
+              <AlertTriangle className="w-3 h-3 text-yellow-600 dark:text-yellow-400" />
             </span>
           ) : (
             <span title="Filament type not loaded">
-              <AlertTriangle className="w-3 h-3 text-orange-400" />
+              <AlertTriangle className="w-3 h-3 text-orange-600 dark:text-orange-400" />
             </span>
           )}
         </div>
@@ -330,7 +330,7 @@ export function PrinterSelector({
 
   if (displayPrinters.length === 0) {
     return (
-      <div className="flex items-center gap-2 text-red-400 text-sm mb-4">
+      <div className="flex items-center gap-2 text-red-700 dark:text-red-400 text-sm mb-4">
         <AlertCircle className="w-4 h-4" />
         No {showInactive ? '' : 'active '}printers available
       </div>
@@ -562,7 +562,7 @@ export function PrinterSelector({
               {stateLabel && (
                 <span className={`text-xs px-2 py-0.5 rounded-full ${
                   busy
-                    ? 'bg-yellow-500/20 text-yellow-400'
+                    ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400'
                     : 'bg-bambu-green/20 text-bambu-green'
                 }`}>
                   {stateLabel}
@@ -606,8 +606,8 @@ export function PrinterSelector({
                     mappingResult.matchStatus === 'full'
                       ? 'text-bambu-green'
                       : mappingResult.matchStatus === 'partial'
-                      ? 'text-yellow-400'
-                      : 'text-orange-400'
+                      ? 'text-yellow-700 dark:text-yellow-400'
+                      : 'text-orange-700 dark:text-orange-400'
                   }`}>
                     ({mappingResult.exactMatches}/{mappingResult.totalSlots} matched)
                   </span>
@@ -654,7 +654,7 @@ export function PrinterSelector({
           onClick={() => setShowAllPrinters(true)}
           className="text-xs text-bambu-gray hover:text-white transition-colors mt-2 flex items-center gap-1"
         >
-          <AlertTriangle className="w-3 h-3 text-yellow-400" />
+          <AlertTriangle className="w-3 h-3 text-yellow-600 dark:text-yellow-400" />
           {hiddenPrinterCount} other printer{hiddenPrinterCount > 1 ? 's' : ''} hidden (different model) —
           <span className="underline">show all</span>
         </button>
@@ -673,7 +673,7 @@ export function PrinterSelector({
 
       {/* Warning when no printer selected (only in printer mode) */}
       {assignmentMode === 'printer' && selectedCount === 0 && (
-        <p className="text-xs text-orange-400 mt-1 flex items-center gap-1">
+        <p className="text-xs text-orange-700 dark:text-orange-400 mt-1 flex items-center gap-1">
           <AlertCircle className="w-3 h-3" />
           Select at least one printer
         </p>
@@ -681,7 +681,7 @@ export function PrinterSelector({
 
       {/* Warning when no model selected (only in model mode) */}
       {assignmentMode === 'model' && !targetModel && (
-        <p className="text-xs text-orange-400 mt-1 flex items-center gap-1">
+        <p className="text-xs text-orange-700 dark:text-orange-400 mt-1 flex items-center gap-1">
           <AlertCircle className="w-3 h-3" />
           Select a target printer model
         </p>

@@ -137,7 +137,7 @@ export function CreateUserAdvancedAuthModal({
             {/* Username Field */}
             <div>
               <label className="block text-sm font-medium text-white mb-2">
-                {t('users.form.username')} <span className="text-red-400">*</span>
+                {t('users.form.username')} <span className="text-red-600 dark:text-red-400">*</span>
               </label>
               <input
                 type="text"
@@ -153,7 +153,7 @@ export function CreateUserAdvancedAuthModal({
             {/* Email Field */}
             <div>
               <label className="block text-sm font-medium text-white mb-2">
-                {t('users.form.email') || 'Email'} <span className="text-red-400">*</span>
+                {t('users.form.email') || 'Email'} <span className="text-red-600 dark:text-red-400">*</span>
               </label>
               <input
                 type="email"
@@ -191,7 +191,7 @@ export function CreateUserAdvancedAuthModal({
                     />
                     <span className="text-sm text-white">{group.name}</span>
                     {group.is_system && (
-                      <span className="text-xs text-yellow-400">({t('users.system')})</span>
+                      <span className="text-xs text-yellow-700 dark:text-yellow-400">({t('users.system')})</span>
                     )}
                   </label>
                 ))}

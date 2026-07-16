@@ -16,7 +16,6 @@ from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_owners
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
-from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_batch import PrintBatch
@@ -36,6 +35,7 @@ from backend.app.schemas.print_queue import (
     PrintQueueReorder,
 )
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
+from backend.app.services.filament_requirements import overrides_for_plate
 from backend.app.services.notification_service import notification_service
 from backend.app.utils.printer_models import normalize_printer_model, normalize_printer_model_id
 from backend.app.utils.threemf_tools import (
@@ -116,6 +116,22 @@ def _extract_filament_types_from_3mf(file_path: Path, plate_id: int | None = Non
 _extract_print_time_from_3mf = extract_print_time_from_3mf
 
 
+async def _resolve_source_path(db: AsyncSession, item: PrintQueueItem) -> Path | None:
+    """Resolve an existing queue item's source 3MF on disk, or None."""
+    if item.archive_id:
+        result = await db.execute(select(PrintArchive).where(PrintArchive.id == item.archive_id))
+        archive = result.scalar_one_or_none()
+        if archive:
+            return settings.base_dir / archive.file_path
+    elif item.library_file_id:
+        result = await db.execute(LibraryFile.active().where(LibraryFile.id == item.library_file_id))
+        library_file = result.scalar_one_or_none()
+        if library_file:
+            lib_path = Path(library_file.file_path)
+            return lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
+    return None
+
+
 def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
     """Add nested archive/printer/library_file info to response."""
     # Parse ams_mapping from JSON string BEFORE model_validate
@@ -187,6 +203,8 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "timelapse": item.timelapse,
         "use_ams": item.use_ams,
         "nozzle_offset_cali": item.nozzle_offset_cali,
+        "preheat_override": item.preheat_override,
+        "preheat_chamber_target_override": item.preheat_chamber_target_override,
         "status": item.status,
         "started_at": item.started_at,
         "completed_at": item.completed_at,
@@ -450,9 +468,9 @@ async def add_to_queue(
 
     # Extract filament types for model-based assignment (used by scheduler for validation)
     required_filament_types = None
+    file_path = None
     if target_model_norm:
         # Get file path from archive or library file
-        file_path = None
         if archive:
             file_path = settings.base_dir / archive.file_path
         elif library_file:
@@ -468,15 +486,17 @@ async def add_to_queue(
     # If filament overrides are provided, update required_filament_types to match override types
     filament_overrides_json = None
     if data.filament_overrides and target_model_norm:
-        filament_overrides_json = json.dumps(data.filament_overrides)
-        # Update required_filament_types from overrides so scheduler validates against overridden types
-        override_types = sorted({o["type"] for o in data.filament_overrides if "type" in o})
-        if override_types:
-            # Merge with existing types (overrides may only cover some slots)
-            existing_types = set(json.loads(required_filament_types)) if required_filament_types else set()
-            # Replace types for overridden slots, keep others
-            all_types = existing_types | set(override_types)
-            required_filament_types = json.dumps(sorted(all_types))
+        plate_overrides = overrides_for_plate(data.filament_overrides, file_path, data.plate_id)
+        if plate_overrides:
+            filament_overrides_json = json.dumps(plate_overrides)
+            # Update required_filament_types from overrides so scheduler validates against overridden types
+            override_types = sorted({o["type"] for o in plate_overrides if "type" in o})
+            if override_types:
+                # Merge with existing types (overrides may only cover some slots)
+                existing_types = set(json.loads(required_filament_types)) if required_filament_types else set()
+                # Replace types for overridden slots, keep others
+                all_types = existing_types | set(override_types)
+                required_filament_types = json.dumps(sorted(all_types))
 
     # Validate quantity
     quantity = max(1, data.quantity)
@@ -634,6 +654,8 @@ async def add_to_queue(
             timelapse=data.timelapse,
             use_ams=data.use_ams,
             nozzle_offset_cali=data.nozzle_offset_cali,
+            preheat_override=data.preheat_override,
+            preheat_chamber_target_override=data.preheat_chamber_target_override,
             gcode_injection=data.gcode_injection,
             cleanup_library_after_dispatch=data.cleanup_library_after_dispatch,
             project_id=data.project_id,
@@ -1081,11 +1103,18 @@ async def update_queue_item(
     if "ams_mapping" in update_data:
         update_data["ams_mapping"] = json.dumps(update_data["ams_mapping"]) if update_data["ams_mapping"] else None
 
-    # Serialize filament_overrides to JSON for TEXT column storage
+    # Serialize filament_overrides to JSON for TEXT column storage, keeping only
+    # the slots this item's plate actually prints (#2551 — same shared-override
+    # list the create path narrows).
     if "filament_overrides" in update_data:
-        update_data["filament_overrides"] = (
-            json.dumps(update_data["filament_overrides"]) if update_data["filament_overrides"] else None
-        )
+        overrides = update_data["filament_overrides"]
+        if overrides:
+            overrides = overrides_for_plate(
+                overrides,
+                await _resolve_source_path(db, item),
+                update_data.get("plate_id", item.plate_id),
+            )
+        update_data["filament_overrides"] = json.dumps(overrides) if overrides else None
 
     # Serialize H2C rack-swap nozzle pick (#1780) to JSON for TEXT column
     # storage; same Text-as-opaque-blob convention as ams_mapping above.
@@ -1268,9 +1297,7 @@ async def stop_queue_item(
     holding only _OWN saw the Stop button in the queue UI but got 403 on click.
     """
 
-    from backend.app.models.smart_plug import SmartPlug
     from backend.app.services.printer_manager import printer_manager
-    from backend.app.services.tasmota import tasmota_service
 
     user, can_modify_all = auth_result
 
@@ -1319,33 +1346,21 @@ async def stop_queue_item(
     item.error_message = "Stopped by user" if stop_sent else "Stopped by user (printer was offline)"
     await db.commit()
 
-    # Get smart plug info if auto-off is enabled
-    plug_ip = None
-    if auto_off_after:
-        result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-        plug = result.scalar_one_or_none()
-        if plug and plug.enabled:
-            plug_ip = plug.ip_address
-
     logger.info("Stopped printing queue item %s (stop command sent: %s)", item_id, stop_sent)
 
-    # Schedule background task for cooldown + power off
-    if plug_ip:
+    # Schedule power-off if the queue item opted in. Delegates to the smart-plug
+    # manager so the off honours each plug's configured strategy (time delay or
+    # temperature threshold), is cancelled if the printer starts printing again,
+    # and never cuts power on a loaded print (#1890). Previously an inline block
+    # hardcoded a 50°C / 600s cooldown wait and powered off on the timeout
+    # regardless of print state.
+    if auto_off_after:
+        from backend.app.services.smart_plug_manager import smart_plug_manager
 
-        async def cooldown_and_poweroff():
-            logger.info("Auto-off: Waiting for printer %s to cool down before power off...", printer_id)
-            await printer_manager.wait_for_cooldown(printer_id, target_temp=50.0, timeout=600)
-            # Re-fetch plug since we're in a new async context
-            from backend.app.core.database import async_session
-
-            async with async_session() as new_db:
-                result = await new_db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-                plug = result.scalar_one_or_none()
-                if plug and plug.enabled:
-                    logger.info("Auto-off: Powering off printer %s", printer_id)
-                    await tasmota_service.turn_off(plug)
-
-        spawn_background_task(cooldown_and_poweroff(), name=f"queue-cooldown-poweroff-{printer_id}")
+        try:
+            await smart_plug_manager.schedule_off_after_queue_job(printer_id, db)
+        except Exception as e:
+            logger.warning("Auto-off: Failed to schedule power-off for printer %s: %s", printer_id, e)
 
     return {"message": "Print stopped" if stop_sent else "Queue item cancelled (printer was offline)"}
 

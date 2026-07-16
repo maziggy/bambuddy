@@ -34,10 +34,8 @@ class FTPProfile:
 
     # Pin the SSL context's ``maximum_version`` to TLS 1.2.
     #
-    # Python 3.13's default ``ssl.create_default_context()`` negotiates
-    # TLS 1.3 when both peers support it. The Bambuddy Docker image is
-    # ``python:3.13-slim-trixie``, so every Docker user gets 1.3 by
-    # default. Some Bambu printer firmwares (P2S 01.02.00.00 confirmed
+    # ``ssl.create_default_context()`` negotiates TLS 1.3 when both peers
+    # support it. Some Bambu printer firmwares (P2S 01.02.00.00 confirmed
     # by @iitazz, #1401) implement session reuse on the FTPS data
     # channel against an old vsFTPd build that doesn't tolerate TLS
     # 1.3's asynchronous session-ticket model: the data channel gets
@@ -47,12 +45,18 @@ class FTPProfile:
     # the printer). Capping to TLS 1.2 makes session resumption
     # synchronous and the upload completes normally.
     #
+    # Note this cap only bites on models that *offer* 1.3 in the first
+    # place. Probed directly on :990, an X1C and an H2D both refuse
+    # TLS 1.0, 1.1 and 1.3 with a handshake_failure alert and complete
+    # only on 1.2 — so for those models the cap is a no-op and the
+    # negotiated version was never 1.3. The P2S evidently does offer
+    # 1.3, which is why it alone surfaced the session-reuse bug.
+    # (P1S untested; no claim made either way.)
+    #
     # **Defaults to False** — only applied to printer models where a
-    # reporter has confirmed the symptom. Existing P1S / X1C / H2D
-    # installs that work fine today stay on the negotiated TLS 1.3.
-    # This is deliberately conservative; flipping a printer to the
-    # capped path is a config edit when a new model surfaces the
-    # same bug.
+    # reporter has confirmed the symptom. This is deliberately
+    # conservative; flipping a printer to the capped path is a config
+    # edit when a new model surfaces the same bug.
     cap_tls_v1_2: bool = False
 
 

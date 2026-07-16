@@ -30,7 +30,9 @@ repos:
         exclude: ^(static/|frontend/tsconfig\.)
       - id: check-added-large-files
         args: ['--maxkb=1000']
-        exclude: ^static/assets/
+        # CHANGELOG.md is intentionally large (detailed per-release entries over
+        # many versions); exempt it while keeping the 1 MB guard for everything else.
+        exclude: ^(static/assets/|CHANGELOG\.md$)
       - id: check-merge-conflict
       - id: debug-statements
       - id: detect-private-key

@@ -65,6 +65,9 @@ async def create_api_key(
         can_read_status=data.can_read_status,
         can_manage_library=data.can_manage_library,
         can_manage_inventory=data.can_manage_inventory,
+        can_manage_maintenance=data.can_manage_maintenance,
+        can_manage_archives=data.can_manage_archives,
+        can_manage_projects=data.can_manage_projects,
         can_access_cloud=data.can_access_cloud,
         can_update_energy_cost=data.can_update_energy_cost,
         printer_ids=data.printer_ids,
@@ -86,6 +89,9 @@ async def create_api_key(
         can_read_status=api_key.can_read_status,
         can_manage_library=api_key.can_manage_library,
         can_manage_inventory=api_key.can_manage_inventory,
+        can_manage_maintenance=api_key.can_manage_maintenance,
+        can_manage_archives=api_key.can_manage_archives,
+        can_manage_projects=api_key.can_manage_projects,
         can_access_cloud=api_key.can_access_cloud,
         can_update_energy_cost=api_key.can_update_energy_cost,
         printer_ids=api_key.printer_ids,
@@ -139,6 +145,12 @@ async def update_api_key(
         api_key.can_manage_library = data.can_manage_library
     if data.can_manage_inventory is not None:
         api_key.can_manage_inventory = data.can_manage_inventory
+    if data.can_manage_maintenance is not None:
+        api_key.can_manage_maintenance = data.can_manage_maintenance
+    if data.can_manage_archives is not None:
+        api_key.can_manage_archives = data.can_manage_archives
+    if data.can_manage_projects is not None:
+        api_key.can_manage_projects = data.can_manage_projects
     if data.can_access_cloud is not None:
         # Same constraint as create — flipping cloud access on a legacy key
         # without an owner would be silently broken; reject at the route layer.

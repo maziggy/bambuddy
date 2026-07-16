@@ -131,61 +131,92 @@ class TestExecuteHmsActionDispatch:
         assert "err" not in cmds[0]["print"]
         assert "job_id" not in cmds[0]["print"]
 
-    def test_ignore_resume_dispatches_resume_when_print_paused(self, client):
-        # Verified on H2D: idle_ignore is silently rejected while gcode_state
-        # is PAUSE. The user's intent on a paused HMS modal is to continue,
-        # so IGNORE_RESUME dispatches a plain resume instead. See #1830 §(2).
+    def test_ignore_resume_sends_bambustudio_ignore_command_paused(self, client):
+        # IGNORE_RESUME dispatches BambuStudio's `command_hms_ignore`
+        # (DeviceManager.cpp:1450) — `command: "ignore"`, not `resume` and
+        # not `idle_ignore`. The firmware handles both "skip this check on the
+        # next attempt" and "resume the paused print" in one operation.
+        # The previous Bambuddy code redirected to plain resume, which caused
+        # wrong-plate to re-pause 1-2 s after the user clicked Ignore (#1869).
+        # `err` is the DECIMAL int representation of the hex error code.
         client.state.state = "PAUSE"
-        client.execute_hms_action("03008070", HMSAction.IGNORE_RESUME)
+        client.execute_hms_action("05008051", HMSAction.IGNORE_RESUME, job_id="task-7")
         cmds = self._published_commands(client)
         assert cmds[0] == {
             "print": {
-                "command": "resume",
-                "param": "",
+                "command": "ignore",
+                "err": str(0x05008051),  # "83918929"
+                "param": "reserve",
+                "job_id": "task-7",
                 "sequence_id": "0",
             }
         }
 
-    def test_ignore_resume_uses_idle_ignore_when_not_paused(self, client):
-        # For non-pause warnings (e.g. AMS-side prompts during printing),
-        # idle_ignore IS the correct command and the firmware honours it.
+    def test_ignore_resume_state_independent(self, client):
+        # BambuStudio's DeviceErrorDialog dispatches IGNORE_RESUME via
+        # `command_hms_ignore` unconditionally — there's no PAUSE-vs-RUNNING
+        # branch. Bambuddy's previous code special-cased PAUSE to a plain
+        # resume; the BambuStudio shape works in both states.
         client.state.state = "RUNNING"
-        client.execute_hms_action("03008070", HMSAction.IGNORE_RESUME)
+        client.execute_hms_action("05008051", HMSAction.IGNORE_RESUME)
+        cmds = self._published_commands(client)
+        assert cmds[0]["print"]["command"] == "ignore"
+        assert cmds[0]["print"]["err"] == str(0x05008051)
+
+    def test_ignore_no_reminder_uses_ignore_command_not_idle_ignore(self, client):
+        # BambuStudio routes IGNORE_NO_REMINDER_NEXT_TIME and
+        # DONT_REMIND_NEXT_TIME to the same `command_hms_ignore` as
+        # IGNORE_RESUME (DeviceErrorDialog.cpp:596-602) — the "don't remind"
+        # half is the firmware's responsibility, the wire shape is identical.
+        client.state.state = "PAUSE"
+        client.execute_hms_action("03008070", HMSAction.DONT_REMIND_NEXT_TIME, job_id="task-1")
+        cmds = self._published_commands(client)
+        assert cmds[0] == {
+            "print": {
+                "command": "ignore",
+                "err": str(0x03008070),
+                "param": "reserve",
+                "job_id": "task-1",
+                "sequence_id": "0",
+            }
+        }
+
+    def test_no_reminder_next_time_uses_idle_ignore_type_zero(self, client):
+        # NO_REMINDER_NEXT_TIME (distinct from IGNORE_NO_REMINDER_NEXT_TIME)
+        # is BambuStudio's `command_hms_idle_ignore` with type=0
+        # (DeviceErrorDialog.cpp:588-590). Dismisses the dialog without
+        # resuming. The `err` is the same decimal-int format as the ignore
+        # command — same `m_error_code` is passed in BambuStudio.
+        client.state.state = "RUNNING"
+        client.execute_hms_action("03008070", HMSAction.NO_REMINDER_NEXT_TIME)
         cmds = self._published_commands(client)
         assert cmds[0] == {
             "print": {
                 "command": "idle_ignore",
-                "err": "03008070",
+                "err": str(0x03008070),
                 "type": 0,
                 "sequence_id": "0",
             }
         }
 
-    def test_dont_remind_dispatches_resume_when_paused(self, client):
-        # The persistent variant still degrades to resume on a paused print —
-        # the "don't remind" flag can't ride along on a resume, but the user
-        # clicked an action whose top-level intent is to continue, so we
-        # honour that. The behavioural contract is documented in hms_ignore.
+    def test_ignore_accepts_16_char_full_code_as_decimal(self, client):
+        # hms[]-array faults carry a 16-char full identifier. Bambu's firmware
+        # matches `err` as a numeric string, so the 16-char hex parses to a
+        # 64-bit int and serializes back as its decimal form.
         client.state.state = "PAUSE"
-        client.execute_hms_action("03008070", HMSAction.DONT_REMIND_NEXT_TIME)
-        cmds = self._published_commands(client)
-        assert cmds[0]["print"]["command"] == "resume"
-
-    def test_dont_remind_uses_idle_ignore_type_one_when_not_paused(self, client):
-        client.state.state = "RUNNING"
-        client.execute_hms_action("03008070", HMSAction.DONT_REMIND_NEXT_TIME)
-        cmds = self._published_commands(client)
-        assert cmds[0]["print"]["command"] == "idle_ignore"
-        assert cmds[0]["print"]["type"] == 1
-
-    def test_idle_ignore_accepts_16_char_full_code(self, client):
-        # hms[]-array faults carry a 16-char full identifier. The firmware
-        # matches against the full 64-bit code; the truncated 8-char form
-        # (used pre-#1830) was silently rejected on H2C.
-        client.state.state = "RUNNING"
         client.execute_hms_action("0C00030000020010", HMSAction.IGNORE_RESUME)
         cmds = self._published_commands(client)
-        assert cmds[0]["print"]["err"] == "0C00030000020010"
+        assert cmds[0]["print"]["command"] == "ignore"
+        assert cmds[0]["print"]["err"] == str(0x0C00030000020010)
+
+    def test_ignore_with_no_job_id_sends_empty_string(self, client):
+        # BambuStudio's `command_hms_ignore` always passes `m_obj->job_id_`
+        # (a `std::string` — empty when there's no active subtask). Match the
+        # shape: empty string, not None / missing key.
+        client.state.state = "PAUSE"
+        client.execute_hms_action("05008051", HMSAction.IGNORE_RESUME, job_id=None)
+        cmds = self._published_commands(client)
+        assert cmds[0]["print"]["job_id"] == ""
 
     def test_filament_extruded_sends_ams_done(self, client):
         client.execute_hms_action("07008029", HMSAction.FILAMENT_EXTRUDED)

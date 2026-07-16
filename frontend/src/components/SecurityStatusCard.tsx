@@ -80,14 +80,14 @@ export function SecurityStatusCard() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="text-red-400" data-testid="encryption-error">{t('common.errorLoading')}</div>
+          <div className="text-red-700 dark:text-red-400" data-testid="encryption-error">{t('common.errorLoading')}</div>
           {/* S5: manual recovery button — the bounded auto-retry above stops
               after 3 consecutive failures so the operator needs an explicit
               way to reset polling without reloading the whole page. */}
           <button
             type="button"
             onClick={() => refetch()}
-            className="mt-2 text-sm text-blue-400 underline hover:text-blue-300"
+            className="mt-2 text-sm text-blue-700 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
             data-testid="encryption-retry-button"
           >
             {t('common.retry')}
@@ -109,23 +109,23 @@ export function SecurityStatusCard() {
   let statusBody: string;
 
   if (data.decryption_broken) {
-    severityClasses = 'bg-red-500/20 border-red-500/50 text-red-400';
-    icon = <XCircle className="text-red-400" size={20} />;
+    severityClasses = 'bg-red-100 dark:bg-red-500/20 border-red-400 dark:border-red-500/50 text-red-700 dark:text-red-400';
+    icon = <XCircle className="text-red-600 dark:text-red-400" size={20} />;
     statusLabel = t('settings.encryption.decryptionBrokenTitle');
     statusBody = t('settings.encryption.decryptionBrokenError', { count: totalEncrypted });
   } else if (data.key_source === 'generated') {
-    severityClasses = 'bg-amber-500/10 border-amber-500/30 text-amber-400';
-    icon = <ShieldCheck className="text-amber-400" size={20} />;
+    severityClasses = 'bg-amber-50 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-400';
+    icon = <ShieldCheck className="text-amber-600 dark:text-amber-400" size={20} />;
     statusLabel = t('settings.encryption.enabledGenerated');
     statusBody = t('settings.encryption.backupHint');
   } else if (totalLegacy > 0) {
-    severityClasses = 'bg-amber-500/10 border-amber-500/30 text-amber-400';
-    icon = <AlertTriangle className="text-amber-400" size={20} />;
+    severityClasses = 'bg-amber-50 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-400';
+    icon = <AlertTriangle className="text-amber-600 dark:text-amber-400" size={20} />;
     statusLabel = data.key_source === 'env' ? t('settings.encryption.enabledFromEnv') : t('settings.encryption.enabledFromFile');
     statusBody = t('settings.encryption.legacyRowsWarning', { count: totalLegacy });
   } else if (data.key_configured) {
-    severityClasses = 'bg-green-500/20 border-green-500/30 text-green-400';
-    icon = <ShieldCheck className="text-green-400" size={20} />;
+    severityClasses = 'bg-green-100 dark:bg-green-500/20 border-green-300 dark:border-green-500/30 text-green-700 dark:text-green-400';
+    icon = <ShieldCheck className="text-green-600 dark:text-green-400" size={20} />;
     statusLabel = data.key_source === 'env' ? t('settings.encryption.enabledFromEnv') : t('settings.encryption.enabledFromFile');
     statusBody = t('settings.encryption.allEncrypted');
   } else {
@@ -157,7 +157,7 @@ export function SecurityStatusCard() {
         </div>
         {showConcurrentLegacyWarning && (
           <div
-            className="mt-2 p-3 border rounded-lg bg-amber-500/10 border-amber-500/30 text-amber-400"
+            className="mt-2 p-3 border rounded-lg bg-amber-50 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-400"
             data-testid="encryption-legacy-warning"
           >
             <p className="text-sm">{t('settings.encryption.legacyRowsWarning', { count: totalLegacy })}</p>
@@ -165,7 +165,7 @@ export function SecurityStatusCard() {
         )}
         {data.migration_error_count > 0 && (
           <div
-            className="mt-2 p-3 border rounded-lg bg-amber-500/10 border-amber-500/30 text-amber-400"
+            className="mt-2 p-3 border rounded-lg bg-amber-50 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-400"
             data-testid="encryption-migration-warning"
           >
             <p className="text-sm">

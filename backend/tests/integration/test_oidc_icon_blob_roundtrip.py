@@ -1,54 +1,85 @@
-"""Type-mapping coverage for the OIDC icon BLOB column (#1333).
+"""Backup-schema fidelity for the PG→SQLite portable export (#1333, #2526).
 
-Bambuddy's ``create_backup_zip`` rebuilds the SQLite backup schema from
-``Base.metadata`` when the source database is PostgreSQL. The column-type
-mapping previously fell through to ``TEXT`` for any unknown SQLAlchemy
-type — including ``LargeBinary`` / ``BYTEA`` — which corrupts non-UTF8
-icon bytes during the PG → SQLite-ZIP round trip.
+Bambuddy's ``create_backup_zip`` rebuilds the SQLite backup schema when the
+source database is PostgreSQL. It now uses ``Base.metadata.create_all()``
+against a SQLite engine — the same DDL a native SQLite install gets — rather
+than a hand-rolled ``name + type`` CREATE TABLE. The old rebuild dropped two
+things that these tests pin:
 
-These tests exercise the extracted ``_sqlalchemy_type_to_sqlite_type``
-helper directly so the regression guard doesn't depend on a full backup
-pipeline. The SQLite source path is just ``shutil.copy2`` of the live
-.db file and is therefore unaffected by the type mapping.
+* ``LargeBinary`` fell through to ``TEXT``, corrupting non-UTF8 OIDC icon
+  bytes during the round trip (#1333). ``create_all`` renders it as ``BLOB``.
+* ``NOT NULL`` / ``DEFAULT`` / FK / ``UNIQUE`` were all dropped, so a
+  Postgres→SQLite restore left ``server_default`` columns (e.g.
+  ``spoolbuddy_devices.created_at``) with no ``DEFAULT`` — later inserts
+  wrote ``NULL`` and 500'd on read (#2526). ``create_all`` emits the default.
+
+The SQLite *source* path is just ``shutil.copy2`` of the live .db file and is
+therefore unaffected — these guards only matter for the PostgreSQL branch.
 """
 
 import hashlib
 import sqlite3
 
 import pytest
-from sqlalchemy import Column, LargeBinary
+from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.routes.settings import _sqlalchemy_type_to_sqlite_type
+from backend.app.core.database import Base
 from backend.tests._fixtures.oidc_icon import PNG_BYTES as _PNG_BYTES
 
 
-class TestTypeMapping:
-    """Unit-level coverage of the helper that backups use for PG→SQLite."""
+def _build_backup_schema(db_path) -> dict[str, dict]:
+    """Build the portable SQLite schema exactly as create_backup_zip's
+    PostgreSQL branch does, then return ``{table: {col: PRAGMA row}}``.
 
-    def test_largebinary_maps_to_blob(self):
-        # Direct from a SQLAlchemy LargeBinary column — this is exactly
-        # what the create_backup_zip loop calls str() on.
-        col = Column(LargeBinary)
-        assert _sqlalchemy_type_to_sqlite_type(str(col.type)) == "BLOB"
+    PRAGMA table_info rows are ``(cid, name, type, notnull, dflt_value, pk)``.
+    """
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        Base.metadata.create_all(engine)
+    finally:
+        engine.dispose()
 
-    @pytest.mark.parametrize(
-        "type_repr",
-        ["BLOB", "BYTEA", "BYTEA(1024)", "VARBINARY", "BINARY", "binary varying"],
-    )
-    def test_binary_type_strings_map_to_blob(self, type_repr):
-        assert _sqlalchemy_type_to_sqlite_type(type_repr) == "BLOB"
+    conn = sqlite3.connect(str(db_path))
+    try:
+        schema: dict[str, dict] = {}
+        tables = [
+            row[0]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        ]
+        for table in tables:
+            schema[table] = {row[1]: row for row in conn.execute(f"PRAGMA table_info({table})")}  # noqa: S608
+        return schema
+    finally:
+        conn.close()
 
-    def test_integer_unchanged(self):
-        assert _sqlalchemy_type_to_sqlite_type("INTEGER") == "INTEGER"
-        assert _sqlalchemy_type_to_sqlite_type("BIGINT") == "INTEGER"
 
-    def test_boolean_unchanged(self):
-        assert _sqlalchemy_type_to_sqlite_type("BOOLEAN") == "BOOLEAN"
+class TestBackupSchemaFidelity:
+    """The real backup-schema builder (metadata.create_all on SQLite),
+    inspected via sqlite_master, keeps the constraints the old name+type
+    rebuild dropped."""
 
-    def test_unknown_falls_back_to_text(self):
-        assert _sqlalchemy_type_to_sqlite_type("VARCHAR(500)") == "TEXT"
-        assert _sqlalchemy_type_to_sqlite_type("DATETIME") == "TEXT"
+    def test_icon_data_column_is_blob(self, tmp_path):
+        # #1333 — LargeBinary must render as BLOB, not TEXT, or non-UTF8
+        # OIDC icon bytes are corrupted on the PG→SQLite round trip.
+        schema = _build_backup_schema(tmp_path / "schema.db")
+        assert schema["oidc_providers"]["icon_data"][2] == "BLOB"
+
+    def test_server_default_column_keeps_default(self, tmp_path):
+        # #2526 — a server_default=func.now() column must carry a DEFAULT so
+        # inserts that omit it (SQLAlchemy does, for server-side defaults)
+        # don't write NULL after a Postgres→SQLite restore.
+        schema = _build_backup_schema(tmp_path / "schema.db")
+        created_at = schema["spoolbuddy_devices"]["created_at"]
+        assert created_at[4] is not None, "created_at lost its DEFAULT clause"
+        assert "CURRENT_TIMESTAMP" in str(created_at[4]).upper()
+
+    def test_not_null_column_keeps_not_null(self, tmp_path):
+        # #2526 — NOT NULL columns must stay NOT NULL. A single-column PK is
+        # implicitly NOT NULL, so assert on a non-PK required column.
+        schema = _build_backup_schema(tmp_path / "schema.db")
+        # notnull flag is index 3 of the PRAGMA row.
+        assert schema["spoolbuddy_devices"]["device_id"][3] == 1
 
 
 class TestSqliteBinaryRoundtrip:

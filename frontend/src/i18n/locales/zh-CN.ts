@@ -196,10 +196,16 @@ export default {
       extraLarge: '超大卡片',
     },
     pageView: {
+      openCamWallPage: '在独立页面中打开摄像头墙',
       cards: '卡片',
       camWall: '摄像头墙',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          '此摄像头墙链接已失效。令牌可能已过期或被撤销。',
+        loadFailed: '无法加载打印机。',
+      },
       noPrinters: '没有可显示的打印机',
       noSignal: '无信号',
       live: '直播',
@@ -416,6 +422,7 @@ export default {
       unload: '卸载',
     },
     bedJog: {
+      limitWarning: '手动移动时不会强制执行行程限位——Bambu 固件存在缺陷，远程指令会忽略软件限位。请小心移动以避免碰撞。',
       title: '点动控制',
       bed: '热床',
       step: '步长 (mm)',
@@ -569,6 +576,10 @@ export default {
       notSupported: '不支持干燥',
       powerRequired: '连接AMS电源适配器以启用干燥',
       startingDrying: '正在启动干燥...',
+      toastCommandSent: '已发送干燥命令',
+      toastStopped: '已停止干燥',
+      toastNotStarted: '打印机已接受命令，但 AMS 未开始干燥。请检查 AMS 电源适配器是否已连接，以及打印机是否处于空闲状态。',
+      screenOnly: '此打印机的 AMS 干燥只能在打印机自带的屏幕上操作（Bambu 的限制）',
       stoppingDrying: '正在停止干燥...',
       rotateTray: '干燥时旋转料盘',
       rotateUnavailableReason: '不可用 — 此 AMS 中有插槽已装入打印头。料盘被送料管固定，无法旋转。请先回退耗材。',
@@ -1989,6 +2000,15 @@ export default {
     manageLibraryDescription: '上传、重命名和删除资料库文件；从 MakerWorld 导入模型',
     manageInventory: '管理库存',
     manageInventoryDescription: '创建、更新和删除耗材盘以及库存记录。SpoolBuddy 终端（NFC 扫描、秤读取、终端系统命令）需要此权限。',
+    manageMaintenance: '管理维护',
+    manageMaintenanceDescription: '记录已完成的维护、重置计数器、编辑间隔并管理维护类型目录。适用于在不授予更广泛打印机控制权限的情况下记录"我清洁了喷嘴"的 Home Assistant 自动化。',
+    manageArchives: '管理打印存档',
+    manageArchivesDescription: '编辑和删除打印存档，包括移除旧的打印。不包括清除其统计数据贡献。适用于精简打印历史的自动化。',
+    manageProjects: '管理项目',
+    manageProjectsDescription: '创建、更新和删除项目，并向其添加存档。适用于将打印整理到项目中的自动化。',
+    maintenanceBadge: '维护',
+    archivesBadge: '存档',
+    projectsBadge: '项目',
     libraryBadge: '资料库',
     inventoryBadge: '库存',
     cloudAccess: '允许云端访问',
@@ -2057,8 +2077,31 @@ export default {
     tempFanPresetsChamber: '腔室温度',
     tempFanPresetsFan: '风扇速度',
     tempFanPresetsReset: '恢复默认值',
+    concurrentUploadsTitle: '并发上传',
+    concurrentUploadsDescription: '队列可以同时向多少台打印机发送文件。打印机接收文件很慢（大型打印可能需要几分钟），并且每台都要排队等候——因此在打印机较多时，调高该值可以避免批次中最后一台打印机等完前面所有传输。如果网络或 Bambuddy 主机难以承受并行传输，请调低该值。',
+    concurrentUploadsLabel: '同时上传的打印机数量',
+    concurrentUploadsHelp: '设为 1 时一次只向一台打印机发送（旧行为）。默认值为 4。',
     staggeredStart: '错峰启动',
     staggeredStartDescription: '错峰启动多台打印机批次时的默认组大小和间隔。可在打印对话框中按批次覆盖。',
+    preheatTitle: '预热与热保温',
+    preheatDescription: '在每个排队打印开始前预热热床（以及支持的话腔体）并保持温度。对于没有腔体主动加热的打印机使用工程材料（PA、ABS）很有帮助 — 保温计时进行时，热床通过辐射温暖腔体。热床目标温度从打印文件读取；腔体行为取决于打印机型号。',
+    preheatEnabled: '启用预热与保温',
+    preheatEnabledDesc: '关闭时，排队打印立即开始。每个队列项可按单次打印覆盖。',
+    preheatFilamentTargetsLabel: '按耗材的腔体目标 (°C)',
+    preheatFilamentTargetsHint: 'Bambuddy 会在已装入的 AMS 槽位中选择最高目标；仅 PLA 的打印推导为 0 并自动跳过腔体阶段。',
+    preheatFilamentTargetsReset: '重置为默认值',
+    preheatFilamentTargetsDefaultRow: '其他 / 未映射',
+    preheatMaxWait: '最长等待（秒）',
+    preheatMaxWaitHelp: '进入保温阶段前的腔体预热阶段上限。',
+    preheatSoak: '保温（秒）',
+    preheatSoakHelp: '达到目标或最长等待结束后的保持时间。',
+    preheatHardwareTitle: '按打印机的行为：',
+    preheatHardwareDetail: 'H2C/H2D/H2D Pro/H2S/X2D/X1E 通过 M141 主动加热腔体。X1C/P2S 读取腔体温度但仅靠热床辐射加热。P1S/P1P/A1/A1 Mini 无腔体传感器 — 仅保温计时器生效。',
+    preheatPerItemDesc: '在本次打印开始前预热热床和腔体。默认使用设置 → 工作流的全局开关。',
+    preheatOverride_inherit: '继承',
+    preheatOverride_on: '开启',
+    preheatOverride_off: '关闭',
+    preheatTargetOverride: '覆盖腔体目标 (°C，留空使用耗材默认)',
     plateClear: '热床清空确认',
     requirePlateClear: '需要热床清空确认',
     requirePlateClearDescription: '启用后，调度器会在已完成打印的打印机上启动排队打印之前，等待每台打印机的热床清空确认。禁用后，也会隐藏打印机卡片上的打印板状态标记和“将打印板标记为已清理”按钮。',
@@ -3084,6 +3127,7 @@ export default {
       clearAll: '清除全部',
       permissionsSelected: '已选 {{count}} 个',
       noResults: '没有权限匹配您的搜索',
+      websocketHint: '实时更新所需。缺少此权限时，界面将回退到定期轮询。',
     },
   },
 
@@ -3285,6 +3329,8 @@ export default {
       },
     },
     connectedAs: '已连接为',
+    signInExpiredTitle: 'Bambu Cloud 登录已过期',
+    signInExpiredBody: 'Bambu Lab 不再接受已保存的令牌。请重新登录以恢复云配置文件、MakerWorld 导入和固件检查。',
     logout: '退出登录',
     noLogoutPermission: '您没有退出登录的权限',
     failedToLoad: '加载配置文件失败',
@@ -3541,6 +3587,9 @@ export default {
     searchSubfoldersHint: '包含子文件夹',
     readme: {
       truncated: '已截断',
+      show: '显示 README',
+      hide: '隐藏 README',
+      label: 'README',
     },
     tags: {
       title: '标签',
@@ -3895,6 +3944,10 @@ export default {
     toastArchives: '用 Bambuddy 归档了 {{count}} 次打印。看看是谁让它保持独立。',
     toastAnniversary: '与 Bambuddy 相伴一年了！看看是谁让项目保持独立。',
     toastVersionUpdate: '已更新至 v{{version}}。Bambuddy 之所以免费，离不开支持者。',
+    toastBusiness: '您正在 {{count}} 台打印机上运行 Bambuddy？我们为团队提供支持方案：优先修复、开具发票，以及与维护者的直接沟通渠道。',
+    businessCta: 'Bambuddy 商业版',
+    businessTitle: 'Bambuddy 商业版',
+    businessTagline: '您正在管理 {{count}} 台打印机。我们为团队和打印农场提供优先支持、商业授权和发票开具。',
   },
 
   // Library (K Profiles)
@@ -4150,6 +4203,8 @@ export default {
       title: '打印线材标签',
       selectedCount: '已选 {{count}} 项',
       pickSpools: '选择要打印标签的线材：',
+      monochrome: '单色（黑白打印机）',
+      monochromeHint: '移除颜色色块并加宽文本',
       searchPlaceholder: '按名称、品牌或 #ID 搜索',
       filterByMaterial: '材料：',
       allMaterials: '全部',
@@ -4506,6 +4561,8 @@ export default {
     selectPrinter: '选择打印机',
     selectPlate: '选择板',
     filamentMapping: '耗材映射',
+    plateN: '板 {{n}}',
+    plateFilamentsUnreadable: '无法读取所选盘的耗材信息，因此无法进行映射。取消选择该盘即可将其余盘加入队列。',
     totalCost: '总成本：',
     slotRemainingShort: ' - 剩余 {{grams}}g',
     printSettings: '打印设置',
@@ -4741,6 +4798,20 @@ export default {
     backupSize: '大小',
     localTimeHint: '本地时间 ({{tz}})',
     defaultPathLabel: '默认：',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'Bambuddy 无法写入该目录',
+      howToFix: '解决方法：',
+      sandboxed: 'Bambuddy 服务无法写入 {{path}}。它的 systemd 单元以 ProtectSystem=strict 运行，因此除安装、数据和日志目录之外的所有目录对服务而言都是只读的，即使你自己的 shell 可以写入也一样。',
+      read_only: '{{path}} 位于只读文件系统上。',
+      permission_denied: 'Bambuddy 无权写入 {{path}}。请检查该目录的属主和权限。',
+      no_space: '{{path}} 所在的文件系统已满。',
+      not_a_directory: '{{path}} 存在，但不是目录。',
+      missing: '{{path}} 不存在且无法创建。',
+      error: 'Bambuddy 无法写入 {{path}}。',
+      ephemeralTitle: '这些备份在容器重建后会丢失',
+      container_ephemeral: '{{path}} 位于 Bambuddy 容器内部，而不是宿主机上。写入其中的备份会在容器重建时丢失。请从宿主机挂载该目录：',
+    },
 
     // Category labels
     categories: {
@@ -5294,7 +5365,12 @@ export default {
     restPowerPath: '功率 JSON 路径',
     restPowerMultiplier: '功率乘数',
     restEnergyUrl: '能耗URL',
-    restEnergyPath: '能耗 JSON 路径',
+    restEnergyPath: '能耗 JSON 路径（今日）',
+    restEnergyTotalPath: '能耗 JSON 路径（累计值）',
+    restEnergyTotalMultiplier: '累计值倍数',
+    restEnergyTotalPathHint: '例如 aenergy.total',
+    restEnergyTotalHint:
+      '许多插座（包括所有 Shelly）只提供永不归零的累计计数值。该值应填在此处，而不是上面的字段：若当作今日用量读取，它在午夜不会归零，而“昨日”和“总计”会一直为空。Bambuddy 会据此推算“今日”和“昨日”，这需要一到两天的采样数据。Shelly 以瓦时为单位，因此倍数请填 0.001。',
     restEnergyMultiplier: '能耗乘数',
     restUrlRequired: 'REST 插座至少需要一个 URL（ON 或 OFF）',
     restHeadersHint: '例如 {"Authorization": "Bearer your-token"}',
@@ -6192,6 +6268,7 @@ export default {
         pass: '打印机报告此选项已开启 — 发送的文件将存储在 SD 卡上，归档将包含缩略图和切片机元数据。',
         fail: '打印机报告此选项已关闭。请启用"将发送的文件存储在外部存储中" — 在较新固件 (P2S 01.02 / Bambu Studio 2.6+) 中，开关位于打印机的打印设置中；在较旧版本中位于 Bambu Studio / OrcaSlicer 的设备选项卡中。如果不启用此选项，每次归档的打印都将没有缩略图也没有切片机元数据。',
         skip: '未检查 — 需要有效的 MQTT 连接。在该设置仅存在于切片机中的较旧切片机上，打印机不会报告此设置，因此即使选项已关闭，此检查也会通过 — 请手动验证安装步骤 4。',
+        skip_unsupported_model: '此型号有 SD 卡槽，但无法开启该选项 — 当前 P1 系列固件不会在 Bambu Studio 中显示此开关，且打印机没有屏幕。这里无需修复；在 Bambu Lab 通过固件添加支持之前，存档的打印可能缺少缩略图和切片元数据。',
       },
       port_rtsps: {
         title: '摄像头端口（{{protocol}} {{port}}）',
@@ -6412,6 +6489,8 @@ export default {
     resolveButton: '解析',
     signInRequiredTitle: '下载需要登录 Bambu Cloud',
     signInRequiredBody: '您可以匿名浏览模型详情，但下载 3MF 文件需要 Bambu Cloud 账户。',
+    signInExpiredTitle: 'Bambu Cloud 登录已过期',
+    signInExpiredBody: '您仍处于 Bambuddy 的登录状态，但 Bambu Lab 已不再接受已保存的令牌，因此下载会失败。请重新登录 Bambu Cloud。',
     openCloudSettings: '打开云设置',
     untitledModel: '无标题模型',
     byCreator: '作者: {{name}}',
@@ -6584,10 +6663,14 @@ export default {
     saveFailed: '无法保存自动清除设置。',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: '摄像头视频流',
+      camwall: '摄像头墙',
+    },
     title: '摄像头 API 令牌',
     navTitle: '摄像头 API 令牌',
     description:
-      '长期令牌，用于将摄像头流嵌入 Home Assistant、Frigate、信息亭或其他需要稳定 URL 的工具。每个令牌仅限摄像头流，可随时撤销。',
+      '长期令牌，用于将摄像头视频流嵌入 Home Assistant、Frigate、自助展示屏或其他需要稳定网址的工具。权限范围在创建时选择，令牌可随时撤销。',
     loading: '加载中…',
     confirmRevoke: {
       title: '撤销此令牌？',
@@ -6596,6 +6679,11 @@ export default {
       confirm: '撤销',
     },
     create: {
+      scopeLabel: '权限范围',
+      hintCameraStream:
+        '摄像头视频流令牌只能获取摄像头视频流和快照。适用于 Home Assistant、Frigate 或任何嵌入单个摄像头的场景。',
+      hintCamWall:
+        '摄像头墙令牌可在无需登录的屏幕上打开 /camwall，能看到每台打印机的名称和状态以及摄像头视频流，但看不到文件名、地址或访问码。',
       title: '创建新令牌',
       nameLabel: '令牌名称',
       namePlaceholder: '例如 Home Assistant',
@@ -6605,6 +6693,9 @@ export default {
         '最大有效期 365 天。令牌值仅在创建时显示一次 — 请立即复制。',
     },
     created: {
+      camWallUrlTitle: '此屏幕的摄像头墙网址',
+      camWallUrlHint:
+        '在屏幕上打开此网址。任何能看到该网址的人都能观看摄像头墙，请像对待钥匙一样对待它——撤销令牌即可切断该屏幕的访问。',
       title: '令牌已创建 — 立即复制',
       warning:
         '这是此令牌唯一一次可见。关闭此对话框后您将无法再次查看。',
@@ -6612,6 +6703,7 @@ export default {
       dismiss: '我已保存',
     },
     list: {
+      scope: '权限范围',
       myTitle: '我的令牌',
       allTitle: '所有用户（管理员视图）',
       empty: '暂无令牌。',

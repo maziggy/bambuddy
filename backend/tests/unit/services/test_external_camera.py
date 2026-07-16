@@ -591,3 +591,117 @@ class TestUsbCameraHandling:
 
         result = await capture_frame("http://example.com", "usb", timeout=1)
         assert result is None
+
+
+def _encode_image(ext: str) -> bytes:
+    """Encode a small solid test image to the given container (.png/.webp/.jpg)."""
+    import cv2
+    import numpy as np
+
+    img = np.zeros((16, 24, 3), dtype=np.uint8)
+    img[:, :12] = (0, 0, 255)  # half red so the frame isn't uniformly black
+    ok, buf = cv2.imencode(ext, img)
+    assert ok, f"failed to encode {ext}"
+    return buf.tobytes()
+
+
+def _fake_snapshot_session(body: bytes, status: int = 200):
+    """Build an aiohttp.ClientSession stand-in whose GET yields `body`.
+
+    Matches the `async with ClientSession(...) as session, session.get(url) as
+    response` usage inside `_capture_snapshot`.
+    """
+
+    class _Resp:
+        def __init__(self):
+            self.status = status
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def read(self):
+            return body
+
+    class _Session:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        def get(self, _url):
+            return _Resp()
+
+    return _Session
+
+
+class TestSnapshotTranscode:
+    """Regression for #1902. Snapshot endpoints that serve PNG/WebP (not JPEG)
+    broke the browser MJPEG stream, because every multipart part is hard-labelled
+    ``Content-Type: image/jpeg`` — the browser rejected the non-JPEG payload and
+    dropped the whole stream ("connection lost"). ``_capture_snapshot`` now
+    transcodes non-JPEG stills to JPEG; only genuinely undecodable payloads fall
+    through to the raw bytes (unchanged last-resort behaviour)."""
+
+    def test_transcode_png_to_jpeg(self):
+        from backend.app.services.external_camera import _transcode_to_jpeg
+
+        png = _encode_image(".png")
+        assert not png.startswith(JPEG_START)  # sanity: input really is PNG
+        out = _transcode_to_jpeg(png)
+        assert out is not None and out.startswith(JPEG_START)
+
+    def test_transcode_webp_to_jpeg(self):
+        from backend.app.services.external_camera import _transcode_to_jpeg
+
+        webp = _encode_image(".webp")
+        assert not webp.startswith(JPEG_START)
+        out = _transcode_to_jpeg(webp)
+        assert out is not None and out.startswith(JPEG_START)
+
+    def test_transcode_returns_none_for_non_image(self):
+        """HTML error pages / auth redirects / empty bodies aren't images —
+        transcode returns None so the caller can log and fall back."""
+        from backend.app.services.external_camera import _transcode_to_jpeg
+
+        assert _transcode_to_jpeg(b"<html><body>404 Not Found</body></html>") is None
+        assert _transcode_to_jpeg(b"") is None
+
+    @pytest.mark.asyncio
+    async def test_capture_snapshot_transcodes_png_response(self):
+        """The reported case: a snapshot URL returning PNG yields JPEG bytes."""
+        from backend.app.services import external_camera as ec
+
+        png = _encode_image(".png")
+        with patch.object(ec.aiohttp, "ClientSession", _fake_snapshot_session(png)):
+            out = await ec._capture_snapshot("http://192.168.50.50/snapshot.png", 10)
+        assert out is not None and out.startswith(JPEG_START)
+
+    @pytest.mark.asyncio
+    async def test_capture_snapshot_jpeg_passthrough_unchanged(self):
+        """A JPEG snapshot must be returned byte-for-byte (fast path, no
+        re-encode) so we don't degrade quality or waste CPU on JPEG cameras."""
+        from backend.app.services import external_camera as ec
+
+        jpeg = _encode_image(".jpg")
+        assert jpeg.startswith(JPEG_START)
+        with patch.object(ec.aiohttp, "ClientSession", _fake_snapshot_session(jpeg)):
+            out = await ec._capture_snapshot("http://192.168.50.50/snapshot.jpg", 10)
+        assert out == jpeg  # identical object bytes — proves no transcode ran
+
+    @pytest.mark.asyncio
+    async def test_capture_snapshot_non_image_falls_back_to_raw(self):
+        """Undecodable (non-image) responses return the raw bytes unchanged, so
+        behaviour is never worse than before the fix."""
+        from backend.app.services import external_camera as ec
+
+        html = b"<html><body>unauthorized</body></html>"
+        with patch.object(ec.aiohttp, "ClientSession", _fake_snapshot_session(html)):
+            out = await ec._capture_snapshot("http://192.168.50.50/snapshot", 10)
+        assert out == html

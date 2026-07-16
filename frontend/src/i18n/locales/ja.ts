@@ -195,10 +195,16 @@ export default {
       extraLarge: '特大',
     },
     pageView: {
+      openCamWallPage: 'カメラウォールをページとして開く',
       cards: 'カード',
       camWall: 'カメラウォール',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          'このカメラウォールのリンクは無効です。トークンの有効期限が切れたか、取り消された可能性があります。',
+        loadFailed: 'プリンターを読み込めませんでした。',
+      },
       noPrinters: '表示するプリンターがありません',
       noSignal: '信号なし',
       live: 'ライブ',
@@ -415,6 +421,7 @@ export default {
       unload: 'アンロード',
     },
     bedJog: {
+      limitWarning: '手動移動では可動範囲の制限が適用されません。Bambu のファームウェアの不具合により、リモートコマンドではソフトウェアリミットが無視されます。衝突しないよう注意して操作してください。',
       title: 'ジョグ操作',
       bed: 'ベッド',
       step: 'ステップ (mm)',
@@ -568,6 +575,10 @@ export default {
       notSupported: '乾燥非対応',
       powerRequired: 'AMS電源アダプターを接続して乾燥を有効にしてください',
       startingDrying: '乾燥を開始しています...',
+      toastCommandSent: '乾燥コマンドを送信しました',
+      toastStopped: '乾燥を停止しました',
+      toastNotStarted: 'プリンターはコマンドを受け付けましたが、AMS は乾燥を開始しませんでした。AMS の電源アダプターが接続されているか、プリンターがアイドル状態かを確認してください。',
+      screenOnly: 'このプリンターでは、AMS の乾燥はプリンター本体の画面からのみ操作できます (Bambu の仕様上の制限)',
       stoppingDrying: '乾燥を停止しています...',
       rotateTray: '乾燥中にスプールを回転',
       rotateUnavailableReason: '利用不可 — このAMSのスロットがツールヘッドにロードされています。スプールが供給チューブで固定されているため回転できません。先にフィラメントを引き戻してください。',
@@ -1987,6 +1998,15 @@ export default {
     manageLibraryDescription: 'ライブラリファイルのアップロード、名前変更、削除。MakerWorld からのモデルインポート。',
     manageInventory: '在庫の管理',
     manageInventoryDescription: 'スプールと在庫レコードの作成、更新、削除。SpoolBuddy キオスク（NFC スキャン、はかり読み取り、キオスクのシステムコマンド）に必要です。',
+    manageMaintenance: 'メンテナンスの管理',
+    manageMaintenanceDescription: '完了したメンテナンスの記録、カウンターのリセット、間隔の編集、メンテナンス種類カタログの管理。より広範なプリンター制御を許可することなく「ノズルをクリーニングした」を記録する Home Assistant オートメーションに適しています。',
+    manageArchives: 'アーカイブの管理',
+    manageArchivesDescription: '古い印刷の削除を含む、印刷アーカイブの編集と削除。統計への寄与の削除は含まれません。印刷履歴を整理するオートメーションに適しています。',
+    manageProjects: 'プロジェクトの管理',
+    manageProjectsDescription: 'プロジェクトの作成、更新、削除、およびプロジェクトへのアーカイブの追加。印刷をプロジェクトに整理するオートメーションに適しています。',
+    maintenanceBadge: 'メンテナンス',
+    archivesBadge: 'アーカイブ',
+    projectsBadge: 'プロジェクト',
     libraryBadge: 'ライブラリ',
     inventoryBadge: '在庫',
     cloudAccess: 'クラウドアクセスを許可',
@@ -2055,8 +2075,31 @@ export default {
     tempFanPresetsChamber: 'チャンバー温度',
     tempFanPresetsFan: 'ファン速度',
     tempFanPresetsReset: 'デフォルトにリセット',
+    concurrentUploadsTitle: '同時アップロード',
+    concurrentUploadsDescription: 'キューが同時にファイルを送信できるプリンター数です。プリンターのファイル受信は遅く（大きな造形では数分かかることもあります）、各プリンターは順番を待ちます。台数の多い環境では、この値を上げることで、バッチ内の最後のプリンターが先行するすべての転送を待たずに済みます。ネットワークや Bambuddy ホストが並列転送に耐えられない場合は下げてください。',
+    concurrentUploadsLabel: '同時に送信するプリンター数',
+    concurrentUploadsHelp: '1 にすると 1 台ずつ送信します（従来の動作）。既定値は 4 です。',
     staggeredStart: '段階的開始',
     staggeredStartDescription: '複数プリンターのバッチ開始を段階的に行う際のデフォルトのグループサイズと間隔。プリントモーダルでバッチごとに上書き可能。',
+    preheatTitle: 'プレヒート & ヒートソーク',
+    preheatDescription: 'キュー内の各印刷を開始する前に、ベッド（および対応している場合はチャンバー）を加熱し、温度を保持します。エンジニアリング素材（PA、ABS）をチャンバー能動加熱のないプリンターで使う際に有効です。ソーク中はベッドの放射熱でチャンバーが温まります。ベッド目標温度は印刷ファイルから読み取られ、チャンバーの挙動はプリンター機種によって異なります。',
+    preheatEnabled: 'プレヒート & ソークを有効化',
+    preheatEnabledDesc: 'オフにすると、キュー内の印刷は即時開始されます。各キュー項目で印刷ごとに上書き可能です。',
+    preheatFilamentTargetsLabel: 'フィラメント別チャンバー目標 (°C)',
+    preheatFilamentTargetsHint: 'Bambuddyはロード済みのAMSスロット中で最も高い目標値を選びます。PLAのみの印刷は0となり、チャンバー段階は自動でスキップされます。',
+    preheatFilamentTargetsReset: 'デフォルトにリセット',
+    preheatFilamentTargetsDefaultRow: 'その他 / 未登録',
+    preheatMaxWait: '最大待機時間（秒）',
+    preheatMaxWaitHelp: 'ソークへ移行するまでのチャンバー加熱フェーズの上限。',
+    preheatSoak: 'ソーク（秒）',
+    preheatSoakHelp: '目標到達後または最大待機経過後の保持時間。',
+    preheatHardwareTitle: 'プリンター別の挙動:',
+    preheatHardwareDetail: 'H2C/H2D/H2D Pro/H2S/X2D/X1EはM141でチャンバーを能動加熱します。X1C/P2Sはチャンバー温度を取得しますが、加熱はベッド放射のみです。P1S/P1P/A1/A1 Miniにはチャンバーセンサーがなく、ソークタイマーのみが適用されます。',
+    preheatPerItemDesc: 'この印刷を開始する前にベッドとチャンバーを加熱します。既定では設定 → ワークフローのグローバルトグルを使用します。',
+    preheatOverride_inherit: '継承',
+    preheatOverride_on: 'オン',
+    preheatOverride_off: 'オフ',
+    preheatTargetOverride: 'チャンバー目標を上書き (°C、空欄でフィラメント既定値)',
     plateClear: 'プレートクリア確認',
     requirePlateClear: 'プレートクリア確認を必須にする',
     requirePlateClearDescription: '有効にすると、スケジューラーは完了したプリンターでキューの印刷を開始する前に、プリンターごとのプレートクリア確認を待ちます。無効にすると、プリンターカード上のプレート状態バッジと「プレートをクリア済みにする」ボタンも非表示になります。',
@@ -3096,6 +3139,7 @@ export default {
       clearAll: 'すべて解除',
       permissionsSelected: '{{count}}件選択',
       noResults: '検索に一致する権限がありません',
+      websocketHint: 'ライブ更新に必要です。この権限がないと、インターフェースは定期的なポーリングに切り替わります。',
     },
   },
 
@@ -3297,6 +3341,8 @@ export default {
       },
     },
     connectedAs: '接続中:',
+    signInExpiredTitle: 'Bambu Cloud のサインインの有効期限が切れました',
+    signInExpiredBody: '保存されたトークンは Bambu Lab に受け付けられなくなりました。クラウドプロファイル、MakerWorld のインポート、ファームウェア確認を復元するには、再度サインインしてください。',
     logout: 'ログアウト',
     noLogoutPermission: 'ログアウトする権限がありません',
     failedToLoad: 'ファイルの読み込みに失敗しました',
@@ -3553,6 +3599,9 @@ export default {
     searchSubfoldersHint: 'サブフォルダーを含む',
     readme: {
       truncated: '切り詰め',
+      show: 'READMEを表示',
+      hide: 'READMEを非表示',
+      label: 'README',
     },
     tags: {
       title: 'タグ',
@@ -3907,6 +3956,10 @@ export default {
     toastArchives: '{{count}}件の印刷をBambuddyでアーカイブしました。独立を支えてくれている方々をご覧ください。',
     toastAnniversary: 'Bambuddyとの1周年です！プロジェクトを支えてくれている方々をご覧ください。',
     toastVersionUpdate: 'v{{version}}にアップデートされました。Bambuddyは支援者のおかげで無料で提供されています。',
+    toastBusiness: '{{count}}台のプリンターでBambuddyを運用中ですね。チーム向けのサポートプランがあります（優先対応、請求書発行、開発者への直接窓口）。',
+    businessCta: 'ビジネス向けBambuddy',
+    businessTitle: 'ビジネス向けBambuddy',
+    businessTagline: '{{count}}台のプリンターを運用中です。チームやプリントファーム向けに、優先サポート、商用ライセンス、請求書発行をご用意しています。',
   },
 
   // Library (K Profiles)
@@ -4162,6 +4215,8 @@ export default {
       title: 'スプールラベルを印刷',
       selectedCount: '{{count}}件選択中',
       pickSpools: 'ラベルを印刷するスプールを選択:',
+      monochrome: 'モノクロ（白黒プリンター）',
+      monochromeHint: 'カラースウォッチを削除してテキストを広げます',
       searchPlaceholder: '名前、ブランド、#IDで検索',
       filterByMaterial: '素材:',
       allMaterials: 'すべて',
@@ -4518,6 +4573,8 @@ export default {
     selectPrinter: 'プリンターを選択',
     selectPlate: 'プレートを選択',
     filamentMapping: 'フィラメントマッピング',
+    plateN: 'プレート {{n}}',
+    plateFilamentsUnreadable: '選択したプレートのフィラメントを読み取れなかったため、割り当てできません。そのプレートの選択を解除すると、残りをキューに追加できます。',
     totalCost: '合計コスト:',
     slotRemainingShort: ' - 残{{grams}}g',
     printSettings: '印刷設定',
@@ -4753,6 +4810,20 @@ export default {
     backupSize: 'サイズ',
     localTimeHint: '現地時刻 ({{tz}})',
     defaultPathLabel: 'デフォルト:',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'Bambuddy はこのディレクトリに書き込めません',
+      howToFix: '対処方法:',
+      sandboxed: 'Bambuddy サービスは {{path}} に書き込めません。systemd ユニットが ProtectSystem=strict で動作しているため、インストール・データ・ログの各ディレクトリ以外はすべてサービスから読み取り専用になります。自分のシェルからは書き込める場所であっても同様です。',
+      read_only: '{{path}} は読み取り専用のファイルシステム上にあります。',
+      permission_denied: 'Bambuddy には {{path}} への書き込み権限がありません。ディレクトリの所有者とパーミッションを確認してください。',
+      no_space: '{{path}} があるファイルシステムに空き容量がありません。',
+      not_a_directory: '{{path}} は存在しますが、ディレクトリではありません。',
+      missing: '{{path}} は存在せず、作成もできませんでした。',
+      error: 'Bambuddy は {{path}} に書き込めません。',
+      ephemeralTitle: 'これらのバックアップはコンテナの再作成で失われます',
+      container_ephemeral: '{{path}} はホストではなく Bambuddy コンテナ内にあります。そこに書き込まれたバックアップはコンテナを再作成すると失われます。ホスト側のディレクトリをマウントしてください:',
+    },
 
     // Category labels
     categories: {
@@ -5306,7 +5377,12 @@ export default {
     restPowerPath: '電力JSONパス',
     restPowerMultiplier: '電力乗数',
     restEnergyUrl: 'エネルギーURL',
-    restEnergyPath: '電力量JSONパス',
+    restEnergyPath: 'エネルギーの JSON パス (今日)',
+    restEnergyTotalPath: 'エネルギーの JSON パス (積算値)',
+    restEnergyTotalMultiplier: '積算値の乗数',
+    restEnergyTotalPathHint: '例: aenergy.total',
+    restEnergyTotalHint:
+      '多くのスマートプラグ (Shelly はすべて) は、リセットされない積算カウンターしか返しません。その値は上の欄ではなく、ここに入力してください。今日の使用量として読むと深夜にリセットされず、昨日と合計は空のままになります。Bambuddy は積算値から今日と昨日を算出しますが、そのためには 1〜2 日分の測定値が必要です。Shelly はワット時で返すため、乗数には 0.001 を指定してください。',
     restEnergyMultiplier: 'エネルギー乗数',
     restUrlRequired: 'RESTプラグには少なくとも1つのURL（ONまたはOFF）が必要',
     restHeadersHint: '例: {"Authorization": "Bearer your-token"}',
@@ -6205,6 +6281,7 @@ export default {
         pass: 'プリンターはこのオプションが有効と報告しています — 送信されたファイルはSDカードに保存され、アーカイブにはサムネイルとスライサーメタデータが含まれます。',
         fail: 'プリンターはこのオプションが無効と報告しています。「送信ファイルを外部ストレージに保存」を有効にしてください — 新しいファームウェア (P2S 01.02 / Bambu Studio 2.6以降) ではプリンター本体の印刷設定にトグルがあります。古いバージョンでは Bambu Studio / OrcaSlicer のデバイスタブにあります。この設定がないと、アーカイブされた印刷にはサムネイルもスライサーメタデータも残りません。',
         skip: '未確認 — アクティブなMQTT接続が必要です。古いスライサーでこの設定がスライサー側のみに存在する場合、プリンターはそれを報告しないため、オプションが無効でもこのチェックは通過します — インストール手順4を手動で確認してください。',
+        skip_unsupported_model: 'このモデルにはSDスロットがありますが、オプションを有効にする方法がありません — 現在のP1シリーズのファームウェアはBambu Studioにトグルを表示せず、プリンターに画面もありません。ここで修正すべきことはありません。Bambu Labがファームウェアで対応するまで、アーカイブされた印刷にはサムネイルやスライサーのメタデータが欠ける場合があります。',
       },
       port_rtsps: {
         title: 'カメラポート ({{protocol}} {{port}})',
@@ -6425,6 +6502,8 @@ export default {
     resolveButton: '読み込む',
     signInRequiredTitle: 'ダウンロードには Bambu Cloud へのサインインが必要です',
     signInRequiredBody: 'モデルの詳細は匿名で閲覧できますが、3MF ファイルをダウンロードするには Bambu Cloud アカウントが必要です。',
+    signInExpiredTitle: 'Bambu Cloud のサインインの有効期限が切れました',
+    signInExpiredBody: 'Bambuddy にはサインインしたままですが、Bambu Lab が保存されたトークンを受け付けなくなったため、ダウンロードは失敗します。Bambu Cloud に再度サインインしてください。',
     openCloudSettings: 'Cloud 設定を開く',
     untitledModel: '無題のモデル',
     byCreator: '作成者: {{name}}',
@@ -6597,10 +6676,14 @@ export default {
     saveFailed: '自動削除設定を保存できませんでした。',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: 'カメラストリーム',
+      camwall: 'カメラウォール',
+    },
     title: 'カメラAPIトークン',
     navTitle: 'カメラAPIトークン',
     description:
-      'Home Assistant、Frigate、キオスク、その他安定したURLが必要なツールにカメラストリームを埋め込むための長期トークン。各トークンはカメラストリーム専用で、いつでも取り消し可能。',
+      'Home Assistant、Frigate、キオスク画面など、安定した URL を必要とするツールにカメラ映像を埋め込むための長期トークンです。スコープは作成時に選択し、トークンはいつでも取り消せます。',
     loading: '読み込み中…',
     confirmRevoke: {
       title: 'このトークンを取り消しますか？',
@@ -6609,6 +6692,11 @@ export default {
       confirm: '取り消し',
     },
     create: {
+      scopeLabel: 'スコープ',
+      hintCameraStream:
+        'カメラストリームトークンで取得できるのは、カメラの映像とスナップショットだけです。Home Assistant や Frigate など、単一のカメラを埋め込む用途に使用してください。',
+      hintCamWall:
+        'カメラウォールトークンは、ログインなしの画面で /camwall を開きます。各プリンターの名前と状態、そしてカメラ映像を見ることができます。ファイル名、アドレス、アクセスコードは見えません。',
       title: '新しいトークンを作成',
       nameLabel: 'トークン名',
       namePlaceholder: '例：Home Assistant',
@@ -6618,6 +6706,9 @@ export default {
         '最大有効期間は365日。トークン値は作成時に一度だけ表示されます — 今すぐコピーしてください。',
     },
     created: {
+      camWallUrlTitle: 'この画面用のカメラウォール URL',
+      camWallUrlHint:
+        'この URL を画面で開いてください。URL を読める人は誰でもウォールを見られるため、鍵と同じように扱ってください。トークンを取り消すと、その画面は遮断されます。',
       title: 'トークンを作成しました – 今すぐコピー',
       warning:
         'このトークンが表示されるのは今回限りです。このダイアログを閉じると二度と表示できません。',
@@ -6625,6 +6716,7 @@ export default {
       dismiss: '保存しました',
     },
     list: {
+      scope: 'スコープ',
       myTitle: 'マイトークン',
       allTitle: '全ユーザー（管理者ビュー）',
       empty: 'トークンはまだありません。',

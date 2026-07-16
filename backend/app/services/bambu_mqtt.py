@@ -56,6 +56,7 @@ def apply_tray_exist_bits(
     *,
     power_on_flag: bool = True,
     log_label: str | None = None,
+    annotate_exists: bool = False,
 ) -> int:
     """Wipe stale per-tray filament fields on slots whose `tray_exist_bits` bit is 0.
 
@@ -86,6 +87,14 @@ def apply_tray_exist_bits(
     `tray_exist_bits_str` is expected as a hex string (firmware sends it that
     way). Ints are tolerated for defensive symmetry but typically not seen
     on the wire. ``None`` / empty / unparseable → no-op.
+
+    ``annotate_exists`` writes a per-tray ``exists`` bool (from the bitmask) on
+    every processed slot. This is firmware's authoritative "spool physically
+    present" signal — the same one BambuStudio uses to draw a ``?`` for a
+    non-RFID spool in an otherwise-unidentified slot. Bambuddy's AMS card keys
+    empty-vs-unknown off it so a non-Bambu spool shows ``?`` instead of "Empty"
+    (#2527). Only the internal (printer-card) caller sets this; the VP bridge
+    leaves it False so the ``exists`` key never reaches the slicer wire format.
 
     Mutates ``units`` in place. Returns the number of slots cleared.
     """
@@ -131,6 +140,8 @@ def apply_tray_exist_bits(
                 continue
             global_bit = ams_id * 4 + tray_id
             slot_exists = (tray_exist_bits >> global_bit) & 1
+            if annotate_exists:
+                tray["exists"] = bool(slot_exists)
             if slot_exists:
                 continue
             tray["state"] = 9
@@ -292,7 +303,7 @@ class PrinterState:
     ipcam: bool = False  # Live view / camera streaming enabled
     wifi_signal: int | None = None  # WiFi signal strength in dBm
     wired_network: bool = False  # Ethernet connection detected (home_flag bit 18)
-    door_open: bool = False  # Enclosure door open (home_flag bit 23, X1/P1S/P2S/H2*)
+    door_open: bool = False  # Enclosure door open (home_flag bit 23; models with a door sensor: X1/X1C/X1E/X2D/P2S/H2*)
     # Nozzle hardware info (for dual nozzle printers, index 0 = left, 1 = right)
     nozzles: list = field(default_factory=lambda: [NozzleInfo(), NozzleInfo()])
     # AI detection and print options
@@ -482,6 +493,8 @@ class BambuMQTTClient:
         self.serial_number = serial_number
         self.access_code = access_code
         self.model = model
+        # Last value logged by _debug_on_change(), keyed by log site. See there.
+        self._debug_last: dict[str, object] = {}
         self.on_state_change = on_state_change
         self.on_print_start = on_print_start
         self.on_print_complete = on_print_complete
@@ -557,6 +570,10 @@ class BambuMQTTClient:
         self._raw_message_handlers: list[Callable[[str, bytes], None]] = []
         self._disconnection_event: threading.Event | None = None
         self._previous_ams_hash: str | None = None  # Track AMS changes
+        # Track external-spool (vt_tray) identity changes separately: the AMS
+        # hash above covers only AMS units, so an external-spool-only filament
+        # swap would never re-trigger inventory reconciliation (#2575).
+        self._previous_vt_tray_hash: str | None = None
 
         # Cache AMS firmware/SN from get_version in case it arrives before AMS status
         # Key: ams_id (int). Value: {'sw_ver': str, 'sn': str}
@@ -990,6 +1007,46 @@ class BambuMQTTClient:
                     json.dumps(print_data),
                 )
 
+    def _debug_on_change(self, key: str, value: object, msg: str, *args: object) -> None:
+        """``logger.debug``, but only when ``value`` differs from the last call for ``key``.
+
+        The state dumps in the push_status handler fire whenever their field is
+        *present* in the frame — and a full push_status carries every field, so
+        they fire on every frame regardless of whether anything changed. Several
+        even say "updated" or "changes" in their own comment while doing nothing
+        of the sort.
+
+        On one printer that is ~1.5 lines/s and nobody noticed. On the 19-printer
+        farm in #2555 it is ~100 lines/s, which fills the 5 MB log inside five
+        minutes: the reporter enabled debug logging as asked and the support
+        bundle came back holding under five minutes of history, almost none of it
+        about the queue problem we were chasing. 27,727 of its 29,830 lines were
+        these dumps.
+
+        Deduplicating on the value keeps every transition — which is the only part
+        anyone reads these lines for — and drops the steady-state repetition.
+        ``value`` must capture everything interpolated into ``msg``, or a change
+        will be swallowed; pass a tuple when the message renders several fields.
+        """
+        if not logger.isEnabledFor(logging.DEBUG):
+            # Debug logging is toggled at RUNTIME (POST /support/debug-logging),
+            # and these clients outlive the toggle. Letting INFO-level frames warm
+            # the cache would be self-defeating: the operator turns debug on
+            # precisely to see the printer's current state, and a cache already
+            # holding every steady-state value would suppress that baseline until
+            # something happened to change. On an idle printer the bundle would
+            # come back with none of these lines at all.
+            #
+            # So while debug is off we record nothing and drop whatever we had.
+            # Every enable then starts cold and dumps a full baseline on the next
+            # frame, exactly as it did before this method existed.
+            self._debug_last.clear()
+            return
+        if self._debug_last.get(key) == value:
+            return
+        self._debug_last[key] = value
+        logger.debug(msg, *args)
+
     def _process_message(self, payload: dict):
         """Process incoming MQTT message from printer."""
         # Handle top-level AMS data (comes outside of "print" key)
@@ -1135,6 +1192,14 @@ class BambuMQTTClient:
                         vt_tray = [vt_tray]
                     self.state.raw_data["vt_tray"] = vt_tray
 
+            # The regular AMS change-hash (in _handle_ams_data) only sees AMS
+            # units, and _handle_ams_data runs before this block — so a change
+            # to the external spool alone (e.g. swapping generic TPU for generic
+            # ABS on the printer) never re-triggers on_ams_change, leaving a
+            # stale inventory assignment on the ams_id=255 slot (#2575). Detect
+            # external-spool identity changes here and fire the same callback.
+            self._maybe_trigger_external_spool_change()
+
             # Parse ams_status directly from print data (NOT from print.ams)
             # ams_status is a combined value: lower 8 bits = sub status, bits 8-15 = main status
             # Main status: 0=idle, 1=filament_change, 2=rfid_identifying, 3=assist, 4=calibration
@@ -1154,9 +1219,14 @@ class BambuMQTTClient:
                 self.state.ams_status_main = (self.state.ams_status >> 8) & 0xFF
 
                 # Log when ams_status changes (for filament change tracking debug)
-                logger.debug(
-                    f"[{self.serial_number}] ams_status: {self.state.ams_status} "
-                    f"(main={self.state.ams_status_main}, sub={self.state.ams_status_sub})"
+                self._debug_on_change(
+                    "ams_status:print",
+                    self.state.ams_status,
+                    "[%s] ams_status: %s (main=%s, sub=%s)",
+                    self.serial_number,
+                    self.state.ams_status,
+                    self.state.ams_status_main,
+                    self.state.ams_status_sub,
                 )
 
             # Check for command responses
@@ -1611,6 +1681,39 @@ class BambuMQTTClient:
             return candidates.pop()
         return None
 
+    def _maybe_trigger_external_spool_change(self):
+        """Fire on_ams_change when the external spool (vt_tray) identity changes.
+
+        The AMS change-hash in _handle_ams_data is built only from AMS units, so
+        an external-spool-only filament swap would otherwise never re-run the
+        inventory reconciliation that unlinks a stale ams_id=255 assignment
+        (#2575). The reconciliation reads vt_tray from live status itself, so we
+        just need to re-fire the callback with the current merged AMS data.
+        """
+        import hashlib
+
+        vt_tray = self.state.raw_data.get("vt_tray")
+        if not isinstance(vt_tray, list):
+            return
+        # Identity fields only — deliberately exclude `remain` so a print's
+        # steadily-dropping fill percentage doesn't fire on every MQTT push.
+        fp_parts = [
+            f"{vt.get('id')}:{vt.get('tray_type')}:{vt.get('tray_color')}:"
+            f"{vt.get('tag_uid')}:{vt.get('tray_uuid')}:{vt.get('tray_info_idx')}"
+            for vt in vt_tray
+            if isinstance(vt, dict)
+        ]
+        vt_hash = hashlib.md5(":".join(fp_parts).encode(), usedforsecurity=False).hexdigest()
+        if vt_hash == self._previous_vt_tray_hash:
+            return
+        self._previous_vt_tray_hash = vt_hash
+        if self.on_ams_change:
+            logger.debug(
+                "[%s] External spool (vt_tray) changed, triggering sync callback",
+                self.serial_number,
+            )
+            self.on_ams_change(self.state.raw_data.get("ams") or [])
+
     def _handle_ams_data(self, ams_data):
         """Handle AMS data changes for Spoolman integration.
 
@@ -1628,7 +1731,13 @@ class BambuMQTTClient:
             # Log all AMS dict fields to debug tray_now for H2D dual-nozzle
             non_list_fields = {k: v for k, v in ams_data.items() if k != "ams"}
             if non_list_fields:
-                logger.debug("[%s] AMS dict fields: %s", self.serial_number, non_list_fields)
+                self._debug_on_change(
+                    "ams_dict_fields",
+                    non_list_fields,
+                    "[%s] AMS dict fields: %s",
+                    self.serial_number,
+                    non_list_fields,
+                )
 
             # IMPORTANT: Parse ams_status FIRST before tray_now, so we have fresh status
             # when checking if we're in filament change mode for tray_now disambiguation
@@ -1644,9 +1753,14 @@ class BambuMQTTClient:
                 # Compute main and sub status
                 self.state.ams_status_sub = self.state.ams_status & 0xFF
                 self.state.ams_status_main = (self.state.ams_status >> 8) & 0xFF
-                logger.debug(
-                    f"[{self.serial_number}] ams_status: {self.state.ams_status} "
-                    f"(main={self.state.ams_status_main}, sub={self.state.ams_status_sub})"
+                self._debug_on_change(
+                    "ams_status:ams",
+                    self.state.ams_status,
+                    "[%s] ams_status: %s (main=%s, sub=%s)",
+                    self.serial_number,
+                    self.state.ams_status,
+                    self.state.ams_status_main,
+                    self.state.ams_status_sub,
                 )
 
             # Parse tray_now from AMS dict - this is the currently loaded tray global ID
@@ -1867,7 +1981,13 @@ class BambuMQTTClient:
                         )
                     self.state.last_loaded_tray = self.state.tray_now
 
-                logger.debug("[%s] tray_now updated: %s", self.serial_number, self.state.tray_now)
+                self._debug_on_change(
+                    "tray_now",
+                    self.state.tray_now,
+                    "[%s] tray_now updated: %s",
+                    self.serial_number,
+                    self.state.tray_now,
+                )
 
             # NOTE: ams_status is parsed BEFORE tray_now (see above) to ensure correct
             # state when checking filament change mode for H2D disambiguation
@@ -2009,6 +2129,7 @@ class BambuMQTTClient:
                 ams_data.get("tray_exist_bits"),
                 power_on_flag=ams_data.get("power_on_flag", True),
                 log_label=self.serial_number,
+                annotate_exists=True,
             )
 
         self.state.raw_data["ams"] = merged_ams
@@ -2017,7 +2138,14 @@ class BambuMQTTClient:
         self._apply_ams_version_cache(merged_ams)
         # Update timestamp for RFID refresh detection (frontend can detect "new data arrived")
         self.state.last_ams_update = time.time()
-        logger.debug("[%s] Merged AMS data: %s new units, %s total", self.serial_number, len(ams_list), len(merged_ams))
+        self._debug_on_change(
+            "merged_ams",
+            (len(ams_list), len(merged_ams)),
+            "[%s] Merged AMS data: %s new units, %s total",
+            self.serial_number,
+            len(ams_list),
+            len(merged_ams),
+        )
 
         # Extract ams_extruder_map from each AMS unit's info field
         # BambuStudio DevFilaSystem.cpp parses info as hex string:
@@ -2043,7 +2171,15 @@ class BambuMQTTClient:
                         # 0xE = uninitialized AMS, skip
                         continue
                     ams_extruder_map[str(ams_id)] = extruder_id
-                    logger.debug(f"[{self.serial_number}] AMS {ams_id} info=0x{info} -> extruder {extruder_id}")
+                    self._debug_on_change(
+                        f"ams_info:{ams_id}",
+                        (info, extruder_id),
+                        "[%s] AMS %s info=0x%s -> extruder %s",
+                        self.serial_number,
+                        ams_id,
+                        info,
+                        extruder_id,
+                    )
                 except (ValueError, TypeError):
                     pass  # Skip AMS units with unparseable info bitmask values
         if ams_extruder_map:
@@ -2177,6 +2313,35 @@ class BambuMQTTClient:
             # Trigger layer change callback if layer increased
             if new_layer > old_layer and self.on_layer_change:
                 self.on_layer_change(new_layer)
+            # #1867 last-layer finish-photo trigger. A1 Mini (and other
+            # firmware variants) skips `stg_cur=22`, so the fallback fires
+            # at gcode_state=FINISH — which runs AFTER user End G-code
+            # (e.g. SwapMod plate-swap) and captures the wrong plate.
+            # Firing on the layer_num→total_layer_num edge captures the
+            # last object layer before any end G-code executes.
+            total = self.state.total_layers or 0
+            if (
+                total > 0
+                and new_layer >= total
+                and old_layer < total
+                and self._was_running
+                and not self._finish_photo_captured
+                and self.on_finish_photo_moment
+            ):
+                self._finish_photo_captured = True
+                logger.info(
+                    f"[{self.serial_number}] FINISH PHOTO MOMENT (last-layer) — "
+                    f"layer={new_layer}/{total}, "
+                    f"timelapse_active={self._timelapse_during_print}"
+                )
+                self.on_finish_photo_moment(
+                    {
+                        "trigger": "last_layer",
+                        "filename": self._previous_gcode_file or self.state.gcode_file,
+                        "subtask_name": self.state.subtask_name,
+                        "timelapse_was_active": self._timelapse_during_print,
+                    }
+                )
         if "total_layer_num" in data:
             # Some firmware (P1S observed) resets `total_layer_num` to 0 at
             # print end — same shape as the `layer_num` reset guarded above.
@@ -2337,8 +2502,13 @@ class BambuMQTTClient:
                     state_val = ext_data["state"]
                     # Extract bits 12-14 (3 bits) for switch state
                     switch_state = (state_val >> 12) & 0x7
-                    logger.debug(
-                        f"[{self.serial_number}] device.extruder.state={state_val} (switch_state bits 12-14: {switch_state})"
+                    self._debug_on_change(
+                        "extruder_state",
+                        state_val,
+                        "[%s] device.extruder.state=%s (switch_state bits 12-14: %s)",
+                        self.serial_number,
+                        state_val,
+                        switch_state,
                     )
                 # Log 'cur' field if present (might indicate current/active extruder)
                 if "cur" in ext_data:
@@ -2480,7 +2650,13 @@ class BambuMQTTClient:
                         # Valid direct temperature - heater is OFF
                         temps["chamber"] = float(info_temp)
                         temps["chamber_target"] = 0.0  # Direct value means heater off
-                        logger.debug("[%s] info.temp direct: %s°C (heater OFF)", self.serial_number, info_temp)
+                        self._debug_on_change(
+                            "info_temp_direct",
+                            info_temp,
+                            "[%s] info.temp direct: %s°C (heater OFF)",
+                            self.serial_number,
+                            info_temp,
+                        )
             # H2D series: Dual extruder temps are in device.extruder.info array
             # Temperature values are encoded as fixed-point (value / 65536 = °C)
             if "device" in data and isinstance(data["device"], dict):
@@ -2615,7 +2791,13 @@ class BambuMQTTClient:
 
                 # Log ctc_info contents for debugging
                 if ctc_info:
-                    logger.debug("[%s] ctc_info keys: %s", self.serial_number, list(ctc_info.keys()))
+                    self._debug_on_change(
+                        "ctc_info_keys",
+                        tuple(ctc_info.keys()),
+                        "[%s] ctc_info keys: %s",
+                        self.serial_number,
+                        list(ctc_info.keys()),
+                    )
 
                 # FIRST: Parse explicit ctc.info.target if available - this is the authoritative target
                 # (what the slicer shows). This OVERRIDES any previously decoded target.
@@ -2696,14 +2878,31 @@ class BambuMQTTClient:
                     target = self.state.temperatures.get("chamber_target", 0)
 
                 self.state.temperatures["chamber_heating"] = target > 0 and current < target
-                logger.debug(
-                    f"[{self.serial_number}] Chamber heating calculated: target={target}, current={current}, heating={self.state.temperatures['chamber_heating']}, respect_local={respect_local}"
+                self._debug_on_change(
+                    "chamber_heating",
+                    (target, current, self.state.temperatures["chamber_heating"], respect_local),
+                    "[%s] Chamber heating calculated: target=%s, current=%s, heating=%s, respect_local=%s",
+                    self.serial_number,
+                    target,
+                    current,
+                    self.state.temperatures["chamber_heating"],
+                    respect_local,
                 )
 
             # Debug: log chamber value if it was updated
             if "chamber" in temps:
-                logger.debug(
-                    f"[{self.serial_number}] Chamber temp updated to: {self.state.temperatures.get('chamber')}, target: {self.state.temperatures.get('chamber_target')}, heating: {self.state.temperatures.get('chamber_heating')}"
+                self._debug_on_change(
+                    "chamber_temp",
+                    (
+                        self.state.temperatures.get("chamber"),
+                        self.state.temperatures.get("chamber_target"),
+                        self.state.temperatures.get("chamber_heating"),
+                    ),
+                    "[%s] Chamber temp updated to: %s, target: %s, heating: %s",
+                    self.serial_number,
+                    self.state.temperatures.get("chamber"),
+                    self.state.temperatures.get("chamber_target"),
+                    self.state.temperatures.get("chamber_heating"),
                 )
 
             # Calculate nozzle_heating for single nozzle printers (not set by H2D parsing)
@@ -2917,7 +3116,7 @@ class BambuMQTTClient:
         # Parse ipcam/live view status
         if "ipcam" in data:
             ipcam_data = data["ipcam"]
-            logger.debug("[%s] ipcam field: %s", self.serial_number, ipcam_data)
+            self._debug_on_change("ipcam", ipcam_data, "[%s] ipcam field: %s", self.serial_number, ipcam_data)
             if isinstance(ipcam_data, dict):
                 # Check ipcam_record field for live view status
                 self.state.ipcam = ipcam_data.get("ipcam_record") == "enable"
@@ -2939,7 +3138,9 @@ class BambuMQTTClient:
         # Parse WiFi signal strength (dBm)
         if "wifi_signal" in data:
             wifi_signal = data["wifi_signal"]
-            logger.debug("[%s] wifi_signal received: %s", self.serial_number, wifi_signal)
+            self._debug_on_change(
+                "wifi_signal", wifi_signal, "[%s] wifi_signal received: %s", self.serial_number, wifi_signal
+            )
             if isinstance(wifi_signal, (int, float)):
                 self.state.wifi_signal = int(wifi_signal)
             elif isinstance(wifi_signal, str):
@@ -3555,6 +3756,12 @@ class BambuMQTTClient:
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
+        # Same reasoning as ImplicitFTP_TLS in bambu_ftp.py: create_default_context()
+        # inherits its protocol floor from the OpenSSL build instead of declaring one.
+        # Every Bambu broker measured (X1C, H2D on :8883) speaks TLS 1.2 and refuses
+        # 1.0/1.1/1.3, so this floor is a no-op on the wire and closes the gap on
+        # bare-metal installs whose build allows TLS 1.0.
+        ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
         self._client.tls_set_context(ssl_context)
 
         # Backoff reconnects to avoid tight reconnect loops on unstable brokers.
@@ -5439,14 +5646,18 @@ class BambuMQTTClient:
             print_error: Canonical hex identifier for the fault — 8 chars for the
                 32-bit `print_error` path, 16 chars for the 64-bit `hms[]` path
                 (HMSError.full_code). Carried through unchanged from the route.
-                Only the `idle_ignore` branch puts it on the wire; resume / stop
-                use BambuStudio's plain shape (verified against a live H2D, the
-                `err`-bearing shape is silently rejected by the firmware).
+                Converted to its DECIMAL string form for the `ignore` /
+                `idle_ignore` commands' `err` field, which is what the firmware
+                actually compares against the active fault. The pre-#1869
+                hex-string `err` was silently rejected because the firmware was
+                being asked to match `"05008051"` against int 0x05008051
+                (= 83918929 decimal) — see BambuStudio's
+                DeviceManager.cpp:1450-1462 (`command_hms_ignore`) which passes
+                `std::to_string(int m_error_code)`.
             action: One of HMSAction's string values.
             job_id: The `subtask_id` snapshotted onto the HMSError at parse-time.
-                Preserved for symmetry with the catalog but no longer sent —
-                BambuStudio's actual resume/stop commands are plain and the
-                firmware doesn't echo `job_id` back on the response either.
+                Required by BambuStudio's `command_hms_ignore` / `command_hms_stop`
+                shapes; empty string is the no-job-id sentinel.
 
         Returns False when the MQTT client is offline or when `action` is unknown
         so the route surfaces it as a 4xx rather than a silent no-op.
@@ -5464,12 +5675,24 @@ class BambuMQTTClient:
                 self.topic_publish, json.dumps({"pushing": {"command": "pushall", "sequence_id": "0"}}), qos=1
             )
 
+        # BambuStudio's `err` field is the DECIMAL string of the error code's int
+        # value (DeviceErrorDialog.cpp passes `std::to_string(m_error_code)` to
+        # every command_hms_* call). Our route hands us the hex string —
+        # convert. Falls back to the raw input if it's not parseable so the
+        # firmware can reject it and the route can surface 502 instead of us
+        # raising ValueError mid-dispatch.
+        try:
+            err_decimal = str(int(print_error, 16))
+        except ValueError:
+            err_decimal = print_error
+
         def hms_resume():
-            # BambuStudio's actual shape — plain resume, no err / no job_id.
-            # The `err`-bearing shape (`err`, `param: "reserve"`, `job_id`) is
-            # silently rejected by Bambu firmware on print_error- and hms[]-sourced
-            # faults alike; verified by injecting candidate shapes against a live
-            # H2D paused on a wrong-plate HMS. See #1830 §(2).
+            # Plain resume — verified against the user's H2D/H2S to leave PAUSE
+            # cleanly when "Problem Solved and Resume" is clicked. BambuStudio
+            # sends `{command: "resume", err: "<decimal>", param: "reserve",
+            # job_id: ...}` from `command_hms_resume`; we kept the simpler
+            # shape historically because it works, and changing it without a
+            # field test risks regressing a path that the user has confirmed.
             publish(
                 {
                     "print": {
@@ -5481,8 +5704,8 @@ class BambuMQTTClient:
             )
 
         def hms_stop():
-            # Same as hms_resume — BambuStudio's actual shape is plain. The
-            # `err`-bearing variant is silently rejected; verified on the H2D.
+            # Same as hms_resume — plain shape, confirmed working by the user
+            # for "Stop Printing".
             publish(
                 {
                     "print": {
@@ -5493,29 +5716,46 @@ class BambuMQTTClient:
                 }
             )
 
-        def hms_ignore(persistent: bool = False):
-            # `idle_ignore` is BambuStudio's "dismiss this warning" command for
-            # non-pause warnings. type=0 dismisses once, type=1 hides the same
-            # warning permanently.
+        def hms_ignore_command():
+            # BambuStudio's `command_hms_ignore` (DeviceManager.cpp:1450) —
+            # what the "Ignore this and Resume" button actually publishes.
+            # Distinct from `idle_ignore`: this command has the firmware
+            # suppress the next re-check of the named fault AND resume the
+            # paused print in a single operation. The previous Bambuddy code
+            # redirected IGNORE_RESUME to a plain `resume`, which is why the
+            # wrong-plate HMS came back 1-2 s later: `resume` means "I fixed
+            # the problem, re-check normally" so the firmware re-detected the
+            # wrong plate and re-paused with the same code (#1869).
             #
-            # For HMS-paused state, `idle_ignore` is silently rejected by the
-            # firmware regardless of `err` (verified on a live H2D — see
-            # #1830 §(2)). The user-facing intent of "Ignore and resume" on a
-            # paused print is to continue, so we dispatch a plain resume
-            # instead. The `persistent` flag is informational in that branch —
-            # firmware can't honour "don't remind" through a resume — but the
-            # button still does what the user expects.
-            #
-            # NB: PrinterState's `state` field carries the MQTT `gcode_state`
-            # value verbatim — line 2144 stores `data["gcode_state"]` onto it.
-            if self.state.state == "PAUSE":
-                hms_resume()
-                return
+            # BambuStudio also routes IGNORE_NO_REMINDER_NEXT_TIME (a.k.a.
+            # DONT_REMIND_NEXT_TIME) to this same command — the persistent
+            # variant of "don't remind next time" lives on `idle_ignore`'s
+            # type=1, not as a separate ignore shape.
+            publish(
+                {
+                    "print": {
+                        "command": "ignore",
+                        "err": err_decimal,
+                        "param": "reserve",
+                        "job_id": job_id or "",
+                        "sequence_id": "0",
+                    }
+                }
+            )
+
+        def hms_idle_ignore(persistent: bool = False):
+            # `idle_ignore` is BambuStudio's "dismiss this warning without
+            # resuming" command for non-pause warnings — what
+            # `command_hms_idle_ignore` (DeviceManager.cpp:1424) sends.
+            # type=0 dismisses once, type=1 suppresses the same warning
+            # permanently. Used by NO_REMINDER_NEXT_TIME, which BambuStudio
+            # explicitly dispatches via `command_hms_idle_ignore(..., 0)` —
+            # NOT via the resume-bearing `ignore` command.
             publish(
                 {
                     "print": {
                         "command": "idle_ignore",
-                        "err": print_error,
+                        "err": err_decimal,
                         "type": 1 if persistent else 0,
                         "sequence_id": "0",
                     }
@@ -5577,11 +5817,20 @@ class BambuMQTTClient:
             case HMSAction.STOP_PRINTING:
                 hms_stop()
 
-            case HMSAction.IGNORE_RESUME | HMSAction.NO_REMINDER_NEXT_TIME:
-                hms_ignore(persistent=False)
+            case HMSAction.IGNORE_RESUME | HMSAction.IGNORE_NO_REMINDER_NEXT_TIME | HMSAction.DONT_REMIND_NEXT_TIME:
+                # All three buttons map to BambuStudio's `command_hms_ignore`
+                # (DeviceErrorDialog.cpp:596-602). The "no reminder next time"
+                # half of IGNORE_NO_REMINDER_NEXT_TIME is the firmware's
+                # responsibility — the wire shape is identical.
+                hms_ignore_command()
 
-            case HMSAction.IGNORE_NO_REMINDER_NEXT_TIME | HMSAction.DONT_REMIND_NEXT_TIME:
-                hms_ignore(persistent=True)
+            case HMSAction.NO_REMINDER_NEXT_TIME:
+                # BambuStudio's NO_REMINDER_NEXT_TIME branch dispatches
+                # `command_hms_idle_ignore` with type=0
+                # (DeviceErrorDialog.cpp:588-590). Distinct from the
+                # IGNORE_* buttons above: idle_ignore does NOT resume, only
+                # dismisses the dialog.
+                hms_idle_ignore(persistent=False)
 
             case HMSAction.FILAMENT_EXTRUDED | HMSAction.DBL_CHECK_DONE:
                 ams_control("done")

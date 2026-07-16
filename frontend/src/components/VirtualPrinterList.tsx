@@ -96,7 +96,7 @@ export function VirtualPrinterList() {
                   href="https://wiki.bambuddy.cool/features/virtual-printer/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 bg-yellow-500/20 border border-yellow-500/50 rounded text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs"
+                  className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-500/50 rounded text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs"
                 >
                   <ExternalLink className="w-3 h-3" />
                   {t('virtualPrinter.setupRequired.readGuide')}
@@ -109,7 +109,7 @@ export function VirtualPrinterList() {
         <Card className="lg:col-span-2">
           <CardContent className="py-3 px-4">
             <div className="flex items-start gap-2">
-              <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+              <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
               <div className="text-xs text-bambu-gray">
                 <p className="text-white font-medium mb-1">{t('virtualPrinter.howItWorks.title')}</p>
                 <ul className="space-y-1 list-disc list-inside">

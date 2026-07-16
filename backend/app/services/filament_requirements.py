@@ -102,6 +102,57 @@ def extract_filament_requirements(file_path: Path, plate_id: int | None = None) 
     return filaments
 
 
+def overrides_for_plate(
+    overrides: list[dict],
+    file_path: Path | None,
+    plate_id: int | None,
+) -> list[dict]:
+    """Drop the filament overrides whose slots this plate never prints.
+
+    Queueing several plates of one 3MF builds a single override list out of every
+    selected plate's filaments and hands that same list to each plate's item. A
+    ``force_color_match`` entry blocks dispatch until the printer has that exact
+    colour loaded, so a single-colour plate ended up waiting on every colour in
+    the batch (#2551). Each item may only demand what its own plate consumes.
+
+    Overrides are kept as-is when the plate's slots cannot be established (whole
+    file selected, source gone, unreadable 3MF, malformed entry): an item that
+    waits on a colour it does not need is visible and fixable, whereas one that
+    silently loses a forced colour can dispatch the print in the wrong filament.
+    """
+    if not overrides or plate_id is None or file_path is None or not file_path.exists():
+        return overrides
+
+    plate_slots = {f["slot_id"] for f in extract_filament_requirements(file_path, plate_id)}
+    if not plate_slots:
+        logger.warning(
+            "Cannot read the filaments of plate %s in %s; keeping all %d filament override(s)",
+            plate_id,
+            file_path.name,
+            len(overrides),
+        )
+        return overrides
+
+    narrowed = []
+    for override in overrides:
+        try:
+            slot_id = int(override["slot_id"])
+        except (KeyError, TypeError, ValueError):
+            narrowed.append(override)
+            continue
+        if slot_id in plate_slots:
+            narrowed.append(override)
+
+    if len(narrowed) != len(overrides):
+        logger.info(
+            "Plate %s: kept %d of %d filament override(s) — the rest belong to other plates",
+            plate_id,
+            len(narrowed),
+            len(overrides),
+        )
+    return narrowed
+
+
 def _collect_filaments(parent: ET.Element, into: list[dict]) -> None:
     """Walk every `./filament` child under `parent` and append normalised
     entries to `into`. Skips filaments with `used_g <= 0` (slot present in

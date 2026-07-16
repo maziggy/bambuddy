@@ -154,7 +154,10 @@ class TestGetDesign:
             await service.get_design(404)
 
     @pytest.mark.asyncio
-    async def test_maps_401_to_auth_error(self, service):
+    async def test_maps_401_without_token_to_auth_error(self, service):
+        """No token was sent, so a 401 means "sign-in required" — not "your
+        sign-in expired", and nothing gets marked dead (there is nothing to
+        mark). The fixture's service carries no auth token."""
         resp = MagicMock()
         resp.status_code = 401
         resp.json.return_value = {"code": 1, "error": "Please log in"}
@@ -162,8 +165,39 @@ class TestGetDesign:
 
         with pytest.raises(MakerWorldAuthError) as exc_info:
             await service.get_design(1)
-        # Upstream's own message is surfaced to the caller
-        assert "Please log in" in str(exc_info.value)
+        assert "Bambu Cloud" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_401_with_token_reports_expired_and_hides_upstream_text(self):
+        """Bambu answers a dead token with ``{"error": "Please login."}``. We used
+        to forward that verbatim, which produced a "Please login." toast on a UI
+        that simultaneously claimed the user was connected, and pointed at a
+        Settings page that does not exist. Say what happened, name a real page,
+        and record the credential as dead."""
+        marked: list[bool] = []
+
+        async def _on_auth_failure() -> None:
+            marked.append(True)
+
+        svc = MakerWorldService(
+            client=MagicMock(spec=httpx.AsyncClient),
+            auth_token="tok-abc",
+            on_auth_failure=_on_auth_failure,
+        )
+        svc._client.get = AsyncMock()
+        resp = MagicMock()
+        resp.status_code = 401
+        resp.json.return_value = {"code": 4, "error": "Please login.", "message": ""}
+        svc._client.get.return_value = resp
+
+        with pytest.raises(MakerWorldAuthError) as exc_info:
+            await svc.get_design(1)
+
+        message = str(exc_info.value)
+        assert "Please login." not in message
+        assert "expired" in message.lower()
+        assert "Profiles" in message
+        assert marked == [True], "a rejected token must be recorded as dead"
 
     @pytest.mark.asyncio
     async def test_maps_403_to_forbidden_with_upstream_reason(self, service):

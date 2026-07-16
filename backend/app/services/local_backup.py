@@ -6,46 +6,22 @@ on a configurable schedule with retention management.
 
 import asyncio
 import logging
-import os
-from datetime import datetime, timedelta, timezone, tzinfo
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
 
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session
 from backend.app.models.settings import Settings
+from backend.app.services.backup_path import classify_backup_dir_error, probe_backup_dir
+
+# The TZ-env resolution used to live here. It moved to utils/local_time when the
+# smart-plug energy history (#2539) needed the same local day boundary. Re-exported
+# under the old private name so existing importers keep working.
+from backend.app.utils.local_time import local_zone as _local_zone
 
 logger = logging.getLogger(__name__)
-
-
-def _local_zone() -> tzinfo:
-    """Resolve the local timezone for scheduled-backup HH:MM interpretation.
-
-    Uses the container's ``TZ`` env var (the same value the support package
-    surfaces); falls back to UTC when unset or unrecognised so a missing TZ
-    keeps the legacy behaviour rather than crashing. See #1602 follow-up.
-
-    On Windows the embedded Python in our installer doesn't carry an IANA
-    tz database, so ``ZoneInfo(...)`` — including ``ZoneInfo("UTC")`` —
-    raises ``ZoneInfoNotFoundError`` unless the ``tzdata`` PyPI package is
-    installed. requirements.txt now pins ``tzdata`` on win32, but to keep
-    this resilient on installs that haven't refreshed deps we fall through
-    to the stdlib ``datetime.timezone.utc`` as a last resort; it satisfies
-    every ``astimezone`` / ``str()`` call site without needing the IANA DB.
-    """
-    tz_name = os.environ.get("TZ", "").strip()
-    if tz_name:
-        try:
-            return ZoneInfo(tz_name)
-        except ZoneInfoNotFoundError:
-            logger.warning("Unrecognised TZ env value %r, scheduling in UTC", tz_name)
-    try:
-        return ZoneInfo("UTC")
-    except ZoneInfoNotFoundError:
-        return timezone.utc
-
 
 SCHEDULE_INTERVALS = {
     "hourly": 3600,
@@ -194,6 +170,15 @@ class LocalBackupService:
             return Path(path_setting.strip())
         return _default_backup_dir()
 
+    def check_path(self, path_setting: str) -> dict:
+        """Probe the configured output directory with a real write.
+
+        Called when the path is saved and when the backup card is opened, so a
+        directory the service cannot write to is caught there and then instead
+        of at 03:00 for a week (#2544).
+        """
+        return probe_backup_dir(self._resolve_backup_dir(path_setting))
+
     async def run_backup(self, settings: dict | None = None) -> dict:
         """Run a backup now. Returns {success, message, filename}."""
         if self._running:
@@ -205,11 +190,22 @@ class LocalBackupService:
                 settings = await self._load_settings()
 
             backup_dir = self._resolve_backup_dir(settings["path"])
-            backup_dir.mkdir(parents=True, exist_ok=True)
 
-            from backend.app.api.routes.settings import create_backup_zip
+            try:
+                backup_dir.mkdir(parents=True, exist_ok=True)
 
-            zip_path, filename = await create_backup_zip(output_path=backup_dir)
+                from backend.app.api.routes.settings import create_backup_zip
+
+                zip_path, filename = await create_backup_zip(output_path=backup_dir)
+            except OSError as e:
+                # A raw "[Errno 30] Read-only file system" sends people off to check
+                # folder permissions, which is exactly where the answer is not (#2544).
+                diagnosis = classify_backup_dir_error(e, backup_dir)
+                self._last_backup_at = datetime.now(timezone.utc).isoformat()
+                self._last_status = "failed"
+                self._last_message = diagnosis["message"]
+                logger.error("Local backup failed: %s (%s)", diagnosis["message"], diagnosis["detail"])
+                return {"success": False, "message": diagnosis["message"], "diagnosis": diagnosis}
 
             # Prune old backups
             retention = max(1, settings["retention"])

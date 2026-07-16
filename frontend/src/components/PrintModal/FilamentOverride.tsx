@@ -16,6 +16,12 @@ interface FilamentOverrideProps {
   forceColorMatch?: Record<number, boolean>;
   /** Called when a slot's force color match checkbox is toggled. */
   onForceColorMatchChange?: (slotId: number, value: boolean) => void;
+  /** Names the plate these requirements belong to, when one panel is rendered per
+   *  selected plate. Each plate prints its own subset of the file's slots (#2552). */
+  plateLabel?: string;
+  /** Whether to print the explanatory hint. A stack of per-plate panels only needs
+   *  it once, above the first one. Defaults to true. */
+  showHint?: boolean;
 }
 
 /**
@@ -30,6 +36,8 @@ export function FilamentOverride({
   onChange,
   forceColorMatch,
   onForceColorMatchChange,
+  plateLabel,
+  showHint = true,
 }: FilamentOverrideProps) {
   const { t } = useTranslation();
 
@@ -71,9 +79,13 @@ export function FilamentOverride({
   return (
     <div className="mb-4">
       <div className="flex items-center gap-2 text-sm text-bambu-gray mb-2">
-        <span>{t('printModal.filamentOverride')}</span>
+        <span>
+          {plateLabel
+            ? `${t('printModal.filamentOverride')} — ${plateLabel}`
+            : t('printModal.filamentOverride')}
+        </span>
       </div>
-      <p className="text-xs text-bambu-gray mb-2">{t('printModal.filamentOverrideHint')}</p>
+      {showHint && <p className="text-xs text-bambu-gray mb-2">{t('printModal.filamentOverrideHint')}</p>}
       <div className="bg-bambu-dark rounded-lg p-3 space-y-2">
         {filaments.map((req, slotIdx) => {
           const override = overrides[req.slot_id];
@@ -118,7 +130,7 @@ export function FilamentOverride({
                   disabled={compatible.length === 0}
                   className={`flex-1 px-2 py-1 rounded border text-xs bg-bambu-dark-secondary focus:outline-none focus:ring-1 focus:ring-bambu-green ${
                     isOverridden
-                      ? 'border-blue-400/50 text-blue-400'
+                      ? 'border-blue-500/50 dark:border-blue-400/50 text-blue-700 dark:text-blue-400'
                       : 'border-bambu-gray/30 text-bambu-gray'
                   }`}
                 >

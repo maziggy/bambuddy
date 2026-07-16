@@ -45,6 +45,8 @@ from backend.app.services.camera_profiles import get_camera_profile
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["camera"])
 
+_FFMPEG_KILL_TIMEOUT = 2.0
+
 # Track active ffmpeg processes for cleanup
 _active_streams: dict[str, asyncio.subprocess.Process] = {}
 
@@ -243,7 +245,14 @@ async def _terminate_ffmpeg(process: asyncio.subprocess.Process, stream_id: str 
         except TimeoutError:
             logger.warning("ffmpeg didn't terminate gracefully, killing (stream_id=%s)", stream_id)
             process.kill()
-            await process.wait()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=_FFMPEG_KILL_TIMEOUT)
+            except TimeoutError:
+                logger.error(
+                    "ffmpeg did not exit after kill within %.1fs; continuing cleanup (stream_id=%s)",
+                    _FFMPEG_KILL_TIMEOUT,
+                    stream_id,
+                )
     except ProcessLookupError:
         pass  # Already dead
     except OSError as e:

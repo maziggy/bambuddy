@@ -36,6 +36,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@sixfootseven](https://github.com/sixfootseven)
 - [@MethodicalMartian](https://github.com/MethodicalMartian)
 - [@brianharwell](https://github.com/brianharwell)
+- [@shosier01](https://github.com/shosier01)
 
 ## Backers ($5/mo+)
 

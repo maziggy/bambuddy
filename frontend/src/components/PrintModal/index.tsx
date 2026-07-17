@@ -17,6 +17,7 @@ import {
 } from '../../hooks/useFilamentMapping';
 import { useMultiPrinterFilamentMapping, type PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
 import { getColorName } from '../../utils/colors';
+import { isGcodeCompatible } from '../../utils/printer';
 import { getCurrencySymbol } from '../../utils/currency';
 import { getBedTypeInfo } from '../../utils/bedType';
 import { toDateTimeLocalValue, parseUTCDate } from '../../utils/date';
@@ -576,6 +577,17 @@ export function PrintModal({
     }
   }, [targetModel, selectedPlate, prevTargetModel, prevPlateForOverrides, mode]);
 
+  // The sliced-for metadata loads async. If the user switched to model mode
+  // before it arrived, the target is still empty (we never silently default
+  // to another model, #2578) — fill it with the sliced-for model once known,
+  // provided an active printer of that model exists.
+  useEffect(() => {
+    if (assignmentMode !== 'model' || targetModel || !slicedForModel) return;
+    if (printers?.some((p) => p.is_active && p.model === slicedForModel)) {
+      setTargetModel(slicedForModel);
+    }
+  }, [assignmentMode, targetModel, slicedForModel, printers]);
+
   // Auto-expand per-printer mapping when setting is enabled and multiple printers selected
   // Only applies once per printer on initial selection, not when user unchecks
   useEffect(() => {
@@ -779,6 +791,12 @@ export function PrintModal({
     }
     if (assignmentMode === 'model' && !targetModel) {
       showToast('Please select a target printer model', 'error');
+      return;
+    }
+    // Cross-model safety gate (#2578) — mirrors the backend's 400 so the user
+    // gets inline feedback instead of a failed request.
+    if (assignmentMode === 'model' && !isGcodeCompatible(slicedForModel, targetModel)) {
+      showToast(`File was sliced for ${slicedForModel} and cannot be dispatched to ${targetModel} printers`, 'error');
       return;
     }
 
@@ -1070,6 +1088,8 @@ export function PrintModal({
     // Need valid printer/model selection
     if (assignmentMode === 'printer' && selectedPrinters.length === 0) return false;
     if (assignmentMode === 'model' && !targetModel) return false;
+    // Cross-model mismatch cannot be queued (#2578)
+    if (assignmentMode === 'model' && !isGcodeCompatible(slicedForModel, targetModel)) return false;
 
     // For multi-plate files, need at least one plate selected
     if (isMultiPlate && selectedPlates.size === 0) return false;
@@ -1085,6 +1105,7 @@ export function PrintModal({
     selectedPrinters.length,
     assignmentMode,
     targetModel,
+    slicedForModel,
     isMultiPlate,
     selectedPlates.size,
     isPending,

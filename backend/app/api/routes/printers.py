@@ -8,6 +8,7 @@ from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core import database
 from backend.app.core.auth import (
     RequireCameraStreamTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
@@ -952,7 +953,6 @@ def clear_cover_cache(printer_id: int) -> None:
 async def get_printer_cover(
     printer_id: int,
     view: str | None = None,
-    db: AsyncSession = Depends(get_db),
     _: None = RequireCameraStreamTokenIfAuthEnabled,
 ):
     """Get the cover image for the current print job.
@@ -961,8 +961,21 @@ async def get_printer_cover(
         view: Optional view type. Use "top" for top-down build plate view (useful for skip objects).
               Default returns angled 3D perspective view.
     """
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
+    # Fetch the printer in a short-lived session and release the pooled DB
+    # connection BEFORE the FTP download below. Previously this route took its
+    # row via Depends(get_db), whose session stays open for the whole request —
+    # so a 3MF cover download (up to 8 paths × 3 retries with backoff, minutes
+    # under FTP contention) pinned one pooled connection idle-in-transaction the
+    # entire time (issue #2572). db is used only for this one SELECT; everything
+    # after reads already-loaded printer.* scalars (expire_on_commit=False keeps
+    # them readable), printer_manager, and FTP/zip — no lazy loads.
+    #
+    # Reference async_session via the module so the maker is looked up at call
+    # time — keeps it in sync with reinitialize_database() and lets the test
+    # harness's patch of backend.app.core.database.async_session take effect.
+    async with database.async_session() as db:
+        result = await db.execute(select(Printer).where(Printer.id == printer_id))
+        printer = result.scalar_one_or_none()
     if not printer:
         raise HTTPException(404, "Printer not found")
 
@@ -3126,16 +3139,29 @@ async def bed_jog(
             "translates this into the right G-code Z sign per printer model."
         ),
     ),
-    force: bool = Query(False, description="If true, bypass soft endstops via M211 (for use when Z is not homed)"),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_CONTROL),
     db: AsyncSession = Depends(get_db),
 ):
     """Adjust the nozzle-bed gap by a relative distance.
 
-    Emits a short G-code sequence via MQTT. When ``force`` is true the soft
-    endstops are disabled for the duration of the move, matching the
-    "ignore and move anyway" option Bambu Studio offers when the printer
-    is not homed.
+    Emits a short G-code sequence via MQTT.
+
+    Soft-endstop policy (#2579). The printer's software travel limits are the
+    only thing between a jog button and a bed crash — on Bambu machines the
+    physical endstops are homing-only (there is no runtime limit switch in the
+    travel path), so once they are disabled nothing stops the move. The old
+    code disabled them (``M211 S0``) around every forced jog, and the UI sent
+    ``force`` on every jog, so the limits were off on every bed move — that is
+    what let a jog drive the nozzle into the bed on all models (#2579). This
+    endpoint now emits a **bare relative move and never touches ``M211`` at
+    all** — byte-for-byte what the printer's own touchscreen jog sends, which
+    stops at the travel limit. Bambuddy no longer disables the firmware's soft
+    endstops, and it no longer sends ``M211 S1`` either: that was an unverified
+    attempt to re-enable a printer left disabled by an older build, and on real
+    hardware the jog moved past the limit *with* it. If a printer still jogs
+    past its limits, its endstops were disabled at the firmware level by the old
+    build — power-cycle it once to restore them; from then on Bambuddy leaves
+    them alone.
 
     Direction handling: on bed-on-Z printers (X1 / P1 / H2 family) the bed
     is the Z-axis, and Bambu's home convention puts Z=0 at the top with
@@ -3162,12 +3188,10 @@ async def bed_jog(
 
     gcode_distance = -distance if is_bed_slinger(printer.model) else distance
 
-    lines = []
-    if force:
-        lines.append("M211 S0")
-    lines += ["G91", f"G1 Z{gcode_distance:.2f} F600", "G90"]
-    if force:
-        lines.append("M211 S1")
+    # Bare relative move — exactly what the touchscreen sends. Never touch M211
+    # (#2579): the firmware keeps its soft endstops on by default and clamps the
+    # move at the travel limit.
+    lines = ["G91", f"G1 Z{gcode_distance:.2f} F600", "G90"]
 
     if not client.send_gcode("\n".join(lines)):
         raise HTTPException(500, "Failed to send bed-jog command")
@@ -3202,6 +3226,9 @@ async def xy_jog(
     if y:
         axes.append(f"Y{y:.2f}")
 
+    # Bare relative move — never touch M211 (#2579). The firmware keeps its soft
+    # endstops on by default and clamps the move at the travel limit; a printer
+    # left disabled by an older build is recovered with a power cycle.
     if not client.send_gcode("\n".join(["G91", f"G1 {' '.join(axes)} F6000", "G90"])):
         raise HTTPException(500, "Failed to send XY jog command")
 

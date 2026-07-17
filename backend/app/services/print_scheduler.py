@@ -43,7 +43,7 @@ from backend.app.services.printer_manager import (
 )
 from backend.app.services.smart_plug_manager import smart_plug_manager
 from backend.app.utils.filename import derive_remote_filename
-from backend.app.utils.printer_models import normalize_printer_model
+from backend.app.utils.printer_models import is_gcode_compatible, normalize_printer_model
 
 logger = logging.getLogger(__name__)
 
@@ -290,6 +290,13 @@ class PrintScheduler:
                 result = await db.execute(
                     select(PrintQueueItem)
                     .where(PrintQueueItem.status == "pending")
+                    # archive/library_file are read by the cross-model gate
+                    # (#2578); eager-load once per pass instead of a lazy-load
+                    # (which would raise in async) per item.
+                    .options(
+                        selectinload(PrintQueueItem.archive),
+                        selectinload(PrintQueueItem.library_file),
+                    )
                     .order_by(
                         PrintQueueItem.printer_id,
                         PrintQueueItem.target_model,
@@ -302,6 +309,10 @@ class PrintScheduler:
                 result = await db.execute(
                     select(PrintQueueItem)
                     .where(PrintQueueItem.status == "pending")
+                    .options(
+                        selectinload(PrintQueueItem.archive),
+                        selectinload(PrintQueueItem.library_file),
+                    )
                     .order_by(PrintQueueItem.printer_id, PrintQueueItem.position)
                 )
             items = list(result.scalars().all())
@@ -568,15 +579,34 @@ class PrintScheduler:
                             # Merge: keep original types for non-overridden slots, add override types
                             effective_types = sorted(set(required_types or []) | set(override_types))
 
-                    printer_id, waiting_reason = await self._find_idle_printer_for_model(
-                        db,
-                        item.target_model,
-                        busy_printers,
-                        effective_types,
-                        item.target_location,
-                        filament_overrides=filament_overrides,
-                        require_plate_clear=require_plate_clear,
-                    )
+                    # Cross-model safety gate (#2578): never hand a 3MF sliced
+                    # for an incompatible model to a printer, no matter how the
+                    # row got into the DB (old rows, direct API writes). Held
+                    # as pending with an actionable waiting_reason — the user
+                    # fixes it by editing the item's target model.
+                    sliced_for = None
+                    if item.archive:
+                        sliced_for = item.archive.sliced_for_model
+                    elif item.library_file and item.library_file.file_metadata:
+                        sliced_for = item.library_file.file_metadata.get("sliced_for_model")
+
+                    if not is_gcode_compatible(sliced_for, item.target_model):
+                        printer_id = None
+                        waiting_reason = (
+                            f"File was sliced for {sliced_for}, which is not compatible with "
+                            f"{item.target_model} — edit the item and fix its target model"
+                        )
+                        skip_reasons["sliced_model_mismatch"] = skip_reasons.get("sliced_model_mismatch", 0) + 1
+                    else:
+                        printer_id, waiting_reason = await self._find_idle_printer_for_model(
+                            db,
+                            item.target_model,
+                            busy_printers,
+                            effective_types,
+                            item.target_location,
+                            filament_overrides=filament_overrides,
+                            require_plate_clear=require_plate_clear,
+                        )
 
                     # Update waiting_reason if changed and send notification when first waiting
                     if item.waiting_reason != waiting_reason:

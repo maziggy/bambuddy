@@ -11,7 +11,10 @@ import logging
 import math
 import re
 import zipfile
+from collections import OrderedDict
+from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Lock
 
 import defusedxml.ElementTree as ET
 
@@ -424,6 +427,178 @@ def extract_nozzle_mapping_from_3mf(zf: zipfile.ZipFile) -> dict[int, int] | Non
         return None
 
 
+@dataclass(frozen=True)
+class PlateMetadata:
+    """Combined per-plate slice_info.config values from a single 3MF parse.
+
+    Bundles the three fields the queue listing needs so a queue poll opens and
+    parses each 3MF once instead of three times (#2573). ``filament_usage`` is
+    the full per-filament list (other callers — usage tracking, Spoolman — need
+    it); ``filament_used_grams`` is its ``used_g`` sum, precomputed here so the
+    queue path doesn't re-sum on every hit.
+    """
+
+    print_time_seconds: int | None = None
+    filament_usage: list[dict] = field(default_factory=list)
+    bed_type: str | None = None
+    filament_used_grams: float = 0.0
+
+
+_EMPTY_PLATE_METADATA = PlateMetadata()
+
+# Revision-keyed cache for parsed per-plate metadata. Queue polling re-lists the
+# same unchanged 3MFs every few seconds per connected client (#2573); without a
+# cache each row costs a ZIP open + XML parse. The key includes the file's
+# mtime_ns and size so a replaced or edited file transparently gets a fresh
+# entry — no manual invalidation needed. Bounded LRU + lock so it stays small
+# and is safe to touch from worker threads.
+_PLATE_METADATA_CACHE: "OrderedDict[tuple, PlateMetadata]" = OrderedDict()
+_PLATE_METADATA_CACHE_LOCK = Lock()
+_PLATE_METADATA_CACHE_MAX = 512
+
+
+def clear_plate_metadata_cache() -> None:
+    """Drop all cached per-plate metadata (used by tests)."""
+    with _PLATE_METADATA_CACHE_LOCK:
+        _PLATE_METADATA_CACHE.clear()
+
+
+def _parse_plate_metadata_uncached(file_path: Path, plate_id: int | None) -> PlateMetadata:
+    """Open the 3MF once and pull print time, filament usage and bed type.
+
+    Replicates the per-field ``plate_id=None`` behaviour of the three legacy
+    helpers exactly: usage collects every ``<filament>`` in the file, while
+    print time and bed type come from the first ``<plate>``.
+    """
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            if "Metadata/slice_info.config" not in zf.namelist():
+                return _EMPTY_PLATE_METADATA
+            content = zf.read("Metadata/slice_info.config").decode()
+            root = ET.fromstring(content)
+    except Exception as e:
+        logger.warning("Failed to read plate metadata from %s: %s", file_path, e)
+        return _EMPTY_PLATE_METADATA
+
+    def _plate_index(plate_elem) -> int | None:
+        for meta in plate_elem.findall("metadata"):
+            if meta.get("key") == "index":
+                try:
+                    return int(meta.get("value", "0"))
+                except ValueError:
+                    return None
+        return None
+
+    def _collect_filaments(plate_elem) -> list[dict]:
+        out: list[dict] = []
+        for f in plate_elem.findall("filament"):
+            filament_id = f.get("id")
+            # Both the used_g float() and the id int() must stay inside the guard:
+            # a non-numeric id or used_g is silently skipped (matches the legacy
+            # helpers, which tolerated garbage rows rather than raising — a raise
+            # here would 500 the whole queue listing).
+            try:
+                used_amount = float(f.get("used_g", "0"))
+                if filament_id:
+                    out.append(
+                        {
+                            "slot_id": int(filament_id),
+                            "used_g": used_amount,
+                            "type": f.get("type", ""),
+                            "color": f.get("color", ""),
+                        }
+                    )
+            except (ValueError, TypeError):
+                continue
+        return out
+
+    print_time: int | None = None
+    bed_type: str | None = None
+    filament_usage: list[dict] = []
+    matched_plate = None
+
+    if plate_id is not None:
+        for plate_elem in root.findall(".//plate"):
+            if _plate_index(plate_elem) == plate_id:
+                matched_plate = plate_elem
+                break
+    else:
+        matched_plate = root.find(".//plate")
+
+    if matched_plate is not None:
+        for meta in matched_plate.findall("metadata"):
+            key = meta.get("key")
+            if key == "prediction" and print_time is None:
+                try:
+                    print_time = int(meta.get("value", "0"))
+                except ValueError:
+                    print_time = None
+            elif key == "curr_bed_type" and meta.get("value"):
+                bed_type = (meta.get("value") or "").strip()
+
+    if plate_id is not None:
+        if matched_plate is not None:
+            filament_usage = _collect_filaments(matched_plate)
+    else:
+        # Legacy plate_id=None usage: every filament in the file, not just plate 1.
+        for f in root.findall(".//filament"):
+            filament_id = f.get("id")
+            # int()/float() both guarded — a garbage id/used_g row is skipped, not raised.
+            try:
+                used_amount = float(f.get("used_g", "0"))
+                if filament_id:
+                    filament_usage.append(
+                        {
+                            "slot_id": int(filament_id),
+                            "used_g": used_amount,
+                            "type": f.get("type", ""),
+                            "color": f.get("color", ""),
+                        }
+                    )
+            except (ValueError, TypeError):
+                continue
+
+    return PlateMetadata(
+        print_time_seconds=print_time,
+        filament_usage=filament_usage,
+        bed_type=bed_type,
+        filament_used_grams=sum(f["used_g"] for f in filament_usage),
+    )
+
+
+def extract_plate_metadata_from_3mf(file_path: Path, plate_id: int | None = None) -> PlateMetadata:
+    """Return combined per-plate metadata, cached by file revision (#2573).
+
+    The result is keyed by ``(path, plate_id, mtime_ns, size)`` so an unchanged
+    file is parsed at most once; a replaced/edited file re-parses automatically.
+    The returned ``PlateMetadata`` is shared and MUST be treated as read-only —
+    callers that need a mutable filament list get a copy from the wrappers below.
+    """
+    file_path = Path(file_path)
+    try:
+        stat = file_path.stat()
+    except OSError:
+        # File missing/unreadable: parse (which will return empty) but don't
+        # cache — the file may appear later and we don't want a sticky miss.
+        return _parse_plate_metadata_uncached(file_path, plate_id)
+
+    key = (str(file_path), plate_id, stat.st_mtime_ns, stat.st_size)
+    with _PLATE_METADATA_CACHE_LOCK:
+        cached = _PLATE_METADATA_CACHE.get(key)
+        if cached is not None:
+            _PLATE_METADATA_CACHE.move_to_end(key)
+            return cached
+
+    metadata = _parse_plate_metadata_uncached(file_path, plate_id)
+
+    with _PLATE_METADATA_CACHE_LOCK:
+        _PLATE_METADATA_CACHE[key] = metadata
+        _PLATE_METADATA_CACHE.move_to_end(key)
+        while len(_PLATE_METADATA_CACHE) > _PLATE_METADATA_CACHE_MAX:
+            _PLATE_METADATA_CACHE.popitem(last=False)
+    return metadata
+
+
 def extract_filament_usage_from_3mf(file_path: Path, plate_id: int | None = None) -> list[dict]:
     """Extract per-filament total usage from 3MF slice_info.config.
 
@@ -438,68 +613,9 @@ def extract_filament_usage_from_3mf(file_path: Path, plate_id: int | None = None
         List of filament usage dictionaries:
         [{"slot_id": 1, "used_g": 50.5, "type": "PLA", "color": "#FF0000"}, ...]
     """
-    filament_usage = []
-    try:
-        with zipfile.ZipFile(file_path, "r") as zf:
-            if "Metadata/slice_info.config" not in zf.namelist():
-                return []
-
-            content = zf.read("Metadata/slice_info.config").decode()
-            root = ET.fromstring(content)
-
-            if plate_id is not None:
-                # Find the plate element with matching index
-                for plate_elem in root.findall(".//plate"):
-                    plate_index = None
-                    for meta in plate_elem.findall("metadata"):
-                        if meta.get("key") == "index":
-                            try:
-                                plate_index = int(meta.get("value", "0"))
-                            except ValueError:
-                                pass
-                            break
-
-                    if plate_index == plate_id:
-                        for f in plate_elem.findall("filament"):
-                            filament_id = f.get("id")
-                            used_g = f.get("used_g", "0")
-                            try:
-                                used_amount = float(used_g)
-                                if filament_id:
-                                    filament_usage.append(
-                                        {
-                                            "slot_id": int(filament_id),
-                                            "used_g": used_amount,
-                                            "type": f.get("type", ""),
-                                            "color": f.get("color", ""),
-                                        }
-                                    )
-                            except (ValueError, TypeError):
-                                pass
-                        break
-            else:
-                # No plate_id specified - extract all filaments
-                for f in root.findall(".//filament"):
-                    filament_id = f.get("id")
-                    used_g = f.get("used_g", "0")
-                    try:
-                        used_amount = float(used_g)
-                        if filament_id:
-                            filament_usage.append(
-                                {
-                                    "slot_id": int(filament_id),
-                                    "used_g": used_amount,
-                                    "type": f.get("type", ""),
-                                    "color": f.get("color", ""),
-                                }
-                            )
-                    except (ValueError, TypeError):
-                        pass  # Skip filament entries with unparseable usage values
-
-    except Exception:
-        pass  # Return whatever usage data was collected before the error
-
-    return filament_usage
+    # Delegate to the cached combined parse (#2573). Return fresh dicts so callers
+    # that mutate the list don't corrupt the shared cached PlateMetadata.
+    return [dict(f) for f in extract_plate_metadata_from_3mf(file_path, plate_id).filament_usage]
 
 
 def extract_print_time_from_3mf(file_path: Path, plate_id: int | None = None) -> int | None:
@@ -518,46 +634,7 @@ def extract_print_time_from_3mf(file_path: Path, plate_id: int | None = None) ->
     Returns:
         Predicted print time in seconds, or None if not found / unparseable.
     """
-    try:
-        with zipfile.ZipFile(file_path, "r") as zf:
-            if "Metadata/slice_info.config" not in zf.namelist():
-                return None
-
-            content = zf.read("Metadata/slice_info.config").decode()
-            root = ET.fromstring(content)
-
-            if plate_id is not None:
-                for plate_elem in root.findall(".//plate"):
-                    plate_index = None
-                    for meta in plate_elem.findall("metadata"):
-                        if meta.get("key") == "index":
-                            try:
-                                plate_index = int(meta.get("value", "0"))
-                            except ValueError:
-                                pass  # Skip plate with unparseable index
-                            break
-
-                    if plate_index == plate_id:
-                        for meta in plate_elem.findall("metadata"):
-                            if meta.get("key") == "prediction":
-                                try:
-                                    return int(meta.get("value", "0"))
-                                except ValueError:
-                                    return None
-                        break
-            else:
-                plate_elem = root.find(".//plate")
-                if plate_elem is not None:
-                    for meta in plate_elem.findall("metadata"):
-                        if meta.get("key") == "prediction":
-                            try:
-                                return int(meta.get("value", "0"))
-                            except ValueError:
-                                return None
-    except Exception as e:
-        logger.warning("Failed to extract print time from %s: %s", file_path, e)
-
-    return None
+    return extract_plate_metadata_from_3mf(file_path, plate_id).print_time_seconds
 
 
 def extract_bed_type_from_3mf(file_path: Path, plate_id: int | None = None) -> str | None:
@@ -578,36 +655,7 @@ def extract_bed_type_from_3mf(file_path: Path, plate_id: int | None = None) -> s
     Returns:
         Bed type string (e.g. "Textured PEI Plate"), or None if not found.
     """
-    try:
-        with zipfile.ZipFile(file_path, "r") as zf:
-            if "Metadata/slice_info.config" not in zf.namelist():
-                return None
-
-            content = zf.read("Metadata/slice_info.config").decode()
-            root = ET.fromstring(content)
-
-            for plate_elem in root.findall(".//plate"):
-                plate_index = None
-                bed_value: str | None = None
-                for meta in plate_elem.findall("metadata"):
-                    key = meta.get("key")
-                    if key == "index":
-                        try:
-                            plate_index = int(meta.get("value", "0"))
-                        except ValueError:
-                            pass  # Skip plate with unparseable index
-                    elif key == "curr_bed_type" and meta.get("value"):
-                        bed_value = (meta.get("value") or "").strip()
-
-                if plate_id is None:
-                    # First plate wins when no plate_id is requested.
-                    return bed_value
-                if plate_index == plate_id:
-                    return bed_value
-    except Exception:
-        pass  # Return None on any failure rather than raising — caller decides
-
-    return None
+    return extract_plate_metadata_from_3mf(file_path, plate_id).bed_type
 
 
 # Header values exposed as `{placeholder}` substitutions inside snippets.

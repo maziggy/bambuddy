@@ -571,6 +571,32 @@ class TestPrintersAPI:
     # ========================================================================
 
 
+class TestCoverPoolHygiene:
+    """Regression guard for the /cover DB-connection leak (issue #2572)."""
+
+    def test_cover_does_not_hold_a_get_db_session(self):
+        """The cover endpoint must NOT take a ``Depends(get_db)`` session.
+
+        ``get_db`` is a ``yield`` dependency, so its session stays open for the
+        whole request — including the 3MF cover download (up to 8 remote paths ×
+        retries with backoff, minutes under FTP contention), pinning one pooled
+        DB connection ``idle in transaction`` the entire time. The endpoint
+        fetches the printer in a short-lived ``async with async_session()`` and
+        releases the connection before the FTP work. If someone re-adds a
+        ``Depends(get_db)`` param, this fails.
+        """
+        import inspect
+
+        from backend.app.api.routes.printers import get_db, get_printer_cover
+
+        for name, param in inspect.signature(get_printer_cover).parameters.items():
+            dependency = getattr(param.default, "dependency", None)
+            assert dependency is not get_db, (
+                f"get_printer_cover re-introduced a get_db-held session via parameter {name!r} — "
+                "it would stay open for the entire FTP cover download (issue #2572)"
+            )
+
+
 class TestPrinterDataIntegrity:
     """Tests for printer data integrity."""
 
@@ -3780,7 +3806,7 @@ class TestXYJogAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_success_x_only_emits_relative_gcode(self, async_client: AsyncClient, printer_factory):
-        """X-only jog should emit G91/G90 wrapping and only include the X axis."""
+        """X-only jog is a bare relative move (no M211), wraps in G91/G90, X only."""
         printer = await printer_factory(name="P", model="X1C")
         mock_client = MagicMock()
         mock_client.send_gcode.return_value = True
@@ -3789,6 +3815,8 @@ class TestXYJogAPI:
             response = await async_client.post(f"/api/v1/printers/{printer.id}/xy-jog?x=10&y=0")
         assert response.status_code == 200
         sent = mock_client.send_gcode.call_args.args[0]
+        # Never touch M211 — bare move, exactly like the touchscreen (#2579).
+        assert "M211" not in sent
         assert sent.startswith("G91\n")
         assert sent.endswith("\nG90")
         assert "X10.00" in sent

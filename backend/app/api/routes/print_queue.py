@@ -37,7 +37,11 @@ from backend.app.schemas.print_queue import (
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.filament_requirements import overrides_for_plate
 from backend.app.services.notification_service import notification_service
-from backend.app.utils.printer_models import normalize_printer_model, normalize_printer_model_id
+from backend.app.utils.printer_models import (
+    is_gcode_compatible,
+    normalize_printer_model,
+    normalize_printer_model_id,
+)
 from backend.app.utils.threemf_tools import (
     extract_bed_type_from_3mf,
     extract_filament_usage_from_3mf,
@@ -465,6 +469,22 @@ async def add_to_queue(
             validate_print_filename(library_file.filename)
         except InvalidFilenameError as e:
             raise HTTPException(400, str(e)) from e
+
+    # Cross-model safety gate (#2578): a G-code 3MF sliced for one model must
+    # not be queued for dispatch to an incompatible model. The UI can no longer
+    # produce such rows, but API-created rows must be rejected here too — the
+    # scheduler assigns model-based items to hardware with no human in the loop.
+    if target_model_norm:
+        sliced_for = None
+        if archive:
+            sliced_for = archive.sliced_for_model
+        elif library_file and library_file.file_metadata:
+            sliced_for = library_file.file_metadata.get("sliced_for_model")
+        if not is_gcode_compatible(sliced_for, target_model_norm):
+            raise HTTPException(
+                400,
+                f"File was sliced for {sliced_for} and cannot be dispatched to {target_model_norm} printers",
+            )
 
     # Extract filament types for model-based assignment (used by scheduler for validation)
     required_filament_types = None
@@ -1098,6 +1118,23 @@ async def update_queue_item(
         )
         if not result.scalars().first():
             raise HTTPException(400, f"No active printers for model: {update_data['target_model']}")
+
+        # Cross-model safety gate (#2578) — same check as the create route, so
+        # a mismatched target can't be introduced by editing either.
+        sliced_for = None
+        if item.archive_id:
+            result = await db.execute(select(PrintArchive.sliced_for_model).where(PrintArchive.id == item.archive_id))
+            sliced_for = result.scalar_one_or_none()
+        elif item.library_file_id:
+            result = await db.execute(select(LibraryFile).where(LibraryFile.id == item.library_file_id))
+            lib = result.scalar_one_or_none()
+            if lib and lib.file_metadata:
+                sliced_for = lib.file_metadata.get("sliced_for_model")
+        if not is_gcode_compatible(sliced_for, update_data["target_model"]):
+            raise HTTPException(
+                400,
+                f"File was sliced for {sliced_for} and cannot be dispatched to {update_data['target_model']} printers",
+            )
 
     # Serialize ams_mapping to JSON for TEXT column storage
     if "ams_mapping" in update_data:

@@ -18,6 +18,28 @@ export function getPrinterImage(model: string | null | undefined): string {
   return '/img/printers/default.png';
 }
 
+// G-code interchange families (#2578). Mirrors backend GCODE_COMPAT_FAMILIES
+// in backend/app/utils/printer_models.py — keep the two in sync. A sliced 3MF
+// may target a different model ONLY within its family; everything else is
+// exact-match only.
+const GCODE_COMPAT_FAMILIES: ReadonlyArray<ReadonlySet<string>> = [
+  new Set(['X1', 'X1C', 'X1E', 'P1P', 'P1S']),
+];
+
+/** True when G-code sliced for one model may be dispatched to the other.
+ *  Unknown/missing metadata on either side returns true (can't validate). */
+export function isGcodeCompatible(
+  slicedForModel: string | null | undefined,
+  targetModel: string | null | undefined,
+): boolean {
+  if (!slicedForModel || !targetModel) return true;
+  const norm = (m: string) => m.trim().toUpperCase().replace(/[\s-]/g, '');
+  const a = norm(slicedForModel);
+  const b = norm(targetModel);
+  if (a === b) return true;
+  return GCODE_COMPAT_FAMILIES.some((family) => family.has(a) && family.has(b));
+}
+
 export function getWifiStrength(rssi: number): { labelKey: string; color: string; bars: number } {
   if (rssi >= -50) return { labelKey: 'printers.wifiSignal.excellent', color: 'text-bambu-green', bars: 4 };
   if (rssi >= -60) return { labelKey: 'printers.wifiSignal.good', color: 'text-bambu-green', bars: 3 };

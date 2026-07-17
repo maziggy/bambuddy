@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Cloud, ExternalLink, LogOut, Loader2, AlertCircle, AlertTriangle, Check, Mail, ArrowLeft } from 'lucide-react';
+import { Cloud, ExternalLink, LogOut, Loader2, AlertCircle, Check } from 'lucide-react';
 
 import { api } from '../api/client';
-import type { OrcaOAuthProvider } from '../api/client';
+import type { OrcaDeviceStartResponse, OrcaDevicePollStatus } from '../api/client';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
@@ -14,16 +14,12 @@ import { OrcaCloudProfilesView } from './OrcaCloudProfilesView';
 /**
  * Orca Cloud profile sync tab.
  *
- * Auth uses a paste-based PKCE handshake: backend generates the verifier and
- * authorize URL, the user opens it in a new tab and signs in, the browser
- * redirects to ``http://localhost:41172/callback`` (which fails to load since
- * Bambuddy isn't on the user's localhost), and the user copies the URL from
- * their address bar back into the paste textarea below. The backend extracts
- * the code, validates state for CSRF, and exchanges for tokens.
- *
- * See OrcaSlicer/OrcaSlicer#14028 for the open feature request asking
- * SoftFever to broaden the Supabase redirect_to allowlist so we could ship
- * a clean OAuth callback instead.
+ * Auth uses the RFC 8628 device-authorization grant: the backend requests a
+ * device code from Orca and returns a short user_code plus a verification link.
+ * The user opens the link, approves the code in their Orca Cloud settings, and
+ * Bambuddy polls the backend (which polls Orca's token endpoint) until the
+ * pairing completes. No redirect URL, no callback paste, no client secret —
+ * see backend/app/services/orca_cloud.py for the deep dive.
  */
 export function OrcaCloudView() {
   const { t } = useTranslation();
@@ -32,17 +28,11 @@ export function OrcaCloudView() {
   const { hasPermission } = useAuth();
   const canManage = hasPermission('orca_cloud:auth');
 
-  // Paste-flow local state: once the user clicks an OAuth provider, we hold
-  // the returned auth_url so the same URL stays clickable while they go
-  // fetch the callback URL from their browser. ``mode`` drives which
-  // sub-form is showing: picker → OAuth paste-flow → email/password form.
-  const [mode, setMode] = useState<'picker' | 'paste' | 'password'>('picker');
-  const [authUrl, setAuthUrl] = useState<string | null>(null);
-  const [pastedUrl, setPastedUrl] = useState('');
-  const [pasteError, setPasteError] = useState<string | null>(null);
-  const [passwordEmail, setPasswordEmail] = useState('');
-  const [passwordValue, setPasswordValue] = useState('');
-  const [passwordError, setPasswordError] = useState<string | null>(null);
+  // Pairing sub-state: null until the user clicks Connect, then the device
+  // response (code + link) that we display while polling.
+  const [pairing, setPairing] = useState<OrcaDeviceStartResponse | null>(null);
+  const [pollIntervalMs, setPollIntervalMs] = useState(5000);
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   const { data: status, isLoading: statusLoading } = useQuery({
     queryKey: ['orcaCloudStatus'],
@@ -80,54 +70,26 @@ export function OrcaCloudView() {
     if (profilesUpdatedAt) setLastSyncTime(new Date(profilesUpdatedAt));
   }, [profilesUpdatedAt]);
 
-  const startAuthMutation = useMutation({
-    mutationFn: (provider: OrcaOAuthProvider) => api.orcaCloudStartAuth(provider),
-    onSuccess: (data) => {
-      setAuthUrl(data.auth_url);
-      setPastedUrl('');
-      setPasteError(null);
-      setMode('paste');
-      // Open in a new tab so the user can keep Bambuddy open in their
-      // current tab while they sign in.
-      window.open(data.auth_url, '_blank', 'noopener,noreferrer');
-    },
-    onError: (err: Error) => {
-      showToast(err.message || t('profiles.orcaCloud.errors.startFailed'), 'error');
-    },
-  });
+  const finishPairing = () => {
+    setPairing(null);
+    setPollIntervalMs(5000);
+  };
 
-  const finishAuthMutation = useMutation({
-    mutationFn: (url: string) => api.orcaCloudFinishAuth(url),
-    onSuccess: (data) => {
-      setAuthUrl(null);
-      setPastedUrl('');
-      setPasteError(null);
-      setMode('picker');
-      queryClient.invalidateQueries({ queryKey: ['orcaCloudStatus'] });
-      queryClient.invalidateQueries({ queryKey: ['orcaCloudProfiles'] });
-      showToast(t('profiles.orcaCloud.toast.connected', { email: data.email || '' }));
-    },
-    onError: (err: Error) => {
-      // Surface the backend's error message in the paste-error slot so the
-      // user can fix the input (rather than a transient toast they might miss).
-      setPasteError(err.message || t('profiles.orcaCloud.errors.finishFailed'));
-    },
-  });
+  const handleTerminal = (status: OrcaDevicePollStatus) => {
+    if (status === 'access_denied') setConnectError(t('profiles.orcaCloud.errors.denied'));
+    else if (status === 'expired_token') setConnectError(t('profiles.orcaCloud.errors.expired'));
+    finishPairing();
+  };
 
-  const passwordLoginMutation = useMutation({
-    mutationFn: ({ email, password }: { email: string; password: string }) =>
-      api.orcaCloudPasswordLogin(email, password),
+  const startMutation = useMutation({
+    mutationFn: api.orcaCloudDeviceStart,
     onSuccess: (data) => {
-      setPasswordEmail('');
-      setPasswordValue('');
-      setPasswordError(null);
-      setMode('picker');
-      queryClient.invalidateQueries({ queryKey: ['orcaCloudStatus'] });
-      queryClient.invalidateQueries({ queryKey: ['orcaCloudProfiles'] });
-      showToast(t('profiles.orcaCloud.toast.connected', { email: data.email || '' }));
+      setConnectError(null);
+      setPollIntervalMs(Math.max(1, data.interval) * 1000);
+      setPairing(data);
     },
     onError: (err: Error) => {
-      setPasswordError(err.message || t('profiles.orcaCloud.errors.passwordFailed'));
+      setConnectError(err.message || t('profiles.orcaCloud.errors.startFailed'));
     },
   });
 
@@ -140,41 +102,60 @@ export function OrcaCloudView() {
     },
   });
 
-  const handleSubmitPaste = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPasteError(null);
-    const trimmed = pastedUrl.trim();
-    if (!trimmed) {
-      setPasteError(t('profiles.orcaCloud.errors.emptyPaste'));
-      return;
-    }
-    if (!trimmed.includes('code=')) {
-      setPasteError(t('profiles.orcaCloud.errors.noCode'));
-      return;
-    }
-    finishAuthMutation.mutate(trimmed);
-  };
+  // Poll the backend while a pairing is in flight. react-query drives the
+  // cadence; the effect below reacts to each poll result. refetchInterval
+  // returns false once we stop (pairing cleared), which halts polling.
+  const { data: pollData, error: pollError } = useQuery({
+    // Scope the cache per pairing attempt so a fresh Connect never re-consumes
+    // a previous attempt's cached 'complete'/terminal result.
+    queryKey: ['orcaCloudDevicePoll', pairing?.user_code ?? 'none'],
+    queryFn: api.orcaCloudDevicePoll,
+    enabled: pairing !== null,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchInterval: pairing !== null ? pollIntervalMs : false,
+  });
 
-  const handleSubmitPassword = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPasswordError(null);
-    const email = passwordEmail.trim();
-    if (!email || !passwordValue) {
-      setPasswordError(t('profiles.orcaCloud.errors.passwordEmpty'));
+  // A ref so the poll-result effect can act exactly once per new result
+  // without re-running when unrelated state (interval, etc.) changes.
+  const lastHandledStatus = useRef<OrcaDevicePollStatus | null>(null);
+  useEffect(() => {
+    if (!pairing || !pollData) return;
+    const s = pollData.status;
+    if (s === 'slow_down') {
+      // Back off as the RFC prescribes, then keep waiting.
+      setPollIntervalMs((ms) => ms + 5000);
       return;
     }
-    passwordLoginMutation.mutate({ email, password: passwordValue });
-  };
+    if (s === 'authorization_pending') return;
+    if (lastHandledStatus.current === s) return;
+    lastHandledStatus.current = s;
+    if (s === 'complete') {
+      finishPairing();
+      queryClient.invalidateQueries({ queryKey: ['orcaCloudStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['orcaCloudProfiles'] });
+      showToast(t('profiles.orcaCloud.connectedShort'));
+    } else {
+      handleTerminal(s);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollData, pairing]);
 
-  const resetToPicker = () => {
-    setMode('picker');
-    setAuthUrl(null);
-    setPastedUrl('');
-    setPasteError(null);
-    setPasswordEmail('');
-    setPasswordValue('');
-    setPasswordError(null);
-  };
+  // A poll HTTP error (e.g. the pending state vanished server-side) ends the
+  // flow rather than spinning forever.
+  useEffect(() => {
+    if (pairing && pollError) {
+      setConnectError(t('profiles.orcaCloud.errors.pollFailed'));
+      finishPairing();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollError, pairing]);
+
+  // Reset the one-shot guard whenever a new pairing starts.
+  useEffect(() => {
+    if (pairing) lastHandledStatus.current = null;
+  }, [pairing]);
 
   if (statusLoading) {
     return (
@@ -191,8 +172,13 @@ export function OrcaCloudView() {
           <div className="flex items-center gap-3">
             <div className="w-2 h-2 rounded-full bg-bambu-green animate-pulse" />
             <span className="text-sm text-bambu-gray">
-              {t('profiles.orcaCloud.connectedAs')}{' '}
-              <span className="text-white">{status?.email}</span>
+              {status?.email ? (
+                <>
+                  {t('profiles.orcaCloud.connectedAs')} <span className="text-white">{status.email}</span>
+                </>
+              ) : (
+                <span className="text-white">{t('profiles.orcaCloud.connectedShort')}</span>
+              )}
             </span>
           </div>
           <Button
@@ -209,28 +195,12 @@ export function OrcaCloudView() {
       )}
 
       {!connected ? (
-        <ConnectFlow
-          mode={mode}
-          authUrl={authUrl}
-          pastedUrl={pastedUrl}
-          setPastedUrl={setPastedUrl}
-          pasteError={pasteError}
-          passwordEmail={passwordEmail}
-          setPasswordEmail={setPasswordEmail}
-          passwordValue={passwordValue}
-          setPasswordValue={setPasswordValue}
-          passwordError={passwordError}
-          onPickProvider={(provider) => startAuthMutation.mutate(provider)}
-          onPickPassword={() => {
-            setMode('password');
-            setPasswordError(null);
-          }}
-          onSubmitPaste={handleSubmitPaste}
-          onSubmitPassword={handleSubmitPassword}
-          onBack={resetToPicker}
-          isStarting={startAuthMutation.isPending}
-          isFinishing={finishAuthMutation.isPending}
-          isPasswordLoading={passwordLoginMutation.isPending}
+        <ConnectCard
+          pairing={pairing}
+          connectError={connectError}
+          onConnect={() => startMutation.mutate()}
+          onCancel={finishPairing}
+          isStarting={startMutation.isPending}
           canManage={canManage}
           t={t}
         />
@@ -257,258 +227,80 @@ export function OrcaCloudView() {
   );
 }
 
-interface ConnectFlowProps {
-  mode: 'picker' | 'paste' | 'password';
-  authUrl: string | null;
-  pastedUrl: string;
-  setPastedUrl: (v: string) => void;
-  pasteError: string | null;
-  passwordEmail: string;
-  setPasswordEmail: (v: string) => void;
-  passwordValue: string;
-  setPasswordValue: (v: string) => void;
-  passwordError: string | null;
-  onPickProvider: (provider: OrcaOAuthProvider) => void;
-  onPickPassword: () => void;
-  onSubmitPaste: (e: React.FormEvent) => void;
-  onSubmitPassword: (e: React.FormEvent) => void;
-  onBack: () => void;
+interface ConnectCardProps {
+  pairing: OrcaDeviceStartResponse | null;
+  connectError: string | null;
+  onConnect: () => void;
+  onCancel: () => void;
   isStarting: boolean;
-  isFinishing: boolean;
-  isPasswordLoading: boolean;
   canManage: boolean;
   t: (key: string, opts?: Record<string, string>) => string;
 }
 
-function ConnectFlow(props: ConnectFlowProps) {
-  if (props.mode === 'paste' && props.authUrl) {
-    return <PasteCard {...props} authUrl={props.authUrl} />;
-  }
-  if (props.mode === 'password') {
-    return <PasswordCard {...props} />;
-  }
-  return <PickerCard {...props} />;
-}
+function ConnectCard({ pairing, connectError, onConnect, onCancel, isStarting, canManage, t }: ConnectCardProps) {
+  // While pairing is in flight, show the code + approval link + waiting spinner.
+  if (pairing) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center max-w-md mx-auto">
+          <Cloud className="w-12 h-12 text-bambu-green mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-white mb-2">{t('profiles.orcaCloud.device.title')}</h2>
+          <p className="text-bambu-gray mb-6">{t('profiles.orcaCloud.device.instruction')}</p>
 
-function PickerCard({
-  onPickProvider,
-  onPickPassword,
-  isStarting,
-  canManage,
-  t,
-}: ConnectFlowProps) {
-  // Orca's web sign-in offers four options: Google, Apple, GitHub (all
-  // OAuth, paste-flow) and email+password (direct). We mirror that surface
-  // so users with a non-Google account aren't blocked.
+          <p className="text-xs uppercase tracking-wide text-bambu-gray mb-2">
+            {t('profiles.orcaCloud.device.codeLabel')}
+          </p>
+          <div className="mb-6 py-3 px-4 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg">
+            <span className="text-2xl font-mono font-bold tracking-[0.3em] text-white select-all">
+              {pairing.user_code}
+            </span>
+          </div>
+
+          <a href={pairing.verification_uri_complete} target="_blank" rel="noopener noreferrer">
+            <Button className="w-full mb-3">
+              <ExternalLink className="w-4 h-4" />
+              {t('profiles.orcaCloud.device.openButton')}
+            </Button>
+          </a>
+          <p className="text-xs text-bambu-gray break-all mb-6">
+            {t('profiles.orcaCloud.device.manualHint', { url: pairing.verification_uri })}
+          </p>
+
+          <div className="flex items-center justify-center gap-2 text-sm text-bambu-gray mb-4">
+            <Loader2 className="w-4 h-4 animate-spin text-bambu-green" />
+            {t('profiles.orcaCloud.device.waiting')}
+          </div>
+          <button type="button" onClick={onCancel} className="text-bambu-gray hover:text-white text-sm">
+            {t('profiles.orcaCloud.device.cancel')}
+          </button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <CardContent className="p-8 text-center">
         <Cloud className="w-12 h-12 text-bambu-green mx-auto mb-4" />
-        <h2 className="text-xl font-bold text-white mb-2">
-          {t('profiles.orcaCloud.connect.title')}
-        </h2>
-        <p className="text-bambu-gray mb-6 max-w-xl mx-auto">
-          {t('profiles.orcaCloud.connect.description')}
-        </p>
-        <div className="flex flex-col gap-2 max-w-sm mx-auto">
+        <h2 className="text-xl font-bold text-white mb-2">{t('profiles.orcaCloud.connect.title')}</h2>
+        <p className="text-bambu-gray mb-6 max-w-xl mx-auto">{t('profiles.orcaCloud.connect.description')}</p>
+        <div className="max-w-sm mx-auto">
           <Button
-            onClick={onPickPassword}
+            onClick={onConnect}
             disabled={isStarting || !canManage}
             title={!canManage ? t('profiles.orcaCloud.noConnectPermission') : undefined}
+            className="w-full"
           >
-            <Mail className="w-4 h-4" />
-            {t('profiles.orcaCloud.providers.email')}
+            {isStarting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            {t('profiles.orcaCloud.connectButton')}
           </Button>
-          <Button
-            variant="secondary"
-            onClick={() => onPickProvider('google')}
-            disabled={isStarting || !canManage}
-            title={!canManage ? t('profiles.orcaCloud.noConnectPermission') : undefined}
-          >
-            {isStarting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
-            {t('profiles.orcaCloud.providers.google')}
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => onPickProvider('github')}
-            disabled={isStarting || !canManage}
-            title={!canManage ? t('profiles.orcaCloud.noConnectPermission') : undefined}
-          >
-            <ExternalLink className="w-4 h-4" />
-            {t('profiles.orcaCloud.providers.github')}
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => onPickProvider('apple')}
-            disabled={isStarting || !canManage}
-            title={!canManage ? t('profiles.orcaCloud.noConnectPermission') : undefined}
-          >
-            <ExternalLink className="w-4 h-4" />
-            {t('profiles.orcaCloud.providers.apple')}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function PasteCard({
-  authUrl,
-  pastedUrl,
-  setPastedUrl,
-  pasteError,
-  onSubmitPaste,
-  onBack,
-  isFinishing,
-  t,
-}: ConnectFlowProps & { authUrl: string }) {
-  return (
-    <Card>
-      <CardContent className="p-6">
-        <button
-          type="button"
-          onClick={onBack}
-          className="text-bambu-gray hover:text-white text-sm flex items-center gap-1 mb-4"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          {t('profiles.orcaCloud.back')}
-        </button>
-        <h2 className="text-xl font-bold text-white mb-4">
-          {t('profiles.orcaCloud.paste.title')}
-        </h2>
-
-        {/* Numbered-step list with prominent visual treatment. Step 2 carries
-            the critical "the page failing is expected" message inside an
-            amber callout so users don't read the connection-refused page
-            as a Bambuddy error. */}
-        <ol className="space-y-3 mb-6">
-          <li className="flex gap-3">
-            <span className="flex-shrink-0 w-7 h-7 rounded-full bg-bambu-dark-tertiary text-white text-sm font-bold flex items-center justify-center">1</span>
-            <p className="text-base text-white pt-0.5">{t('profiles.orcaCloud.paste.step1')}</p>
-          </li>
-          <li className="flex gap-3">
-            <span className="flex-shrink-0 w-7 h-7 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-sm font-bold flex items-center justify-center">2</span>
-            <div className="flex-1 p-3 bg-amber-500/10 border border-amber-500/40 rounded">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-                <p className="text-base text-white font-medium">{t('profiles.orcaCloud.paste.step2')}</p>
-              </div>
-            </div>
-          </li>
-          <li className="flex gap-3">
-            <span className="flex-shrink-0 w-7 h-7 rounded-full bg-bambu-dark-tertiary text-white text-sm font-bold flex items-center justify-center">3</span>
-            <p className="text-base text-white pt-0.5">{t('profiles.orcaCloud.paste.step3')}</p>
-          </li>
-        </ol>
-
-        <div className="mb-4 p-3 bg-bambu-dark rounded border border-bambu-dark-tertiary">
-          <p className="text-xs text-bambu-gray mb-1">{t('profiles.orcaCloud.paste.signInUrl')}</p>
-          <a
-            href={authUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-bambu-green text-sm break-all hover:underline"
-          >
-            {authUrl}
-          </a>
-        </div>
-        <form onSubmit={onSubmitPaste}>
-          <label htmlFor="orca-callback-url" className="block text-sm text-bambu-gray mb-2">
-            {t('profiles.orcaCloud.paste.label')}
-          </label>
-          <textarea
-            id="orca-callback-url"
-            value={pastedUrl}
-            onChange={(e) => setPastedUrl(e.target.value)}
-            placeholder={t('profiles.orcaCloud.paste.placeholder')}
-            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm font-mono resize-none focus:outline-none focus:border-bambu-green"
-            rows={3}
-            disabled={isFinishing}
-          />
-          {pasteError && (
-            <p className="mt-2 text-sm text-red-700 dark:text-red-400 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4" />
-              {pasteError}
+          {connectError && (
+            <p className="mt-3 text-sm text-red-700 dark:text-red-400 flex items-center justify-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              {connectError}
             </p>
           )}
-          <div className="mt-4 flex items-center gap-3">
-            <Button type="submit" disabled={isFinishing || !pastedUrl.trim()}>
-              {isFinishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              {t('profiles.orcaCloud.paste.submit')}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
-  );
-}
-
-function PasswordCard({
-  passwordEmail,
-  setPasswordEmail,
-  passwordValue,
-  setPasswordValue,
-  passwordError,
-  onSubmitPassword,
-  onBack,
-  isPasswordLoading,
-  t,
-}: ConnectFlowProps) {
-  return (
-    <Card>
-      <CardContent className="p-6 max-w-md mx-auto">
-        <button
-          type="button"
-          onClick={onBack}
-          className="text-bambu-gray hover:text-white text-sm flex items-center gap-1 mb-4"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          {t('profiles.orcaCloud.back')}
-        </button>
-        <h2 className="text-xl font-bold text-white mb-4">
-          {t('profiles.orcaCloud.password.title')}
-        </h2>
-        <form onSubmit={onSubmitPassword} className="space-y-4">
-          <div>
-            <label htmlFor="orca-password-email" className="block text-sm text-bambu-gray mb-1">
-              {t('profiles.orcaCloud.password.email')}
-            </label>
-            <input
-              id="orca-password-email"
-              type="email"
-              value={passwordEmail}
-              onChange={(e) => setPasswordEmail(e.target.value)}
-              placeholder={t('profiles.orcaCloud.password.emailPlaceholder')}
-              className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm focus:outline-none focus:border-bambu-green"
-              disabled={isPasswordLoading}
-              autoComplete="email"
-            />
-          </div>
-          <div>
-            <label htmlFor="orca-password-value" className="block text-sm text-bambu-gray mb-1">
-              {t('profiles.orcaCloud.password.password')}
-            </label>
-            <input
-              id="orca-password-value"
-              type="password"
-              value={passwordValue}
-              onChange={(e) => setPasswordValue(e.target.value)}
-              className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm focus:outline-none focus:border-bambu-green"
-              disabled={isPasswordLoading}
-              autoComplete="current-password"
-            />
-          </div>
-          {passwordError && (
-            <p className="text-sm text-red-700 dark:text-red-400 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4" />
-              {passwordError}
-            </p>
-          )}
-          <Button type="submit" disabled={isPasswordLoading || !passwordEmail.trim() || !passwordValue}>
-            {isPasswordLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            {t('profiles.orcaCloud.password.submit')}
-          </Button>
-        </form>
+        </div>
       </CardContent>
     </Card>
   );

@@ -850,6 +850,22 @@ class TestQueueLibraryFileSupport:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_add_library_file_rejects_cross_model_mismatch(
+        self, async_client: AsyncClient, printer_factory, library_file_factory, db_session
+    ):
+        """Cross-model gate (#2578) also reads sliced_for_model from library file metadata."""
+        await printer_factory(model="H2D")
+        lib_file = await library_file_factory(file_metadata={"print_name": "Mismatch", "sliced_for_model": "X1C"})
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={"target_model": "H2D", "library_file_id": lib_file.id},
+        )
+        assert response.status_code == 400
+        assert "sliced for X1C" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_add_to_queue_library_file_with_options(
         self, async_client: AsyncClient, printer_factory, library_file_factory, db_session
     ):
@@ -1400,6 +1416,90 @@ class TestTargetLocationFeature:
         assert response.status_code == 200
         result = response.json()
         assert result["target_location"] is None
+
+    # ------------------------------------------------------------------
+    # Cross-model dispatch gate (#2578): a G-code 3MF sliced for one model
+    # must not be queued for model-based dispatch to an incompatible model.
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_rejects_cross_model_mismatch(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """X1C-sliced archive + target_model=H2D must be rejected (#2578)."""
+        await printer_factory(model="H2D")
+        archive = await archive_factory(sliced_for_model="X1C")
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={"target_model": "H2D", "archive_id": archive.id},
+        )
+        assert response.status_code == 400
+        assert "sliced for X1C" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_allows_gcode_family_target(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """X1C-sliced G-code on a P1S is an intentional mixed-farm workflow —
+        same kinematics/volume family, must stay allowed."""
+        await printer_factory(model="P1S")
+        archive = await archive_factory(sliced_for_model="X1C")
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={"target_model": "P1S", "archive_id": archive.id},
+        )
+        assert response.status_code == 200
+        assert response.json()["target_model"] == "P1S"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_add_to_queue_without_sliced_metadata_not_blocked(
+        self, async_client: AsyncClient, printer_factory, archive_factory, db_session
+    ):
+        """Legacy archives without sliced_for_model can't be validated — must keep working."""
+        await printer_factory(model="H2D")
+        archive = await archive_factory()  # no sliced_for_model
+
+        response = await async_client.post(
+            "/api/v1/queue/",
+            json={"target_model": "H2D", "archive_id": archive.id},
+        )
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_rejects_cross_model_mismatch(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
+    ):
+        """Editing an item must not be able to introduce an incompatible target either."""
+        await printer_factory(model="X1C")
+        await printer_factory(model="H2D")
+        archive = await archive_factory(sliced_for_model="X1C")
+        item = await queue_item_factory(printer_id=None, target_model="X1C", archive_id=archive.id)
+
+        response = await async_client.patch(f"/api/v1/queue/{item.id}", json={"target_model": "H2D"})
+        assert response.status_code == 400
+        assert "sliced for X1C" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_can_fix_stale_mismatched_target(
+        self, async_client: AsyncClient, printer_factory, archive_factory, queue_item_factory, db_session
+    ):
+        """A pre-fix DB row with a wrong target (the reporter's rows 78-82) must be
+        repairable by editing the target back to the sliced-for model."""
+        await printer_factory(model="X1C")
+        archive = await archive_factory(sliced_for_model="X1C")
+        # Stale mismatched row written directly to the DB (bypasses the API gate)
+        item = await queue_item_factory(printer_id=None, target_model="H2D", archive_id=archive.id)
+
+        response = await async_client.patch(f"/api/v1/queue/{item.id}", json={"target_model": "X1C"})
+        assert response.status_code == 200
+        assert response.json()["target_model"] == "X1C"
 
 
 class TestAbortedStatusNormalisation:

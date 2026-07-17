@@ -205,6 +205,24 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
           { key: 'user_key', label: 'User Key', placeholder: 'Your Pushover user key', type: 'text', required: true },
           { key: 'app_token', label: 'App Token', placeholder: 'Your Pushover app token', type: 'text', required: true },
           { key: 'priority', label: 'Priority', placeholder: '0 (normal)', type: 'number', required: false },
+          // Emergency priority (2) requires retry/expire — Pushover rejects the
+          // message otherwise. Only shown when priority is set to 2.
+          {
+            key: 'retry',
+            label: t('notifications.pushoverRetry'),
+            placeholder: '60',
+            type: 'number',
+            required: false,
+            showIf: (cfg: Record<string, string>) => cfg.priority === '2',
+          },
+          {
+            key: 'expire',
+            label: t('notifications.pushoverExpire'),
+            placeholder: '3600',
+            type: 'number',
+            required: false,
+            showIf: (cfg: Record<string, string>) => cfg.priority === '2',
+          },
         ];
       case 'telegram':
         return [

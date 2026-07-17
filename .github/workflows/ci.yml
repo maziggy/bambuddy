@@ -68,7 +68,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          # Upgrade setuptools too: the runner's Python toolcache ships an old
+          # setuptools that trips pip-audit (PYSEC-2026-3447, fixed in 83.0.0).
+          # A fix exists, so we upgrade rather than --ignore-vuln.
+          python -m pip install --upgrade pip setuptools
           pip install -r requirements.txt
           pip install pip-audit
 

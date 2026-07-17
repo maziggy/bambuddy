@@ -45,6 +45,14 @@ from backend.app.services.camera_profiles import get_camera_profile
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["camera"])
 
+# Upper bound on waiting for a SIGKILLed ffmpeg to be reaped (#2580). A killed
+# ffmpeg stuck in uninterruptible I/O on a dead RTSP socket can take arbitrarily
+# long to exit — an unbounded post-kill wait() parked the fan-out stream
+# coroutine for 12 hours on a P2S, leaving every viewer attached to a stalled
+# broadcaster. Abandoning the wait is safe: cleanup_orphaned_streams' /proc scan
+# reaps any Bambu ffmpeg not attached to an active stream on its next pass.
+_FFMPEG_KILL_TIMEOUT = 2.0
+
 # Track active ffmpeg processes for cleanup
 _active_streams: dict[str, asyncio.subprocess.Process] = {}
 
@@ -243,7 +251,17 @@ async def _terminate_ffmpeg(process: asyncio.subprocess.Process, stream_id: str 
         except TimeoutError:
             logger.warning("ffmpeg didn't terminate gracefully, killing (stream_id=%s)", stream_id)
             process.kill()
-            await process.wait()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=_FFMPEG_KILL_TIMEOUT)
+            except TimeoutError:
+                # Do NOT keep waiting (#2580): the caller is the stream
+                # generator, and blocking here pins the fan-out pump forever.
+                # The orphan janitor reaps the process later.
+                logger.error(
+                    "ffmpeg did not exit within %.1fs of SIGKILL; abandoning wait (stream_id=%s)",
+                    _FFMPEG_KILL_TIMEOUT,
+                    stream_id,
+                )
     except ProcessLookupError:
         pass  # Already dead
     except OSError as e:
@@ -829,20 +847,13 @@ async def stop_camera_stream(
             if event:
                 event.set()
             if process.returncode is None:
-                try:
-                    process.terminate()
-                    try:
-                        await asyncio.wait_for(process.wait(), timeout=2.0)
-                    except TimeoutError:
-                        logger.warning("ffmpeg didn't terminate gracefully, killing (stream_id=%s)", stream_id)
-                        process.kill()
-                        await process.wait()
-                    stopped += 1
-                    logger.info("Terminated ffmpeg process for stream %s", stream_id)
-                except ProcessLookupError:
-                    pass  # Process already dead
-                except OSError as e:
-                    logger.warning("Error stopping stream %s: %s", stream_id, e)
+                # Shared helper, not an inline copy: it bounds the post-kill
+                # wait (#2580) — a killed-but-unreaped ffmpeg used to hang this
+                # request forever, exactly when the user hit Stop to recover a
+                # stuck stream.
+                await _terminate_ffmpeg(process, stream_id)
+                stopped += 1
+                logger.info("Terminated ffmpeg process for stream %s", stream_id)
             _spawned_ffmpeg_pids.pop(process.pid, None)
 
     for stream_id in to_remove:
@@ -1615,9 +1626,20 @@ async def cleanup_orphaned_streams():
                 event.set()
             try:
                 proc.kill()
-                await proc.wait()
+                # Bounded (#2580): an unreaped SIGKILLed ffmpeg must not hang
+                # the periodic cleanup loop — this janitor is the safety net
+                # that recovers stalled streams, so it can least afford to
+                # block. The /proc scan above retries the kill next pass.
+                await asyncio.wait_for(proc.wait(), timeout=_FFMPEG_KILL_TIMEOUT)
             except (ProcessLookupError, OSError):
                 pass
+            except TimeoutError:
+                logger.error(
+                    "ffmpeg (pid=%d) did not exit within %.1fs of SIGKILL; abandoning wait (stream_id=%s)",
+                    proc.pid,
+                    _FFMPEG_KILL_TIMEOUT,
+                    sid,
+                )
             _active_streams.pop(sid, None)
             _disconnect_events.pop(sid, None)
             _stream_last_frame_times.pop(sid, None)

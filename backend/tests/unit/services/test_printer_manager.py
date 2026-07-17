@@ -1804,6 +1804,37 @@ class TestInitPrinterConnections:
 
             mock_manager.connect_printer.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_one_failing_printer_does_not_abort_the_rest(self):
+        """A single unreachable printer must not abort startup or the others (#2572).
+
+        The connections are gathered with return_exceptions=True. The old serial
+        ``await`` loop had no error handling, so the first printer that raised
+        propagated straight out of init_printer_connections and failed the
+        FastAPI lifespan — taking the whole app down over one bad row, and
+        skipping every printer after it. This asserts the isolation: every
+        printer is still attempted and the exception never escapes.
+        """
+        mock_db = AsyncMock()
+        printers = [MagicMock(id=i, name=f"p{i}", is_active=True) for i in range(3)]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = printers
+        mock_db.execute.return_value = mock_result
+
+        async def connect(printer):
+            if printer.id == 1:
+                raise ConnectionError("printer 1 is unreachable")
+            return True
+
+        with patch("backend.app.services.printer_manager.printer_manager") as mock_manager:
+            mock_manager.connect_printer = AsyncMock(side_effect=connect)
+
+            # Must not raise despite printer 1 failing.
+            await init_printer_connections(mock_db)
+
+            # All three were still attempted (not aborted at the failing one).
+            assert mock_manager.connect_printer.call_count == 3
+
 
 class TestAmsChangeCallback:
     """Tests for AMS change callback functionality."""

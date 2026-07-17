@@ -1608,12 +1608,30 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             spool.material if spool else "?",
                         )
                         stale.append(assignment)  # Spool changed
+            # Snapshot slots before delete — ORM attribute access after the
+            # commit would refresh against a deleted row.
+            unlinked_slots = [(a.ams_id, a.tray_id) for a in stale]
             for a in stale:
                 await db.delete(a)
             if stale:
                 logger.info("Auto-unlinked %d stale spool assignments for printer %d", len(stale), printer_id)
             # Commit any changes (stale deletions and/or fingerprint updates)
             await db.commit()
+            # Tell open browsers the assignment is gone (#2575). Only the manual
+            # REST assign/unassign endpoints broadcast this event; without it the
+            # frontend's spool-assignments cache keeps rendering the unlinked
+            # spool on the slot until an unrelated refetch — which reads exactly
+            # like "the fix didn't work" (reporter verified: a browser refresh
+            # after the swap showed the correct state all along).
+            for ams_id, tray_id in unlinked_slots:
+                await ws_manager.broadcast(
+                    {
+                        "type": "spool_assignment_changed",
+                        "printer_id": printer_id,
+                        "ams_id": ams_id,
+                        "tray_id": tray_id,
+                    }
+                )
     except Exception as e:
         logger.warning("Spool assignment cleanup failed: %s", e, exc_info=True)
 
@@ -2418,6 +2436,14 @@ async def on_print_start(printer_id: int, data: dict):
         )
         if printer and printer.plate_detection_enabled:
             logger.info("[PLATE CHECK] ENTERING plate detection code for printer %s", printer_id)
+            # Release the pooled DB connection before the plate-detection camera
+            # work (a 2.5s light-settle sleep + FTP/camera capture). Only the
+            # printer SELECT has run so far — nothing to persist — so this commit
+            # is a data-noop that ends the read transaction and returns the
+            # connection to the pool during the I/O (issue #2572). expire_on_commit
+            # =False keeps printer.* readable; on_plate_not_empty (rare) and the
+            # archive lookups below re-acquire a fresh connection on next execute.
+            await db.commit()
             try:
                 from backend.app.services.plate_detection import check_plate_empty
 
@@ -2940,6 +2966,18 @@ async def on_print_start(printer_id: int, data: dict):
         possible_names = [x for x in possible_names if not (x in seen or seen.add(x))]
 
         logger.info("Trying filenames: %s", possible_names)
+
+        # Release the pooled DB connection before the 3MF FTP download. Reaching
+        # here means none of the expected-/existing-archive write branches ran
+        # (they all return earlier) — only SELECTs have executed on this path, so
+        # this commit persists nothing; it ends the read transaction so the
+        # connection returns to the pool during the download. That download tries
+        # up to five remote paths per candidate filename with retry/backoff and
+        # can run for minutes under FTP contention; holding the session across it
+        # pinned one pooled connection idle-in-transaction (issue #2572). No DB
+        # work runs during the download — the new-archive writes below re-acquire
+        # a fresh connection, and expire_on_commit=False keeps printer.* readable.
+        await db.commit()
 
         # Try to find and download the 3MF file
         temp_path = None
@@ -6107,12 +6145,18 @@ async def lifespan(app: FastAPI):
     from backend.app.services.makerworld import (
         set_shared_http_client as set_shared_makerworld_http_client,
     )
+    from backend.app.services.orca_cloud import (
+        set_shared_http_client as set_shared_orca_http_client,
+    )
 
     _shared_cloud_http_client = _httpx.AsyncClient(timeout=30.0)
     set_shared_http_client(_shared_cloud_http_client)
     # Reuse the same connection pool for MakerWorld — different host, same
     # keep-alive pool saves a TLS handshake per request.
     set_shared_makerworld_http_client(_shared_cloud_http_client)
+    # Same for Orca Cloud — without this the per-request OrcaCloudService()
+    # each spun up (and never closed) its own client, leaking sockets.
+    set_shared_orca_http_client(_shared_cloud_http_client)
 
     # Fix queue items stuck with invalid "aborted" status (should be "cancelled").
     # This can happen when a print was cancelled mid-print on versions before this fix.
@@ -6432,6 +6476,7 @@ async def lifespan(app: FastAPI):
     # Drop the shared Bambu Cloud HTTP client we registered at startup.
     set_shared_http_client(None)
     set_shared_makerworld_http_client(None)
+    set_shared_orca_http_client(None)
     await _shared_cloud_http_client.aclose()
 
     # Checkpoint WAL (SQLite only) and close all database connections

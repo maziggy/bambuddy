@@ -1320,10 +1320,26 @@ export interface CloudLoginResponse {
 // Orca Cloud types — paste-flow PKCE handshake against auth.orcaslicer.com.
 // See backend/app/services/orca_cloud.py for the deep dive on why this
 // flow is paste-based rather than callback-based.
-export type OrcaOAuthProvider = 'google' | 'apple' | 'github';
+export interface OrcaDeviceStartResponse {
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete: string;
+  interval: number;
+  expires_in: number;
+}
 
-export interface OrcaAuthStartResponse {
-  auth_url: string;
+export type OrcaDevicePollStatus =
+  | 'authorization_pending'
+  | 'slow_down'
+  | 'access_denied'
+  | 'expired_token'
+  | 'complete';
+
+export interface OrcaDevicePollResponse {
+  status: OrcaDevicePollStatus;
+  connected: boolean;
+  email: string | null;
+  user_id: string | null;
 }
 
 export interface OrcaAuthStatusResponse {
@@ -4802,24 +4818,17 @@ export const api = {
   cloudLogout: () =>
     request<{ success: boolean }>('/cloud/logout', { method: 'POST' }),
 
-  // Orca Cloud — paste-based PKCE flow for OAuth (Google/Apple/GitHub),
-  // direct credentials for email+password. start() returns an auth URL the
-  // user opens in their browser; after sign-in they paste the callback URL
-  // back via finish(). password() skips the dance entirely.
-  orcaCloudStartAuth: (provider: OrcaOAuthProvider = 'google') =>
-    request<OrcaAuthStartResponse>('/orca-cloud/auth/start', {
+  // Orca Cloud — RFC 8628 device pairing. deviceStart() returns a short
+  // user_code + verification link; the user approves it in their Orca Cloud
+  // settings while the frontend polls devicePoll() every `interval` seconds
+  // until the status flips to 'complete' (or a terminal deny/expire).
+  orcaCloudDeviceStart: () =>
+    request<OrcaDeviceStartResponse>('/orca-cloud/device/start', {
       method: 'POST',
-      body: JSON.stringify({ provider }),
     }),
-  orcaCloudFinishAuth: (callback_url: string) =>
-    request<OrcaAuthStatusResponse>('/orca-cloud/auth/finish', {
+  orcaCloudDevicePoll: () =>
+    request<OrcaDevicePollResponse>('/orca-cloud/device/poll', {
       method: 'POST',
-      body: JSON.stringify({ callback_url }),
-    }),
-  orcaCloudPasswordLogin: (email: string, password: string) =>
-    request<OrcaAuthStatusResponse>('/orca-cloud/auth/password', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
     }),
   orcaCloudStatus: () =>
     request<OrcaAuthStatusResponse>('/orca-cloud/status'),

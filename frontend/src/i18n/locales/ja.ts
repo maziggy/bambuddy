@@ -5547,6 +5547,8 @@ export default {
     userKey: 'ユーザーキー',
     appToken: 'アプリトークン',
     priority: '優先度',
+    pushoverRetry: '緊急再通知 (秒)',
+    pushoverExpire: '緊急有効期限 (秒)',
     botToken: 'ボットトークン',
     chatId: 'チャットID',
     smtpServer: 'SMTPサーバー',

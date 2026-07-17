@@ -5495,6 +5495,8 @@ export default {
     userKey: 'Kullanıcı Anahtarı',
     appToken: 'Uygulama Belirteci',
     priority: 'Öncelik',
+    pushoverRetry: 'Acil yeniden deneme (sn)',
+    pushoverExpire: 'Acil sona erme (sn)',
     botToken: 'Bot Belirteci',
     chatId: 'Sohbet ID',
     smtpServer: 'SMTP Sunucusu',

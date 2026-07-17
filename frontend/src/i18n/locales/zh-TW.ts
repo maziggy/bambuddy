@@ -5535,6 +5535,8 @@ export default {
     userKey: '使用者金鑰',
     appToken: '應用程式權杖',
     priority: '優先順序',
+    pushoverRetry: '緊急重試 (秒)',
+    pushoverExpire: '緊急逾時 (秒)',
     botToken: '機器人權杖',
     chatId: '聊天 ID',
     smtpServer: 'SMTP 伺服器',

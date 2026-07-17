@@ -5259,6 +5259,8 @@ export default {
     userKey: '사용자 키',
     appToken: '앱 토큰',
     priority: '우선순위',
+    pushoverRetry: '긴급 재알림 (초)',
+    pushoverExpire: '긴급 만료 (초)',
     botToken: '봇 토큰',
     chatId: '채팅 ID',
     smtpServer: 'SMTP 서버',

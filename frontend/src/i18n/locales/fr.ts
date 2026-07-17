@@ -5536,6 +5536,8 @@ export default {
     userKey: 'Clé utilisateur',
     appToken: 'Jeton d\'application',
     priority: 'Priorité',
+    pushoverRetry: 'Réessai urgence (s)',
+    pushoverExpire: 'Expiration urgence (s)',
     botToken: 'Jeton du bot',
     chatId: 'ID du chat',
     smtpServer: 'Serveur SMTP',

@@ -5535,6 +5535,8 @@ export default {
     userKey: '用户密钥',
     appToken: '应用令牌',
     priority: '优先级',
+    pushoverRetry: '紧急重试 (秒)',
+    pushoverExpire: '紧急过期 (秒)',
     botToken: '机器人令牌',
     chatId: '聊天 ID',
     smtpServer: 'SMTP 服务器',

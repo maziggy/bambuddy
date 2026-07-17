@@ -5535,6 +5535,8 @@ export default {
     userKey: 'Chiave utente',
     appToken: 'Token applicazione',
     priority: 'Priorità',
+    pushoverRetry: 'Ripetizione emergenza (s)',
+    pushoverExpire: 'Scadenza emergenza (s)',
     botToken: 'Token del bot',
     chatId: 'ID chat',
     smtpServer: 'Server SMTP',

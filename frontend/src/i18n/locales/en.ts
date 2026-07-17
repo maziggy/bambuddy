@@ -5590,6 +5590,8 @@ export default {
     userKey: 'User Key',
     appToken: 'App Token',
     priority: 'Priority',
+    pushoverRetry: 'Emergency Retry (s)',
+    pushoverExpire: 'Emergency Expire (s)',
     botToken: 'Bot Token',
     chatId: 'Chat ID',
     smtpServer: 'SMTP Server',

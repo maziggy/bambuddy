@@ -1608,12 +1608,30 @@ async def on_ams_change(printer_id: int, ams_data: list):
                             spool.material if spool else "?",
                         )
                         stale.append(assignment)  # Spool changed
+            # Snapshot slots before delete — ORM attribute access after the
+            # commit would refresh against a deleted row.
+            unlinked_slots = [(a.ams_id, a.tray_id) for a in stale]
             for a in stale:
                 await db.delete(a)
             if stale:
                 logger.info("Auto-unlinked %d stale spool assignments for printer %d", len(stale), printer_id)
             # Commit any changes (stale deletions and/or fingerprint updates)
             await db.commit()
+            # Tell open browsers the assignment is gone (#2575). Only the manual
+            # REST assign/unassign endpoints broadcast this event; without it the
+            # frontend's spool-assignments cache keeps rendering the unlinked
+            # spool on the slot until an unrelated refetch — which reads exactly
+            # like "the fix didn't work" (reporter verified: a browser refresh
+            # after the swap showed the correct state all along).
+            for ams_id, tray_id in unlinked_slots:
+                await ws_manager.broadcast(
+                    {
+                        "type": "spool_assignment_changed",
+                        "printer_id": printer_id,
+                        "ams_id": ams_id,
+                        "tray_id": tray_id,
+                    }
+                )
     except Exception as e:
         logger.warning("Spool assignment cleanup failed: %s", e, exc_info=True)
 

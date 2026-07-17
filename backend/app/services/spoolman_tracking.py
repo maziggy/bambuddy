@@ -601,7 +601,9 @@ async def _report_spool_usage_for_slots(
             spools_updated += 1
             if slot_costs_out is not None:
                 _c = await _spool_cost_for_grams(
-                    client, spool_id_to_use, grams_used,
+                    client,
+                    spool_id_to_use,
+                    grams_used,
                     prefetched=spool if resolution_path == "tag" else None,
                 )
                 if _c is not None:
@@ -743,7 +745,9 @@ async def _report_spool_usage_split_by_tray_changes(
                 spools_updated += 1
                 if slot_costs_out is not None:
                     _c = await _spool_cost_for_grams(
-                        client, spool_id_to_use, segment_grams,
+                        client,
+                        spool_id_to_use,
+                        segment_grams,
                         prefetched=spool if resolution_path == "tag" else None,
                     )
                     if _c is not None:

@@ -1,0 +1,200 @@
+2026-07-17 18:51:49,971 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-07-17 18:51:49,971 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-07-17 18:51:51,807 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [VP-[PRINTER]] 1Hz status push: 60 pushes/min to [IP]:32903
+2026-07-17 18:51:53,779 INFO [backend.app.services.homeassistant] [67e7f269] Turned ON HA entity '[PRINTER]/Heater' (switch.heater)
+2026-07-17 18:51:53,782 INFO [uvicorn.access] [-] [IP]:49268 - "POST /api/v1/smart-plugs/1/control HTTP/1.1" 200
+2026-07-17 18:52:17,409 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-17 18:52:18,611 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-17 18:52:18,618 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-07-17 18:52:19,591 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 128 tray 0: state=9 (not loaded) — clearing stale tray data
+2026-07-17 18:52:19,592 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-07-17 18:52:19,624 INFO [backend.app.services.spoolman] [-] Updating spool 39 by slot-assignment hint (no RFID tag available)
+2026-07-17 18:52:19,635 INFO [backend.app.services.spoolman] [-] Updating existing spool 63 for tag 4BD88118B3154582...
+2026-07-17 18:52:19,646 INFO [backend.app.services.spoolman] [-] Updating existing spool 64 for tag 6CB1012001474717...
+2026-07-17 18:52:19,657 INFO [backend.app.services.spoolman] [-] Updating spool 71 by slot-assignment hint (no RFID tag available)
+2026-07-17 18:52:19,667 INFO [backend.app.main] [-] Auto-synced 4 AMS trays to Spoolman for printer 1
+2026-07-17 18:52:20,845 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-07-17 18:52:20,871 INFO [backend.app.services.spoolman] [-] Updating spool 39 by slot-assignment hint (no RFID tag available)
+2026-07-17 18:52:20,886 INFO [backend.app.services.spoolman] [-] Updating existing spool 63 for tag 4BD88118B3154582...
+2026-07-17 18:52:20,902 INFO [backend.app.services.spoolman] [-] Updating existing spool 64 for tag 6CB1012001474717...
+2026-07-17 18:52:20,915 INFO [backend.app.services.spoolman] [-] Updating spool 71 by slot-assignment hint (no RFID tag available)
+2026-07-17 18:52:20,936 INFO [backend.app.main] [-] Auto-synced 4 AMS trays to Spoolman for printer 1
+2026-07-17 18:52:24,831 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-07-17 18:52:24,861 INFO [backend.app.services.spoolman] [-] Updating spool 39 by slot-assignment hint (no RFID tag available)
+2026-07-17 18:52:24,876 INFO [backend.app.services.spoolman] [-] Updating existing spool 63 for tag 4BD88118B3154582...
+2026-07-17 18:52:24,888 INFO [backend.app.services.spoolman] [-] Updating existing spool 64 for tag 6CB1012001474717...
+2026-07-17 18:52:24,899 INFO [backend.app.services.spoolman] [-] Updating spool 71 by slot-assignment hint (no RFID tag available)
+2026-07-17 18:52:24,910 INFO [backend.app.main] [-] Auto-synced 4 AMS trays to Spoolman for printer 1
+2026-07-17 18:52:51,956 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [VP-[PRINTER]] 1Hz status push: 60 pushes/min to [IP]:32903
+2026-07-17 18:53:48,850 INFO [backend.app.main] [-] Recorded 2 AMS sensor history entries
+2026-07-17 18:53:52,086 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [VP-[PRINTER]] 1Hz status push: 60 pushes/min to [IP]:32903
+2026-07-17 18:54:52,216 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [VP-[PRINTER]] 1Hz status push: 60 pushes/min to [IP]:32903
+2026-07-17 18:55:05,219 INFO [backend.app.api.routes.cloud] [e4fed636] get_filament_info called with 5 IDs: ['GFG99', 'GFA01', 'GFL99', 'P05a4964', ',']
+2026-07-17 18:55:06,081 WARNING [backend.app.api.routes.cloud] [e4fed636] Failed to get cloud preset P05a4964 (API ID: P05a4964): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-17 18:55:06,254 WARNING [backend.app.api.routes.cloud] [e4fed636] Failed to get cloud preset , (API ID: ,): Failed to get setting detail: 422 {"x_request_id":"8296bcf6-a5c6-4f63-a9dd-274b642d487f","detail":"Invalid input parameters","body":{"SettingId":","}}
+2026-07-17 18:55:06,256 INFO [uvicorn.access] [-] [IP]:46634 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-17 18:55:10,871 INFO [backend.app.services.bambu_mqtt] [1a7a36b7] [[SERIAL]] Publishing ams_filament_setting: AMS 128, tray 0, tray_info_idx=, setting_id=
+2026-07-17 18:55:10,871 INFO [backend.app.services.bambu_mqtt] [1a7a36b7] [[SERIAL]] Publishing extrusion_cali_sel: AMS 128, tray 0, cali_idx=-1
+2026-07-17 18:55:10,872 INFO [backend.app.api.routes.spoolman_inventory] [1a7a36b7] No stored K-profile for Spoolman spool 51 — reset slot to Default K (cali_idx=-1)
+2026-07-17 18:55:10,872 INFO [backend.app.api.routes.spoolman_inventory] [1a7a36b7] Auto-configured AMS slot ams=128 tray=0 for Spoolman spool 51 on printer 1
+2026-07-17 18:55:10,872 INFO [uvicorn.access] [-] [IP]:56088 - "POST /api/v1/spoolman/inventory/slot-assignments HTTP/1.1" 200
+2026-07-17 18:55:10,886 INFO [uvicorn.access] [-] [IP]:56088 - "POST /api/v1/printers/1/refresh-status HTTP/1.1" 200
+2026-07-17 18:55:12,660 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-07-17 18:55:12,689 INFO [backend.app.services.spoolman] [-] Updating spool 39 by slot-assignment hint (no RFID tag available)
+2026-07-17 18:55:12,700 INFO [backend.app.services.spoolman] [-] Updating existing spool 63 for tag 4BD88118B3154582...
+2026-07-17 18:55:12,711 INFO [backend.app.services.spoolman] [-] Updating existing spool 64 for tag 6CB1012001474717...
+2026-07-17 18:55:12,721 INFO [backend.app.services.spoolman] [-] Updating spool 71 by slot-assignment hint (no RFID tag available)
+2026-07-17 18:55:12,732 INFO [backend.app.services.spoolman] [-] Updating spool 51 by slot-assignment hint (no RFID tag available)
+2026-07-17 18:55:12,741 INFO [backend.app.main] [-] Auto-synced 5 AMS trays to Spoolman for printer 1
+2026-07-17 18:55:14,221 INFO [backend.app.api.routes.support] [0452e466] Log level changed to DEBUG
+2026-07-17 18:55:14,222 INFO [backend.app.api.routes.bug_report] [0452e466] Bug report: enabled debug logging
+2026-07-17 18:55:14,222 DEBUG [backend.app.services.bambu_mqtt] [0452e466] [[SERIAL]] Requesting status update (pushall)
+2026-07-17 18:55:14,222 INFO [uvicorn.access] [-] [IP]:56088 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-07-17 18:55:15,481 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1783511, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-07-17 18:55:15,481 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-07-17 18:55:15,482 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1783511 (binary: 0b110110011011011010111)
+2026-07-17 18:55:15,482 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-07-17 18:55:15,482 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '11', 'ams_exist_bits_raw': '11', 'cali_id': 255, 'cali_stat': 0, 'cfs': [], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': '1000f', 'tray_hall_out_bits': '0', 'tray_is_bbl_bits': '1000f', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': '1000f', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 45}
+2026-07-17 18:55:15,482 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-07-17 18:55:15,482 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-07-17 18:55:15,482 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x10002003 -> extruder 0
+2026-07-17 18:55:15,482 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 128 info=0x11002104 -> extruder 1
+2026-07-17 18:55:15,482 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '128': 1}
+2026-07-17 18:55:15,482 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-07-17 18:55:15,482 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-17 18:55:15,483 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=274 (switch_state bits 12-14: 0)
+2026-07-17 18:55:15,483 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 29°C (heater OFF)
+2026-07-17 18:55:15,483 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-07-17 18:55:15,483 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=29.0, heating=False, respect_local=False
+2026-07-17 18:55:15,483 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 29.0, target: 0.0, heating: False
+2026-07-17 18:55:15,483 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-07-17 18:55:15,484 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 6, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-07-17 18:55:15,484 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -38dBm
+2026-07-17 18:55:15,484 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-07-17 18:55:15,484 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-07-17 18:55:15,484 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-07-17 18:55:16,450 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP NOTIFY for VP-[PRINTER] (Location=[IP], USN=09400A391800001, bind=[IP])
+2026-07-17 18:55:16,790 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1783511, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-07-17 18:55:16,791 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-07-17 18:55:16,791 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1783511 (binary: 0b110110011011011010111)
+2026-07-17 18:55:16,791 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-07-17 18:55:16,791 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '11', 'ams_exist_bits_raw': '11', 'cali_id': 255, 'cali_stat': 0, 'cfs': [], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': '1000f', 'tray_hall_out_bits': '0', 'tray_is_bbl_bits': '1000f', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': '1000f', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 46}
+2026-07-17 18:55:16,791 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-07-17 18:55:16,791 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-07-17 18:55:16,791 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x10002003 -> extruder 0
+2026-07-17 18:55:16,791 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 128 info=0x11002104 -> extruder 1
+2026-07-17 18:55:16,791 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '128': 1}
+2026-07-17 18:55:16,791 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-07-17 18:55:16,792 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-17 18:55:16,792 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=274 (switch_state bits 12-14: 0)
+2026-07-17 18:55:16,792 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 29°C (heater OFF)
+2026-07-17 18:55:16,792 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-07-17 18:55:16,792 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=29.0, heating=False, respect_local=False
+2026-07-17 18:55:16,792 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 29.0, target: 0.0, heating: False
+2026-07-17 18:55:16,792 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-07-17 18:55:16,793 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 6, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-07-17 18:55:16,793 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -38dBm
+2026-07-17 18:55:16,793 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-07-17 18:55:16,793 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-07-17 18:55:16,793 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-07-17 18:55:18,188 INFO [backend.app.services.homeassistant] [a57ab403] Turned OFF HA entity '[PRINTER]/Heater' (switch.heater)
+2026-07-17 18:55:18,188 INFO [backend.app.services.printer_manager] [a57ab403] Marking printer 1 as offline (smart plug power off)
+2026-07-17 18:55:18,189 INFO [backend.app.main] [a57ab403] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-17 18:55:18,193 INFO [uvicorn.access] [-] [IP]:56088 - "POST /api/v1/smart-plugs/1/control HTTP/1.1" 200
+2026-07-17 18:55:21,309 DEBUG [backend.app.services.print_scheduler] [-] Auto-drying: printer 1 skipped — not connected
+2026-07-17 18:55:22,057 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: not connected
+2026-07-17 18:55:23,662 INFO [backend.app.services.homeassistant] [1be84f01] Turned ON HA entity '[PRINTER]/Heater' (switch.heater)
+2026-07-17 18:55:23,666 INFO [uvicorn.access] [-] [IP]:56088 - "POST /api/v1/smart-plugs/1/control HTTP/1.1" 200
+2026-07-17 18:55:46,535 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP NOTIFY for VP-[PRINTER] (Location=[IP], USN=09400A391800001, bind=[IP])
+2026-07-17 18:55:47,386 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-17 18:55:48,313 DEBUG [backend.app.api.routes.printers] [d58a2311] API returning ams_mapping: [], ams_extruder_map: {'0': 0, '128': 1}
+2026-07-17 18:55:48,313 DEBUG [backend.app.api.routes.printers] [d58a2311] Using tray_now directly as global ID: 255
+2026-07-17 18:55:48,659 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Requesting firmware version info
+2026-07-17 18:55:48,659 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending K-profile priming request
+2026-07-17 18:55:48,659 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-17 18:55:48,664 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Request topic subscription accepted. ams_mapping capture enabled for slicer-initiated prints.
+2026-07-17 18:55:48,798 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 firmware: 04.00.22.04
+2026-07-17 18:55:48,799 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 128 firmware: 04.00.21.94
+2026-07-17 18:55:49,047 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_get
+2026-07-17 18:55:49,047 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-07-17 18:55:50,240 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1783511, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-07-17 18:55:50,241 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-07-17 18:55:50,241 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1783511 (binary: 0b110110011011011010111)
+2026-07-17 18:55:50,241 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-07-17 18:55:50,241 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '11', 'ams_exist_bits_raw': '11', 'cali_id': 255, 'cali_stat': 0, 'cfs': [], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': '1000f', 'tray_hall_out_bits': '0', 'tray_is_bbl_bits': 'f', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': '1000f', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 15}
+2026-07-17 18:55:50,241 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-07-17 18:55:50,241 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 128 tray 0: state=9 (not loaded) — clearing stale tray data
+2026-07-17 18:55:50,241 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-07-17 18:55:50,241 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x20002003 -> extruder 0
+2026-07-17 18:55:50,241 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 128 info=0x21002104 -> extruder 1
+2026-07-17 18:55:50,242 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '128': 1}
+2026-07-17 18:55:50,242 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS data changed, triggering sync callback
+2026-07-17 18:55:50,242 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-07-17 18:55:50,242 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-17 18:55:50,242 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=274 (switch_state bits 12-14: 0)
+2026-07-17 18:55:50,242 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 28°C (heater OFF)
+2026-07-17 18:55:50,243 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-07-17 18:55:50,243 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=28.0, heating=False, respect_local=False
+2026-07-17 18:55:50,243 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 28.0, target: 0.0, heating: False
+2026-07-17 18:55:50,243 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-07-17 18:55:50,243 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-07-17 18:55:50,243 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 6, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-07-17 18:55:50,244 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -39dBm
+2026-07-17 18:55:50,244 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-07-17 18:55:50,244 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-07-17 18:55:50,244 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: unknown -> IDLE, file: , subtask: 
+2026-07-17 18:55:50,256 DEBUG [backend.app.main] [-] [Printer 1] Fetching spools cache for AMS sync...
+2026-07-17 18:55:50,270 DEBUG [backend.app.main] [-] [Printer 1] Cached 53 spools for batch sync
+2026-07-17 18:55:50,272 DEBUG [backend.app.services.spoolman] [-] Processing [PRINTER] AMS 0 tray 0: type=PETG, idx=GFG99, uuid=none, tag=none...
+2026-07-17 18:55:50,272 INFO [backend.app.services.spoolman] [-] Updating spool 39 by slot-assignment hint (no RFID tag available)
+2026-07-17 18:55:50,289 DEBUG [backend.app.services.spoolman] [-] Processing [PRINTER] AMS 0 tray 1: type=PLA, idx=GFA01, uuid=4BD88118B3154582, tag=06CCEBE0...
+2026-07-17 18:55:50,289 DEBUG [backend.app.services.spoolman] [-] Found spool 63 matching tag 4BD88118B315458280ED1F2056EF8A93
+2026-07-17 18:55:50,289 INFO [backend.app.services.spoolman] [-] Updating existing spool 63 for tag 4BD88118B3154582...
+2026-07-17 18:55:50,316 DEBUG [backend.app.services.spoolman] [-] Processing [PRINTER] AMS 0 tray 2: type=PLA, idx=GFA01, uuid=6CB1012001474717, tag=B658F9E4...
+2026-07-17 18:55:50,316 DEBUG [backend.app.services.spoolman] [-] Found spool 64 matching tag 6CB10120014747178F1A909D7ED5BC1D
+2026-07-17 18:55:50,316 INFO [backend.app.services.spoolman] [-] Updating existing spool 64 for tag 6CB1012001474717...
+2026-07-17 18:55:50,329 DEBUG [backend.app.services.spoolman] [-] Processing [PRINTER] AMS 0 tray 3: type=PLA, idx=GFL99, uuid=none, tag=none...
+2026-07-17 18:55:50,329 INFO [backend.app.services.spoolman] [-] Updating spool 71 by slot-assignment hint (no RFID tag available)
+2026-07-17 18:55:50,341 INFO [backend.app.main] [-] Auto-synced 4 AMS trays to Spoolman for printer 1
+2026-07-17 18:55:51,321 DEBUG [backend.app.services.print_scheduler] [-] Auto-drying: printer 1 — checking 2 AMS units
+2026-07-17 18:55:51,321 DEBUG [backend.app.services.print_scheduler] [-] Auto-drying: printer 1 AMS 0 skipped — humidity 33 <= threshold 40
+2026-07-17 18:55:51,321 DEBUG [backend.app.services.print_scheduler] [-] Auto-drying: printer 1 AMS 128 skipped — no drying-eligible filaments in trays
+2026-07-17 18:55:51,760 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'allow_skip_parts': False, 'buildplate_marker_detector': True, 'cfg': 1783511, 'first_layer_inspector': True, 'halt_print_sensitivity': 'medium', 'print_halt': True, 'printing_monitor': True, 'spaghetti_detector': True}
+2026-07-17 18:55:51,760 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['allow_skip_parts', 'buildplate_marker_detector', 'cfg', 'first_layer_inspector', 'halt_print_sensitivity', 'print_halt', 'printing_monitor', 'spaghetti_detector']
+2026-07-17 18:55:51,761 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] xcam cfg bitmask: 1783511 (binary: 0b110110011011011010111)
+2026-07-17 18:55:51,761 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-07-17 18:55:51,761 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '11', 'ams_exist_bits_raw': '11', 'cali_id': 255, 'cali_stat': 0, 'cfs': [], 'insert_flag': True, 'power_on_flag': False, 'tray_exist_bits': '1000f', 'tray_hall_out_bits': '0', 'tray_is_bbl_bits': 'f', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': '1000f', 'tray_reading_bits': '0', 'tray_tar': '255', 'unbind_ams_stat': 0, 'version': 15}
+2026-07-17 18:55:51,761 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-07-17 18:55:51,761 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-07-17 18:55:51,761 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x20002003 -> extruder 0
+2026-07-17 18:55:51,761 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 128 info=0x21002104 -> extruder 1
+2026-07-17 18:55:51,761 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '128': 1}
+2026-07-17 18:55:51,761 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS data changed, triggering sync callback
+2026-07-17 18:55:51,762 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-07-17 18:55:51,762 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-17 18:55:51,762 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] device.extruder.state=274 (switch_state bits 12-14: 0)
+2026-07-17 18:55:51,762 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] info.temp direct: 28°C (heater OFF)
+2026-07-17 18:55:51,762 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ctc_info keys: ['temp']
+2026-07-17 18:55:51,763 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-07-17 18:55:51,763 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=28.0, heating=False, respect_local=False
+2026-07-17 18:55:51,764 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 28.0, target: 0.0, heating: False
+2026-07-17 18:55:51,764 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-07-17 18:55:51,764 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'agora_service': 'disable', 'brtc_service': 'enable', 'bs_state': 0, 'cap_pic_enable': 'invalid', 'ipcam_dev': '1', 'ipcam_record': 'enable', 'laser_preview_res': 6, 'mode_bits': 2, 'resolution': '1080p', 'rtsp_url': 'rtsps://[IP]:322/streaming/live/1', 'timelapse': 'disable', 'tl_store_hpd_type': 2, 'tl_store_path_type': 2, 'tutk_server': 'disable'}
+2026-07-17 18:55:51,764 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -39dBm
+2026-07-17 18:55:51,764 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'mode': 'on', 'node': 'chamber_light'}, {'mode': 'flashing', 'node': 'work_light'}, {'mode': 'on', 'node': 'chamber_light2'}]
+2026-07-17 18:55:51,764 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT mapping field: []
+2026-07-17 18:55:51,764 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-07-17 18:55:51,776 DEBUG [backend.app.main] [-] [Printer 1] Fetching spools cache for AMS sync...
+2026-07-17 18:55:51,793 DEBUG [backend.app.main] [-] [Printer 1] Cached 53 spools for batch sync
+2026-07-17 18:55:51,795 DEBUG [backend.app.services.spoolman] [-] Processing [PRINTER] AMS 0 tray 0: type=PETG, idx=GFG99, uuid=none, tag=none...
+2026-07-17 18:55:51,795 INFO [backend.app.services.spoolman] [-] Updating spool 39 by slot-assignment hint (no RFID tag available)
+2026-07-17 18:55:51,812 DEBUG [backend.app.services.spoolman] [-] Processing [PRINTER] AMS 0 tray 1: type=PLA, idx=GFA01, uuid=4BD88118B3154582, tag=06CCEBE0...
+2026-07-17 18:55:51,813 DEBUG [backend.app.services.spoolman] [-] Found spool 63 matching tag 4BD88118B315458280ED1F2056EF8A93
+2026-07-17 18:55:51,813 INFO [backend.app.services.spoolman] [-] Updating existing spool 63 for tag 4BD88118B3154582...
+2026-07-17 18:55:51,825 DEBUG [backend.app.services.spoolman] [-] Processing [PRINTER] AMS 0 tray 2: type=PLA, idx=GFA01, uuid=6CB1012001474717, tag=B658F9E4...
+2026-07-17 18:55:51,825 DEBUG [backend.app.services.spoolman] [-] Found spool 64 matching tag 6CB10120014747178F1A909D7ED5BC1D
+2026-07-17 18:55:51,825 INFO [backend.app.services.spoolman] [-] Updating existing spool 64 for tag 6CB1012001474717...
+2026-07-17 18:55:51,836 DEBUG [backend.app.services.spoolman] [-] Processing [PRINTER] AMS 0 tray 3: type=PLA, idx=GFL99, uuid=none, tag=none...
+2026-07-17 18:55:51,836 INFO [backend.app.services.spoolman] [-] Updating spool 71 by slot-assignment hint (no RFID tag available)
+2026-07-17 18:55:51,847 INFO [backend.app.main] [-] Auto-synced 4 AMS trays to Spoolman for printer 1
+2026-07-17 18:55:52,328 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [VP-[PRINTER]] 1Hz status push: 60 pushes/min to [IP]:32903

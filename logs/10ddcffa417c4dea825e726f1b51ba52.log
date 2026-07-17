@@ -1,0 +1,200 @@
+2026-07-16 22:55:23,943 INFO [backend.app.services.print_scheduler] [-] Dispatching 1 queue item(s) with up to 4 concurrent upload(s): [15]
+2026-07-16 22:55:23,956 INFO [backend.app.services.print_scheduler] [-] Starting queue item 15
+2026-07-16 22:55:23,993 INFO [backend.app.services.print_scheduler] [-] Queue item 15: FTP upload starting - printer=[PRINTER] (P1S), ip=[IP], file=AMS_Drawer_-_P1S(2).3mf, local_path=/home/[user]/bambuddy/archive/1/20260716_224955_AMS_Drawer_-_P1S(2)/9c87642d024d40e99cd546f9a98b51e2.3mf, retry_enabled=True, retry_count=3, timeout=30.0
+2026-07-16 22:55:24,841 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-07-16 22:55:24,911 INFO [backend.app.services.bambu_ftp] [-] FTP connecting to [IP] for upload (model=P1S, mode=prot_p, socket_timeout=30.0s, deadline=3907s)...
+2026-07-16 22:55:25,742 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-07-16 22:55:25,743 INFO [backend.app.services.bambu_ftp] [-] FTP connected to [IP]
+2026-07-16 22:55:25,743 INFO [backend.app.services.bambu_ftp] [-] FTP uploading /home/[user]/bambuddy/archive/1/20260716_224955_AMS_Drawer_-_P1S(2)/9c87642d024d40e99cd546f9a98b51e2.3mf (100026242 bytes) to /AMS_Drawer_-_P1S(2).3mf
+2026-07-16 22:55:25,814 INFO [backend.app.services.bambu_ftp] [-] FTP data channel ready in 0.1s (PASV + TLS handshake)
+2026-07-16 22:56:28,555 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-16 22:56:28,994 INFO [uvicorn.access] [-] [IP]:58249 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-16 22:56:29,695 INFO [uvicorn.access] [-] [IP]:51409 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-16 22:56:29,818 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-16 22:56:29,841 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-16 22:56:29,843 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-07-16 22:56:30,531 INFO [backend.app.api.routes.cloud] [11008b08] get_filament_info called with 1 IDs: ['GFB01']
+2026-07-16 22:56:30,867 INFO [uvicorn.access] [-] [IP]:51409 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-16 22:56:37,074 INFO [backend.app.api.routes.print_queue] [6ad197aa] Cancelled queue item 15
+2026-07-16 22:56:37,076 INFO [uvicorn.access] [-] [IP]:57159 - "POST /api/v1/queue/15/cancel HTTP/1.1" 200
+2026-07-16 22:59:43,793 INFO [backend.app.api.routes.print_queue] [97674297] Added library file 12 to queue for 1
+2026-07-16 22:59:43,829 INFO [uvicorn.access] [-] [IP]:54078 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-07-16 23:00:03,565 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-16 23:00:05,455 INFO [backend.app.services.camera] [e1a47608] Found ffmpeg at: /usr/bin/ffmpeg
+2026-07-16 23:00:41,582 INFO [backend.app.services.mqtt_relay] [c50cd7f8] MQTT relay disabled
+2026-07-16 23:00:41,597 INFO [uvicorn.access] [-] [IP]:54828 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-07-16 23:00:52,293 INFO [uvicorn.access] [-] [IP]:54828 - "POST /api/v1/notification-templates/preview HTTP/1.1" 200
+2026-07-16 23:03:42,939 INFO [backend.app.services.bambu_ftp] [-] FTP STOR confirmed for /AMS_Drawer_-_P1S(2).3mf: 226
+2026-07-16 23:03:42,940 INFO [backend.app.services.bambu_ftp] [-] FTP upload complete: /AMS_Drawer_-_P1S(2).3mf (100026242 bytes in 497.2s, 196 KB/s)
+2026-07-16 23:03:42,940 INFO [backend.app.services.bambu_ftp] [-] FTP mode cached for [IP]: prot_p
+2026-07-16 23:03:42,961 INFO [backend.app.main] [-] Registered expected print: printer=1, file=AMS_Drawer_-_P1S(2).3mf, archive=19, ams_mapping=[-1, -1, -1, -1, -1, -1, 1], plate_id=5
+2026-07-16 23:03:42,987 INFO [backend.app.services.print_scheduler] [-] Queue item 15 no longer pending at print-command time (cancelled or removed mid-dispatch) — aborting before MQTT send (#1853)
+2026-07-16 23:03:43,855 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-07-16 23:03:46,978 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(16, 1, None, 12)]
+2026-07-16 23:03:47,017 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=IDLE, awaiting_plate_clear=True
+2026-07-16 23:03:47,021 INFO [backend.app.services.print_scheduler] [-] Dispatching 1 queue item(s) with up to 4 concurrent upload(s): [16]
+2026-07-16 23:03:47,025 INFO [backend.app.services.print_scheduler] [-] Starting queue item 16
+2026-07-16 23:03:51,645 INFO [backend.app.services.print_scheduler] [-] Queue item 16: Created archive 20 from library file 12
+2026-07-16 23:03:51,664 INFO [backend.app.services.print_scheduler] [-] Queue item 16: FTP upload starting - printer=[PRINTER] (P1S), ip=[IP], file=AMS_Drawer_-_P1S(2).3mf, local_path=/home/[user]/bambuddy/archive/library/files/9c87642d024d40e99cd546f9a98b51e2.3mf, retry_enabled=True, retry_count=3, timeout=30.0
+2026-07-16 23:03:52,529 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-07-16 23:03:52,607 INFO [backend.app.services.bambu_ftp] [-] FTP connecting to [IP] for upload (model=P1S, mode=prot_p, socket_timeout=30.0s, deadline=3907s)...
+2026-07-16 23:03:53,457 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-07-16 23:03:53,458 INFO [backend.app.services.bambu_ftp] [-] FTP connected to [IP]
+2026-07-16 23:03:53,458 INFO [backend.app.services.bambu_ftp] [-] FTP uploading /home/[user]/bambuddy/archive/library/files/9c87642d024d40e99cd546f9a98b51e2.3mf (100026242 bytes) to /AMS_Drawer_-_P1S(2).3mf
+2026-07-16 23:03:53,527 INFO [backend.app.services.bambu_ftp] [-] FTP data channel ready in 0.1s (PASV + TLS handshake)
+2026-07-16 23:03:59,108 INFO [backend.app.api.routes.cloud] [f8ebf522] get_filament_info called with 1 IDs: ['GFB01']
+2026-07-16 23:03:59,765 INFO [uvicorn.access] [-] [IP]:63730 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-16 23:05:03,583 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-16 23:10:03,600 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-16 23:12:09,919 INFO [backend.app.services.bambu_ftp] [-] FTP STOR confirmed for /AMS_Drawer_-_P1S(2).3mf: 226
+2026-07-16 23:12:09,920 INFO [backend.app.services.bambu_ftp] [-] FTP upload complete: /AMS_Drawer_-_P1S(2).3mf (100026242 bytes in 496.5s, 197 KB/s)
+2026-07-16 23:12:09,920 INFO [backend.app.services.bambu_ftp] [-] FTP mode cached for [IP]: prot_p
+2026-07-16 23:12:09,943 INFO [backend.app.main] [-] Registered expected print: printer=1, file=AMS_Drawer_-_P1S(2).3mf, archive=20, ams_mapping=[-1, -1, -1, -1, -1, -1, 1], plate_id=5
+2026-07-16 23:12:09,956 INFO [backend.app.services.print_scheduler] [-] Queue item 16: Status set to 'printing', sending print command...
+2026-07-16 23:12:09,960 INFO [backend.app.services.printer_manager] [-] PRINT COMMAND: printer=1, file=AMS_Drawer_-_P1S(2).3mf, caller=print_scheduler.py:775:_one
+2026-07-16 23:12:09,961 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_5.gcode", "url": "ftp://AMS_Drawer_-_P1S(2).3mf", "file": "AMS_Drawer_-_P1S(2).3mf", "md5": "", "bed_type": "auto", "timelapse": true, "bed_leveling": true, "auto_bed_leveling": 1, "flow_cali": false, "vibration_cali": true, "layer_inspect": true, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 0, "subtask_name": "AMS_Drawer_-_P1S(2)", "profile_id": "0", "project_id": "1857302951", "subtask_id": "1857302951", "task_id": "1857302951", "ams_mapping": [-1, -1, -1, -1, -1, -1, 1], "ams_mapping2": [{"ams_id": 255, "slot_id": 255}, {"ams_id": 255, "slot_id": 255}, {"ams_id": 255, "slot_id": 255}, {"ams_id": 255, "slot_id": 255}, {"ams_id": 255, "slot_id": 255}, {"ams_id": 255, "slot_id": 255}, {"ams_id": 0, "slot_id": 1}]}}
+2026-07-16 23:12:09,962 INFO [backend.app.services.print_scheduler] [-] Queue item 16: Print started successfully - AMS_Drawer_-_P1S(2).gcode.3mf
+2026-07-16 23:12:09,990 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS Filament Backup: OFF
+2026-07-16 23:12:26,675 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT START detected - file: AMS_Drawer_-_P1S(2).3mf, subtask: AMS_Drawer_-_P1S(2), is_new: True, is_file_change: False
+2026-07-16 23:12:26,677 INFO [backend.app.main] [-] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-07-16 23:12:26,683 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Skipped trays with invalid remain% for printer 1: AMS0-T0(remain=-1), AMS0-T1(remain=-1), AMS0-T2(remain=-1), AMS0-T3(remain=-1)
+2026-07-16 23:12:26,683 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping=None, tray_now=1, last_loaded_tray=1
+2026-07-16 23:12:26,684 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping-related keys: {'ams_extruder_map': {'0': 0}}
+2026-07-16 23:12:26,684 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 0: T0(type=ASA, color=FFFAF2FF, now=?, tar=?), T1(type=ASA, color=FFFAF2FF, now=?, tar=?), T2(type=ASA, color=00FF11FF, now=?, tar=?), T3(type=, color=, now=?, tar=?)
+2026-07-16 23:12:26,689 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Snapshotted 4 spool assignments for printer 1: {'0-0': 3, '0-1': 5, '0-2': 4, '0-3': 6}
+2026-07-16 23:12:26,697 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (1 trays): {'255-0': 0}
+2026-07-16 23:12:26,707 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=False
+2026-07-16 23:12:26,707 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: AMS_Drawer_-_P1S(2).3mf, subtask: AMS_Drawer_-_P1S(2)
+2026-07-16 23:12:26,708 INFO [backend.app.main] [-] Using expected archive 20 for print (skipping duplicate)
+2026-07-16 23:12:26,719 INFO [backend.app.main] [-] [CALLBACK] Injected ams_mapping into usage tracker session: [-1, -1, -1, -1, -1, -1, 1]
+2026-07-16 23:12:26,723 INFO [backend.app.main] [-] [ENERGY] No smart plug for printer 1 (archive 20)
+2026-07-16 23:12:26,731 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-07-16 23:12:26,732 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:12:28,360 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 65016 bytes
+2026-07-16 23:12:28,361 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 ([PRINTER])
+2026-07-16 23:12:28,391 INFO [backend.app.services.notification_service] [-] Found 1 providers for print_start: ['Bambuddy Notification']
+2026-07-16 23:12:28,493 INFO [backend.app.services.notification_service] [-] Sent notification via Bambuddy Notification
+2026-07-16 23:12:28,663 INFO [backend.app.main] [-] Loaded 1 printable objects for printer 1
+2026-07-16 23:12:29,614 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-07-16 23:12:30,253 INFO [backend.app.main] [-] [TIMELAPSE] Baseline at print start: 15 video files for printer 1
+2026-07-16 23:12:34,585 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:13:13,742 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:13:52,642 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:14:32,974 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:15:03,620 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-16 23:15:11,496 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:15:51,340 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:16:03,700 INFO [backend.app.api.routes.cloud] [02875361] get_filament_info called with 1 IDs: ['GFB01']
+2026-07-16 23:16:05,050 INFO [uvicorn.access] [-] [IP]:61086 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-16 23:16:06,669 INFO [backend.app.api.routes.printers] [a56e0c72] Cover: resolved plate 5 before download (subtask=AMS_Drawer_-_P1S(2))
+2026-07-16 23:16:06,673 INFO [backend.app.api.routes.printers] [a56e0c72] Cover using cached 3MF from /home/[user]/bambuddy/archive/library/files/9c87642d024d40e99cd546f9a98b51e2.3mf (avoided duplicate FTP)
+2026-07-16 23:16:06,675 INFO [backend.app.api.routes.printers] [a56e0c72] Downloaded file size: 100026242 bytes
+2026-07-16 23:16:07,070 INFO [backend.app.api.routes.printers] [414e7d3c] Cover: resolved plate 5 before download (subtask=AMS_Drawer_-_P1S(2))
+2026-07-16 23:16:21,209 INFO [uvicorn.access] [-] [IP]:51450 - "POST /api/v1/printers/1/fan-speed?fan=aux&speed=0 HTTP/1.1" 200
+2026-07-16 23:16:31,607 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:17:10,991 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:17:51,286 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:18:31,062 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:19:10,176 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:19:10,585 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-07-16 23:19:10,585 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:19:12,795 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 104118 bytes
+2026-07-16 23:19:50,837 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:20:03,666 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-16 23:20:30,459 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:21:09,629 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:21:24,964 INFO [backend.app.api.routes.cloud] [9c7d8eca] get_filament_info called with 1 IDs: ['GFB01']
+2026-07-16 23:21:26,597 INFO [uvicorn.access] [-] [IP]:65197 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-16 23:21:51,019 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:22:25,197 INFO [uvicorn.access] [-] [IP]:64978 - "POST /api/v1/notifications/test-config HTTP/1.1" 200
+2026-07-16 23:22:30,242 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:22:37,524 INFO [backend.app.api.routes.notifications] [94335204] Created notification provider: Pushover (pushover)
+2026-07-16 23:22:37,531 INFO [uvicorn.access] [-] [IP]:55527 - "POST /api/v1/notifications/ HTTP/1.1" 200
+2026-07-16 23:23:10,206 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:23:49,700 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:24:28,255 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:25:03,684 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-16 23:25:08,630 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:25:47,083 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:26:11,174 INFO [backend.app.api.routes.notifications] [c4407361] Updated notification provider: Pushover
+2026-07-16 23:26:11,177 INFO [uvicorn.access] [-] [IP]:57232 - "PATCH /api/v1/notifications/2 HTTP/1.1" 200
+2026-07-16 23:26:12,707 INFO [backend.app.api.routes.notifications] [63207642] Updated notification provider: Pushover
+2026-07-16 23:26:12,710 INFO [uvicorn.access] [-] [IP]:57232 - "PATCH /api/v1/notifications/2 HTTP/1.1" 200
+2026-07-16 23:26:26,273 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:27:06,839 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:27:45,724 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:27:46,944 INFO [uvicorn.access] [-] [IP]:63657 - "POST /api/v1/notifications/test-config HTTP/1.1" 200
+2026-07-16 23:28:26,400 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:28:45,170 INFO [uvicorn.access] [-] [IP]:50282 - "POST /api/v1/notifications/test-config HTTP/1.1" 200
+2026-07-16 23:29:06,319 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:29:13,740 INFO [uvicorn.access] [-] [IP]:51528 - "POST /api/v1/notifications/test-config HTTP/1.1" 200
+2026-07-16 23:29:45,229 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:30:03,743 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-16 23:30:24,910 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:30:49,135 INFO [backend.app.api.routes.printers] [fb877a4d] Cover: resolved plate 5 before download (subtask=AMS_Drawer_-_P1S(2))
+2026-07-16 23:30:49,279 INFO [backend.app.api.routes.cloud] [04667c2c] get_filament_info called with 1 IDs: ['GFB01']
+2026-07-16 23:30:49,935 INFO [uvicorn.access] [-] [IP]:52423 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-16 23:31:04,251 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:31:43,473 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:32:23,525 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:33:02,425 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:33:43,925 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:33:59,898 INFO [backend.app.api.routes.notifications] [37a5e163] Created notification provider: Pushover Urgent (pushover)
+2026-07-16 23:33:59,903 INFO [uvicorn.access] [-] [IP]:50980 - "POST /api/v1/notifications/ HTTP/1.1" 200
+2026-07-16 23:34:03,155 INFO [uvicorn.access] [-] [IP]:50980 - "POST /api/v1/notifications/3/test HTTP/1.1" 200
+2026-07-16 23:34:24,481 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:35:03,322 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:35:03,762 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-16 23:35:34,640 INFO [uvicorn.access] [-] [IP]:63026 - "POST /api/v1/notifications/test-config HTTP/1.1" 200
+2026-07-16 23:35:43,778 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:36:22,835 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:37:01,811 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:37:41,966 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:38:20,857 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:38:22,194 INFO [backend.app.api.routes.notifications] [0284a400] Updated notification provider: Pushover Urgent
+2026-07-16 23:38:22,196 INFO [uvicorn.access] [-] [IP]:52169 - "PATCH /api/v1/notifications/3 HTTP/1.1" 200
+2026-07-16 23:38:28,643 INFO [uvicorn.access] [-] [IP]:54471 - "POST /api/v1/notifications/3/test HTTP/1.1" 200
+2026-07-16 23:39:01,243 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:39:40,615 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:40:03,778 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-16 23:40:19,693 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:41:00,181 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:41:12,786 INFO [uvicorn.access] [-] [IP]:57709 - "POST /api/v1/notifications/test-config HTTP/1.1" 200
+2026-07-16 23:41:38,689 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:42:18,558 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:42:53,004 INFO [backend.app.api.routes.support] [fff5ddee] Log level changed to DEBUG
+2026-07-16 23:42:53,005 INFO [backend.app.api.routes.bug_report] [fff5ddee] Bug report: enabled debug logging
+2026-07-16 23:42:53,005 DEBUG [backend.app.services.bambu_mqtt] [fff5ddee] [[SERIAL]] Requesting status update (pushall)
+2026-07-16 23:42:53,007 INFO [uvicorn.access] [-] [IP]:52066 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-07-16 23:42:53,643 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: AMS_Drawer_-_P1S(2).3mf, subtask_name: AMS_Drawer_-_P1S(2)
+2026-07-16 23:42:53,643 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': '7', 'tray_is_bbl_bits': '7', 'tray_tar': '1', 'tray_now': '1', 'tray_pre': '1', 'tray_read_done_bits': '7', 'tray_reading_bits': '0', 'version': 12, 'insert_flag': True, 'power_on_flag': False}
+2026-07-16 23:42:53,644 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 1
+2026-07-16 23:42:53,644 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-07-16 23:42:53,645 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x2003 -> extruder 0
+2026-07-16 23:42:53,645 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-16 23:42:53,646 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-07-16 23:42:53,646 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-16 23:42:53,646 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-07-16 23:42:53,647 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-07-16 23:42:53,647 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-07-16 23:42:53,648 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-07-16 23:42:53,648 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-07-16 23:42:53,649 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'enable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-07-16 23:42:53,649 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Timelapse detected during print (from ipcam)
+2026-07-16 23:42:53,649 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -33dBm
+2026-07-16 23:42:53,650 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-07-16 23:42:53,650 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: AMS_Drawer_-_P1S(2).3mf, subtask: AMS_Drawer_-_P1S(2)
+2026-07-16 23:42:55,730 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-16 23:42:55,731 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-16 23:42:57,652 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-16 23:42:59,549 DEBUG [backend.app.services.camera] [-] Chamber image: received 68813 bytes
+2026-07-16 23:42:59,794 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-16 23:42:59,798 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -32dBm
+2026-07-16 23:43:05,012 DEBUG [backend.app.main] [-] Recorded 3 printer sensor history entries
+2026-07-16 23:43:08,771 INFO [uvicorn.access] [-] [IP]:52066 - "POST /api/v1/notifications/test-config HTTP/1.1" 200
+2026-07-16 23:43:09,915 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-16 23:43:09,918 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -34dBm
+2026-07-16 23:43:11,719 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: added 30s, total=400900s (111.36h)
+2026-07-16 23:43:11,741 DEBUG [backend.app.main] [-] Updated runtime for 1 printer(s)
+2026-07-16 23:43:11,954 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-16 23:43:11,955 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -32dBm

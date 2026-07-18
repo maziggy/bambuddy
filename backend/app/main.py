@@ -6824,16 +6824,16 @@ async def auth_middleware(request, call_next):
             raise ValueError("No jti in token")
         iat = payload.get("iat")
 
-        # Reject revoked tokens (defense-in-depth gateway check)
-        if await is_jti_revoked(jti):
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Token has been revoked"},
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        # Verify user exists, is active, and token is still fresh (L-R8-A)
+        # Verify user exists, is active, and token is still fresh (L-R8-A).
+        # Reject revoked tokens first (defense-in-depth gateway check), reusing
+        # this session so the gateway adds a single pooled checkout, not two (#2572).
         async with async_session() as db:
+            if await is_jti_revoked(jti, db):
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Token has been revoked"},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
             user = await get_user_by_username(db, username)
             if not user or not user.is_active:
                 return JSONResponse(

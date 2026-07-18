@@ -3715,6 +3715,19 @@ class BambuMQTTClient:
                         self.serial_number,
                     )
 
+            # Symmetric to the gate above: if the resolved mapping targets a real
+            # AMS tray, force use_ams=True even when the incoming/stored value was
+            # False. Queue 'Any [model]' jobs arrive external-only from the VP (the
+            # slicer sees no AMS on the virtual printer) and are colour-matched to a
+            # real slot at dispatch — the stale False must not override that (#2595).
+            if ams_mapping and not use_ams and not is_dual_nozzle:
+                if any(t is not None and 0 <= int(t) < 254 for t in ams_mapping):
+                    use_ams = True
+                    logger.info(
+                        "[%s] Resolved AMS slot in mapping — setting use_ams=True",
+                        self.serial_number,
+                    )
+
             # Unique per-submission identity fields. Hardcoded "0" values caused
             # third-party MQTT observers (OctoEverywhere, etc.) to see reprints as
             # continuations of the same job: the printer reuses gcode_start_time

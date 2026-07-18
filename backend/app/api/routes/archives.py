@@ -593,8 +593,12 @@ async def list_archives_slim(
                 # print_time_seconds (slicer estimate) for non-completed
                 # events would diverge from Quick Stats — so expose the
                 # measured value here unconditionally.
+                #
+                # Trust an explicit 0 (reconciled aborts store it deliberately;
+                # their real end time is unknown) instead of recomputing the
+                # multi-day disconnect gap from the timestamps (#2592).
                 r.duration_seconds
-                if r.duration_seconds and r.duration_seconds > 0
+                if r.duration_seconds is not None
                 else (
                     int((r.completed_at - r.started_at).total_seconds())
                     if r.started_at and r.completed_at and (r.completed_at - r.started_at).total_seconds() > 0
@@ -1071,7 +1075,12 @@ async def get_archive_stats(
     )
     total_seconds = 0
     for duration_seconds, started_at, completed_at in time_rows.all():
-        if duration_seconds:
+        # Trust an explicitly stored duration, INCLUDING 0: a reconciled abort
+        # stores 0 on purpose because its real end time is unknown, and the
+        # started_at→completed_at fallback would otherwise bank the whole
+        # multi-day disconnect gap as print time (#2592). Only rows with a NULL
+        # duration (legacy entries that never recorded one) fall back.
+        if duration_seconds is not None:
             total_seconds += duration_seconds
         elif started_at and completed_at:
             elapsed = (completed_at - started_at).total_seconds()

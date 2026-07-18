@@ -3916,23 +3916,46 @@ class BambuMQTTClient:
                         flat_ams_mapping.append(tray_id)
                         ams_mapping2.append({"ams_id": ams_id, "slot_id": slot_id})
 
-            # If all mapped slots are external spool (no real AMS trays), force use_ams=False.
-            # P1S/P1P with no AMS rejects use_ams=True with "Failed to get AMS mapping table".
-            # Skip for dual-nozzle printers — use_ams controls nozzle routing there.
-            # H2S falls through this gate now (#1386): it is single-nozzle and was
+            # Reconcile use_ams against the resolved ams_mapping for single-nozzle
+            # printers — the mapping is authoritative about whether this print
+            # actually feeds from the AMS. Skip for dual-nozzle printers, where
+            # use_ams encodes nozzle routing rather than an AMS on/off flag.
+            # H2S falls through here now (#1386): it is single-nozzle and was
             # hitting the dual-nozzle bypass, which caused 07FF_8012 when printing
             # without an AMS attached.
             #
-            # Only an *explicit* external/virtual spool (254/255) may downgrade to
-            # use_ams=False. An unresolved slot (-1) must NOT: it means the mapping
-            # was never resolved — e.g. a frontend status-load race that persisted
-            # [-1] (#2589) — and treating that as "external" silently started the
-            # print against an empty external feed, pausing with a runout. A genuine
-            # external selection is >=254; unresolved is -1. Keep them distinct so an
-            # unresolved mapping fails loudly (or is recomputed upstream) instead of
-            # silently going external.
-            if ams_mapping and use_ams and not is_dual_nozzle:
-                if all(t is None or int(t) >= 254 for t in ams_mapping):
+            # Two symmetric corrections:
+            #
+            # (a) A mapping that resolves a *real* AMS tray (0-253) forces
+            #     use_ams=True even if it arrived False. A print sent to a Virtual
+            #     Printer is sliced against the VP, which advertises no AMS, so the
+            #     slicer sends use_ams=false and that gets stamped on the queue item
+            #     — but at dispatch the scheduler colour-matches a real printer and
+            #     resolves a real AMS slot. Without this, the stale False reaches the
+            #     printer, which ignores the mapped slot and aborts at layer 0 on the
+            #     empty external spool ("not enough filament"). Diagnosed by
+            #     @Sawtaytoes (#2595, PR #2596).
+            #
+            # (b) Only an *explicit* external/virtual spool (254/255) may downgrade
+            #     to use_ams=False. P1S/P1P with no AMS rejects use_ams=True with
+            #     "Failed to get AMS mapping table". An unresolved slot (-1) does
+            #     NEITHER: it means the mapping was never resolved — e.g. a frontend
+            #     status-load race that persisted [-1] (#2589) — and treating it as
+            #     external silently started the print against an empty feed. A genuine
+            #     external selection is >=254; unresolved is -1; a loaded tray is
+            #     0-253. Keeping them distinct means an unresolved mapping fails loudly
+            #     (or is recomputed upstream) instead of silently going external, and
+            #     never gets force-enabled by (a) either.
+            if ams_mapping and not is_dual_nozzle:
+                has_real_tray = any(t is not None and 0 <= int(t) <= 253 for t in ams_mapping)
+                all_external = all(t is None or int(t) >= 254 for t in ams_mapping)
+                if has_real_tray and not use_ams:
+                    use_ams = True
+                    logger.info(
+                        "[%s] AMS mapping resolved a real slot — setting use_ams=True (#2595)",
+                        self.serial_number,
+                    )
+                elif use_ams and all_external:
                     use_ams = False
                     logger.info(
                         "[%s] All filament slots use external spool — setting use_ams=False",

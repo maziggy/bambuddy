@@ -84,6 +84,11 @@ class Settings(BaseSettings):
     db_max_overflow: int | None = Field(default=None, ge=0)
     db_pool_timeout: int | None = Field(default=None, gt=0)
     db_pool_recycle: int | None = Field(default=None, gt=0)
+    # LIFO checkout (PostgreSQL default on): reuse the most-recently-returned
+    # connection so a bursty farm keeps a small hot set busy and lets the excess
+    # overflow connections age out via pool_recycle instead of churning the whole
+    # pool. Override with DB_POOL_USE_LIFO. No effect on SQLite. (#2572)
+    db_pool_use_lifo: bool | None = Field(default=None)
 
     # Logging
     log_level: str = "INFO"  # Override with LOG_LEVEL env var or DEBUG=true

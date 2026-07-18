@@ -88,7 +88,7 @@ def _ints(**values):
 @pytest.mark.asyncio
 async def test_global_disabled_inherit_skips(scheduler, item, archive):
     """preheat_enabled=False + item.preheat_override='inherit' → no heater dispatch."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
 
     with (
@@ -106,7 +106,7 @@ async def test_global_disabled_inherit_skips(scheduler, item, archive):
 @pytest.mark.asyncio
 async def test_item_override_off_bypasses_global_on(scheduler, item, archive):
     """preheat_enabled=True + item.preheat_override='off' → preheat suppressed."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
     item.preheat_override = "off"
 
@@ -126,7 +126,7 @@ async def test_item_override_off_bypasses_global_on(scheduler, item, archive):
 async def test_item_override_on_runs_despite_global_off(scheduler, item, archive):
     """preheat_enabled=False + item.preheat_override='on' → preheat runs (bed
     fires, chamber depends on the resolved target)."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
     item.preheat_override = "on"
     item.preheat_chamber_target_override = 0  # explicit no-chamber so the assertion is sharp
@@ -154,7 +154,7 @@ async def test_item_override_on_runs_despite_global_off(scheduler, item, archive
 async def test_chamber_target_override_beats_filament_map(scheduler, item, archive):
     """item.preheat_chamber_target_override is the highest-priority source —
     a PLA-only print with an explicit 50°C override still heats the chamber."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
     item.preheat_chamber_target_override = 50
 
@@ -178,7 +178,7 @@ async def test_filament_map_picks_max_across_loaded_slots(scheduler, item, archi
     """Mixed PA + PLA load: PA=50 + PLA=0 → chamber target 50 (the max).
     The "lowest common denominator" model is wrong here; PA's requirement
     is the binding constraint."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
 
     with (
@@ -203,7 +203,7 @@ async def test_filament_map_picks_max_across_loaded_slots(scheduler, item, archi
 async def test_pla_only_derives_zero_chamber_skips(scheduler, item, archive):
     """PLA-only print: filament-map lookup returns 0 → chamber phase skips
     automatically without the user touching anything."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
 
     with (
@@ -226,7 +226,7 @@ async def test_unknown_filament_type_falls_to_default(scheduler, item, archive):
     """A loaded tray with a type not in the map uses the `default` entry —
     keeps users with custom filament names safe (they get 0 by default,
     can be tuned via the per-filament editor)."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
 
     with (
@@ -248,7 +248,7 @@ async def test_unknown_filament_type_falls_to_default(scheduler, item, archive):
 async def test_custom_filament_targets_json_parses(scheduler, item, archive):
     """User-customised filament-target JSON overrides the bundled defaults —
     raising PLA to 30°C makes a PLA-only print actually heat the chamber."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
     custom_map = '{"PLA": 30, "default": 0}'
 
@@ -270,7 +270,7 @@ async def test_custom_filament_targets_json_parses(scheduler, item, archive):
 async def test_malformed_filament_targets_falls_back_to_defaults(scheduler, item, archive):
     """A corrupted JSON in the setting must not break the scheduler — log
     and use bundled defaults."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
 
     with (
@@ -298,7 +298,7 @@ async def test_malformed_filament_targets_falls_back_to_defaults(scheduler, item
 async def test_no_bed_temperature_in_archive_skips(scheduler, item):
     """Archive without bed_temperature metadata skips entirely rather than
     guessing a default that might wreck a non-PLA print."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
     bare_archive = SimpleNamespace(bed_temperature=None)
 
@@ -320,7 +320,7 @@ async def test_no_bed_temperature_in_archive_skips(scheduler, item):
 async def test_x1c_skips_m141_but_waits_passively(scheduler, item, archive):
     """X1C has a chamber sensor but no active heater — M141 must NOT fire even
     when the filament map derives a non-zero target."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
 
     with (
@@ -343,7 +343,7 @@ async def test_x1c_skips_m141_but_waits_passively(scheduler, item, archive):
 async def test_p1s_no_chamber_sensor_uses_soak_timer_only(scheduler, item, archive):
     """P1S has no chamber sensor — derived target is ignored for the wait
     loop, only the soak timer applies."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
 
     with (
@@ -365,7 +365,7 @@ async def test_p1s_no_chamber_sensor_uses_soak_timer_only(scheduler, item, archi
 @pytest.mark.asyncio
 async def test_lost_client_skips_silently(scheduler, item, archive):
     """If the MQTT client drops, the helper returns without raising."""
-    db = MagicMock()
+    db = AsyncMock()
 
     with (
         patch.object(scheduler, "_get_bool_setting", AsyncMock(return_value=True)),
@@ -385,7 +385,7 @@ async def test_h2d_flips_airduct_to_heating_before_m141(scheduler, item, archive
     chamber fan actively extracts the heat we're trying to put in and the
     chamber never converges. Verify airduct=heating fires AND lands before
     the chamber-target call so the heater starts in the right airflow regime."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
     call_order = []
     client.set_airduct_mode.side_effect = lambda mode: call_order.append(("airduct", mode)) or True
@@ -417,7 +417,7 @@ async def test_x1c_skips_airduct_no_heater_no_call(scheduler, item, archive):
     AND has_heater, so X1C gets neither call regardless. Important: a
     spurious set_airduct on X1C wouldn't just be wasted MQTT — there's no
     flap to set, so the firmware response would be undefined behaviour."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
 
     with (
@@ -452,7 +452,7 @@ async def test_get_preheat_filament_targets_defaults_when_missing(scheduler):
     """Empty / null setting → bundled defaults are used. _get_preheat_filament_targets
     upper-cases the keys, so the bundled `default` becomes `DEFAULT` on the
     returned dict — keep both spellings synced."""
-    db = MagicMock()
+    db = AsyncMock()
     with patch.object(scheduler, "_get_setting", AsyncMock(return_value=None)):
         targets = await scheduler._get_preheat_filament_targets(db)
     # The bundled defaults dict is kept as-is on the "no setting" path, so
@@ -475,7 +475,7 @@ async def test_h2d_chamber_heat_switches_airduct_to_heating(scheduler, item, arc
     with chamber_target > 0 must switch the airduct to heating BEFORE the
     M141 dispatch — otherwise the open exhaust flap actively fights the
     chamber heater and the chamber never converges."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
 
     with (
@@ -500,7 +500,7 @@ async def test_h2d_chamber_zero_switches_airduct_to_cooling(scheduler, item, arc
     previously left in heating mode (from a prior ABS run) must switch
     back to cooling. Otherwise PLA prints inherit ABS's closed-flap recirc
     and run hot."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
 
     with (
@@ -524,7 +524,7 @@ async def test_h2d_airduct_already_correct_idempotent(scheduler, item, archive):
     """If the airduct is already in the desired mode, don't re-send
     `set_airduct` — the firmware accepts it but it generates needless MQTT
     chatter and could thrash the flap motor on rapid repeats."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
 
     with (
@@ -551,7 +551,7 @@ async def test_x1c_no_airduct_flap_never_fires_set_airduct(scheduler, item, arch
     no-op. Regression guard: wiring this to `supports_chamber_temp` or
     `supports_chamber_heater` alone would have leaked the command to
     X1C/X1E or P2S inappropriately."""
-    db = MagicMock()
+    db = AsyncMock()
     client = _make_client()
 
     with (

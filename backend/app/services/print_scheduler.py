@@ -2509,6 +2509,15 @@ class PrintScheduler:
             except Exception as exc:
                 logger.warning("Queue item %s: preheat chamber M141 failed: %s", item.id, exc)
 
+        # Release the pooled DB connection before the (potentially many-minute)
+        # heat-soak wait below (#2572). Every setting this method needs is read
+        # above; the wait/soak loop only polls printer_manager state and sleeps —
+        # it never touches the DB. Without this the caller's transaction sat
+        # "idle in transaction" for the whole soak, pinning one pooled connection
+        # per preheating printer. expire_on_commit=False keeps item/printer
+        # readable afterwards; there are no pending writes to lose here.
+        await db.commit()
+
         # Wait for convergence. Bed warm-up is fast (~5 min from cold); chamber
         # via M141 takes a few minutes; chamber via bed radiation can take 20+.
         # Poll every 3s — frequent enough for responsive logging without
@@ -3070,6 +3079,19 @@ class PrintScheduler:
             f"ip={printer.ip_address}, file={remote_filename}, local_path={file_path}, "
             f"retry_enabled={ftp_retry_enabled}, retry_count={ftp_retry_count}, timeout={ftp_timeout}"
         )
+
+        # Release the pooled DB connection before the FTP delete/upload (#2572).
+        # Every read this method needs (printer, archive/library, preheat) is
+        # done, and the library-file branch already committed its archive
+        # creation. Without this the transaction opened by the first SELECT above
+        # stays "idle in transaction" for the entire upload — multiple seconds
+        # for a large 3MF — pinning one pooled connection per in-flight dispatch;
+        # a farm dispatching many jobs at once then exhausts the pool. This was
+        # correlated to an exact idle-in-transaction session on a 93-printer farm
+        # (reporter @Jostxxl). expire_on_commit=False keeps item/printer/archive
+        # readable; the status writes below (upload-failure path and the
+        # pending->printing CAS) transparently open a fresh transaction.
+        await db.commit()
 
         # Delete existing file if present (avoids 553 error on overwrite)
         try:

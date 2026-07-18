@@ -51,6 +51,9 @@ def _resolve_pool_kwargs() -> dict:
             "max_overflow": max_overflow,
             "pool_pre_ping": True,
             "pool_recycle": settings.db_pool_recycle if settings.db_pool_recycle is not None else 1800,
+            # LIFO checkout keeps a bursty farm on a small hot connection set and
+            # lets overflow connections recycle out during quiet spells (#2572).
+            "pool_use_lifo": settings.db_pool_use_lifo if settings.db_pool_use_lifo is not None else True,
         }
     if settings.db_pool_timeout is not None:
         kwargs["pool_timeout"] = settings.db_pool_timeout
@@ -69,6 +72,7 @@ def _create_engine():
         "pool_timeout": kwargs.get("pool_timeout", 30),
         "pool_recycle": kwargs.get("pool_recycle", -1),
         "pool_pre_ping": kwargs.get("pool_pre_ping", False),
+        "pool_use_lifo": kwargs.get("pool_use_lifo", False),
     }
 
     eng = create_async_engine(

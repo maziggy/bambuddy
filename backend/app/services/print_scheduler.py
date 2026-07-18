@@ -2868,6 +2868,28 @@ class PrintScheduler:
             )
             return
 
+        # Busy-printer guard (#2598). check_queue gates dispatch on
+        # _is_printer_idle(), but that treats FINISH as idle and a printer can
+        # keep reporting FINISH for tens of seconds *after* it accepted a
+        # project_file (see the watchdog's phase-B note). A watchdog revert
+        # (#2555) also releases the dispatch hold, so a re-selected item can
+        # reach here while its printer has actually started printing. Uploading
+        # and dispatching then collides with the live job — the firmware answers
+        # 0500_4004 and, on an A1 mini, cancels the running print. Re-check the
+        # live state right before the expensive FTP upload: if the printer is
+        # busy, leave the item pending and let a later tick dispatch it once the
+        # printer is genuinely idle. No wasted upload, no collision.
+        pre_dispatch_state = getattr(printer_manager.get_status(item.printer_id), "state", None)
+        if pre_dispatch_state in _ACTIVE_PRINT_STATES:
+            logger.info(
+                "Queue item %s: printer %s is busy (state=%s) — deferring dispatch, "
+                "leaving item pending for a later tick (#2598)",
+                item.id,
+                item.printer_id,
+                pre_dispatch_state,
+            )
+            return
+
         # Determine source: archive or library file
         archive = None
         library_file = None
@@ -3446,6 +3468,29 @@ class PrintScheduler:
                 )
             except Exception:
                 pass  # Best-effort — don't fail the error handler
+
+            # Busy-refusal is a deferral, not a failure (#2598). The printer's
+            # state can flip from idle to active in the window between the
+            # pre-dispatch check above and this publish (the FTP upload takes
+            # seconds); start_print() then refuses to send project_file to the
+            # now-busy printer and returns False. Failing the item here would be
+            # wrong — the printer is fine, it is simply busy — so revert to
+            # pending and let a later tick dispatch it once the printer is idle,
+            # exactly like the pre-dispatch guard. Only a start_print() False on
+            # an idle/unknown printer is a genuine command failure.
+            post_dispatch_state = getattr(printer_manager.get_status(item.printer_id), "state", None)
+            if post_dispatch_state in _ACTIVE_PRINT_STATES:
+                logger.info(
+                    "Queue item %s: printer %s became busy (state=%s) before the start "
+                    "command was sent — deferring, reverting item to pending (#2598)",
+                    item.id,
+                    item.printer_id,
+                    post_dispatch_state,
+                )
+                item.status = "pending"
+                item.started_at = None
+                await db.commit()
+                return
 
             # Print command failed - revert status
             item.status = "failed"

@@ -32,6 +32,14 @@ logger = logging.getLogger(__name__)
 #   "n3s/<id>"  – AMS HT (H2D Pro and similar; IDs typically start at 128)
 _AMS_MODULE_PREFIXES = ("ams/", "n3f/", "n3s/")
 
+# gcode_state values that mean the printer is not idle and must not be handed a
+# new start-print (#2598). The firmware rejects a project_file while busy with
+# 0500_4004 "Device is busy and cannot start a new task", and on some models
+# (A1 mini reported) that error cancels the RUNNING job. IDLE / FINISH / FAILED
+# are valid start targets and are deliberately excluded. Mirrors
+# printer_manager.ACTIVE_PRINT_STATES and print_scheduler._ACTIVE_PRINT_STATES.
+_ACTIVE_PRINT_STATES = frozenset({"PREPARE", "SLICING", "RUNNING", "PAUSE"})
+
 
 def parse_ams_filament_backup_from_cfg(cfg_raw: object) -> bool | None:
     """Extract AMS Filament Backup state from a Bambu push_status ``print.cfg`` value.
@@ -3851,7 +3859,31 @@ class BambuMQTTClient:
                 firmware honours the user's slicer pick instead of falling
                 back to "last matching nozzle" auto-pick. Silently ignored
                 on single-nozzle printers.
+
+        Returns True when the start command was published, False otherwise
+        (not connected, or the printer is already busy — see the run-state
+        guard below).
         """
+        # Never dispatch project_file to a printer that is not idle (#2598).
+        # This is the single publish choke point for every dispatch path — the
+        # queue scheduler, a manual start, a webhook, and a Virtual-Printer
+        # forwarded job all funnel through here — so one guard covers them all.
+        # The firmware rejects a start while busy with 0500_4004 ("Device is
+        # busy and cannot start a new task"), and on an A1 mini that error
+        # cancels the RUNNING job (#2598). IDLE / FINISH / FAILED are valid
+        # start targets; only the active-print states are refused. (A
+        # transport-level QoS-1 replay on reconnect would bypass this guard,
+        # but the dispatch/watchdog reconnect path hard-resets the client with a
+        # fresh client_id, so paho has no inflight project_file to replay there.)
+        if self.state.state in _ACTIVE_PRINT_STATES:
+            logger.warning(
+                "[%s] start_print refused: printer busy (gcode_state=%s) — not publishing project_file for %s",
+                self.serial_number,
+                self.state.state,
+                filename,
+            )
+            return False
+
         if self._client and self.state.connected:
             # Bambu print command format — matches Bambu Studio's format.
             # The calibration/leveling fields (timelapse, bed_leveling,

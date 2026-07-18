@@ -91,6 +91,19 @@ _PROFILES: dict[str, FTPProfile] = {
     "X2D": FTPProfile(
         cap_tls_v1_2=True,
     ),
+    # H2C firmware 01.02.00.00 (#2582, reporter @gyrene2083) — same H2
+    # generation and same firmware line as P2S, and with no profile it
+    # ran on the Python-default TLS 1.3. Reported symptom is exactly the
+    # one the X2D comment describes: the sliced 3MF intermittently fails
+    # to come off the printer over FTPS, so the print drops to the no-3MF
+    # fallback archive with no slice data — which is why the Print Log
+    # shows no filament and nothing is deducted. Cap to TLS 1.2 by analogy
+    # with P2S (intermittent "sometimes works" points at the session-reuse
+    # variant, not X2D's deterministic handshake failure); if a debug
+    # capture shows a different FTPS variant the entry stays the tuning slot.
+    "H2C": FTPProfile(
+        cap_tls_v1_2=True,
+    ),
 }
 
 # SSDP internal codes that should resolve to a display-name profile.
@@ -98,6 +111,8 @@ _PROFILES: dict[str, FTPProfile] = {
 _MODEL_ALIASES: dict[str, str] = {
     "N7": "P2S",  # P2S internal SSDP code
     "N6": "X2D",  # X2D internal SSDP code
+    "O1C": "H2C",  # H2C internal SSDP code
+    "O1C2": "H2C",  # H2C dual-nozzle variant SSDP code
 }
 
 

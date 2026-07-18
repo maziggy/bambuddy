@@ -1,0 +1,200 @@
+issuer=CN=Virtual Printer CA
+2026-07-18 23:27:00,116 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT SSL context: TLS 1.2+, cert=/app/data/virtual_printer/certs/1/virtual_printer.crt
+2026-07-18 23:27:00,117 INFO [backend.app.services.virtual_printer.tcp_proxy] [-] Starting Camera-6000 TCP proxy: [IP]:6000 → [IP]:6000
+2026-07-18 23:27:00,123 INFO [backend.app.services.virtual_printer.bind_server] [-] Starting bind server on ports [3000, 3002] (serial=[SERIAL], model=C12, tls=True)
+2026-07-18 23:27:00,124 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Starting virtual printer SSDP server: [PRINTER] Buddy ([SERIAL])
+2026-07-18 23:27:00,125 INFO [backend.app.services.virtual_printer.ssdp_server] [-] SSDP server listening on port 2021, advertising IP: [IP]
+2026-07-18 23:27:00,125 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Virtual printer: [PRINTER] Buddy ([SERIAL]) model=C12
+2026-07-18 23:27:00,126 INFO [backend.app.services.virtual_printer.ssdp_server] [-] SSDP server also listening on [IP]:2021
+2026-07-18 23:27:00,127 INFO [backend.app.services.virtual_printer.ssdp_server] [-] Sent initial SSDP NOTIFY announcement
+2026-07-18 23:27:00,130 WARNING [backend.app.services.virtual_printer.bind_server] [-] Bind server port 3000 already in use, skipping
+2026-07-18 23:27:00,131 INFO [backend.app.services.virtual_printer.ftp_server] [-] Implicit FTPS server started on port 990
+2026-07-18 23:27:00,131 INFO [backend.app.services.virtual_printer.ftp_server] [-] FTP passive data port range: 50000-50009
+2026-07-18 23:27:00,132 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Simple MQTT server listening on port 8883
+2026-07-18 23:27:00,133 INFO [backend.app.services.virtual_printer.tcp_proxy] [-] Camera-6000 TCP proxy listening on port 6000
+2026-07-18 23:27:00,134 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Starting periodic status push task
+2026-07-18 23:27:00,135 INFO [backend.app.services.virtual_printer.bind_server] [-] Bind server listening on [IP]:3002 (TLS)
+2026-07-18 23:27:00,137 INFO [backend.app.services.virtual_printer.manager] [-] [VP [PRINTER] Buddy] Server-mode services started on [IP]
+2026-07-18 23:27:00,137 INFO [backend.app.services.virtual_printer.manager] [-] Started server-mode VP: [PRINTER] Buddy on [IP]
+2026-07-18 23:27:00,138 INFO [root] [-] Virtual printer manager synced from database
+2026-07-18 23:27:00,863 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-18 23:27:00,939 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] State is FINISH but completion NOT triggered: prev=None, was_running=False, already_triggered=False, has_callback=True
+2026-07-18 23:27:00,945 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-07-18 23:27:00,956 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-07-18 23:27:00,963 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Firmware version: 01.10.00.00
+2026-07-18 23:27:01,524 INFO [backend.app.services.spoolman] [-] Updating spool 47 by slot-assignment hint (no RFID tag available)
+2026-07-18 23:27:01,635 INFO [backend.app.services.spoolman] [-] Updating spool 47 by slot-assignment hint (no RFID tag available)
+2026-07-18 23:27:01,656 INFO [backend.app.services.spoolman] [-] Updating spool 3 by slot-assignment hint (no RFID tag available)
+2026-07-18 23:27:01,681 INFO [backend.app.services.spoolman] [-] Updating spool 3 by slot-assignment hint (no RFID tag available)
+2026-07-18 23:27:01,702 INFO [backend.app.services.spoolman] [-] Updating spool 48 by slot-assignment hint (no RFID tag available)
+2026-07-18 23:27:01,717 INFO [backend.app.services.spoolman] [-] Updating spool 48 by slot-assignment hint (no RFID tag available)
+2026-07-18 23:27:01,756 INFO [backend.app.main] [-] Auto-synced 3 AMS trays to Spoolman for printer 1
+2026-07-18 23:27:01,767 INFO [backend.app.main] [-] Auto-synced 3 AMS trays to Spoolman for printer 1
+2026-07-18 23:27:02,565 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] MQTT TLS connection from ('[IP]', 55227) - cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256), version=TLSv1.3
+2026-07-18 23:27:02,566 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] MQTT client connected: [IP]:55227
+2026-07-18 23:27:02,567 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] MQTT client authenticated successfully
+2026-07-18 23:27:02,569 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] MQTT client [IP]:55227 authenticated (negotiated keepalive=60s, idle disconnect disabled)
+2026-07-18 23:27:03,739 INFO [backend.app.api.routes.camera] [ce0543e9] Using chamber image protocol for P1S
+2026-07-18 23:27:03,740 INFO [backend.app.api.routes.camera] [ce0543e9] Camera viewer attached to printer-1 (subscribers=1)
+2026-07-18 23:27:03,742 INFO [backend.app.api.routes.camera] [ce0543e9] Starting chamber image stream for [IP] (stream_id=1-fanout, model=P1S)
+2026-07-18 23:27:03,792 INFO [uvicorn.access] [-] [IP]:46500 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-18 23:27:03,830 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-18 23:27:03,837 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-18 23:27:03,839 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-07-18 23:27:04,493 INFO [backend.app.services.camera] [ce0543e9] Chamber image: connected to [IP]:6000
+2026-07-18 23:27:09,598 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 23:27:16,231 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Probing developer mode via ams_filament_setting (seq=5)
+2026-07-18 23:27:16,278 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Developer mode probe: ENABLED (result='success')
+2026-07-18 23:28:00,402 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 58 pushes/min to [IP]:55227
+2026-07-18 23:29:00,538 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 60 pushes/min to [IP]:55227
+2026-07-18 23:29:20,670 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-18 23:29:20,672 INFO [backend.app.api.routes.camera] [ce0543e9] Camera viewer detached from printer-1 (subscribers=0)
+2026-07-18 23:29:21,209 INFO [uvicorn.access] [-] [IP]:45818 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-18 23:29:21,954 INFO [uvicorn.access] [-] [IP]:45832 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-18 23:29:22,048 INFO [backend.app.api.routes.camera] [91ea119f] Using chamber image protocol for P1S
+2026-07-18 23:29:22,049 INFO [backend.app.api.routes.camera] [91ea119f] Camera viewer attached to printer-1 (subscribers=1)
+2026-07-18 23:29:22,168 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-18 23:29:22,286 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-18 23:29:22,287 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-07-18 23:29:22,894 INFO [backend.app.api.routes.cloud] [caa2628d] get_filament_info called with 3 IDs: ['GFSNL03', 'GFL99', 'GFSNL04']
+2026-07-18 23:29:23,617 INFO [uvicorn.access] [-] [IP]:46038 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-18 23:29:38,902 INFO [backend.app.services.bambu_mqtt] [27b73d6a] [[SERIAL]] Publishing ams_filament_setting: AMS 0, tray 2, tray_info_idx=GFL99, setting_id=GFSL99
+2026-07-18 23:29:38,903 INFO [backend.app.services.bambu_mqtt] [27b73d6a] [[SERIAL]] Publishing extrusion_cali_sel: AMS 0, tray 2, cali_idx=-1
+2026-07-18 23:29:38,905 INFO [backend.app.api.routes.spoolman_inventory] [27b73d6a] No stored K-profile for Spoolman spool 52 — reset slot to Default K (cali_idx=-1)
+2026-07-18 23:29:38,906 INFO [backend.app.api.routes.spoolman_inventory] [27b73d6a] Auto-configured AMS slot ams=0 tray=2 for Spoolman spool 52 on printer 1
+2026-07-18 23:29:38,909 INFO [uvicorn.access] [-] [IP]:35776 - "POST /api/v1/spoolman/inventory/slot-assignments HTTP/1.1" 200
+2026-07-18 23:29:39,136 INFO [uvicorn.access] [-] [IP]:35786 - "POST /api/v1/printers/1/refresh-status HTTP/1.1" 200
+2026-07-18 23:30:00,793 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 60 pushes/min to [IP]:55227
+2026-07-18 23:30:10,489 INFO [backend.app.api.routes.camera] [91ea119f] Camera viewer detached from printer-1 (subscribers=0)
+2026-07-18 23:30:11,228 INFO [backend.app.api.routes.camera] [ce0543e9] Chamber image stream cancelled (stream_id=1-fanout)
+2026-07-18 23:30:11,247 INFO [backend.app.api.routes.camera] [ce0543e9] Chamber image stream stopped for [IP] (stream_id=1-fanout)
+2026-07-18 23:30:11,251 INFO [backend.app.api.routes.camera] [9f30abad] Shut down camera fan-out broadcaster for printer 1
+2026-07-18 23:30:11,252 INFO [backend.app.api.routes.camera] [9f30abad] Stopped 0 camera stream(s) for printer 1
+2026-07-18 23:30:11,263 INFO [uvicorn.access] [-] [IP]:37736 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-07-18 23:30:11,422 INFO [backend.app.services.camera] [6277678b] Found ffmpeg at: /usr/bin/ffmpeg
+2026-07-18 23:31:00,943 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 60 pushes/min to [IP]:55227
+2026-07-18 23:31:17,957 INFO [backend.app.services.bambu_mqtt] [0afcf3f7] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-18 23:31:17,976 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=6, 0 profiles, expected=0.4
+2026-07-18 23:31:17,977 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-18 23:31:17,979 INFO [backend.app.services.bambu_mqtt] [0afcf3f7] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-18 23:31:41,583 INFO [backend.app.api.routes.camera] [de2cfcce] Using chamber image protocol for P1S
+2026-07-18 23:31:41,584 INFO [backend.app.api.routes.camera] [de2cfcce] Camera viewer attached to printer-1 (subscribers=1)
+2026-07-18 23:31:41,586 INFO [backend.app.api.routes.camera] [de2cfcce] Starting chamber image stream for [IP] (stream_id=1-fanout, model=P1S)
+2026-07-18 23:31:42,338 INFO [backend.app.services.camera] [de2cfcce] Chamber image: connected to [IP]:6000
+2026-07-18 23:32:01,094 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 60 pushes/min to [IP]:55227
+2026-07-18 23:32:09,625 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 23:32:39,810 INFO [backend.app.services.bambu_mqtt] [f5ca9e9d] [[SERIAL]] Publishing ams_filament_setting: AMS 0, tray 2, tray_info_idx=GFL99, setting_id=GFSL99
+2026-07-18 23:32:39,811 INFO [backend.app.services.bambu_mqtt] [f5ca9e9d] [[SERIAL]] Publishing extrusion_cali_sel: AMS 0, tray 2, cali_idx=-1
+2026-07-18 23:32:39,812 INFO [backend.app.api.routes.spoolman_inventory] [f5ca9e9d] No stored K-profile for Spoolman spool 52 — reset slot to Default K (cali_idx=-1)
+2026-07-18 23:32:39,813 INFO [backend.app.api.routes.spoolman_inventory] [f5ca9e9d] Auto-configured AMS slot ams=0 tray=2 for Spoolman spool 52 on printer 1
+2026-07-18 23:32:39,815 INFO [uvicorn.access] [-] [IP]:60452 - "POST /api/v1/spoolman/inventory/slot-assignments HTTP/1.1" 200
+2026-07-18 23:32:40,043 INFO [uvicorn.access] [-] [IP]:60468 - "POST /api/v1/printers/1/refresh-status HTTP/1.1" 200
+2026-07-18 23:33:01,230 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 60 pushes/min to [IP]:55227
+2026-07-18 23:33:24,824 INFO [backend.app.api.routes.camera] [de2cfcce] Camera viewer detached from printer-1 (subscribers=0)
+2026-07-18 23:33:25,003 INFO [backend.app.api.routes.camera] [de2cfcce] Chamber image stream cancelled (stream_id=1-fanout)
+2026-07-18 23:33:25,009 INFO [backend.app.api.routes.camera] [de2cfcce] Chamber image stream stopped for [IP] (stream_id=1-fanout)
+2026-07-18 23:33:25,010 INFO [backend.app.api.routes.camera] [65567d93] Shut down camera fan-out broadcaster for printer 1
+2026-07-18 23:33:25,011 INFO [backend.app.api.routes.camera] [65567d93] Stopped 0 camera stream(s) for printer 1
+2026-07-18 23:33:25,016 INFO [uvicorn.access] [-] [IP]:56484 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-07-18 23:33:36,944 INFO [backend.app.services.bambu_mqtt] [8cb4de55] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-18 23:33:36,966 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=7, 0 profiles, expected=0.4
+2026-07-18 23:33:36,967 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-18 23:33:36,968 INFO [backend.app.services.bambu_mqtt] [8cb4de55] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-18 23:34:01,366 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 60 pushes/min to [IP]:55227
+2026-07-18 23:34:07,770 INFO [uvicorn.access] [-] [IP]:43762 - "DELETE /api/v1/spoolman/inventory/slot-assignments/52 HTTP/1.1" 200
+2026-07-18 23:34:13,648 INFO [backend.app.services.bambu_mqtt] [ae4e21f8] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-18 23:34:13,662 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=8, 0 profiles, expected=0.4
+2026-07-18 23:34:13,663 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-18 23:34:13,664 INFO [backend.app.services.bambu_mqtt] [ae4e21f8] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-18 23:34:32,388 INFO [backend.app.api.routes.camera] [65aabff0] Using chamber image protocol for P1S
+2026-07-18 23:34:32,389 INFO [backend.app.api.routes.camera] [65aabff0] Camera viewer attached to printer-1 (subscribers=1)
+2026-07-18 23:34:32,392 INFO [backend.app.api.routes.camera] [65aabff0] Starting chamber image stream for [IP] (stream_id=1-fanout, model=P1S)
+2026-07-18 23:34:32,885 INFO [backend.app.api.routes.cloud] [5cf9079a] get_filament_info called with 3 IDs: ['GFSNL03', 'GFL99', 'GFSNL04']
+2026-07-18 23:34:33,143 INFO [backend.app.services.camera] [65aabff0] Chamber image: connected to [IP]:6000
+2026-07-18 23:34:33,625 INFO [uvicorn.access] [-] [IP]:59576 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-18 23:34:43,040 INFO [backend.app.services.bambu_mqtt] [6ff2fded] [[SERIAL]] Publishing ams_filament_setting: AMS 0, tray 2, tray_info_idx=GFL99, setting_id=GFSL99
+2026-07-18 23:34:43,041 INFO [backend.app.services.bambu_mqtt] [6ff2fded] [[SERIAL]] Publishing extrusion_cali_sel: AMS 0, tray 2, cali_idx=-1
+2026-07-18 23:34:43,042 INFO [backend.app.api.routes.spoolman_inventory] [6ff2fded] No stored K-profile for Spoolman spool 52 — reset slot to Default K (cali_idx=-1)
+2026-07-18 23:34:43,042 INFO [backend.app.api.routes.spoolman_inventory] [6ff2fded] Auto-configured AMS slot ams=0 tray=2 for Spoolman spool 52 on printer 1
+2026-07-18 23:34:43,045 INFO [uvicorn.access] [-] [IP]:42150 - "POST /api/v1/spoolman/inventory/slot-assignments HTTP/1.1" 200
+2026-07-18 23:34:43,271 INFO [uvicorn.access] [-] [IP]:42176 - "POST /api/v1/printers/1/refresh-status HTTP/1.1" 200
+2026-07-18 23:35:01,535 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 60 pushes/min to [IP]:55227
+2026-07-18 23:35:10,066 INFO [uvicorn.access] [-] [IP]:53070 - "POST /api/v1/printers/1/refresh-status HTTP/1.1" 200
+2026-07-18 23:35:18,139 INFO [backend.app.services.bambu_mqtt] [7969b6d6] [[SERIAL]] Set chamber lights off (seq=10)
+2026-07-18 23:35:18,141 INFO [uvicorn.access] [-] [IP]:57952 - "POST /api/v1/printers/1/chamber-light?on=false HTTP/1.1" 200
+2026-07-18 23:36:01,714 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 60 pushes/min to [IP]:55227
+2026-07-18 23:37:01,863 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 60 pushes/min to [IP]:55227
+2026-07-18 23:37:09,645 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 23:38:02,000 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 60 pushes/min to [IP]:55227
+2026-07-18 23:39:02,141 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 60 pushes/min to [IP]:55227
+2026-07-18 23:40:02,275 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 60 pushes/min to [IP]:55227
+2026-07-18 23:41:02,411 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 60 pushes/min to [IP]:55227
+2026-07-18 23:41:09,695 INFO [backend.app.api.routes.cloud] [c2363a66] get_filament_info called with 3 IDs: ['GFSNL03', 'GFL99', 'GFSNL04']
+2026-07-18 23:41:10,463 INFO [uvicorn.access] [-] [IP]:33928 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-18 23:42:02,580 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 60 pushes/min to [IP]:55227
+2026-07-18 23:42:09,666 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 23:43:02,726 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 60 pushes/min to [IP]:55227
+2026-07-18 23:44:02,888 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [[PRINTER] Buddy] 1Hz status push: 60 pushes/min to [IP]:55227
+2026-07-18 23:44:26,436 INFO [backend.app.api.routes.support] [9ded5a2e] Log level changed to DEBUG
+2026-07-18 23:44:26,437 INFO [backend.app.api.routes.bug_report] [9ded5a2e] Bug report: enabled debug logging
+2026-07-18 23:44:26,438 DEBUG [backend.app.services.bambu_mqtt] [9ded5a2e] [[SERIAL]] Requesting status update (pushall)
+2026-07-18 23:44:26,440 INFO [uvicorn.access] [-] [IP]:40666 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-07-18 23:44:26,501 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: strawberry-top-green
+2026-07-18 23:44:26,501 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'b', 'tray_is_bbl_bits': 'b', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'b', 'tray_reading_bits': '0', 'version': 48, 'insert_flag': True, 'power_on_flag': True}
+2026-07-18 23:44:26,502 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-07-18 23:44:26,503 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-07-18 23:44:26,503 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-07-18 23:44:26,504 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-18 23:44:26,505 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-07-18 23:44:26,505 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-18 23:44:26,506 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-07-18 23:44:26,507 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-07-18 23:44:26,507 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-07-18 23:44:26,508 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-07-18 23:44:26,508 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-07-18 23:44:26,509 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-07-18 23:44:26,510 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -38dBm
+2026-07-18 23:44:26,510 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-07-18 23:44:26,511 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: strawberry-top-green
+2026-07-18 23:44:28,550 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-18 23:44:28,551 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-18 23:44:30,602 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-18 23:44:30,603 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-18 23:44:31,641 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP NOTIFY for [PRINTER] Buddy (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-07-18 23:44:34,700 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-18 23:44:34,701 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-18 23:44:34,702 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -39dBm
+2026-07-18 23:44:38,748 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-18 23:44:38,749 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -38dBm
+2026-07-18 23:44:39,519 INFO [backend.app.services.bambu_mqtt] [1dee4e16] [[SERIAL]] Publishing ams_filament_setting: AMS 0, tray 2, tray_info_idx=GFL99, setting_id=GFSL99
+2026-07-18 23:44:39,520 DEBUG [backend.app.services.bambu_mqtt] [1dee4e16] [[SERIAL]] ams_filament_setting command: {"print": {"command": "ams_filament_setting", "ams_id": 0, "tray_id": 2, "slot_id": 2, "tray_info_idx": "GFL99", "tray_type": "PLA", "tray_sub_brands": "Unknown PLA Dark Seaweed Green PLA", "tray_color": "163B23FF", "nozzle_temp_min": 230, "nozzle_temp_max": 230, "sequence_id": "0", "setting_id": "GFSL99"}}
+2026-07-18 23:44:39,520 INFO [backend.app.services.bambu_mqtt] [1dee4e16] [[SERIAL]] Publishing extrusion_cali_sel: AMS 0, tray 2, cali_idx=-1
+2026-07-18 23:44:39,521 DEBUG [backend.app.services.bambu_mqtt] [1dee4e16] [[SERIAL]] extrusion_cali_sel command: {"print": {"command": "extrusion_cali_sel", "cali_idx": -1, "filament_id": "GFL99", "nozzle_diameter": "0.4", "ams_id": 0, "tray_id": 2, "slot_id": 2, "sequence_id": "0"}}
+2026-07-18 23:44:39,522 INFO [backend.app.api.routes.spoolman_inventory] [1dee4e16] No stored K-profile for Spoolman spool 52 — reset slot to Default K (cali_idx=-1)
+2026-07-18 23:44:39,522 INFO [backend.app.api.routes.spoolman_inventory] [1dee4e16] Auto-configured AMS slot ams=0 tray=2 for Spoolman spool 52 on printer 1
+2026-07-18 23:44:39,525 INFO [uvicorn.access] [-] [IP]:41770 - "POST /api/v1/spoolman/inventory/slot-assignments HTTP/1.1" 200
+2026-07-18 23:44:39,541 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: ams_filament_setting
+2026-07-18 23:44:39,541 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_filament_setting response: {'command': 'ams_filament_setting', 'ams_id': 0, 'tray_id': 2, 'slot_id': 2, 'tray_info_idx': 'GFL99', 'tray_type': 'PLA', 'tray_sub_brands': 'Unknown PLA Dark Seaweed Green PLA', 'tray_color': '163B23FF', 'nozzle_temp_min': 230, 'nozzle_temp_max': 230, 'sequence_id': '0', 'setting_id': 'GFSL99', 'reason': 'success', 'result': 'success'}
+2026-07-18 23:44:39,607 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: extrusion_cali_sel
+2026-07-18 23:44:39,613 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] extrusion_cali_sel response: {'command': 'extrusion_cali_sel', 'cali_idx': -1, 'filament_id': 'GFL99', 'nozzle_diameter': '0.4', 'ams_id': 0, 'tray_id': 2, 'slot_id': 2, 'sequence_id': '0', 'reason': 'success', 'result': 'success'}
+2026-07-18 23:44:39,816 DEBUG [backend.app.api.routes.printers] [ceaad562] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-07-18 23:44:39,817 DEBUG [backend.app.api.routes.printers] [ceaad562] Using tray_now directly as global ID: 255
+2026-07-18 23:44:39,831 DEBUG [backend.app.services.bambu_mqtt] [b16d4275] [[SERIAL]] Requesting status update (pushall)
+2026-07-18 23:44:39,834 INFO [uvicorn.access] [-] [IP]:41792 - "POST /api/v1/printers/1/refresh-status HTTP/1.1" 200
+2026-07-18 23:44:39,898 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: strawberry-top-green
+2026-07-18 23:44:39,899 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-18 23:44:39,900 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-18 23:44:39,901 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-07-18 23:44:39,902 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-07-18 23:44:39,903 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-07-18 23:44:39,904 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-07-18 23:44:39,905 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: strawberry-top-green
+2026-07-18 23:44:43,975 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-18 23:44:46,025 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-18 23:44:46,026 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-18 23:44:48,079 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-18 23:44:48,080 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-18 23:44:48,080 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -39dBm
+2026-07-18 23:44:52,130 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-18 23:44:52,131 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -38dBm
+2026-07-18 23:44:54,197 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status

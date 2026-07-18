@@ -4,6 +4,7 @@ Bambu Lab Cloud API Routes
 Handles authentication and profile management with Bambu Cloud.
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -737,6 +738,92 @@ _filament_cache: dict[str, dict] = {}
 _filament_cache_time: float = 0
 FILAMENT_CACHE_TTL = 300  # 5 minutes
 
+# In-flight cloud lookups, keyed by setting_id (#2572). The printer overview
+# mounts one filament-info request per printer card, so at farm scale several
+# browsers ask for the same uncached preset within the same instant. Without
+# coalescing each request issues its own Bambu Cloud round-trip for the same id
+# (a thundering herd against a rate-limited API). The first caller to miss a
+# given id becomes the leader and resolves it; concurrent callers await its
+# future and reuse the result instead of duplicating the call.
+_filament_inflight: dict[str, asyncio.Future] = {}
+
+
+async def _fetch_one_cloud_filament(setting_id: str, cloud: BambuCloudService) -> dict | None:
+    """Fetch a single filament preset from Bambu Cloud.
+
+    Returns ``{"name", "k"}`` on success (name may be empty when the preset
+    resolves but carries no display name), or ``None`` when the lookup fails.
+    Never raises — a 400 is the expected answer for many bare preset IDs and is
+    logged at DEBUG; anything else is a real fault logged at WARNING.
+    """
+    try:
+        api_setting_id = _filament_id_to_setting_id(setting_id)
+        data = await cloud.get_setting_detail(api_setting_id)
+        setting = data.get("setting", {})
+        name = data.get("name", "")
+        k_value = setting.get("pressure_advance")
+        if k_value is not None:
+            try:
+                k_value = float(k_value)
+            except (ValueError, TypeError):
+                k_value = None
+        return {"name": name, "k": k_value}
+    except Exception as e:
+        # A 400 here is the *expected* answer, not a fault, and the local-preset
+        # fallback (Phase 3) exists to handle it (#2530). Two routine causes:
+        #   * Many official presets are only addressable with a printer variant
+        #     suffix — "GFSA00" resolves, "GFSL05" does not, only "GFSL05_07"
+        #     (@BBL A1) does. The bare ID is all the AMS reports, so the lookup
+        #     legitimately misses.
+        #   * Personal presets ("P…") belong to the Bambu account that sliced the
+        #     file; another account will never resolve them.
+        # Logging those at WARNING on every AMS tooltip refresh trains users to
+        # ignore the log. Anything else — expired token, 5xx, a connection
+        # failure — stays at WARNING because it is a fault.
+        expected_miss = isinstance(e, BambuCloudError) and e.status_code == 400
+        logger.log(
+            logging.DEBUG if expected_miss else logging.WARNING,
+            "Failed to get cloud preset %s (API ID: %s): %s",
+            setting_id,
+            _filament_id_to_setting_id(setting_id),
+            e,
+        )
+        return None
+
+
+async def _resolve_cloud_filament(setting_id: str, cloud: BambuCloudService) -> dict | None:
+    """Resolve one preset via Bambu Cloud, single-flighting concurrent misses (#2572).
+
+    Concurrent callers for the same ``setting_id`` share one cloud round-trip:
+    the first caller resolves it while the rest await the shared future. Returns
+    the info dict (also populating ``_filament_cache``) or ``None`` on failure.
+    """
+    if setting_id in _filament_cache:
+        return _filament_cache[setting_id]
+
+    existing = _filament_inflight.get(setting_id)
+    if existing is not None:
+        # Another request is already fetching this id — reuse its result.
+        # shield() so our own cancellation can't cancel the shared leader.
+        try:
+            return await asyncio.shield(existing)
+        except Exception:
+            return None
+
+    fut: asyncio.Future = asyncio.get_event_loop().create_future()
+    _filament_inflight[setting_id] = fut
+    info: dict | None = None
+    try:
+        info = await _fetch_one_cloud_filament(setting_id, cloud)
+        return info
+    finally:
+        if info is not None:
+            _filament_cache[setting_id] = info
+        if not fut.done():
+            fut.set_result(info)
+        _filament_inflight.pop(setting_id, None)
+
+
 # Built-in filament ID → name mapping (fallback when cloud API and local profiles
 # don't have the entry). Based on Bambu Lab's known filament catalogue.
 _BUILTIN_FILAMENT_NAMES: dict[str, str] = {
@@ -949,50 +1036,23 @@ async def get_filament_info(
     # Phase 2: Try cloud for uncached IDs
     if unresolved_ids:
         cloud = await build_authenticated_cloud(db, current_user)
+        # Release the request's DB transaction before the sequential Bambu Cloud
+        # round-trips below (#2572). build_authenticated_cloud has read the
+        # stored token — the only DB access this phase needs — and nothing until
+        # Phase 3 touches the DB again. Without this the session sat "idle in
+        # transaction" for the full duration of N external HTTP calls, pinning a
+        # pooled connection per in-flight request. Phase 3's read transparently
+        # opens a fresh transaction on the same still-open session.
+        await db.rollback()
         if cloud is not None and cloud.is_authenticated:
             try:
                 still_unresolved: list[str] = []
                 for setting_id in unresolved_ids:
-                    try:
-                        api_setting_id = _filament_id_to_setting_id(setting_id)
-                        data = await cloud.get_setting_detail(api_setting_id)
-                        setting = data.get("setting", {})
-                        name = data.get("name", "")
-                        k_value = setting.get("pressure_advance")
-                        if k_value is not None:
-                            try:
-                                k_value = float(k_value)
-                            except (ValueError, TypeError):
-                                k_value = None
-
-                        info = {"name": name, "k": k_value}
-                        _filament_cache[setting_id] = info
+                    info = await _resolve_cloud_filament(setting_id, cloud)
+                    if info is not None:
                         result[setting_id] = info
-
-                        if not name:
-                            still_unresolved.append(setting_id)
-                    except Exception as e:
-                        # A 400 here is the *expected* answer, not a fault, and Phase 3
-                        # exists to handle it (#2530). Two routine causes:
-                        #   * Many official presets are only addressable with a printer
-                        #     variant suffix — "GFSA00" resolves, "GFSL05" does not, only
-                        #     "GFSL05_07" (@BBL A1) does. The bare ID is all the AMS
-                        #     reports, so the lookup legitimately misses.
-                        #   * Personal presets ("P…") belong to the Bambu account that
-                        #     sliced the file; another account will never resolve them.
-                        # Logging those at WARNING on every AMS tooltip refresh trains
-                        # users to ignore the log. Anything else — expired token, 5xx,
-                        # a connection failure — stays at WARNING because it is a fault.
-                        expected_miss = isinstance(e, BambuCloudError) and e.status_code == 400
-                        logger.log(
-                            logging.DEBUG if expected_miss else logging.WARNING,
-                            "Failed to get cloud preset %s (API ID: %s): %s",
-                            setting_id,
-                            _filament_id_to_setting_id(setting_id),
-                            e,
-                        )
+                    if info is None or not info.get("name"):
                         still_unresolved.append(setting_id)
-
                 unresolved_ids = still_unresolved
             finally:
                 await cloud.close()

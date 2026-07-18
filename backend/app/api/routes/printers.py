@@ -963,6 +963,15 @@ _cover_cache: dict[int, dict[tuple[str, str], bytes]] = {}
 # Cleared on print start alongside _cover_cache.
 _cover_404_cache: dict[int, set[tuple[str, str]]] = {}
 
+# In-flight cover downloads, keyed by (printer_id, subtask_name, view_key) (#2572).
+# The farm dashboard mounts a cover tile per printer card, so several browsers
+# request the same printer's cover in the same instant, all miss the cache, and
+# each runs the full multi-path FTP lookup + 3MF extraction (one observed live
+# transfer pulled an 81 MB 3MF while real print uploads were in flight). The
+# first request to miss becomes the leader; concurrent requests await its future
+# and then serve from the positive/negative cache it filled.
+_cover_inflight: dict[tuple[int, str, str], asyncio.Future] = {}
+
 
 def clear_cover_cache(printer_id: int) -> None:
     """Clear cached cover images for a printer. Call on print start to avoid stale thumbnails."""
@@ -1039,6 +1048,53 @@ async def get_printer_cover(
     if printer_id in _cover_404_cache and cache_key in _cover_404_cache[printer_id]:
         raise HTTPException(404, f"No cover available for '{subtask_name}' (cached)")
 
+    # Coalesce concurrent downloads for the same cover (#2572). The positive and
+    # negative caches were just checked above; if another request is already
+    # downloading this exact cover, wait for it and serve from the cache it fills
+    # instead of launching a duplicate multi-path FTP + 3MF extraction.
+    inflight_key = (printer_id, subtask_name, view_key)
+    leader = _cover_inflight.get(inflight_key)
+    if leader is not None:
+        # shield() so our own cancellation can't cancel the shared leader.
+        try:
+            await asyncio.shield(leader)
+        except Exception:
+            pass
+        if printer_id in _cover_cache and cache_key in _cover_cache[printer_id]:
+            return Response(content=_cover_cache[printer_id][cache_key], media_type="image/png")
+        if printer_id in _cover_404_cache and cache_key in _cover_404_cache[printer_id]:
+            raise HTTPException(404, f"No cover available for '{subtask_name}' (cached)")
+        # Leader finished without filling either cache (a transient 503) — fall
+        # through and try the download ourselves.
+
+    fut: asyncio.Future = asyncio.get_event_loop().create_future()
+    _cover_inflight[inflight_key] = fut
+    try:
+        image_data = await _produce_cover_image(printer, printer_id, subtask_name, view, view_key, plate_num, cache_key)
+        return Response(content=image_data, media_type="image/png")
+    finally:
+        if not fut.done():
+            fut.set_result(None)
+        _cover_inflight.pop(inflight_key, None)
+
+
+async def _produce_cover_image(
+    printer: Printer,
+    printer_id: int,
+    subtask_name: str,
+    view: str | None,
+    view_key: str,
+    plate_num: int | None,
+    cache_key: tuple[str, str],
+) -> bytes:
+    """Download the active-print 3MF and extract its cover thumbnail (#2572).
+
+    Split out of ``get_printer_cover`` so concurrent requests for the same cover
+    can single-flight through it (see ``_cover_inflight``). Returns the PNG bytes
+    on success (also filling ``_cover_cache``) and raises ``HTTPException`` on
+    failure (filling ``_cover_404_cache`` for the definitive 404s). Does no DB
+    work — the caller already released the pooled connection before this runs.
+    """
     # Build possible 3MF filenames from subtask_name
     # Bambu printers may store files as "name.gcode.3mf" (sliced via Bambu Studio)
     # or just "name.3mf" (uploaded directly)
@@ -1202,7 +1258,7 @@ async def get_printer_cover(
                     if printer_id not in _cover_cache:
                         _cover_cache[printer_id] = {}
                     _cover_cache[printer_id][(subtask_name, view_key)] = image_data
-                    return Response(content=image_data, media_type="image/png")
+                    return image_data
                 except KeyError:
                     continue
 
@@ -1213,7 +1269,7 @@ async def get_printer_cover(
                     if printer_id not in _cover_cache:
                         _cover_cache[printer_id] = {}
                     _cover_cache[printer_id][(subtask_name, view_key)] = image_data
-                    return Response(content=image_data, media_type="image/png")
+                    return image_data
 
             _cover_404_cache.setdefault(printer_id, set()).add(cache_key)
             raise HTTPException(404, "No thumbnail found in 3MF file")

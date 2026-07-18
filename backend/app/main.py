@@ -4718,6 +4718,13 @@ async def on_print_complete(printer_id: int, data: dict):
             if hms_errors:
                 logger.info("[ARCHIVE] HMS errors at failure: %s", hms_errors)
             failure_reason = derive_failure_reason(status, hms_errors)
+            if data.get("_reconciled"):
+                # A reconciled completion closes out a stale archive at
+                # reconnect — it is not a user action, so don't mislabel it
+                # "User cancelled". The "Stale" prefix matches the existing
+                # stale-cleanup convention and records that the real end time
+                # is unknown, which is also why its logged duration is 0 (#2592).
+                failure_reason = "Stale - reconciled after reconnect, end time unknown"
             if failure_reason:
                 logger.info("[ARCHIVE] failure_reason=%r (status=%s)", failure_reason, status)
             elif status == "failed" and hms_errors:
@@ -4818,6 +4825,9 @@ async def on_print_complete(printer_id: int, data: dict):
                     thumbnail_path=archive.thumbnail_path,
                     created_by_id=archive.created_by_id,
                     created_by_username=_print_user_info.get("username") if _print_user_info else None,
+                    # Reconciled completions have an unknown real end time —
+                    # log 0 duration instead of the whole disconnect gap (#2592).
+                    reconciled=bool(data.get("_reconciled")),
                 )
                 await db.commit()
                 logger.info("[PRINT_LOG] Log entry written for archive %s", archive_id)
@@ -6814,16 +6824,16 @@ async def auth_middleware(request, call_next):
             raise ValueError("No jti in token")
         iat = payload.get("iat")
 
-        # Reject revoked tokens (defense-in-depth gateway check)
-        if await is_jti_revoked(jti):
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Token has been revoked"},
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        # Verify user exists, is active, and token is still fresh (L-R8-A)
+        # Verify user exists, is active, and token is still fresh (L-R8-A).
+        # Reject revoked tokens first (defense-in-depth gateway check), reusing
+        # this session so the gateway adds a single pooled checkout, not two (#2572).
         async with async_session() as db:
+            if await is_jti_revoked(jti, db):
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Token has been revoked"},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
             user = await get_user_by_username(db, username)
             if not user or not user.is_active:
                 return JSONResponse(

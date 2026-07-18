@@ -141,6 +141,7 @@ function isAlwaysAllowedIdentical(value) {
 // German loanwords / cognates from English are extensive. Most short technical
 // UI labels are identical in DE. List below curates the legitimate ones.
 const DE_COGNATES = [
+  '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the DE term too
   'Name', 'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Modus',
   'Stop', 'Reset', 'Test', 'Code', 'Token', 'Server', 'Port', 'Bug', 'Job',
   'Barcode',  // scan-to-add — German uses the same English loanword
@@ -221,6 +222,7 @@ const FR_COGNATES = [
 
 // Italian cognates.
 const IT_COGNATES = [
+  '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the IT term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Email',  // common loanword in Italian, used verbatim in UI labels
@@ -268,6 +270,7 @@ const JA_COGNATES = [
 
 // Portuguese (BR) cognates.
 const PT_BR_COGNATES = [
+  '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the PT-BR term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Pipeline', 'Pipelines',  // #1425 — Slicer Pipelines (PT-BR)
@@ -342,6 +345,7 @@ const KO_COGNATES = [
 
 // Spanish cognates — words/phrases that are genuinely identical in Spanish.
 const ES_COGNATES = [
+  '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the ES term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Pipeline', 'Pipelines',  // #1425 — Slicer Pipelines (ES)
@@ -364,6 +368,7 @@ const ES_COGNATES = [
 // Turkish cognates — technical UI labels that Turkish speakers use verbatim
 // from English (loanwords + acronyms + format strings). Curated, not a shortcut.
 const TR_COGNATES = [
+  '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the TR term too
   'Filament', 'Firmware', 'Disk', 'Hex', 'Test', 'Port', 'Model', 'Metal',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name

@@ -25,6 +25,13 @@ const unknownError: HMSError = {
   severity: 1,
 };
 
+// Error code 0700_8011 = AMS filament runout (#2587).
+const runoutError: HMSError = {
+  attr: 0x0700,
+  code: '0x8011',
+  severity: 2,
+};
+
 describe('HMSErrorModal', () => {
   const defaultProps = {
     printerName: 'Test Printer',
@@ -119,6 +126,66 @@ describe('HMSErrorModal', () => {
       await waitFor(() => {
         expect(onClose).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('runout guidance (#2587)', () => {
+    it('shows the generic runout text when no guidance is provided', () => {
+      render(<HMSErrorModal {...defaultProps} errors={[runoutError]} />);
+      expect(
+        screen.getByText('AMS filament ran out. Please insert a new filament into the same AMS slot.')
+      ).toBeInTheDocument();
+    });
+
+    it('names both the expected and ran-out slot when both are resolved', () => {
+      render(
+        <HMSErrorModal
+          {...defaultProps}
+          errors={[runoutError]}
+          runoutGuidance={{ expectedSlotLabel: 'AMS-A · Slot 3', ranOutSlotLabel: 'AMS-A · Slot 2' }}
+        />
+      );
+      const p = screen.getByText(/waiting for compatible filament/i);
+      expect(p.textContent).toContain('AMS-A · Slot 3');
+      expect(p.textContent).toContain('AMS-A · Slot 2');
+      // The misleading "same slot" text must be gone.
+      expect(screen.queryByText(/into the same AMS slot/i)).not.toBeInTheDocument();
+    });
+
+    it('names only the expected slot when the ran-out slot is unknown', () => {
+      render(
+        <HMSErrorModal
+          {...defaultProps}
+          errors={[runoutError]}
+          runoutGuidance={{ expectedSlotLabel: 'AMS-A · Slot 3', ranOutSlotLabel: null }}
+        />
+      );
+      const p = screen.getByText(/waiting for compatible filament/i);
+      expect(p.textContent).toContain('AMS-A · Slot 3');
+    });
+
+    it('shows an honest fallback when the slot cannot be resolved', () => {
+      render(
+        <HMSErrorModal
+          {...defaultProps}
+          errors={[runoutError]}
+          runoutGuidance={{ expectedSlotLabel: null, ranOutSlotLabel: null }}
+        />
+      );
+      expect(screen.getByText(/could not determine which slot/i)).toBeInTheDocument();
+    });
+
+    it('does not apply runout guidance to non-runout errors', () => {
+      render(
+        <HMSErrorModal
+          {...defaultProps}
+          errors={[knownError]}
+          runoutGuidance={{ expectedSlotLabel: 'AMS-A · Slot 3', ranOutSlotLabel: 'AMS-A · Slot 2' }}
+        />
+      );
+      // 0300_400C keeps its own description; no slot injection.
+      expect(screen.getByText('The task was canceled.')).toBeInTheDocument();
+      expect(screen.queryByText(/waiting for compatible filament/i)).not.toBeInTheDocument();
     });
   });
 

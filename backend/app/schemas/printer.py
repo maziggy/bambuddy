@@ -332,6 +332,17 @@ class PrinterStatus(BaseModel):
     fila_switch: FilaSwitchResponse | None = None
     # Currently loaded tray (global ID): 254 = external spool, 255 = no filament
     tray_now: int = 255
+    # Runout / filament-replacement guidance (#2587). Populated only while the
+    # print is PAUSED. Both are globalised tray IDs (ams_id*4+slot, or 128-135 for
+    # AMS-HT, or 254 for external) so the frontend can highlight them with the same
+    # logic it uses for tray_now:
+    #   expected_tray = the slot the firmware now expects filament in (from tray_tar).
+    #                   None when idle, not paused, or the slot can't be resolved
+    #                   (multi-AMS ambiguity) — the UI then says "check the printer".
+    #   previous_tray = the slot loaded before the pause, i.e. the one that ran out
+    #                   (from tray_pre). None when unknown.
+    expected_tray: int | None = None
+    previous_tray: int | None = None
     # AMS status for filament change tracking
     # Main status: 0=idle, 1=filament_change, 2=rfid_identifying, 3=assist, 4=calibration
     ams_status_main: int = 0

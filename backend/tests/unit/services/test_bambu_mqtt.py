@@ -3931,12 +3931,18 @@ class TestStartPrintAmsMapping:
         cmd = self._get_published_command(mqtt_client)
         assert cmd["use_ams"] is False
 
-    def test_all_unmapped_sets_use_ams_false(self, mqtt_client):
-        """All unmapped slots on non-H2D printer sets use_ams=False."""
+    def test_all_unresolved_keeps_use_ams_true(self, mqtt_client):
+        """All-unresolved (-1) is NOT external — must keep use_ams=True (#2589).
+
+        A stored [-1] comes from an unresolved mapping (e.g. a frontend
+        status-load race), not an explicit external-spool selection. Treating it
+        as external silently started the print against the empty external feed.
+        Only >=254 may downgrade to use_ams=False.
+        """
         mqtt_client.start_print("test.3mf", ams_mapping=[-1, -1], use_ams=True)
 
         cmd = self._get_published_command(mqtt_client)
-        assert cmd["use_ams"] is False
+        assert cmd["use_ams"] is True
 
     def test_mixed_ams_and_external_keeps_use_ams_true(self, mqtt_client):
         """AMS tray + external spool keeps use_ams=True."""

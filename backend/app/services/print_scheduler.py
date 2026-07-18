@@ -154,6 +154,25 @@ def _canonical_filament_type(ftype: str) -> str:
     return _FILAMENT_EQUIV_MAP.get(upper, upper)
 
 
+def _mapping_is_all_unresolved(mapping: list | None) -> bool:
+    """True if ``mapping`` is a non-empty list whose every entry is the
+    unresolved sentinel (-1 / None) — i.e. no required slot ever matched a tray.
+
+    Such a mapping is a bug artifact: a frontend status-load race can serialize
+    ``[-1]`` before the printer's AMS trays are known (#2589). It must be
+    recomputed from live status at dispatch rather than trusted, otherwise it
+    reaches the print command and is silently downgraded to external-spool mode.
+
+    A partially-resolved mapping (``[-1, -1, 5]`` where slot 3 matched, or a
+    padding ``-1`` for a slot this plate does not print) is NOT unresolved. An
+    explicit external selection (``>= 254``) is NOT unresolved either — those
+    keep their meaning.
+    """
+    if not isinstance(mapping, list) or not mapping:
+        return False
+    return all(t is None or (isinstance(t, int) and t < 0) for t in mapping)
+
+
 def _installed_nozzle_diameters(status) -> list[float]:
     """Parse the installed nozzle diameters from a PrinterState (#1899).
 
@@ -503,15 +522,11 @@ class PrintScheduler:
                             )
                             continue
 
-                    # Compute AMS mapping if not already set
-                    if not item.ams_mapping:
-                        computed_mapping = await self._compute_ams_mapping_for_printer(db, item.printer_id, item)
-                        if computed_mapping:
-                            item.ams_mapping = json.dumps(computed_mapping)
-                            logger.info(
-                                f"Queue item {item.id}: Computed AMS mapping for printer {item.printer_id}: {computed_mapping}"
-                            )
-                            await db.commit()
+                    # Resolve the AMS mapping when it's missing OR unresolved
+                    # (all -1). A stored all-[-1] mapping is a bug artifact — a
+                    # frontend status-load race can persist [-1] (#2589) — and
+                    # must be recomputed from live trays rather than trusted.
+                    await self._ensure_ams_mapping(db, item.printer_id, item)
 
                     # Filament-deficit pre-dispatch check (#1496). If the
                     # assigned spool can't satisfy any required slot grams,
@@ -677,16 +692,11 @@ class PrintScheduler:
                             db=db,
                         )
 
-                        # Compute AMS mapping for the assigned printer if not already set
-                        # This is critical for model-based jobs where mapping wasn't computed upfront
-                        if not item.ams_mapping:
-                            computed_mapping = await self._compute_ams_mapping_for_printer(db, printer_id, item)
-                            if computed_mapping:
-                                item.ams_mapping = json.dumps(computed_mapping)
-                                logger.info(
-                                    f"Queue item {item.id}: Computed AMS mapping for printer {printer_id}: {computed_mapping}"
-                                )
-                                await db.commit()
+                        # Resolve the AMS mapping for the assigned printer when it's
+                        # missing OR unresolved (all -1). Critical for model-based
+                        # jobs where mapping wasn't computed upfront, and it also
+                        # self-heals a bogus stored [-1] (#2589).
+                        await self._ensure_ams_mapping(db, printer_id, item)
 
                         # Filament-deficit pre-dispatch check (#1496).
                         if await self._block_on_filament_deficit(db, item):
@@ -1121,6 +1131,56 @@ class PrintScheduler:
             if (o_type, o_color) in loaded:
                 matches += 1
         return matches
+
+    async def _ensure_ams_mapping(self, db: AsyncSession, printer_id: int, item: PrintQueueItem) -> None:
+        """Ensure the queue item carries a usable AMS mapping before dispatch.
+
+        Recomputes from live printer status when the stored mapping is missing OR
+        unresolved (all -1). A stored all-[-1] mapping is a bug artifact — a
+        frontend status-load race can serialize [-1] before the printer's AMS
+        trays are known (#2589) — and must not be trusted: downstream it would be
+        silently downgraded to external-spool mode and print against an empty
+        feed. A resolved mapping (including manual overrides, or a partially
+        padded one) is left untouched.
+
+        When recompute cannot resolve it either (no compatible tray loaded), the
+        bogus [-1] is cleared to None so it is not later mistaken for an explicit
+        external selection; the print command then keeps use_ams=True and the
+        firmware surfaces a clear AMS-mapping error instead of silently printing
+        to the empty external feed.
+        """
+        stored_mapping: list | None = None
+        if item.ams_mapping:
+            try:
+                stored_mapping = json.loads(item.ams_mapping)
+            except (json.JSONDecodeError, TypeError):
+                stored_mapping = None
+
+        # Already resolved (present and not all-unresolved) — keep as-is so a
+        # user's manual mapping is never overwritten.
+        if item.ams_mapping and not _mapping_is_all_unresolved(stored_mapping):
+            return
+
+        computed_mapping = await self._compute_ams_mapping_for_printer(db, printer_id, item)
+        if computed_mapping and not _mapping_is_all_unresolved(computed_mapping):
+            item.ams_mapping = json.dumps(computed_mapping)
+            logger.info(
+                "Queue item %s: Computed AMS mapping for printer %s: %s",
+                item.id,
+                printer_id,
+                computed_mapping,
+            )
+            await db.commit()
+        elif _mapping_is_all_unresolved(stored_mapping):
+            logger.warning(
+                "Queue item %s: stored ams_mapping %s is unresolved and could not be recomputed "
+                "from live status on printer %s; clearing it so dispatch does not treat it as external",
+                item.id,
+                stored_mapping,
+                printer_id,
+            )
+            item.ams_mapping = None
+            await db.commit()
 
     async def _compute_ams_mapping_for_printer(
         self, db: AsyncSession, printer_id: int, item: PrintQueueItem

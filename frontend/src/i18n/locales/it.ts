@@ -604,6 +604,12 @@ export default {
       title: 'Questo slot è il filamento {{n}} nella stampa attiva',
       ariaLabel: 'Slot stampa attiva {{n}}',
     },
+    expectedSlot: {
+      title: 'La stampante è in attesa di filamento in questo slot',
+      ariaLabel: 'Slot filamento previsto {{n}}',
+      label: '{{ams}} · Slot {{slot}}',
+      external: 'Bobina esterna',
+    },
     // Filaments section
     filaments: 'Filamenti',
     // Camera
@@ -2803,6 +2809,9 @@ export default {
     clearFailed: 'Impossibile cancellare gli errori HMS',
     actionSuccess: 'Azione inviata alla stampante',
     actionFailed: 'Impossibile inviare l\'azione',
+    runoutExpectedSlot: 'Il filamento in {{ranOut}} è esaurito. La stampante ora attende filamento compatibile in {{expected}}. Inserisci una bobina in {{expected}}, quindi seleziona Riprova.',
+    runoutExpectedSlotOnly: 'La stampante attende filamento compatibile in {{expected}}. Inserisci lì una bobina, quindi seleziona Riprova.',
+    runoutSlotUnknown: 'Il filamento è esaurito e la stampa è in pausa. Bambuddy non è riuscito a determinare quale slot la stampante attende ora — controlla lo schermo della stampante per lo slot richiesto.',
     actions: {
       RESUME_PRINTING: 'Riprendi stampa',
       RESUME_PRINTING_DEFECTS: 'Riprendi (difetti accettabili)',
@@ -4629,6 +4638,7 @@ export default {
     overrideWith: 'Sostituisci con',
     resetToOriginal: 'Ripristina originale',
     insufficientFilamentTitle: 'Filamento insufficiente',
+    waitingForAmsStatus: 'In attesa dello stato AMS di {{printer}}…',
     insufficientFilamentMessage: 'Alcune bobine assegnate hanno meno filamento rimanente di quanto necessario per questa stampa:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: necessita di {{required}}g, rimanenti {{remaining}}g',
     printAnyway: 'Stampa comunque',

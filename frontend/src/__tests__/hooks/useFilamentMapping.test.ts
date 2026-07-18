@@ -6,11 +6,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { renderHook } from '@testing-library/react';
 import {
   buildAmsMapping,
   buildFilamentComparison,
   buildLoadedFilaments,
   computeAmsMapping,
+  useFilamentMapping,
 } from '../../hooks/useFilamentMapping';
 import { effectivePreferLowest } from '../../utils/amsHelpers';
 import type { PrinterStatus } from '../../api/client';
@@ -1241,5 +1243,47 @@ describe('per-plate mapping vs. the whole-file union (#2551 follow-up)', () => {
     expect(plate2).toEqual([-1, 1]);
     // Plate 1 is mapped from its own (empty) override set and still gets red.
     expect(buildAmsMapping(buildFilamentComparison(PLATE_1, loaded, {}))).toEqual([0]);
+  });
+});
+
+describe('useFilamentMapping — no [-1] mapping during a status-load race (#2589)', () => {
+  // The file requires one PETG slot; two compatible PETG spools are loaded once
+  // the printer status arrives.
+  const filamentReqs = {
+    filaments: [{ slot_id: 1, type: 'PETG', color: '#161616', used_grams: 141.86 }],
+  };
+  const statusWithPetg = createPrinterStatus([
+    {
+      id: 0,
+      tray: [
+        { id: 0, tray_type: 'PETG', tray_color: 'BCBCBC' },
+        { id: 1, tray_type: 'PETG', tray_color: 'FFFFFF' },
+      ],
+    },
+  ]);
+
+  it('returns undefined (not [-1]) while printerStatus is still loading', () => {
+    // printerStatus undefined = query not resolved yet. Serializing [-1] here is
+    // exactly what dispatched the P1S print to the empty external feed.
+    const { result } = renderHook(() => useFilamentMapping(filamentReqs, undefined, {}));
+    expect(result.current.amsMapping).toBeUndefined();
+  });
+
+  it('resolves to an AMS tray once status has loaded (type-only match, strict color off)', () => {
+    // Black requested, only gray/white PETG loaded: a type-only match is valid.
+    const { result } = renderHook(() => useFilamentMapping(filamentReqs, statusWithPetg, {}));
+    expect(result.current.amsMapping).toEqual([0]);
+    expect(result.current.hasTypeMismatch).toBe(false);
+  });
+
+  it('still emits [-1] for a genuine mismatch when trays are present', () => {
+    // Status loaded but nothing compatible (only PLA) -> the mapping legitimately
+    // carries -1 and the mismatch is surfaced; this must NOT be suppressed.
+    const statusWithPla = createPrinterStatus([
+      { id: 0, tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000' }] },
+    ]);
+    const { result } = renderHook(() => useFilamentMapping(filamentReqs, statusWithPla, {}));
+    expect(result.current.amsMapping).toEqual([-1]);
+    expect(result.current.hasTypeMismatch).toBe(true);
   });
 });

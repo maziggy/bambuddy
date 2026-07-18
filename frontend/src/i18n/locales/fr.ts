@@ -604,6 +604,12 @@ export default {
       title: 'Cet emplacement est le filament {{n}} dans l\'impression active',
       ariaLabel: 'Emplacement d\'impression active {{n}}',
     },
+    expectedSlot: {
+      title: 'L\'imprimante attend du filament dans cet emplacement',
+      ariaLabel: 'Emplacement de filament attendu {{n}}',
+      label: '{{ams}} · Emplacement {{slot}}',
+      external: 'Bobine externe',
+    },
     // Filaments section
     filaments: 'Filaments',
     // Camera
@@ -2804,6 +2810,9 @@ export default {
     clearFailed: 'Échec de l\'effacement des erreurs HMS',
     actionSuccess: 'Action envoyée à l\'imprimante',
     actionFailed: 'Échec de l\'envoi de l\'action',
+    runoutExpectedSlot: 'Le filament est épuisé dans {{ranOut}}. L\'imprimante attend maintenant du filament compatible dans {{expected}}. Insérez une bobine dans {{expected}}, puis sélectionnez Réessayer.',
+    runoutExpectedSlotOnly: 'L\'imprimante attend du filament compatible dans {{expected}}. Insérez-y une bobine, puis sélectionnez Réessayer.',
+    runoutSlotUnknown: 'Le filament est épuisé et l\'impression est en pause. Bambuddy n\'a pas pu déterminer quel emplacement l\'imprimante attend désormais — vérifiez l\'écran de l\'imprimante pour l\'emplacement demandé.',
     actions: {
       RESUME_PRINTING: 'Reprendre l\'impression',
       RESUME_PRINTING_DEFECTS: 'Reprendre (défauts acceptables)',
@@ -4630,6 +4639,7 @@ export default {
     overrideWith: 'Remplacer par',
     resetToOriginal: 'Revenir à l\'original',
     insufficientFilamentTitle: 'Filament insuffisant',
+    waitingForAmsStatus: 'En attente de l\'état de l\'AMS de {{printer}}…',
     insufficientFilamentMessage: 'Certaines bobines assignées ont moins de filament restant que nécessaire pour cette impression :',
     insufficientFilamentLine: '{{printer}} - {{slot}} : nécessite {{required}}g, restant {{remaining}}g',
     printAnyway: 'Imprimer quand même',

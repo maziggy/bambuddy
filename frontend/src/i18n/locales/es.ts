@@ -604,6 +604,12 @@ export default {
       title: 'Este slot es el filamento {{n}} en la impresión activa',
       ariaLabel: 'Slot de impresión activa {{n}}',
     },
+    expectedSlot: {
+      title: 'La impresora está esperando filamento en este slot',
+      ariaLabel: 'Slot de filamento esperado {{n}}',
+      label: '{{ams}} · Slot {{slot}}',
+      external: 'Bobina externa',
+    },
     // Filaments section
     filaments: 'Filamentos',
     // Camera
@@ -2818,6 +2824,9 @@ export default {
     clearFailed: 'Error al borrar los errores HMS',
     actionSuccess: 'Acción enviada a la impresora',
     actionFailed: 'No se pudo enviar la acción',
+    runoutExpectedSlot: 'El filamento se agotó en {{ranOut}}. La impresora ahora espera filamento compatible en {{expected}}. Inserta una bobina en {{expected}} y luego selecciona Reintentar.',
+    runoutExpectedSlotOnly: 'La impresora está esperando filamento compatible en {{expected}}. Inserta una bobina ahí y luego selecciona Reintentar.',
+    runoutSlotUnknown: 'El filamento se agotó y la impresión está en pausa. Bambuddy no pudo determinar qué slot espera ahora la impresora — revisa la pantalla de la impresora para ver el slot solicitado.',
     actions: {
       RESUME_PRINTING: 'Reanudar impresión',
       RESUME_PRINTING_DEFECTS: 'Reanudar (defectos aceptables)',
@@ -4649,6 +4658,7 @@ export default {
     overrideWith: 'Anular con',
     resetToOriginal: 'Restablecer al original',
     insufficientFilamentTitle: 'No hay suficiente filamento',
+    waitingForAmsStatus: 'Esperando el estado del AMS de {{printer}}…',
     insufficientFilamentMessage: 'Algunas bobinas asignadas tienen menos filamento restante del que necesita esta impresión:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: necesita {{required}} g, restante {{remaining}} g',
     printAnyway: 'Imprimir de todos modos',

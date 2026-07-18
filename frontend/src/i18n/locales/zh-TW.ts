@@ -604,6 +604,12 @@ export default {
       title: '此料槽在目前列印中是耗材 {{n}}',
       ariaLabel: '目前列印料槽 {{n}}',
     },
+    expectedSlot: {
+      title: '印表機正在等待此料槽裝入耗材',
+      ariaLabel: '需要裝料的料槽 {{n}}',
+      label: '{{ams}} · 料槽 {{slot}}',
+      external: '外部料卷',
+    },
     // Filaments section
     filaments: '耗材',
     // Camera
@@ -2803,6 +2809,9 @@ export default {
     clearFailed: '清除 HMS 錯誤失敗',
     actionSuccess: '已向印表機傳送動作',
     actionFailed: '動作傳送失敗',
+    runoutExpectedSlot: '{{ranOut}} 的耗材已用盡。印表機現在正在等待 {{expected}} 裝入相容耗材。請將料卷裝入 {{expected}}，然後選擇「重試」。',
+    runoutExpectedSlotOnly: '印表機正在等待 {{expected}} 裝入相容耗材。請在該料槽裝入料卷，然後選擇「重試」。',
+    runoutSlotUnknown: '耗材已用盡，列印已暫停。Bambuddy 無法確定印表機現在需要哪個料槽——請在印表機螢幕上查看所請求的料槽。',
     actions: {
       RESUME_PRINTING: '恢復列印',
       RESUME_PRINTING_DEFECTS: '恢復 (瑕疵可接受)',
@@ -4629,6 +4638,7 @@ export default {
     overrideWith: '覆蓋為',
     resetToOriginal: '恢復為原始',
     insufficientFilamentTitle: '耗材不足',
+    waitingForAmsStatus: '正在等待 {{printer}} 的 AMS 狀態…',
     insufficientFilamentMessage: '部分已分配料盤的剩餘耗材少於本次列印所需：',
     insufficientFilamentLine: '{{printer}} - {{slot}}：需要 {{required}}g，剩餘 {{remaining}}g',
     printAnyway: '仍然列印',

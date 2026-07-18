@@ -14,7 +14,24 @@ interface HMSErrorModalProps {
   onClose: () => void;
   printerId: number;
   hasPermission: (permission: Permission) => boolean;
+  // Runout guidance for a PAUSED print (#2587). When set, AMS-runout errors are
+  // re-described to name the physical slot the firmware now expects, instead of
+  // the generic "insert into the same slot" text (wrong under AMS Filament Backup).
+  // Slot labels are pre-formatted (e.g. "AMS-A · Slot 3"); null when the slot
+  // could not be resolved → an honest "check the printer" message is shown.
+  runoutGuidance?: {
+    expectedSlotLabel: string | null;
+    ranOutSlotLabel: string | null;
+  } | null;
 }
+
+// AMS per-slot filament-runout short codes (module 0x07). These pause the print
+// waiting for a specific slot — the ones #2587 re-describes. Printer-side /
+// external runout (0300_8004) has no AMS slot and is deliberately excluded.
+const AMS_RUNOUT_SHORT_CODES = new Set([
+  '0700_8011', '0701_8011', '0702_8011', '0703_8011', '0704_8011',
+  '0705_8011', '0706_8011', '0707_8011', '07FF_8011',
+]);
 
 // Comprehensive error code database (short format: XXXX_YYYY)
 // Auto-generated from ha-bambulab - 853 codes
@@ -917,7 +934,7 @@ function getHMSHomeUrl(): string {
   return `https://wiki.bambulab.com/en/hms/home`;
 }
 
-export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPermission }: HMSErrorModalProps) {
+export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPermission, runoutGuidance }: HMSErrorModalProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -1003,7 +1020,24 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
                 const { label, color, bgColor, Icon } = getSeverityInfo(error.severity);
                 const codeNum = parseInt(error.code.replace('0x', ''), 16) || 0;
                 const shortCode = getShortCode(error.attr, codeNum);
-                const description = ERROR_DESCRIPTIONS[shortCode] ?? t('hmsErrors.unknownCode');
+                // Runout guidance (#2587): for an AMS per-slot runout on a paused
+                // print, name the slot the firmware now expects rather than the
+                // misleading generic "insert into the same slot" text.
+                let description = ERROR_DESCRIPTIONS[shortCode] ?? t('hmsErrors.unknownCode');
+                if (runoutGuidance && AMS_RUNOUT_SHORT_CODES.has(shortCode)) {
+                  if (runoutGuidance.expectedSlotLabel && runoutGuidance.ranOutSlotLabel) {
+                    description = t('hmsErrors.runoutExpectedSlot', {
+                      expected: runoutGuidance.expectedSlotLabel,
+                      ranOut: runoutGuidance.ranOutSlotLabel,
+                    });
+                  } else if (runoutGuidance.expectedSlotLabel) {
+                    description = t('hmsErrors.runoutExpectedSlotOnly', {
+                      expected: runoutGuidance.expectedSlotLabel,
+                    });
+                  } else {
+                    description = t('hmsErrors.runoutSlotUnknown');
+                  }
+                }
                 const hmsHomeUrl = getHMSHomeUrl();
                 const displayCode = shortCode.replace('_', '-');
 

@@ -608,6 +608,12 @@ export default {
       title: 'This slot is filament {{n}} in the active print',
       ariaLabel: 'Active print slot {{n}}',
     },
+    expectedSlot: {
+      title: 'The printer is waiting for filament in this slot',
+      ariaLabel: 'Expected filament slot {{n}}',
+      label: '{{ams}} · Slot {{slot}}',
+      external: 'External spool',
+    },
     // Filaments section
     filaments: 'Filaments',
     // Camera
@@ -2844,6 +2850,9 @@ export default {
     clearFailed: 'Failed to clear HMS errors',
     actionSuccess: 'Action sent to printer',
     actionFailed: 'Failed to send action',
+    runoutExpectedSlot: 'Filament ran out in {{ranOut}}. The printer is now waiting for compatible filament in {{expected}}. Insert a spool into {{expected}}, then select Retry.',
+    runoutExpectedSlotOnly: 'The printer is waiting for compatible filament in {{expected}}. Insert a spool there, then select Retry.',
+    runoutSlotUnknown: 'Filament ran out and the print is paused. Bambuddy could not determine which slot the printer now expects — check the printer screen for the requested slot.',
     actions: {
       RESUME_PRINTING: "Resume Printing",
       RESUME_PRINTING_DEFECTS: "Resume (defects acceptable)",
@@ -4684,6 +4693,7 @@ export default {
     overrideWith: 'Override with',
     resetToOriginal: 'Reset to original',
     insufficientFilamentTitle: 'Not enough filament',
+    waitingForAmsStatus: 'Waiting for AMS status from {{printer}}…',
     insufficientFilamentMessage: 'Some assigned spools have less filament remaining than this print needs:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: needs {{required}}g, remaining {{remaining}}g',
     printAnyway: 'Print anyway',

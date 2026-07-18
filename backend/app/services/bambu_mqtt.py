@@ -321,6 +321,15 @@ class PrinterState:
     active_extruder: int = 0
     # Currently loaded tray (global ID): 254/255 = external spools, 255 = no filament on legacy printers
     tray_now: int = 255
+    # Firmware's target/previous tray as reported in print.ams (RAW, not globalised):
+    #   tray_tar = the slot the paused/loading print now expects
+    #   tray_pre = the slot that was loaded before (e.g. the one that ran out)
+    # For a single regular AMS these equal the global tray ID; for multi-AMS they
+    # are local slot IDs (0-3) that must be resolved against the mapping field, and
+    # for AMS-HT they are already global (128-135). 255 = none/idle, 254 = external.
+    # Surfaced during a runout PAUSE so the UI can name the expected slot (#2587).
+    tray_tar: int = 255
+    tray_pre: int = 255
     # Last valid tray_now (0-253) — survives unload (255) for usage tracking after print completes
     last_loaded_tray: int = -1
     # Pending load target - used to track what tray we're loading for H2D disambiguation
@@ -1762,6 +1771,34 @@ class BambuMQTTClient:
                     self.state.ams_status_main,
                     self.state.ams_status_sub,
                 )
+
+            # Parse tray_tar / tray_pre (RAW). These identify the slot the firmware
+            # now expects (tray_tar) and the slot loaded before (tray_pre) — the key
+            # signal for a runout PAUSE where AMS Filament Backup has advanced to the
+            # next compatible slot (#2587). Stored raw here; globalised at the API
+            # boundary because that resolution needs the AMS layout. On H2D/multi-AMS
+            # these are local slot numbers (0-3), not global IDs.
+            for _tk, _attr in (("tray_tar", "tray_tar"), ("tray_pre", "tray_pre")):
+                if _tk in ams_data:
+                    _raw = ams_data[_tk]
+                    if isinstance(_raw, str):
+                        try:
+                            _val = int(_raw)
+                        except ValueError:
+                            _val = 255
+                    else:
+                        _val = _raw if _raw is not None else 255
+                    prev = getattr(self.state, _attr)
+                    setattr(self.state, _attr, _val)
+                    # Log changes only while paused — the moment the operator cares —
+                    # so a healthy print's normal tar churn doesn't spam the log.
+                    if _val != prev and _val not in (255, -1) and self.state.state == "PAUSE":
+                        logger.info(
+                            "[%s] AMS %s changed to %s while paused (expected/previous slot signal, #2587)",
+                            self.serial_number,
+                            _tk,
+                            _val,
+                        )
 
             # Parse tray_now from AMS dict - this is the currently loaded tray global ID
             # Note: tray_tar is also available but on H2D it's just slot number (0-3), not global ID
@@ -3879,14 +3916,46 @@ class BambuMQTTClient:
                         flat_ams_mapping.append(tray_id)
                         ams_mapping2.append({"ams_id": ams_id, "slot_id": slot_id})
 
-            # If all mapped slots are external spool (no real AMS trays), force use_ams=False.
-            # P1S/P1P with no AMS rejects use_ams=True with "Failed to get AMS mapping table".
-            # Skip for dual-nozzle printers — use_ams controls nozzle routing there.
-            # H2S falls through this gate now (#1386): it is single-nozzle and was
+            # Reconcile use_ams against the resolved ams_mapping for single-nozzle
+            # printers — the mapping is authoritative about whether this print
+            # actually feeds from the AMS. Skip for dual-nozzle printers, where
+            # use_ams encodes nozzle routing rather than an AMS on/off flag.
+            # H2S falls through here now (#1386): it is single-nozzle and was
             # hitting the dual-nozzle bypass, which caused 07FF_8012 when printing
             # without an AMS attached.
-            if ams_mapping and use_ams and not is_dual_nozzle:
-                if all(t is None or int(t) < 0 or int(t) >= 254 for t in ams_mapping):
+            #
+            # Two symmetric corrections:
+            #
+            # (a) A mapping that resolves a *real* AMS tray (0-253) forces
+            #     use_ams=True even if it arrived False. A print sent to a Virtual
+            #     Printer is sliced against the VP, which advertises no AMS, so the
+            #     slicer sends use_ams=false and that gets stamped on the queue item
+            #     — but at dispatch the scheduler colour-matches a real printer and
+            #     resolves a real AMS slot. Without this, the stale False reaches the
+            #     printer, which ignores the mapped slot and aborts at layer 0 on the
+            #     empty external spool ("not enough filament"). Diagnosed by
+            #     @Sawtaytoes (#2595, PR #2596).
+            #
+            # (b) Only an *explicit* external/virtual spool (254/255) may downgrade
+            #     to use_ams=False. P1S/P1P with no AMS rejects use_ams=True with
+            #     "Failed to get AMS mapping table". An unresolved slot (-1) does
+            #     NEITHER: it means the mapping was never resolved — e.g. a frontend
+            #     status-load race that persisted [-1] (#2589) — and treating it as
+            #     external silently started the print against an empty feed. A genuine
+            #     external selection is >=254; unresolved is -1; a loaded tray is
+            #     0-253. Keeping them distinct means an unresolved mapping fails loudly
+            #     (or is recomputed upstream) instead of silently going external, and
+            #     never gets force-enabled by (a) either.
+            if ams_mapping and not is_dual_nozzle:
+                has_real_tray = any(t is not None and 0 <= int(t) <= 253 for t in ams_mapping)
+                all_external = all(t is None or int(t) >= 254 for t in ams_mapping)
+                if has_real_tray and not use_ams:
+                    use_ams = True
+                    logger.info(
+                        "[%s] AMS mapping resolved a real slot — setting use_ams=True (#2595)",
+                        self.serial_number,
+                    )
+                elif use_ams and all_external:
                     use_ams = False
                     logger.info(
                         "[%s] All filament slots use external spool — setting use_ams=False",

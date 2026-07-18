@@ -54,6 +54,7 @@ from backend.app.services.printer_manager import (
     drying_screen_only,
     get_derived_status_name,
     printer_manager,
+    resolve_expected_tray,
     resolve_plate_id,
     supports_chamber_heater,
     supports_chamber_temp,
@@ -766,6 +767,26 @@ async def get_printer_status(
         ams_mapping=ams_mapping,
         ams_extruder_map=ams_extruder_map,
         tray_now=tray_now,
+        # Runout guidance (#2587): resolve the firmware's target/previous slot to a
+        # global tray ID, but only while PAUSED — the moment the operator needs it.
+        expected_tray=(
+            resolve_expected_tray(
+                state.tray_tar,
+                [(u.id, u.is_ams_ht) for u in ams_units],
+                raw_data.get("mapping"),
+            )
+            if state.state == "PAUSE"
+            else None
+        ),
+        previous_tray=(
+            resolve_expected_tray(
+                state.tray_pre,
+                [(u.id, u.is_ams_ht) for u in ams_units],
+                raw_data.get("mapping"),
+            )
+            if state.state == "PAUSE"
+            else None
+        ),
         ams_status_main=state.ams_status_main,
         ams_status_sub=state.ams_status_sub,
         mc_print_sub_stage=state.mc_print_sub_stage,
@@ -1212,18 +1233,37 @@ async def get_printer_cover(
 # ============================================
 
 
+async def _load_printer_or_404(printer_id: int) -> Printer:
+    """Load a printer in a short-lived session, releasing the pooled DB
+    connection before the caller starts any FTP/network I/O (#2572).
+
+    The file-manager and storage routes talk FTP to the printer, which can
+    block for the full socket timeout — longer when a saturated FTP pool backs
+    up. Holding the request's Depends(get_db) session across that FTP pinned one
+    pooled connection idle-in-transaction per in-flight request, a top cause of
+    pool exhaustion on large farms. The returned row's scalar columns stay
+    readable after the session closes (expire_on_commit=False). Raises 404 when
+    the printer doesn't exist.
+
+    Reference async_session via the module so the maker is resolved at call time
+    — keeps it in sync with reinitialize_database() and lets tests patch it.
+    """
+    async with database.async_session() as db:
+        result = await db.execute(select(Printer).where(Printer.id == printer_id))
+        printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+    return printer
+
+
 @router.get("/{printer_id}/files")
 async def list_printer_files(
     printer_id: int,
     path: str = "/",
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
-    db: AsyncSession = Depends(get_db),
 ):
     """List files on the printer at the specified path."""
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+    printer = await _load_printer_or_404(printer_id)
 
     files = await list_files_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
 
@@ -1242,13 +1282,9 @@ async def download_printer_file(
     printer_id: int,
     path: str,
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
-    db: AsyncSession = Depends(get_db),
 ):
     """Download a file from the printer."""
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+    printer = await _load_printer_or_404(printer_id)
 
     data = await download_file_bytes_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
     if data is None:
@@ -1283,16 +1319,11 @@ async def get_printer_file_gcode(
     printer_id: int,
     path: str,
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
-    db: AsyncSession = Depends(get_db),
 ):
     """Get gcode for a file stored on a printer (for preview)."""
     import io
 
-    # Validate printer
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+    printer = await _load_printer_or_404(printer_id)
 
     data = await download_file_bytes_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
     if data is None:
@@ -1322,7 +1353,6 @@ async def get_printer_file_plates(
     printer_id: int,
     path: str = Query(..., description="Full path to the 3MF file on the printer"),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
-    db: AsyncSession = Depends(get_db),
 ):
     """Get available plates from a multi-plate 3MF file stored on a printer."""
     import io
@@ -1330,11 +1360,7 @@ async def get_printer_file_plates(
 
     import defusedxml.ElementTree as ET
 
-    # Validate printer
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+    printer = await _load_printer_or_404(printer_id)
 
     filename = path.split("/")[-1]
     if not filename.lower().endswith(".3mf"):
@@ -1567,15 +1593,11 @@ async def get_printer_file_plate_thumbnail(
     plate_index: int,
     path: str = Query(..., description="Full path to the 3MF file on the printer"),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
-    db: AsyncSession = Depends(get_db),
 ):
     """Get a plate thumbnail image from a printer-stored 3MF file."""
     import io
 
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+    printer = await _load_printer_or_404(printer_id)
 
     data = await download_file_bytes_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
     if data is None:
@@ -1598,7 +1620,6 @@ async def download_printer_files_as_zip(
     printer_id: int,
     request: dict,
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
-    db: AsyncSession = Depends(get_db),
 ):
     """Download multiple files from the printer as a ZIP archive."""
     import io
@@ -1607,10 +1628,7 @@ async def download_printer_files_as_zip(
     if not paths:
         raise HTTPException(400, "No files specified")
 
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+    printer = await _load_printer_or_404(printer_id)
 
     # Create ZIP in memory
     zip_buffer = io.BytesIO()
@@ -1645,13 +1663,9 @@ async def delete_printer_file(
     printer_id: int,
     path: str,
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
-    db: AsyncSession = Depends(get_db),
 ):
     """Delete a file from the printer."""
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+    printer = await _load_printer_or_404(printer_id)
 
     from backend.app.services.bambu_ftp import DeleteResult
 
@@ -1668,13 +1682,9 @@ async def delete_printer_file(
 async def get_printer_storage(
     printer_id: int,
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
-    db: AsyncSession = Depends(get_db),
 ):
     """Get storage information from the printer."""
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+    printer = await _load_printer_or_404(printer_id)
 
     storage_info = await get_storage_info_async(printer.ip_address, printer.access_code, printer_model=printer.model)
 

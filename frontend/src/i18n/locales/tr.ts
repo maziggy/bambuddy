@@ -604,6 +604,12 @@ export default {
       title: 'Bu slot, aktif baskıdaki {{n}} numaralı filament',
       ariaLabel: 'Aktif baskı slotu {{n}}',
     },
+    expectedSlot: {
+      title: 'Yazıcı bu slotta filament bekliyor',
+      ariaLabel: 'Beklenen filament slotu {{n}}',
+      label: '{{ams}} · Slot {{slot}}',
+      external: 'Harici makara',
+    },
     // Filamentler bölümü
     filaments: 'Filamentler',
     // Kamera
@@ -2819,6 +2825,9 @@ export default {
     clearFailed: 'HMS hataları temizlenemedi',
     actionSuccess: 'Eylem yazıcıya gönderildi',
     actionFailed: 'Eylem gönderilemedi',
+    runoutExpectedSlot: '{{ranOut}} slotundaki filament bitti. Yazıcı şimdi {{expected}} slotunda uyumlu filament bekliyor. {{expected}} slotuna bir makara takın ve ardından Yeniden Dene\'yi seçin.',
+    runoutExpectedSlotOnly: 'Yazıcı {{expected}} slotunda uyumlu filament bekliyor. Oraya bir makara takın ve ardından Yeniden Dene\'yi seçin.',
+    runoutSlotUnknown: 'Filament bitti ve baskı duraklatıldı. Bambuddy yazıcının şu anda hangi slotu beklediğini belirleyemedi — istenen slot için yazıcının ekranını kontrol edin.',
     actions: {
       RESUME_PRINTING: 'Baskıyı sürdür',
       RESUME_PRINTING_DEFECTS: 'Sürdür (kusurlar kabul edilebilir)',
@@ -4619,6 +4628,7 @@ export default {
     overrideWith: 'Şununla geçersiz kıl',
     resetToOriginal: 'Orijinale sıfırla',
     insufficientFilamentTitle: 'Yeterli filament yok',
+    waitingForAmsStatus: '{{printer}} için AMS durumu bekleniyor…',
     insufficientFilamentMessage: 'Bazı atanmış makaralarda bu baskının ihtiyaç duyduğundan daha az filament kaldı:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: {{required}}g gerekli, {{remaining}}g kaldı',
     printAnyway: 'Yine de yazdır',

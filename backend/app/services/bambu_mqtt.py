@@ -2078,10 +2078,26 @@ class BambuMQTTClient:
                             # 10=spool present but filament not in feeder) indicate
                             # the slot should be cleared.  Without this, old
                             # tray_type/tray_color persist indefinitely (#784).
+                            #
+                            # BUT this is regular-AMS semantics. An AMS-HT (single-
+                            # tray high-temp dry box, id >= 128) reports its loaded
+                            # tray as state=9, not 11 — it doesn't feed filament into
+                            # a shared buffer the way a 4-slot AMS does. Applying the
+                            # `state != 11 → empty` rule to an HT unit wiped a present
+                            # spool on every power-on, when the printer sends a partial
+                            # {id, state=9} for the HT tray (#2594). Skip the state
+                            # heuristic for HT units — a genuine HT spool removal still
+                            # clears via the explicit tray_type=="" case above and the
+                            # tray_exist_bits cleanup below.
+                            try:
+                                _is_ht_unit = int(ams_id) >= 128
+                            except (TypeError, ValueError):
+                                _is_ht_unit = False
                             tray_state = new_tray.get("state")
                             if (
                                 tray_state is not None
                                 and tray_state != 11
+                                and not _is_ht_unit
                                 and "tray_type" not in new_tray
                                 and merged_tray.get("tray_type")
                             ):

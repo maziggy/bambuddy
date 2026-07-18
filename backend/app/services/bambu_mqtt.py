@@ -321,6 +321,15 @@ class PrinterState:
     active_extruder: int = 0
     # Currently loaded tray (global ID): 254/255 = external spools, 255 = no filament on legacy printers
     tray_now: int = 255
+    # Firmware's target/previous tray as reported in print.ams (RAW, not globalised):
+    #   tray_tar = the slot the paused/loading print now expects
+    #   tray_pre = the slot that was loaded before (e.g. the one that ran out)
+    # For a single regular AMS these equal the global tray ID; for multi-AMS they
+    # are local slot IDs (0-3) that must be resolved against the mapping field, and
+    # for AMS-HT they are already global (128-135). 255 = none/idle, 254 = external.
+    # Surfaced during a runout PAUSE so the UI can name the expected slot (#2587).
+    tray_tar: int = 255
+    tray_pre: int = 255
     # Last valid tray_now (0-253) — survives unload (255) for usage tracking after print completes
     last_loaded_tray: int = -1
     # Pending load target - used to track what tray we're loading for H2D disambiguation
@@ -1762,6 +1771,34 @@ class BambuMQTTClient:
                     self.state.ams_status_main,
                     self.state.ams_status_sub,
                 )
+
+            # Parse tray_tar / tray_pre (RAW). These identify the slot the firmware
+            # now expects (tray_tar) and the slot loaded before (tray_pre) — the key
+            # signal for a runout PAUSE where AMS Filament Backup has advanced to the
+            # next compatible slot (#2587). Stored raw here; globalised at the API
+            # boundary because that resolution needs the AMS layout. On H2D/multi-AMS
+            # these are local slot numbers (0-3), not global IDs.
+            for _tk, _attr in (("tray_tar", "tray_tar"), ("tray_pre", "tray_pre")):
+                if _tk in ams_data:
+                    _raw = ams_data[_tk]
+                    if isinstance(_raw, str):
+                        try:
+                            _val = int(_raw)
+                        except ValueError:
+                            _val = 255
+                    else:
+                        _val = _raw if _raw is not None else 255
+                    prev = getattr(self.state, _attr)
+                    setattr(self.state, _attr, _val)
+                    # Log changes only while paused — the moment the operator cares —
+                    # so a healthy print's normal tar churn doesn't spam the log.
+                    if _val != prev and _val not in (255, -1) and self.state.state == "PAUSE":
+                        logger.info(
+                            "[%s] AMS %s changed to %s while paused (expected/previous slot signal, #2587)",
+                            self.serial_number,
+                            _tk,
+                            _val,
+                        )
 
             # Parse tray_now from AMS dict - this is the currently loaded tray global ID
             # Note: tray_tar is also available but on H2D it's just slot number (0-3), not global ID

@@ -604,6 +604,12 @@ export default {
       title: '此料槽在当前打印中是耗材 {{n}}',
       ariaLabel: '当前打印料槽 {{n}}',
     },
+    expectedSlot: {
+      title: '打印机正在等待此料槽装入耗材',
+      ariaLabel: '需要装料的料槽 {{n}}',
+      label: '{{ams}} · 料槽 {{slot}}',
+      external: '外部料卷',
+    },
     // Filaments section
     filaments: '耗材',
     // Camera
@@ -2793,6 +2799,9 @@ export default {
     clearFailed: '清除 HMS 错误失败',
     actionSuccess: '已向打印机发送操作',
     actionFailed: '操作发送失败',
+    runoutExpectedSlot: '{{ranOut}} 的耗材已用尽。打印机现在正在等待 {{expected}} 装入兼容耗材。请将料卷装入 {{expected}}，然后选择"重试"。',
+    runoutExpectedSlotOnly: '打印机正在等待 {{expected}} 装入兼容耗材。请在该料槽装入料卷，然后选择"重试"。',
+    runoutSlotUnknown: '耗材已用尽，打印已暂停。Bambuddy 无法确定打印机现在需要哪个料槽——请在打印机屏幕上查看所请求的料槽。',
     actions: {
       RESUME_PRINTING: '恢复打印',
       RESUME_PRINTING_DEFECTS: '恢复 (缺陷可接受)',

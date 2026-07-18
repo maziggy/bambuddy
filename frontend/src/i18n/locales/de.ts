@@ -604,6 +604,12 @@ export default {
       title: 'Dieser Slot ist Filament {{n}} im aktiven Druck',
       ariaLabel: 'Aktiver Druck-Slot {{n}}',
     },
+    expectedSlot: {
+      title: 'Der Drucker wartet auf Filament in diesem Slot',
+      ariaLabel: 'Erwarteter Filament-Slot {{n}}',
+      label: '{{ams}} · Slot {{slot}}',
+      external: 'Externe Spule',
+    },
     // Filaments section
     filaments: 'Filamente',
     // Camera
@@ -2805,6 +2811,9 @@ export default {
     clearFailed: 'HMS-Fehler konnten nicht gelöscht werden',
     actionSuccess: 'Aktion an Drucker gesendet',
     actionFailed: 'Aktion konnte nicht gesendet werden',
+    runoutExpectedSlot: 'Das Filament in {{ranOut}} ist aufgebraucht. Der Drucker wartet jetzt auf kompatibles Filament in {{expected}}. Legen Sie eine Spule in {{expected}} ein und wählen Sie dann Wiederholen.',
+    runoutExpectedSlotOnly: 'Der Drucker wartet auf kompatibles Filament in {{expected}}. Legen Sie dort eine Spule ein und wählen Sie dann Wiederholen.',
+    runoutSlotUnknown: 'Das Filament ist aufgebraucht und der Druck ist pausiert. Bambuddy konnte nicht ermitteln, welchen Slot der Drucker jetzt erwartet — prüfen Sie am Druckerdisplay, welcher Slot angefordert wird.',
     actions: {
       RESUME_PRINTING: 'Druck fortsetzen',
       RESUME_PRINTING_DEFECTS: 'Fortsetzen (Mängel akzeptabel)',

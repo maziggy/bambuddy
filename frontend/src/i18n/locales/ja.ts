@@ -603,6 +603,12 @@ export default {
       title: 'このスロットはアクティブな印刷のフィラメント {{n}} です',
       ariaLabel: 'アクティブ印刷スロット {{n}}',
     },
+    expectedSlot: {
+      title: 'プリンターはこのスロットのフィラメントを待っています',
+      ariaLabel: '要求スロット {{n}}',
+      label: '{{ams}} · スロット {{slot}}',
+      external: '外部スプール',
+    },
     // Filaments section
     filaments: 'フィラメント',
     // Camera
@@ -2805,6 +2811,9 @@ export default {
     clearFailed: 'HMSエラーのクリアに失敗しました',
     actionSuccess: 'アクションをプリンターに送信しました',
     actionFailed: 'アクションの送信に失敗しました',
+    runoutExpectedSlot: '{{ranOut}} のフィラメントが切れました。プリンターは現在 {{expected}} に対応するフィラメントを待っています。{{expected}} にスプールをセットして、「再試行」を選択してください。',
+    runoutExpectedSlotOnly: 'プリンターは {{expected}} に対応するフィラメントを待っています。そこにスプールをセットして、「再試行」を選択してください。',
+    runoutSlotUnknown: 'フィラメントが切れて印刷が一時停止しています。プリンターが現在要求しているスロットを Bambuddy が特定できませんでした。プリンターの画面で要求されているスロットを確認してください。',
     actions: {
       RESUME_PRINTING: '印刷を再開',
       RESUME_PRINTING_DEFECTS: '再開（不具合を許容）',

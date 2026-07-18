@@ -54,6 +54,7 @@ from backend.app.services.printer_manager import (
     drying_screen_only,
     get_derived_status_name,
     printer_manager,
+    resolve_expected_tray,
     resolve_plate_id,
     supports_chamber_heater,
     supports_chamber_temp,
@@ -766,6 +767,26 @@ async def get_printer_status(
         ams_mapping=ams_mapping,
         ams_extruder_map=ams_extruder_map,
         tray_now=tray_now,
+        # Runout guidance (#2587): resolve the firmware's target/previous slot to a
+        # global tray ID, but only while PAUSED — the moment the operator needs it.
+        expected_tray=(
+            resolve_expected_tray(
+                state.tray_tar,
+                [(u.id, u.is_ams_ht) for u in ams_units],
+                raw_data.get("mapping"),
+            )
+            if state.state == "PAUSE"
+            else None
+        ),
+        previous_tray=(
+            resolve_expected_tray(
+                state.tray_pre,
+                [(u.id, u.is_ams_ht) for u in ams_units],
+                raw_data.get("mapping"),
+            )
+            if state.state == "PAUSE"
+            else None
+        ),
         ams_status_main=state.ams_status_main,
         ams_status_sub=state.ams_status_sub,
         mc_print_sub_stage=state.mc_print_sub_stage,

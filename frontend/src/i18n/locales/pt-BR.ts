@@ -604,6 +604,12 @@ export default {
       title: 'Este slot é o filamento {{n}} na impressão ativa',
       ariaLabel: 'Slot de impressão ativa {{n}}',
     },
+    expectedSlot: {
+      title: 'A impressora está aguardando filamento neste slot',
+      ariaLabel: 'Slot de filamento esperado {{n}}',
+      label: '{{ams}} · Slot {{slot}}',
+      external: 'Bobina externa',
+    },
     // Filaments section
     filaments: 'Filamentos',
     // Camera
@@ -2793,6 +2799,9 @@ export default {
     clearFailed: 'Falha ao limpar erros HMS',
     actionSuccess: 'Ação enviada à impressora',
     actionFailed: 'Falha ao enviar ação',
+    runoutExpectedSlot: 'O filamento acabou em {{ranOut}}. A impressora agora aguarda filamento compatível em {{expected}}. Insira uma bobina em {{expected}} e selecione Tentar novamente.',
+    runoutExpectedSlotOnly: 'A impressora está aguardando filamento compatível em {{expected}}. Insira uma bobina ali e selecione Tentar novamente.',
+    runoutSlotUnknown: 'O filamento acabou e a impressão está pausada. O Bambuddy não conseguiu determinar qual slot a impressora agora espera — verifique a tela da impressora para o slot solicitado.',
     actions: {
       RESUME_PRINTING: 'Retomar impressão',
       RESUME_PRINTING_DEFECTS: 'Retomar (defeitos aceitáveis)',

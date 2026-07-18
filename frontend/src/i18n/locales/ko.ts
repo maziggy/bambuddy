@@ -567,6 +567,12 @@ export default {
       title: '이 슬롯은 활성 인쇄의 필라멘트 {{n}}입니다',
       ariaLabel: '활성 인쇄 슬롯 {{n}}'
     },
+    expectedSlot: {
+      title: '프린터가 이 슬롯의 필라멘트를 기다리고 있습니다',
+      ariaLabel: '요청된 필라멘트 슬롯 {{n}}',
+      label: '{{ams}} · 슬롯 {{slot}}',
+      external: '외부 스풀',
+    },
     filaments: '필라멘트',
     openCameraOverlay: '카메라 오버레이 열기',
     openCameraWindow: '새 창에서 카메라 열기',
@@ -2655,6 +2661,9 @@ export default {
     clearFailed: 'HMS 오류 지우기 실패',
     actionSuccess: '프린터에 작업을 전송함',
     actionFailed: '작업 전송 실패',
+    runoutExpectedSlot: '{{ranOut}}의 필라멘트가 소진되었습니다. 프린터가 이제 {{expected}}에 호환 필라멘트를 기다리고 있습니다. {{expected}}에 스풀을 넣은 다음 다시 시도를 선택하세요.',
+    runoutExpectedSlotOnly: '프린터가 {{expected}}에 호환 필라멘트를 기다리고 있습니다. 거기에 스풀을 넣은 다음 다시 시도를 선택하세요.',
+    runoutSlotUnknown: '필라멘트가 소진되어 인쇄가 일시정지되었습니다. Bambuddy가 프린터가 현재 요청하는 슬롯을 확인할 수 없습니다 — 프린터 화면에서 요청된 슬롯을 확인하세요.',
     actions: {
       RESUME_PRINTING: '인쇄 재개',
       RESUME_PRINTING_DEFECTS: '재개 (결함 허용)',

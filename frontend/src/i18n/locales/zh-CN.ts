@@ -4584,6 +4584,7 @@ export default {
     overrideWith: '覆盖为',
     resetToOriginal: '恢复为原始',
     insufficientFilamentTitle: '耗材不足',
+    waitingForAmsStatus: '正在等待 {{printer}} 的 AMS 状态…',
     insufficientFilamentMessage: '部分已分配线轴的剩余耗材少于本次打印所需：',
     insufficientFilamentLine: '{{printer}} - {{slot}}：需要 {{required}}g，剩余 {{remaining}}g',
     printAnyway: '仍然打印',

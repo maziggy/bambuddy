@@ -439,7 +439,17 @@ export function useFilamentMapping(
     [filamentReqs, loadedFilaments, manualMappings, preferLowest, ftsActive, inventoryByTrayId],
   );
 
-  const amsMapping = useMemo(() => buildAmsMapping(filamentComparison), [filamentComparison]);
+  // Don't emit a mapping until the printer's trays are known. With no loaded
+  // filaments (e.g. printerStatus still loading), buildFilamentComparison marks
+  // every required slot unmatched and buildAmsMapping would serialize an
+  // all-[-1] array — which the backend used to treat as an explicit
+  // external-spool selection, silently printing to an empty feed (#2589).
+  // Return undefined instead so the scheduler resolves the mapping from live
+  // status at dispatch. Mirrors the guard in computeAmsMapping.
+  const amsMapping = useMemo(
+    () => (loadedFilaments.length === 0 ? undefined : buildAmsMapping(filamentComparison)),
+    [filamentComparison, loadedFilaments.length],
+  );
 
   const hasTypeMismatch = filamentComparison.some((f) => f.status === 'mismatch');
   const hasColorMismatch = filamentComparison.some((f) => f.status === 'type_only');

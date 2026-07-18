@@ -4639,6 +4639,7 @@ export default {
     overrideWith: 'Override with',
     resetToOriginal: 'Reset to original',
     insufficientFilamentTitle: 'Not enough filament',
+    waitingForAmsStatus: 'Waiting for AMS status from {{printer}}…',
     insufficientFilamentMessage: 'Some assigned spools have less filament remaining than this print needs:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: needs {{required}}g, remaining {{remaining}}g',
     printAnyway: 'Print anyway',

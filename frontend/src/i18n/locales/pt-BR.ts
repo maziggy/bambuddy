@@ -4584,6 +4584,7 @@ export default {
     overrideWith: 'Substituir por',
     resetToOriginal: 'Restaurar original',
     insufficientFilamentTitle: 'Filamento insuficiente',
+    waitingForAmsStatus: 'Aguardando o status do AMS de {{printer}}…',
     insufficientFilamentMessage: 'Alguns dos carretéis atribuídos têm menos filamento restante do que o necessário para esta impressão:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: necessário {{required}}g, restante {{remaining}}g',
     printAnyway: 'Imprimir mesmo assim',

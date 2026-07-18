@@ -3885,8 +3885,17 @@ class BambuMQTTClient:
             # H2S falls through this gate now (#1386): it is single-nozzle and was
             # hitting the dual-nozzle bypass, which caused 07FF_8012 when printing
             # without an AMS attached.
+            #
+            # Only an *explicit* external/virtual spool (254/255) may downgrade to
+            # use_ams=False. An unresolved slot (-1) must NOT: it means the mapping
+            # was never resolved — e.g. a frontend status-load race that persisted
+            # [-1] (#2589) — and treating that as "external" silently started the
+            # print against an empty external feed, pausing with a runout. A genuine
+            # external selection is >=254; unresolved is -1. Keep them distinct so an
+            # unresolved mapping fails loudly (or is recomputed upstream) instead of
+            # silently going external.
             if ams_mapping and use_ams and not is_dual_nozzle:
-                if all(t is None or int(t) < 0 or int(t) >= 254 for t in ams_mapping):
+                if all(t is None or int(t) >= 254 for t in ams_mapping):
                     use_ams = False
                     logger.info(
                         "[%s] All filament slots use external spool — setting use_ams=False",

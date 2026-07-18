@@ -4596,6 +4596,7 @@ export default {
     overrideWith: 'Ersetzen mit',
     resetToOriginal: 'Auf Original zurücksetzen',
     insufficientFilamentTitle: 'Nicht genug Filament',
+    waitingForAmsStatus: 'Warte auf AMS-Status von {{printer}}…',
     insufficientFilamentMessage: 'Einige zugewiesene Spulen haben weniger Filament als dieser Druck benötigt:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: benötigt {{required}}g, verbleibend {{remaining}}g',
     printAnyway: 'Trotzdem drucken',

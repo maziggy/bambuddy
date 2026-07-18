@@ -4368,6 +4368,7 @@ export default {
     overrideWith: '재정의',
     resetToOriginal: '원래대로 초기화',
     insufficientFilamentTitle: '필라멘트 부족',
+    waitingForAmsStatus: '{{printer}}의 AMS 상태를 기다리는 중…',
     insufficientFilamentMessage: '일부 할당된 스풀에 이 인쇄에 필요한 것보다 적은 필라멘트가 남아 있습니다:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: {{required}}g 필요, {{remaining}}g 남음',
     printAnyway: '그래도 인쇄',

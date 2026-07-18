@@ -4585,6 +4585,7 @@ export default {
     overrideWith: 'Remplacer par',
     resetToOriginal: 'Revenir à l\'original',
     insufficientFilamentTitle: 'Filament insuffisant',
+    waitingForAmsStatus: 'En attente de l\'état de l\'AMS de {{printer}}…',
     insufficientFilamentMessage: 'Certaines bobines assignées ont moins de filament restant que nécessaire pour cette impression :',
     insufficientFilamentLine: '{{printer}} - {{slot}} : nécessite {{required}}g, restant {{remaining}}g',
     printAnyway: 'Imprimer quand même',

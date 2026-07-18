@@ -4596,6 +4596,7 @@ export default {
     overrideWith: '変更先',
     resetToOriginal: 'オリジナルに戻す',
     insufficientFilamentTitle: 'フィラメントが不足しています',
+    waitingForAmsStatus: '{{printer}} のAMSステータスを待機しています…',
     insufficientFilamentMessage: '割り当てられたスプールの一部は、この印刷に必要な量より残量が少ないです:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: 必要 {{required}}g、残り {{remaining}}g',
     printAnyway: 'それでも印刷',

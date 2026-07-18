@@ -4574,6 +4574,7 @@ export default {
     overrideWith: 'Şununla geçersiz kıl',
     resetToOriginal: 'Orijinale sıfırla',
     insufficientFilamentTitle: 'Yeterli filament yok',
+    waitingForAmsStatus: '{{printer}} için AMS durumu bekleniyor…',
     insufficientFilamentMessage: 'Bazı atanmış makaralarda bu baskının ihtiyaç duyduğundan daha az filament kaldı:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: {{required}}g gerekli, {{remaining}}g kaldı',
     printAnyway: 'Yine de yazdır',

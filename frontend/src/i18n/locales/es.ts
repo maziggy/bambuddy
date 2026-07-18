@@ -4604,6 +4604,7 @@ export default {
     overrideWith: 'Anular con',
     resetToOriginal: 'Restablecer al original',
     insufficientFilamentTitle: 'No hay suficiente filamento',
+    waitingForAmsStatus: 'Esperando el estado del AMS de {{printer}}…',
     insufficientFilamentMessage: 'Algunas bobinas asignadas tienen menos filamento restante del que necesita esta impresión:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: necesita {{required}} g, restante {{remaining}} g',
     printAnyway: 'Imprimir de todos modos',

@@ -653,6 +653,7 @@ export interface Archive {
   original_archive_id: number | null;  // ID of the first/original archive
   object_count: number | null;
   print_name: string | null;
+  plate_id: number | null;  // Selected plate of a multi-plate 3MF (#2603)
   print_time_seconds: number | null;
   actual_time_seconds: number | null;  // Computed from started_at/completed_at
   time_accuracy: number | null;  // Percentage: 100 = perfect, >100 = faster than estimated

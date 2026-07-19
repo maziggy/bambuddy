@@ -110,7 +110,9 @@ async def queue_factory(tmp_path):
 async def _dispatch_library_item(ctx, *, archive_failure=False, unlink_side_effect=None):
     scheduler = PrintScheduler()
 
-    async def archive_print(self, *, printer_id, source_file, original_filename, created_by_id=None, project_id=None):
+    async def archive_print(
+        self, *, printer_id, source_file, original_filename, created_by_id=None, project_id=None, plate_id=None
+    ):
         if archive_failure:
             raise RuntimeError("archive copy failed")
 

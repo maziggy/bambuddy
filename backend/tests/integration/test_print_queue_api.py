@@ -3164,3 +3164,75 @@ class TestForceColorOverridesAreScopedToThePlate:
         )
         assert response.status_code == 200
         assert [o["color_name"] for o in response.json()["filament_overrides"]] == ["Sunshine Yellow"]
+
+
+@pytest.mark.asyncio
+async def test_stop_offline_reconciles_linked_archive_status_2603(
+    async_client: AsyncClient, printer_factory, archive_factory, db_session
+):
+    """Stopping a printing item while the printer is offline must also close out its
+    archive (#2603).
+
+    When the stop command reaches the printer, the later MQTT completion event flips
+    the archive to cancelled. When the printer is offline no such event ever arrives,
+    so without this the archive stays "printing" forever while the queue row is
+    already cancelled — the reporter's archive 436. The offline branch reconciles the
+    archive directly.
+    """
+    from unittest.mock import MagicMock, patch
+
+    from backend.app.models.print_queue import PrintQueueItem
+
+    printer = await printer_factory(name="Offline printer")
+    archive = await archive_factory(
+        printer.id, status="printing", plate_id=22, filename="heart 3.gcode.3mf", with_run=False
+    )
+    item = PrintQueueItem(printer_id=printer.id, archive_id=archive.id, status="printing")
+    db_session.add(item)
+    await db_session.commit()
+    await db_session.refresh(item)
+
+    # stop_print returns False => printer offline / not connected.
+    with patch(
+        "backend.app.services.printer_manager.printer_manager.stop_print",
+        MagicMock(return_value=False),
+    ):
+        resp = await async_client.post(f"/api/v1/queue/{item.id}/stop")
+
+    assert resp.status_code == 200
+    await db_session.refresh(item)
+    await db_session.refresh(archive)
+    assert item.status == "cancelled"
+    assert archive.status == "cancelled", "an offline stop must reconcile the archive, not leave it 'printing'"
+    assert archive.completed_at is not None
+    assert archive.failure_reason == "Stopped by user (printer was offline)"
+
+
+@pytest.mark.asyncio
+async def test_stop_online_leaves_archive_for_mqtt_to_reconcile_2603(
+    async_client: AsyncClient, printer_factory, archive_factory, db_session
+):
+    """When the stop command reaches the printer, the archive is left to the MQTT
+    completion path — the offline reconcile must NOT fire and pre-empt it."""
+    from unittest.mock import MagicMock, patch
+
+    from backend.app.models.print_queue import PrintQueueItem
+
+    printer = await printer_factory(name="Online printer")
+    archive = await archive_factory(printer.id, status="printing", filename="heart 3.gcode.3mf", with_run=False)
+    item = PrintQueueItem(printer_id=printer.id, archive_id=archive.id, status="printing")
+    db_session.add(item)
+    await db_session.commit()
+    await db_session.refresh(item)
+
+    with patch(
+        "backend.app.services.printer_manager.printer_manager.stop_print",
+        MagicMock(return_value=True),
+    ):
+        resp = await async_client.post(f"/api/v1/queue/{item.id}/stop")
+
+    assert resp.status_code == 200
+    await db_session.refresh(item)
+    await db_session.refresh(archive)
+    assert item.status == "cancelled"
+    assert archive.status == "printing", "an online stop must leave the archive for the MQTT completion path"

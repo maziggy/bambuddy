@@ -2965,6 +2965,14 @@ class PrintScheduler:
                 await self._power_off_if_needed(db, item)
                 return
 
+            # Persist the queue item's selected plate onto the archive so Print
+            # History can show the actual plate after cancel/fail/complete (#2603).
+            # Only when the archive doesn't already carry one, so a reprint of a
+            # plate-specific archive isn't relabelled by a differently-plated
+            # queue row.
+            if archive.plate_id is None and item.plate_id is not None:
+                archive.plate_id = item.plate_id
+
             file_path = settings.base_dir / archive.file_path
             filename = archive.filename
 
@@ -2997,6 +3005,7 @@ class PrintScheduler:
                     original_filename=filename,
                     created_by_id=item.created_by_id,
                     project_id=item.project_id,
+                    plate_id=item.plate_id,  # selected plate → Print History (#2603)
                 )
                 if archive:
                     item.archive_id = archive.id

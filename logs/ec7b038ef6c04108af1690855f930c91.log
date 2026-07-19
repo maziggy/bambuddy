@@ -1,0 +1,200 @@
+2026-07-19 17:50:05,405 INFO [uvicorn.access] [-] [IP]:45282 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:50:15,572 INFO [uvicorn.access] [-] [IP]:50922 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:50:15,762 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-19 17:50:22,830 INFO [uvicorn.access] [-] [IP]:61164 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-19 17:50:22,885 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-19 17:50:22,896 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-19 17:50:22,899 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-07-19 17:50:25,915 INFO [uvicorn.access] [-] [IP]:37294 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:50:31,960 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-19 17:50:36,119 INFO [uvicorn.access] [-] [IP]:47352 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:50:46,496 INFO [uvicorn.access] [-] [IP]:38380 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:50:56,939 INFO [uvicorn.access] [-] [IP]:43580 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:51:07,165 INFO [uvicorn.access] [-] [IP]:42044 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:51:17,335 INFO [uvicorn.access] [-] [IP]:38030 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:51:27,500 INFO [uvicorn.access] [-] [IP]:48972 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:51:37,705 INFO [uvicorn.access] [-] [IP]:59244 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:51:47,905 INFO [uvicorn.access] [-] [IP]:44904 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:51:58,082 INFO [uvicorn.access] [-] [IP]:40930 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:52:08,251 INFO [uvicorn.access] [-] [IP]:33766 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:52:18,464 INFO [uvicorn.access] [-] [IP]:42674 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:52:28,647 INFO [uvicorn.access] [-] [IP]:60024 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:52:38,849 INFO [uvicorn.access] [-] [IP]:49424 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:52:49,020 INFO [uvicorn.access] [-] [IP]:46962 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:52:59,186 INFO [uvicorn.access] [-] [IP]:49866 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:53:09,353 INFO [uvicorn.access] [-] [IP]:57348 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:53:13,930 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-19 17:53:19,839 INFO [uvicorn.access] [-] [IP]:48448 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:53:30,010 INFO [uvicorn.access] [-] [IP]:53238 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:53:40,234 INFO [uvicorn.access] [-] [IP]:56492 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:53:50,406 INFO [uvicorn.access] [-] [IP]:50750 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:54:00,589 INFO [uvicorn.access] [-] [IP]:51154 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:54:10,756 INFO [uvicorn.access] [-] [IP]:57748 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:54:20,956 INFO [uvicorn.access] [-] [IP]:48894 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:54:28,210 INFO [uvicorn.access] [-] [IP]:65518 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-19 17:54:29,516 INFO [uvicorn.access] [-] [IP]:65521 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-19 17:54:29,842 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-19 17:54:29,895 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-19 17:54:29,899 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-07-19 17:54:31,396 INFO [uvicorn.access] [-] [IP]:49144 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:54:31,438 INFO [backend.app.api.routes.cloud] [b0f716ff] get_filament_info called with 3 IDs: ['GFA00', 'GFG02', 'GFU03']
+2026-07-19 17:54:31,676 INFO [backend.app.api.routes.cloud] [33e129d5] get_filament_info called with 1 IDs: ['GFA00']
+2026-07-19 17:54:31,956 WARNING [backend.app.api.routes.cloud] [b0f716ff] Failed to get cloud preset GFG02 (API ID: GFSG02): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-19 17:54:31,971 INFO [uvicorn.access] [-] [IP]:65517 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-19 17:54:32,154 WARNING [backend.app.api.routes.cloud] [b0f716ff] Failed to get cloud preset GFU03 (API ID: GFSU03): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-19 17:54:32,181 INFO [uvicorn.access] [-] [IP]:65520 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-19 17:54:41,560 INFO [uvicorn.access] [-] [IP]:48018 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:54:51,769 INFO [uvicorn.access] [-] [IP]:43134 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:54:56,866 INFO [backend.app.api.routes.spoolbuddy] [e96a0ec8] System command queued for device sb-b827eb89edd3: shutdown
+2026-07-19 17:54:56,870 INFO [uvicorn.access] [-] [IP]:49155 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/system/command HTTP/1.1" 200
+2026-07-19 17:55:01,936 INFO [uvicorn.access] [-] [IP]:43922 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/heartbeat HTTP/1.1" 200
+2026-07-19 17:55:02,080 INFO [backend.app.api.routes.spoolbuddy] [ca7d86f2] System command result from sb-b827eb89edd3 with no pending command: shutdown
+2026-07-19 17:55:02,083 INFO [uvicorn.access] [-] [IP]:43922 - "POST /api/v1/spoolbuddy/devices/sb-b827eb89edd3/system/command-result HTTP/1.1" 200
+2026-07-19 17:55:38,275 INFO [backend.app.api.routes.spoolbuddy] [-] SpoolBuddy device offline: sb-b827eb89edd3
+2026-07-19 17:58:13,960 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-19 18:03:13,989 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-19 18:08:14,082 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-19 18:13:14,111 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-19 18:18:14,140 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-19 18:23:14,170 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-19 18:28:14,196 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-19 18:33:14,224 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-19 18:34:23,358 INFO [backend.app.api.routes.cloud] [b26bc84f] get_filament_info called with 1 IDs: ['GFA00']
+2026-07-19 18:34:23,608 INFO [uvicorn.access] [-] [IP]:60125 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-19 18:34:24,839 INFO [uvicorn.access] [-] [IP]:60125 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-19 18:34:26,532 INFO [backend.app.api.routes.cloud] [73b9e307] get_filament_info called with 3 IDs: ['GFA00', 'GFG02', 'GFU03']
+2026-07-19 18:34:26,723 WARNING [backend.app.api.routes.cloud] [73b9e307] Failed to get cloud preset GFG02 (API ID: GFSG02): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-19 18:34:26,915 WARNING [backend.app.api.routes.cloud] [73b9e307] Failed to get cloud preset GFU03 (API ID: GFSU03): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-19 18:34:26,926 INFO [uvicorn.access] [-] [IP]:54934 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-19 18:34:30,489 INFO [backend.app.api.routes.camera] [9b53e138] Using chamber image protocol for A1 Mini
+2026-07-19 18:34:30,490 INFO [backend.app.api.routes.camera] [9b53e138] Camera viewer attached to printer-1 (subscribers=2)
+2026-07-19 18:34:30,553 INFO [backend.app.api.routes.camera] [6197d20c] Using chamber image protocol for A1
+2026-07-19 18:34:30,554 INFO [backend.app.api.routes.camera] [6197d20c] Camera viewer attached to printer-2 (subscribers=3)
+2026-07-19 18:34:31,764 INFO [backend.app.api.routes.camera] [5958daab] Skipping force-shutdown for printer 1: 2 subscriber(s) still attached; natural cleanup will tear down when last viewer disconnects
+2026-07-19 18:34:31,767 INFO [uvicorn.access] [-] [IP]:54934 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-07-19 18:34:31,836 INFO [backend.app.api.routes.camera] [663b4601] Skipping force-shutdown for printer 2: 3 subscriber(s) still attached; natural cleanup will tear down when last viewer disconnects
+2026-07-19 18:34:31,839 INFO [uvicorn.access] [-] [IP]:54934 - "POST /api/v1/printers/2/camera/stop HTTP/1.1" 200
+2026-07-19 18:34:32,663 INFO [backend.app.api.routes.camera] [b8757c0c] Camera viewer detached from printer-1 (subscribers=1)
+2026-07-19 18:34:34,635 INFO [backend.app.api.routes.camera] [eacec884] Camera viewer detached from printer-2 (subscribers=2)
+2026-07-19 18:38:13,576 INFO [backend.app.api.routes.camera] [da6664e7] Using chamber image protocol for A1 Mini
+2026-07-19 18:38:13,577 INFO [backend.app.api.routes.camera] [da6664e7] Camera viewer attached to printer-1 (subscribers=2)
+2026-07-19 18:38:13,588 INFO [backend.app.api.routes.camera] [66236522] Using chamber image protocol for A1
+2026-07-19 18:38:13,589 INFO [backend.app.api.routes.camera] [66236522] Camera viewer attached to printer-2 (subscribers=3)
+2026-07-19 18:38:14,283 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-19 18:40:03,971 INFO [backend.app.api.routes.camera] [da6664e7] Camera viewer detached from printer-1 (subscribers=1)
+2026-07-19 18:40:03,988 INFO [backend.app.api.routes.camera] [66236522] Camera viewer detached from printer-2 (subscribers=2)
+2026-07-19 18:40:04,190 INFO [backend.app.api.routes.camera] [b4d3240d] Skipping force-shutdown for printer 1: 1 subscriber(s) still attached; natural cleanup will tear down when last viewer disconnects
+2026-07-19 18:40:04,198 INFO [uvicorn.access] [-] [IP]:55614 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-07-19 18:40:04,200 INFO [backend.app.api.routes.camera] [ad15ea00] Skipping force-shutdown for printer 2: 2 subscriber(s) still attached; natural cleanup will tear down when last viewer disconnects
+2026-07-19 18:40:04,208 INFO [uvicorn.access] [-] [IP]:53644 - "POST /api/v1/printers/2/camera/stop HTTP/1.1" 200
+2026-07-19 18:43:14,328 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-19 18:48:14,373 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-19 18:53:14,419 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-19 18:55:45,374 INFO [uvicorn.access] [-] [IP]:56701 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-19 18:55:58,677 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-19 18:55:59,765 INFO [uvicorn.access] [-] [IP]:56703 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-19 18:55:59,961 INFO [uvicorn.access] [-] [IP]:56720 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-19 18:56:00,208 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-19 18:56:00,238 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-19 18:56:00,242 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-07-19 18:56:20,770 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-19 18:56:21,998 INFO [uvicorn.access] [-] [IP]:56743 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-19 18:56:22,186 INFO [uvicorn.access] [-] [IP]:56748 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-19 18:56:22,332 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-19 18:56:22,390 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-19 18:56:22,393 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-07-19 18:57:24,766 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-19 18:58:14,463 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-19 18:58:52,941 INFO [uvicorn.access] [-] [IP]:54373 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-19 18:58:54,361 INFO [uvicorn.access] [-] [IP]:54377 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-19 18:58:54,708 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-19 18:58:54,756 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-19 18:58:54,759 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-07-19 18:58:56,814 INFO [backend.app.api.routes.cloud] [927400e5] get_filament_info called with 3 IDs: ['GFA00', 'GFG02', 'GFU03']
+2026-07-19 18:58:56,920 INFO [backend.app.api.routes.cloud] [2a3efdb1] get_filament_info called with 1 IDs: ['GFA00']
+2026-07-19 18:58:57,197 INFO [uvicorn.access] [-] [IP]:54372 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-19 18:58:57,298 WARNING [backend.app.api.routes.cloud] [927400e5] Failed to get cloud preset GFG02 (API ID: GFSG02): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-19 18:58:57,521 WARNING [backend.app.api.routes.cloud] [927400e5] Failed to get cloud preset GFU03 (API ID: GFSU03): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-19 18:58:57,530 INFO [uvicorn.access] [-] [IP]:54377 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-19 19:03:12,724 INFO [uvicorn.access] [-] [IP]:60415 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-19 19:03:12,921 INFO [uvicorn.access] [-] [IP]:60421 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-19 19:03:13,142 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-19 19:03:13,201 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-19 19:03:13,205 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-07-19 19:03:14,495 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-19 19:03:17,861 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-19 19:04:24,655 INFO [backend.app.api.routes.support] [814efae2] Log level changed to DEBUG
+2026-07-19 19:04:24,656 INFO [backend.app.api.routes.bug_report] [814efae2] Bug report: enabled debug logging
+2026-07-19 19:04:24,657 DEBUG [backend.app.services.bambu_mqtt] [814efae2] [[SERIAL]] Requesting status update (pushall)
+2026-07-19 19:04:24,658 DEBUG [backend.app.services.bambu_mqtt] [814efae2] [[SERIAL]] Requesting status update (pushall)
+2026-07-19 19:04:24,662 INFO [uvicorn.access] [-] [IP]:50831 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-07-19 19:04:25,059 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-07-19 19:04:25,059 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-07-19 19:04:25,060 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: DiamantKugel
+2026-07-19 19:04:25,060 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '0', 'tray_exist_bits': '0', 'tray_is_bbl_bits': '0', 'tray_tar': '254', 'tray_now': '254', 'tray_pre': '254', 'tray_read_done_bits': '0', 'tray_reading_bits': '0', 'version': 8, 'insert_flag': True, 'power_on_flag': False}
+2026-07-19 19:04:25,061 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 254
+2026-07-19 19:04:25,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 0 new units, 0 total
+2026-07-19 19:04:25,062 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 768 (main=3, sub=0)
+2026-07-19 19:04:25,063 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-19 19:04:25,063 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-07-19 19:04:25,064 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-07-19 19:04:25,065 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-07-19 19:04:25,065 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-07-19 19:04:25,066 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-07-19 19:04:25,067 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-07-19 19:04:25,069 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -62dBm
+2026-07-19 19:04:25,069 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-07-19 19:04:25,070 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: DiamantKugel
+2026-07-19 19:04:25,690 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-07-19 19:04:25,691 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-07-19 19:04:25,693 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: IDLE, gcode_file: , subtask_name: 
+2026-07-19 19:04:25,695 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'b', 'tray_is_bbl_bits': 'b', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'b', 'tray_reading_bits': '0', 'version': 9, 'insert_flag': True, 'power_on_flag': True}
+2026-07-19 19:04:25,697 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-07-19 19:04:25,698 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-07-19 19:04:25,699 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-07-19 19:04:25,699 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-19 19:04:25,702 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-07-19 19:04:25,704 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-19 19:04:25,706 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-07-19 19:04:25,707 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-07-19 19:04:25,709 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-07-19 19:04:25,710 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-07-19 19:04:25,715 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-07-19 19:04:25,717 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'disable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-07-19 19:04:25,718 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-07-19 19:04:25,719 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-07-19 19:04:25,720 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: IDLE -> IDLE, file: , subtask: 
+2026-07-19 19:04:26,426 DEBUG [backend.app.main] [-] Recorded 6 printer sensor history entries
+2026-07-19 19:04:27,071 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-19 19:04:27,072 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -61dBm
+2026-07-19 19:04:27,174 DEBUG [backend.app.api.routes.printers] [af2342af] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-07-19 19:04:27,175 DEBUG [backend.app.api.routes.printers] [af2342af] Using tray_now directly as global ID: 255
+2026-07-19 19:04:27,728 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-19 19:04:27,728 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -53dBm
+2026-07-19 19:04:28,181 DEBUG [backend.app.api.routes.printers] [1954ceb4] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-19 19:04:28,182 DEBUG [backend.app.api.routes.printers] [1954ceb4] Using tray_now directly as global ID: 254
+2026-07-19 19:04:31,114 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-19 19:04:31,812 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-19 19:04:33,855 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-19 19:04:33,855 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-07-19 19:04:35,144 INFO [uvicorn.access] [-] [IP]:50831 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-19 19:04:35,573 INFO [uvicorn.access] [-] [IP]:50831 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-19 19:04:35,765 DEBUG [backend.app.api.routes.printers] [dc7d49ce] API returning ams_mapping: [], ams_extruder_map: {'0': 0}
+2026-07-19 19:04:35,766 DEBUG [backend.app.api.routes.printers] [dc7d49ce] Using tray_now directly as global ID: 255
+2026-07-19 19:04:35,879 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-19 19:04:35,898 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-19 19:04:35,902 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 2 printers
+2026-07-19 19:04:35,917 DEBUG [backend.app.api.routes.printers] [082c94cb] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-19 19:04:35,919 DEBUG [backend.app.api.routes.printers] [082c94cb] Using tray_now directly as global ID: 254
+2026-07-19 19:04:37,006 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-19 19:04:37,157 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-19 19:04:37,930 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-19 19:04:37,931 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -53dBm
+2026-07-19 19:04:39,180 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-19 19:04:39,181 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -60dBm
+2026-07-19 19:04:39,980 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-19 19:04:39,981 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -54dBm
+2026-07-19 19:04:42,872 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-19 19:04:42,875 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -53dBm
+2026-07-19 19:04:43,224 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-19 19:04:43,226 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -61dBm

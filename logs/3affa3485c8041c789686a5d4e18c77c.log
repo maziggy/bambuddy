@@ -1,0 +1,200 @@
+2026-07-18 19:45:18,820 INFO [backend.app.main] [-] Print complete - filename: 5U+Lab+Rax_plate_5.3mf, subtask: 5U+Lab+Rax_plate_5, status: completed
+2026-07-18 19:45:18,820 INFO [backend.app.main] [-] Looking for archive in _active_prints, keys to try: [(1, '5U+Lab+Rax_plate_5.3mf'), (1, '5U+Lab+Rax_plate_5.gcode.3mf'), (1, '5U+Lab+Rax_plate_5'), (1, '5U+Lab+Rax_plate_5.3mf'), (1, '5U+Lab+Rax_plate_5.3mf')]...
+2026-07-18 19:45:18,820 INFO [backend.app.main] [-] Current _active_prints: [(1, '5U+Lab+Rax_plate_5.gcode.3mf'), (1, '5U+Lab+Rax_plate_5.3mf')]
+2026-07-18 19:45:18,820 INFO [backend.app.main] [-] Found archive 7 with key (1, '5U+Lab+Rax_plate_5.3mf')
+2026-07-18 19:45:22,133 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-07-18 19:45:22,535 INFO [backend.app.main] [-] Deleted /5U+Lab+Rax_plate_5.3mf from printer [PRINTER] SD card
+2026-07-18 19:45:25,946 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-07-18 19:45:26,332 INFO [backend.app.main] [-] [TIMING] SD card cleanup: 7.513s elapsed
+2026-07-18 19:45:26,347 INFO [backend.app.main] [-] Updated queue item 7 status to completed
+2026-07-18 19:45:26,358 INFO [backend.app.main] [-] [TIMING] Queue item update: 7.540s elapsed
+2026-07-18 19:45:26,373 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] on_print_complete: printer=1, archive=7, session=yes, ams_mapping=[-1, 1]
+2026-07-18 19:45:26,374 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT COMPLETE printer 1: mapping=None, tray_now=255, last_loaded_tray=1
+2026-07-18 19:45:26,379 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: archive 7, plate_id=5, filament_usage=[{'slot_id': 2, 'used_g': 40.42, 'type': 'PETG', 'color': '#161616'}]
+2026-07-18 19:45:26,379 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: slot_to_tray=[-1, 1] (source: print_cmd)
+2026-07-18 19:45:26,380 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: slot_id=2 -> global_tray=1 -> AMS0-T1 (used_g=40.4, tray_now_override=None)
+2026-07-18 19:45:26,382 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: no spool assignment at printer 1 AMS0-T1
+2026-07-18 19:45:26,382 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] VT254: not in print mapping/tray_change_log — skipping fallback for printer 1
+2026-07-18 19:45:26,385 INFO [backend.app.services.spoolman_tracking] [-] [SPOOLMAN] No tracking data for print (printer=1, archive=7)
+2026-07-18 19:45:26,385 INFO [backend.app.main] [-] [TIMING] Spoolman usage report: 7.567s elapsed
+2026-07-18 19:45:26,385 INFO [backend.app.main] [-] [TIMING] Filament usage tracking: 7.567s elapsed
+2026-07-18 19:45:26,386 INFO [backend.app.main] [-] [TIMING] Archive lookup: 7.567s elapsed
+2026-07-18 19:45:26,386 INFO [backend.app.main] [-] [ARCHIVE] Updating archive 7 status...
+2026-07-18 19:45:26,390 INFO [backend.app.main] [-] [ARCHIVE] Archive 7 status updated to completed, failure_reason=None
+2026-07-18 19:45:26,391 INFO [backend.app.main] [-] [ARCHIVE] WebSocket notification sent for archive 7
+2026-07-18 19:45:26,391 INFO [backend.app.main] [-] [TIMING] Archive status update: 7.572s elapsed
+2026-07-18 19:45:26,395 INFO [backend.app.main] [-] [PRINT_LOG] Log entry written for archive 7
+2026-07-18 19:45:26,395 INFO [backend.app.main] [-] [TIMING] Print log entry: 7.576s elapsed
+2026-07-18 19:45:26,395 INFO [backend.app.main] [-] [TIMING] Background tasks scheduled (energy, photo): 7.576s elapsed
+2026-07-18 19:45:26,395 INFO [backend.app.main] [-] [TIMING] All background tasks scheduled: 7.577s elapsed
+2026-07-18 19:45:26,395 INFO [backend.app.main] [-] [CALLBACK] on_print_complete finished for printer 1, archive 7
+2026-07-18 19:45:26,395 INFO [backend.app.main] [-] [ENERGY-BG] Starting energy calculation for archive 7
+2026-07-18 19:45:26,396 INFO [backend.app.main] [-] [PHOTO-BG] Starting finish photo capture for archive 7
+2026-07-18 19:45:26,396 INFO [backend.app.main] [-] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-07-18 19:45:26,397 INFO [backend.app.main] [-] [MAINT-BG] Starting maintenance check for printer 1
+2026-07-18 19:45:26,397 INFO [backend.app.main] [-] [LAYER-TL] Stitching layer timelapse for printer 1
+2026-07-18 19:45:26,402 INFO [backend.app.main] [-] [AUTO-OFF-BG] Completed
+2026-07-18 19:45:26,406 INFO [backend.app.main] [-] [PHOTO-BG] Saved stage-22 pre-captured frame: finish_20260718_194526_2439dd04.jpg (57648 bytes)
+2026-07-18 19:45:26,418 INFO [backend.app.main] [-] [PHOTO-BG] Saved: finish_20260718_194526_2439dd04.jpg
+2026-07-18 19:45:26,419 INFO [backend.app.main] [-] [PHOTO-NOTIFY] Photo task returned: finish_20260718_194526_2439dd04.jpg
+2026-07-18 19:45:26,419 INFO [backend.app.main] [-] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260718_194526_2439dd04.jpg
+2026-07-18 19:45:26,426 INFO [backend.app.main] [-] [NOTIFY-BG] Loaded finish photo bytes: 57648 bytes
+2026-07-18 19:45:26,426 INFO [backend.app.services.notification_service] [-] on_print_complete called for printer 1 ([PRINTER]), status=completed
+2026-07-18 19:45:26,428 INFO [backend.app.services.notification_service] [-] No notification providers configured for on_print_complete event on printer 1
+2026-07-18 19:45:26,428 INFO [backend.app.main] [-] [NOTIFY-BG] Completed
+2026-07-18 19:45:26,430 INFO [backend.app.main] [-] [MAINT-BG] Completed (no items need attention)
+2026-07-18 19:45:26,634 INFO [backend.app.main] [-] [ENERGY-BG] Energy response: {'power': 0.0, 'voltage': None, 'current': None, 'today': None, 'total': 47.6807875, 'yesterday': None, 'factor': None, 'apparent_power': None, 'reactive_power': None}
+2026-07-18 19:45:26,634 INFO [backend.app.main] [-] [ENERGY-BG] Per-print energy: 0.194 kWh
+2026-07-18 19:45:26,650 INFO [backend.app.main] [-] [ENERGY-BG] Saved: 0.194 kWh, cost=0.029
+2026-07-18 19:46:54,709 INFO [backend.app.main] [-] Evicted 1 stale expected-print entries (TTL=7200s)
+2026-07-18 19:47:14,973 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 19:52:14,991 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 19:57:15,002 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 20:02:15,021 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 20:07:15,040 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 20:12:15,058 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 20:17:15,077 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 20:17:49,029 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-18 20:22:15,096 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 20:27:15,115 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 20:32:15,133 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 20:37:15,151 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 20:42:15,169 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 20:47:15,188 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 20:52:15,206 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 20:57:15,224 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 21:02:15,242 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 21:07:15,255 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 21:12:15,274 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 21:17:15,293 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 21:17:49,265 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-18 21:22:15,312 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 21:27:15,331 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 21:32:15,348 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 21:37:15,368 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 21:42:15,387 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 21:47:15,405 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 21:52:15,423 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 21:57:15,441 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 22:02:15,458 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 22:07:15,476 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 22:12:15,494 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 22:17:15,512 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 22:17:49,499 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-18 22:22:15,530 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 22:27:15,553 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 22:32:15,571 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-18 22:36:40,773 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-18 22:36:40,773 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-18 22:36:40,774 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-18 22:37:40,777 INFO [backend.app.main] [-] [#1752] Printer 1 offline debounce elapsed: still_offline=True
+2026-07-18 22:37:40,781 INFO [backend.app.main] [-] [#1752] Dispatching on_printer_offline for printer 1 ([PRINTER])
+2026-07-18 23:17:49,780 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-19 00:17:50,010 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-19 01:17:50,274 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-19 02:17:50,550 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-19 03:17:50,798 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-19 04:17:51,067 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-19 05:17:51,341 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-19 06:17:51,735 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-19 07:17:52,343 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-19 08:17:52,605 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-19 08:22:38,723 INFO [uvicorn.access] [-] [IP]:51451 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-19 08:22:38,865 INFO [uvicorn.access] [-] [IP]:51455 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-19 08:22:38,894 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-07-19 08:22:38,894 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-19 08:22:38,895 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-07-19 08:22:38,918 INFO [backend.app.api.routes.cloud] [b9eab8d6] get_filament_info called with 3 IDs: ['GFL95', 'GFG99', 'GFA50']
+2026-07-19 08:22:39,049 WARNING [backend.app.api.routes.cloud] [b9eab8d6] Failed to get cloud preset GFL95 (API ID: GFSL95): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-19 08:22:39,138 WARNING [backend.app.api.routes.cloud] [b9eab8d6] Failed to get cloud preset GFA50 (API ID: GFSA50): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-19 08:22:39,140 INFO [uvicorn.access] [-] [IP]:51454 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-19 08:22:47,275 INFO [backend.app.services.homeassistant] [128a2a74] Turned ON HA entity 'Bambu P1S Printer' (switch.creality_k1_printer_switch)
+2026-07-19 08:22:47,280 INFO [uvicorn.access] [-] [IP]:51456 - "POST /api/v1/smart-plugs/1/control HTTP/1.1" 200
+2026-07-19 08:23:00,467 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 35219.7s, forcing reconnect
+2026-07-19 08:23:00,469 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-19 08:23:00,470 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-19 08:23:00,486 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-19 08:23:02,310 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-19 08:23:02,925 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-07-19 08:23:02,944 INFO [backend.app.main] [-] Auto-unlink: spool 1 AMS0-T3 — fingerprint mismatch (cur=00000000/ fp=6E88BCFF/PLA-CF spool=6E88BCFF/PLA-CF)
+2026-07-19 08:23:02,945 INFO [backend.app.main] [-] Auto-unlinked 1 stale spool assignments for printer 1
+2026-07-19 08:23:03,275 INFO [backend.app.api.routes.cloud] [3b7345a7] get_filament_info called with 2 IDs: ['GFL95', 'GFG99']
+2026-07-19 08:23:03,277 INFO [uvicorn.access] [-] [IP]:51461 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-19 08:23:04,826 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-07-19 08:23:04,871 INFO [backend.app.services.spool_tag_matcher] [-] Auto-assigned spool 1 to printer 1 AMS0-T3 (RFID match)
+2026-07-19 08:23:04,874 INFO [backend.app.main] [-] RFID auto-assigned spool 1 to printer 1 AMS0-T3
+2026-07-19 08:24:13,797 INFO [backend.app.api.routes.print_queue] [3f80eb39] Added library file 5 to queue for 1
+2026-07-19 08:24:13,800 INFO [uvicorn.access] [-] [IP]:51486 - "POST /api/v1/queue/ HTTP/1.1" 200
+2026-07-19 08:24:22,871 INFO [backend.app.services.print_scheduler] [-] Queue check: found 1 pending items: [(8, 1, None, 5)]
+2026-07-19 08:24:22,885 INFO [backend.app.services.print_scheduler] [-] Starting queue item 8
+2026-07-19 08:24:22,961 INFO [backend.app.services.print_scheduler] [-] Queue item 8: Created archive 8 from library file 5
+2026-07-19 08:24:22,966 INFO [backend.app.services.print_scheduler] [-] Queue item 8: FTP upload starting - printer=[PRINTER] (P1S), ip=[IP], file=5U+Lab+Rax_plate_6.3mf, local_path=/app/data/archive/library/files/42290fab19f344e2a4a14111eb413d5e.3mf, retry_enabled=True, retry_count=3, timeout=30.0
+2026-07-19 08:24:32,524 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-07-19 08:24:33,246 INFO [backend.app.services.bambu_ftp] [-] FTP connecting to [IP] for upload (model=P1S, mode=prot_p, socket_timeout=30.0s)...
+2026-07-19 08:24:35,289 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-07-19 08:24:35,289 INFO [backend.app.services.bambu_ftp] [-] FTP connected to [IP]
+2026-07-19 08:24:35,289 INFO [backend.app.services.bambu_ftp] [-] FTP uploading /app/data/archive/library/files/42290fab19f344e2a4a14111eb413d5e.3mf (3070881 bytes) to /5U+Lab+Rax_plate_6.3mf
+2026-07-19 08:24:38,485 INFO [backend.app.services.bambu_ftp] [-] FTP data channel ready in 3.2s (PASV + TLS handshake)
+2026-07-19 08:25:55,366 INFO [backend.app.services.bambu_ftp] [-] FTP STOR confirmed for /5U+Lab+Rax_plate_6.3mf: 226
+2026-07-19 08:25:55,367 INFO [backend.app.services.bambu_ftp] [-] FTP upload complete: /5U+Lab+Rax_plate_6.3mf (3070881 bytes in 80.1s, 37 KB/s)
+2026-07-19 08:25:55,369 INFO [backend.app.services.bambu_ftp] [-] FTP mode cached for [IP]: prot_p
+2026-07-19 08:25:55,677 INFO [backend.app.main] [-] Registered expected print: printer=1, file=5U+Lab+Rax_plate_6.3mf, archive=8, ams_mapping=[-1, 1], plate_id=6
+2026-07-19 08:25:55,683 INFO [backend.app.services.print_scheduler] [-] Queue item 8: Status set to 'printing', sending print command...
+2026-07-19 08:25:55,684 INFO [backend.app.services.printer_manager] [-] PRINT COMMAND: printer=1, file=5U+Lab+Rax_plate_6.3mf, caller=print_scheduler.py:401:check_queue
+2026-07-19 08:25:55,685 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Sending print command: {"print": {"sequence_id": "20000", "command": "project_file", "param": "Metadata/plate_6.gcode", "url": "ftp://5U+Lab+Rax_plate_6.3mf", "file": "5U+Lab+Rax_plate_6.3mf", "md5": "", "bed_type": "auto", "timelapse": false, "bed_leveling": false, "auto_bed_leveling": 0, "flow_cali": false, "vibration_cali": true, "layer_inspect": false, "use_ams": true, "cfg": "0", "extrude_cali_flag": 0, "extrude_cali_manual_mode": 0, "nozzle_offset_cali": 0, "subtask_name": "5U+Lab+Rax_plate_6", "profile_id": "0", "project_id": "2063328674", "subtask_id": "2063328674", "task_id": "2063328674", "ams_mapping": [-1, 1], "ams_mapping2": [{"ams_id": 255, "slot_id": 255}, {"ams_id": 0, "slot_id": 1}]}}
+2026-07-19 08:25:55,685 INFO [backend.app.services.print_scheduler] [-] Queue item 8: Print started successfully - 5U+Lab+Rax_plate_6.gcode.3mf
+2026-07-19 08:25:55,694 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=IDLE, awaiting_plate_clear=False
+2026-07-19 08:26:06,734 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT START detected - file: 5U+Lab+Rax_plate_6.3mf, subtask: 5U+Lab+Rax_plate_6, is_new: True, is_file_change: False
+2026-07-19 08:26:06,735 INFO [backend.app.main] [-] [CALLBACK] on_print_start called for printer 1, data keys: ['filename', 'subtask_name', 'remaining_time', 'raw_data', 'ams_mapping']
+2026-07-19 08:26:06,741 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Skipped trays with invalid remain% for printer 1: AMS0-T0(remain=-1), AMS0-T1(remain=-1), AMS0-T2(remain=-1), AMS0-T3(remain=-1)
+2026-07-19 08:26:06,741 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping=None, tray_now=255, last_loaded_tray=1
+2026-07-19 08:26:06,741 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1: mapping-related keys: {'ams_extruder_map': {'0': 0}}
+2026-07-19 08:26:06,741 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT START printer 1 AMS 0: T0(type=PLA, color=161616FF, now=?, tar=?), T1(type=PETG, color=161616FF, now=?, tar=?), T2(type=PLA, color=7C4B00FF, now=?, tar=?), T3(type=PLA-CF, color=6E88BCFF, now=?, tar=?)
+2026-07-19 08:26:06,744 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Snapshotted 1 spool assignments for printer 1: {'0-3': 1}
+2026-07-19 08:26:06,748 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Captured start remain% for printer 1 (1 trays): {'255-0': 0}
+2026-07-19 08:26:06,758 INFO [backend.app.main] [-] [PLATE CHECK] printer_id=1, plate_detection_enabled=False
+2026-07-19 08:26:06,758 INFO [backend.app.main] [-] [CALLBACK] Print start detected - filename: 5U+Lab+Rax_plate_6.3mf, subtask: 5U+Lab+Rax_plate_6
+2026-07-19 08:26:06,758 INFO [backend.app.main] [-] Using expected archive 8 for print (skipping duplicate)
+2026-07-19 08:26:06,766 INFO [backend.app.main] [-] [CALLBACK] Injected ams_mapping into usage tracker session: [-1, 1]
+2026-07-19 08:26:06,913 INFO [backend.app.api.routes.printers] [68a81942] Cover: resolved plate 6 before download (subtask=5U+Lab+Rax_plate_6)
+2026-07-19 08:26:06,913 INFO [backend.app.api.routes.printers] [68a81942] Cover using cached 3MF from /app/data/archive/library/files/42290fab19f344e2a4a14111eb413d5e.3mf (avoided duplicate FTP)
+2026-07-19 08:26:06,913 INFO [backend.app.api.routes.printers] [68a81942] Downloaded file size: 3070881 bytes
+2026-07-19 08:26:06,966 INFO [backend.app.main] [-] [ENERGY] Recorded starting energy (expected-print) for archive 8: 47.7083905555556 kWh
+2026-07-19 08:26:06,968 INFO [backend.app.main] [-] [SNAPSHOT] Capturing fresh frame for printer 1
+2026-07-19 08:26:06,969 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: P1S)
+2026-07-19 08:26:16,769 INFO [backend.app.main] [-] [SNAPSHOT] Fresh camera frame: 62567 bytes
+2026-07-19 08:26:16,770 INFO [backend.app.services.notification_service] [-] on_print_start called for printer 1 ([PRINTER])
+2026-07-19 08:26:16,774 INFO [backend.app.services.notification_service] [-] No notification providers configured for print_start event on printer 1
+2026-07-19 08:26:16,779 INFO [backend.app.main] [-] Loaded 1 printable objects for printer 1
+2026-07-19 08:26:21,367 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=P1S, prot_c=False)
+2026-07-19 08:26:24,661 INFO [backend.app.main] [-] [TIMELAPSE] Baseline at print start: 181 video files for printer 1
+2026-07-19 08:26:48,361 INFO [backend.app.api.routes.support] [f9cb75a2] Log level changed to DEBUG
+2026-07-19 08:26:48,361 INFO [backend.app.api.routes.bug_report] [f9cb75a2] Bug report: enabled debug logging
+2026-07-19 08:26:48,361 DEBUG [backend.app.services.bambu_mqtt] [f9cb75a2] [[SERIAL]] Requesting status update (pushall)
+2026-07-19 08:26:48,362 INFO [uvicorn.access] [-] [IP]:51502 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-07-19 08:26:48,719 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-07-19 08:26:48,719 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-07-19 08:26:48,719 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-19 08:26:48,720 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-19 08:26:48,720 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -43dBm
+2026-07-19 08:26:51,465 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: RUNNING, gcode_file: 5U+Lab+Rax_plate_6.3mf, subtask_name: 5U+Lab+Rax_plate_6
+2026-07-19 08:26:51,465 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 6, 'insert_flag': True, 'power_on_flag': False}
+2026-07-19 08:26:51,465 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-07-19 08:26:51,465 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-07-19 08:26:51,465 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-07-19 08:26:51,465 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-19 08:26:51,466 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-07-19 08:26:51,466 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-19 08:26:51,466 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-07-19 08:26:51,466 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-07-19 08:26:51,466 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-07-19 08:26:51,466 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-07-19 08:26:51,467 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-07-19 08:26:51,467 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-07-19 08:26:51,467 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -43dBm
+2026-07-19 08:26:51,467 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'on'}]
+2026-07-19 08:26:51,467 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> RUNNING, file: 5U+Lab+Rax_plate_6.3mf, subtask: 5U+Lab+Rax_plate_6
+2026-07-19 08:26:51,486 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-07-19 08:26:51,486 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1001 -> extruder 0
+2026-07-19 08:26:51,486 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-19 08:26:51,486 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status

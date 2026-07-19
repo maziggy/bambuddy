@@ -51,6 +51,9 @@ def _resolve_pool_kwargs() -> dict:
             "max_overflow": max_overflow,
             "pool_pre_ping": True,
             "pool_recycle": settings.db_pool_recycle if settings.db_pool_recycle is not None else 1800,
+            # LIFO checkout keeps a bursty farm on a small hot connection set and
+            # lets overflow connections recycle out during quiet spells (#2572).
+            "pool_use_lifo": settings.db_pool_use_lifo if settings.db_pool_use_lifo is not None else True,
         }
     if settings.db_pool_timeout is not None:
         kwargs["pool_timeout"] = settings.db_pool_timeout
@@ -69,6 +72,7 @@ def _create_engine():
         "pool_timeout": kwargs.get("pool_timeout", 30),
         "pool_recycle": kwargs.get("pool_recycle", -1),
         "pool_pre_ping": kwargs.get("pool_pre_ping", False),
+        "pool_use_lifo": kwargs.get("pool_use_lifo", False),
     }
 
     eng = create_async_engine(
@@ -848,6 +852,13 @@ async def run_migrations(conn):
 
     # Migration: Add f3d_path column to print_archives for Fusion 360 design files
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN f3d_path VARCHAR(500)")
+
+    # Migration: Add plate_id column to print_archives (#2603). The selected plate
+    # of a multi-plate 3MF is copied from the queue item at dispatch so Print
+    # History can show the actual plate instead of falling back to Plate 1.
+    # Nullable, no default — identical DDL on SQLite and Postgres. Backfilled from
+    # linked queue rows below.
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN plate_id INTEGER")
 
     # Migration: Add on_maintenance_due column to notification_providers
     await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN on_maintenance_due BOOLEAN DEFAULT 0")
@@ -3505,6 +3516,56 @@ async def run_migrations(conn):
     # docstring). The scheduler reads it as `(item.dispatch_attempts or 0) + 1`
     # regardless, so even a NULL row could not disable the retry cap.
     await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN dispatch_attempts INTEGER DEFAULT 0")
+
+    # Backfill: copy the selected plate from linked queue rows onto their archives
+    # (#2603). Recovers the plate for archives created before print_archives had a
+    # plate_id column, wherever the queue row still points at the archive and
+    # carries a plate. Runs here — after every print_queue column migration
+    # (plate_id, archive_id) — because it reads print_queue.plate_id, which is
+    # added far earlier in this function but must exist before this DML runs on a
+    # first-ever migration pass. Correlated-subquery form so the DML is identical
+    # on SQLite and Postgres; the WHERE plate_id IS NULL guard makes it idempotent
+    # and keeps it from clobbering values set on later runs.
+    async with conn.begin_nested():
+        # Only do any work (and, on SQLite, the FTS rebuild below) when there is
+        # actually a plate to recover — so this is a one-off cost on the upgrade
+        # boot, not an every-boot tax once every archive is backfilled.
+        has_work = (
+            await conn.execute(
+                text(
+                    "SELECT 1 FROM print_archives a "
+                    "JOIN print_queue q ON q.archive_id = a.id "
+                    "WHERE a.plate_id IS NULL AND q.plate_id IS NOT NULL "
+                    "LIMIT 1"
+                )
+            )
+        ).first() is not None
+        if has_work:
+            # SQLite: print_archives has an external-content FTS index (archive_fts,
+            # created above) whose AFTER UPDATE trigger issues an FTS 'delete' for
+            # the row. Archives created before that table existed were never indexed
+            # (its creation runs no rebuild), and updating an un-indexed row trips
+            # "database disk image is malformed". plate_id isn't even an FTS column,
+            # so the trigger's re-index is pointless here — but it still fires. Rebuild
+            # the index from the content table first so every row is present and the
+            # trigger's 'delete' is well-defined. Postgres has no such FTS table.
+            if is_sqlite():
+                await conn.execute(text("INSERT INTO archive_fts(archive_fts) VALUES('rebuild')"))
+            await conn.execute(
+                text(
+                    "UPDATE print_archives "
+                    "SET plate_id = ("
+                    "  SELECT pq.plate_id FROM print_queue pq "
+                    "  WHERE pq.archive_id = print_archives.id AND pq.plate_id IS NOT NULL "
+                    "  LIMIT 1"
+                    ") "
+                    "WHERE plate_id IS NULL "
+                    "AND EXISTS ("
+                    "  SELECT 1 FROM print_queue pq "
+                    "  WHERE pq.archive_id = print_archives.id AND pq.plate_id IS NOT NULL"
+                    ")"
+                )
+            )
 
     # Migration: Disambiguate the four ``user_print_*`` notification template
     # names by appending " Email" (#1792). See ``_migrate_rename_user_print_template_names``.

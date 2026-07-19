@@ -269,6 +269,17 @@ class PrintScheduler:
         # Matches the watchdog timeout (90 s) plus a safety margin so the
         # watchdog runs first on the unhappy path.
         self._dispatch_max_hold = 180.0
+        # Refillable upload pool (#2602). Items whose FTP upload was launched by
+        # an earlier pass and is still running. `_start_print` flips the row
+        # pending -> printing only *after* the upload completes, so until then
+        # the row stays `pending`: each tick, check_queue excludes these
+        # item_ids from re-selection and their printers from new dispatch /
+        # auto-drying, and launches only `limit - len(_inflight)` new uploads so
+        # freed slots refill on the next fast tick. check_queue is the sole,
+        # sequential caller and the prune done-callbacks run in the same
+        # event-loop thread, so this dict needs no lock.
+        # item_id -> (task, printer_id)
+        self._inflight: dict[int, tuple[asyncio.Task, int | None]] = {}
 
     async def run(self):
         """Main loop - check queue every interval."""
@@ -336,6 +347,14 @@ class PrintScheduler:
                 )
             items = list(result.scalars().all())
 
+            # Drop rows whose upload is still in flight from an earlier pass
+            # (#2602). They stay `pending` until the upload finishes, so without
+            # this a fast tick would re-select and re-dispatch the same row.
+            # Belt-and-suspenders with the printer exclusion below.
+            if self._inflight:
+                inflight_ids = set(self._inflight)
+                items = [it for it in items if it.id not in inflight_ids]
+
             # Read plate-clear setting once per queue check. Default MUST be
             # False to match the schema (SettingsSchema.require_plate_clear
             # defaults False) and the frontend (toggle + card badge both treat a
@@ -346,9 +365,15 @@ class PrintScheduler:
             require_plate_clear = await self._get_bool_setting(db, "require_plate_clear", default=False)
 
             if not items:
-                # No pending items — still check auto-drying on idle printers
-                await self._check_auto_drying(db, [], set(), require_plate_clear=require_plate_clear)
-                return False
+                # No dispatchable pending items — still check auto-drying on idle
+                # printers, but keep any printer with an upload still in flight
+                # from an earlier pass out of it (#2602): its print is imminent,
+                # so it must not be auto-dried in the gap before the row flips to
+                # printing. Report the pass as productive while uploads run so the
+                # loop stays on the fast interval.
+                inflight_printers = {pid for (_task, pid) in self._inflight.values() if pid is not None}
+                await self._check_auto_drying(db, [], inflight_printers, require_plate_clear=require_plate_clear)
+                return bool(self._inflight)
 
             logger.info(
                 "Queue check: found %d pending items: %s",
@@ -382,6 +407,15 @@ class PrintScheduler:
             for held_printer_id in list(self._dispatch_holds.keys()):
                 if self._printer_in_dispatch_hold(held_printer_id):
                     busy_printers.add(held_printer_id)
+
+            # Exclude printers whose upload is still in flight from an earlier
+            # pass (#2602). The row is `pending` until the upload finishes and
+            # the printing-state seed / dispatch hold above only arm once the
+            # upload completes, so this is what holds the printer (and, via
+            # busy_printers, its auto-drying) out of the pass during the upload.
+            for _task, inflight_pid in self._inflight.values():
+                if inflight_pid is not None:
+                    busy_printers.add(inflight_pid)
 
             # Log skip reasons once per queue check (not per item)
             skip_reasons: dict[str, int] = {}
@@ -763,73 +797,94 @@ class PrintScheduler:
             await db.commit()
 
             if dispatch_ids:
-                await self._dispatch_selected(dispatch_ids, upload_limit)
+                item_printers = {it.id: it.printer_id for it in items}
+                self._launch_uploads(dispatch_ids, item_printers, upload_limit)
 
             # Auto-drying: start drying on idle printers that have no pending queue items
             await self._check_auto_drying(db, items, busy_printers, require_plate_clear=require_plate_clear)
 
-            return bool(dispatch_ids)
+            # Keep the loop on the fast interval while any upload is in flight so
+            # a slot freed mid-tick refills within seconds rather than after the
+            # 30 s idle sleep (#2602). Selecting anything this pass (launched or
+            # deferred because the pool was full) also counts as productive.
+            return bool(dispatch_ids) or bool(self._inflight)
 
-    async def _dispatch_selected(self, item_ids: list[int], limit: int) -> None:
-        """Upload and start every item selected by this queue pass, in parallel.
+    def _launch_uploads(self, item_ids: list[int], item_printers: dict[int, int | None], limit: int) -> None:
+        """Launch selected uploads as a refillable pool, capped at ``limit`` (#2602).
 
         Dispatch used to happen inline in the selection loop: ``await
-        _start_print(db, item)`` for each item in turn. Since ``_start_print``
+        _start_print(db, item)`` per item in turn. Since ``_start_print``
         performs the FTP upload, that serialized every printer behind every
-        other printer's transfer — even though the printers are entirely
-        independent machines. A Bambu printer's FTP server sustains ~150 KB/s
-        (its own SD write is the bottleneck, not the network), so a 41 MB 3MF
-        takes ~4 minutes. The reporter's 19-printer farm therefore needed ~80
-        minutes before the last printer received its file, and the queue looked
-        like it was starting prints "one by one, very slowly" (#2555).
+        other printer's transfer even though the printers are independent
+        machines; #2555 moved it to a parallel ``asyncio.gather()``. But that
+        gather was awaited before ``check_queue`` returned, so the run loop
+        stayed blocked until the *slowest* upload in the batch finished — a
+        513 s upload left 15 of 16 configured slots idle for 8.5 minutes on a
+        93-printer farm even as other printers came free (#2602).
 
-        Uploads to *different* printers contend for nothing, so they run
-        concurrently here, bounded by ``queue_max_concurrent_uploads``. The
-        bound exists because the printers are independent but the host is not:
-        each in-flight upload holds a thread in the FTP pool, a TLS session and
-        a file handle.
+        Each upload now runs as an independent background task tracked in
+        ``self._inflight``. check_queue excludes in-flight item_ids (still
+        `pending` until their upload completes) and their printers from the
+        next pass's selection, and this method launches at most
+        ``limit - len(self._inflight)`` new uploads, so a freed slot refills on
+        the next fast tick instead of waiting out the whole batch. The bound
+        exists because the printers are independent but the host is not: each
+        in-flight upload holds a thread in the FTP pool, a TLS session and a
+        file handle.
 
-        This is awaited before ``check_queue`` returns, which preserves the
-        invariant the rest of the scheduler is built on: a pass never overlaps
-        with the next one. It matters more than it looks — ``_start_print``
-        flips the row pending -> printing only *after* the upload finishes, so
-        a pass that returned early while uploads were still in flight would let
-        the next pass re-dispatch the very same still-pending rows.
+        The no-overlapping-dispatch invariant the batch-await used to provide
+        is now carried by the in-flight exclusion in check_queue. Everything
+        else — the pending->printing CAS, the busy-printer guard (#2598), the
+        per-printer hold, and each item's independent failure handling — still
+        lives in ``_start_print`` and runs per task exactly as before.
 
-        ``limit`` is read by the caller, on the caller's session, before it
-        commits — reading it here would leave that session idle-in-transaction
-        for the whole dispatch. This function deliberately takes no session.
+        Synchronous on purpose: it registers every launched task into
+        ``self._inflight`` before returning, so the next (sequential) tick sees
+        an accurate in-flight count with no interleaving await.
         """
-        sem = asyncio.Semaphore(limit)
+        free = limit - len(self._inflight)
+        if free <= 0:
+            logger.info(
+                "Upload pool full (%d/%d in flight) — deferring %d item(s) to a later tick: %s",
+                len(self._inflight),
+                limit,
+                len(item_ids),
+                item_ids,
+            )
+            return
 
-        async def _one(item_id: int) -> None:
-            # Its own session: these run concurrently, and an AsyncSession is not
-            # safe to share across tasks. It also keeps a slow upload from pinning
-            # the caller's session (and, on SQLite, its transaction) open for the
-            # duration.
-            async with sem, async_session() as item_db:
-                item = await item_db.get(PrintQueueItem, item_id)
-                if not item:
-                    logger.info("Queue item %s vanished before dispatch — skipping", item_id)
-                    return
-                await self._start_print(item_db, item)
-
+        to_launch = item_ids[:free]
+        deferred = item_ids[free:]
         logger.info(
-            "Dispatching %d queue item(s) with up to %d concurrent upload(s): %s",
-            len(item_ids),
+            "Launching %d upload(s) (pool %d/%d in flight)%s",
+            len(to_launch),
+            len(self._inflight),
             limit,
-            item_ids,
+            f" — deferring {deferred} to a later tick" if deferred else "",
         )
-        results = await asyncio.gather(*(_one(i) for i in item_ids), return_exceptions=True)
 
-        # gather() with return_exceptions keeps one printer's failure from
-        # cancelling its siblings' in-flight uploads. _start_print already
-        # handles its own failure modes and marks the item failed; anything
-        # arriving here is unexpected, so log it loudly rather than letting
-        # gather swallow it.
-        for item_id, result in zip(item_ids, results, strict=True):
-            if isinstance(result, BaseException):
-                logger.error("Queue item %s: dispatch raised %s: %s", item_id, type(result).__name__, result)
+        for item_id in to_launch:
+            task = spawn_background_task(self._dispatch_one(item_id), name=f"queue-upload-{item_id}")
+            self._inflight[item_id] = (task, item_printers.get(item_id))
+            # Prune on completion so the freed slot is refillable next tick.
+            # spawn_background_task already logs any uncaught exception; this
+            # only reclaims the pool slot (fires on success, failure, or cancel).
+            task.add_done_callback(lambda _t, iid=item_id: self._inflight.pop(iid, None))
+
+    async def _dispatch_one(self, item_id: int) -> None:
+        """Upload + start one queue item in its own session (pool worker, #2602).
+
+        Its own session: pool workers run concurrently and an AsyncSession is
+        not safe to share across tasks; it also keeps a slow upload from pinning
+        the scheduler's session (and, on SQLite, its transaction) open for the
+        transfer's duration.
+        """
+        async with async_session() as item_db:
+            item = await item_db.get(PrintQueueItem, item_id)
+            if not item:
+                logger.info("Queue item %s vanished before dispatch — skipping", item_id)
+                return
+            await self._start_print(item_db, item)
 
     async def _find_idle_printer_for_model(
         self,
@@ -2509,6 +2564,15 @@ class PrintScheduler:
             except Exception as exc:
                 logger.warning("Queue item %s: preheat chamber M141 failed: %s", item.id, exc)
 
+        # Release the pooled DB connection before the (potentially many-minute)
+        # heat-soak wait below (#2572). Every setting this method needs is read
+        # above; the wait/soak loop only polls printer_manager state and sleeps —
+        # it never touches the DB. Without this the caller's transaction sat
+        # "idle in transaction" for the whole soak, pinning one pooled connection
+        # per preheating printer. expire_on_commit=False keeps item/printer
+        # readable afterwards; there are no pending writes to lose here.
+        await db.commit()
+
         # Wait for convergence. Bed warm-up is fast (~5 min from cold); chamber
         # via M141 takes a few minutes; chamber via bed radiation can take 20+.
         # Poll every 3s — frequent enough for responsive logging without
@@ -2859,6 +2923,28 @@ class PrintScheduler:
             )
             return
 
+        # Busy-printer guard (#2598). check_queue gates dispatch on
+        # _is_printer_idle(), but that treats FINISH as idle and a printer can
+        # keep reporting FINISH for tens of seconds *after* it accepted a
+        # project_file (see the watchdog's phase-B note). A watchdog revert
+        # (#2555) also releases the dispatch hold, so a re-selected item can
+        # reach here while its printer has actually started printing. Uploading
+        # and dispatching then collides with the live job — the firmware answers
+        # 0500_4004 and, on an A1 mini, cancels the running print. Re-check the
+        # live state right before the expensive FTP upload: if the printer is
+        # busy, leave the item pending and let a later tick dispatch it once the
+        # printer is genuinely idle. No wasted upload, no collision.
+        pre_dispatch_state = getattr(printer_manager.get_status(item.printer_id), "state", None)
+        if pre_dispatch_state in _ACTIVE_PRINT_STATES:
+            logger.info(
+                "Queue item %s: printer %s is busy (state=%s) — deferring dispatch, "
+                "leaving item pending for a later tick (#2598)",
+                item.id,
+                item.printer_id,
+                pre_dispatch_state,
+            )
+            return
+
         # Determine source: archive or library file
         archive = None
         library_file = None
@@ -2878,6 +2964,14 @@ class PrintScheduler:
                 logger.error("Queue item %s: Archive %s not found", item.id, item.archive_id)
                 await self._power_off_if_needed(db, item)
                 return
+
+            # Persist the queue item's selected plate onto the archive so Print
+            # History can show the actual plate after cancel/fail/complete (#2603).
+            # Only when the archive doesn't already carry one, so a reprint of a
+            # plate-specific archive isn't relabelled by a differently-plated
+            # queue row.
+            if archive.plate_id is None and item.plate_id is not None:
+                archive.plate_id = item.plate_id
 
             file_path = settings.base_dir / archive.file_path
             filename = archive.filename
@@ -2911,6 +3005,7 @@ class PrintScheduler:
                     original_filename=filename,
                     created_by_id=item.created_by_id,
                     project_id=item.project_id,
+                    plate_id=item.plate_id,  # selected plate → Print History (#2603)
                 )
                 if archive:
                     item.archive_id = archive.id
@@ -3070,6 +3165,19 @@ class PrintScheduler:
             f"ip={printer.ip_address}, file={remote_filename}, local_path={file_path}, "
             f"retry_enabled={ftp_retry_enabled}, retry_count={ftp_retry_count}, timeout={ftp_timeout}"
         )
+
+        # Release the pooled DB connection before the FTP delete/upload (#2572).
+        # Every read this method needs (printer, archive/library, preheat) is
+        # done, and the library-file branch already committed its archive
+        # creation. Without this the transaction opened by the first SELECT above
+        # stays "idle in transaction" for the entire upload — multiple seconds
+        # for a large 3MF — pinning one pooled connection per in-flight dispatch;
+        # a farm dispatching many jobs at once then exhausts the pool. This was
+        # correlated to an exact idle-in-transaction session on a 93-printer farm
+        # (reporter @Jostxxl). expire_on_commit=False keeps item/printer/archive
+        # readable; the status writes below (upload-failure path and the
+        # pending->printing CAS) transparently open a fresh transaction.
+        await db.commit()
 
         # Delete existing file if present (avoids 553 error on overwrite)
         try:
@@ -3424,6 +3532,29 @@ class PrintScheduler:
                 )
             except Exception:
                 pass  # Best-effort — don't fail the error handler
+
+            # Busy-refusal is a deferral, not a failure (#2598). The printer's
+            # state can flip from idle to active in the window between the
+            # pre-dispatch check above and this publish (the FTP upload takes
+            # seconds); start_print() then refuses to send project_file to the
+            # now-busy printer and returns False. Failing the item here would be
+            # wrong — the printer is fine, it is simply busy — so revert to
+            # pending and let a later tick dispatch it once the printer is idle,
+            # exactly like the pre-dispatch guard. Only a start_print() False on
+            # an idle/unknown printer is a genuine command failure.
+            post_dispatch_state = getattr(printer_manager.get_status(item.printer_id), "state", None)
+            if post_dispatch_state in _ACTIVE_PRINT_STATES:
+                logger.info(
+                    "Queue item %s: printer %s became busy (state=%s) before the start "
+                    "command was sent — deferring, reverting item to pending (#2598)",
+                    item.id,
+                    item.printer_id,
+                    post_dispatch_state,
+                )
+                item.status = "pending"
+                item.started_at = None
+                await db.commit()
+                return
 
             # Print command failed - revert status
             item.status = "failed"

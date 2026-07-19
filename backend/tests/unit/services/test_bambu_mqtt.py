@@ -1196,6 +1196,63 @@ class TestAMSTrayStateClearning:
         assert tray0["tray_color"] == "00FF00FF"
         assert tray0["remain"] == 75
 
+    def _seed_loaded_ht_tray(self, mqtt_client):
+        """Seed an AMS-HT unit (id 128, single tray) whose loaded tray reports
+        state=9 — the real HT resting state, unlike a 4-slot AMS's state=11."""
+        initial = {
+            "ams": [
+                {
+                    "id": 128,
+                    "tray": [
+                        {
+                            "id": 0,
+                            "tray_type": "PA",
+                            "tray_color": "161616FF",
+                            "tray_info_idx": "GFG99",
+                            "tag_uid": "AABBCCDD11223344",
+                            "tray_uuid": "AABBCCDD11223344AABBCCDD11223344",
+                            "remain": 60,
+                            "state": 9,
+                        }
+                    ],
+                }
+            ],
+            "power_on_flag": True,
+        }
+        mqtt_client._handle_ams_data(initial)
+
+    def test_ht_unit_state_9_preserves_tray_data(self, mqtt_client):
+        """#2594: an AMS-HT reports its loaded tray as state=9. A partial
+        {id, state=9} for the HT unit must NOT be read as 'empty' and wipe the
+        present spool — that made the HT-A spool vanish on every power-on."""
+        self._seed_loaded_ht_tray(mqtt_client)
+
+        # Printer sends a partial {id, state} for the HT tray on power-on.
+        update = {
+            "ams": [{"id": 128, "tray": [{"id": 0, "state": 9}]}],
+            "power_on_flag": True,
+        }
+        mqtt_client._handle_ams_data(update)
+
+        tray0 = mqtt_client.state.raw_data["ams"][0]["tray"][0]
+        assert tray0["tray_type"] == "PA", "HT state=9 must NOT clear a present spool (#2594)"
+        assert tray0["tray_uuid"] == "AABBCCDD11223344AABBCCDD11223344", "HT RFID must survive"
+        assert tray0["remain"] == 60
+
+    def test_ht_unit_explicit_empty_still_clears(self, mqtt_client):
+        """A genuine HT spool removal (explicit tray_type='') must still clear —
+        the #2594 fix only skips the state-heuristic, not the explicit path."""
+        self._seed_loaded_ht_tray(mqtt_client)
+
+        update = {
+            "ams": [{"id": 128, "tray": [{"id": 0, "tray_type": ""}]}],
+            "power_on_flag": False,
+        }
+        mqtt_client._handle_ams_data(update)
+
+        tray0 = mqtt_client.state.raw_data["ams"][0]["tray"][0]
+        assert tray0["tray_type"] == "", "explicit tray_type='' must still clear an HT tray"
+
 
 class TestApplyTrayExistBitsHelper:
     """Direct contract pinning for the shared ``apply_tray_exist_bits`` helper.

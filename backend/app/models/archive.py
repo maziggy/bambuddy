@@ -56,6 +56,14 @@ class PrintArchive(Base):
     # print and keep the original row instead of cancel-then-create.
     subtask_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    # Which plate of a multi-plate 3MF this print was for (1-based), copied from
+    # the queue item at dispatch (#2603). A whole multi-plate 3MF is uploaded
+    # under one filename with no plate suffix, so the parser can't recover the
+    # selected plate and extra_data holds all-plates aggregate metadata; without
+    # this the history UI can't tell which plate was printed and falls back to
+    # Plate 1. NULL for archives with no specific selected plate.
+    plate_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Extended metadata (JSON blob for flexibility)
     extra_data: Mapped[dict | None] = mapped_column(JSON)
 

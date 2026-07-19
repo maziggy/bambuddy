@@ -1132,6 +1132,82 @@ class TestConfigureAMSSlotAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_configure_builtin_empty_setting_id_is_derived(self, async_client: AsyncClient, printer_factory):
+        """A built-in preset (GF* tray_info_idx, empty setting_id) gets a derived GFS* setting_id (#2604).
+
+        The Configure AMS Slot modal sends built-in / local / Orca-generic presets with an
+        empty setting_id. Publishing a filament-id-without-setting-id slot makes the printer
+        treat it as half configured and revert to its previous profile, so the route must
+        back-fill setting_id from the resolved tray_info_idx.
+        """
+        printer = await printer_factory(name="X1C")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+        mock_client.request_status_update.return_value = True
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = None
+
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/slots/0/1/configure",
+                params={
+                    "tray_info_idx": "GFB99",  # Generic ABS, built-in
+                    "tray_type": "ABS",
+                    "tray_sub_brands": "Generic ABS",
+                    "tray_color": "000000FF",
+                    "nozzle_temp_min": 240,
+                    "nozzle_temp_max": 280,
+                    # setting_id intentionally omitted (empty) — as the modal sends it
+                },
+            )
+
+            assert response.status_code == 200
+            call_kwargs = mock_client.ams_set_filament_setting.call_args
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFB99"
+            assert call_kwargs.kwargs["setting_id"] == "GFSB99"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_configure_generic_material_fallback_derives_setting_id(
+        self, async_client: AsyncClient, printer_factory
+    ):
+        """When only a material is given, the generic tray_info_idx fallback still yields a setting_id (#2604)."""
+        printer = await printer_factory(name="X1C")
+
+        mock_client = MagicMock()
+        mock_client.ams_set_filament_setting.return_value = True
+        mock_client.extrusion_cali_sel.return_value = True
+        mock_client.request_status_update.return_value = True
+
+        mock_status = MagicMock()
+        mock_status.raw_data = {"ams": {"ams": []}}  # No existing tray to reuse
+
+        with patch("backend.app.api.routes.printers.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = mock_status
+
+            response = await async_client.post(
+                f"/api/v1/printers/{printer.id}/slots/0/1/configure",
+                params={
+                    "tray_info_idx": "",  # No preset id — route derives generic from material
+                    "tray_type": "ABS",
+                    "tray_sub_brands": "Generic ABS",
+                    "tray_color": "000000FF",
+                    "nozzle_temp_min": 240,
+                    "nozzle_temp_max": 280,
+                },
+            )
+
+            assert response.status_code == 200
+            call_kwargs = mock_client.ams_set_filament_setting.call_args
+            assert call_kwargs.kwargs["tray_info_idx"] == "GFB99"
+            assert call_kwargs.kwargs["setting_id"] == "GFSB99"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_configure_pfus_sent_directly(self, async_client: AsyncClient, printer_factory):
         """PFUS* cloud-synced custom preset IDs are sent to the printer."""
         printer = await printer_factory(name="H2D")

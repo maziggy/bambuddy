@@ -61,6 +61,7 @@ from backend.app.services.printer_manager import (
     supports_drying,
     supports_drying_while_printing,
 )
+from backend.app.utils.filament_ids import filament_id_to_setting_id
 from backend.app.utils.http import build_content_disposition
 
 logger = logging.getLogger(__name__)
@@ -2446,6 +2447,18 @@ async def configure_ams_slot(
         effective_tray_info_idx = kprofile_filament_id
         if kprofile_setting_id:
             effective_setting_id = kprofile_setting_id
+
+    # Back-fill setting_id from the resolved filament id when the client sent
+    # none. Built-in / local / Orca-generic presets in the Configure AMS Slot
+    # modal leave setting_id empty (they carry only a GF* tray_info_idx), and
+    # the printer treats a filament-id-without-setting-id slot as half
+    # configured: it shows the new material briefly, then reverts to its
+    # previously stored profile (#2604). This mirrors the derivation the
+    # inventory/assignment path already does (inventory.py). filament_id_to_
+    # setting_id leaves P* user presets and already-GFS* values unchanged, so
+    # only the empty-setting_id generic paths are affected.
+    if effective_tray_info_idx and not effective_setting_id:
+        effective_setting_id = filament_id_to_setting_id(effective_tray_info_idx)
 
     # Always send ams_set_filament_setting — the user explicitly clicked
     # "Configure Slot", so honor that.  Previous versions skipped this for

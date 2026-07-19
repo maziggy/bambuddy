@@ -3312,10 +3312,18 @@ async def get_plate_preview(
 async def upload_archive(
     file: UploadFile = File(...),
     printer_id: int | None = None,
+    prefer_filename_for_name: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_CREATE),
 ):
-    """Manually upload a 3MF file to archive."""
+    """Manually upload a 3MF file to archive.
+
+    prefer_filename_for_name: When True, use the uploaded filename stem as the
+    archive's display name even if the 3MF embeds a `print_name` in its
+    metadata. Same flag already used by the FTP review flow and virtual-printer
+    dispatch (see ArchiveService.archive_print) — this endpoint just didn't
+    expose it (#1152 follow-up).
+    """
     if not file.filename or not file.filename.endswith(".3mf"):
         raise HTTPException(400, "File must be a .3mf file")
 
@@ -3341,6 +3349,7 @@ async def upload_archive(
             printer_id=printer_id,
             source_file=temp_path,
             created_by_id=current_user.id if current_user else None,
+            prefer_filename_for_name=prefer_filename_for_name,
         )
 
         if not archive:

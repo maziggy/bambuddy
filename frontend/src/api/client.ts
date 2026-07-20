@@ -3477,6 +3477,11 @@ export interface OIDCProvider {
   // #1589: when true, the LoginPage redirects unauthenticated visitors
   // straight to this provider on mount. At most one provider may carry this.
   is_autologin: boolean;
+  // #2593: defined by BAMBUDDY_OIDC_* and rewritten from the environment on
+  // every boot. The API answers 409 to any write, so the settings UI must not
+  // offer edit/delete controls that cannot succeed. Optional so a response
+  // from an older backend still type-checks.
+  is_env_managed?: boolean;
 }
 
 export interface OIDCProviderCreate {

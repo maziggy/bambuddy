@@ -1404,6 +1404,18 @@ async def create_oidc_provider(
     return _build_provider_response(provider)
 
 
+def _refuse_if_env_managed(provider: OIDCProvider) -> None:
+    """Startup rewrites this provider from BAMBUDDY_OIDC_* on every boot, so an
+    edit here would be accepted and then silently reverted at the next restart.
+    BAMBUDDY_LOCAL_LOGIN (#1589) remains the recovery path if it becomes
+    unusable, so refusing outright cannot lock anyone out."""
+    if provider.is_env_managed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This OIDC provider is managed by environment variables and cannot be modified.",
+        )
+
+
 @router.put("/oidc/providers/{provider_id}", response_model=OIDCProviderResponse)
 async def update_oidc_provider(
     provider_id: int,
@@ -1426,6 +1438,7 @@ async def update_oidc_provider(
     provider = result2.scalar_one_or_none()
     if not provider:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found")
+    _refuse_if_env_managed(provider)
 
     if body.default_group_id is not None:
         grp_chk = await db.execute(select(Group).where(Group.id == body.default_group_id))
@@ -1503,6 +1516,7 @@ async def delete_oidc_provider(
     provider = result2.scalar_one_or_none()
     if not provider:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found")
+    _refuse_if_env_managed(provider)
 
     await db.delete(provider)
     await db.commit()
@@ -1571,6 +1585,7 @@ async def delete_oidc_provider_icon(
     provider = result.scalar_one_or_none()
     if provider is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found")
+    _refuse_if_env_managed(provider)
 
     # Setting deferred columns is safe — no read happens, just a write.
     provider.icon_url = None
@@ -1603,6 +1618,7 @@ async def refresh_oidc_provider_icon(
     provider = result.scalar_one_or_none()
     if provider is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found")
+    _refuse_if_env_managed(provider)
     if not provider.icon_url:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -3632,6 +3632,14 @@ async def run_migrations(conn):
     else:
         await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN is_autologin BOOLEAN DEFAULT false")
 
+    # Migration: Add is_env_managed column to oidc_providers (#2593). Marks the
+    # provider upserted from BAMBUDDY_OIDC_* env vars on startup. Postgres
+    # rejects ``DEFAULT 0`` for BOOLEAN columns.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN is_env_managed BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN is_env_managed BOOLEAN DEFAULT false")
+
     # Migration: Add dispatch_attempts to print_queue (#2555). Counts the times
     # the start-watchdog reverted the row from 'printing' back to 'pending' so a
     # printer that never actually starts stops being retried forever. INTEGER

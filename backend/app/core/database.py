@@ -1521,6 +1521,22 @@ async def run_migrations(conn):
         except (OperationalError, ProgrammingError):
             pass  # Already applied
 
+    # Migration: Add dispatching_at claim column to print_queue (#2615). Nullable
+    # timestamp; the type differs by dialect (SQLite DATETIME vs Postgres
+    # TIMESTAMP) so an existing-DB upgrade doesn't hit "type datetime does not
+    # exist" on Postgres. On a fresh DB create_all() already built the column, so
+    # the ALTER is swallowed as "already exists".
+    #
+    # Placed AFTER the print_queue_new2 table-recreate above: that recreate
+    # (SQLite-only, and only on ancient DBs whose archive_id is still NOT NULL)
+    # rebuilds print_queue from an explicit column list that doesn't carry this
+    # column, so adding it earlier would let the recreate silently drop it. Adding
+    # it here means it survives that path.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN dispatching_at DATETIME")
+    else:
+        await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN dispatching_at TIMESTAMP")
+
     # Migration: Add HA energy sensor entity columns to smart_plugs
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN ha_power_entity VARCHAR(100)")
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN ha_energy_today_entity VARCHAR(100)")

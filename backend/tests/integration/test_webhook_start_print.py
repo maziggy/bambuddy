@@ -55,8 +55,8 @@ async def printer_with_queue(db_session):
         status="pending",
         manual_start=True,
         timelapse=True,
-        bed_levelling=True,
-        flow_cali=False,
+        bed_levelling="on",
+        flow_cali="off",
         vibration_cali=True,
         layer_inspect=False,
         use_ams=True,
@@ -94,7 +94,7 @@ class TestWebhookStartPrint:
         assert item.manual_start is False, "manual_start must be cleared so scheduler dispatches"
         # Stored options must be untouched so the scheduler picks the user's choice.
         assert item.timelapse is True
-        assert item.bed_levelling is True
+        assert item.bed_levelling == "on"
         assert item.vibration_cali is True
 
     @pytest.mark.asyncio

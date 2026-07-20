@@ -3842,13 +3842,13 @@ class BambuMQTTClient:
         filename: str,
         plate_id: int = 1,
         ams_mapping: list[int] | None = None,
-        bed_levelling: bool = True,
-        flow_cali: bool = False,
+        bed_levelling: str = "auto",
+        flow_cali: str = "auto",
         vibration_cali: bool = True,
         layer_inspect: bool = False,
         timelapse: bool = False,
         use_ams: bool = True,
-        nozzle_offset_cali: bool = False,
+        nozzle_offset_cali: str = "auto",
         nozzle_mapping: str | None = None,
     ):
         """Start a print job on the printer.
@@ -3861,12 +3861,13 @@ class BambuMQTTClient:
             ams_mapping: List of tray IDs for each filament slot in the 3MF.
                          Global tray ID = (ams_id * 4) + slot_id, external = 254
             timelapse: Record timelapse video
-            bed_levelling: Auto bed levelling before print
-            flow_cali: Flow/pressure advance calibration
+            bed_levelling: Bed levelling — tri-state "off"/"on"/"auto" (auto skips
+                if the bed was levelled recently, matching BambuStudio).
+            flow_cali: Flow/pressure advance calibration — "off"/"on"/"auto".
             vibration_cali: Vibration compensation calibration
             layer_inspect: First layer AI inspection
             use_ams: Use AMS for automatic filament changes
-            nozzle_offset_cali: Run nozzle offset calibration before print
+            nozzle_offset_cali: Nozzle offset calibration — "off"/"on"/"auto"
                 (dual-nozzle printers only — silently ignored on single-nozzle).
             nozzle_mapping: Opaque JSON string captured from BambuStudio's
                 project_file for H2C rack-swap (O1C2) (#1780). When non-null
@@ -4033,6 +4034,17 @@ class BambuMQTTClient:
             # the archive even before the printer echoes subtask_id back (#1485).
             self.last_dispatch_subtask_id = submission_id
 
+            # Tri-state calibration options → BambuStudio's getValueInt encoding:
+            # off=0 (never), on=1 (force every print), auto=2 (printer runs it
+            # only if it wasn't done recently). The paired bool field is true
+            # only for the explicit "on" state — for "auto" the bool is false and
+            # the int carries the intent, exactly as BambuStudio's SelectMachine
+            # sends it. Unknown values fall back to auto.
+            _tristate_wire = {"off": 0, "on": 1, "auto": 2}
+            bed_level_int = _tristate_wire.get(bed_levelling, 2)
+            flow_cali_int = _tristate_wire.get(flow_cali, 2)
+            nozzle_cali_int = _tristate_wire.get(nozzle_offset_cali, 2)
+
             command = {
                 "print": {
                     "sequence_id": "20000",
@@ -4043,32 +4055,34 @@ class BambuMQTTClient:
                     "md5": "",
                     "bed_type": "auto",
                     "timelapse": timelapse,
-                    "bed_leveling": bed_levelling,
-                    "auto_bed_leveling": 1 if bed_levelling else 0,
-                    "flow_cali": flow_cali,
+                    # bed_leveling stays a JSON bool (true only for "on") and
+                    # auto_bed_leveling carries the tri-state int — the exact
+                    # two-field shape BambuStudio sends. The int must stay a plain
+                    # number, never quoted (#1478 boolean-family concern applies to
+                    # the *_cali bools, not these companion ints).
+                    "bed_leveling": bed_levelling == "on",
+                    "auto_bed_leveling": bed_level_int,
+                    "flow_cali": flow_cali == "on",
                     "vibration_cali": vibration_cali,
                     "layer_inspect": layer_inspect,
                     "use_ams": use_ams,
                     "cfg": "0",
                     # extrude_cali_flag gates flow-dynamics calibration:
-                    # 1 = run it, 0 = printer skips entirely (#1478 evidence).
-                    # 2 = "skip and reuse stored PA" was previously believed to
-                    # suppress the stage too, but #1721 testing on H2D 01.x
-                    # showed stage 8 ("Calibrating dynamic flow") still gets
-                    # queued when we send 2. A real BambuStudio Send-dialog
-                    # capture today also showed 0 when the user disables flow
-                    # calibration. Going with 0 to actually suppress the
-                    # pre-print calibration stage.
-                    "extrude_cali_flag": 1 if flow_cali else 0,
+                    # 0 = never, 1 = force every print, 2 = auto (run only if the
+                    # filament wasn't calibrated recently). #1721 saw stage 8
+                    # ("Calibrating dynamic flow") still queued when we send 2 —
+                    # that is exactly the auto contract (the printer queues the
+                    # stage and skips it at runtime if recent), not a bug, so 2 is
+                    # the right wire value for "auto". off/on remain 0/1.
+                    "extrude_cali_flag": flow_cali_int,
                     "extrude_cali_manual_mode": 0,
-                    # 1 = run, 0 = skip (matches BambuStudio's wire today). The
-                    # earlier 2 = "skip" reading from #1682 didn't actually
-                    # suppress stage 39 ("Nozzle offset calibration") on H2D
-                    # 01.x — captured live in #1721. BambuStudio exposes the
-                    # toggle only for dual-nozzle (H2D/H2D Pro/H2C/X2D); single-
-                    # nozzle prints still resolve to 0 here so firmware never
-                    # runs a calibration the head doesn't support.
-                    "nozzle_offset_cali": 1 if (nozzle_offset_cali and is_dual_nozzle) else 0,
+                    # 0 = never, 1 = force, 2 = auto (skip if recent). #1721 saw
+                    # stage 39 ("Nozzle offset calibration") still queued on 2 —
+                    # again the auto contract, not a failure to suppress.
+                    # BambuStudio exposes the toggle only for dual-nozzle
+                    # (H2D/H2D Pro/H2C/X2D); single-nozzle prints resolve to 0 so
+                    # firmware never runs a calibration the head doesn't support.
+                    "nozzle_offset_cali": nozzle_cali_int if is_dual_nozzle else 0,
                     "subtask_name": filename.replace(".3mf", "").replace(".gcode", ""),
                     "profile_id": "0",
                     "project_id": submission_id,

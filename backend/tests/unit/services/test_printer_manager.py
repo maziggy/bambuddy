@@ -374,12 +374,12 @@ class TestPrinterManager:
             1,
             ams_mapping=None,
             timelapse=False,
-            bed_levelling=True,
-            flow_cali=False,
+            bed_levelling="auto",
+            flow_cali="auto",
             vibration_cali=True,
             layer_inspect=False,
             use_ams=True,
-            nozzle_offset_cali=False,
+            nozzle_offset_cali="auto",
             nozzle_mapping=None,
         )
         assert result is True

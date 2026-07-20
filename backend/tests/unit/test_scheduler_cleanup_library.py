@@ -77,13 +77,13 @@ async def queue_factory(tmp_path):
                 library_file_id=library_file.id,
                 status="pending",
                 cleanup_library_after_dispatch=cleanup,
-                bed_levelling=True,
-                flow_cali=False,
+                bed_levelling="on",
+                flow_cali="off",
                 vibration_cali=True,
                 layer_inspect=False,
                 timelapse=False,
                 use_ams=True,
-                nozzle_offset_cali=True,
+                nozzle_offset_cali="on",
             )
             db.add(item)
             await db.commit()
@@ -110,7 +110,9 @@ async def queue_factory(tmp_path):
 async def _dispatch_library_item(ctx, *, archive_failure=False, unlink_side_effect=None):
     scheduler = PrintScheduler()
 
-    async def archive_print(self, *, printer_id, source_file, original_filename, created_by_id=None, project_id=None):
+    async def archive_print(
+        self, *, printer_id, source_file, original_filename, created_by_id=None, project_id=None, plate_id=None
+    ):
         if archive_failure:
             raise RuntimeError("archive copy failed")
 

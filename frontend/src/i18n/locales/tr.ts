@@ -2110,6 +2110,9 @@ export default {
     preheatOverride_inherit: 'Devral',
     preheatOverride_on: 'Açık',
     preheatOverride_off: 'Kapalı',
+    calibrationMode_off: 'Kapalı',
+    calibrationMode_on: 'Açık',
+    calibrationMode_auto: 'Otomatik',
     preheatTargetOverride: 'Oda hedefini geçersiz kıl (°C, boş = filament varsayılanı)',
     plateClear: 'Plaka Temizleme Onayı',
     requirePlateClear: 'Plaka temizleme onayı gerektir',
@@ -4022,6 +4025,8 @@ export default {
     refreshPresets: 'Yenile',
     refreshPresetsTitle: "Ön ayarları yenile — en güncel bulut ve paketli listeleri getir (Bambu Studio veya Bambu Handy'de bir ön ayar sildikten sonra kullanın)",
     allPresetsRequired: 'Tüm ön ayarlar seçilmelidir',
+    useEmbedded: 'Dosyanın yerleşik ayarlarını kullan',
+    useEmbeddedHint: 'Yukarıdaki profiller yerine tasarımcının ayarladığı gibi (duvarlar, dolgu, filament) dilimle. Yazıcınız dosyayla eşleştiği için sunuluyor.',
     enqueuing: 'Dilimleme işi gönderiliyor…',
     queued: 'Kuyrukta…',
     failed: 'Dilimleme başarısız. Dilimleyici yardımcı bileşen günlüklerini kontrol edin.',
@@ -6616,6 +6621,7 @@ export default {
     scope: {
       camera_stream: 'Kamera akışı',
       camwall: 'Kamera duvarı',
+      overlay: 'Yayın bindirmesi',
     },
     title: 'Kamera API Belirteçleri',
     navTitle: 'Kamera API belirteçleri',
@@ -6634,6 +6640,8 @@ export default {
         'Kamera akışı belirteci yalnızca kamera akışlarını ve anlık görüntüleri alabilir. Home Assistant, Frigate veya tek bir kamerayı gömen her şey için kullanın.',
       hintCamWall:
         'Kamera duvarı belirteci, oturum açmadan bir ekranda /camwall adresini açar. Her yazıcının adını ve durumunu, ayrıca kamera akışlarını görebilir. Dosya adlarını, adresleri veya erişim kodlarını göremez.',
+      hintOverlay:
+        'Yayın bindirmesi belirteci, oturum açmadan bir ekranda /overlay/{printerId} adresini açar — OBS veya herhangi bir canlı yayın için. Bir yazıcının kamera akışını ve ekranda gösterilen dosya adı dahil canlı yazdırma durumunu görebilir. Adresleri veya erişim kodlarını göremez.',
       title: 'Yeni belirteç oluştur',
       nameLabel: 'Belirteç adı',
       namePlaceholder: 'örn. Home Assistant',
@@ -6646,6 +6654,9 @@ export default {
       camWallUrlTitle: 'Bu ekran için kamera duvarı adresi',
       camWallUrlHint:
         'Bu adresi ekranda açın. Adresi okuyabilen herkes duvarı izleyebilir, bu yüzden onu bir anahtar gibi görün; ekranın erişimini kesmek için belirteci iptal edin.',
+      overlayUrlTitle: 'OBS için bindirme adresi',
+      overlayUrlHint:
+        'Bunu OBS\'ye Tarayıcı Kaynağı olarak ekleyin. /overlay/1 içindeki sayıyı yazıcınızın numarasıyla değiştirin (Yazıcılar sayfasındaki adresinden). Adresi okuyabilen herkes yayını izleyebilir, bu yüzden onu bir anahtar gibi görün — erişimi kesmek için belirteci iptal edin.',
       title: 'Belirteç oluşturuldu — şimdi kopyalayın',
       warning:
         'Bu, bu belirtecin görünür olacağı tek seferdir. Bu iletişim kutusunu kapattıktan sonra onu bir daha asla görüntüleyemezsiniz.',

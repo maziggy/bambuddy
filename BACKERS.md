@@ -28,11 +28,11 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@RoBoT24-web](https://github.com/RoBoT24-web)
 - [@Rayvenhaus](https://github.com/Rayvenhaus)
 - [@TheUltimateC0der](https://github.com/TheUltimateC0der)
+- [@rstocks](https://github.com/rstocks)
 
 ## Supporters ($15/mo+)
 
 - [@rewart01](https://github.com/rewart01)
-- [@rstocks](https://github.com/rstocks)
 - [@sixfootseven](https://github.com/sixfootseven)
 - [@MethodicalMartian](https://github.com/MethodicalMartian)
 - [@brianharwell](https://github.com/brianharwell)

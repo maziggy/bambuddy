@@ -2062,6 +2062,9 @@ export default {
     preheatOverride_inherit: 'Hériter',
     preheatOverride_on: 'Activé',
     preheatOverride_off: 'Désactivé',
+    calibrationMode_off: 'Désactivé',
+    calibrationMode_on: 'Activé',
+    calibrationMode_auto: 'Auto',
     preheatTargetOverride: 'Surcharger la cible chambre (°C, vide = par filament)',
     plateClear: 'Confirmation de plateau libre',
     requirePlateClear: 'Exiger la confirmation de plateau libre',
@@ -4021,6 +4024,8 @@ export default {
     refreshPresets: 'Actualiser',
     refreshPresetsTitle: 'Actualiser les préréglages — récupérer les dernières listes Cloud et bundle (à utiliser après avoir supprimé un préréglage dans Bambu Studio ou Bambu Handy)',
     allPresetsRequired: 'Tous les préréglages doivent être sélectionnés',
+    useEmbedded: 'Utiliser les réglages intégrés du fichier',
+    useEmbeddedHint: "Slicer tel que le concepteur l'a configuré (parois, remplissage, filament) au lieu des profils ci-dessus. Proposé car votre imprimante correspond à celle du fichier.",
     enqueuing: 'Envoi du travail de découpage…',
     queued: 'En file d\'attente…',
     failed: 'Échec du découpage. Vérifiez les journaux du sidecar.',
@@ -6664,6 +6669,7 @@ export default {
     scope: {
       camera_stream: 'Flux de caméra',
       camwall: 'Mur de caméras',
+      overlay: 'Incrustation de streaming',
     },
     title: 'Jetons API caméra',
     navTitle: 'Jetons API caméra',
@@ -6682,6 +6688,8 @@ export default {
         'Un jeton de flux de caméra ne peut récupérer que des flux et des instantanés. À utiliser pour Home Assistant, Frigate ou tout ce qui intègre une seule caméra.',
       hintCamWall:
         "Un jeton Mur de caméras ouvre /camwall sur un écran sans connexion. Il voit le nom et l'état de chaque imprimante, ainsi que leurs flux de caméra. Il ne voit ni les noms de fichiers, ni les adresses, ni les codes d'accès.",
+      hintOverlay:
+        "Un jeton Incrustation de streaming ouvre /overlay/{printerId} sur un écran sans connexion — pour OBS ou tout autre flux en direct. Il voit le flux de caméra d'une imprimante ainsi que son état d'impression en direct, y compris le nom de fichier affiché à l'écran. Il ne voit ni les adresses ni les codes d'accès.",
       title: 'Créer un nouveau jeton',
       nameLabel: 'Nom du jeton',
       namePlaceholder: 'par ex. Home Assistant',
@@ -6694,6 +6702,9 @@ export default {
       camWallUrlTitle: 'Adresse du mur de caméras pour cet écran',
       camWallUrlHint:
         "Ouvrez cette adresse sur l'écran. Quiconque peut lire l'adresse peut regarder le mur : traitez-la comme une clé. Révoquez le jeton pour couper l'écran.",
+      overlayUrlTitle: "Adresse d'incrustation pour OBS",
+      overlayUrlHint:
+        "Ajoutez ceci comme Source navigateur dans OBS. Remplacez le numéro dans /overlay/1 par le numéro de votre imprimante (indiqué dans son adresse sur la page Imprimantes). Quiconque peut lire l'adresse peut regarder le flux : traitez-la comme une clé et révoquez le jeton pour couper l'accès.",
       title: 'Jeton créé – copiez-le maintenant',
       warning:
         'C\'est la seule fois où ce jeton sera visible. Après la fermeture de ce dialogue, vous ne pourrez plus jamais le voir.',

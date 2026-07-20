@@ -269,11 +269,24 @@ class PrintScheduler:
         # Matches the watchdog timeout (90 s) plus a safety margin so the
         # watchdog runs first on the unhappy path.
         self._dispatch_max_hold = 180.0
+        # Refillable upload pool (#2602). Items whose FTP upload was launched by
+        # an earlier pass and is still running. `_start_print` flips the row
+        # pending -> printing only *after* the upload completes, so until then
+        # the row stays `pending`: each tick, check_queue excludes these
+        # item_ids from re-selection and their printers from new dispatch /
+        # auto-drying, and launches only `limit - len(_inflight)` new uploads so
+        # freed slots refill on the next fast tick. check_queue is the sole,
+        # sequential caller and the prune done-callbacks run in the same
+        # event-loop thread, so this dict needs no lock.
+        # item_id -> (task, printer_id)
+        self._inflight: dict[int, tuple[asyncio.Task, int | None]] = {}
 
     async def run(self):
         """Main loop - check queue every interval."""
         self._running = True
         logger.info("Print scheduler started")
+
+        await self._clear_stale_dispatch_claims()
 
         while self._running:
             dispatched = False
@@ -285,6 +298,25 @@ class PrintScheduler:
             # Re-check quickly after a productive pass so a draining batch does
             # not stall behind the idle interval; otherwise sleep normally (#2555).
             await asyncio.sleep(self._fast_check_interval if dispatched else self._check_interval)
+
+    async def _clear_stale_dispatch_claims(self) -> None:
+        """Clear dispatch claims left behind by a crash/restart mid-upload (#2615).
+
+        A claim is only ever held by a live dispatch coroutine, and no coroutine
+        survives a process restart — so every ``dispatching_at`` present at startup
+        is stale. Clearing them lets those still-pending rows be re-selected for a
+        fresh, consistent dispatch instead of being wedged out of the selection
+        query forever. Called once at the top of ``run()``."""
+        try:
+            async with async_session() as db:
+                res = await db.execute(
+                    update(PrintQueueItem).where(PrintQueueItem.dispatching_at.is_not(None)).values(dispatching_at=None)
+                )
+                await db.commit()
+                if res.rowcount:
+                    logger.info("Cleared %d stale dispatch claim(s) at startup (#2615)", res.rowcount)
+        except Exception as exc:
+            logger.error("Failed to clear stale dispatch claims at startup: %s", exc)
 
     def stop(self):
         """Stop the scheduler."""
@@ -309,6 +341,11 @@ class PrintScheduler:
                 result = await db.execute(
                     select(PrintQueueItem)
                     .where(PrintQueueItem.status == "pending")
+                    # Never re-select a row a dispatch worker has already claimed
+                    # (#2615) — belt-and-suspenders with the _inflight exclusion
+                    # below, and the guard that lets an orphaned claim be ignored
+                    # until startup reconciliation clears it.
+                    .where(PrintQueueItem.dispatching_at.is_(None))
                     # archive/library_file are read by the cross-model gate
                     # (#2578); eager-load once per pass instead of a lazy-load
                     # (which would raise in async) per item.
@@ -328,6 +365,8 @@ class PrintScheduler:
                 result = await db.execute(
                     select(PrintQueueItem)
                     .where(PrintQueueItem.status == "pending")
+                    # Skip rows already claimed by a dispatch worker (#2615).
+                    .where(PrintQueueItem.dispatching_at.is_(None))
                     .options(
                         selectinload(PrintQueueItem.archive),
                         selectinload(PrintQueueItem.library_file),
@@ -335,6 +374,14 @@ class PrintScheduler:
                     .order_by(PrintQueueItem.printer_id, PrintQueueItem.position)
                 )
             items = list(result.scalars().all())
+
+            # Drop rows whose upload is still in flight from an earlier pass
+            # (#2602). They stay `pending` until the upload finishes, so without
+            # this a fast tick would re-select and re-dispatch the same row.
+            # Belt-and-suspenders with the printer exclusion below.
+            if self._inflight:
+                inflight_ids = set(self._inflight)
+                items = [it for it in items if it.id not in inflight_ids]
 
             # Read plate-clear setting once per queue check. Default MUST be
             # False to match the schema (SettingsSchema.require_plate_clear
@@ -346,9 +393,15 @@ class PrintScheduler:
             require_plate_clear = await self._get_bool_setting(db, "require_plate_clear", default=False)
 
             if not items:
-                # No pending items — still check auto-drying on idle printers
-                await self._check_auto_drying(db, [], set(), require_plate_clear=require_plate_clear)
-                return False
+                # No dispatchable pending items — still check auto-drying on idle
+                # printers, but keep any printer with an upload still in flight
+                # from an earlier pass out of it (#2602): its print is imminent,
+                # so it must not be auto-dried in the gap before the row flips to
+                # printing. Report the pass as productive while uploads run so the
+                # loop stays on the fast interval.
+                inflight_printers = {pid for (_task, pid) in self._inflight.values() if pid is not None}
+                await self._check_auto_drying(db, [], inflight_printers, require_plate_clear=require_plate_clear)
+                return bool(self._inflight)
 
             logger.info(
                 "Queue check: found %d pending items: %s",
@@ -382,6 +435,15 @@ class PrintScheduler:
             for held_printer_id in list(self._dispatch_holds.keys()):
                 if self._printer_in_dispatch_hold(held_printer_id):
                     busy_printers.add(held_printer_id)
+
+            # Exclude printers whose upload is still in flight from an earlier
+            # pass (#2602). The row is `pending` until the upload finishes and
+            # the printing-state seed / dispatch hold above only arm once the
+            # upload completes, so this is what holds the printer (and, via
+            # busy_printers, its auto-drying) out of the pass during the upload.
+            for _task, inflight_pid in self._inflight.values():
+                if inflight_pid is not None:
+                    busy_printers.add(inflight_pid)
 
             # Log skip reasons once per queue check (not per item)
             skip_reasons: dict[str, int] = {}
@@ -763,73 +825,139 @@ class PrintScheduler:
             await db.commit()
 
             if dispatch_ids:
-                await self._dispatch_selected(dispatch_ids, upload_limit)
+                item_printers = {it.id: it.printer_id for it in items}
+                self._launch_uploads(dispatch_ids, item_printers, upload_limit)
 
             # Auto-drying: start drying on idle printers that have no pending queue items
             await self._check_auto_drying(db, items, busy_printers, require_plate_clear=require_plate_clear)
 
-            return bool(dispatch_ids)
+            # Keep the loop on the fast interval while any upload is in flight so
+            # a slot freed mid-tick refills within seconds rather than after the
+            # 30 s idle sleep (#2602). Selecting anything this pass (launched or
+            # deferred because the pool was full) also counts as productive.
+            return bool(dispatch_ids) or bool(self._inflight)
 
-    async def _dispatch_selected(self, item_ids: list[int], limit: int) -> None:
-        """Upload and start every item selected by this queue pass, in parallel.
+    def _launch_uploads(self, item_ids: list[int], item_printers: dict[int, int | None], limit: int) -> None:
+        """Launch selected uploads as a refillable pool, capped at ``limit`` (#2602).
 
         Dispatch used to happen inline in the selection loop: ``await
-        _start_print(db, item)`` for each item in turn. Since ``_start_print``
+        _start_print(db, item)`` per item in turn. Since ``_start_print``
         performs the FTP upload, that serialized every printer behind every
-        other printer's transfer — even though the printers are entirely
-        independent machines. A Bambu printer's FTP server sustains ~150 KB/s
-        (its own SD write is the bottleneck, not the network), so a 41 MB 3MF
-        takes ~4 minutes. The reporter's 19-printer farm therefore needed ~80
-        minutes before the last printer received its file, and the queue looked
-        like it was starting prints "one by one, very slowly" (#2555).
+        other printer's transfer even though the printers are independent
+        machines; #2555 moved it to a parallel ``asyncio.gather()``. But that
+        gather was awaited before ``check_queue`` returned, so the run loop
+        stayed blocked until the *slowest* upload in the batch finished — a
+        513 s upload left 15 of 16 configured slots idle for 8.5 minutes on a
+        93-printer farm even as other printers came free (#2602).
 
-        Uploads to *different* printers contend for nothing, so they run
-        concurrently here, bounded by ``queue_max_concurrent_uploads``. The
-        bound exists because the printers are independent but the host is not:
-        each in-flight upload holds a thread in the FTP pool, a TLS session and
-        a file handle.
+        Each upload now runs as an independent background task tracked in
+        ``self._inflight``. check_queue excludes in-flight item_ids (still
+        `pending` until their upload completes) and their printers from the
+        next pass's selection, and this method launches at most
+        ``limit - len(self._inflight)`` new uploads, so a freed slot refills on
+        the next fast tick instead of waiting out the whole batch. The bound
+        exists because the printers are independent but the host is not: each
+        in-flight upload holds a thread in the FTP pool, a TLS session and a
+        file handle.
 
-        This is awaited before ``check_queue`` returns, which preserves the
-        invariant the rest of the scheduler is built on: a pass never overlaps
-        with the next one. It matters more than it looks — ``_start_print``
-        flips the row pending -> printing only *after* the upload finishes, so
-        a pass that returned early while uploads were still in flight would let
-        the next pass re-dispatch the very same still-pending rows.
+        The no-overlapping-dispatch invariant the batch-await used to provide
+        is now carried by the in-flight exclusion in check_queue. Everything
+        else — the pending->printing CAS, the busy-printer guard (#2598), the
+        per-printer hold, and each item's independent failure handling — still
+        lives in ``_start_print`` and runs per task exactly as before.
 
-        ``limit`` is read by the caller, on the caller's session, before it
-        commits — reading it here would leave that session idle-in-transaction
-        for the whole dispatch. This function deliberately takes no session.
+        Synchronous on purpose: it registers every launched task into
+        ``self._inflight`` before returning, so the next (sequential) tick sees
+        an accurate in-flight count with no interleaving await.
         """
-        sem = asyncio.Semaphore(limit)
+        free = limit - len(self._inflight)
+        if free <= 0:
+            logger.info(
+                "Upload pool full (%d/%d in flight) — deferring %d item(s) to a later tick: %s",
+                len(self._inflight),
+                limit,
+                len(item_ids),
+                item_ids,
+            )
+            return
 
-        async def _one(item_id: int) -> None:
-            # Its own session: these run concurrently, and an AsyncSession is not
-            # safe to share across tasks. It also keeps a slow upload from pinning
-            # the caller's session (and, on SQLite, its transaction) open for the
-            # duration.
-            async with sem, async_session() as item_db:
+        to_launch = item_ids[:free]
+        deferred = item_ids[free:]
+        logger.info(
+            "Launching %d upload(s) (pool %d/%d in flight)%s",
+            len(to_launch),
+            len(self._inflight),
+            limit,
+            f" — deferring {deferred} to a later tick" if deferred else "",
+        )
+
+        for item_id in to_launch:
+            task = spawn_background_task(self._dispatch_one(item_id), name=f"queue-upload-{item_id}")
+            self._inflight[item_id] = (task, item_printers.get(item_id))
+            # Prune on completion so the freed slot is refillable next tick.
+            # spawn_background_task already logs any uncaught exception; this
+            # only reclaims the pool slot (fires on success, failure, or cancel).
+            task.add_done_callback(lambda _t, iid=item_id: self._inflight.pop(iid, None))
+
+    async def _dispatch_one(self, item_id: int) -> None:
+        """Upload + start one queue item in its own session (pool worker, #2602).
+
+        Its own session: pool workers run concurrently and an AsyncSession is
+        not safe to share across tasks; it also keeps a slow upload from pinning
+        the scheduler's session (and, on SQLite, its transaction) open for the
+        transfer's duration.
+        """
+        async with async_session() as item_db:
+            # Claim the row for dispatch BEFORE reading the printer snapshot or
+            # touching any slow I/O (#2615). The claim is an atomic CAS on
+            # (status='pending', dispatching_at IS NULL); while it's held the edit
+            # routes reject reassignment (409), so printer_id can't change out from
+            # under the in-flight upload and split the queue row from the
+            # archive/expected-print/physical command.
+            if not await self._claim_for_dispatch(item_db, item_id):
+                logger.info(
+                    "Queue item %s not claimable for dispatch (cancelled, removed, or already claimed) — skipping",
+                    item_id,
+                )
+                return
+            try:
                 item = await item_db.get(PrintQueueItem, item_id)
                 if not item:
-                    logger.info("Queue item %s vanished before dispatch — skipping", item_id)
+                    logger.info("Queue item %s vanished after claim — skipping", item_id)
                     return
                 await self._start_print(item_db, item)
+            finally:
+                # Release the claim on every exit. Once dispatch has finished the
+                # row's status carries the lock (printing/failed/cancelled are all
+                # != pending), so the token is only needed for the duration of the
+                # upload. A row left pending (e.g. busy-printer deferral) becomes
+                # dispatchable again on the next tick.
+                await self._clear_dispatch_claim(item_db, item_id)
 
-        logger.info(
-            "Dispatching %d queue item(s) with up to %d concurrent upload(s): %s",
-            len(item_ids),
-            limit,
-            item_ids,
+    async def _claim_for_dispatch(self, db: AsyncSession, item_id: int) -> bool:
+        """Atomically stamp ``dispatching_at`` on a still-pending, unclaimed row.
+
+        Returns True if this call won the claim, False if the row was already
+        claimed, no longer pending (cancelled mid-tick), or removed. The CAS is
+        the load-bearing guard against reassign-during-dispatch (#2615)."""
+        res = await db.execute(
+            update(PrintQueueItem)
+            .where(PrintQueueItem.id == item_id)
+            .where(PrintQueueItem.status == "pending")
+            .where(PrintQueueItem.dispatching_at.is_(None))
+            .values(dispatching_at=datetime.now(timezone.utc))
         )
-        results = await asyncio.gather(*(_one(i) for i in item_ids), return_exceptions=True)
+        await db.commit()
+        return res.rowcount > 0
 
-        # gather() with return_exceptions keeps one printer's failure from
-        # cancelling its siblings' in-flight uploads. _start_print already
-        # handles its own failure modes and marks the item failed; anything
-        # arriving here is unexpected, so log it loudly rather than letting
-        # gather swallow it.
-        for item_id, result in zip(item_ids, results, strict=True):
-            if isinstance(result, BaseException):
-                logger.error("Queue item %s: dispatch raised %s: %s", item_id, type(result).__name__, result)
+    async def _clear_dispatch_claim(self, db: AsyncSession, item_id: int) -> None:
+        """Clear the dispatch claim (#2615). Best-effort: a failure here must not
+        mask the dispatch outcome, and startup reconciliation clears any leftover."""
+        try:
+            await db.execute(update(PrintQueueItem).where(PrintQueueItem.id == item_id).values(dispatching_at=None))
+            await db.commit()
+        except Exception as exc:
+            logger.warning("Queue item %s: failed to clear dispatch claim: %s", item_id, exc)
 
     async def _find_idle_printer_for_model(
         self,
@@ -2910,6 +3038,14 @@ class PrintScheduler:
                 await self._power_off_if_needed(db, item)
                 return
 
+            # Persist the queue item's selected plate onto the archive so Print
+            # History can show the actual plate after cancel/fail/complete (#2603).
+            # Only when the archive doesn't already carry one, so a reprint of a
+            # plate-specific archive isn't relabelled by a differently-plated
+            # queue row.
+            if archive.plate_id is None and item.plate_id is not None:
+                archive.plate_id = item.plate_id
+
             file_path = settings.base_dir / archive.file_path
             filename = archive.filename
 
@@ -2942,6 +3078,7 @@ class PrintScheduler:
                     original_filename=filename,
                     created_by_id=item.created_by_id,
                     project_id=item.project_id,
+                    plate_id=item.plate_id,  # selected plate → Print History (#2603)
                 )
                 if archive:
                     item.archive_id = archive.id

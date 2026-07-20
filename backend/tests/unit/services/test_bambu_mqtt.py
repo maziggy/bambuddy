@@ -4060,15 +4060,18 @@ class TestStartPrintAmsMapping:
         mqtt_client.start_print(
             "test.3mf",
             timelapse=True,
-            bed_levelling=False,
-            flow_cali=True,
+            bed_levelling="off",
+            flow_cali="on",
             vibration_cali=False,
             layer_inspect=True,
         )
 
         cmd = self._get_published_command(mqtt_client)
         assert cmd["timelapse"] is True
+        # bed_leveling stays a bool (true only for "on"); the tri-state rides on
+        # the auto_bed_leveling int.
         assert cmd["bed_leveling"] is False
+        assert cmd["auto_bed_leveling"] == 0
         assert cmd["flow_cali"] is True
         assert cmd["vibration_cali"] is False
         assert cmd["layer_inspect"] is True
@@ -4078,16 +4081,13 @@ class TestStartPrintAmsMapping:
     def test_p2s_uses_boolean_format(self, mqtt_client):
         """P2S sends calibration fields as JSON booleans (single-nozzle, like X1C/A1/P1)."""
         mqtt_client.model = "P2S"
-        mqtt_client.start_print("test.3mf", timelapse=True, flow_cali=False)
+        mqtt_client.start_print("test.3mf", timelapse=True, flow_cali="off")
 
         cmd = self._get_published_command(mqtt_client)
         assert cmd["timelapse"] is True
         assert cmd["flow_cali"] is False
-        # flow_cali off → extrude_cali_flag=0 (firmware actually skips the
-        # pre-print calibration stage). #1721 test on H2D 01.x showed `2`
-        # didn't suppress stage 8 ("Calibrating dynamic flow") despite the
-        # earlier "skip and reuse stored PA" reading; `0` does — verified
-        # live against the stg queue.
+        # flow_cali "off" → extrude_cali_flag=0 (firmware skips the pre-print
+        # calibration stage entirely). "auto" would send 2 instead.
         assert cmd["extrude_cali_flag"] == 0
 
     def test_h2s_single_external_spool_uses_main_id(self, mqtt_client):
@@ -4132,8 +4132,8 @@ class TestStartPrintAmsMapping:
         mqtt_client.start_print(
             "test.3mf",
             timelapse=True,
-            bed_levelling=False,
-            flow_cali=True,
+            bed_levelling="off",
+            flow_cali="on",
             vibration_cali=False,
             layer_inspect=True,
         )
@@ -4148,13 +4148,48 @@ class TestStartPrintAmsMapping:
         # flow-dynamics calibration instead of reusing the stored PA value.
         assert cmd["extrude_cali_flag"] == 1
 
-    def test_nozzle_offset_cali_default_is_skip(self, mqtt_client):
-        """Default `nozzle_offset_cali=False` → wire value `0` (skip).
+    def test_bed_leveling_auto_sends_int_two(self, mqtt_client):
+        """`bed_levelling="auto"` → bool false + auto_bed_leveling=2.
 
-        #1721 H2D 01.x test: `2` ("skip") didn't actually suppress stage 39
-        ("Nozzle offset calibration") — the stage stayed in the `stg` queue
-        and ran at print start. `0` does suppress it (verified live). Matches
-        what a BambuStudio Send-dialog echo on the same firmware shows.
+        Matches BambuStudio's ops_auto wire shape: the bool is true only for the
+        explicit "on" state; "auto" carries its intent in the int (2 = run only
+        if the bed wasn't levelled recently).
+        """
+        mqtt_client.model = "X1C"
+        mqtt_client.start_print("test.3mf", bed_levelling="auto")
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["bed_leveling"] is False
+        assert cmd["auto_bed_leveling"] == 2
+
+    def test_bed_leveling_on_sends_int_one(self, mqtt_client):
+        """`bed_levelling="on"` → bool true + auto_bed_leveling=1 (force)."""
+        mqtt_client.model = "X1C"
+        mqtt_client.start_print("test.3mf", bed_levelling="on")
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["bed_leveling"] is True
+        assert cmd["auto_bed_leveling"] == 1
+
+    def test_flow_cali_auto_sends_int_two(self, mqtt_client):
+        """`flow_cali="auto"` → bool false + extrude_cali_flag=2.
+
+        #1721 saw stage 8 stay queued on 2 — that is the auto contract (queued,
+        skipped at runtime if the filament was calibrated recently), which is
+        exactly what "auto" should do.
+        """
+        mqtt_client.model = "X1C"
+        mqtt_client.start_print("test.3mf", flow_cali="auto")
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["flow_cali"] is False
+        assert cmd["extrude_cali_flag"] == 2
+
+    def test_nozzle_offset_cali_default_auto_gated_on_single_nozzle(self, mqtt_client):
+        """Default (auto) on a single-nozzle printer → wire value `0`.
+
+        The default is now "auto", but single-nozzle machines have no second
+        head to calibrate, so the MQTT layer gates any state to `0` there.
         """
         mqtt_client.model = "P1S"
         mqtt_client.start_print("test.3mf")
@@ -4163,44 +4198,50 @@ class TestStartPrintAmsMapping:
         assert cmd["nozzle_offset_cali"] == 0
 
     def test_nozzle_offset_cali_ignored_on_single_nozzle(self, mqtt_client):
-        """Single-nozzle printer: `nozzle_offset_cali=True` is silently dropped.
+        """Single-nozzle printer: `nozzle_offset_cali="on"` is silently dropped.
 
         H2S is in the H2 firmware family but single-nozzle. The toggle has
         no physical meaning on single-nozzle machines and the UI gates it
         behind `nozzle_count==2`. Even if a stale queue item from when the
         printer was misidentified as dual carries the flag, the MQTT layer
         must downgrade it so firmware never tries to calibrate a head it
-        doesn't have (#1682). `0` is the actually-honoured skip value
-        post-#1721; old `2` left the stage in the queue.
+        doesn't have (#1682).
         """
         mqtt_client.model = "P1S"
-        mqtt_client.start_print("test.3mf", nozzle_offset_cali=True)
+        mqtt_client.start_print("test.3mf", nozzle_offset_cali="on")
 
         cmd = self._get_published_command(mqtt_client)
         assert cmd["nozzle_offset_cali"] == 0
 
     def test_nozzle_offset_cali_honored_on_dual_nozzle(self, mqtt_client):
-        """Dual-nozzle printer (H2D): `nozzle_offset_cali=True` → wire value `1`.
+        """Dual-nozzle printer (H2D): `nozzle_offset_cali="on"` → wire value `1`.
 
         H2D is in `DUAL_NOZZLE_MODELS`. The toggle controls whether the
         printer runs the nozzle-offset calibration pass before the print
-        starts. `1`=run (#1682).
+        starts. "on"=1 (force), "auto"=2, "off"=0 (#1682).
         """
         mqtt_client.model = "H2D"
-        mqtt_client.start_print("test.3mf", nozzle_offset_cali=True)
+        mqtt_client.start_print("test.3mf", nozzle_offset_cali="on")
 
         cmd = self._get_published_command(mqtt_client)
         assert cmd["nozzle_offset_cali"] == 1
 
-    def test_nozzle_offset_cali_false_on_dual_nozzle(self, mqtt_client):
-        """Dual-nozzle printer (H2D Pro): `nozzle_offset_cali=False` → `0` (skip).
+    def test_nozzle_offset_cali_auto_on_dual_nozzle(self, mqtt_client):
+        """Dual-nozzle printer (H2D): `nozzle_offset_cali="auto"` → wire value `2`."""
+        mqtt_client.model = "H2D"
+        mqtt_client.start_print("test.3mf", nozzle_offset_cali="auto")
+
+        cmd = self._get_published_command(mqtt_client)
+        assert cmd["nozzle_offset_cali"] == 2
+
+    def test_nozzle_offset_cali_off_on_dual_nozzle(self, mqtt_client):
+        """Dual-nozzle printer (H2D Pro): `nozzle_offset_cali="off"` → `0` (skip).
 
         Critical for users like #1682 who run diamond nozzles and need to
-        keep the calibration off. The wire value flipped from `2` to `0` in
-        #1721 after the H2D test showed `2` didn't actually suppress.
+        keep the calibration off.
         """
         mqtt_client.model = "H2D Pro"
-        mqtt_client.start_print("test.3mf", nozzle_offset_cali=False)
+        mqtt_client.start_print("test.3mf", nozzle_offset_cali="off")
 
         cmd = self._get_published_command(mqtt_client)
         assert cmd["nozzle_offset_cali"] == 0

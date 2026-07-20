@@ -9,7 +9,13 @@ check the UI enforces.
 
 from __future__ import annotations
 
+import logging
 import os
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 # All four or nothing: a provider missing its secret would be written to the
 # database and then fail at authorize time, long after the operator could
@@ -52,3 +58,73 @@ def read_env_oidc_config() -> dict | None:
         "icon_url": os.environ.get("BAMBUDDY_OIDC_ICON_URL"),
         "is_autologin": _env_bool("BAMBUDDY_OIDC_AUTOLOGIN", False),
     }
+
+
+# Everything the schema validates and the model stores, except client_secret --
+# that one goes through the property so it is encrypted at rest.
+_APPLIED_FIELDS = (
+    "name",
+    "issuer_url",
+    "client_id",
+    "scopes",
+    "is_enabled",
+    "auto_create_users",
+    "auto_link_existing_accounts",
+    "email_claim",
+    "require_email_verified",
+    "icon_url",
+    "is_autologin",
+)
+
+
+async def apply_env_oidc_provider(db: AsyncSession) -> None:
+    """Upsert the env-managed provider, or disable it when the config is gone.
+
+    Never raises: this runs during startup, and a typo in one variable must not
+    stop the app from booting. A rejected config is logged and skipped.
+    """
+    # Imported here rather than at module scope: app.core is imported by the
+    # models themselves, so a top-level import would be a cycle.
+    from backend.app.models.oidc_provider import OIDCProvider
+    from backend.app.schemas.auth import OIDCProviderCreate
+
+    config = read_env_oidc_config()
+    existing = (
+        await db.execute(select(OIDCProvider).where(OIDCProvider.is_env_managed.is_(True)))
+    ).scalar_one_or_none()
+
+    if config is None:
+        # Disabled, never deleted: user_oidc_links.provider_id is FK ON DELETE
+        # CASCADE, so removing the row would unlink every bound account and the
+        # links would not come back when the variables do.
+        if existing is not None and existing.is_enabled:
+            existing.is_enabled = False
+            await db.commit()
+            logger.info("BAMBUDDY_OIDC_* is unset -- env-managed provider disabled.")
+        return
+
+    try:
+        # The same schema the API uses, so env config cannot reach a state the
+        # UI would have refused (notably the SEC-1 auto-link check).
+        validated = OIDCProviderCreate(**config)
+    except Exception as exc:  # noqa: BLE001 -- any rejection must be survivable
+        logger.error("BAMBUDDY_OIDC_* config rejected, provider not applied: %s", exc)
+        return
+
+    if existing is None:
+        existing = OIDCProvider(is_env_managed=True)
+        db.add(existing)
+    for field in _APPLIED_FIELDS:
+        setattr(existing, field, getattr(validated, field))
+    existing.client_secret = validated.client_secret
+    existing.is_env_managed = True
+    await db.flush()  # the id is needed by the autologin sweep below
+
+    if existing.is_autologin:
+        await db.execute(
+            update(OIDCProvider)
+            .where(OIDCProvider.id != existing.id, OIDCProvider.is_autologin.is_(True))
+            .values(is_autologin=False)
+        )
+    await db.commit()
+    logger.info("Env-managed OIDC provider %r applied.", existing.name)

@@ -772,6 +772,41 @@ def _compute_run_filament_grams(
     return None
 
 
+def _plate_scoped_run_estimate(archive, full_path) -> tuple[float | None, float | None]:
+    """Per-run (grams, cost) scoped to the plate this run actually printed (#2614).
+
+    ``PrintArchive.filament_used_grams`` / ``.cost`` are the sum over EVERY plate of
+    the source 3MF — correct for the archive card and project rollup, but wrong for a
+    single plate dispatched from a multi-plate file: without scoping, each printed
+    plate of a 22-plate file logs the whole ~12 kg and inflates every statistic. When
+    the archive carries a ``plate_id`` and its 3MF is on disk, return that plate's
+    slicer estimate instead; cost is scaled by the plate's share of the whole so it
+    stays consistent with the scoped grams without re-doing the filament price lookup.
+    Falls back to the archive's whole-file values when there's no plate to scope to.
+    """
+    whole_grams = archive.filament_used_grams
+    if archive.plate_id is None or full_path is None or not full_path.exists():
+        return whole_grams, archive.cost
+    try:
+        from backend.app.utils.threemf_tools import extract_plate_metadata_from_3mf
+
+        plate_grams = extract_plate_metadata_from_3mf(full_path, archive.plate_id).filament_used_grams
+    except Exception as exc:
+        logging.getLogger(__name__).debug(
+            "[#2614] plate-scoped estimate failed for archive %s (plate %s): %s",
+            archive.id,
+            archive.plate_id,
+            exc,
+        )
+        return whole_grams, archive.cost
+    if not plate_grams or plate_grams <= 0:
+        return whole_grams, archive.cost
+    plate_cost = archive.cost
+    if archive.cost and whole_grams and whole_grams > 0:
+        plate_cost = round(archive.cost * (plate_grams / whole_grams), 2)
+    return round(plate_grams, 2), plate_cost
+
+
 def _get_start_ams_mapping(data: dict, archive_id: int | None) -> list[int] | None:
     """Resolve AMS mapping for print start without consuming stored queue/reprint state."""
     stored_ams_mapping = data.get("ams_mapping")
@@ -4791,9 +4826,19 @@ async def on_print_complete(printer_id: int, data: dict):
                 # math (failed / cancelled / stopped get scaled to progress
                 # or to tracked spool deltas).
                 _run_status = data.get("status", "completed")
+                # #2614: scope the per-run estimate to the printed plate. For a
+                # multi-plate 3MF dispatched one plate at a time, the archive's
+                # filament/cost are the whole-file totals; the PrintLogEntry must
+                # reflect only this plate. No effect on single-plate archives (the
+                # plate estimate equals the whole-file value) or on the tracker
+                # path (measured spool deltas win in _compute_run_filament_grams).
+                _est_full_path = (
+                    app_settings.base_dir / archive.file_path if archive.file_path else None
+                )  # SEC-PATH-OK: archive.file_path is DB-stored, internally generated
+                _est_grams, _est_cost = _plate_scoped_run_estimate(archive, _est_full_path)
                 _run_grams = _compute_run_filament_grams(
                     _run_status,
-                    archive.filament_used_grams,
+                    _est_grams,
                     data.get("progress"),
                     usage_results,
                 )
@@ -4806,7 +4851,7 @@ async def on_print_complete(printer_id: int, data: dict):
                 if usage_results:
                     _run_cost = sum(r.get("cost") or 0 for r in usage_results) or None
                 if _run_cost is None and _run_status == "completed":
-                    _run_cost = archive.cost
+                    _run_cost = _est_cost
 
                 await write_log_entry(
                     db,
@@ -6577,6 +6622,13 @@ PUBLIC_API_PATTERNS = [
     # Camera (streams loaded via <img> tag)
     "/camera/stream",  # /printers/{id}/camera/stream
     "/camera/snapshot",  # /printers/{id}/camera/snapshot
+    # Streaming-overlay status feed (#2613): OBS loads /overlay/{id} with no login
+    # and this backs it, authenticated by an ``overlay``-scoped token in the query
+    # string (same reasoning as the camera streams above — no header to carry a
+    # JWT). "Public" only means the middleware steps aside; the route still runs
+    # RequireOverlayTokenIfAuthEnabled, which rejects an absent, expired, revoked,
+    # or wrong-scoped token — a camwall or camera_stream token does NOT open it.
+    "/overlay-status",  # /printers/{id}/overlay-status
     # Slicer token-authenticated downloads — protocol handlers (bambustudioopen://,
     # orcaslicer://) cannot send auth headers. These endpoints validate a short-lived
     # download token in the URL path instead.

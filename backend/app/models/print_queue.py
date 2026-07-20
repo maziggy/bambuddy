@@ -111,6 +111,16 @@ class PrintQueueItem(Base):
     # Status: pending, printing, completed, failed, skipped, cancelled
     status: Mapped[str] = mapped_column(String(20), default="pending")
 
+    # Dispatch claim (#2615). Set atomically by the scheduler the moment it
+    # begins dispatching this row and cleared when dispatch ends. The row stays
+    # `status='pending'` throughout the (slow) FTP upload, which left a window
+    # where a concurrent PATCH could reassign printer_id mid-upload and split the
+    # queue row from the archive/expected-print/physical command. While this is
+    # set the edit routes reject changes (409) and the scheduler won't re-select
+    # the row. Startup reconciliation clears any left over by a crash mid-dispatch
+    # (no coroutine survives a restart), so a stale claim never wedges an item.
+    dispatching_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     # Cleared by the per-printer "Resume after failure" action (#1818) so the
     # scheduler's `_check_previous_success` lookback skips this row. Without
     # this, a single `failed` or `aborted` print poisoned every later

@@ -286,6 +286,8 @@ class PrintScheduler:
         self._running = True
         logger.info("Print scheduler started")
 
+        await self._clear_stale_dispatch_claims()
+
         while self._running:
             dispatched = False
             try:
@@ -296,6 +298,25 @@ class PrintScheduler:
             # Re-check quickly after a productive pass so a draining batch does
             # not stall behind the idle interval; otherwise sleep normally (#2555).
             await asyncio.sleep(self._fast_check_interval if dispatched else self._check_interval)
+
+    async def _clear_stale_dispatch_claims(self) -> None:
+        """Clear dispatch claims left behind by a crash/restart mid-upload (#2615).
+
+        A claim is only ever held by a live dispatch coroutine, and no coroutine
+        survives a process restart — so every ``dispatching_at`` present at startup
+        is stale. Clearing them lets those still-pending rows be re-selected for a
+        fresh, consistent dispatch instead of being wedged out of the selection
+        query forever. Called once at the top of ``run()``."""
+        try:
+            async with async_session() as db:
+                res = await db.execute(
+                    update(PrintQueueItem).where(PrintQueueItem.dispatching_at.is_not(None)).values(dispatching_at=None)
+                )
+                await db.commit()
+                if res.rowcount:
+                    logger.info("Cleared %d stale dispatch claim(s) at startup (#2615)", res.rowcount)
+        except Exception as exc:
+            logger.error("Failed to clear stale dispatch claims at startup: %s", exc)
 
     def stop(self):
         """Stop the scheduler."""
@@ -320,6 +341,11 @@ class PrintScheduler:
                 result = await db.execute(
                     select(PrintQueueItem)
                     .where(PrintQueueItem.status == "pending")
+                    # Never re-select a row a dispatch worker has already claimed
+                    # (#2615) — belt-and-suspenders with the _inflight exclusion
+                    # below, and the guard that lets an orphaned claim be ignored
+                    # until startup reconciliation clears it.
+                    .where(PrintQueueItem.dispatching_at.is_(None))
                     # archive/library_file are read by the cross-model gate
                     # (#2578); eager-load once per pass instead of a lazy-load
                     # (which would raise in async) per item.
@@ -339,6 +365,8 @@ class PrintScheduler:
                 result = await db.execute(
                     select(PrintQueueItem)
                     .where(PrintQueueItem.status == "pending")
+                    # Skip rows already claimed by a dispatch worker (#2615).
+                    .where(PrintQueueItem.dispatching_at.is_(None))
                     .options(
                         selectinload(PrintQueueItem.archive),
                         selectinload(PrintQueueItem.library_file),
@@ -880,11 +908,56 @@ class PrintScheduler:
         transfer's duration.
         """
         async with async_session() as item_db:
-            item = await item_db.get(PrintQueueItem, item_id)
-            if not item:
-                logger.info("Queue item %s vanished before dispatch — skipping", item_id)
+            # Claim the row for dispatch BEFORE reading the printer snapshot or
+            # touching any slow I/O (#2615). The claim is an atomic CAS on
+            # (status='pending', dispatching_at IS NULL); while it's held the edit
+            # routes reject reassignment (409), so printer_id can't change out from
+            # under the in-flight upload and split the queue row from the
+            # archive/expected-print/physical command.
+            if not await self._claim_for_dispatch(item_db, item_id):
+                logger.info(
+                    "Queue item %s not claimable for dispatch (cancelled, removed, or already claimed) — skipping",
+                    item_id,
+                )
                 return
-            await self._start_print(item_db, item)
+            try:
+                item = await item_db.get(PrintQueueItem, item_id)
+                if not item:
+                    logger.info("Queue item %s vanished after claim — skipping", item_id)
+                    return
+                await self._start_print(item_db, item)
+            finally:
+                # Release the claim on every exit. Once dispatch has finished the
+                # row's status carries the lock (printing/failed/cancelled are all
+                # != pending), so the token is only needed for the duration of the
+                # upload. A row left pending (e.g. busy-printer deferral) becomes
+                # dispatchable again on the next tick.
+                await self._clear_dispatch_claim(item_db, item_id)
+
+    async def _claim_for_dispatch(self, db: AsyncSession, item_id: int) -> bool:
+        """Atomically stamp ``dispatching_at`` on a still-pending, unclaimed row.
+
+        Returns True if this call won the claim, False if the row was already
+        claimed, no longer pending (cancelled mid-tick), or removed. The CAS is
+        the load-bearing guard against reassign-during-dispatch (#2615)."""
+        res = await db.execute(
+            update(PrintQueueItem)
+            .where(PrintQueueItem.id == item_id)
+            .where(PrintQueueItem.status == "pending")
+            .where(PrintQueueItem.dispatching_at.is_(None))
+            .values(dispatching_at=datetime.now(timezone.utc))
+        )
+        await db.commit()
+        return res.rowcount > 0
+
+    async def _clear_dispatch_claim(self, db: AsyncSession, item_id: int) -> None:
+        """Clear the dispatch claim (#2615). Best-effort: a failure here must not
+        mask the dispatch outcome, and startup reconciliation clears any leftover."""
+        try:
+            await db.execute(update(PrintQueueItem).where(PrintQueueItem.id == item_id).values(dispatching_at=None))
+            await db.commit()
+        except Exception as exc:
+            logger.warning("Queue item %s: failed to clear dispatch claim: %s", item_id, exc)
 
     async def _find_idle_printer_for_model(
         self,

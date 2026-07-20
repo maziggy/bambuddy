@@ -45,11 +45,17 @@ MAX_TOKEN_LIFETIME_DAYS = 365
 #                   Cam Wall draws: printer names and print state (#2531).
 #                   Strictly wider than camera_stream, so it gets its own scope
 #                   rather than quietly extending tokens already handed out.
-ALLOWED_SCOPES: frozenset[str] = frozenset({"camera_stream", "camwall"})
+#   overlay       — the streaming overlay (#2613): the camera stream plus the
+#                   single-printer status the /overlay page draws, which unlike
+#                   the Cam Wall *includes the print filename*. A distinct grant
+#                   precisely because it reveals the part name a camwall token
+#                   is trusted never to expose, so folding it into camwall would
+#                   silently widen every wall token already handed out.
+ALLOWED_SCOPES: frozenset[str] = frozenset({"camera_stream", "camwall", "overlay"})
 
-# Scopes the camera stream / snapshot endpoints honour. A Cam Wall token has to
-# be able to pull the video its own tiles are showing.
-STREAM_SCOPES: tuple[str, ...] = ("camera_stream", "camwall")
+# Scopes the camera stream / snapshot endpoints honour. A Cam Wall or overlay
+# token has to be able to pull the video its own view is showing.
+STREAM_SCOPES: tuple[str, ...] = ("camera_stream", "camwall", "overlay")
 
 # Don't write to last_used_at more than once per minute per token. MJPEG
 # streams call verify() at most once per fetch (the browser holds the

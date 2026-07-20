@@ -116,3 +116,14 @@ def test_optional_strings_override_their_defaults(monkeypatch):
     assert cfg["scopes"] == "openid profile groups"
     assert cfg["email_claim"] == "mail"
     assert cfg["icon_url"] == "https://sso.example.com/logo.png"
+
+
+def test_every_var_the_reader_knows_is_registered_in_the_typo_guard():
+    """An unregistered BAMBUDDY_* var logs "possible typo" at every boot, which
+    would tell operators their correct config is wrong. Asserted against the
+    reader's own vars rather than a copied list, so a var added later is caught
+    here instead of in someone's logs."""
+    from backend.app.core.config import _INTENTIONAL_UNSETTINGS
+
+    unregistered = {v for v in (*REQUIRED, *OPTIONAL) if v not in _INTENTIONAL_UNSETTINGS}
+    assert not unregistered

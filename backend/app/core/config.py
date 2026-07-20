@@ -135,6 +135,20 @@ _INTENTIONAL_UNSETTINGS = {
     "LOG_DIR",  # config.py (above)
     "LOG_LEVEL",  # main.py logging setup
     "BUG_REPORT_RELAY_URL",  # config.py (above)
+    # #2593 — core/oidc_env.py reads these directly; they are not Settings
+    # fields because they map to an OIDCProvider row, not to app config.
+    "BAMBUDDY_OIDC_NAME",
+    "BAMBUDDY_OIDC_ISSUER_URL",
+    "BAMBUDDY_OIDC_CLIENT_ID",
+    "BAMBUDDY_OIDC_CLIENT_SECRET",
+    "BAMBUDDY_OIDC_SCOPES",
+    "BAMBUDDY_OIDC_ENABLED",
+    "BAMBUDDY_OIDC_AUTO_CREATE_USERS",
+    "BAMBUDDY_OIDC_AUTO_LINK_EXISTING",
+    "BAMBUDDY_OIDC_EMAIL_CLAIM",
+    "BAMBUDDY_OIDC_REQUIRE_EMAIL_VERIFIED",
+    "BAMBUDDY_OIDC_ICON_URL",
+    "BAMBUDDY_OIDC_AUTOLOGIN",
 }
 
 _known_settings_fields = {f.upper() for f in settings.model_fields}

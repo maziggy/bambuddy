@@ -6687,6 +6687,7 @@ export default {
     scope: {
       camera_stream: 'Transmisión de cámara',
       camwall: 'Muro de cámaras',
+      overlay: 'Superposición de streaming',
     },
     title: 'Tokens de API de la cámara',
     navTitle: 'Tokens de API de la cámara',
@@ -6705,6 +6706,8 @@ export default {
         'Un token de transmisión de cámara solo puede obtener transmisiones e instantáneas. Úsalo para Home Assistant, Frigate o cualquier cosa que incruste una sola cámara.',
       hintCamWall:
         'Un token de muro de cámaras abre /camwall en una pantalla sin iniciar sesión. Puede ver el nombre y el estado de cada impresora, y sus transmisiones de cámara. No puede ver nombres de archivo, direcciones ni códigos de acceso.',
+      hintOverlay:
+        'Un token de superposición de streaming abre /overlay/{printerId} en una pantalla sin iniciar sesión, para OBS o cualquier transmisión en vivo. Puede ver la transmisión de la cámara de una impresora y su estado de impresión en vivo, incluido el nombre de archivo que aparece en pantalla. No puede ver direcciones ni códigos de acceso.',
       title: 'Crear nuevo token',
       nameLabel: 'Nombre del token',
       namePlaceholder: 'p. ej. Home Assistant',
@@ -6717,6 +6720,9 @@ export default {
       camWallUrlTitle: 'Dirección del muro de cámaras para esta pantalla',
       camWallUrlHint:
         'Abre esta dirección en la pantalla. Cualquiera que pueda leerla puede ver el muro, así que trátala como una llave: revoca el token para dejar la pantalla sin acceso.',
+      overlayUrlTitle: 'Dirección de superposición para OBS',
+      overlayUrlHint:
+        'Agrega esto como Fuente de navegador en OBS. Cambia el número de /overlay/1 por el número de tu impresora (de su dirección en la página Impresoras). Cualquiera que pueda leer la dirección puede ver la transmisión, así que trátala como una llave: revoca el token para cortar el acceso.',
       title: 'Token creado — cópielo ahora',
       warning:
         'Esta es la única vez que este token estará visible. Después de cerrar este diálogo no podrá volver a verlo nunca.',

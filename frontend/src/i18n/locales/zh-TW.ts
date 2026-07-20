@@ -6664,6 +6664,7 @@ export default {
     scope: {
       camera_stream: '攝影機串流',
       camwall: '攝影機牆',
+      overlay: '直播疊加層',
     },
     title: '攝影機 API 權杖',
     navTitle: '攝影機 API 權杖',
@@ -6682,6 +6683,8 @@ export default {
         '攝影機串流權杖只能取得攝影機串流與快照。適用於 Home Assistant、Frigate 或任何嵌入單一攝影機的情境。',
       hintCamWall:
         '攝影機牆權杖可在無須登入的螢幕上開啟 /camwall，能看到每台印表機的名稱與狀態以及攝影機串流，但看不到檔案名稱、位址或存取碼。',
+      hintOverlay:
+        '直播疊加層權杖可在無須登入的螢幕上開啟 /overlay/{printerId}——供 OBS 或任何直播使用。它能看到一台印表機的攝影機串流以及即時列印狀態，包括螢幕上顯示的檔案名稱，但看不到位址或存取碼。',
       title: '建立新權杖',
       nameLabel: '權杖名稱',
       namePlaceholder: '例如 Home Assistant',
@@ -6694,6 +6697,9 @@ export default {
       camWallUrlTitle: '此螢幕的攝影機牆網址',
       camWallUrlHint:
         '在螢幕上開啟此網址。任何能看到該網址的人都能觀看攝影機牆，請像對待鑰匙一樣對待它——撤銷權杖即可切斷該螢幕的存取。',
+      overlayUrlTitle: '用於 OBS 的疊加層網址',
+      overlayUrlHint:
+        '在 OBS 中將其新增為「瀏覽器」來源（Browser Source）。將 /overlay/1 中的數字改為您印表機的編號（可在「印表機」頁面的網址中查看）。任何能看到該網址的人都能觀看直播，請像對待鑰匙一樣對待它——撤銷權杖即可切斷存取。',
       title: '權杖已建立 — 立即複製',
       warning:
         '這是此權杖唯一一次可見。關閉此對話框後您將無法再次查看。',

@@ -6722,6 +6722,7 @@ export default {
     scope: {
       camera_stream: 'Camera stream',
       camwall: 'Cam Wall',
+      overlay: 'Streaming Overlay',
     },
     title: 'Camera API Tokens',
     navTitle: 'Camera API tokens',
@@ -6740,6 +6741,8 @@ export default {
         'A camera-stream token can only fetch camera streams and snapshots. Use it for Home Assistant, Frigate, or anything embedding a single camera.',
       hintCamWall:
         "A Cam Wall token opens /camwall on a screen with no login. It can see every printer's name and state, and their camera streams. It cannot see filenames, addresses or access codes.",
+      hintOverlay:
+        "A Streaming Overlay token opens /overlay/{printerId} on a screen with no login — for OBS or any live stream. It can see one printer's camera stream plus its live print status, including the filename shown on screen. It cannot see addresses or access codes.",
       title: 'Create new token',
       nameLabel: 'Token name',
       namePlaceholder: 'e.g. Home Assistant',
@@ -6752,6 +6755,9 @@ export default {
       camWallUrlTitle: 'Cam Wall URL for this display',
       camWallUrlHint:
         'Open this on the screen. Anyone who can read the URL can watch the wall, so treat it like a key — revoke the token to cut the display off.',
+      overlayUrlTitle: 'Overlay URL for OBS',
+      overlayUrlHint:
+        "Add this as a Browser Source in OBS. Change the /overlay/1 number to your printer's number (from its URL on the Printers page). Anyone who can read the URL can watch the stream, so treat it like a key — revoke the token to cut it off.",
       title: 'Token created — copy it now',
       warning:
         'This is the only time this token will be visible. After you close this dialog you can never view it again.',

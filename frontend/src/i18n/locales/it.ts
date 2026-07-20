@@ -6665,6 +6665,7 @@ export default {
     scope: {
       camera_stream: 'Flusso della telecamera',
       camwall: 'Muro telecamere',
+      overlay: 'Overlay di streaming',
     },
     title: 'Token API telecamera',
     navTitle: 'Token API telecamera',
@@ -6683,6 +6684,8 @@ export default {
         'Un token del flusso della telecamera può recuperare soltanto flussi e istantanee. Usalo per Home Assistant, Frigate o qualsiasi cosa incorpori una singola telecamera.',
       hintCamWall:
         'Un token Muro telecamere apre /camwall su uno schermo senza login. Vede nome e stato di ogni stampante e i relativi flussi della telecamera. Non vede nomi di file, indirizzi o codici di accesso.',
+      hintOverlay:
+        'Un token Overlay di streaming apre /overlay/{printerId} su uno schermo senza login, per OBS o qualsiasi diretta streaming. Vede il flusso della telecamera di una stampante e il suo stato di stampa in tempo reale, incluso il nome del file mostrato sullo schermo. Non vede indirizzi o codici di accesso.',
       title: 'Crea nuovo token',
       nameLabel: 'Nome token',
       namePlaceholder: 'es. Home Assistant',
@@ -6695,6 +6698,9 @@ export default {
       camWallUrlTitle: 'Indirizzo del muro telecamere per questo schermo',
       camWallUrlHint:
         'Apri questo indirizzo sullo schermo. Chiunque possa leggerlo può guardare il muro, quindi trattalo come una chiave: revoca il token per escludere lo schermo.',
+      overlayUrlTitle: 'Indirizzo overlay per OBS',
+      overlayUrlHint:
+        "Aggiungi questo come Sorgente browser in OBS. Cambia il numero in /overlay/1 con il numero della tua stampante (dall'indirizzo nella pagina Stampanti). Chiunque possa leggere l'indirizzo può guardare lo streaming, quindi trattalo come una chiave: revoca il token per interrompere l'accesso.",
       title: 'Token creato – copialo ora',
       warning:
         'Questa è l\'unica volta in cui questo token sarà visibile. Dopo la chiusura di questa finestra non potrai più visualizzarlo.',

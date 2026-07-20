@@ -774,7 +774,10 @@ async def bulk_update_queue_items(
     skipped_count = 0
 
     for item in items:
-        if item.status != "pending":
+        # Skip non-pending rows and rows a dispatch worker has claimed (#2615) —
+        # editing a claimed row mid-upload would split it from the in-flight
+        # dispatch, so it's excluded from the bulk change (cancel to move it).
+        if item.status != "pending" or item.dispatching_at is not None:
             skipped_count += 1
             continue
 
@@ -1082,6 +1085,14 @@ async def update_queue_item(
     if item.status != "pending":
         raise HTTPException(400, "Can only update pending items")
 
+    # Dispatch claim (#2615): the row is pending but a scheduler worker has
+    # already claimed it and is uploading to its printer. Editing now (e.g.
+    # reassigning printer_id) would split the queue row from the in-flight
+    # archive/expected-print/physical command. Reject until dispatch finishes;
+    # to move it, cancel first (the coordinated escape) and re-queue.
+    if item.dispatching_at is not None:
+        raise HTTPException(409, "Item is being dispatched — cancel it first to make changes")
+
     update_data = data.model_dump(exclude_unset=True)
 
     # Normalize target_model if being updated
@@ -1152,6 +1163,16 @@ async def update_queue_item(
         update_data["nozzle_mapping"] = (
             json.dumps(update_data["nozzle_mapping"]) if update_data["nozzle_mapping"] else None
         )
+
+    # Re-check the dispatch claim right before mutating (#2615). Several awaited
+    # validations ran since the guard above, and a scheduler worker may have
+    # claimed the row in that gap. A fresh read (item isn't dirty yet, so no
+    # autoflush races the check) narrows the window to effectively nothing.
+    claimed = (
+        await db.execute(select(PrintQueueItem.dispatching_at).where(PrintQueueItem.id == item_id))
+    ).scalar_one_or_none()
+    if claimed is not None:
+        raise HTTPException(409, "Item is being dispatched — cancel it first to make changes")
 
     for field, value in update_data.items():
         setattr(item, field, value)

@@ -6665,6 +6665,7 @@ export default {
     scope: {
       camera_stream: 'Transmissão da câmera',
       camwall: 'Mural de câmeras',
+      overlay: 'Sobreposição de streaming',
     },
     title: 'Tokens da API de câmera',
     navTitle: 'Tokens da API de câmera',
@@ -6683,6 +6684,8 @@ export default {
         'Um token de transmissão da câmera só consegue buscar transmissões e instantâneos. Use-o no Home Assistant, no Frigate ou em qualquer coisa que incorpore uma única câmera.',
       hintCamWall:
         'Um token do mural de câmeras abre /camwall em uma tela sem login. Ele vê o nome e o estado de cada impressora e as transmissões das câmeras. Não vê nomes de arquivo, endereços nem códigos de acesso.',
+      hintOverlay:
+        'Um token de sobreposição de streaming abre /overlay/{printerId} em uma tela sem login — para o OBS ou qualquer transmissão ao vivo. Ele vê a transmissão da câmera de uma impressora e seu status de impressão ao vivo, incluindo o nome de arquivo mostrado na tela. Não vê endereços nem códigos de acesso.',
       title: 'Criar novo token',
       nameLabel: 'Nome do token',
       namePlaceholder: 'ex. Home Assistant',
@@ -6695,6 +6698,9 @@ export default {
       camWallUrlTitle: 'Endereço do mural de câmeras para esta tela',
       camWallUrlHint:
         'Abra este endereço na tela. Qualquer pessoa que consiga lê-lo pode assistir ao painel, então trate-o como uma chave: revogue o token para cortar o acesso da tela.',
+      overlayUrlTitle: 'Endereço de sobreposição para OBS',
+      overlayUrlHint:
+        'Adicione isto como Fonte de navegador no OBS. Altere o número em /overlay/1 para o número da sua impressora (do endereço dela na página Impressoras). Qualquer pessoa que consiga ler o endereço pode assistir à transmissão, então trate-o como uma chave: revogue o token para cortar o acesso.',
       title: 'Token criado – copie agora',
       warning:
         'Esta é a única vez que este token será visível. Após fechar este diálogo, você nunca poderá vê-lo novamente.',

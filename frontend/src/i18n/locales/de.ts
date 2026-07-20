@@ -6678,6 +6678,7 @@ export default {
     scope: {
       camera_stream: 'Kamera-Stream',
       camwall: 'Kamera-Wand',
+      overlay: 'Streaming-Overlay',
     },
     title: 'Kamera-API-Tokens',
     navTitle: 'Kamera-API-Tokens',
@@ -6696,6 +6697,8 @@ export default {
         'Ein Kamera-Stream-Token kann ausschließlich Kamera-Streams und Schnappschüsse abrufen. Geeignet für Home Assistant, Frigate oder alles, was eine einzelne Kamera einbettet.',
       hintCamWall:
         'Ein Kamera-Wand-Token öffnet /camwall auf einem Bildschirm ohne Anmeldung. Es sieht Name und Status jedes Druckers sowie deren Kamera-Streams. Dateinamen, Adressen und Zugangscodes sieht es nicht.',
+      hintOverlay:
+        'Ein Streaming-Overlay-Token öffnet /overlay/{printerId} auf einem Bildschirm ohne Anmeldung – für OBS oder jeden Livestream. Es sieht den Kamera-Stream eines Druckers sowie dessen Live-Druckstatus, einschließlich des auf dem Bildschirm angezeigten Dateinamens. Adressen und Zugangscodes sieht es nicht.',
       title: 'Neues Token erstellen',
       nameLabel: 'Token-Name',
       namePlaceholder: 'z. B. Home Assistant',
@@ -6708,6 +6711,9 @@ export default {
       camWallUrlTitle: 'Kamera-Wand-Adresse für diesen Bildschirm',
       camWallUrlHint:
         'Diese Adresse auf dem Bildschirm öffnen. Wer die Adresse lesen kann, kann die Kamera-Wand sehen — behandeln Sie sie wie einen Schlüssel. Widerrufen Sie das Token, um den Bildschirm abzuschalten.',
+      overlayUrlTitle: 'Overlay-Adresse für OBS',
+      overlayUrlHint:
+        'Fügen Sie dies in OBS als Browser-Quelle hinzu. Ändern Sie die Zahl in /overlay/1 auf die Nummer Ihres Druckers (aus dessen Adresse auf der Seite „Drucker“). Wer die Adresse lesen kann, kann den Stream sehen – behandeln Sie sie wie einen Schlüssel und widerrufen Sie das Token, um sie abzuschalten.',
       title: 'Token erstellt – jetzt kopieren',
       warning:
         'Dies ist das einzige Mal, dass dieser Token sichtbar ist. Nach dem Schließen dieses Dialogs können Sie ihn nie wieder anzeigen.',

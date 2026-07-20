@@ -6622,6 +6622,13 @@ PUBLIC_API_PATTERNS = [
     # Camera (streams loaded via <img> tag)
     "/camera/stream",  # /printers/{id}/camera/stream
     "/camera/snapshot",  # /printers/{id}/camera/snapshot
+    # Streaming-overlay status feed (#2613): OBS loads /overlay/{id} with no login
+    # and this backs it, authenticated by an ``overlay``-scoped token in the query
+    # string (same reasoning as the camera streams above — no header to carry a
+    # JWT). "Public" only means the middleware steps aside; the route still runs
+    # RequireOverlayTokenIfAuthEnabled, which rejects an absent, expired, revoked,
+    # or wrong-scoped token — a camwall or camera_stream token does NOT open it.
+    "/overlay-status",  # /printers/{id}/overlay-status
     # Slicer token-authenticated downloads — protocol handlers (bambustudioopen://,
     # orcaslicer://) cannot send auth headers. These endpoints validate a short-lived
     # download token in the URL path instead.

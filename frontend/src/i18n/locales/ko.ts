@@ -6147,6 +6147,7 @@ export default {
     scope: {
       camera_stream: '카메라 스트림',
       camwall: '카메라 월',
+      overlay: '스트리밍 오버레이',
     },
     title: '카메라 API 토큰',
     navTitle: '카메라 API 토큰',
@@ -6165,6 +6166,8 @@ export default {
         '카메라 스트림 토큰은 카메라 스트림과 스냅숏만 가져올 수 있습니다. Home Assistant, Frigate 등 카메라 하나를 삽입하는 용도로 사용하세요.',
       hintCamWall:
         '카메라 월 토큰은 로그인 없이 화면에서 /camwall을 엽니다. 모든 프린터의 이름과 상태, 카메라 스트림을 볼 수 있습니다. 파일 이름, 주소, 액세스 코드는 볼 수 없습니다.',
+      hintOverlay:
+        '스트리밍 오버레이 토큰은 로그인 없이 화면에서 /overlay/{printerId}을 엽니다 — OBS나 모든 라이브 방송용입니다. 프린터 한 대의 카메라 스트림과 화면에 표시되는 파일 이름을 포함한 실시간 인쇄 상태를 볼 수 있습니다. 주소나 액세스 코드는 볼 수 없습니다.',
       title: '새 토큰 만들기',
       nameLabel: '토큰 이름',
       namePlaceholder: '예: Home Assistant',
@@ -6176,6 +6179,9 @@ export default {
       camWallUrlTitle: '이 화면용 카메라 월 주소',
       camWallUrlHint:
         '이 주소를 화면에서 여세요. 주소를 읽을 수 있는 사람은 누구나 월을 볼 수 있으므로 열쇠처럼 다루세요. 토큰을 취소하면 해당 화면의 접근이 차단됩니다.',
+      overlayUrlTitle: 'OBS용 오버레이 주소',
+      overlayUrlHint:
+        'OBS에서 이것을 브라우저 소스로 추가하세요. /overlay/1의 숫자를 프린터의 번호(프린터 페이지의 주소에 표시됨)로 변경하세요. 주소를 읽을 수 있는 사람은 누구나 스트림을 볼 수 있으므로 열쇠처럼 다루세요 — 접근을 차단하려면 토큰을 취소하세요.',
       title: '토큰 생성됨 — 지금 복사하세요',
       warning: '이 토큰은 이 번만 볼 수 있습니다. 이 대화상자를 닫으면 다시는 볼 수 없습니다.',
       copy: '복사',

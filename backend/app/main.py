@@ -6188,6 +6188,14 @@ async def lifespan(app: FastAPI):
 
     await init_db()
 
+    # After migrations, so the is_env_managed column exists. Never raises --
+    # a bad BAMBUDDY_OIDC_* value is logged and skipped rather than blocking
+    # startup (see apply_env_oidc_provider).
+    from backend.app.core.oidc_env import apply_env_oidc_provider
+
+    async with async_session() as oidc_db:
+        await apply_env_oidc_provider(oidc_db)
+
     # Register an app-scoped httpx client for Bambu Cloud services so
     # per-request BambuCloudService instances reuse the same connection pool
     # (important for routes like /cloud/filament-info that chain many

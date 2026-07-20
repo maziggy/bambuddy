@@ -335,6 +335,57 @@ class TestPrintQueueAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_reassign_rejected_while_dispatching(
+        self, async_client: AsyncClient, queue_item_factory, printer_factory, db_session
+    ):
+        """#2615: a claimed (in-flight) row rejects edits with 409, so its printer
+        can't be reassigned out from under the running FTP upload."""
+        from datetime import datetime, timezone
+
+        item = await queue_item_factory(dispatching_at=datetime.now(timezone.utc))
+        other = await printer_factory()
+        original_printer_id = item.printer_id
+
+        response = await async_client.patch(f"/api/v1/queue/{item.id}", json={"printer_id": other.id})
+        assert response.status_code == 409
+
+        await db_session.refresh(item)
+        assert item.printer_id == original_printer_id, "printer_id must not change on a dispatching row"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_update_skips_dispatching_item(
+        self, async_client: AsyncClient, queue_item_factory, printer_factory, db_session
+    ):
+        """#2615: bulk edits skip a claimed row rather than splitting it."""
+        from datetime import datetime, timezone
+
+        item = await queue_item_factory(dispatching_at=datetime.now(timezone.utc))
+        other = await printer_factory()
+        original_printer_id = item.printer_id
+
+        response = await async_client.patch("/api/v1/queue/bulk", json={"item_ids": [item.id], "printer_id": other.id})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["skipped_count"] == 1
+        assert body["updated_count"] == 0
+
+        await db_session.refresh(item)
+        assert item.printer_id == original_printer_id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_allowed_on_unclaimed_pending_item(
+        self, async_client: AsyncClient, queue_item_factory, db_session
+    ):
+        """Regression guard: a normal pending row (no claim) still edits fine."""
+        item = await queue_item_factory()
+        response = await async_client.patch(f"/api/v1/queue/{item.id}", json={"plate_id": 7})
+        assert response.status_code == 200
+        assert response.json()["plate_id"] == 7
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_get_queue_item(self, async_client: AsyncClient, queue_item_factory, db_session):
         """Verify single queue item can be retrieved."""
         item = await queue_item_factory()

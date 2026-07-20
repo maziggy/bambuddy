@@ -101,6 +101,7 @@ function CreateTokenForm({ onCreated }: CreateTokenFormProps) {
         >
           <option value="camera_stream">{t('cameraTokens.scope.camera_stream', 'Camera stream')}</option>
           <option value="camwall">{t('cameraTokens.scope.camwall', 'Cam Wall')}</option>
+          <option value="overlay">{t('cameraTokens.scope.overlay', 'Streaming Overlay')}</option>
         </select>
         <input
           type="number"
@@ -133,10 +134,15 @@ function CreateTokenForm({ onCreated }: CreateTokenFormProps) {
               'cameraTokens.create.hintCamWall',
               'A Cam Wall token opens /camwall on a screen with no login — it can see every printer\'s name and state, and their camera streams. It cannot see filenames, addresses or access codes.',
             )
-          : t(
-              'cameraTokens.create.hintCameraStream',
-              'A camera-stream token can only fetch camera streams and snapshots. Use it for Home Assistant, Frigate, or anything embedding a single camera.',
-            )}
+          : scope === 'overlay'
+            ? t(
+                'cameraTokens.create.hintOverlay',
+                'A Streaming Overlay token opens /overlay/{printerId} on a screen with no login — for OBS or any live stream. It can see one printer\'s camera stream plus its live print status, including the filename shown on screen. It cannot see addresses or access codes.',
+              )
+            : t(
+                'cameraTokens.create.hintCameraStream',
+                'A camera-stream token can only fetch camera streams and snapshots. Use it for Home Assistant, Frigate, or anything embedding a single camera.',
+              )}
       </p>
       <p className="text-xs text-bambu-gray mt-1">
         {t(
@@ -217,6 +223,14 @@ function JustCreatedModal({ token, onClose }: JustCreatedModalProps) {
       ? `${window.location.origin}/camwall?token=${encodeURIComponent(plaintext)}`
       : null;
 
+  // For an overlay token, likewise the artefact is the URL. It targets one
+  // printer, so we template printer 1 and tell the user to swap in the number
+  // from the printer's URL on the main page (#2613).
+  const overlayUrl =
+    token.scope === 'overlay' && plaintext
+      ? `${window.location.origin}/overlay/1?token=${encodeURIComponent(plaintext)}`
+      : null;
+
   const copyText = async (value: string) => {
     if (!value) return;
     try {
@@ -292,6 +306,32 @@ function JustCreatedModal({ token, onClose }: JustCreatedModalProps) {
               <button
                 type="button"
                 onClick={() => copyText(camWallUrl)}
+                className="flex items-center gap-2 px-3 py-2 bg-bambu-green text-white rounded-md hover:bg-bambu-green/90"
+              >
+                <Copy className="w-4 h-4" />
+                {t('cameraTokens.created.copy', 'Copy')}
+              </button>
+            </div>
+          </div>
+        )}
+        {overlayUrl && (
+          <div className="mb-4">
+            <p className="text-sm font-medium text-white mb-1">
+              {t('cameraTokens.created.overlayUrlTitle', 'Overlay URL for OBS')}
+            </p>
+            <p className="text-xs text-bambu-gray mb-2">
+              {t(
+                'cameraTokens.created.overlayUrlHint',
+                'Add this as a Browser Source in OBS. Change the /overlay/1 number to your printer\'s number (from its URL on the Printers page). Anyone who can read the URL can watch the stream, so treat it like a key — revoke the token to cut it off.',
+              )}
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 px-3 py-2 bg-bambu-dark rounded-md text-bambu-green text-xs break-all font-mono select-all">
+                {overlayUrl}
+              </code>
+              <button
+                type="button"
+                onClick={() => copyText(overlayUrl)}
                 className="flex items-center gap-2 px-3 py-2 bg-bambu-green text-white rounded-md hover:bg-bambu-green/90"
               >
                 <Copy className="w-4 h-4" />

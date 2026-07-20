@@ -587,6 +587,116 @@ async def _migrate_scope_force_color_overrides_to_plate(conn) -> None:
         )
 
 
+async def _migrate_scope_run_filament_to_plate(conn) -> None:
+    """Repair completed print-log rows that stored a multi-plate 3MF's whole-file
+    filament (and cost) instead of the printed plate's (#2614).
+
+    When the AMS tracker measured nothing for a completed run, the per-run filament
+    fell back to ``PrintArchive.filament_used_grams`` — the sum over EVERY plate of
+    the source 3MF (right for the archive card / project rollup, wrong for one
+    printed plate). So each printed plate of a 22-plate file logged the full ~12 kg,
+    inflating lifetime / user / project / filament stats by the plate count. The
+    forward fix scopes new rows; this repairs the rows already written.
+
+    Only completed rows whose stored grams EXACTLY equal the archive's whole-file
+    value are touched — that is the mis-copy signature. Tracker-measured rows (a
+    rounded spool-delta sum) and partial-progress rows (scaled to progress) never
+    match, so they are never clobbered. Cost is scaled by the plate's share of the
+    whole so it stays consistent with the corrected grams. Runs AFTER the #2603
+    archive plate_id backfill so ``print_archives.plate_id`` is populated.
+
+    Gated to run **exactly once** via a settings flag. This is not merely for
+    idempotency: a genuine single-plate print carries a ``plate_id`` too (the UI
+    always sends one), and for it the plate estimate legitimately equals the
+    whole-file value — so those rows match the signature on every boot. Without
+    the one-shot gate we would re-parse every single-plate 3MF on the print log at
+    each startup, a cost that grows without bound with print history. One pass is
+    enough: the forward fix keeps all new rows correct.
+    """
+    from pathlib import Path
+
+    from sqlalchemy import text
+
+    from backend.app.utils.threemf_tools import extract_plate_metadata_from_3mf
+
+    flag = "_backfill_2614_plate_filament_done"
+
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already:
+            return
+
+        rows = (
+            await conn.execute(
+                text(
+                    "SELECT ple.id AS entry_id, ple.filament_used_grams AS grams, ple.cost AS cost, "
+                    "a.plate_id AS plate_id, a.filament_used_grams AS whole_grams, a.file_path AS file_path "
+                    "FROM print_log_entries ple "
+                    "JOIN print_archives a ON a.id = ple.archive_id "
+                    "WHERE ple.status = 'completed' "
+                    "AND a.plate_id IS NOT NULL "
+                    "AND a.file_path IS NOT NULL "
+                    "AND a.filament_used_grams IS NOT NULL "
+                    "AND ple.filament_used_grams IS NOT NULL "
+                    "AND ple.filament_used_grams = a.filament_used_grams"
+                )
+            )
+        ).fetchall()
+
+        corrected = 0
+        grams_removed = 0.0
+        for row in rows:
+            path = Path(row.file_path)
+            if not path.is_absolute():
+                path = settings.base_dir / row.file_path
+            if not path.exists():
+                continue
+            try:
+                plate_grams = extract_plate_metadata_from_3mf(path, row.plate_id).filament_used_grams
+            except Exception as exc:
+                logger.warning(
+                    "[#2614] could not read plate %s of %s for log entry %s: %s",
+                    row.plate_id,
+                    row.file_path,
+                    row.entry_id,
+                    exc,
+                )
+                continue
+            if not plate_grams or plate_grams <= 0:
+                continue
+            new_grams = round(plate_grams, 2)
+            if abs(new_grams - (row.grams or 0)) < 0.01:
+                continue  # nothing to change (e.g. a genuine single-plate file)
+            new_cost = row.cost
+            whole = row.whole_grams or 0
+            if row.cost and whole > 0:
+                new_cost = round(row.cost * (plate_grams / whole), 2)
+            await conn.execute(
+                text("UPDATE print_log_entries SET filament_used_grams = :g, cost = :c WHERE id = :id"),
+                {"g": new_grams, "c": new_cost, "id": row.entry_id},
+            )
+            corrected += 1
+            grams_removed += (row.grams or 0) - new_grams
+
+        if corrected:
+            logger.info(
+                "[#2614] Re-scoped %d completed print-log row(s) from whole-file to plate filament "
+                "(removed %.0f g of over-counted usage from statistics)",
+                corrected,
+                grams_removed,
+            )
+
+        # Mark done unconditionally (even when nothing matched) so this one-shot
+        # never re-scans the print log on subsequent boots. id/timestamps come
+        # from the table's own defaults; "key" is quoted as it's a keyword.
+        await conn.execute(
+            text('INSERT INTO settings ("key", value) VALUES (:k, :v)'),
+            {"k": flag, "v": "true"},
+        )
+
+
 async def _migrate_drop_library_print_name(conn) -> None:
     """Strip the embedded 3MF Title (``print_name``) from library file metadata (#1489).
 
@@ -1411,6 +1521,22 @@ async def run_migrations(conn):
                 await conn.execute(text("ALTER TABLE print_queue_new2 RENAME TO print_queue"))
         except (OperationalError, ProgrammingError):
             pass  # Already applied
+
+    # Migration: Add dispatching_at claim column to print_queue (#2615). Nullable
+    # timestamp; the type differs by dialect (SQLite DATETIME vs Postgres
+    # TIMESTAMP) so an existing-DB upgrade doesn't hit "type datetime does not
+    # exist" on Postgres. On a fresh DB create_all() already built the column, so
+    # the ALTER is swallowed as "already exists".
+    #
+    # Placed AFTER the print_queue_new2 table-recreate above: that recreate
+    # (SQLite-only, and only on ancient DBs whose archive_id is still NOT NULL)
+    # rebuilds print_queue from an explicit column list that doesn't carry this
+    # column, so adding it earlier would let the recreate silently drop it. Adding
+    # it here means it survives that path.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN dispatching_at DATETIME")
+    else:
+        await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN dispatching_at TIMESTAMP")
 
     # Migration: Add HA energy sensor entity columns to smart_plugs
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN ha_power_entity VARCHAR(100)")
@@ -3566,6 +3692,11 @@ async def run_migrations(conn):
                     ")"
                 )
             )
+
+    # Migration: repair completed print-log rows that stored a multi-plate 3MF's
+    # whole-file filament instead of the printed plate's (#2614). Runs AFTER the
+    # #2603 archive plate_id backfill above so print_archives.plate_id is populated.
+    await _migrate_scope_run_filament_to_plate(conn)
 
     # Migration: Disambiguate the four ``user_print_*`` notification template
     # names by appending " Email" (#1792). See ``_migrate_rename_user_print_template_names``.

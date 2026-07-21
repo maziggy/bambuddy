@@ -16,6 +16,7 @@ import { Card, CardContent, CardDensityProvider, CardHeader } from '../component
 import { SlicerBundlesPanel } from '../components/SlicerBundlesPanel';
 import { SlicerPipelinesPanel } from '../components/SlicerPipelinesPanel';
 import { CameraTokensSection } from './CameraTokensPage';
+import { QsvDiagnosticPanel } from '../components/QsvDiagnosticPanel';
 import { Collapsible } from '../components/Collapsible';
 import { Button } from '../components/Button';
 import { SmartPlugCard } from '../components/SmartPlugCard';
@@ -2016,6 +2017,10 @@ export function SettingsPage() {
                         'Uses the CPU for H.264 decoding and MJPEG encoding.',
                       )}
                 </p>
+
+                <QsvDiagnosticPanel
+                  selected={(localSettings.camera_video_processing ?? 'software') === 'intel_qsv'}
+                />
               </div>
 
               {/* External Cameras Section */}

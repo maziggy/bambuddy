@@ -233,6 +233,22 @@ export interface CameraDiagnoseResult {
   summary_code: string;
 }
 
+export interface QsvDiagnosticStage {
+  name: 'ffmpeg' | 'render_device' | 'qsv_codecs' | 'qsv_initialization';
+  status: 'ok' | 'failed' | 'skipped';
+  duration_ms: number;
+  code: string | null;
+  detail: string | null;
+}
+
+export interface QsvDiagnosticResult {
+  available: boolean;
+  overall_status: 'ok' | 'failed';
+  device: string;
+  stages: QsvDiagnosticStage[];
+  summary_code: string;
+}
+
 // Connection diagnostic (GET /printers/{id}/diagnostic and
 // POST /printers/diagnostic). Each check's `id` + `status` resolve a
 // localized title/fix under `diagnostic.check.*`; `params` interpolate it.
@@ -4837,6 +4853,8 @@ export const api = {
   },
   checkFfmpeg: () =>
     request<{ installed: boolean; path: string | null }>('/settings/check-ffmpeg'),
+  diagnoseQsv: () =>
+    request<QsvDiagnosticResult>('/settings/camera/qsv-diagnostic', { method: 'POST' }),
   getNetworkInterfaces: () =>
     request<{ interfaces: NetworkInterface[] }>('/settings/network-interfaces'),
 

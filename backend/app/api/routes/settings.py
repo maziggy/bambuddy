@@ -406,6 +406,17 @@ async def check_ffmpeg(
     }
 
 
+@router.post("/camera/qsv-diagnostic")
+async def qsv_diagnostic(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+):
+    """Check whether Intel Quick Sync camera processing can run."""
+    from backend.app.services.qsv_diagnostic import diagnose_qsv
+
+    result = await diagnose_qsv()
+    return result.to_dict()
+
+
 @router.get("/spoolman")
 async def get_spoolman_settings(
     db: AsyncSession = Depends(get_db),

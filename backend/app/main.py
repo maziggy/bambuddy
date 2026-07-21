@@ -772,6 +772,41 @@ def _compute_run_filament_grams(
     return None
 
 
+def _plate_scoped_run_estimate(archive, full_path) -> tuple[float | None, float | None]:
+    """Per-run (grams, cost) scoped to the plate this run actually printed (#2614).
+
+    ``PrintArchive.filament_used_grams`` / ``.cost`` are the sum over EVERY plate of
+    the source 3MF — correct for the archive card and project rollup, but wrong for a
+    single plate dispatched from a multi-plate file: without scoping, each printed
+    plate of a 22-plate file logs the whole ~12 kg and inflates every statistic. When
+    the archive carries a ``plate_id`` and its 3MF is on disk, return that plate's
+    slicer estimate instead; cost is scaled by the plate's share of the whole so it
+    stays consistent with the scoped grams without re-doing the filament price lookup.
+    Falls back to the archive's whole-file values when there's no plate to scope to.
+    """
+    whole_grams = archive.filament_used_grams
+    if archive.plate_id is None or full_path is None or not full_path.exists():
+        return whole_grams, archive.cost
+    try:
+        from backend.app.utils.threemf_tools import extract_plate_metadata_from_3mf
+
+        plate_grams = extract_plate_metadata_from_3mf(full_path, archive.plate_id).filament_used_grams
+    except Exception as exc:
+        logging.getLogger(__name__).debug(
+            "[#2614] plate-scoped estimate failed for archive %s (plate %s): %s",
+            archive.id,
+            archive.plate_id,
+            exc,
+        )
+        return whole_grams, archive.cost
+    if not plate_grams or plate_grams <= 0:
+        return whole_grams, archive.cost
+    plate_cost = archive.cost
+    if archive.cost and whole_grams and whole_grams > 0:
+        plate_cost = round(archive.cost * (plate_grams / whole_grams), 2)
+    return round(plate_grams, 2), plate_cost
+
+
 def _get_start_ams_mapping(data: dict, archive_id: int | None) -> list[int] | None:
     """Resolve AMS mapping for print start without consuming stored queue/reprint state."""
     stored_ams_mapping = data.get("ams_mapping")
@@ -4546,6 +4581,7 @@ async def on_print_complete(printer_id: int, data: dict):
     # --- Track filament consumption (must run before archive_id early-return so usage
     # is recorded even when auto-archive is disabled) ---
     usage_results: list[dict] = []
+    _spoolman_run_cost: float | None = None
     # Prefer ams_mapping captured from MQTT request topic (works for all print sources)
     stored_ams_mapping = data.get("ams_mapping")
     # Fallback to _print_ams_mappings for queue/reprint (set before print starts)
@@ -4597,7 +4633,7 @@ async def on_print_complete(printer_id: int, data: dict):
     if archive_id:
         if data.get("status") == "completed":
             try:
-                await _report_spoolman_usage(printer_id, archive_id)
+                _spoolman_run_cost = await _report_spoolman_usage(printer_id, archive_id)
                 log_timing("Spoolman usage report")
             except Exception as e:
                 logger.warning("Spoolman usage reporting failed: %s", e)
@@ -4718,6 +4754,13 @@ async def on_print_complete(printer_id: int, data: dict):
             if hms_errors:
                 logger.info("[ARCHIVE] HMS errors at failure: %s", hms_errors)
             failure_reason = derive_failure_reason(status, hms_errors)
+            if data.get("_reconciled"):
+                # A reconciled completion closes out a stale archive at
+                # reconnect — it is not a user action, so don't mislabel it
+                # "User cancelled". The "Stale" prefix matches the existing
+                # stale-cleanup convention and records that the real end time
+                # is unknown, which is also why its logged duration is 0 (#2592).
+                failure_reason = "Stale - reconciled after reconnect, end time unknown"
             if failure_reason:
                 logger.info("[ARCHIVE] failure_reason=%r (status=%s)", failure_reason, status)
             elif status == "failed" and hms_errors:
@@ -4784,9 +4827,19 @@ async def on_print_complete(printer_id: int, data: dict):
                 # math (failed / cancelled / stopped get scaled to progress
                 # or to tracked spool deltas).
                 _run_status = data.get("status", "completed")
+                # #2614: scope the per-run estimate to the printed plate. For a
+                # multi-plate 3MF dispatched one plate at a time, the archive's
+                # filament/cost are the whole-file totals; the PrintLogEntry must
+                # reflect only this plate. No effect on single-plate archives (the
+                # plate estimate equals the whole-file value) or on the tracker
+                # path (measured spool deltas win in _compute_run_filament_grams).
+                _est_full_path = (
+                    app_settings.base_dir / archive.file_path if archive.file_path else None
+                )  # SEC-PATH-OK: archive.file_path is DB-stored, internally generated
+                _est_grams, _est_cost = _plate_scoped_run_estimate(archive, _est_full_path)
                 _run_grams = _compute_run_filament_grams(
                     _run_status,
-                    archive.filament_used_grams,
+                    _est_grams,
                     data.get("progress"),
                     usage_results,
                 )
@@ -4798,8 +4851,10 @@ async def on_print_complete(printer_id: int, data: dict):
                 _run_cost: float | None = None
                 if usage_results:
                     _run_cost = sum(r.get("cost") or 0 for r in usage_results) or None
+                if _run_cost is None and _spoolman_run_cost is not None:
+                    _run_cost = _spoolman_run_cost
                 if _run_cost is None and _run_status == "completed":
-                    _run_cost = archive.cost
+                    _run_cost = _est_cost
 
                 await write_log_entry(
                     db,
@@ -4818,6 +4873,9 @@ async def on_print_complete(printer_id: int, data: dict):
                     thumbnail_path=archive.thumbnail_path,
                     created_by_id=archive.created_by_id,
                     created_by_username=_print_user_info.get("username") if _print_user_info else None,
+                    # Reconciled completions have an unknown real end time —
+                    # log 0 duration instead of the whole disconnect gap (#2592).
+                    reconciled=bool(data.get("_reconciled")),
                 )
                 await db.commit()
                 logger.info("[PRINT_LOG] Log entry written for archive %s", archive_id)
@@ -6567,6 +6625,13 @@ PUBLIC_API_PATTERNS = [
     # Camera (streams loaded via <img> tag)
     "/camera/stream",  # /printers/{id}/camera/stream
     "/camera/snapshot",  # /printers/{id}/camera/snapshot
+    # Streaming-overlay status feed (#2613): OBS loads /overlay/{id} with no login
+    # and this backs it, authenticated by an ``overlay``-scoped token in the query
+    # string (same reasoning as the camera streams above — no header to carry a
+    # JWT). "Public" only means the middleware steps aside; the route still runs
+    # RequireOverlayTokenIfAuthEnabled, which rejects an absent, expired, revoked,
+    # or wrong-scoped token — a camwall or camera_stream token does NOT open it.
+    "/overlay-status",  # /printers/{id}/overlay-status
     # Slicer token-authenticated downloads — protocol handlers (bambustudioopen://,
     # orcaslicer://) cannot send auth headers. These endpoints validate a short-lived
     # download token in the URL path instead.
@@ -6814,16 +6879,16 @@ async def auth_middleware(request, call_next):
             raise ValueError("No jti in token")
         iat = payload.get("iat")
 
-        # Reject revoked tokens (defense-in-depth gateway check)
-        if await is_jti_revoked(jti):
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Token has been revoked"},
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        # Verify user exists, is active, and token is still fresh (L-R8-A)
+        # Verify user exists, is active, and token is still fresh (L-R8-A).
+        # Reject revoked tokens first (defense-in-depth gateway check), reusing
+        # this session so the gateway adds a single pooled checkout, not two (#2572).
         async with async_session() as db:
+            if await is_jti_revoked(jti, db):
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Token has been revoked"},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
             user = await get_user_by_username(db, username)
             if not user or not user.is_active:
                 return JSONResponse(

@@ -604,6 +604,12 @@ export default {
       title: '此料槽在当前打印中是耗材 {{n}}',
       ariaLabel: '当前打印料槽 {{n}}',
     },
+    expectedSlot: {
+      title: '打印机正在等待此料槽装入耗材',
+      ariaLabel: '需要装料的料槽 {{n}}',
+      label: '{{ams}} · 料槽 {{slot}}',
+      external: '外部料卷',
+    },
     // Filaments section
     filaments: '耗材',
     // Camera
@@ -2101,6 +2107,9 @@ export default {
     preheatOverride_inherit: '继承',
     preheatOverride_on: '开启',
     preheatOverride_off: '关闭',
+    calibrationMode_off: '关闭',
+    calibrationMode_on: '开启',
+    calibrationMode_auto: '自动',
     preheatTargetOverride: '覆盖腔体目标 (°C，留空使用耗材默认)',
     plateClear: '热床清空确认',
     requirePlateClear: '需要热床清空确认',
@@ -2793,6 +2802,9 @@ export default {
     clearFailed: '清除 HMS 错误失败',
     actionSuccess: '已向打印机发送操作',
     actionFailed: '操作发送失败',
+    runoutExpectedSlot: '{{ranOut}} 的耗材已用尽。打印机现在正在等待 {{expected}} 装入兼容耗材。请将料卷装入 {{expected}}，然后选择"重试"。',
+    runoutExpectedSlotOnly: '打印机正在等待 {{expected}} 装入兼容耗材。请在该料槽装入料卷，然后选择"重试"。',
+    runoutSlotUnknown: '耗材已用尽，打印已暂停。Bambuddy 无法确定打印机现在需要哪个料槽——请在打印机屏幕上查看所请求的料槽。',
     actions: {
       RESUME_PRINTING: '恢复打印',
       RESUME_PRINTING_DEFECTS: '恢复 (缺陷可接受)',
@@ -4011,6 +4023,8 @@ export default {
     refreshPresets: '刷新',
     refreshPresetsTitle: '刷新预设 — 获取最新的云端和打包配置列表（在 Bambu Studio 或 Bambu Handy 中删除预设后使用）',
     allPresetsRequired: '必须选择所有预设',
+    useEmbedded: '使用文件的内置设置',
+    useEmbeddedHint: '按设计者的设置（壁、填充、耗材）切片，而非上方的配置文件。因您的打印机与文件匹配而可用。',
     enqueuing: '提交切片任务中…',
     queued: '已排队…',
     failed: '切片失败。请检查切片器 sidecar 日志。',
@@ -4584,6 +4598,7 @@ export default {
     overrideWith: '覆盖为',
     resetToOriginal: '恢复为原始',
     insufficientFilamentTitle: '耗材不足',
+    waitingForAmsStatus: '正在等待 {{printer}} 的 AMS 状态…',
     insufficientFilamentMessage: '部分已分配线轴的剩余耗材少于本次打印所需：',
     insufficientFilamentLine: '{{printer}} - {{slot}}：需要 {{required}}g，剩余 {{remaining}}g',
     printAnyway: '仍然打印',
@@ -6652,6 +6667,7 @@ export default {
     scope: {
       camera_stream: '摄像头视频流',
       camwall: '摄像头墙',
+      overlay: '直播叠加层',
     },
     title: '摄像头 API 令牌',
     navTitle: '摄像头 API 令牌',
@@ -6670,6 +6686,8 @@ export default {
         '摄像头视频流令牌只能获取摄像头视频流和快照。适用于 Home Assistant、Frigate 或任何嵌入单个摄像头的场景。',
       hintCamWall:
         '摄像头墙令牌可在无需登录的屏幕上打开 /camwall，能看到每台打印机的名称和状态以及摄像头视频流，但看不到文件名、地址或访问码。',
+      hintOverlay:
+        '直播叠加层令牌可在无需登录的屏幕上打开 /overlay/{printerId}——供 OBS 或任何直播使用。它能看到一台打印机的摄像头视频流以及实时打印状态，包括屏幕上显示的文件名，但看不到地址或访问码。',
       title: '创建新令牌',
       nameLabel: '令牌名称',
       namePlaceholder: '例如 Home Assistant',
@@ -6682,6 +6700,9 @@ export default {
       camWallUrlTitle: '此屏幕的摄像头墙网址',
       camWallUrlHint:
         '在屏幕上打开此网址。任何能看到该网址的人都能观看摄像头墙，请像对待钥匙一样对待它——撤销令牌即可切断该屏幕的访问。',
+      overlayUrlTitle: '用于 OBS 的叠加层网址',
+      overlayUrlHint:
+        '在 OBS 中将其添加为“浏览器”源（Browser Source）。将 /overlay/1 中的数字改为您打印机的编号（可在“打印机”页面的网址中查看）。任何能看到该网址的人都能观看直播，请像对待钥匙一样对待它——撤销令牌即可切断访问。',
       title: '令牌已创建 — 立即复制',
       warning:
         '这是此令牌唯一一次可见。关闭此对话框后您将无法再次查看。',

@@ -604,6 +604,12 @@ export default {
       title: 'Dieser Slot ist Filament {{n}} im aktiven Druck',
       ariaLabel: 'Aktiver Druck-Slot {{n}}',
     },
+    expectedSlot: {
+      title: 'Der Drucker wartet auf Filament in diesem Slot',
+      ariaLabel: 'Erwarteter Filament-Slot {{n}}',
+      label: '{{ams}} · Slot {{slot}}',
+      external: 'Externe Spule',
+    },
     // Filaments section
     filaments: 'Filamente',
     // Camera
@@ -2100,6 +2106,9 @@ export default {
     preheatOverride_inherit: 'Übernehmen',
     preheatOverride_on: 'An',
     preheatOverride_off: 'Aus',
+    calibrationMode_off: 'Aus',
+    calibrationMode_on: 'An',
+    calibrationMode_auto: 'Auto',
     preheatTargetOverride: 'Kammer-Ziel überschreiben (°C, leer = Filament-Standard)',
     plateClear: 'Druckplatte-Bestätigung',
     requirePlateClear: 'Druckplatte-Bestätigung erforderlich',
@@ -2805,6 +2814,9 @@ export default {
     clearFailed: 'HMS-Fehler konnten nicht gelöscht werden',
     actionSuccess: 'Aktion an Drucker gesendet',
     actionFailed: 'Aktion konnte nicht gesendet werden',
+    runoutExpectedSlot: 'Das Filament in {{ranOut}} ist aufgebraucht. Der Drucker wartet jetzt auf kompatibles Filament in {{expected}}. Legen Sie eine Spule in {{expected}} ein und wählen Sie dann Wiederholen.',
+    runoutExpectedSlotOnly: 'Der Drucker wartet auf kompatibles Filament in {{expected}}. Legen Sie dort eine Spule ein und wählen Sie dann Wiederholen.',
+    runoutSlotUnknown: 'Das Filament ist aufgebraucht und der Druck ist pausiert. Bambuddy konnte nicht ermitteln, welchen Slot der Drucker jetzt erwartet — prüfen Sie am Druckerdisplay, welcher Slot angefordert wird.',
     actions: {
       RESUME_PRINTING: 'Druck fortsetzen',
       RESUME_PRINTING_DEFECTS: 'Fortsetzen (Mängel akzeptabel)',
@@ -4023,6 +4035,8 @@ export default {
     refreshPresets: 'Aktualisieren',
     refreshPresetsTitle: 'Profile neu laden — die aktuellen Cloud- und Bundle-Listen abrufen (nach dem Löschen eines Profils in Bambu Studio oder Bambu Handy verwenden)',
     allPresetsRequired: 'Alle Profile müssen ausgewählt sein',
+    useEmbedded: 'Eingebettete Einstellungen der Datei verwenden',
+    useEmbeddedHint: 'So slicen, wie der Ersteller es angelegt hat (Wände, Füllung, Filament), statt mit den obigen Profilen. Verfügbar, weil dein Drucker zur Datei passt.',
     enqueuing: 'Slice-Auftrag wird übermittelt…',
     queued: 'In Warteschlange…',
     failed: 'Slicen fehlgeschlagen. Logs des Slicer-Sidecars prüfen.',
@@ -4596,6 +4610,7 @@ export default {
     overrideWith: 'Ersetzen mit',
     resetToOriginal: 'Auf Original zurücksetzen',
     insufficientFilamentTitle: 'Nicht genug Filament',
+    waitingForAmsStatus: 'Warte auf AMS-Status von {{printer}}…',
     insufficientFilamentMessage: 'Einige zugewiesene Spulen haben weniger Filament als dieser Druck benötigt:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: benötigt {{required}}g, verbleibend {{remaining}}g',
     printAnyway: 'Trotzdem drucken',
@@ -6666,6 +6681,7 @@ export default {
     scope: {
       camera_stream: 'Kamera-Stream',
       camwall: 'Kamera-Wand',
+      overlay: 'Streaming-Overlay',
     },
     title: 'Kamera-API-Tokens',
     navTitle: 'Kamera-API-Tokens',
@@ -6684,6 +6700,8 @@ export default {
         'Ein Kamera-Stream-Token kann ausschließlich Kamera-Streams und Schnappschüsse abrufen. Geeignet für Home Assistant, Frigate oder alles, was eine einzelne Kamera einbettet.',
       hintCamWall:
         'Ein Kamera-Wand-Token öffnet /camwall auf einem Bildschirm ohne Anmeldung. Es sieht Name und Status jedes Druckers sowie deren Kamera-Streams. Dateinamen, Adressen und Zugangscodes sieht es nicht.',
+      hintOverlay:
+        'Ein Streaming-Overlay-Token öffnet /overlay/{printerId} auf einem Bildschirm ohne Anmeldung – für OBS oder jeden Livestream. Es sieht den Kamera-Stream eines Druckers sowie dessen Live-Druckstatus, einschließlich des auf dem Bildschirm angezeigten Dateinamens. Adressen und Zugangscodes sieht es nicht.',
       title: 'Neues Token erstellen',
       nameLabel: 'Token-Name',
       namePlaceholder: 'z. B. Home Assistant',
@@ -6696,6 +6714,9 @@ export default {
       camWallUrlTitle: 'Kamera-Wand-Adresse für diesen Bildschirm',
       camWallUrlHint:
         'Diese Adresse auf dem Bildschirm öffnen. Wer die Adresse lesen kann, kann die Kamera-Wand sehen — behandeln Sie sie wie einen Schlüssel. Widerrufen Sie das Token, um den Bildschirm abzuschalten.',
+      overlayUrlTitle: 'Overlay-Adresse für OBS',
+      overlayUrlHint:
+        'Fügen Sie dies in OBS als Browser-Quelle hinzu. Ändern Sie die Zahl in /overlay/1 auf die Nummer Ihres Druckers (aus dessen Adresse auf der Seite „Drucker“). Wer die Adresse lesen kann, kann den Stream sehen – behandeln Sie sie wie einen Schlüssel und widerrufen Sie das Token, um sie abzuschalten.',
       title: 'Token erstellt – jetzt kopieren',
       warning:
         'Dies ist das einzige Mal, dass dieser Token sichtbar ist. Nach dem Schließen dieses Dialogs können Sie ihn nie wieder anzeigen.',

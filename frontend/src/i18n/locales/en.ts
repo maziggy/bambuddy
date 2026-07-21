@@ -608,6 +608,12 @@ export default {
       title: 'This slot is filament {{n}} in the active print',
       ariaLabel: 'Active print slot {{n}}',
     },
+    expectedSlot: {
+      title: 'The printer is waiting for filament in this slot',
+      ariaLabel: 'Expected filament slot {{n}}',
+      label: '{{ams}} · Slot {{slot}}',
+      external: 'External spool',
+    },
     // Filaments section
     filaments: 'Filaments',
     // Camera
@@ -2119,6 +2125,9 @@ export default {
     preheatOverride_inherit: 'Inherit',
     preheatOverride_on: 'On',
     preheatOverride_off: 'Off',
+    calibrationMode_off: 'Off',
+    calibrationMode_on: 'On',
+    calibrationMode_auto: 'Auto',
     preheatTargetOverride: 'Chamber target override (°C, blank = filament default)',
     plateClear: 'Plate-Clear Confirmation',
     requirePlateClear: 'Require plate-clear confirmation',
@@ -2834,6 +2843,9 @@ export default {
     clearFailed: 'Failed to clear HMS errors',
     actionSuccess: 'Action sent to printer',
     actionFailed: 'Failed to send action',
+    runoutExpectedSlot: 'Filament ran out in {{ranOut}}. The printer is now waiting for compatible filament in {{expected}}. Insert a spool into {{expected}}, then select Retry.',
+    runoutExpectedSlotOnly: 'The printer is waiting for compatible filament in {{expected}}. Insert a spool there, then select Retry.',
+    runoutSlotUnknown: 'Filament ran out and the print is paused. Bambuddy could not determine which slot the printer now expects — check the printer screen for the requested slot.',
     actions: {
       RESUME_PRINTING: "Resume Printing",
       RESUME_PRINTING_DEFECTS: "Resume (defects acceptable)",
@@ -4057,6 +4069,8 @@ export default {
     refreshPresets: 'Refresh',
     refreshPresetsTitle: 'Refresh presets — fetch the latest cloud and bundled listings (use after deleting a preset in Bambu Studio or Bambu Handy)',
     allPresetsRequired: 'All presets must be selected',
+    useEmbedded: "Use the file's built-in settings",
+    useEmbeddedHint: "Slice it the way the designer set it up (walls, infill, filament) instead of the profiles above. Offered because your printer matches the file's.",
     enqueuing: 'Submitting slice job…',
     queued: 'Queued…',
     failed: 'Slicing failed. Check the slicer sidecar logs.',
@@ -4639,6 +4653,7 @@ export default {
     overrideWith: 'Override with',
     resetToOriginal: 'Reset to original',
     insufficientFilamentTitle: 'Not enough filament',
+    waitingForAmsStatus: 'Waiting for AMS status from {{printer}}…',
     insufficientFilamentMessage: 'Some assigned spools have less filament remaining than this print needs:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: needs {{required}}g, remaining {{remaining}}g',
     printAnyway: 'Print anyway',
@@ -6710,6 +6725,7 @@ export default {
     scope: {
       camera_stream: 'Camera stream',
       camwall: 'Cam Wall',
+      overlay: 'Streaming Overlay',
     },
     title: 'Camera API Tokens',
     navTitle: 'Camera API tokens',
@@ -6728,6 +6744,8 @@ export default {
         'A camera-stream token can only fetch camera streams and snapshots. Use it for Home Assistant, Frigate, or anything embedding a single camera.',
       hintCamWall:
         "A Cam Wall token opens /camwall on a screen with no login. It can see every printer's name and state, and their camera streams. It cannot see filenames, addresses or access codes.",
+      hintOverlay:
+        "A Streaming Overlay token opens /overlay/{printerId} on a screen with no login — for OBS or any live stream. It can see one printer's camera stream plus its live print status, including the filename shown on screen. It cannot see addresses or access codes.",
       title: 'Create new token',
       nameLabel: 'Token name',
       namePlaceholder: 'e.g. Home Assistant',
@@ -6740,6 +6758,9 @@ export default {
       camWallUrlTitle: 'Cam Wall URL for this display',
       camWallUrlHint:
         'Open this on the screen. Anyone who can read the URL can watch the wall, so treat it like a key — revoke the token to cut the display off.',
+      overlayUrlTitle: 'Overlay URL for OBS',
+      overlayUrlHint:
+        "Add this as a Browser Source in OBS. Change the /overlay/1 number to your printer's number (from its URL on the Printers page). Anyone who can read the URL can watch the stream, so treat it like a key — revoke the token to cut it off.",
       title: 'Token created — copy it now',
       warning:
         'This is the only time this token will be visible. After you close this dialog you can never view it again.',

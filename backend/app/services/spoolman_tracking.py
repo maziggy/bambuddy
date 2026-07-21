@@ -462,6 +462,29 @@ async def _resolve_spool_id_via_slot_assignment(printer_id: int, ams_id: int, tr
         return result.scalar_one_or_none()
 
 
+async def _spool_cost_for_grams(client, spool_id: int, grams: float, prefetched: dict | None = None) -> float | None:
+    """Gram-based cost for `grams` off a Spoolman spool's price.
+
+    Uses the spool-level price override if set, else the filament price,
+    divided by the filament's net weight (grams) to get a per-gram rate.
+    Best-effort: returns None (never raises) if price/weight are missing or
+    the fetch fails, so cost calculation can never break usage reporting.
+    """
+    try:
+        sp = prefetched or await client.get_spool(spool_id)
+        fil = sp.get("filament") or {}
+        price = sp.get("price")
+        if price is None:
+            price = fil.get("price")
+        weight_g = fil.get("weight")
+        if price is None or not weight_g or float(weight_g) <= 0:
+            return None
+        return round(float(grams) * (float(price) / float(weight_g)), 2)
+    except Exception as exc:  # noqa: BLE001 — cost is non-critical, must not abort reporting
+        logger.debug("[SPOOLMAN] cost calc failed for spool %s: %s", spool_id, exc)
+        return None
+
+
 async def _report_spool_usage_for_slots(
     client,
     filament_usage_items: list[tuple[int, float]],
@@ -472,6 +495,7 @@ async def _report_spool_usage_for_slots(
     printer_id: int | None = None,
     slot_colors_out: dict[int, str] | None = None,
     slot_materials_out: dict[int, str] | None = None,
+    slot_costs_out: dict[int, float] | None = None,
 ) -> int:
     """Report usage to Spoolman for a list of (slot_id, grams) pairs.
 
@@ -575,6 +599,15 @@ async def _report_spool_usage_for_slots(
                 resolution_path,
             )
             spools_updated += 1
+            if slot_costs_out is not None:
+                _c = await _spool_cost_for_grams(
+                    client,
+                    spool_id_to_use,
+                    grams_used,
+                    prefetched=spool if resolution_path == "tag" else None,
+                )
+                if _c is not None:
+                    slot_costs_out[slot_id] = _c
         except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
             logger.warning("[SPOOLMAN] Failed to record usage for spool %s: %s", spool_id_to_use, exc)
 
@@ -595,6 +628,7 @@ async def _report_spool_usage_split_by_tray_changes(
     printer_id: int,
     slot_colors_out: dict[int, str] | None = None,
     slot_materials_out: dict[int, str] | None = None,
+    slot_costs_out: dict[int, float] | None = None,
 ) -> tuple[int, set[int]]:
     """Split each slot's grams across ``tray_changes`` and charge per-segment.
 
@@ -709,6 +743,15 @@ async def _report_spool_usage_split_by_tray_changes(
                     resolution_path,
                 )
                 spools_updated += 1
+                if slot_costs_out is not None:
+                    _c = await _spool_cost_for_grams(
+                        client,
+                        spool_id_to_use,
+                        segment_grams,
+                        prefetched=spool if resolution_path == "tag" else None,
+                    )
+                    if _c is not None:
+                        slot_costs_out[slot_id] = round(slot_costs_out.get(slot_id, 0.0) + _c, 2)
             except (SpoolmanNotFoundError, SpoolmanClientError, SpoolmanUnavailableError) as exc:
                 logger.warning(
                     "[SPOOLMAN] Split slot %s seg %s: failed to record usage for spool %s: %s",
@@ -1002,6 +1045,7 @@ async def report_usage(printer_id: int, archive_id: int):
 
         slot_colors: dict[int, str] = {}
         slot_materials: dict[int, str] = {}
+        slot_costs: dict[int, float] = {}
         handled_global_tray_ids: set[int] = set()
         spools_updated = 0
 
@@ -1047,6 +1091,7 @@ async def report_usage(printer_id: int, archive_id: int):
                     printer_id=printer_id,
                     slot_colors_out=slot_colors,
                     slot_materials_out=slot_materials,
+                    slot_costs_out=slot_costs,
                 )
                 spools_updated += split_updated
                 handled_global_tray_ids |= split_handled
@@ -1063,6 +1108,7 @@ async def report_usage(printer_id: int, archive_id: int):
                     printer_id=printer_id,
                     slot_colors_out=slot_colors,
                     slot_materials_out=slot_materials,
+                    slot_costs_out=slot_costs,
                 )
                 # Track which physical slots the 3MF path already covered so
                 # Path 2 doesn't double-charge them.
@@ -1087,6 +1133,7 @@ async def report_usage(printer_id: int, archive_id: int):
                 archive_id=archive_id,
                 slot_colors_out=slot_colors,
                 slot_materials_out=slot_materials,
+                slot_costs_out=slot_costs,
             )
             spools_updated += fallback_updates
 
@@ -1104,6 +1151,8 @@ async def report_usage(printer_id: int, archive_id: int):
         # it was sliced for otherwise records the sliced type (#2563).
         await _apply_spool_types_to_archive(db, archive_id, filament_usage, slot_materials)
 
+        return round(sum(slot_costs.values()), 2) if slot_costs else None
+
 
 async def _report_remain_delta_for_slots(
     client,
@@ -1115,6 +1164,7 @@ async def _report_remain_delta_for_slots(
     archive_id: int,
     slot_colors_out: dict[int, str] | None = None,
     slot_materials_out: dict[int, str] | None = None,
+    slot_costs_out: dict[int, float] | None = None,
 ) -> int:
     """AMS remain%-delta path: write ``(start - current) * filament.weight``
     grams to Spoolman for slots the 3MF path didn't cover.
@@ -1212,6 +1262,10 @@ async def _report_remain_delta_for_slots(
             material = filament.get("material")
             if material:
                 slot_materials_out[-(global_tray_id + 1)] = material
+        if slot_costs_out is not None:
+            _c = await _spool_cost_for_grams(client, spool_id, grams_used, prefetched=spool)
+            if _c is not None:
+                slot_costs_out[-(global_tray_id + 1)] = _c
         logger.info(
             "[SPOOLMAN] Archive %s AMS%d-T%d: %.2fg via remain-delta (%d%% of %.0fg) -> spool %s",
             archive_id,

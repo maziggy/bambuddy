@@ -128,6 +128,31 @@ _SLICER_OPTIONS_WAIT_TIMEOUT = 5.0
 # scheduler tick interval before dispatch picks the item up.
 _RECENT_QUEUE_ITEM_TTL = 30.0
 
+# BambuStudio's tri-state calibration options (bed_leveling / flow_cali /
+# nozzle_offset_cali) travel on the project_file command as a bool plus an int
+# companion — off=0, on=1, auto=2 (getValueInt parity). The int carries the full
+# state; the bool is true only for "on".
+_TRISTATE_INT = {0: "off", 1: "on", 2: "auto"}
+
+
+def _tristate_from_slicer(data: dict, bool_field: str, int_field: str) -> str | None:
+    """Reconstruct off/on/auto from a captured slicer project_file dict.
+
+    Prefer the int companion (auto_bed_leveling / extrude_cali_flag / etc.) which
+    carries all three states; fall back to the bool field (on/off only); return
+    None when the slicer sent neither so the caller can use its own default.
+    """
+    if int_field in data:
+        try:
+            resolved = _TRISTATE_INT.get(int(data[int_field]))
+        except (TypeError, ValueError):
+            resolved = None
+        if resolved is not None:
+            return resolved
+    if bool_field in data:
+        return "on" if bool(data[bool_field]) else "off"
+    return None
+
 
 def _get_serial_for_model(model: str, serial_suffix: str) -> str:
     """Get serial number for the given model and suffix."""
@@ -411,9 +436,16 @@ class VirtualPrinterInstance:
         # `nozzles_info` is intentionally not stamped — column kept for
         # legacy rows but never written; see PrintQueueItem.nozzles_info.
         patch: dict = {}
+        # Tri-state options (off/on/auto) — reconstruct from the int companion.
+        for bool_field, int_field, column in (
+            ("bed_leveling", "auto_bed_leveling", "bed_levelling"),
+            ("flow_cali", "extrude_cali_flag", "flow_cali"),
+        ):
+            resolved = _tristate_from_slicer(data, bool_field, int_field)
+            if resolved is not None:
+                patch[column] = resolved
+        # On/off options.
         for mqtt_field, column in (
-            ("bed_leveling", "bed_levelling"),
-            ("flow_cali", "flow_cali"),
             ("vibration_cali", "vibration_cali"),
             ("layer_inspect", "layer_inspect"),
             ("timelapse", "timelapse"),
@@ -714,6 +746,19 @@ class VirtualPrinterInstance:
                 def _bool_setting(value: str | None, default: bool) -> bool:
                     return value.lower() == "true" if value is not None else default
 
+                def _tristate_setting(value: str | None, default: str) -> str:
+                    """Tri-state workflow default, coercing legacy true/false rows."""
+                    if value is None:
+                        return default
+                    low = value.strip().lower()
+                    if low in ("on", "off", "auto"):
+                        return low
+                    if low in ("true", "1"):
+                        return "on"
+                    if low in ("false", "0"):
+                        return "off"
+                    return default
+
                 def _slicer_or(field_mqtt: str, settings_default: bool) -> bool:
                     """Slicer's MQTT value if present, else the settings default.
 
@@ -725,13 +770,27 @@ class VirtualPrinterInstance:
                         return bool(slicer_opts[field_mqtt])
                     return settings_default
 
+                def _slicer_tristate(bool_field: str, int_field: str, settings_default: str) -> str:
+                    """Slicer's tri-state (off/on/auto) if present, else the default."""
+                    if slicer_opts is not None:
+                        resolved = _tristate_from_slicer(slicer_opts, bool_field, int_field)
+                        if resolved is not None:
+                            return resolved
+                    return settings_default
+
                 # Note the MQTT field names differ from Bambuddy's column
                 # names: MQTT uses `bed_leveling` (single L) while the
                 # column / settings key use `bed_levelling` (double L).
-                bed_levelling = _slicer_or(
-                    "bed_leveling", _bool_setting(await get_setting(db, "default_bed_levelling"), True)
+                bed_levelling = _slicer_tristate(
+                    "bed_leveling",
+                    "auto_bed_leveling",
+                    _tristate_setting(await get_setting(db, "default_bed_levelling"), "auto"),
                 )
-                flow_cali = _slicer_or("flow_cali", _bool_setting(await get_setting(db, "default_flow_cali"), False))
+                flow_cali = _slicer_tristate(
+                    "flow_cali",
+                    "extrude_cali_flag",
+                    _tristate_setting(await get_setting(db, "default_flow_cali"), "auto"),
+                )
                 vibration_cali = _slicer_or(
                     "vibration_cali", _bool_setting(await get_setting(db, "default_vibration_cali"), True)
                 )

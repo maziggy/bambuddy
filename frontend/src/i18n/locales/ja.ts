@@ -603,6 +603,12 @@ export default {
       title: 'このスロットはアクティブな印刷のフィラメント {{n}} です',
       ariaLabel: 'アクティブ印刷スロット {{n}}',
     },
+    expectedSlot: {
+      title: 'プリンターはこのスロットのフィラメントを待っています',
+      ariaLabel: '要求スロット {{n}}',
+      label: '{{ams}} · スロット {{slot}}',
+      external: '外部スプール',
+    },
     // Filaments section
     filaments: 'フィラメント',
     // Camera
@@ -2099,6 +2105,9 @@ export default {
     preheatOverride_inherit: '継承',
     preheatOverride_on: 'オン',
     preheatOverride_off: 'オフ',
+    calibrationMode_off: 'オフ',
+    calibrationMode_on: 'オン',
+    calibrationMode_auto: '自動',
     preheatTargetOverride: 'チャンバー目標を上書き (°C、空欄でフィラメント既定値)',
     plateClear: 'プレートクリア確認',
     requirePlateClear: 'プレートクリア確認を必須にする',
@@ -2805,6 +2814,9 @@ export default {
     clearFailed: 'HMSエラーのクリアに失敗しました',
     actionSuccess: 'アクションをプリンターに送信しました',
     actionFailed: 'アクションの送信に失敗しました',
+    runoutExpectedSlot: '{{ranOut}} のフィラメントが切れました。プリンターは現在 {{expected}} に対応するフィラメントを待っています。{{expected}} にスプールをセットして、「再試行」を選択してください。',
+    runoutExpectedSlotOnly: 'プリンターは {{expected}} に対応するフィラメントを待っています。そこにスプールをセットして、「再試行」を選択してください。',
+    runoutSlotUnknown: 'フィラメントが切れて印刷が一時停止しています。プリンターが現在要求しているスロットを Bambuddy が特定できませんでした。プリンターの画面で要求されているスロットを確認してください。',
     actions: {
       RESUME_PRINTING: '印刷を再開',
       RESUME_PRINTING_DEFECTS: '再開（不具合を許容）',
@@ -4023,6 +4035,8 @@ export default {
     refreshPresets: '再読み込み',
     refreshPresetsTitle: 'プリセットを再取得 — クラウドとバンドルの最新リストを取得します（Bambu Studio または Bambu Handy でプリセットを削除した後にお使いください）',
     allPresetsRequired: 'すべてのプリセットを選択する必要があります',
+    useEmbedded: 'ファイルに埋め込まれた設定を使用',
+    useEmbeddedHint: '上のプロファイルではなく、設計者が設定したとおり（ウォール、インフィル、フィラメント）にスライスします。お使いのプリンターがファイルと一致するため利用できます。',
     enqueuing: 'スライスジョブを送信中…',
     queued: '待機中…',
     failed: 'スライスに失敗。サイドカーのログを確認してください。',
@@ -4596,6 +4610,7 @@ export default {
     overrideWith: '変更先',
     resetToOriginal: 'オリジナルに戻す',
     insufficientFilamentTitle: 'フィラメントが不足しています',
+    waitingForAmsStatus: '{{printer}} のAMSステータスを待機しています…',
     insufficientFilamentMessage: '割り当てられたスプールの一部は、この印刷に必要な量より残量が少ないです:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: 必要 {{required}}g、残り {{remaining}}g',
     printAnyway: 'それでも印刷',
@@ -6665,6 +6680,7 @@ export default {
     scope: {
       camera_stream: 'カメラストリーム',
       camwall: 'カメラウォール',
+      overlay: '配信オーバーレイ',
     },
     title: 'カメラAPIトークン',
     navTitle: 'カメラAPIトークン',
@@ -6683,6 +6699,8 @@ export default {
         'カメラストリームトークンで取得できるのは、カメラの映像とスナップショットだけです。Home Assistant や Frigate など、単一のカメラを埋め込む用途に使用してください。',
       hintCamWall:
         'カメラウォールトークンは、ログインなしの画面で /camwall を開きます。各プリンターの名前と状態、そしてカメラ映像を見ることができます。ファイル名、アドレス、アクセスコードは見えません。',
+      hintOverlay:
+        '配信オーバーレイトークンは、ログインなしの画面で /overlay/{printerId} を開きます — OBS やライブ配信向けです。1台のプリンターのカメラ映像に加え、画面に表示されるファイル名を含むライブの印刷状況を見ることができます。アドレスやアクセスコードは見えません。',
       title: '新しいトークンを作成',
       nameLabel: 'トークン名',
       namePlaceholder: '例：Home Assistant',
@@ -6695,6 +6713,9 @@ export default {
       camWallUrlTitle: 'この画面用のカメラウォール URL',
       camWallUrlHint:
         'この URL を画面で開いてください。URL を読める人は誰でもウォールを見られるため、鍵と同じように扱ってください。トークンを取り消すと、その画面は遮断されます。',
+      overlayUrlTitle: 'OBS 用のオーバーレイ URL',
+      overlayUrlHint:
+        'これを OBS の「ブラウザ」ソース（Browser Source）として追加してください。/overlay/1 の番号を、お使いのプリンターの番号（プリンターページの URL に表示）に変更します。URL を読める人は誰でも配信を見られるため、鍵と同じように扱い、遮断するにはトークンを取り消してください。',
       title: 'トークンを作成しました – 今すぐコピー',
       warning:
         'このトークンが表示されるのは今回限りです。このダイアログを閉じると二度と表示できません。',

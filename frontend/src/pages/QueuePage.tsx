@@ -65,7 +65,7 @@ import { api, ApiError } from '../api/client';
 import { PipelineRunsView } from './PipelineRunsPage';
 import { type TimeFormat, formatETA, formatDuration, formatRelativeTime, parseUTCDate } from '../utils/date';
 import { getBedTypeInfo } from '../utils/bedType';
-import type { PrintQueueItem, PrintQueueBulkUpdate, Permission } from '../api/client';
+import type { PrintQueueItem, PrintQueueBulkUpdate, Permission, CalibrationMode } from '../api/client';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -143,13 +143,13 @@ function BulkEditModal({
   const [manualStart, setManualStart] = useState<boolean | 'unchanged'>('unchanged');
   const [autoOffAfter, setAutoOffAfter] = useState<boolean | 'unchanged'>('unchanged');
   const [requirePreviousSuccess, setRequirePreviousSuccess] = useState<boolean | 'unchanged'>('unchanged');
-  const [bedLevelling, setBedLevelling] = useState<boolean | 'unchanged'>('unchanged');
-  const [flowCali, setFlowCali] = useState<boolean | 'unchanged'>('unchanged');
+  const [bedLevelling, setBedLevelling] = useState<CalibrationMode | 'unchanged'>('unchanged');
+  const [flowCali, setFlowCali] = useState<CalibrationMode | 'unchanged'>('unchanged');
   const [vibrationCali, setVibrationCali] = useState<boolean | 'unchanged'>('unchanged');
   const [layerInspect, setLayerInspect] = useState<boolean | 'unchanged'>('unchanged');
   const [timelapse, setTimelapse] = useState<boolean | 'unchanged'>('unchanged');
   const [useAms, setUseAms] = useState<boolean | 'unchanged'>('unchanged');
-  const [nozzleOffsetCali, setNozzleOffsetCali] = useState<boolean | 'unchanged'>('unchanged');
+  const [nozzleOffsetCali, setNozzleOffsetCali] = useState<CalibrationMode | 'unchanged'>('unchanged');
 
   // Show the dual-nozzle-only toggle when the user has at least one
   // dual-nozzle printer registered (H2D/H2D Pro/H2C/X2D). Single-nozzle
@@ -229,14 +229,14 @@ function BulkEditModal({
           <div>
             <label className="block text-sm font-medium text-white mb-2">{t('queue.bulkEdit.printOptions')}</label>
             <div className="space-y-2">
-              <TriStateToggle label={t('queue.bulkEdit.bedLevelling')} value={bedLevelling} onChange={setBedLevelling} t={t} />
-              <TriStateToggle label={t('queue.bulkEdit.flowCalibration')} value={flowCali} onChange={setFlowCali} t={t} />
+              <CalibrationModeToggle label={t('queue.bulkEdit.bedLevelling')} value={bedLevelling} onChange={setBedLevelling} t={t} />
+              <CalibrationModeToggle label={t('queue.bulkEdit.flowCalibration')} value={flowCali} onChange={setFlowCali} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.vibrationCalibration')} value={vibrationCali} onChange={setVibrationCali} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.layerInspection')} value={layerInspect} onChange={setLayerInspect} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.timelapse')} value={timelapse} onChange={setTimelapse} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.useAms')} value={useAms} onChange={setUseAms} t={t} />
               {hasDualNozzlePrinter && (
-                <TriStateToggle label={t('queue.bulkEdit.nozzleOffsetCali')} value={nozzleOffsetCali} onChange={setNozzleOffsetCali} t={t} />
+                <CalibrationModeToggle label={t('queue.bulkEdit.nozzleOffsetCali')} value={nozzleOffsetCali} onChange={setNozzleOffsetCali} t={t} />
               )}
             </div>
           </div>
@@ -295,6 +295,43 @@ function TriStateToggle({
         >
           {t('common.on')}
         </button>
+      </div>
+    </div>
+  );
+}
+
+// Four-state selector for the tri-state calibration options in bulk edit
+// (unchanged / off / auto / on). Mirrors TriStateToggle's chrome.
+function CalibrationModeToggle({
+  label,
+  value,
+  onChange,
+  t,
+}: {
+  label: string;
+  value: CalibrationMode | 'unchanged';
+  onChange: (val: CalibrationMode | 'unchanged') => void;
+  t: (key: string) => string;
+}) {
+  const modes: Array<{ key: CalibrationMode | 'unchanged'; label: string; active: string }> = [
+    { key: 'unchanged', label: '—', active: 'bg-bambu-dark-tertiary text-white' },
+    { key: 'off', label: t('settings.calibrationMode_off'), active: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400' },
+    { key: 'auto', label: t('settings.calibrationMode_auto'), active: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400' },
+    { key: 'on', label: t('settings.calibrationMode_on'), active: 'bg-bambu-green/20 text-bambu-green' },
+  ];
+  return (
+    <div className="flex items-center justify-between py-1">
+      <span className="text-sm text-bambu-gray">{label}</span>
+      <div className="flex items-center gap-1 bg-bambu-dark rounded-lg p-0.5">
+        {modes.map(({ key, label: modeLabel, active }) => (
+          <button
+            key={key}
+            onClick={() => onChange(key)}
+            className={`px-2 py-1 text-xs rounded ${value === key ? active : 'text-bambu-gray hover:text-white'}`}
+          >
+            {modeLabel}
+          </button>
+        ))}
       </div>
     </div>
   );

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core import database
 from backend.app.core.auth import (
     RequireCameraStreamTokenIfAuthEnabled,
+    RequireOverlayTokenIfAuthEnabled,
     RequirePermissionIfAuthEnabled,
     is_auth_enabled,
 )
@@ -54,12 +55,14 @@ from backend.app.services.printer_manager import (
     drying_screen_only,
     get_derived_status_name,
     printer_manager,
+    resolve_expected_tray,
     resolve_plate_id,
     supports_chamber_heater,
     supports_chamber_temp,
     supports_drying,
     supports_drying_while_printing,
 )
+from backend.app.utils.filament_ids import filament_id_to_setting_id
 from backend.app.utils.http import build_content_disposition
 
 logger = logging.getLogger(__name__)
@@ -766,6 +769,26 @@ async def get_printer_status(
         ams_mapping=ams_mapping,
         ams_extruder_map=ams_extruder_map,
         tray_now=tray_now,
+        # Runout guidance (#2587): resolve the firmware's target/previous slot to a
+        # global tray ID, but only while PAUSED — the moment the operator needs it.
+        expected_tray=(
+            resolve_expected_tray(
+                state.tray_tar,
+                [(u.id, u.is_ams_ht) for u in ams_units],
+                raw_data.get("mapping"),
+            )
+            if state.state == "PAUSE"
+            else None
+        ),
+        previous_tray=(
+            resolve_expected_tray(
+                state.tray_pre,
+                [(u.id, u.is_ams_ht) for u in ams_units],
+                raw_data.get("mapping"),
+            )
+            if state.state == "PAUSE"
+            else None
+        ),
         ams_status_main=state.ams_status_main,
         ams_status_sub=state.ams_status_sub,
         mc_print_sub_stage=state.mc_print_sub_stage,
@@ -797,6 +820,70 @@ async def get_printer_status(
             else None
         ),
     )
+
+
+@router.get("/{printer_id}/overlay-status")
+async def get_overlay_status(
+    printer_id: int,
+    _: None = RequireOverlayTokenIfAuthEnabled,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Everything the streaming overlay (#2613) draws for one printer.
+
+    A token-authenticated sibling of ``get_printer_status`` for embeds with no
+    login session — OBS loads ``/overlay/{id}?token=...`` and this feeds it.
+    Deliberately flat and minimal (name, camera rotation, live print state, and
+    the one setting the overlay reads) rather than the full ``PrinterStatus``:
+    a token holder gets exactly the fields the overlay renders, nothing more.
+
+    Unlike the Cam Wall feed this *includes the print filename* — the overlay
+    names the part on screen — which is why it sits behind its own ``overlay``
+    scope rather than ``camwall``.
+    """
+    from backend.app.api.routes.settings import get_setting
+
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+
+    time_format = await get_setting(db, "time_format") or "system"
+    state = printer_manager.get_status(printer_id)
+
+    if not state:
+        # Never connected this run — mirror get_printer_status()'s disconnected
+        # shape so the overlay renders its offline state rather than erroring.
+        return {
+            "id": printer_id,
+            "name": printer.name,
+            "camera_rotation": printer.camera_rotation or 0,
+            "connected": False,
+            "state": None,
+            "current_print": None,
+            "gcode_file": None,
+            "progress": None,
+            "remaining_time": None,
+            "layer_num": None,
+            "total_layers": None,
+            "stg_cur_name": None,
+            "time_format": time_format,
+        }
+
+    return {
+        "id": printer_id,
+        "name": printer.name,
+        "camera_rotation": printer.camera_rotation or 0,
+        "connected": state.connected,
+        "state": state.state,
+        "current_print": state.current_print,
+        "gcode_file": state.gcode_file,
+        "progress": state.progress,
+        "remaining_time": state.remaining_time,
+        "layer_num": state.layer_num,
+        "total_layers": state.total_layers,
+        "stg_cur_name": get_derived_status_name(state, printer.model),
+        "time_format": time_format,
+    }
 
 
 @router.get("/{printer_id}/current-print-user")
@@ -942,6 +1029,15 @@ _cover_cache: dict[int, dict[tuple[str, str], bytes]] = {}
 # Cleared on print start alongside _cover_cache.
 _cover_404_cache: dict[int, set[tuple[str, str]]] = {}
 
+# In-flight cover downloads, keyed by (printer_id, subtask_name, view_key) (#2572).
+# The farm dashboard mounts a cover tile per printer card, so several browsers
+# request the same printer's cover in the same instant, all miss the cache, and
+# each runs the full multi-path FTP lookup + 3MF extraction (one observed live
+# transfer pulled an 81 MB 3MF while real print uploads were in flight). The
+# first request to miss becomes the leader; concurrent requests await its future
+# and then serve from the positive/negative cache it filled.
+_cover_inflight: dict[tuple[int, str, str], asyncio.Future] = {}
+
 
 def clear_cover_cache(printer_id: int) -> None:
     """Clear cached cover images for a printer. Call on print start to avoid stale thumbnails."""
@@ -1018,6 +1114,53 @@ async def get_printer_cover(
     if printer_id in _cover_404_cache and cache_key in _cover_404_cache[printer_id]:
         raise HTTPException(404, f"No cover available for '{subtask_name}' (cached)")
 
+    # Coalesce concurrent downloads for the same cover (#2572). The positive and
+    # negative caches were just checked above; if another request is already
+    # downloading this exact cover, wait for it and serve from the cache it fills
+    # instead of launching a duplicate multi-path FTP + 3MF extraction.
+    inflight_key = (printer_id, subtask_name, view_key)
+    leader = _cover_inflight.get(inflight_key)
+    if leader is not None:
+        # shield() so our own cancellation can't cancel the shared leader.
+        try:
+            await asyncio.shield(leader)
+        except Exception:
+            pass
+        if printer_id in _cover_cache and cache_key in _cover_cache[printer_id]:
+            return Response(content=_cover_cache[printer_id][cache_key], media_type="image/png")
+        if printer_id in _cover_404_cache and cache_key in _cover_404_cache[printer_id]:
+            raise HTTPException(404, f"No cover available for '{subtask_name}' (cached)")
+        # Leader finished without filling either cache (a transient 503) — fall
+        # through and try the download ourselves.
+
+    fut: asyncio.Future = asyncio.get_event_loop().create_future()
+    _cover_inflight[inflight_key] = fut
+    try:
+        image_data = await _produce_cover_image(printer, printer_id, subtask_name, view, view_key, plate_num, cache_key)
+        return Response(content=image_data, media_type="image/png")
+    finally:
+        if not fut.done():
+            fut.set_result(None)
+        _cover_inflight.pop(inflight_key, None)
+
+
+async def _produce_cover_image(
+    printer: Printer,
+    printer_id: int,
+    subtask_name: str,
+    view: str | None,
+    view_key: str,
+    plate_num: int | None,
+    cache_key: tuple[str, str],
+) -> bytes:
+    """Download the active-print 3MF and extract its cover thumbnail (#2572).
+
+    Split out of ``get_printer_cover`` so concurrent requests for the same cover
+    can single-flight through it (see ``_cover_inflight``). Returns the PNG bytes
+    on success (also filling ``_cover_cache``) and raises ``HTTPException`` on
+    failure (filling ``_cover_404_cache`` for the definitive 404s). Does no DB
+    work — the caller already released the pooled connection before this runs.
+    """
     # Build possible 3MF filenames from subtask_name
     # Bambu printers may store files as "name.gcode.3mf" (sliced via Bambu Studio)
     # or just "name.3mf" (uploaded directly)
@@ -1181,7 +1324,7 @@ async def get_printer_cover(
                     if printer_id not in _cover_cache:
                         _cover_cache[printer_id] = {}
                     _cover_cache[printer_id][(subtask_name, view_key)] = image_data
-                    return Response(content=image_data, media_type="image/png")
+                    return image_data
                 except KeyError:
                     continue
 
@@ -1192,7 +1335,7 @@ async def get_printer_cover(
                     if printer_id not in _cover_cache:
                         _cover_cache[printer_id] = {}
                     _cover_cache[printer_id][(subtask_name, view_key)] = image_data
-                    return Response(content=image_data, media_type="image/png")
+                    return image_data
 
             _cover_404_cache.setdefault(printer_id, set()).add(cache_key)
             raise HTTPException(404, "No thumbnail found in 3MF file")
@@ -1212,18 +1355,37 @@ async def get_printer_cover(
 # ============================================
 
 
+async def _load_printer_or_404(printer_id: int) -> Printer:
+    """Load a printer in a short-lived session, releasing the pooled DB
+    connection before the caller starts any FTP/network I/O (#2572).
+
+    The file-manager and storage routes talk FTP to the printer, which can
+    block for the full socket timeout — longer when a saturated FTP pool backs
+    up. Holding the request's Depends(get_db) session across that FTP pinned one
+    pooled connection idle-in-transaction per in-flight request, a top cause of
+    pool exhaustion on large farms. The returned row's scalar columns stay
+    readable after the session closes (expire_on_commit=False). Raises 404 when
+    the printer doesn't exist.
+
+    Reference async_session via the module so the maker is resolved at call time
+    — keeps it in sync with reinitialize_database() and lets tests patch it.
+    """
+    async with database.async_session() as db:
+        result = await db.execute(select(Printer).where(Printer.id == printer_id))
+        printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+    return printer
+
+
 @router.get("/{printer_id}/files")
 async def list_printer_files(
     printer_id: int,
     path: str = "/",
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
-    db: AsyncSession = Depends(get_db),
 ):
     """List files on the printer at the specified path."""
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+    printer = await _load_printer_or_404(printer_id)
 
     files = await list_files_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
 
@@ -1242,13 +1404,9 @@ async def download_printer_file(
     printer_id: int,
     path: str,
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
-    db: AsyncSession = Depends(get_db),
 ):
     """Download a file from the printer."""
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+    printer = await _load_printer_or_404(printer_id)
 
     data = await download_file_bytes_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
     if data is None:
@@ -1283,16 +1441,11 @@ async def get_printer_file_gcode(
     printer_id: int,
     path: str,
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
-    db: AsyncSession = Depends(get_db),
 ):
     """Get gcode for a file stored on a printer (for preview)."""
     import io
 
-    # Validate printer
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+    printer = await _load_printer_or_404(printer_id)
 
     data = await download_file_bytes_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
     if data is None:
@@ -1322,7 +1475,6 @@ async def get_printer_file_plates(
     printer_id: int,
     path: str = Query(..., description="Full path to the 3MF file on the printer"),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
-    db: AsyncSession = Depends(get_db),
 ):
     """Get available plates from a multi-plate 3MF file stored on a printer."""
     import io
@@ -1330,11 +1482,7 @@ async def get_printer_file_plates(
 
     import defusedxml.ElementTree as ET
 
-    # Validate printer
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+    printer = await _load_printer_or_404(printer_id)
 
     filename = path.split("/")[-1]
     if not filename.lower().endswith(".3mf"):
@@ -1567,15 +1715,11 @@ async def get_printer_file_plate_thumbnail(
     plate_index: int,
     path: str = Query(..., description="Full path to the 3MF file on the printer"),
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
-    db: AsyncSession = Depends(get_db),
 ):
     """Get a plate thumbnail image from a printer-stored 3MF file."""
     import io
 
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+    printer = await _load_printer_or_404(printer_id)
 
     data = await download_file_bytes_async(printer.ip_address, printer.access_code, path, printer_model=printer.model)
     if data is None:
@@ -1598,7 +1742,6 @@ async def download_printer_files_as_zip(
     printer_id: int,
     request: dict,
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
-    db: AsyncSession = Depends(get_db),
 ):
     """Download multiple files from the printer as a ZIP archive."""
     import io
@@ -1607,10 +1750,7 @@ async def download_printer_files_as_zip(
     if not paths:
         raise HTTPException(400, "No files specified")
 
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+    printer = await _load_printer_or_404(printer_id)
 
     # Create ZIP in memory
     zip_buffer = io.BytesIO()
@@ -1645,13 +1785,9 @@ async def delete_printer_file(
     printer_id: int,
     path: str,
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_FILES),
-    db: AsyncSession = Depends(get_db),
 ):
     """Delete a file from the printer."""
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+    printer = await _load_printer_or_404(printer_id)
 
     from backend.app.services.bambu_ftp import DeleteResult
 
@@ -1668,13 +1804,9 @@ async def delete_printer_file(
 async def get_printer_storage(
     printer_id: int,
     _=RequirePermissionIfAuthEnabled(Permission.PRINTERS_READ),
-    db: AsyncSession = Depends(get_db),
 ):
     """Get storage information from the printer."""
-    result = await db.execute(select(Printer).where(Printer.id == printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+    printer = await _load_printer_or_404(printer_id)
 
     storage_info = await get_storage_info_async(printer.ip_address, printer.access_code, printer_model=printer.model)
 
@@ -2380,6 +2512,18 @@ async def configure_ams_slot(
         effective_tray_info_idx = kprofile_filament_id
         if kprofile_setting_id:
             effective_setting_id = kprofile_setting_id
+
+    # Back-fill setting_id from the resolved filament id when the client sent
+    # none. Built-in / local / Orca-generic presets in the Configure AMS Slot
+    # modal leave setting_id empty (they carry only a GF* tray_info_idx), and
+    # the printer treats a filament-id-without-setting-id slot as half
+    # configured: it shows the new material briefly, then reverts to its
+    # previously stored profile (#2604). This mirrors the derivation the
+    # inventory/assignment path already does (inventory.py). filament_id_to_
+    # setting_id leaves P* user presets and already-GFS* values unchanged, so
+    # only the empty-setting_id generic paths are affected.
+    if effective_tray_info_idx and not effective_setting_id:
+        effective_setting_id = filament_id_to_setting_id(effective_tray_info_idx)
 
     # Always send ams_set_filament_setting — the user explicitly clicked
     # "Configure Slot", so honor that.  Previous versions skipped this for

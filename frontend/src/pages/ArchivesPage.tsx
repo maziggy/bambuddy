@@ -948,6 +948,7 @@ function ArchiveCard({
         <div className="flex items-center justify-between gap-2 mb-1">
           <h3 className="min-w-0 font-medium text-white truncate">
             {archive.print_name || archive.filename}
+            {archive.plate_id != null && ` — ${t('printers.plateNumber', { number: archive.plate_id })}`}
           </h3>
           <Button
             variant="ghost"

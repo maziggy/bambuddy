@@ -372,7 +372,7 @@ export function PrintModal({
   });
 
   // Only fetch printer status when single printer selected (for filament mapping)
-  const { data: printerStatus } = useQuery({
+  const { data: printerStatus, isLoading: printerStatusLoading } = useQuery({
     queryKey: ['printer-status', effectivePrinterId],
     queryFn: () => api.getPrinterStatus(effectivePrinterId!),
     enabled: !!effectivePrinterId,
@@ -1100,6 +1100,12 @@ export function PrintModal({
     // the rest — the banner above says which state we are in.
     if (perPlateReqsPending || perPlateReqsFailed) return false;
 
+    // A single-printer AMS job must wait for the printer's live status before it
+    // can resolve the filament mapping. Submitting mid-load matched against zero
+    // known trays and serialized an all-[-1] mapping, which dispatched the print
+    // to the empty external feed (#2589).
+    if (assignmentMode === 'printer' && selectedPrinters.length === 1 && printerStatusLoading) return false;
+
     return true;
   }, [
     selectedPrinters.length,
@@ -1111,6 +1117,7 @@ export function PrintModal({
     isPending,
     perPlateReqsPending,
     perPlateReqsFailed,
+    printerStatusLoading,
   ]);
 
   // Quantity only applies for single-printer or model-based assignment (not multi-printer)
@@ -1479,6 +1486,17 @@ export function PrintModal({
             {updateQueueMutation.isError && (
               <div className="mb-4 p-3 bg-red-100 dark:bg-red-500/20 border border-red-500/50 rounded-lg text-sm text-red-700 dark:text-red-400">
                 {(updateQueueMutation.error as Error)?.message || 'Failed to complete operation'}
+              </div>
+            )}
+
+            {/* Waiting for the printer's AMS status: submitting now would map
+                against zero known trays and dispatch to the empty external feed (#2589). */}
+            {assignmentMode === 'printer' && selectedPrinters.length === 1 && printerStatusLoading && (
+              <div className="mb-4 p-3 bg-blue-100 dark:bg-blue-500/20 border border-blue-500/50 rounded-lg text-sm text-blue-700 dark:text-blue-400 flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {t('printModal.waitingForAmsStatus', {
+                  printer: printers?.find((p) => p.id === effectivePrinterId)?.name ?? '',
+                })}
               </div>
             )}
 

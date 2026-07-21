@@ -717,8 +717,9 @@ class TestVirtualPrinterInstance:
         # settings values must flow through to the queue item exactly as stored.
         settings_map = {
             "virtual_printer_archive_name_source": None,
-            "default_bed_levelling": "false",  # model default: True
-            "default_flow_cali": "true",  # model default: False
+            # Legacy boolean-string rows still coerce (false->off, true->on).
+            "default_bed_levelling": "false",  # tri-state default: auto
+            "default_flow_cali": "true",  # tri-state default: auto
             "default_vibration_cali": "false",  # model default: True
             "default_layer_inspect": "true",  # model default: False
             "default_timelapse": "true",  # model default: False
@@ -746,8 +747,8 @@ class TestVirtualPrinterInstance:
 
         assert len(added_items) == 1
         queue_item = added_items[0]
-        assert queue_item.bed_levelling is False, "default_bed_levelling=false must flow through"
-        assert queue_item.flow_cali is True, "default_flow_cali=true must flow through"
+        assert queue_item.bed_levelling == "off", "default_bed_levelling=false must flow through"
+        assert queue_item.flow_cali == "on", "default_flow_cali=true must flow through"
         assert queue_item.vibration_cali is False, "default_vibration_cali=false must flow through"
         assert queue_item.layer_inspect is True, "default_layer_inspect=true must flow through"
         assert queue_item.timelapse is True, "default_timelapse=true must flow through"
@@ -806,8 +807,8 @@ class TestVirtualPrinterInstance:
         assert len(added_items) == 1
         queue_item = added_items[0]
         # These must match the AppSettings (Pydantic) defaults in schemas/settings.py
-        assert queue_item.bed_levelling is True
-        assert queue_item.flow_cali is False
+        assert queue_item.bed_levelling == "auto"
+        assert queue_item.flow_cali == "auto"
         assert queue_item.vibration_cali is True
         assert queue_item.layer_inspect is False
         assert queue_item.timelapse is False
@@ -896,8 +897,8 @@ class TestVirtualPrinterInstance:
         assert len(added_items) == 1
         queue_item = added_items[0]
         assert queue_item.timelapse is True, "Slicer's timelapse=True must override settings.default_timelapse=False"
-        assert queue_item.bed_levelling is False, "Slicer's bed_leveling=False must override default_bed_levelling=True"
-        assert queue_item.flow_cali is True
+        assert queue_item.bed_levelling == "off", "Slicer's bed_leveling=False must override default_bed_levelling"
+        assert queue_item.flow_cali == "on"
         assert queue_item.vibration_cali is False
         assert queue_item.layer_inspect is True
         # Capture is consumed — no lingering state for the next print of the same name.
@@ -962,8 +963,75 @@ class TestVirtualPrinterInstance:
         assert len(added_items) == 1
         queue_item = added_items[0]
         assert queue_item.timelapse is True, "integer 1 must coerce to True"
-        assert queue_item.bed_levelling is False, "integer 0 must coerce to False"
-        assert queue_item.flow_cali is True
+        assert queue_item.bed_levelling == "off", "integer 0 must coerce to off"
+        assert queue_item.flow_cali == "on"
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_captures_slicer_auto_from_int_companion(self, tmp_path):
+        """The slicer's tri-state rides on the int companion (auto_bed_leveling /
+        extrude_cali_flag). When the slicer picks "Auto" it sends bed_leveling
+        false + auto_bed_leveling 2; the VP must record "auto", not "off".
+        """
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items = []
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=added_items.append)
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=26,
+            name="SlicerAuto",
+            mode="queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800026",
+            auto_dispatch=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        await inst.on_print_command(
+            file_path.name,
+            {
+                "command": "project_file",
+                "bed_leveling": False,
+                "auto_bed_leveling": 2,
+                "flow_cali": False,
+                "extrude_cali_flag": 2,
+            },
+        )
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "test"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        queue_item = added_items[0]
+        assert queue_item.bed_levelling == "auto", "auto_bed_leveling=2 must record 'auto'"
+        assert queue_item.flow_cali == "auto", "extrude_cali_flag=2 must record 'auto'"
 
     @pytest.mark.asyncio
     async def test_add_to_print_queue_populates_required_filament_types(self, tmp_path):
@@ -1895,7 +1963,7 @@ class TestVirtualPrinterInstance:
         params = dict(compiled.params)
         assert _json.loads(params["nozzle_mapping"]) == [16, -1, -1, 1]
         assert params["timelapse"] is True
-        assert params["bed_levelling"] is False  # MQTT bed_leveling → column bed_levelling
+        assert params["bed_levelling"] == "off"  # MQTT bed_leveling → column bed_levelling (tri-state)
         # Recent-queue tracking dict is cleared after the patch.
         assert file_path.name not in inst._recent_queue_items
 

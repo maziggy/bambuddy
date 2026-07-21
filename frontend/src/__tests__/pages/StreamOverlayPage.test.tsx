@@ -368,4 +368,66 @@ describe('StreamOverlayPage', () => {
       });
     });
   });
+
+  describe('kiosk token mode (#2613)', () => {
+    const mockOverlayPrinting = {
+      id: 1,
+      name: 'X1 Carbon',
+      camera_rotation: 0,
+      connected: true,
+      state: 'RUNNING',
+      current_print: 'KioskBenchy.gcode.3mf',
+      gcode_file: 'plate_1.gcode',
+      progress: 67,
+      remaining_time: 40,
+      layer_num: 10,
+      total_layers: 20,
+      stg_cur_name: null,
+      time_format: 'system',
+    };
+
+    it('reads the token-authed overlay-status feed and carries the token to the camera', async () => {
+      let overlayHit = false;
+      server.use(
+        http.get('/api/v1/printers/:id/overlay-status', () => {
+          overlayHit = true;
+          return HttpResponse.json(mockOverlayPrinting);
+        })
+      );
+
+      renderOverlayPage(1, '?token=obs-tok');
+
+      await waitFor(() => {
+        expect(screen.getByText('KioskBenchy')).toBeInTheDocument();
+      });
+      expect(overlayHit).toBe(true);
+      expect(screen.getByText('67%')).toBeInTheDocument();
+
+      // The camera <img> must carry the same kiosk token — a fresh OBS browser
+      // has no session to mint a camera stream token from.
+      const img = screen.getByAltText('Camera stream') as HTMLImageElement;
+      expect(img.src).toContain('token=obs-tok');
+    });
+
+    it('does not touch the JWT-only status endpoint or a WebSocket in kiosk mode', async () => {
+      let statusHit = false;
+      server.use(
+        http.get('/api/v1/printers/:id/overlay-status', () => HttpResponse.json(mockOverlayPrinting)),
+        http.get('/api/v1/printers/:id/status', () => {
+          statusHit = true;
+          return HttpResponse.json(mockStatusIdle);
+        })
+      );
+
+      renderOverlayPage(1, '?token=obs-tok');
+
+      await waitFor(() => {
+        expect(screen.getByText('KioskBenchy')).toBeInTheDocument();
+      });
+      // The logged-in status query is disabled when a token is present, so an
+      // unauthenticated OBS browser never fires a doomed 401 (or opens a socket).
+      expect(statusHit).toBe(false);
+      expect(WebSocket).not.toHaveBeenCalled();
+    });
+  });
 });

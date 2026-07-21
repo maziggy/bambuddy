@@ -704,13 +704,13 @@ class PrinterManager:
         filename: str,
         plate_id: int = 1,
         ams_mapping: list[int] | None = None,
-        bed_levelling: bool = True,
-        flow_cali: bool = False,
+        bed_levelling: str = "auto",
+        flow_cali: str = "auto",
         vibration_cali: bool = True,
         layer_inspect: bool = False,
         timelapse: bool = False,
         use_ams: bool = True,
-        nozzle_offset_cali: bool = False,
+        nozzle_offset_cali: str = "auto",
         nozzle_mapping: str | None = None,
     ) -> bool:
         """Start a print on a connected printer.
@@ -997,6 +997,64 @@ def resolve_plate_id(state) -> int | None:
     return parse_plate_id(state.gcode_file)
 
 
+def resolve_expected_tray(
+    raw_slot: int | None,
+    ams_layout: list[tuple[int, bool]],
+    mapping_raw: object,
+) -> int | None:
+    """Globalise a raw firmware ``tray_tar``/``tray_pre`` value for the runout UI (#2587).
+
+    The firmware reports the target/previous slot as a bare number whose meaning
+    depends on the AMS layout (see ``PrinterState.tray_tar``). This mirrors the
+    ``tray_now`` handling so the resolved ID lines up with what the AMS graphic
+    already highlights via ``ams_id*4 + slot``.
+
+    ``ams_layout`` is a list of ``(ams_id, is_ams_ht)`` for the connected units.
+
+    - ``255``/``-1`` (none/idle) -> ``None``
+    - ``254`` (external spool) -> ``254``
+    - ``128``-``135`` (AMS-HT) -> already global, returned as-is
+    - ``0``-``3`` local slot:
+        * exactly one regular AMS -> ``ams_id*4 + slot``
+        * several regular AMS -> resolved via the snow-encoded ``mapping`` field
+          (each entry = ``ams_hw_id*256 + slot``; ``65535`` = unmapped), or
+          ``None`` when it stays ambiguous (honest "can't determine")
+        * no regular AMS -> ``None``
+    - ``4``-``15`` -> already a global regular-AMS ID, returned as-is
+
+    Returns ``None`` for anything it can't place, so the caller surfaces a
+    "check the printer" message instead of pointing at the wrong slot.
+    """
+    if raw_slot is None or raw_slot in (255, -1):
+        return None
+    if raw_slot == 254:
+        return 254
+    if 128 <= raw_slot <= 135:
+        return raw_slot
+    if 0 <= raw_slot <= 3:
+        regular = [ams_id for ams_id, is_ht in ams_layout if not is_ht]
+        if len(regular) == 1:
+            return regular[0] * 4 + raw_slot
+        if len(regular) > 1:
+            if not isinstance(mapping_raw, list):
+                return None
+            candidates: set[int] = set()
+            for value in mapping_raw:
+                if not isinstance(value, int) or value >= 65535:
+                    continue
+                ams_hw_id = value >> 8
+                slot = value & 0xFF
+                if 0 <= ams_hw_id <= 3 and (slot & 0x03) == raw_slot:
+                    candidates.add(ams_hw_id * 4 + raw_slot)
+                elif 128 <= ams_hw_id <= 135 and raw_slot == 0:
+                    candidates.add(ams_hw_id)
+            return candidates.pop() if len(candidates) == 1 else None
+        return None
+    if 4 <= raw_slot <= 15:
+        return raw_slot
+    return None
+
+
 def printer_state_to_dict(
     state: PrinterState,
     printer_id: int | None = None,
@@ -1239,6 +1297,28 @@ def printer_state_to_dict(
         "ams_status_main": state.ams_status_main,
         "ams_status_sub": state.ams_status_sub,
         "tray_now": state.tray_now,
+        # Runout / filament-replacement guidance (#2587). Only meaningful while
+        # PAUSED — resolve the firmware's target/previous slot to a global tray ID
+        # so the AMS graphic can highlight the slot the print now expects and name
+        # the one that ran out. None when idle, not paused, or unresolvable.
+        "expected_tray": (
+            resolve_expected_tray(
+                state.tray_tar,
+                [(u["id"], u.get("is_ams_ht", False)) for u in ams_units],
+                raw_data.get("mapping"),
+            )
+            if state.state == "PAUSE"
+            else None
+        ),
+        "previous_tray": (
+            resolve_expected_tray(
+                state.tray_pre,
+                [(u["id"], u.get("is_ams_ht", False)) for u in ams_units],
+                raw_data.get("mapping"),
+            )
+            if state.state == "PAUSE"
+            else None
+        ),
         # Per-AMS extruder map: {ams_id: extruder_id} where 0=right, 1=left
         "ams_extruder_map": ams_extruder_map,
         # WiFi signal strength

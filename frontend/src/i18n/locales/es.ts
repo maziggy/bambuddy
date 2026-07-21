@@ -604,6 +604,12 @@ export default {
       title: 'Este slot es el filamento {{n}} en la impresión activa',
       ariaLabel: 'Slot de impresión activa {{n}}',
     },
+    expectedSlot: {
+      title: 'La impresora está esperando filamento en este slot',
+      ariaLabel: 'Slot de filamento esperado {{n}}',
+      label: '{{ams}} · Slot {{slot}}',
+      external: 'Bobina externa',
+    },
     // Filaments section
     filaments: 'Filamentos',
     // Camera
@@ -2103,6 +2109,9 @@ export default {
     preheatOverride_inherit: 'Heredar',
     preheatOverride_on: 'Activado',
     preheatOverride_off: 'Desactivado',
+    calibrationMode_off: 'Desactivado',
+    calibrationMode_on: 'Activado',
+    calibrationMode_auto: 'Automático',
     preheatTargetOverride: 'Sobrescribir objetivo de cámara (°C, vacío = por filamento)',
     plateClear: 'Confirmación de cama despejada',
     requirePlateClear: 'Requerir confirmación de cama despejada',
@@ -2808,6 +2817,9 @@ export default {
     clearFailed: 'Error al borrar los errores HMS',
     actionSuccess: 'Acción enviada a la impresora',
     actionFailed: 'No se pudo enviar la acción',
+    runoutExpectedSlot: 'El filamento se agotó en {{ranOut}}. La impresora ahora espera filamento compatible en {{expected}}. Inserta una bobina en {{expected}} y luego selecciona Reintentar.',
+    runoutExpectedSlotOnly: 'La impresora está esperando filamento compatible en {{expected}}. Inserta una bobina ahí y luego selecciona Reintentar.',
+    runoutSlotUnknown: 'El filamento se agotó y la impresión está en pausa. Bambuddy no pudo determinar qué slot espera ahora la impresora — revisa la pantalla de la impresora para ver el slot solicitado.',
     actions: {
       RESUME_PRINTING: 'Reanudar impresión',
       RESUME_PRINTING_DEFECTS: 'Reanudar (defectos aceptables)',
@@ -4026,6 +4038,8 @@ export default {
     refreshPresets: 'Actualizar',
     refreshPresetsTitle: 'Actualizar preajustes — recuperar los listados más recientes de la nube y los paquetes (úselo tras eliminar un preajuste en Bambu Studio o Bambu Handy)',
     allPresetsRequired: 'Deben seleccionarse todos los preajustes',
+    useEmbedded: 'Usar la configuración incorporada del archivo',
+    useEmbeddedHint: 'Laminar tal como lo configuró el diseñador (perímetros, relleno, filamento) en lugar de los perfiles de arriba. Disponible porque tu impresora coincide con la del archivo.',
     enqueuing: 'Enviando el trabajo de laminado…',
     queued: 'En cola…',
     failed: 'Error al laminar. Consulte los registros del contenedor auxiliar del laminador.',
@@ -4604,6 +4618,7 @@ export default {
     overrideWith: 'Anular con',
     resetToOriginal: 'Restablecer al original',
     insufficientFilamentTitle: 'No hay suficiente filamento',
+    waitingForAmsStatus: 'Esperando el estado del AMS de {{printer}}…',
     insufficientFilamentMessage: 'Algunas bobinas asignadas tienen menos filamento restante del que necesita esta impresión:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: necesita {{required}} g, restante {{remaining}} g',
     printAnyway: 'Imprimir de todos modos',
@@ -6675,6 +6690,7 @@ export default {
     scope: {
       camera_stream: 'Transmisión de cámara',
       camwall: 'Muro de cámaras',
+      overlay: 'Superposición de streaming',
     },
     title: 'Tokens de API de la cámara',
     navTitle: 'Tokens de API de la cámara',
@@ -6693,6 +6709,8 @@ export default {
         'Un token de transmisión de cámara solo puede obtener transmisiones e instantáneas. Úsalo para Home Assistant, Frigate o cualquier cosa que incruste una sola cámara.',
       hintCamWall:
         'Un token de muro de cámaras abre /camwall en una pantalla sin iniciar sesión. Puede ver el nombre y el estado de cada impresora, y sus transmisiones de cámara. No puede ver nombres de archivo, direcciones ni códigos de acceso.',
+      hintOverlay:
+        'Un token de superposición de streaming abre /overlay/{printerId} en una pantalla sin iniciar sesión, para OBS o cualquier transmisión en vivo. Puede ver la transmisión de la cámara de una impresora y su estado de impresión en vivo, incluido el nombre de archivo que aparece en pantalla. No puede ver direcciones ni códigos de acceso.',
       title: 'Crear nuevo token',
       nameLabel: 'Nombre del token',
       namePlaceholder: 'p. ej. Home Assistant',
@@ -6705,6 +6723,9 @@ export default {
       camWallUrlTitle: 'Dirección del muro de cámaras para esta pantalla',
       camWallUrlHint:
         'Abre esta dirección en la pantalla. Cualquiera que pueda leerla puede ver el muro, así que trátala como una llave: revoca el token para dejar la pantalla sin acceso.',
+      overlayUrlTitle: 'Dirección de superposición para OBS',
+      overlayUrlHint:
+        'Agrega esto como Fuente de navegador en OBS. Cambia el número de /overlay/1 por el número de tu impresora (de su dirección en la página Impresoras). Cualquiera que pueda leer la dirección puede ver la transmisión, así que trátala como una llave: revoca el token para cortar el acceso.',
       title: 'Token creado — cópielo ahora',
       warning:
         'Esta es la única vez que este token estará visible. Después de cerrar este diálogo no podrá volver a verlo nunca.',

@@ -220,6 +220,13 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   // user had no way to switch plates without cloning the preset.
   const [bedType, setBedType] = useState<string | null>(null);
 
+  // "Slice as designed" (#2611). When on, the backend honours the source
+  // 3MF's embedded project_settings.config (the designer's own wall count,
+  // infill, etc.) instead of the picked process/filament profiles. Only
+  // offered when the picked printer matches the design's target model —
+  // see canUseEmbedded below.
+  const [useEmbedded, setUseEmbedded] = useState(false);
+
   // Slicer Pipelines (#1425) — apply a saved preset bundle to all four slots
   // with one pick, or save the current selection as a new pipeline.
   const pipelinesQuery = useQuery({
@@ -380,6 +387,24 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   const embeddedPrinter = platesQuery.data?.embedded_printer ?? null;
   const embeddedProcess = platesQuery.data?.embedded_process ?? null;
 
+  // "Slice as designed" is offered only when the source carries embedded
+  // settings (a real project 3MF, not an STL) AND the picked printer matches
+  // the design's target model. The match gate is load-bearing: honouring
+  // embedded settings for a different model would place the model on the
+  // wrong bed. Names come from the same preset namespace, so a normalised
+  // (strip "# " prefix, case-fold) equality is enough.
+  const canUseEmbedded = useMemo<boolean>(() => {
+    if (!embeddedPrinter || !embeddedProcess || !selectedPrinterName) return false;
+    const norm = (s: string) => s.replace(/^#\s*/, '').trim().toLowerCase();
+    return norm(selectedPrinterName) === norm(embeddedPrinter);
+  }, [embeddedPrinter, embeddedProcess, selectedPrinterName]);
+
+  // Drop back to profile slicing whenever the toggle stops being offered
+  // (e.g. the user switches to a printer that doesn't match the design).
+  useEffect(() => {
+    if (!canUseEmbedded) setUseEmbedded(false);
+  }, [canUseEmbedded]);
+
   // Printer pre-pick: defaults to the printer the 3MF was prepared for when
   // that preset is available, else the first listed printer. Runs once when
   // presets first arrive; later re-renders preserve any manual choice.
@@ -476,6 +501,10 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
       filament_presets: filamentPresets as PresetRef[],
       ...(plate != null ? { plate } : {}),
       ...(bedType != null ? { bed_type: bedType } : {}),
+      // The preset refs above are still sent (the backend validator requires
+      // them) but go unused when this flag is set — the slicer falls back on
+      // the file's embedded project_settings.config instead.
+      ...(useEmbedded && canUseEmbedded ? { use_embedded_settings: true } : {}),
     };
   }
 
@@ -710,25 +739,53 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                 data={presetsQuery.data}
                 value={printerPreset}
                 onChange={setPrinterPreset}
-                disabled={isEnqueuing}
+                // Locked in embedded mode too: the picked printer is unused on
+                // the embedded-settings path, and changing it away from the
+                // design's target would drop canUseEmbedded and yank the toggle
+                // out from under the user (#2611).
+                disabled={isEnqueuing || useEmbedded}
               />
+              {/* "Slice as designed" (#2611): honour the file's embedded
+                  settings instead of the picked process/filament. Offered
+                  only when the picked printer matches the design's target. */}
+              {canUseEmbedded && (
+                <label className="flex items-start gap-2 text-sm text-bambu-gray cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={useEmbedded}
+                    onChange={(e) => setUseEmbedded(e.target.checked)}
+                    disabled={isEnqueuing}
+                    className="mt-0.5 cursor-pointer"
+                  />
+                  <span>
+                    {t('slice.useEmbedded')}
+                    <span className="block text-xs text-bambu-gray/70">
+                      {t('slice.useEmbeddedHint')}
+                    </span>
+                  </span>
+                </label>
+              )}
               <PresetDropdown
                 label={t('slice.process')}
                 slot="process"
                 data={presetsQuery.data}
                 value={processPreset}
                 onChange={setProcessPreset}
-                disabled={isEnqueuing}
+                disabled={isEnqueuing || useEmbedded}
                 selectedPrinterName={selectedPrinterName}
                 compatIndex={compatIndex}
               />
               {/* Bed-type override (#1337). Always visible, always enabled.
                   The backend patches curr_bed_type on the resolved process
                   JSON before forwarding to the sidecar. */}
+              {/* Bed-type patches curr_bed_type onto the resolved process
+                  JSON, which the embedded-settings path never sends — so it
+                  has no effect there and is disabled to avoid implying it
+                  does. */}
               <BedTypeDropdown
                 value={bedType}
                 onChange={setBedType}
-                disabled={isEnqueuing}
+                disabled={isEnqueuing || useEmbedded}
               />
               {/* Filament reqs may need a server-side preview-slice for
                   unsliced project files (single-pass, then cached). Show a
@@ -775,7 +832,7 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                           return next;
                         })
                       }
-                      disabled={isEnqueuing || !isUsed}
+                      disabled={isEnqueuing || !isUsed || useEmbedded}
                       swatchColor={filamentSlots.length > 1 ? slot.color : undefined}
                       selectedPrinterName={selectedPrinterName}
                       compatIndex={compatIndex}

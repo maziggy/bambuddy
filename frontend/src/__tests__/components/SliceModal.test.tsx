@@ -259,6 +259,79 @@ describe('SliceModal', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
+  it('offers "use the file\'s built-in settings" when the printer matches the design, and sends the flag (#2611)', async () => {
+    const onClose = vi.fn();
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+    // A project 3MF whose embedded printer matches a listed preset — the
+    // printer pre-pick lands on it, so selectedPrinterName === embedded and
+    // the "slice as designed" toggle is offered.
+    mockApi.getLibraryFilePlates.mockResolvedValue({
+      file_id: 100,
+      filename: 'Designed.3mf',
+      plates: [],
+      is_multi_plate: false,
+      embedded_printer: 'Bambu Lab X1 Carbon 0.4 nozzle',
+      embedded_process: '0.20mm Standard',
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose,
+    });
+
+    const user = userEvent.setup();
+    const toggle = (await screen.findByLabelText(
+      /Use the file's built-in settings/,
+    )) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+
+    // All preset dropdowns are live until the toggle is on, then bypassed —
+    // the printer included, so changing it can't silently drop the mode.
+    const printerSelect = presetSelects()[0];
+    const processSelect = presetSelects()[1];
+    expect(printerSelect.disabled).toBe(false);
+    expect(processSelect.disabled).toBe(false);
+    await user.click(toggle);
+    expect(printerSelect.disabled).toBe(true);
+    expect(processSelect.disabled).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+    await waitFor(() => {
+      expect(mockApi.sliceLibraryFile).toHaveBeenCalledWith(
+        100,
+        expect.objectContaining({ use_embedded_settings: true }),
+      );
+    });
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it('hides the embedded-settings toggle when the picked printer differs from the design (#2611)', async () => {
+    // Embedded target is a model with no matching preset in the listing, so
+    // the printer pre-pick falls back to the local default (Imported X1C),
+    // which does not match — honouring embedded settings would risk the
+    // wrong bed, so the toggle stays hidden.
+    mockApi.getLibraryFilePlates.mockResolvedValue({
+      file_id: 100,
+      filename: 'Designed.3mf',
+      plates: [],
+      is_multi_plate: false,
+      embedded_printer: 'Bambu Lab P1S 0.4 nozzle',
+      embedded_process: '0.20mm Standard',
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByText('Imported X1C 0.4')).toBeDefined());
+    expect(screen.queryByLabelText(/Use the file's built-in settings/)).toBeNull();
+  });
+
   it('includes bed_type in the request when the user picks a non-auto plate (#1337)', async () => {
     const onClose = vi.fn();
     mockApi.sliceLibraryFile.mockResolvedValue({

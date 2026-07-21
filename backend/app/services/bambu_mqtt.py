@@ -32,6 +32,14 @@ logger = logging.getLogger(__name__)
 #   "n3s/<id>"  – AMS HT (H2D Pro and similar; IDs typically start at 128)
 _AMS_MODULE_PREFIXES = ("ams/", "n3f/", "n3s/")
 
+# gcode_state values that mean the printer is not idle and must not be handed a
+# new start-print (#2598). The firmware rejects a project_file while busy with
+# 0500_4004 "Device is busy and cannot start a new task", and on some models
+# (A1 mini reported) that error cancels the RUNNING job. IDLE / FINISH / FAILED
+# are valid start targets and are deliberately excluded. Mirrors
+# printer_manager.ACTIVE_PRINT_STATES and print_scheduler._ACTIVE_PRINT_STATES.
+_ACTIVE_PRINT_STATES = frozenset({"PREPARE", "SLICING", "RUNNING", "PAUSE"})
+
 
 def parse_ams_filament_backup_from_cfg(cfg_raw: object) -> bool | None:
     """Extract AMS Filament Backup state from a Bambu push_status ``print.cfg`` value.
@@ -321,6 +329,15 @@ class PrinterState:
     active_extruder: int = 0
     # Currently loaded tray (global ID): 254/255 = external spools, 255 = no filament on legacy printers
     tray_now: int = 255
+    # Firmware's target/previous tray as reported in print.ams (RAW, not globalised):
+    #   tray_tar = the slot the paused/loading print now expects
+    #   tray_pre = the slot that was loaded before (e.g. the one that ran out)
+    # For a single regular AMS these equal the global tray ID; for multi-AMS they
+    # are local slot IDs (0-3) that must be resolved against the mapping field, and
+    # for AMS-HT they are already global (128-135). 255 = none/idle, 254 = external.
+    # Surfaced during a runout PAUSE so the UI can name the expected slot (#2587).
+    tray_tar: int = 255
+    tray_pre: int = 255
     # Last valid tray_now (0-253) — survives unload (255) for usage tracking after print completes
     last_loaded_tray: int = -1
     # Pending load target - used to track what tray we're loading for H2D disambiguation
@@ -1763,6 +1780,34 @@ class BambuMQTTClient:
                     self.state.ams_status_sub,
                 )
 
+            # Parse tray_tar / tray_pre (RAW). These identify the slot the firmware
+            # now expects (tray_tar) and the slot loaded before (tray_pre) — the key
+            # signal for a runout PAUSE where AMS Filament Backup has advanced to the
+            # next compatible slot (#2587). Stored raw here; globalised at the API
+            # boundary because that resolution needs the AMS layout. On H2D/multi-AMS
+            # these are local slot numbers (0-3), not global IDs.
+            for _tk, _attr in (("tray_tar", "tray_tar"), ("tray_pre", "tray_pre")):
+                if _tk in ams_data:
+                    _raw = ams_data[_tk]
+                    if isinstance(_raw, str):
+                        try:
+                            _val = int(_raw)
+                        except ValueError:
+                            _val = 255
+                    else:
+                        _val = _raw if _raw is not None else 255
+                    prev = getattr(self.state, _attr)
+                    setattr(self.state, _attr, _val)
+                    # Log changes only while paused — the moment the operator cares —
+                    # so a healthy print's normal tar churn doesn't spam the log.
+                    if _val != prev and _val not in (255, -1) and self.state.state == "PAUSE":
+                        logger.info(
+                            "[%s] AMS %s changed to %s while paused (expected/previous slot signal, #2587)",
+                            self.serial_number,
+                            _tk,
+                            _val,
+                        )
+
             # Parse tray_now from AMS dict - this is the currently loaded tray global ID
             # Note: tray_tar is also available but on H2D it's just slot number (0-3), not global ID
             if "tray_now" in ams_data:
@@ -2033,10 +2078,26 @@ class BambuMQTTClient:
                             # 10=spool present but filament not in feeder) indicate
                             # the slot should be cleared.  Without this, old
                             # tray_type/tray_color persist indefinitely (#784).
+                            #
+                            # BUT this is regular-AMS semantics. An AMS-HT (single-
+                            # tray high-temp dry box, id >= 128) reports its loaded
+                            # tray as state=9, not 11 — it doesn't feed filament into
+                            # a shared buffer the way a 4-slot AMS does. Applying the
+                            # `state != 11 → empty` rule to an HT unit wiped a present
+                            # spool on every power-on, when the printer sends a partial
+                            # {id, state=9} for the HT tray (#2594). Skip the state
+                            # heuristic for HT units — a genuine HT spool removal still
+                            # clears via the explicit tray_type=="" case above and the
+                            # tray_exist_bits cleanup below.
+                            try:
+                                _is_ht_unit = int(ams_id) >= 128
+                            except (TypeError, ValueError):
+                                _is_ht_unit = False
                             tray_state = new_tray.get("state")
                             if (
                                 tray_state is not None
                                 and tray_state != 11
+                                and not _is_ht_unit
                                 and "tray_type" not in new_tray
                                 and merged_tray.get("tray_type")
                             ):
@@ -3781,13 +3842,13 @@ class BambuMQTTClient:
         filename: str,
         plate_id: int = 1,
         ams_mapping: list[int] | None = None,
-        bed_levelling: bool = True,
-        flow_cali: bool = False,
+        bed_levelling: str = "auto",
+        flow_cali: str = "auto",
         vibration_cali: bool = True,
         layer_inspect: bool = False,
         timelapse: bool = False,
         use_ams: bool = True,
-        nozzle_offset_cali: bool = False,
+        nozzle_offset_cali: str = "auto",
         nozzle_mapping: str | None = None,
     ):
         """Start a print job on the printer.
@@ -3800,12 +3861,13 @@ class BambuMQTTClient:
             ams_mapping: List of tray IDs for each filament slot in the 3MF.
                          Global tray ID = (ams_id * 4) + slot_id, external = 254
             timelapse: Record timelapse video
-            bed_levelling: Auto bed levelling before print
-            flow_cali: Flow/pressure advance calibration
+            bed_levelling: Bed levelling — tri-state "off"/"on"/"auto" (auto skips
+                if the bed was levelled recently, matching BambuStudio).
+            flow_cali: Flow/pressure advance calibration — "off"/"on"/"auto".
             vibration_cali: Vibration compensation calibration
             layer_inspect: First layer AI inspection
             use_ams: Use AMS for automatic filament changes
-            nozzle_offset_cali: Run nozzle offset calibration before print
+            nozzle_offset_cali: Nozzle offset calibration — "off"/"on"/"auto"
                 (dual-nozzle printers only — silently ignored on single-nozzle).
             nozzle_mapping: Opaque JSON string captured from BambuStudio's
                 project_file for H2C rack-swap (O1C2) (#1780). When non-null
@@ -3814,7 +3876,31 @@ class BambuMQTTClient:
                 firmware honours the user's slicer pick instead of falling
                 back to "last matching nozzle" auto-pick. Silently ignored
                 on single-nozzle printers.
+
+        Returns True when the start command was published, False otherwise
+        (not connected, or the printer is already busy — see the run-state
+        guard below).
         """
+        # Never dispatch project_file to a printer that is not idle (#2598).
+        # This is the single publish choke point for every dispatch path — the
+        # queue scheduler, a manual start, a webhook, and a Virtual-Printer
+        # forwarded job all funnel through here — so one guard covers them all.
+        # The firmware rejects a start while busy with 0500_4004 ("Device is
+        # busy and cannot start a new task"), and on an A1 mini that error
+        # cancels the RUNNING job (#2598). IDLE / FINISH / FAILED are valid
+        # start targets; only the active-print states are refused. (A
+        # transport-level QoS-1 replay on reconnect would bypass this guard,
+        # but the dispatch/watchdog reconnect path hard-resets the client with a
+        # fresh client_id, so paho has no inflight project_file to replay there.)
+        if self.state.state in _ACTIVE_PRINT_STATES:
+            logger.warning(
+                "[%s] start_print refused: printer busy (gcode_state=%s) — not publishing project_file for %s",
+                self.serial_number,
+                self.state.state,
+                filename,
+            )
+            return False
+
         if self._client and self.state.connected:
             # Bambu print command format — matches Bambu Studio's format.
             # The calibration/leveling fields (timelapse, bed_leveling,
@@ -3879,14 +3965,46 @@ class BambuMQTTClient:
                         flat_ams_mapping.append(tray_id)
                         ams_mapping2.append({"ams_id": ams_id, "slot_id": slot_id})
 
-            # If all mapped slots are external spool (no real AMS trays), force use_ams=False.
-            # P1S/P1P with no AMS rejects use_ams=True with "Failed to get AMS mapping table".
-            # Skip for dual-nozzle printers — use_ams controls nozzle routing there.
-            # H2S falls through this gate now (#1386): it is single-nozzle and was
+            # Reconcile use_ams against the resolved ams_mapping for single-nozzle
+            # printers — the mapping is authoritative about whether this print
+            # actually feeds from the AMS. Skip for dual-nozzle printers, where
+            # use_ams encodes nozzle routing rather than an AMS on/off flag.
+            # H2S falls through here now (#1386): it is single-nozzle and was
             # hitting the dual-nozzle bypass, which caused 07FF_8012 when printing
             # without an AMS attached.
-            if ams_mapping and use_ams and not is_dual_nozzle:
-                if all(t is None or int(t) < 0 or int(t) >= 254 for t in ams_mapping):
+            #
+            # Two symmetric corrections:
+            #
+            # (a) A mapping that resolves a *real* AMS tray (0-253) forces
+            #     use_ams=True even if it arrived False. A print sent to a Virtual
+            #     Printer is sliced against the VP, which advertises no AMS, so the
+            #     slicer sends use_ams=false and that gets stamped on the queue item
+            #     — but at dispatch the scheduler colour-matches a real printer and
+            #     resolves a real AMS slot. Without this, the stale False reaches the
+            #     printer, which ignores the mapped slot and aborts at layer 0 on the
+            #     empty external spool ("not enough filament"). Diagnosed by
+            #     @Sawtaytoes (#2595, PR #2596).
+            #
+            # (b) Only an *explicit* external/virtual spool (254/255) may downgrade
+            #     to use_ams=False. P1S/P1P with no AMS rejects use_ams=True with
+            #     "Failed to get AMS mapping table". An unresolved slot (-1) does
+            #     NEITHER: it means the mapping was never resolved — e.g. a frontend
+            #     status-load race that persisted [-1] (#2589) — and treating it as
+            #     external silently started the print against an empty feed. A genuine
+            #     external selection is >=254; unresolved is -1; a loaded tray is
+            #     0-253. Keeping them distinct means an unresolved mapping fails loudly
+            #     (or is recomputed upstream) instead of silently going external, and
+            #     never gets force-enabled by (a) either.
+            if ams_mapping and not is_dual_nozzle:
+                has_real_tray = any(t is not None and 0 <= int(t) <= 253 for t in ams_mapping)
+                all_external = all(t is None or int(t) >= 254 for t in ams_mapping)
+                if has_real_tray and not use_ams:
+                    use_ams = True
+                    logger.info(
+                        "[%s] AMS mapping resolved a real slot — setting use_ams=True (#2595)",
+                        self.serial_number,
+                    )
+                elif use_ams and all_external:
                     use_ams = False
                     logger.info(
                         "[%s] All filament slots use external spool — setting use_ams=False",
@@ -3916,6 +4034,17 @@ class BambuMQTTClient:
             # the archive even before the printer echoes subtask_id back (#1485).
             self.last_dispatch_subtask_id = submission_id
 
+            # Tri-state calibration options → BambuStudio's getValueInt encoding:
+            # off=0 (never), on=1 (force every print), auto=2 (printer runs it
+            # only if it wasn't done recently). The paired bool field is true
+            # only for the explicit "on" state — for "auto" the bool is false and
+            # the int carries the intent, exactly as BambuStudio's SelectMachine
+            # sends it. Unknown values fall back to auto.
+            _tristate_wire = {"off": 0, "on": 1, "auto": 2}
+            bed_level_int = _tristate_wire.get(bed_levelling, 2)
+            flow_cali_int = _tristate_wire.get(flow_cali, 2)
+            nozzle_cali_int = _tristate_wire.get(nozzle_offset_cali, 2)
+
             command = {
                 "print": {
                     "sequence_id": "20000",
@@ -3926,32 +4055,34 @@ class BambuMQTTClient:
                     "md5": "",
                     "bed_type": "auto",
                     "timelapse": timelapse,
-                    "bed_leveling": bed_levelling,
-                    "auto_bed_leveling": 1 if bed_levelling else 0,
-                    "flow_cali": flow_cali,
+                    # bed_leveling stays a JSON bool (true only for "on") and
+                    # auto_bed_leveling carries the tri-state int — the exact
+                    # two-field shape BambuStudio sends. The int must stay a plain
+                    # number, never quoted (#1478 boolean-family concern applies to
+                    # the *_cali bools, not these companion ints).
+                    "bed_leveling": bed_levelling == "on",
+                    "auto_bed_leveling": bed_level_int,
+                    "flow_cali": flow_cali == "on",
                     "vibration_cali": vibration_cali,
                     "layer_inspect": layer_inspect,
                     "use_ams": use_ams,
                     "cfg": "0",
                     # extrude_cali_flag gates flow-dynamics calibration:
-                    # 1 = run it, 0 = printer skips entirely (#1478 evidence).
-                    # 2 = "skip and reuse stored PA" was previously believed to
-                    # suppress the stage too, but #1721 testing on H2D 01.x
-                    # showed stage 8 ("Calibrating dynamic flow") still gets
-                    # queued when we send 2. A real BambuStudio Send-dialog
-                    # capture today also showed 0 when the user disables flow
-                    # calibration. Going with 0 to actually suppress the
-                    # pre-print calibration stage.
-                    "extrude_cali_flag": 1 if flow_cali else 0,
+                    # 0 = never, 1 = force every print, 2 = auto (run only if the
+                    # filament wasn't calibrated recently). #1721 saw stage 8
+                    # ("Calibrating dynamic flow") still queued when we send 2 —
+                    # that is exactly the auto contract (the printer queues the
+                    # stage and skips it at runtime if recent), not a bug, so 2 is
+                    # the right wire value for "auto". off/on remain 0/1.
+                    "extrude_cali_flag": flow_cali_int,
                     "extrude_cali_manual_mode": 0,
-                    # 1 = run, 0 = skip (matches BambuStudio's wire today). The
-                    # earlier 2 = "skip" reading from #1682 didn't actually
-                    # suppress stage 39 ("Nozzle offset calibration") on H2D
-                    # 01.x — captured live in #1721. BambuStudio exposes the
-                    # toggle only for dual-nozzle (H2D/H2D Pro/H2C/X2D); single-
-                    # nozzle prints still resolve to 0 here so firmware never
-                    # runs a calibration the head doesn't support.
-                    "nozzle_offset_cali": 1 if (nozzle_offset_cali and is_dual_nozzle) else 0,
+                    # 0 = never, 1 = force, 2 = auto (skip if recent). #1721 saw
+                    # stage 39 ("Nozzle offset calibration") still queued on 2 —
+                    # again the auto contract, not a failure to suppress.
+                    # BambuStudio exposes the toggle only for dual-nozzle
+                    # (H2D/H2D Pro/H2C/X2D); single-nozzle prints resolve to 0 so
+                    # firmware never runs a calibration the head doesn't support.
+                    "nozzle_offset_cali": nozzle_cali_int if is_dual_nozzle else 0,
                     "subtask_name": filename.replace(".3mf", "").replace(".gcode", ""),
                     "profile_id": "0",
                     "project_id": submission_id,

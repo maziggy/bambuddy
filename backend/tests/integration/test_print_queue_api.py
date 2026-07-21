@@ -289,8 +289,8 @@ class TestPrintQueueAPI:
         data = {
             "printer_id": printer.id,
             "archive_id": archive.id,
-            "bed_levelling": False,
-            "flow_cali": True,
+            "bed_levelling": "off",
+            "flow_cali": "on",
             "vibration_cali": False,
             "layer_inspect": True,
             "timelapse": True,
@@ -299,8 +299,8 @@ class TestPrintQueueAPI:
         response = await async_client.post("/api/v1/queue/", json=data)
         assert response.status_code == 200
         result = response.json()
-        assert result["bed_levelling"] is False
-        assert result["flow_cali"] is True
+        assert result["bed_levelling"] == "off"
+        assert result["flow_cali"] == "on"
         assert result["vibration_cali"] is False
         assert result["layer_inspect"] is True
         assert result["timelapse"] is True
@@ -324,14 +324,65 @@ class TestPrintQueueAPI:
         response = await async_client.patch(
             f"/api/v1/queue/{item.id}",
             json={
-                "bed_levelling": False,
+                "bed_levelling": "off",
                 "timelapse": True,
             },
         )
         assert response.status_code == 200
         result = response.json()
-        assert result["bed_levelling"] is False
+        assert result["bed_levelling"] == "off"
         assert result["timelapse"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_reassign_rejected_while_dispatching(
+        self, async_client: AsyncClient, queue_item_factory, printer_factory, db_session
+    ):
+        """#2615: a claimed (in-flight) row rejects edits with 409, so its printer
+        can't be reassigned out from under the running FTP upload."""
+        from datetime import datetime, timezone
+
+        item = await queue_item_factory(dispatching_at=datetime.now(timezone.utc))
+        other = await printer_factory()
+        original_printer_id = item.printer_id
+
+        response = await async_client.patch(f"/api/v1/queue/{item.id}", json={"printer_id": other.id})
+        assert response.status_code == 409
+
+        await db_session.refresh(item)
+        assert item.printer_id == original_printer_id, "printer_id must not change on a dispatching row"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_update_skips_dispatching_item(
+        self, async_client: AsyncClient, queue_item_factory, printer_factory, db_session
+    ):
+        """#2615: bulk edits skip a claimed row rather than splitting it."""
+        from datetime import datetime, timezone
+
+        item = await queue_item_factory(dispatching_at=datetime.now(timezone.utc))
+        other = await printer_factory()
+        original_printer_id = item.printer_id
+
+        response = await async_client.patch("/api/v1/queue/bulk", json={"item_ids": [item.id], "printer_id": other.id})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["skipped_count"] == 1
+        assert body["updated_count"] == 0
+
+        await db_session.refresh(item)
+        assert item.printer_id == original_printer_id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_update_allowed_on_unclaimed_pending_item(
+        self, async_client: AsyncClient, queue_item_factory, db_session
+    ):
+        """Regression guard: a normal pending row (no claim) still edits fine."""
+        item = await queue_item_factory()
+        response = await async_client.patch(f"/api/v1/queue/{item.id}", json={"plate_id": 7})
+        assert response.status_code == 200
+        assert response.json()["plate_id"] == 7
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -878,7 +929,7 @@ class TestQueueLibraryFileSupport:
             "library_file_id": lib_file.id,
             "ams_mapping": [1, 2, -1, -1],
             "plate_id": 2,
-            "bed_levelling": False,
+            "bed_levelling": "off",
             "timelapse": True,
             "manual_start": True,
         }
@@ -888,7 +939,7 @@ class TestQueueLibraryFileSupport:
         assert result["library_file_id"] == lib_file.id
         assert result["ams_mapping"] == [1, 2, -1, -1]
         assert result["plate_id"] == 2
-        assert result["bed_levelling"] is False
+        assert result["bed_levelling"] == "off"
         assert result["timelapse"] is True
         assert result["manual_start"] is True
 
@@ -1054,8 +1105,8 @@ class TestBulkUpdateEndpoint:
             defaults = {
                 "status": "pending",
                 "position": 1,
-                "bed_levelling": True,
-                "flow_cali": False,
+                "bed_levelling": "on",
+                "flow_cali": "off",
                 "vibration_cali": True,
             }
             defaults.update(kwargs)
@@ -1072,12 +1123,12 @@ class TestBulkUpdateEndpoint:
     @pytest.mark.integration
     async def test_bulk_update_single_field(self, async_client: AsyncClient, queue_item_factory, db_session):
         """Verify bulk update can change a single field on multiple items."""
-        item1 = await queue_item_factory(bed_levelling=True)
-        item2 = await queue_item_factory(bed_levelling=True)
+        item1 = await queue_item_factory(bed_levelling="on")
+        item2 = await queue_item_factory(bed_levelling="on")
 
         response = await async_client.patch(
             "/api/v1/queue/bulk",
-            json={"item_ids": [item1.id, item2.id], "bed_levelling": False},
+            json={"item_ids": [item1.id, item2.id], "bed_levelling": "off"},
         )
         assert response.status_code == 200
         result = response.json()
@@ -1087,22 +1138,22 @@ class TestBulkUpdateEndpoint:
         # Verify items were updated
         await db_session.refresh(item1)
         await db_session.refresh(item2)
-        assert item1.bed_levelling is False
-        assert item2.bed_levelling is False
+        assert item1.bed_levelling == "off"
+        assert item2.bed_levelling == "off"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_bulk_update_multiple_fields(self, async_client: AsyncClient, queue_item_factory, db_session):
         """Verify bulk update can change multiple fields at once."""
-        item1 = await queue_item_factory(bed_levelling=True, flow_cali=False, manual_start=False)
-        item2 = await queue_item_factory(bed_levelling=True, flow_cali=False, manual_start=False)
+        item1 = await queue_item_factory(bed_levelling="on", flow_cali="off", manual_start=False)
+        item2 = await queue_item_factory(bed_levelling="on", flow_cali="off", manual_start=False)
 
         response = await async_client.patch(
             "/api/v1/queue/bulk",
             json={
                 "item_ids": [item1.id, item2.id],
-                "bed_levelling": False,
-                "flow_cali": True,
+                "bed_levelling": "off",
+                "flow_cali": "on",
                 "manual_start": True,
             },
         )
@@ -1111,23 +1162,23 @@ class TestBulkUpdateEndpoint:
         assert result["updated_count"] == 2
 
         await db_session.refresh(item1)
-        assert item1.bed_levelling is False
-        assert item1.flow_cali is True
+        assert item1.bed_levelling == "off"
+        assert item1.flow_cali == "on"
         assert item1.manual_start is True
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_bulk_update_skips_non_pending(self, async_client: AsyncClient, queue_item_factory, db_session):
         """Verify bulk update skips non-pending items."""
-        pending_item = await queue_item_factory(status="pending", bed_levelling=True)
-        printing_item = await queue_item_factory(status="printing", bed_levelling=True)
-        completed_item = await queue_item_factory(status="completed", bed_levelling=True)
+        pending_item = await queue_item_factory(status="pending", bed_levelling="on")
+        printing_item = await queue_item_factory(status="printing", bed_levelling="on")
+        completed_item = await queue_item_factory(status="completed", bed_levelling="on")
 
         response = await async_client.patch(
             "/api/v1/queue/bulk",
             json={
                 "item_ids": [pending_item.id, printing_item.id, completed_item.id],
-                "bed_levelling": False,
+                "bed_levelling": "off",
             },
         )
         assert response.status_code == 200
@@ -1139,9 +1190,9 @@ class TestBulkUpdateEndpoint:
         await db_session.refresh(pending_item)
         await db_session.refresh(printing_item)
         await db_session.refresh(completed_item)
-        assert pending_item.bed_levelling is False
-        assert printing_item.bed_levelling is True
-        assert completed_item.bed_levelling is True
+        assert pending_item.bed_levelling == "off"
+        assert printing_item.bed_levelling == "on"
+        assert completed_item.bed_levelling == "on"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -2199,7 +2250,7 @@ class TestAbortedStatusNormalisation:
             "printer_id": printer.id,
             "archive_id": archive.id,
             "quantity": 2,
-            "bed_levelling": False,
+            "bed_levelling": "off",
             "timelapse": True,
         }
         response = await async_client.post("/api/v1/queue/", json=data)
@@ -2210,7 +2261,7 @@ class TestAbortedStatusNormalisation:
         batch_items = [i for i in list_response.json() if i["batch_id"] == batch_id]
         assert len(batch_items) == 2
         for item in batch_items:
-            assert item["bed_levelling"] is False
+            assert item["bed_levelling"] == "off"
             assert item["timelapse"] is True
 
     @pytest.mark.asyncio
@@ -3164,3 +3215,75 @@ class TestForceColorOverridesAreScopedToThePlate:
         )
         assert response.status_code == 200
         assert [o["color_name"] for o in response.json()["filament_overrides"]] == ["Sunshine Yellow"]
+
+
+@pytest.mark.asyncio
+async def test_stop_offline_reconciles_linked_archive_status_2603(
+    async_client: AsyncClient, printer_factory, archive_factory, db_session
+):
+    """Stopping a printing item while the printer is offline must also close out its
+    archive (#2603).
+
+    When the stop command reaches the printer, the later MQTT completion event flips
+    the archive to cancelled. When the printer is offline no such event ever arrives,
+    so without this the archive stays "printing" forever while the queue row is
+    already cancelled — the reporter's archive 436. The offline branch reconciles the
+    archive directly.
+    """
+    from unittest.mock import MagicMock, patch
+
+    from backend.app.models.print_queue import PrintQueueItem
+
+    printer = await printer_factory(name="Offline printer")
+    archive = await archive_factory(
+        printer.id, status="printing", plate_id=22, filename="heart 3.gcode.3mf", with_run=False
+    )
+    item = PrintQueueItem(printer_id=printer.id, archive_id=archive.id, status="printing")
+    db_session.add(item)
+    await db_session.commit()
+    await db_session.refresh(item)
+
+    # stop_print returns False => printer offline / not connected.
+    with patch(
+        "backend.app.services.printer_manager.printer_manager.stop_print",
+        MagicMock(return_value=False),
+    ):
+        resp = await async_client.post(f"/api/v1/queue/{item.id}/stop")
+
+    assert resp.status_code == 200
+    await db_session.refresh(item)
+    await db_session.refresh(archive)
+    assert item.status == "cancelled"
+    assert archive.status == "cancelled", "an offline stop must reconcile the archive, not leave it 'printing'"
+    assert archive.completed_at is not None
+    assert archive.failure_reason == "Stopped by user (printer was offline)"
+
+
+@pytest.mark.asyncio
+async def test_stop_online_leaves_archive_for_mqtt_to_reconcile_2603(
+    async_client: AsyncClient, printer_factory, archive_factory, db_session
+):
+    """When the stop command reaches the printer, the archive is left to the MQTT
+    completion path — the offline reconcile must NOT fire and pre-empt it."""
+    from unittest.mock import MagicMock, patch
+
+    from backend.app.models.print_queue import PrintQueueItem
+
+    printer = await printer_factory(name="Online printer")
+    archive = await archive_factory(printer.id, status="printing", filename="heart 3.gcode.3mf", with_run=False)
+    item = PrintQueueItem(printer_id=printer.id, archive_id=archive.id, status="printing")
+    db_session.add(item)
+    await db_session.commit()
+    await db_session.refresh(item)
+
+    with patch(
+        "backend.app.services.printer_manager.printer_manager.stop_print",
+        MagicMock(return_value=True),
+    ):
+        resp = await async_client.post(f"/api/v1/queue/{item.id}/stop")
+
+    assert resp.status_code == 200
+    await db_session.refresh(item)
+    await db_session.refresh(archive)
+    assert item.status == "cancelled"
+    assert archive.status == "printing", "an online stop must leave the archive for the MQTT completion path"

@@ -105,12 +105,12 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "print_drying_enabled",
             "require_plate_clear",
             "queue_shortest_first",
-            "default_bed_levelling",
-            "default_flow_cali",
+            # default_bed_levelling / default_flow_cali / default_nozzle_offset_cali
+            # are tri-state strings (off/on/auto) — parsed via the raw-string else
+            # branch; the TriState validator coerces legacy "true"/"false" rows.
             "default_vibration_cali",
             "default_layer_inspect",
             "default_timelapse",
-            "default_nozzle_offset_cali",
             "ldap_enabled",
             "ldap_auto_provision",
             "local_login_enabled",

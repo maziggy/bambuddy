@@ -567,6 +567,12 @@ export default {
       title: '이 슬롯은 활성 인쇄의 필라멘트 {{n}}입니다',
       ariaLabel: '활성 인쇄 슬롯 {{n}}'
     },
+    expectedSlot: {
+      title: '프린터가 이 슬롯의 필라멘트를 기다리고 있습니다',
+      ariaLabel: '요청된 필라멘트 슬롯 {{n}}',
+      label: '{{ams}} · 슬롯 {{slot}}',
+      external: '외부 스풀',
+    },
     filaments: '필라멘트',
     openCameraOverlay: '카메라 오버레이 열기',
     openCameraWindow: '새 창에서 카메라 열기',
@@ -1981,6 +1987,9 @@ export default {
     preheatOverride_inherit: '상속',
     preheatOverride_on: '켜기',
     preheatOverride_off: '끄기',
+    calibrationMode_off: '끄기',
+    calibrationMode_on: '켜기',
+    calibrationMode_auto: '자동',
     preheatTargetOverride: '챔버 목표 재정의 (°C, 비우면 필라멘트 기본값)',
     plateClear: '플레이트 비움 확인',
     requirePlateClear: '플레이트 비움 확인 필요',
@@ -2655,6 +2664,9 @@ export default {
     clearFailed: 'HMS 오류 지우기 실패',
     actionSuccess: '프린터에 작업을 전송함',
     actionFailed: '작업 전송 실패',
+    runoutExpectedSlot: '{{ranOut}}의 필라멘트가 소진되었습니다. 프린터가 이제 {{expected}}에 호환 필라멘트를 기다리고 있습니다. {{expected}}에 스풀을 넣은 다음 다시 시도를 선택하세요.',
+    runoutExpectedSlotOnly: '프린터가 {{expected}}에 호환 필라멘트를 기다리고 있습니다. 거기에 스풀을 넣은 다음 다시 시도를 선택하세요.',
+    runoutSlotUnknown: '필라멘트가 소진되어 인쇄가 일시정지되었습니다. Bambuddy가 프린터가 현재 요청하는 슬롯을 확인할 수 없습니다 — 프린터 화면에서 요청된 슬롯을 확인하세요.',
     actions: {
       RESUME_PRINTING: '인쇄 재개',
       RESUME_PRINTING_DEFECTS: '재개 (결함 허용)',
@@ -3812,6 +3824,8 @@ export default {
     refreshPresets: '새로 고침',
     refreshPresetsTitle: '프리셋 새로 고침 — 최신 클라우드 및 번들 목록 가져오기 (Bambu Studio 또는 Bambu Handy에서 프리셋 삭제 후 사용)',
     allPresetsRequired: '모든 프리셋을 선택해야 합니다',
+    useEmbedded: '파일에 포함된 설정 사용',
+    useEmbeddedHint: '위 프로필 대신 디자이너가 설정한 대로(벽, 내부 채움, 필라멘트) 슬라이싱합니다. 프린터가 파일과 일치하여 사용할 수 있습니다.',
     enqueuing: '슬라이싱 작업 제출 중…',
     queued: '대기 중…',
     failed: '슬라이싱 실패. 슬라이서 사이드카 로그를 확인하세요.',
@@ -4368,6 +4382,7 @@ export default {
     overrideWith: '재정의',
     resetToOriginal: '원래대로 초기화',
     insufficientFilamentTitle: '필라멘트 부족',
+    waitingForAmsStatus: '{{printer}}의 AMS 상태를 기다리는 중…',
     insufficientFilamentMessage: '일부 할당된 스풀에 이 인쇄에 필요한 것보다 적은 필라멘트가 남아 있습니다:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: {{required}}g 필요, {{remaining}}g 남음',
     printAnyway: '그래도 인쇄',
@@ -6135,6 +6150,7 @@ export default {
     scope: {
       camera_stream: '카메라 스트림',
       camwall: '카메라 월',
+      overlay: '스트리밍 오버레이',
     },
     title: '카메라 API 토큰',
     navTitle: '카메라 API 토큰',
@@ -6153,6 +6169,8 @@ export default {
         '카메라 스트림 토큰은 카메라 스트림과 스냅숏만 가져올 수 있습니다. Home Assistant, Frigate 등 카메라 하나를 삽입하는 용도로 사용하세요.',
       hintCamWall:
         '카메라 월 토큰은 로그인 없이 화면에서 /camwall을 엽니다. 모든 프린터의 이름과 상태, 카메라 스트림을 볼 수 있습니다. 파일 이름, 주소, 액세스 코드는 볼 수 없습니다.',
+      hintOverlay:
+        '스트리밍 오버레이 토큰은 로그인 없이 화면에서 /overlay/{printerId}을 엽니다 — OBS나 모든 라이브 방송용입니다. 프린터 한 대의 카메라 스트림과 화면에 표시되는 파일 이름을 포함한 실시간 인쇄 상태를 볼 수 있습니다. 주소나 액세스 코드는 볼 수 없습니다.',
       title: '새 토큰 만들기',
       nameLabel: '토큰 이름',
       namePlaceholder: '예: Home Assistant',
@@ -6164,6 +6182,9 @@ export default {
       camWallUrlTitle: '이 화면용 카메라 월 주소',
       camWallUrlHint:
         '이 주소를 화면에서 여세요. 주소를 읽을 수 있는 사람은 누구나 월을 볼 수 있으므로 열쇠처럼 다루세요. 토큰을 취소하면 해당 화면의 접근이 차단됩니다.',
+      overlayUrlTitle: 'OBS용 오버레이 주소',
+      overlayUrlHint:
+        'OBS에서 이것을 브라우저 소스로 추가하세요. /overlay/1의 숫자를 프린터의 번호(프린터 페이지의 주소에 표시됨)로 변경하세요. 주소를 읽을 수 있는 사람은 누구나 스트림을 볼 수 있으므로 열쇠처럼 다루세요 — 접근을 차단하려면 토큰을 취소하세요.',
       title: '토큰 생성됨 — 지금 복사하세요',
       warning: '이 토큰은 이 번만 볼 수 있습니다. 이 대화상자를 닫으면 다시는 볼 수 없습니다.',
       copy: '복사',

@@ -135,6 +135,7 @@ All notable changes to Bambuddy will be documented in this file.
 
 ### Security
 - **Bumped two frontend dev-tooling dependencies with denial-of-service advisories (GHSA-3jxr-9vmj-r5cp, GHSA-52cp-r559-cp3m)** — `brace-expansion` and `js-yaml`, both pulled in transitively by `eslint` (via `minimatch` and `@eslint/eslintrc`), were flagged by `npm audit`. They are build/lint-time tooling only and are not part of the shipped app, so no running Bambuddy install was ever exposed. `npm audit fix` couldn't move eslint to the patched versions on its own, so they're pinned to the fixed releases through the existing `overrides` block in `frontend/package.json` (`brace-expansion ^5.0.7`, `js-yaml ^4.3.0`). `npm audit` now reports zero vulnerabilities and eslint still runs clean.
+- **Raised the Docker image's pip floor to 26.1.2 (PYSEC-2026-196)** — The image already upgraded pip before installing requirements, but the floor was `pip>=26.1` while PYSEC-2026-196's fix is specifically 26.1.2 (the related PYSEC-2026-2875/2876 are fixed in 26.1). `--upgrade` grabbed the latest in practice, but the loose floor could resolve 26.1.0/26.1.1, which are still vulnerable; the pin now matches the advisory exactly. Build tooling only — pip is not part of the running app.
 
 ## [0.2.4.9] - 2026-07-07
 

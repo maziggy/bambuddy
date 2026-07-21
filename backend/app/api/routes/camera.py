@@ -717,9 +717,7 @@ async def camera_stream(
     async with database.async_session() as db:
         printer = await get_printer_or_404(printer_id, db)
 
-        processing_result = await db.execute(
-            select(Settings.value).where(Settings.key == "camera_video_processing")
-        )
+        processing_result = await db.execute(select(Settings.value).where(Settings.key == "camera_video_processing"))
         camera_video_processing = processing_result.scalar_one_or_none() or "software"
 
     # Check for external camera first

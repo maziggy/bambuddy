@@ -355,6 +355,9 @@ export default {
     toast: {
       printerDeleted: 'Impressora excluída',
       missingSpoolAssignment: 'Impressão iniciada em {{printer}}. Atribuição de bobina ausente para: {{slots}}',
+      assignmentVerified: 'Filamento carregado no compartimento {{slot}} ({{printer}})',
+      assignmentVerifiedNoKprofile: 'Compartimento {{slot}} em {{printer}} carregado, mas o perfil de calibração de fluxo (perfil K) não foi aplicado',
+      assignmentNotConfirmed: 'Não foi possível confirmar a atribuição do compartimento {{slot}} em {{printer}} — verifique o compartimento AMS',
       printerAdded: 'Impressora adicionada',
       printerUpdated: 'Impressora atualizada',
       failedToDelete: 'Falha ao excluir impressora',

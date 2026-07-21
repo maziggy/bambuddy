@@ -358,6 +358,9 @@ export default {
     toast: {
       printerDeleted: 'Printer deleted',
       missingSpoolAssignment: 'Print started on {{printer}}. Missing spool assignment for: {{slots}}',
+      assignmentVerified: 'Filament loaded on slot {{slot}} ({{printer}})',
+      assignmentVerifiedNoKprofile: 'Slot {{slot}} on {{printer}} loaded, but the flow calibration (K-profile) was not applied',
+      assignmentNotConfirmed: 'Could not confirm the assignment for slot {{slot}} on {{printer}} — check the AMS slot',
       printerAdded: 'Printer added',
       printerUpdated: 'Printer updated',
       failedToDelete: 'Failed to delete printer',

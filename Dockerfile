@@ -54,7 +54,7 @@ RUN setcap cap_net_bind_service=+ep "$(readlink -f /usr/local/bin/python3)"
 # wheels (so a hostile wheel could hijack stdlib imports during install).
 COPY requirements.txt ./
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --root-user-action=ignore --upgrade 'pip>=26.1' \
+    pip install --root-user-action=ignore --upgrade 'pip>=26.1.2' \
  && pip install --root-user-action=ignore -r requirements.txt
 
 # Copy backend

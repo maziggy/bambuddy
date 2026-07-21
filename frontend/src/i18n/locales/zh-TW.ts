@@ -355,6 +355,9 @@ export default {
     toast: {
       printerDeleted: '印表機已刪除',
       missingSpoolAssignment: '已在{{printer}}上開始列印。以下料槽未分配耗材: {{slots}}',
+      assignmentVerified: '耗材已載入料槽{{slot}}（{{printer}}）',
+      assignmentVerifiedNoKprofile: '{{printer}}的料槽{{slot}}已載入，但流量校準設定檔（K設定檔）未套用',
+      assignmentNotConfirmed: '無法確認{{printer}}上料槽{{slot}}的分配，請檢查AMS料槽',
       printerAdded: '印表機已新增',
       printerUpdated: '印表機已更新',
       failedToDelete: '刪除印表機失敗',

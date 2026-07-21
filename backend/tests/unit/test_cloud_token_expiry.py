@@ -45,10 +45,27 @@ def _clear_validation_cache():
     bc.invalidate_validation_cache()
 
 
-def _service(status_code: int = 200, *, on_auth_failure=None, raises: Exception | None = None):
+# Bambu's genuine "token expired" 401 body — the only 401 that means sign-out.
+_EXPIRY_401_BODY = {"code": 4, "error": "Please login.", "message": ""}
+
+
+def _service(
+    status_code: int = 200,
+    *,
+    on_auth_failure=None,
+    raises: Exception | None = None,
+    body: object | None = None,
+    json_raises: bool = False,
+):
     svc = BambuCloudService(client=MagicMock(spec=httpx.AsyncClient), on_auth_failure=on_auth_failure)
     resp = MagicMock()
     resp.status_code = status_code
+    # A 401 defaults to Bambu's expiry body so existing "rejected token" cases
+    # mean a real expiry; pass body= to exercise a transient/benign 401.
+    if json_raises:
+        resp.json = MagicMock(side_effect=ValueError("not json"))
+    else:
+        resp.json = MagicMock(return_value=_EXPIRY_401_BODY if (body is None and status_code == 401) else (body or {}))
     svc._client.get = AsyncMock(side_effect=raises) if raises else AsyncMock(return_value=resp)
     return svc
 
@@ -79,7 +96,30 @@ class TestValidateToken:
 
     @pytest.mark.asyncio
     async def test_rejected_token_returns_false(self):
-        svc = _service(401)
+        svc = _service(401)  # defaults to Bambu's genuine expiry body
+        svc.set_token("dead-token")
+        assert await svc.validate_token() is False
+
+    @pytest.mark.asyncio
+    async def test_transient_401_is_unknown_not_invalid(self):
+        """A 401 WITHOUT Bambu's expiry signature is edge/endpoint noise, not a
+        dead token — it must read as unknown, never sign the user out. This is
+        the regression that logged users out on a single stray 401."""
+        svc = _service(401, body={"code": 1, "error": "forbidden"})
+        svc.set_token("good-token")
+        assert await svc.validate_token() is None
+
+    @pytest.mark.asyncio
+    async def test_unparseable_401_is_unknown_not_invalid(self):
+        svc = _service(401, json_raises=True)
+        svc.set_token("good-token")
+        assert await svc.validate_token() is None
+
+    @pytest.mark.asyncio
+    async def test_expiry_signature_via_please_login_text(self):
+        """The `code:4` field is primary, but the "Please login." text alone
+        (no/other code) is still accepted as the expiry signal."""
+        svc = _service(401, body={"error": "Please login.", "message": ""})
         svc.set_token("dead-token")
         assert await svc.validate_token() is False
 
@@ -170,10 +210,25 @@ class TestAuthFailureCallback:
         svc.set_token("dead-token")
         resp = MagicMock()
         resp.status_code = 401
+        resp.json = MagicMock(return_value=_EXPIRY_401_BODY)
         await svc._note_response(resp)
         await svc._note_response(resp)
         await svc._note_response(resp)
         assert calls == [1]
+
+    @pytest.mark.asyncio
+    async def test_transient_401_does_not_fire_the_callback(self):
+        """A benign 401 must not durably invalidate — the callback that persists
+        the dead-token flag stays untouched."""
+        calls: list[int] = []
+
+        async def _cb() -> None:
+            calls.append(1)
+
+        svc = _service(401, on_auth_failure=_cb, body={"code": 1, "error": "forbidden"})
+        svc.set_token("good-token")
+        await svc.validate_token()
+        assert calls == []
 
     @pytest.mark.asyncio
     async def test_success_does_not_fire_the_callback(self):

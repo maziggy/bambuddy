@@ -2720,6 +2720,17 @@ async def configure_ams_slot(
             except Exception:
                 pass
 
+    # Register a read-back verification (#2582) so the tray telemetry that the
+    # status push below returns can confirm the printer accepted this manual
+    # slot configuration. Mirrors the inventory/assignment path.
+    client.register_assignment_verification(
+        ams_id=ams_id,
+        tray_id=tray_id,
+        tray_info_idx=effective_tray_info_idx,
+        tray_color=tray_color,
+        cali_idx=cali_idx,
+    )
+
     # Request fresh status push from printer so frontend gets updated data via WebSocket
     logger.info("[configure_ams_slot] Requesting status update from printer")
     update_result = client.request_status_update()
@@ -3914,8 +3925,12 @@ async def ams_load(
     - 254: external spool (single-external printers, or Ext-L on dual-nozzle H2D)
     - 255: Ext-R on dual-nozzle H2D
     """
-    if tray_id not in range(16) and tray_id not in (254, 255):
-        raise HTTPException(400, "tray_id must be 0..15 (AMS slot), 254 (external / Ext-L), or 255 (Ext-R)")
+    # 24-27 are the A2L AMS-Lite slots (normalised unit 6 = 6*4+slot); see
+    # a2l-am-unit-16. They are valid global tray ids alongside the regular 0-15.
+    if tray_id not in range(16) and tray_id not in range(24, 28) and tray_id not in (254, 255):
+        raise HTTPException(
+            400, "tray_id must be 0..15 (AMS slot), 24..27 (A2L AMS-Lite), 254 (external / Ext-L), or 255 (Ext-R)"
+        )
 
     result = await db.execute(select(Printer).where(Printer.id == printer_id))
     printer = result.scalar_one_or_none()

@@ -6363,6 +6363,61 @@ async def lifespan(app: FastAPI):
 
     printer_manager.set_drying_complete_callback(on_drying_complete)
 
+    async def on_assignment_verified(printer_id: int, ams_id: int, tray_id: int, verified: bool, detail: dict):
+        """Surface the read-back result of a spool assignment to the UI (#2582).
+
+        The MQTT client confirms (or fails to confirm) that the tray telemetry
+        echoed back the filament id we pushed. We relay that as a websocket
+        event so the frontend can toast "loaded" / "assignment didn't take"
+        instead of the historic silent fire-and-forget, which made the
+        AMS→Studio hand-off feel random to users.
+        """
+        try:
+            from backend.app.services.spool_assignment_notifications import (
+                _slot_label_from_global_tray,
+            )
+
+            if ams_id == 255:
+                global_id = 254 + tray_id
+            elif ams_id >= 128:
+                global_id = ams_id
+            else:
+                global_id = ams_id * 4 + tray_id
+            slot_label = _slot_label_from_global_tray(global_id)
+
+            printer_info = printer_manager.get_printer(printer_id)
+            printer_name = printer_info.name if printer_info else f"Printer {printer_id}"
+
+            await ws_manager.broadcast(
+                {
+                    "type": "spool_assignment_verified",
+                    "printer_id": printer_id,
+                    "printer_name": printer_name,
+                    "ams_id": ams_id,
+                    "tray_id": tray_id,
+                    "slot": slot_label,
+                    "verified": verified,
+                    # Present on success: False means the filament setting landed
+                    # but the K-profile (cali_idx) did not — the reporter's exact
+                    # "loaded but no flow profile" symptom.
+                    "kprofile_applied": detail.get("kprofile_applied", True),
+                    # Present on failure: whether any tray telemetry was seen in
+                    # the window (distinguishes "printer silent" from "printer
+                    # stored something else").
+                    "saw_tray": detail.get("saw_tray", False),
+                }
+            )
+        except Exception as e:
+            logging.getLogger(__name__).warning(
+                "Failed to broadcast assignment verification for printer %d AMS%d-T%d: %s",
+                printer_id,
+                ams_id,
+                tray_id,
+                e,
+            )
+
+    printer_manager.set_assignment_verified_callback(on_assignment_verified)
+
     # Initialize MQTT relay from settings
     async with async_session() as db:
         from backend.app.api.routes.settings import get_setting

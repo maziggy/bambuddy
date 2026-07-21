@@ -330,6 +330,9 @@ export default {
     toast: {
       printerDeleted: '프린터가 삭제되었습니다',
       missingSpoolAssignment: '{{printer}}에서 인쇄가 시작되었습니다. 슬롯 할당 누락: {{slots}}',
+      assignmentVerified: '슬롯 {{slot}}에 필라멘트가 로드되었습니다 ({{printer}})',
+      assignmentVerifiedNoKprofile: '{{printer}}의 슬롯 {{slot}}이(가) 로드되었지만 유량 보정 프로파일(K 프로파일)이 적용되지 않았습니다',
+      assignmentNotConfirmed: '{{printer}}의 슬롯 {{slot}} 할당을 확인할 수 없습니다. AMS 슬롯을 확인하세요',
       printerAdded: '프린터가 추가되었습니다',
       printerUpdated: '프린터가 업데이트되었습니다',
       failedToDelete: '프린터 삭제 실패',

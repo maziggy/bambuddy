@@ -27,6 +27,9 @@ def _slot_label_from_global_tray(global_tray_id: int) -> str:
         return "Ext-R"
     if global_tray_id >= 128:
         return f"HT-{chr(65 + (global_tray_id - 128))}"
+    # 24-27 = A2L AMS-Lite (normalised unit 6); see a2l-am-unit-16.
+    if 24 <= global_tray_id <= 27:
+        return f"Lite-{(global_tray_id % 4) + 1}"
     ams_id = global_tray_id // 4
     tray_id = global_tray_id % 4
     return f"{chr(65 + ams_id)}{tray_id + 1}"

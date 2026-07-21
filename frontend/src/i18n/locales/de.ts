@@ -355,6 +355,9 @@ export default {
     toast: {
       printerDeleted: 'Drucker gelöscht',
       missingSpoolAssignment: 'Druck gestartet auf {{printer}}. Fehlende Spulenzuordnung für: {{slots}}',
+      assignmentVerified: 'Filament in Slot {{slot}} geladen ({{printer}})',
+      assignmentVerifiedNoKprofile: 'Slot {{slot}} auf {{printer}} geladen, aber das Fluss-Kalibrierungsprofil (K-Profil) wurde nicht übernommen',
+      assignmentNotConfirmed: 'Zuordnung für Slot {{slot}} auf {{printer}} konnte nicht bestätigt werden – bitte den AMS-Slot prüfen',
       printerAdded: 'Drucker hinzugefügt',
       printerUpdated: 'Drucker aktualisiert',
       failedToDelete: 'Drucker konnte nicht gelöscht werden',

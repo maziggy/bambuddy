@@ -355,6 +355,9 @@ export default {
     toast: {
       printerDeleted: 'Imprimante supprimée',
       missingSpoolAssignment: 'Impression démarrée sur {{printer}}. Attribution de bobine manquante pour : {{slots}}',
+      assignmentVerified: 'Filament chargé dans l\'emplacement {{slot}} ({{printer}})',
+      assignmentVerifiedNoKprofile: 'Emplacement {{slot}} sur {{printer}} chargé, mais le profil de calibration de débit (profil K) n\'a pas été appliqué',
+      assignmentNotConfirmed: 'Impossible de confirmer l\'attribution de l\'emplacement {{slot}} sur {{printer}} — vérifiez l\'emplacement AMS',
       printerAdded: 'Imprimante ajoutée',
       printerUpdated: 'Imprimante mise à jour',
       failedToDelete: 'Échec de la suppression',

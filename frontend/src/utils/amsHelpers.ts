@@ -42,6 +42,10 @@ export function getAmsLabel(amsId: number | string, trayCount: number): string {
   const id = typeof amsId === 'string' ? parseInt(amsId, 10) : amsId;
   const safeId = isNaN(id) ? 0 : id;
   if (safeId === 255) return 'External';
+  // A2L "AMS Lite": the backend normalises its physical unit id 16 to 6 at
+  // ingest (see a2l-am-unit-16). No regular AMS uses id 6, so this is a safe,
+  // self-scoping label for the Lite's 4-slot unit.
+  if (safeId === 6) return 'AMS Lite';
   const isHt = trayCount === 1;
   const normalizedId = safeId >= 128 ? safeId - 128 : safeId;
   const letter = String.fromCharCode(65 + normalizedId);

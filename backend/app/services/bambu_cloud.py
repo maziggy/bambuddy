@@ -32,6 +32,33 @@ def _token_digest(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def is_expiry_401(response: httpx.Response) -> bool:
+    """Whether a 401 is Bambu's genuine "token expired" signal.
+
+    Bambu answers an expired/revoked token with ``{"code":4,"error":"Please
+    login.","message":""}``. Not every 401 means that: individual endpoints
+    return 401 for resource-, region- or scope-specific reasons, and a working
+    token still draws the occasional transient 401 (Cloudflare edge, a brief
+    backend blip). Treating *any* 401 as a dead credential signs the user out on
+    a single stray rejection — the #2562 follow-up regression. We trust only the
+    documented expiry body, so a benign 401 no longer nukes the whole cloud
+    integration. An unparseable / unsigned 401 is deliberately NOT expiry.
+
+    Shared by the Bambu Cloud and MakerWorld services — both carry the same
+    token and see the same expiry body.
+    """
+    try:
+        body = response.json()
+    except Exception:
+        return False
+    if not isinstance(body, dict):
+        return False
+    if body.get("code") == 4:
+        return True
+    text = f"{body.get('error', '')} {body.get('message', '')}".lower()
+    return "please login" in text
+
+
 def invalidate_validation_cache(token: str | None = None) -> None:
     """Drop cached validation verdicts.
 
@@ -197,16 +224,25 @@ class BambuCloudService:
             return False
         return not (self.token_expiry and datetime.now(timezone.utc) > self.token_expiry)
 
-    async def _note_response(self, response: httpx.Response) -> None:
-        """Record a 401 from Bambu as "this stored credential is dead".
+    async def _note_response(self, response: httpx.Response) -> bool:
+        """Record Bambu's genuine token-expiry 401 as "this credential is dead".
 
-        Bambu answers an expired/revoked token with 401 and a body of
-        ``{"code":4,"error":"Please login.","message":""}``. Reported at most
-        once per service instance so a route that makes several calls doesn't
-        write the flag several times.
+        Returns ``True`` only for the real expiry signal (see
+        :meth:`_is_expiry_401`); a plain/transient 401 returns ``False`` and is
+        left alone so it can't durably sign the user out. The durable flag is
+        written at most once per service instance so a route making several
+        calls doesn't write it repeatedly.
         """
-        if response.status_code != 401 or self._on_auth_failure is None or self._auth_failure_reported:
-            return
+        if response.status_code != 401:
+            return False
+        if not is_expiry_401(response):
+            logger.info(
+                "Bambu Cloud returned 401 without the expiry signature — treating as transient, "
+                "not signing the stored token out"
+            )
+            return False
+        if self._on_auth_failure is None or self._auth_failure_reported:
+            return True
         self._auth_failure_reported = True
         if self.access_token:
             _validation_cache[_token_digest(self.access_token)] = (
@@ -219,6 +255,7 @@ class BambuCloudService:
             # Recording the failure is best-effort — the caller still needs the
             # real error (a 401) rather than a bookkeeping exception on top.
             logger.exception("Failed to record Bambu Cloud auth failure")
+        return True
 
     async def validate_token(self) -> bool | None:
         """Ask Bambu whether the loaded token is still accepted.
@@ -249,8 +286,11 @@ class BambuCloudService:
             return None
 
         if response.status_code == 401:
-            await self._note_response(response)
-            return False
+            # Only a 401 carrying Bambu's expiry signature is a real sign-out.
+            # A signature-less 401 here is transient/edge noise — report unknown
+            # (last-known state) rather than expiring a working session.
+            expired = await self._note_response(response)
+            return False if expired else None
         if response.status_code >= 500:
             logger.info(
                 "Bambu Cloud returned %s while validating the token — treating as unknown", response.status_code

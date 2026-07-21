@@ -241,10 +241,14 @@ class AppSettings(BaseModel):
         description="Show warning when free disk space falls below this threshold (GB)",
     )
 
-    # Camera view settings
+    # Camera settings
     camera_view_mode: str = Field(
         default="window",
         description="Camera view mode: 'window' opens in new browser window, 'embedded' shows overlay on main screen",
+    )
+    camera_video_processing: str = Field(
+        default="software",
+        description="Built-in RTSP camera processing: 'software' or 'intel_qsv'",
     )
 
     # Preferred slicer application (server-side / API sidecar slicer)
@@ -593,6 +597,7 @@ class AppSettingsUpdate(BaseModel):
     library_archive_mode: str | None = None
     library_disk_warning_gb: float | None = None
     camera_view_mode: str | None = None
+    camera_video_processing: str | None = None
     preferred_slicer: str | None = None
     open_in_slicer: str | None = None
     use_slicer_api: bool | None = None
@@ -680,6 +685,7 @@ class AppSettingsUpdate(BaseModel):
         candidate = v.strip()
         if "://" not in candidate:
             return v
+
         # Lazy-imported: schemas avoid top-level imports from api/routes,
         # matching the existing pattern in auth.py's _validate_icon_url.
         from backend.app.api.routes._url_safety import assert_safe_lan_service_url
@@ -688,6 +694,17 @@ class AppSettingsUpdate(BaseModel):
             assert_safe_lan_service_url(candidate, label=info.field_name or "URL")
         except ValueError as exc:
             raise ValueError(str(exc)) from exc
+        return v
+
+    @field_validator("camera_video_processing")
+    @classmethod
+    def validate_camera_video_processing(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if v not in ("software", "intel_qsv"):
+            raise ValueError(
+                "camera_video_processing must be 'software' or 'intel_qsv'"
+            )
         return v
 
     @field_validator("gcode_snippets")

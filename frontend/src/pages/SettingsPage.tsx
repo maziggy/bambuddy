@@ -1047,6 +1047,8 @@ export function SettingsPage() {
       (baseline.library_archive_mode ?? 'ask') !== (localSettings.library_archive_mode ?? 'ask') ||
       Number(baseline.library_disk_warning_gb ?? 5) !== Number(localSettings.library_disk_warning_gb ?? 5) ||
       (baseline.camera_view_mode ?? 'window') !== (localSettings.camera_view_mode ?? 'window') ||
+      (baseline.camera_video_processing ?? 'software') !==
+        (localSettings.camera_video_processing ?? 'software') ||
       (baseline.preferred_slicer ?? 'bambu_studio') !== (localSettings.preferred_slicer ?? 'bambu_studio') ||
       (baseline.open_in_slicer ?? null) !== (localSettings.open_in_slicer ?? null) ||
       (baseline.use_slicer_api ?? false) !== (localSettings.use_slicer_api ?? false) ||
@@ -1151,6 +1153,7 @@ export function SettingsPage() {
         library_archive_mode: localSettings.library_archive_mode,
         library_disk_warning_gb: localSettings.library_disk_warning_gb,
         camera_view_mode: localSettings.camera_view_mode,
+        camera_video_processing: localSettings.camera_video_processing,
         preferred_slicer: localSettings.preferred_slicer,
         open_in_slicer: localSettings.open_in_slicer,
         use_slicer_api: localSettings.use_slicer_api,
@@ -2076,6 +2079,40 @@ export function SettingsPage() {
                   {localSettings.camera_view_mode === 'embedded'
                     ? t('settings.cameraOverlayDescription')
                     : t('settings.cameraWindowDescription')}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm text-bambu-gray mb-1">
+                  {t('settings.cameraVideoProcessing', 'Video Processing')}
+                </label>
+                <select
+                  value={localSettings.camera_video_processing ?? 'software'}
+                  onChange={(e) =>
+                    updateSetting(
+                      'camera_video_processing',
+                      e.target.value as 'software' | 'intel_qsv',
+                    )
+                  }
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                >
+                  <option value="software">
+                    {t('settings.cameraVideoProcessingSoftware', 'Software processing')}
+                  </option>
+                  <option value="intel_qsv">
+                    {t('settings.cameraVideoProcessingIntelQsv', 'Intel Quick Sync')}
+                  </option>
+                </select>
+                <p className="text-xs text-bambu-gray mt-1">
+                  {(localSettings.camera_video_processing ?? 'software') === 'intel_qsv'
+                    ? t(
+                        'settings.cameraVideoProcessingIntelQsvDescription',
+                        'Uses Intel Quick Sync for hardware H.264 decoding and MJPEG encoding. Requires Intel media runtime and access to /dev/dri/renderD128.',
+                      )
+                    : t(
+                        'settings.cameraVideoProcessingSoftwareDescription',
+                        'Uses the CPU for H.264 decoding and MJPEG encoding.',
+                      )}
                 </p>
               </div>
 

@@ -4,6 +4,7 @@ Tests the full request/response cycle for /api/v1/archives/ endpoints.
 """
 
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -11,6 +12,69 @@ from httpx import AsyncClient
 
 class TestArchivesAPI:
     """Integration tests for /api/v1/archives/ endpoints."""
+
+    # ========================================================================
+    # Upload endpoint
+    # ========================================================================
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.parametrize("prefer_filename_for_name", [True, False])
+    async def test_upload_archive_forwards_prefer_filename_for_name(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session, prefer_filename_for_name
+    ):
+        """POST /archives/upload must forward prefer_filename_for_name to
+        ArchiveService.archive_print unchanged — this flag lets a caller (e.g.
+        the manual upload UI or an external integration) ask for the uploaded
+        filename to win over the 3MF's embedded print_name (#1152 follow-up:
+        the flag existed on the service but wasn't exposed on this route).
+
+        archive_print is mocked (real 3MF metadata extraction isn't under test
+        here) but its return value is a real PrintArchive row from the
+        factory, so ArchiveResponse.model_validate in the route still exercises
+        real serialization instead of masking a broken response behind a bare
+        MagicMock.
+        """
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, print_name="Mocked Return Archive")
+        archive_print_mock = AsyncMock(return_value=archive)
+
+        files = {"file": ("My Print (final).gcode.3mf", b"PK\x03\x04fake3mf", "application/octet-stream")}
+        params = {"prefer_filename_for_name": prefer_filename_for_name}
+
+        with patch(
+            "backend.app.api.routes.archives.ArchiveService.archive_print",
+            archive_print_mock,
+        ):
+            response = await async_client.post("/api/v1/archives/upload", files=files, params=params)
+
+        assert response.status_code == 200
+        assert archive_print_mock.await_count == 1
+        kwargs = archive_print_mock.await_args.kwargs
+        assert kwargs.get("prefer_filename_for_name") is prefer_filename_for_name
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_upload_archive_defaults_prefer_filename_for_name_false(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Omitting the query param must not change existing behavior for
+        callers that predate this flag."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, print_name="Mocked Return Archive")
+        archive_print_mock = AsyncMock(return_value=archive)
+
+        files = {"file": ("existing-caller.gcode.3mf", b"PK\x03\x04fake3mf", "application/octet-stream")}
+
+        with patch(
+            "backend.app.api.routes.archives.ArchiveService.archive_print",
+            archive_print_mock,
+        ):
+            response = await async_client.post("/api/v1/archives/upload", files=files)
+
+        assert response.status_code == 200
+        kwargs = archive_print_mock.await_args.kwargs
+        assert kwargs.get("prefer_filename_for_name") is False
 
     # ========================================================================
     # List endpoints

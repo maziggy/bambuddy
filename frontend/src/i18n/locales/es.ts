@@ -2458,6 +2458,11 @@ export default {
     // Updates
     printerFirmware: 'Firmware de la impresora',
     checkFirmwareDescription: 'Buscar actualizaciones de firmware de la impresora de Bambu Lab',
+    cameraVideoProcessing: 'Video processing',
+    cameraVideoProcessingSoftware: 'Software',
+    cameraVideoProcessingIntelQsv: 'Intel Quick Sync',
+    cameraVideoProcessingSoftwareDescription: 'Processing on CPU',
+    cameraVideoProcessingIntelQsvDescription: 'Processing on Intel GPU',
     bambuddySoftware: 'Software de Bambuddy',
     autoCheckDescription: 'Buscar automáticamente nuevas versiones al iniciar',
     checkNow: 'Buscar ahora',

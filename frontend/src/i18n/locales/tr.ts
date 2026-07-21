@@ -2459,6 +2459,11 @@ export default {
     // Güncellemeler
     printerFirmware: 'Yazıcı Firmware',
     checkFirmwareDescription: "Bambu Lab'dan yazıcı firmware güncellemelerini kontrol et",
+    cameraVideoProcessing: 'Video processing',
+    cameraVideoProcessingSoftware: 'Software',
+    cameraVideoProcessingIntelQsv: 'Intel Quick Sync',
+    cameraVideoProcessingSoftwareDescription: 'Processing on CPU',
+    cameraVideoProcessingIntelQsvDescription: 'Processing on Intel GPU',
     bambuddySoftware: 'Bambuddy Yazılımı',
     autoCheckDescription: 'Başlangıçta otomatik olarak yeni sürümleri kontrol et',
     checkNow: 'Şimdi kontrol et',

@@ -200,6 +200,32 @@ class TestGetDesign:
         assert marked == [True], "a rejected token must be recorded as dead"
 
     @pytest.mark.asyncio
+    async def test_transient_401_with_token_does_not_invalidate(self):
+        """A 401 WITHOUT Bambu's expiry signature (endpoint/edge noise) must fail
+        the request but NOT durably sign the user out — otherwise one stray 401
+        from any single MakerWorld call kills the whole cloud integration."""
+        marked: list[bool] = []
+
+        async def _on_auth_failure() -> None:
+            marked.append(True)
+
+        svc = MakerWorldService(
+            client=MagicMock(spec=httpx.AsyncClient),
+            auth_token="tok-abc",
+            on_auth_failure=_on_auth_failure,
+        )
+        svc._client.get = AsyncMock()
+        resp = MagicMock()
+        resp.status_code = 401
+        resp.json.return_value = {"code": 1, "error": "forbidden"}
+        svc._client.get.return_value = resp
+
+        with pytest.raises(MakerWorldAuthError):
+            await svc.get_design(1)
+
+        assert marked == [], "a benign 401 must not record the credential as dead"
+
+    @pytest.mark.asyncio
     async def test_maps_403_to_forbidden_with_upstream_reason(self, service):
         """403 is distinct from 401: auth was valid, MakerWorld refuses the
         specific resource (content-gated, region-locked, etc.). The upstream

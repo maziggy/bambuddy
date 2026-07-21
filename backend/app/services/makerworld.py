@@ -28,6 +28,8 @@ from urllib.parse import urlparse
 import certifi
 import httpx
 
+from backend.app.services.bambu_cloud import is_expiry_401
+
 logger = logging.getLogger(__name__)
 
 
@@ -255,8 +257,18 @@ class MakerWorldService:
         if self._owns_client:
             await self._client.aclose()
 
-    async def _note_auth_failure(self) -> None:
-        """Record that Bambu rejected the token we sent. Best-effort, once."""
+    async def _note_auth_failure(self, response: httpx.Response) -> None:
+        """Durably record a dead credential — only for Bambu's genuine expiry 401.
+
+        A MakerWorld 401 without the ``{"code":4,"error":"Please login."}``
+        signature is endpoint- or edge-specific noise, not an expired token;
+        invalidating on it would sign the user out of the whole cloud
+        integration on a single stray rejection (the #2562 follow-up
+        regression). Best-effort, once per service instance.
+        """
+        if not is_expiry_401(response):
+            logger.info("MakerWorld returned 401 without the expiry signature — not signing the stored token out")
+            return
         if self._on_auth_failure is None or self._auth_failure_reported:
             return
         self._auth_failure_reported = True
@@ -307,7 +319,7 @@ class MakerWorldService:
                 # We sent a token and Bambu refused it — the credential is dead,
                 # not merely absent. Record that before raising so the rest of the
                 # app stops claiming the user is connected.
-                await self._note_auth_failure()
+                await self._note_auth_failure(response)
                 raise MakerWorldAuthError(_SIGN_IN_EXPIRED_MESSAGE)
             raise MakerWorldAuthError(f"Signing in to Bambu Cloud is required for {path}")
         if response.status_code == 403:
@@ -469,7 +481,7 @@ class MakerWorldService:
             raise MakerWorldUnavailableError(f"Bambu Lab API request failed: {exc}") from exc
 
         if response.status_code == 401:
-            await self._note_auth_failure()
+            await self._note_auth_failure(response)
             raise MakerWorldAuthError(_SIGN_IN_EXPIRED_MESSAGE)
         if response.status_code == 403:
             upstream = _extract_upstream_error(response)

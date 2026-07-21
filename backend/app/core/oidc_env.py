@@ -78,7 +78,7 @@ _APPLIED_FIELDS = (
 
 
 async def apply_env_oidc_provider(db: AsyncSession) -> None:
-    """Upsert the env-managed provider, or disable it when the config is gone.
+    """Upsert the env-managed provider, or release it when the config is gone.
 
     Never raises: this runs during startup, and a typo in one variable must not
     stop the app from booting. A rejected config is logged and skipped.
@@ -89,19 +89,34 @@ async def apply_env_oidc_provider(db: AsyncSession) -> None:
     from backend.app.schemas.auth import OIDCProviderCreate
 
     config = read_env_oidc_config()
-    existing = (
-        await db.execute(select(OIDCProvider).where(OIDCProvider.is_env_managed.is_(True)))
-    ).scalar_one_or_none()
 
     if config is None:
-        # Disabled, never deleted: user_oidc_links.provider_id is FK ON DELETE
-        # CASCADE, so removing the row would unlink every bound account and the
-        # links would not come back when the variables do.
-        if existing is not None and existing.is_enabled:
-            existing.is_enabled = False
+        # Nothing to look up by name any more, so the previously managed row is
+        # found by the flag -- and then released.
+        released = (
+            await db.execute(select(OIDCProvider).where(OIDCProvider.is_env_managed.is_(True)))
+        ).scalar_one_or_none()
+        if released is not None:
+            # Disabled, never deleted: user_oidc_links.provider_id is FK ON
+            # DELETE CASCADE, so removing the row would unlink every bound
+            # account and the links would not come back when the variables do.
+            # The flag is cleared as well: with no config behind it, a provider
+            # the API still refuses to edit or delete would be a dead end
+            # reachable only through the database.
+            released.is_enabled = False
+            released.is_env_managed = False
             await db.commit()
-            logger.info("BAMBUDDY_OIDC_* is unset -- env-managed provider disabled.")
+            logger.info(
+                "BAMBUDDY_OIDC_* is unset -- provider %r disabled and released to the UI.",
+                released.name,
+            )
         return
+
+    # Identity is the name, which is unique on the table. Matching on the flag
+    # instead meant an operator who named the env provider after one that
+    # already existed hit that unique constraint during startup -- and this
+    # function runs in the lifespan, so the app would not boot.
+    existing = (await db.execute(select(OIDCProvider).where(OIDCProvider.name == config["name"]))).scalar_one_or_none()
 
     try:
         # The same schema the API uses, so env config cannot reach a state the

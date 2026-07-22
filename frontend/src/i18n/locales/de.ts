@@ -481,6 +481,8 @@ export default {
       skip: 'Überspringen',
       confirmTitle: 'Objekt überspringen?',
       confirmMessage: 'Möchten Sie "{{name}}" wirklich überspringen? Dies kann nicht rückgängig gemacht werden.',
+      confirmAllMessage: 'Alle verbleibenden Objekte sind ausgewählt. Dadurch wird der Druckauftrag beendet. Fortfahren?',
+      confirmMultipleMessage: '{{count}} ausgewählte Objekte überspringen? Dies kann nicht rückgängig gemacht werden.',
     },
     // Confirm modals
     confirm: {

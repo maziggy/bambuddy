@@ -1,20 +1,18 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, Loader2, Monitor, AlertCircle, Box, Maximize2 } from 'lucide-react';
+import { AlertCircle, Box, CheckSquare, Loader2, Maximize2, Square, X } from 'lucide-react';
 import { api, withStreamToken } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
+import { pickObjectIdAt, plateClickToMaskPoint } from '../utils/skipObjects';
 import { ConfirmModal } from './ConfirmModal';
 
-// Custom Skip Objects icon - arrow jumping over boxes
 export const SkipObjectsIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    {/* Three boxes at the bottom */}
     <rect x="2" y="15" width="5" height="5" rx="0.5" />
     <rect x="9.5" y="15" width="5" height="5" rx="0.5" fill="currentColor" opacity="0.3" />
     <rect x="17" y="15" width="5" height="5" rx="0.5" />
-    {/* Curved arrow jumping over first box */}
     <path d="M4 12 C4 6, 14 6, 14 12" />
     <polyline points="12,10 14,12 12,14" />
   </svg>
@@ -26,12 +24,25 @@ interface SkipObjectsModalProps {
   onClose: () => void;
 }
 
+interface PrintableObject {
+  id: number;
+  name: string;
+  x: number | null;
+  y: number | null;
+  skipped: boolean;
+}
+
 export function SkipObjectsModal({ printerId, isOpen, onClose }: SkipObjectsModalProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
-  const [pendingSkip, setPendingSkip] = useState<{ id: number; name: string } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [confirming, setConfirming] = useState(false);
   const [enlarged, setEnlarged] = useState(false);
+  const [pickReady, setPickReady] = useState(false);
+  const pickDataRef = useRef<ImageData | null>(null);
+  const overlayRef = useRef<HTMLCanvasElement | null>(null);
+  const enlargedOverlayRef = useRef<HTMLCanvasElement | null>(null);
 
   const { data: status } = useQuery({
     queryKey: ['printerStatus', printerId],
@@ -47,338 +58,323 @@ export function SkipObjectsModal({ printerId, isOpen, onClose }: SkipObjectsModa
     refetchInterval: isOpen ? 5000 : false,
   });
 
+  const hasObjects = (objectsData?.objects.length ?? 0) > 0;
+  const topViewUrl = hasObjects && status?.cover_url
+    ? withStreamToken(`${status.cover_url}?view=top`)
+    : null;
+  const pickViewUrl = hasObjects && status?.cover_url
+    ? withStreamToken(`${status.cover_url}?view=pick`)
+    : null;
+
+  const activeObjects = useMemo(
+    () => (objectsData?.objects ?? []).filter((object) => !object.skipped),
+    [objectsData],
+  );
+  const selectedObjects = useMemo(
+    () => activeObjects.filter((object) => selectedIds.has(object.id)),
+    [activeObjects, selectedIds],
+  );
+  const allSelected = activeObjects.length > 0 && selectedObjects.length === activeObjects.length;
+  const skippingAllRemaining = allSelected && selectedIds.size > 0;
+  const canSubmit = selectedIds.size > 0
+    && (status?.layer_num ?? 0) > 1
+    && hasPermission('printers:control');
+
   const skipObjectsMutation = useMutation({
     mutationFn: (objectIds: number[]) => api.skipObjects(printerId, objectIds),
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       showToast(data.message || t('printers.skipObjects.objectsSkipped'));
-      setPendingSkip(null);
-      refetchObjects();
+      // Refresh before closing: this modal is the only on-demand refetch of the
+      // shared printableObjects query, so the printer card behind it would keep
+      // showing the pre-skip count otherwise.
+      await refetchObjects();
+      setConfirming(false);
+      setSelectedIds(new Set());
+      onClose();
     },
-    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSkipObjects'), 'error'),
+    onError: (error: Error) => {
+      setConfirming(false);
+      showToast(error.message || t('printers.toast.failedToSkipObjects'), 'error');
+    },
   });
+
+  useEffect(() => {
+    if (isOpen) return;
+    setSelectedIds(new Set());
+    setConfirming(false);
+    setEnlarged(false);
+  }, [isOpen]);
+
+  useEffect(() => {
+    pickDataRef.current = null;
+    setPickReady(false);
+    if (!isOpen || !pickViewUrl) return;
+
+    let cancelled = false;
+    const image = new Image();
+    image.onload = () => {
+      if (cancelled) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth || 512;
+      canvas.height = image.naturalHeight || 512;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (!context) return;
+      context.drawImage(image, 0, 0);
+      pickDataRef.current = context.getImageData(0, 0, canvas.width, canvas.height);
+      setPickReady(true);
+    };
+    image.onerror = () => {
+      if (!cancelled) setPickReady(false);
+    };
+    image.src = pickViewUrl;
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, pickViewUrl]);
+
+  useEffect(() => {
+    const pickData = pickDataRef.current;
+    if (!pickData || !objectsData) return;
+
+    const skippedIds = new Set(objectsData.objects.filter((object) => object.skipped).map((object) => object.id));
+    for (const canvas of [overlayRef.current, enlargedOverlayRef.current]) {
+      if (!canvas) continue;
+      canvas.width = pickData.width;
+      canvas.height = pickData.height;
+      const context = canvas.getContext('2d');
+      if (!context) continue;
+      const overlay = context.createImageData(pickData.width, pickData.height);
+
+      for (let offset = 0; offset < pickData.data.length; offset += 4) {
+        const objectId = pickData.data[offset] + (pickData.data[offset + 1] << 8) + (pickData.data[offset + 2] << 16);
+        const selected = selectedIds.has(objectId);
+        const skipped = skippedIds.has(objectId);
+        if (!selected && !skipped) continue;
+        const pixel = offset / 4;
+        const x = pixel % pickData.width;
+        const y = Math.floor(pixel / pickData.width);
+        const stripe = ((x + y) % 14) < 7;
+        overlay.data[offset] = selected ? (stripe ? 37 : 74) : 148;
+        overlay.data[offset + 1] = selected ? (stripe ? 199 : 222) : 163;
+        overlay.data[offset + 2] = selected ? (stripe ? 91 : 128) : 184;
+        overlay.data[offset + 3] = selected ? (stripe ? 205 : 145) : 175;
+      }
+      context.putImageData(overlay, 0, 0);
+    }
+  }, [enlarged, objectsData, pickReady, selectedIds]);
+
+  const toggleObject = (object: PrintableObject) => {
+    if (object.skipped) return;
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(object.id)) next.delete(object.id);
+      else next.add(object.id);
+      return next;
+    });
+  };
+
+  const toggleFromPlate = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const pickData = pickDataRef.current;
+    if (!pickData) return;
+    const point = plateClickToMaskPoint(
+      event.currentTarget.getBoundingClientRect(),
+      pickData.width,
+      pickData.height,
+      event.clientX,
+      event.clientY,
+    );
+    if (!point) return;
+    const objectId = pickObjectIdAt(pickData, point.x, point.y);
+    const object = objectsData?.objects.find((candidate) => candidate.id === objectId);
+    if (object) toggleObject(object);
+  };
+
+  const renderPlate = (large = false) => (
+    <div className={`relative aspect-square overflow-hidden rounded-lg border border-gray-300 bg-gray-900 dark:border-gray-600 ${pickReady ? 'cursor-crosshair' : ''}`}>
+      {topViewUrl ? (
+        <img src={topViewUrl} alt={t('printers.printPreview')} className="absolute inset-0 h-full w-full object-contain" />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Box className="h-10 w-10 text-gray-500" />
+        </div>
+      )}
+      <canvas
+        ref={large ? enlargedOverlayRef : overlayRef}
+        onClick={toggleFromPlate}
+        className="absolute inset-0 h-full w-full object-contain"
+        aria-label={t('printers.skipObjects.selectObjectsToSkip')}
+      />
+      {!large && topViewUrl && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setEnlarged(true);
+          }}
+          className="absolute right-2 top-2 rounded bg-black/65 p-1.5 text-white/80 hover:text-white"
+          title={t('common.expand')}
+        >
+          <Maximize2 className="h-4 w-4" />
+        </button>
+      )}
+      {!pickReady && topViewUrl && (
+        <div className="absolute bottom-2 left-2 rounded bg-black/70 px-2 py-1 text-[10px] text-white/80">
+          {t('common.unavailable')}
+        </div>
+      )}
+    </div>
+  );
 
   if (!isOpen) return null;
 
   return (
     <>
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      onClick={onClose}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        onClick={onClose}
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape') return;
           if (enlarged) setEnlarged(false);
           else onClose();
-        }
-      }}
-      tabIndex={-1}
-      ref={(el) => el?.focus()}
-    >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50 z-0" />
-      {/* Modal */}
-      <div
-        className="relative z-10 bg-white dark:bg-bambu-dark border border-gray-200 dark:border-bambu-dark-tertiary rounded-xl shadow-2xl w-[560px] max-h-[85vh] flex flex-col overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
+        }}
+        tabIndex={-1}
+        ref={(element) => element?.focus()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-bambu-dark-tertiary bg-gray-50 dark:bg-bambu-dark">
-          <div className="flex items-center gap-2">
-            <SkipObjectsIcon className="w-4 h-4 text-bambu-green" />
-            <span className="text-sm font-medium text-gray-900 dark:text-white">{t('printers.skipObjects.title')}</span>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 text-gray-500 dark:text-bambu-gray hover:text-gray-900 dark:hover:text-white rounded transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {!objectsData ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-5 h-5 animate-spin text-bambu-gray" />
-          </div>
-        ) : objectsData.objects.length === 0 ? (
-          <div className="text-center py-8 px-4 text-bambu-gray">
-            <p className="text-sm">{t('printers.noObjectsFound')}</p>
-            <p className="text-xs mt-1 opacity-70">{t('printers.objectsLoadedOnPrintStart')}</p>
-          </div>
-        ) : (
-          <div className="flex flex-col overflow-hidden">
-            {/* Info Banner */}
-            <div className="flex items-center gap-3 px-4 py-2.5 bg-blue-50 dark:bg-blue-500/10 border-b border-gray-200 dark:border-bambu-dark-tertiary">
-              <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center">
-                <Monitor className="w-4 h-4 text-blue-500 dark:text-blue-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-blue-600 dark:text-blue-300">{t('printers.skipObjects.matchIdsInfo')}</p>
-                <p className="text-[10px] text-blue-500/70 dark:text-blue-300/60">{t('printers.skipObjects.printerShowsIds')}</p>
-              </div>
-              <div className="flex-shrink-0 text-xs text-gray-500 dark:text-bambu-gray">
-                {objectsData.skipped_count}/{objectsData.total} {t('printers.skipObjects.skipped')}
+        <div className="absolute inset-0 bg-black/55" />
+        <section
+          className="relative z-10 flex max-h-[88vh] w-full max-w-[980px] flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-2xl dark:border-bambu-dark-tertiary dark:bg-bambu-dark"
+          onClick={(event) => event.stopPropagation()}
+          aria-label={t('printers.skipObjects.title')}
+        >
+          <header className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3 dark:border-bambu-dark-tertiary dark:bg-bambu-dark">
+            <div className="flex items-center gap-2">
+              <SkipObjectsIcon className="h-5 w-5 text-bambu-green" />
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{t('printers.skipObjects.title')}</h2>
+                <p className="text-xs text-gray-500 dark:text-bambu-gray">{t('printers.skipObjects.selectObjectsToSkip')}</p>
               </div>
             </div>
+            <button type="button" onClick={onClose} className="rounded p-1 text-gray-500 hover:text-gray-900 dark:text-bambu-gray dark:hover:text-white">
+              <X className="h-5 w-5" />
+            </button>
+          </header>
 
-            {/* Layer Warning */}
-            {(status?.layer_num ?? 0) <= 1 && (
-              <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-500/10 border-b border-gray-200 dark:border-bambu-dark-tertiary">
-                <AlertCircle className="w-4 h-4 text-amber-500 dark:text-amber-400 flex-shrink-0" />
-                <p className="text-xs text-amber-600 dark:text-amber-400">
+          {!objectsData ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="h-6 w-6 animate-spin text-bambu-gray" />
+            </div>
+          ) : objectsData.objects.length === 0 ? (
+            <div className="px-4 py-12 text-center text-bambu-gray">
+              <p className="text-sm">{t('printers.noObjectsFound')}</p>
+              <p className="mt-1 text-xs opacity-70">{t('printers.objectsLoadedOnPrintStart')}</p>
+            </div>
+          ) : (
+            <>
+              {(status?.layer_num ?? 0) <= 1 && (
+                <div className="flex items-center gap-2 border-b border-amber-400/20 bg-amber-500/10 px-4 py-2 text-xs text-amber-400">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
                   {t('printers.skipObjects.waitForLayer', { layer: status?.layer_num ?? 0 })}
-                </p>
-              </div>
-            )}
-
-            {/* Content: Image + List side by side */}
-            <div className="flex flex-1 overflow-hidden">
-              {/* Left: Preview Image with object markers */}
-              <div className="w-52 flex-shrink-0 p-4 border-r border-gray-200 dark:border-bambu-dark-tertiary bg-gray-50 dark:bg-bambu-dark-secondary overflow-y-auto">
-                <div className="relative cursor-pointer group" onClick={() => setEnlarged(true)}>
-                  {status?.cover_url ? (
-                    <img
-                      src={withStreamToken(`${status.cover_url}?view=top`)}
-                      alt={t('printers.printPreview')}
-                      className="w-full aspect-square object-contain rounded-lg bg-gray-900 dark:bg-gray-900 border border-gray-300 dark:border-gray-600"
-                    />
-                  ) : (
-                    <div className="w-full aspect-square rounded-lg bg-gray-100 dark:bg-bambu-dark flex items-center justify-center">
-                      <Box className="w-8 h-8 text-gray-300 dark:text-bambu-gray/30" />
-                    </div>
-                  )}
-                  {/* Enlarge hint */}
-                  <div className="absolute top-2 right-2 p-1 bg-black/60 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Maximize2 className="w-3.5 h-3.5 text-white" />
+                </div>
+              )}
+              <div className="grid min-h-0 flex-1 grid-cols-[minmax(320px,1fr)_minmax(340px,0.9fr)] overflow-hidden max-md:grid-cols-1 max-md:overflow-y-auto">
+                <div className="border-r border-gray-200 bg-gray-50 p-4 dark:border-bambu-dark-tertiary dark:bg-bambu-dark-secondary max-md:border-b-0 max-md:border-r-0">
+                  {renderPlate()}
+                  <div className="mt-3 flex items-center justify-between text-xs text-gray-500 dark:text-bambu-gray">
+                    <span>{selectedIds.size}/{activeObjects.length}</span>
+                    <span>{objectsData.skipped_count} {t('printers.skipObjects.skipped')}</span>
                   </div>
-                  {/* Object ID markers overlay - positioned based on object data */}
-                  {objectsData.objects.length > 0 && (
-                    <div className="absolute inset-0 pointer-events-none">
-                      {objectsData.objects.map((obj, idx) => {
-                        let x: number, y: number;
+                </div>
 
-                        // Use position data if available, otherwise fall back to grid
-                        if (obj.x != null && obj.y != null && objectsData.bbox_all) {
-                          // bbox_all defines the visible area in the top_N.png image
-                          // Format: [x_min, y_min, x_max, y_max] in mm
-                          const [xMin, yMin, xMax, yMax] = objectsData.bbox_all;
-                          const bboxWidth = xMax - xMin;
-                          const bboxHeight = yMax - yMin;
-
-                          // The image shows bbox_all area with some padding (~5-10%)
-                          const padding = 8;
-                          const contentArea = 100 - (padding * 2);
-
-                          // Map object position to image percentage
-                          x = padding + ((obj.x - xMin) / bboxWidth) * contentArea;
-                          // Y axis: image Y increases downward, but 3D Y increases toward back
-                          y = padding + ((yMax - obj.y) / bboxHeight) * contentArea;
-
-                          // Clamp to valid range
-                          x = Math.max(5, Math.min(95, x));
-                          y = Math.max(5, Math.min(95, y));
-                        } else if (obj.x != null && obj.y != null) {
-                          // Fallback: use full build plate (256mm)
-                          const buildPlate = 256;
-                          x = (obj.x / buildPlate) * 100;
-                          y = 100 - (obj.y / buildPlate) * 100;
-                          x = Math.max(5, Math.min(95, x));
-                          y = Math.max(5, Math.min(95, y));
-                        } else {
-                          // Fallback: arrange in a grid pattern over the build plate area
-                          const cols = Math.ceil(Math.sqrt(objectsData.objects.length));
-                          const row = Math.floor(idx / cols);
-                          const col = idx % cols;
-                          const rows = Math.ceil(objectsData.objects.length / cols);
-                          x = 15 + (col * (70 / cols)) + (35 / cols);
-                          y = 15 + (row * (70 / rows)) + (35 / rows);
-                        }
-
-                        return (
-                          <div
-                            key={obj.id}
-                            className={`absolute flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold shadow-lg ${
-                              obj.skipped
-                                ? 'bg-red-500 text-white line-through'
-                                : 'bg-bambu-green text-black'
-                            }`}
-                            style={{
-                              left: `${x}%`,
-                              top: `${y}%`,
-                              transform: 'translate(-50%, -50%)'
-                            }}
-                            title={obj.name}
-                          >
-                            {obj.id}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {/* Object count overlay */}
-                  <div className="absolute bottom-2 right-2 px-2 py-1 bg-white/90 dark:bg-black/80 rounded text-[10px] text-gray-700 dark:text-white shadow-sm">
-                    {t('printers.skipObjects.activeCount', { count: objectsData.objects.filter(o => !o.skipped).length })}
+                <div className="flex min-h-0 flex-col">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedIds(allSelected ? new Set() : new Set(activeObjects.map((object) => object.id)))}
+                    className="flex items-center gap-3 border-b border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-50 dark:border-bambu-dark-tertiary dark:text-white dark:hover:bg-white/5"
+                  >
+                    {allSelected ? <CheckSquare className="h-5 w-5 text-bambu-green" /> : <Square className="h-5 w-5 text-bambu-gray" />}
+                    <span className="flex-1">{allSelected ? t('common.deselectAll') : t('common.selectAll')}</span>
+                    <span className="text-xs font-normal text-bambu-gray">{activeObjects.length}</span>
+                  </button>
+                  <div className="min-h-0 flex-1 overflow-y-auto">
+                    {objectsData.objects.map((object, index) => {
+                      const selected = selectedIds.has(object.id);
+                      return (
+                        <button
+                          type="button"
+                          key={object.id}
+                          onClick={() => toggleObject(object)}
+                          disabled={object.skipped}
+                          className={`flex w-full items-center gap-3 border-b border-gray-200 px-4 py-2.5 text-left transition-colors dark:border-bambu-dark-tertiary/60 ${
+                            object.skipped
+                              ? 'cursor-not-allowed bg-red-500/5 opacity-55'
+                              : selected
+                                ? 'bg-bambu-green/15 hover:bg-bambu-green/20'
+                                : 'hover:bg-gray-50 dark:hover:bg-white/5'
+                          }`}
+                        >
+                          {object.skipped || selected
+                            ? <CheckSquare className={`h-5 w-5 flex-shrink-0 ${object.skipped ? 'text-red-400' : 'text-bambu-green'}`} />
+                            : <Square className="h-5 w-5 flex-shrink-0 text-bambu-gray" />}
+                          <span className="w-8 flex-shrink-0 text-xs font-bold text-bambu-gray">{index + 1}</span>
+                          <span className={`min-w-0 flex-1 truncate text-sm ${object.skipped ? 'text-red-400 line-through' : 'text-gray-900 dark:text-white'}`}>{object.name}</span>
+                          <span className="text-[10px] text-bambu-gray">ID {object.id}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
 
-              {/* Right: Object List with prominent IDs */}
-              <div className="flex-1 min-w-0 overflow-y-auto">
-                {objectsData.objects.map((obj) => (
-                  <div
-                    key={obj.id}
-                    className={`
-                      flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-bambu-dark-tertiary/50 last:border-0
-                      ${obj.skipped ? 'bg-red-50 dark:bg-red-500/10' : 'hover:bg-gray-50 dark:hover:bg-bambu-dark/50'}
-                    `}
-                  >
-                    {/* Large prominent ID badge */}
-                    <div className={`
-                      w-12 h-12 flex-shrink-0 rounded-lg flex flex-col items-center justify-center
-                      ${obj.skipped
-                        ? 'bg-red-100 dark:bg-red-500/20 border border-red-300 dark:border-red-500/40'
-                        : 'bg-green-100 dark:bg-bambu-green/20 border border-green-300 dark:border-bambu-green/40'}
-                    `}>
-                      <span className={`text-lg font-mono font-bold ${obj.skipped ? 'text-red-500 dark:text-red-400' : 'text-green-600 dark:text-bambu-green'}`}>
-                        {obj.id}
-                      </span>
-                      <span className={`text-[8px] uppercase tracking-wider ${obj.skipped ? 'text-red-700/70 dark:text-red-400/60' : 'text-green-500/60 dark:text-bambu-green/60'}`}>
-                        ID
-                      </span>
-                    </div>
-
-                    {/* Object name and status */}
-                    <div className="flex-1 min-w-0">
-                      <span className={`block text-sm truncate ${obj.skipped ? 'text-red-500 dark:text-red-400 line-through' : 'text-gray-900 dark:text-white'}`}>
-                        {obj.name}
-                      </span>
-                      {obj.skipped && (
-                        <span className="text-[10px] text-red-700/70 dark:text-red-400/60">{t('printers.willBeSkipped')}</span>
-                      )}
-                    </div>
-
-                    {/* Skip button */}
-                    {!obj.skipped ? (
-                      <button
-                        onClick={() => setPendingSkip({ id: obj.id, name: obj.name })}
-                        disabled={skipObjectsMutation.isPending || (status?.layer_num ?? 0) <= 1 || !hasPermission('printers:control')}
-                        className={`px-4 py-2 text-xs font-medium rounded-lg transition-colors ${
-                          (status?.layer_num ?? 0) <= 1 || !hasPermission('printers:control')
-                            ? 'bg-gray-100 dark:bg-bambu-dark text-gray-400 dark:text-bambu-gray/50 cursor-not-allowed'
-                            : 'bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-500/30 border border-red-300 dark:border-red-500/30'
-                        }`}
-                        title={!hasPermission('printers:control') ? t('printers.permission.noControl') : ((status?.layer_num ?? 0) <= 1 ? t('printers.skipObjects.waitForLayer', { layer: status?.layer_num ?? 0 }) : t('printers.skipObjects.skip'))}
-                      >
-                        {t('printers.skipObjects.skip')}
-                      </button>
-                    ) : (
-                      <span className="px-4 py-2 text-xs text-red-500 dark:text-red-400/70 bg-red-100 dark:bg-red-500/10 rounded-lg">
-                        {t('printers.skipObjects.skipped')}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
+              <footer className="flex items-center gap-3 border-t border-gray-200 bg-gray-50 px-4 py-3 dark:border-bambu-dark-tertiary dark:bg-bambu-dark">
+                <span className="mr-auto text-sm text-gray-600 dark:text-bambu-gray">
+                  {selectedIds.size === 0 ? t('printers.skipObjects.noObjectsSelected') : `${selectedIds.size}/${activeObjects.length}`}
+                </span>
+                <button type="button" onClick={onClose} className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:border-bambu-dark-tertiary dark:text-white dark:hover:bg-white/5">
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirming(true)}
+                  disabled={!canSubmit || skipObjectsMutation.isPending}
+                  className="rounded-md bg-red-500 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  {skipObjectsMutation.isPending ? t('printers.skipObjects.skipping') : t('printers.skipObjects.skipSelected')}
+                </button>
+              </footer>
+            </>
+          )}
+        </section>
       </div>
-    </div>
-    {pendingSkip && (
-      <ConfirmModal
-        variant="warning"
-        title={t('printers.skipObjects.confirmTitle')}
-        message={t('printers.skipObjects.confirmMessage', { name: pendingSkip.name })}
-        confirmText={t('printers.skipObjects.skip')}
-        isLoading={skipObjectsMutation.isPending}
-        onConfirm={() => skipObjectsMutation.mutate([pendingSkip.id])}
-        onCancel={() => setPendingSkip(null)}
-      />
-    )}
-    {/* Enlarged lightbox overlay */}
-    {enlarged && objectsData && (
-      <div
-        className="fixed inset-0 bg-black/90 flex items-center justify-center z-60"
-        onClick={() => setEnlarged(false)}
-      >
-        <button
-          onClick={() => setEnlarged(false)}
-          className="absolute top-4 right-4 p-2 text-white/70 hover:text-white transition-colors"
-        >
-          <X className="w-6 h-6" />
-        </button>
-        <div
-          className="relative max-w-[600px] max-h-[80vh] aspect-square"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {status?.cover_url ? (
-            <img
-              src={withStreamToken(`${status.cover_url}?view=top`)}
-              alt={t('printers.printPreview')}
-              className="w-full h-full object-contain rounded-lg bg-gray-900"
-            />
-          ) : (
-            <div className="w-full h-full rounded-lg bg-gray-800 flex items-center justify-center">
-              <Box className="w-16 h-16 text-gray-500" />
-            </div>
-          )}
-          {/* Object ID markers overlay */}
-          {objectsData.objects.length > 0 && (
-            <div className="absolute inset-0 pointer-events-none">
-              {objectsData.objects.map((obj, idx) => {
-                let x: number, y: number;
 
-                if (obj.x != null && obj.y != null && objectsData.bbox_all) {
-                  const [xMin, yMin, xMax, yMax] = objectsData.bbox_all;
-                  const bboxWidth = xMax - xMin;
-                  const bboxHeight = yMax - yMin;
-                  const padding = 8;
-                  const contentArea = 100 - (padding * 2);
-                  x = padding + ((obj.x - xMin) / bboxWidth) * contentArea;
-                  y = padding + ((yMax - obj.y) / bboxHeight) * contentArea;
-                  x = Math.max(5, Math.min(95, x));
-                  y = Math.max(5, Math.min(95, y));
-                } else if (obj.x != null && obj.y != null) {
-                  const buildPlate = 256;
-                  x = (obj.x / buildPlate) * 100;
-                  y = 100 - (obj.y / buildPlate) * 100;
-                  x = Math.max(5, Math.min(95, x));
-                  y = Math.max(5, Math.min(95, y));
-                } else {
-                  const cols = Math.ceil(Math.sqrt(objectsData.objects.length));
-                  const row = Math.floor(idx / cols);
-                  const col = idx % cols;
-                  const rows = Math.ceil(objectsData.objects.length / cols);
-                  x = 15 + (col * (70 / cols)) + (35 / cols);
-                  y = 15 + (row * (70 / rows)) + (35 / rows);
-                }
+      {confirming && (
+        <ConfirmModal
+          variant="warning"
+          title={t('printers.skipObjects.confirmTitle')}
+          message={skippingAllRemaining
+            ? t('printers.skipObjects.confirmAllMessage')
+            : selectedObjects.length === 1
+              // Naming one object is useful; joining 30 is a wall of text, and
+              // plates of clones share a name, so the list identifies nothing.
+              ? t('printers.skipObjects.confirmMessage', { name: selectedObjects[0].name })
+              : t('printers.skipObjects.confirmMultipleMessage', { count: selectedObjects.length })}
+          confirmText={t('printers.skipObjects.skipSelected')}
+          isLoading={skipObjectsMutation.isPending}
+          onConfirm={() => skipObjectsMutation.mutate([...selectedIds])}
+          onCancel={() => setConfirming(false)}
+        />
+      )}
 
-                return (
-                  <div
-                    key={obj.id}
-                    className={`absolute flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold shadow-lg ${
-                      obj.skipped
-                        ? 'bg-red-500 text-white line-through'
-                        : 'bg-bambu-green text-black'
-                    }`}
-                    style={{
-                      left: `${x}%`,
-                      top: `${y}%`,
-                      transform: 'translate(-50%, -50%)'
-                    }}
-                    title={obj.name}
-                  >
-                    {obj.id}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          {/* Active count badge */}
-          <div className="absolute bottom-2 right-2 px-2 py-1 bg-white/90 dark:bg-black/80 rounded text-[10px] text-gray-700 dark:text-white shadow-sm">
-            {t('printers.skipObjects.activeCount', { count: objectsData.objects.filter(o => !o.skipped).length })}
+      {enlarged && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-8" onClick={() => setEnlarged(false)}>
+          <button type="button" onClick={() => setEnlarged(false)} className="absolute right-4 top-4 rounded p-2 text-white/70 hover:text-white">
+            <X className="h-6 w-6" />
+          </button>
+          <div className="aspect-square max-h-[86vh] w-full max-w-[86vh]" onClick={(event) => event.stopPropagation()}>
+            {renderPlate(true)}
           </div>
         </div>
-      </div>
-    )}
-  </>
+      )}
+    </>
   );
 }

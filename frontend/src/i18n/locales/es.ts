@@ -481,6 +481,8 @@ export default {
       skip: 'Omitir',
       confirmTitle: '¿Omitir objeto?',
       confirmMessage: '¿Está seguro de que desea omitir "{{name}}"? Esto no se puede deshacer.',
+      confirmAllMessage: 'Se han seleccionado todos los objetos restantes. Esto detendrá el trabajo de impresión. ¿Continuar?',
+      confirmMultipleMessage: '¿Omitir {{count}} objetos seleccionados? Esto no se puede deshacer.',
     },
     // Confirm modals
     confirm: {

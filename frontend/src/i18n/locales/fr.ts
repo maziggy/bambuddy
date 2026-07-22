@@ -481,6 +481,8 @@ export default {
       skip: 'Sauter',
       confirmTitle: 'Sauter l\'objet ?',
       confirmMessage: 'Voulez-vous vraiment sauter "{{name}}" ? Cette action est irréversible.',
+      confirmAllMessage: 'Tous les objets restants sont sélectionnés. Cela arrêtera la tâche d’impression. Continuer ?',
+      confirmMultipleMessage: 'Sauter {{count}} objets sélectionnés ? Cette action est irréversible.',
     },
     // Confirm modals
     confirm: {

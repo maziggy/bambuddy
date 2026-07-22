@@ -481,6 +481,8 @@ export default {
       skip: 'Ignorar',
       confirmTitle: 'Ignorar Objeto?',
       confirmMessage: 'Tem certeza de que deseja ignorar "{{name}}"? Isso não pode ser desfeito.',
+      confirmAllMessage: 'Todos os objetos restantes estão selecionados. Isso interromperá o trabalho de impressão. Continuar?',
+      confirmMultipleMessage: 'Ignorar {{count}} objetos selecionados? Isso não pode ser desfeito.',
     },
     // Confirm modals
     confirm: {

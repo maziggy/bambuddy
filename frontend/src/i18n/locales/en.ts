@@ -484,6 +484,8 @@ export default {
       skip: 'Skip',
       confirmTitle: 'Skip Object?',
       confirmMessage: 'Are you sure you want to skip "{{name}}"? This cannot be undone.',
+      confirmAllMessage: 'All remaining objects are selected. This will stop the print job. Continue?',
+      confirmMultipleMessage: 'Skip {{count}} selected objects? This cannot be undone.',
     },
     // Confirm modals
     confirm: {

@@ -481,6 +481,8 @@ export default {
       skip: 'Salta',
       confirmTitle: 'Saltare oggetto?',
       confirmMessage: 'Sei sicuro di voler saltare "{{name}}"? Questa azione non può essere annullata.',
+      confirmAllMessage: 'Sono selezionati tutti gli oggetti rimanenti. Questo interromperà il processo di stampa. Continuare?',
+      confirmMultipleMessage: 'Saltare {{count}} oggetti selezionati? Questa azione non può essere annullata.',
     },
     // Confirm modals
     confirm: {

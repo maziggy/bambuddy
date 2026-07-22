@@ -447,7 +447,9 @@ export default {
       waitForLayer: '객체를 건너뛰려면 2층 이상을 기다리세요 (현재 {{layer}}층)',
       skip: '건너뛰기',
       confirmTitle: '객체를 건너뛰시겠습니까?',
-      confirmMessage: '"{{name}}"을(를) 건너뛰시겠습니까? 이 작업은 취소할 수 없습니다.'
+      confirmMessage: '"{{name}}"을(를) 건너뛰시겠습니까? 이 작업은 취소할 수 없습니다.',
+      confirmAllMessage: '남아 있는 모든 개체가 선택되었습니다. 인쇄 작업이 중지됩니다. 계속하시겠습니까?',
+      confirmMultipleMessage: '선택한 {{count}}개의 객체를 건너뛰시겠습니까? 이 작업은 취소할 수 없습니다.',
     },
     confirm: {
       deleteTitle: '프린터 삭제',

@@ -481,6 +481,8 @@ export default {
       skip: '跳過',
       confirmTitle: '跳過物件？',
       confirmMessage: '確定要跳過"{{name}}"嗎？此操作無法復原。',
+      confirmAllMessage: '已選取所有剩餘物件。這將停止列印工作。是否繼續？',
+      confirmMultipleMessage: '跳過選取的 {{count}} 個物件？此操作無法復原。',
     },
     // Confirm modals
     confirm: {

@@ -481,6 +481,8 @@ export default {
       skip: 'Atla',
       confirmTitle: 'Nesne Atlansın mı?',
       confirmMessage: '"{{name}}" atlamak istediğinizden emin misiniz? Bu geri alınamaz.',
+      confirmAllMessage: 'Kalan tüm nesneler seçildi. Bu, yazdırma işini durduracaktır. Devam edilsin mi?',
+      confirmMultipleMessage: 'Seçilen {{count}} nesne atlansın mı? Bu geri alınamaz.',
     },
     // Onay modalleri
     confirm: {

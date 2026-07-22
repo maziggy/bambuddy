@@ -481,6 +481,8 @@ export default {
       skip: '跳过',
       confirmTitle: '跳过对象？',
       confirmMessage: '确定要跳过"{{name}}"吗？此操作无法撤销。',
+      confirmAllMessage: '已选择所有剩余对象。这将停止打印任务。是否继续？',
+      confirmMultipleMessage: '跳过选中的 {{count}} 个对象？此操作无法撤销。',
     },
     // Confirm modals
     confirm: {

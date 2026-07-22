@@ -480,6 +480,8 @@ export default {
       skip: 'スキップ',
       confirmTitle: 'オブジェクトをスキップしますか？',
       confirmMessage: '「{{name}}」をスキップしますか？この操作は元に戻せません。',
+      confirmAllMessage: '残りのオブジェクトがすべて選択されています。印刷ジョブは停止します。続行しますか？',
+      confirmMultipleMessage: '選択した{{count}}個のオブジェクトをスキップしますか？この操作は元に戻せません。',
     },
     // Confirm modals
     confirm: {

@@ -1,0 +1,200 @@
+2026-07-21 22:47:20,462 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 259 (main=1, sub=3)
+2026-07-21 22:47:20,462 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:47:20,462 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -30dBm
+2026-07-21 22:47:22,505 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:47:24,553 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-07-21 22:47:24,553 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x2003 -> extruder 0
+2026-07-21 22:47:24,553 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 1 info=0x142023 -> extruder 0
+2026-07-21 22:47:24,553 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '1': 0}
+2026-07-21 22:47:24,553 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 260 (main=1, sub=4)
+2026-07-21 22:47:24,553 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:47:27,891 INFO [backend.app.services.print_scheduler] [-] Queue check: found 13 pending items: [(38, 1, 27, None), (36, 1, 26, None), (39, 1, 25, None), (40, 1, 25, None), (41, 1, 25, None), (42, 1, 25, None), (43, 1, 25, None), (44, 1, 25, None), (45, 1, 25, None), (46, 1, 25, None), (47, 1, 25, None), (48, 1, 25, None), (37, 1, 26, None)]
+2026-07-21 22:47:27,892 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=RUNNING, awaiting_plate_clear=False
+2026-07-21 22:47:28,624 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:47:28,624 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -31dBm
+2026-07-21 22:47:30,666 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:47:30,666 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -34dBm
+2026-07-21 22:47:31,438 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-07-21 22:47:32,719 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-07-21 22:47:32,719 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x2003 -> extruder 0
+2026-07-21 22:47:32,719 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 1 info=0x142023 -> extruder 0
+2026-07-21 22:47:32,719 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '1': 0}
+2026-07-21 22:47:32,719 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:47:32,719 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -31dBm
+2026-07-21 22:47:33,239 DEBUG [backend.app.services.camera] [-] Chamber image: received 41164 bytes
+2026-07-21 22:47:36,764 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'tray_now': '255', 'tray_pre': '255', 'version': 163}
+2026-07-21 22:47:36,764 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-07-21 22:47:36,764 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS partial update (no tray data)
+2026-07-21 22:47:36,764 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-07-21 22:47:36,764 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:47:36,764 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] mc_print_sub_stage changed: 4 -> 0
+2026-07-21 22:47:37,612 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: added 30s, total=560552s (155.71h)
+2026-07-21 22:47:37,615 DEBUG [backend.app.main] [-] Updated runtime for 1 printer(s)
+2026-07-21 22:47:38,805 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:47:38,805 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -35dBm
+2026-07-21 22:47:40,960 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:47:40,961 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -33dBm
+2026-07-21 22:47:44,246 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP NOTIFY for VP-[PRINTER] (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-07-21 22:47:44,943 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:47:44,943 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -27dBm
+2026-07-21 22:47:47,003 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: None
+2026-07-21 22:47:47,003 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-07-21 22:47:47,003 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x2003 -> extruder 0
+2026-07-21 22:47:47,003 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 1 info=0x142023 -> extruder 0
+2026-07-21 22:47:47,003 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '1': 0}
+2026-07-21 22:47:47,004 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:47:47,004 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: RUNNING -> FINISH, file: , subtask: Filament+Spool+Rack+Complete+V2_plate_2
+2026-07-21 22:47:47,004 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] PRINT COMPLETE detected - state: FINISH, status: completed, file: Filament+Spool+Rack+Complete+V2_plate_2.3mf, subtask: Filament+Spool+Rack+Complete+V2_plate_2, was_running: True, timelapse_during_print: False
+2026-07-21 22:47:47,004 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] FINISH PHOTO MOMENT (FINISH fallback) — stage-22 never fired; capturing at FINISH-state transition
+2026-07-21 22:47:47,005 INFO [backend.app.main] [-] [FINISH-PHOTO-MOMENT] printer=1 trigger=finish_state timelapse_active=False
+2026-07-21 22:47:47,006 INFO [backend.app.main] [-] [CALLBACK] on_print_complete started for printer 1
+2026-07-21 22:47:47,006 INFO [backend.app.main] [-] [TIMING] WebSocket send_print_complete: 0.000s elapsed
+2026-07-21 22:47:47,006 INFO [backend.app.main] [-] Print complete - filename: Filament+Spool+Rack+Complete+V2_plate_2.3mf, subtask: Filament+Spool+Rack+Complete+V2_plate_2, status: completed
+2026-07-21 22:47:47,006 INFO [backend.app.main] [-] Looking for archive in _active_prints, keys to try: [(1, 'Filament+Spool+Rack+Complete+V2_plate_2.3mf'), (1, 'Filament+Spool+Rack+Complete+V2_plate_2.gcode.3mf'), (1, 'Filament+Spool+Rack+Complete+V2_plate_2'), (1, 'Filament+Spool+Rack+Complete+V2_plate_2.3mf'), (1, 'Filament+Spool+Rack+Complete+V2_plate_2.3mf')]...
+2026-07-21 22:47:47,006 INFO [backend.app.main] [-] Current _active_prints: [(1, 'Filament+Spool+Rack+Complete+V2_plate_2.gcode.3mf'), (1, 'Filament+Spool+Rack+Complete+V2_plate_2.3mf')]
+2026-07-21 22:47:47,006 INFO [backend.app.main] [-] Found archive 26 with key (1, 'Filament+Spool+Rack+Complete+V2_plate_2.3mf')
+2026-07-21 22:47:47,013 INFO [backend.app.services.camera] [-] Capturing camera frame bytes from [IP] using chamber image protocol (model: [PRINTER])
+2026-07-21 22:47:47,015 DEBUG [backend.app.services.bambu_ftp] [-] FTP connecting to [IP]:990 (timeout=30s, model=[PRINTER], prot_c=False, cap_tls_v1_2=False)
+2026-07-21 22:47:48,848 DEBUG [backend.app.services.bambu_ftp] [-] FTP connected, logging in as bblp
+2026-07-21 22:47:48,945 DEBUG [backend.app.services.bambu_ftp] [-] FTP logged in, setting prot_p (protected) and passive mode
+2026-07-21 22:47:49,008 DEBUG [backend.app.services.bambu_ftp] [-] FTP server welcome: 220 BBL-P003 FTP Server
+2026-07-21 22:47:49,008 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-07-21 22:47:49,184 INFO [backend.app.main] [-] Deleted /Filament+Spool+Rack+Complete+V2_plate_2.3mf from printer [PRINTER] SD card
+2026-07-21 22:47:49,185 DEBUG [backend.app.services.bambu_ftp] [-] FTP connecting to [IP]:990 (timeout=30s, model=[PRINTER], prot_c=False, cap_tls_v1_2=False)
+2026-07-21 22:47:49,265 DEBUG [backend.app.services.camera] [-] Chamber image: received 56649 bytes
+2026-07-21 22:47:49,276 INFO [backend.app.main] [-] [FINISH-PHOTO-MOMENT] captured RTSP frame (56649 bytes)
+2026-07-21 22:47:50,188 DEBUG [backend.app.services.bambu_ftp] [-] FTP connected, logging in as bblp
+2026-07-21 22:47:50,262 DEBUG [backend.app.services.bambu_ftp] [-] FTP logged in, setting prot_p (protected) and passive mode
+2026-07-21 22:47:50,292 DEBUG [backend.app.services.bambu_ftp] [-] FTP server welcome: 220 BBL-P003 FTP Server
+2026-07-21 22:47:50,293 INFO [backend.app.services.bambu_ftp] [-] FTP connected successfully to [IP] (model=[PRINTER], prot_c=False)
+2026-07-21 22:47:50,314 DEBUG [backend.app.services.bambu_ftp] [-] FTP delete: /Filament+Spool+Rack+Complete+V2_plate_2.gcode not on printer (550)
+2026-07-21 22:47:50,327 INFO [backend.app.main] [-] [TIMING] SD card cleanup: 3.322s elapsed
+2026-07-21 22:47:50,330 INFO [backend.app.main] [-] Updated queue item 35 status to completed
+2026-07-21 22:47:50,331 INFO [backend.app.main] [-] [TIMING] Queue item update: 3.326s elapsed
+2026-07-21 22:47:50,334 INFO [backend.app.main] [-] [BED-COOL] Registered waiter for printer 1 (threshold: 35°C)
+2026-07-21 22:47:50,336 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] on_print_complete: printer=1, archive=26, session=yes, ams_mapping=[0]
+2026-07-21 22:47:50,336 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] PRINT COMPLETE printer 1: mapping=None, tray_now=255, last_loaded_tray=0
+2026-07-21 22:47:50,338 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: archive 26, plate_id=2, filament_usage=[{'slot_id': 1, 'used_g': 111.91, 'type': 'PLA', 'color': '#000000'}]
+2026-07-21 22:47:50,338 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: slot_to_tray=[0] (source: print_cmd)
+2026-07-21 22:47:50,338 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] 3MF: slot_id=1 -> global_tray=0 -> AMS0-T0 (used_g=111.9, tray_now_override=None)
+2026-07-21 22:47:50,339 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] Spool 11 consumed 111.9g (3MF, print_cmd_map) on printer 1 AMS0-T0 (completed)
+2026-07-21 22:47:50,340 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] AMS0-T2: not in print mapping/tray_change_log — skipping fallback for printer 1
+2026-07-21 22:47:50,340 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] AMS0-T3: not in print mapping/tray_change_log — skipping fallback for printer 1
+2026-07-21 22:47:50,340 INFO [backend.app.services.usage_tracker] [-] [UsageTracker] VT254: not in print mapping/tray_change_log — skipping fallback for printer 1
+2026-07-21 22:47:50,343 INFO [backend.app.main] [-] [TIMING] Usage tracker: 3.337s elapsed
+2026-07-21 22:47:50,344 INFO [backend.app.services.spoolman_tracking] [-] [SPOOLMAN] No tracking data for print (printer=1, archive=26)
+2026-07-21 22:47:50,345 INFO [backend.app.main] [-] [TIMING] Spoolman usage report: 3.339s elapsed
+2026-07-21 22:47:50,345 INFO [backend.app.main] [-] [TIMING] Filament usage tracking: 3.339s elapsed
+2026-07-21 22:47:50,345 INFO [backend.app.main] [-] [TIMING] Archive lookup: 3.339s elapsed
+2026-07-21 22:47:50,345 INFO [backend.app.main] [-] [ARCHIVE] Updating archive 26 status...
+2026-07-21 22:47:50,348 INFO [backend.app.main] [-] [ARCHIVE] Archive 26 status updated to completed, failure_reason=None
+2026-07-21 22:47:50,349 INFO [backend.app.main] [-] [ARCHIVE] WebSocket notification sent for archive 26
+2026-07-21 22:47:50,349 INFO [backend.app.main] [-] [TIMING] Archive status update: 3.343s elapsed
+2026-07-21 22:47:50,351 INFO [backend.app.main] [-] [PRINT_LOG] Log entry written for archive 26
+2026-07-21 22:47:50,351 INFO [backend.app.main] [-] [TIMING] Print log entry: 3.346s elapsed
+2026-07-21 22:47:50,351 INFO [backend.app.main] [-] [TIMING] Background tasks scheduled (energy, photo): 3.346s elapsed
+2026-07-21 22:47:50,351 INFO [backend.app.main] [-] [TIMING] All background tasks scheduled: 3.346s elapsed
+2026-07-21 22:47:50,352 INFO [backend.app.main] [-] [CALLBACK] on_print_complete finished for printer 1, archive 26
+2026-07-21 22:47:50,352 INFO [backend.app.main] [-] [ENERGY-BG] Starting energy calculation for archive 26
+2026-07-21 22:47:50,352 INFO [backend.app.main] [-] [PHOTO-BG] Starting finish photo capture for archive 26
+2026-07-21 22:47:50,353 INFO [backend.app.main] [-] [AUTO-OFF-BG] Starting smart plug automation for printer 1
+2026-07-21 22:47:50,353 INFO [backend.app.main] [-] [MAINT-BG] Starting maintenance check for printer 1
+2026-07-21 22:47:50,353 INFO [backend.app.main] [-] [LAYER-TL] Stitching layer timelapse for printer 1
+2026-07-21 22:47:50,357 INFO [backend.app.main] [-] [ENERGY-BG] No start kWh recorded for archive 26
+2026-07-21 22:47:50,359 INFO [backend.app.services.smart_plug_manager] [-] Print completed successfully on printer 1, scheduling turn-off for plug 'BentoBox Filter'
+2026-07-21 22:47:50,359 INFO [backend.app.services.smart_plug_manager] [-] Scheduling turn-off for plug 'BentoBox Filter' in 60 seconds
+2026-07-21 22:47:50,359 INFO [backend.app.main] [-] [AUTO-OFF-BG] Completed
+2026-07-21 22:47:50,360 INFO [backend.app.main] [-] [PHOTO-BG] Saved stage-22 pre-captured frame: finish_20260721_224750_bfcc00d3.jpg (56649 bytes)
+2026-07-21 22:47:50,362 INFO [backend.app.main] [-] [PHOTO-BG] Saved: finish_20260721_224750_bfcc00d3.jpg
+2026-07-21 22:47:50,362 INFO [backend.app.main] [-] [PHOTO-NOTIFY] Photo task returned: finish_20260721_224750_bfcc00d3.jpg
+2026-07-21 22:47:50,363 INFO [backend.app.main] [-] [NOTIFY-BG] Starting notifications for printer 1, photo=finish_20260721_224750_bfcc00d3.jpg
+2026-07-21 22:47:50,365 DEBUG [backend.app.services.smart_plug_manager] [-] Marked plug 1 auto_off_pending=True
+2026-07-21 22:47:50,369 INFO [backend.app.main] [-] [NOTIFY-BG] Loaded finish photo bytes: 56649 bytes
+2026-07-21 22:47:50,369 INFO [backend.app.services.notification_service] [-] on_print_complete called for printer 1 ([PRINTER]), status=completed
+2026-07-21 22:47:50,371 INFO [backend.app.services.notification_service] [-] Found 1 providers for on_print_complete: ['Pushover']
+2026-07-21 22:47:50,374 INFO [backend.app.main] [-] [MAINT-BG] Completed (no items need attention)
+2026-07-21 22:47:51,025 INFO [backend.app.services.notification_service] [-] Sent notification via Pushover
+2026-07-21 22:47:51,026 DEBUG [backend.app.services.notification_service] [-] [EMAIL] Skipping user print email (user_print_complete): advanced_auth not enabled
+2026-07-21 22:47:51,026 INFO [backend.app.main] [-] [NOTIFY-BG] Completed
+2026-07-21 22:47:51,958 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:47:56,024 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:47:56,025 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -29dBm
+2026-07-21 22:47:57,897 INFO [backend.app.services.print_scheduler] [-] Queue check: found 13 pending items: [(38, 1, 27, None), (36, 1, 26, None), (39, 1, 25, None), (40, 1, 25, None), (41, 1, 25, None), (42, 1, 25, None), (43, 1, 25, None), (44, 1, 25, None), (45, 1, 25, None), (46, 1, 25, None), (47, 1, 25, None), (48, 1, 25, None), (37, 1, 26, None)]
+2026-07-21 22:47:57,898 DEBUG [backend.app.services.print_scheduler] [-] Printer 1: not idle — awaiting plate-clear acknowledgment (state=FINISH)
+2026-07-21 22:47:57,898 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-07-21 22:47:58,060 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:47:58,060 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -41dBm
+2026-07-21 22:48:00,118 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:00,118 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -43dBm
+2026-07-21 22:48:03,231 DEBUG [backend.app.main] [-] Recorded 3 printer sensor history entries
+2026-07-21 22:48:04,158 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:04,158 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -29dBm
+2026-07-21 22:48:06,237 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:06,237 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -38dBm
+2026-07-21 22:48:07,616 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: state=FINISH, clearing last_runtime_update
+2026-07-21 22:48:08,247 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:08,247 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -40dBm
+2026-07-21 22:48:12,310 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:12,310 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -38dBm
+2026-07-21 22:48:14,314 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP NOTIFY for VP-[PRINTER] (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-07-21 22:48:14,365 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:14,366 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -39dBm
+2026-07-21 22:48:16,393 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:16,393 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -40dBm
+2026-07-21 22:48:20,460 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:20,460 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -29dBm
+2026-07-21 22:48:22,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:22,512 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -28dBm
+2026-07-21 22:48:24,560 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:24,561 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -29dBm
+2026-07-21 22:48:26,625 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:27,904 INFO [backend.app.services.print_scheduler] [-] Queue check: found 13 pending items: [(38, 1, 27, None), (36, 1, 26, None), (39, 1, 25, None), (40, 1, 25, None), (41, 1, 25, None), (42, 1, 25, None), (43, 1, 25, None), (44, 1, 25, None), (45, 1, 25, None), (46, 1, 25, None), (47, 1, 25, None), (48, 1, 25, None), (37, 1, 26, None)]
+2026-07-21 22:48:27,905 DEBUG [backend.app.services.print_scheduler] [-] Printer 1: not idle — awaiting plate-clear acknowledgment (state=FINISH)
+2026-07-21 22:48:27,905 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=FINISH, awaiting_plate_clear=True
+2026-07-21 22:48:30,686 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:32,739 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:32,739 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -30dBm
+2026-07-21 22:48:34,767 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:34,768 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -29dBm
+2026-07-21 22:48:38,833 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:40,879 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:40,879 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -30dBm
+2026-07-21 22:48:42,923 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:42,923 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -29dBm
+2026-07-21 22:48:44,407 DEBUG [backend.app.services.virtual_printer.ssdp_server] [-] Sent SSDP NOTIFY for VP-[PRINTER] (Location=[IP], USN=[SERIAL], bind=[IP])
+2026-07-21 22:48:47,078 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:47,078 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -28dBm
+2026-07-21 22:48:49,050 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-07-21 22:48:49,051 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x2003 -> extruder 0
+2026-07-21 22:48:49,051 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 1 info=0x142023 -> extruder 0
+2026-07-21 22:48:49,051 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '1': 0}
+2026-07-21 22:48:49,051 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:50,392 INFO [backend.app.services.homeassistant] [-] Turned OFF HA entity 'plug_1' (switch.3d_printer_filter)
+2026-07-21 22:48:50,393 INFO [backend.app.services.smart_plug_manager] [-] Turned off plug 1 after time delay
+2026-07-21 22:48:50,395 INFO [backend.app.services.smart_plug_manager] [-] Auto-off executed for plug 1 (persistent, stays enabled)
+2026-07-21 22:48:50,395 INFO [backend.app.services.printer_manager] [-] Marking printer 1 as offline (smart plug power off)
+2026-07-21 22:48:50,396 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-21 22:48:51,084 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:51,084 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-21 22:48:55,151 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:55,151 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -30dBm
+2026-07-21 22:48:57,242 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-07-21 22:48:57,242 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x2003 -> extruder 0
+2026-07-21 22:48:57,242 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 1 info=0x142023 -> extruder 0
+2026-07-21 22:48:57,243 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '1': 0}
+2026-07-21 22:48:57,243 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:57,243 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -27dBm
+2026-07-21 22:48:57,909 INFO [backend.app.services.print_scheduler] [-] Queue check: found 13 pending items: [(38, 1, 27, None), (36, 1, 26, None), (39, 1, 25, None), (40, 1, 25, None), (41, 1, 25, None), (42, 1, 25, None), (43, 1, 25, None), (44, 1, 25, None), (45, 1, 25, None), (46, 1, 25, None), (47, 1, 25, None), (48, 1, 25, None), (37, 1, 26, None)]
+2026-07-21 22:48:57,910 DEBUG [backend.app.services.print_scheduler] [-] Printer 1: not idle — awaiting plate-clear acknowledgment (state=unknown)
+2026-07-21 22:48:57,910 INFO [backend.app.services.print_scheduler] [-] Queue: printer 1 not available — connected=True, state=unknown, awaiting_plate_clear=True
+2026-07-21 22:48:59,313 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-07-21 22:48:59,313 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x2003 -> extruder 0
+2026-07-21 22:48:59,313 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 1 info=0x142023 -> extruder 0
+2026-07-21 22:48:59,313 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '1': 0}
+2026-07-21 22:48:59,314 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-21 22:48:59,314 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -28dBm
+2026-07-21 22:49:01,387 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 2 new units, 2 total
+2026-07-21 22:49:01,388 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x2003 -> extruder 0
+2026-07-21 22:49:01,388 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 1 info=0x142023 -> extruder 0
+2026-07-21 22:49:01,388 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0, '1': 0}
+2026-07-21 22:49:01,388 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status

@@ -6,9 +6,11 @@
 //
 //   1. Imported (local-tier) presets carry the slicer's own
 //      `compatible_printers` list — an exact list of printer-preset names.
-//   2. BambuStudio's own `@BBL <model>` naming convention on shipped cloud
-//      / standard presets. The token → printer-fragment table is derived
-//      from the backend's canonical PRINTER_MODEL_MAP (fetched via
+//   2. The `@<printer>` naming convention, in both shapes the slicer
+//      writes: `@BBL <model>` on shipped cloud / standard presets, and
+//      `@Bambu Lab <model> <size> nozzle` on presets a user saved for a
+//      specific printer (#2628). The token → printer-fragment table is
+//      derived from the backend's canonical PRINTER_MODEL_MAP (fetched via
 //      /slicer/printer-models), not duplicated here.
 //
 // The result drives grouping, not hard hiding: a preset no rule covers
@@ -136,10 +138,72 @@ function extractPrinterPresetModel(printerPresetName: string): { model: string; 
   return stripped ? { model: stripped, nozzle } : null;
 }
 
+// Trailing parenthetical the slicer appends to user-saved presets —
+// "… @Bambu Lab H2D 0.4 nozzle (Custom)". Dropped before the nozzle suffix
+// is parsed, or the tag would resolve to a nonsense model token and the
+// preset would be branded a mismatch against its OWN printer.
+function stripTrailingParenthetical(s: string): string {
+  return s.replace(/\s*\([^)]*\)\s*$/, '').trim();
+}
+
+// Nozzle sizes Bambu ships run 0.2 – 0.8. The range guard keeps a tag that
+// merely looks numeric ("PLA @2026") from being read as a nozzle and branded
+// incompatible with every printer.
+const MIN_NOZZLE_MM = 0.1;
+const MAX_NOZZLE_MM = 2.0;
+
+// Compare two nozzle strings numerically, so "0.20" and "0.2" are the same
+// size. Unparseable values never match — a size we can't read is not evidence.
+function sameNozzle(a: string, b: string): boolean {
+  const x = Number.parseFloat(a);
+  const y = Number.parseFloat(b);
+  if (Number.isNaN(x) || Number.isNaN(y)) return false;
+  return x === y;
+}
+
+// Pull the model token and nozzle out of a preset name's printer tag.
+// Three shapes exist in the wild (#2628):
+//
+//   "0.20mm Standard @BBL X1C"                    — short code, the form
+//      Bambu ships its own cloud / standard presets under.
+//   "SUNLU TPU 95A @Bambu Lab H2D 0.4 nozzle"     — the full printer-preset
+//      name, the form the slicer writes when a user saves their own preset
+//      for a printer. Handling only the short form left these classified
+//      'unknown', so an H2D-scoped filament was offered (and auto-picked)
+//      for an A1 slice, which the CLI then rejected.
+//   "Overture PLA Matte @0.2"                     — nozzle only, no model.
+//      Returned with a null token: the size can rule a printer OUT, but
+//      says nothing about which models the profile belongs to.
+//
+// The first two shapes are also parsed in ConfigureAmsSlotModal (#1623).
+function extractPrinterTag(presetName: string): { token: string | null; nozzle: string | null } | null {
+  const cleaned = stripTrailingParenthetical(presetName);
+  const bbl = extractBblToken(cleaned);
+  if (bbl) return bbl;
+  // The printer tag is a suffix by convention, so read from the LAST '@' —
+  // a stray earlier one ("My @work PLA @Bambu Lab H2D 0.4 nozzle") must not
+  // swallow it. Anything that doesn't parse as a Bambu printer preset name
+  // falls through to 'unknown', never to a guessed mismatch.
+  const at = cleaned.lastIndexOf('@');
+  if (at < 0) return null;
+  const suffix = cleaned.slice(at + 1).trim();
+  const longForm = extractPrinterPresetModel(suffix);
+  if (longForm) return { token: longForm.model, nozzle: longForm.nozzle };
+  const nozzleOnly = suffix.match(/^([\d.]+)\s*(?:mm)?\s*(?:nozzle)?$/i);
+  if (nozzleOnly) {
+    const size = Number.parseFloat(nozzleOnly[1]);
+    if (!Number.isNaN(size) && size >= MIN_NOZZLE_MM && size <= MAX_NOZZLE_MM) {
+      return { token: null, nozzle: nozzleOnly[1] };
+    }
+  }
+  return null;
+}
+
 /**
- * Name-based fallback for presets BambuStudio ships with a `@BBL <model>`
- * tag (#1325 follow-up). Used only after `compatible_printers` has returned
- * `'unknown'`.
+ * Name-based fallback for presets carrying a printer tag — BambuStudio's own
+ * `@BBL <model>` (#1325 follow-up), the full `@Bambu Lab <model> <size>
+ * nozzle` form user-saved presets get, or a bare `@<size>` (#2628).
+ * Used only after `compatible_printers` has returned `'unknown'`.
  *
  * Compares BOTH model AND nozzle. The nozzle filter is required because
  * Bambu ships per-nozzle process / filament variants (0.2 / 0.4 / 0.6 /
@@ -152,8 +216,23 @@ function classifyByBambuName(
   selectedPrinterName: string,
   bambuModelByShortCode: Record<string, string>,
 ): PrinterCompatibility {
-  const parsed = extractBblToken(presetName);
+  const parsed = extractPrinterTag(presetName);
   if (!parsed) return 'unknown';
+  const selectedParts = extractPrinterPresetModel(selectedPrinterName);
+  if (!selectedParts) return 'unknown';
+  if (parsed.token === null) {
+    // Nozzle-only tag ("Overture PLA Matte @0.2"). The size can rule a
+    // printer OUT, but a matching size proves nothing about the model, so
+    // the best this can ever return is 'unknown' — never 'match'.
+    if (
+      selectedParts.nozzle !== null
+      && parsed.nozzle !== null
+      && !sameNozzle(parsed.nozzle, selectedParts.nozzle)
+    ) {
+      return 'mismatch';
+    }
+    return 'unknown';
+  }
   // If the token isn't in the table (a brand-new Bambu model whose short
   // code the backend registry hasn't added yet, or the model map hasn't
   // loaded yet), fall back to comparing the raw token. That keeps the
@@ -162,8 +241,6 @@ function classifyByBambuName(
   // without us having to ship a code update. When they differ in form
   // (X1C vs "X1 Carbon"), the registry is what makes the match work.
   const inferredModel = bambuModelByShortCode[parsed.token] ?? parsed.token;
-  const selectedParts = extractPrinterPresetModel(selectedPrinterName);
-  if (!selectedParts) return 'unknown';
   // The raw inferred model and the printer-preset fragment may differ only by
   // the Bambu short-code rename (e.g. preset token "A1M" vs printer "A1 Mini").
   // ``matchesPrinterModelSuffix`` consults the alias table before declaring a
@@ -180,7 +257,7 @@ function classifyByBambuName(
   // or non-Bambu printer names that happened to match the model.
   if (selectedParts.nozzle !== null) {
     const presetNozzle = parsed.nozzle ?? DEFAULT_NOZZLE;
-    if (presetNozzle !== selectedParts.nozzle) return 'mismatch';
+    if (!sameNozzle(presetNozzle, selectedParts.nozzle)) return 'mismatch';
   }
   return 'match';
 }

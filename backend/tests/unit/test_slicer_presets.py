@@ -155,6 +155,83 @@ class TestEnrichCloudMetadata:
         assert c["filament"][0].filament_colour == "#FFFFFF"
 
 
+class TestEnrichCompatiblePrinters:
+    """#2628: the same name bridge carries ``compatible_printers`` onto the
+    tiers that don't ship one. Bambu Cloud never does — so a profile whose
+    name carries no printer model reads as "compatibility unknown", which the
+    SliceModal treats as usable and auto-picks for the wrong printer."""
+
+    COMPAT = ["Bambu Lab X1 Carbon 0.2 nozzle", "Bambu Lab P1S 0.2 nozzle"]
+
+    def _tier(self, source: str, slot: str, compat: list[str] | None) -> dict[str, list[UnifiedPreset]]:
+        empty: dict[str, list[UnifiedPreset]] = {"printer": [], "process": [], "filament": []}
+        empty[slot] = [
+            UnifiedPreset(id=f"{source}1", name="Overture PLA Matte @0.2", source=source, compatible_printers=compat)
+        ]
+        return empty
+
+    def test_bambu_cloud_borrows_the_list_from_a_same_named_local_import(self):
+        local = self._tier("local", "filament", self.COMPAT)
+        cloud = self._tier("cloud", "filament", None)
+
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(_slot([]), cloud, local, _slot([]))
+
+        assert c["filament"][0].compatible_printers == self.COMPAT
+
+    def test_bambu_cloud_borrows_from_orca_cloud_too(self):
+        orca = self._tier("orca_cloud", "filament", self.COMPAT)
+        cloud = self._tier("cloud", "filament", None)
+
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(orca, cloud, _slot([]), _slot([]))
+
+        assert c["filament"][0].compatible_printers == self.COMPAT
+
+    def test_orca_cloud_borrows_when_its_own_content_had_no_list(self):
+        orca = self._tier("orca_cloud", "filament", None)
+        local = self._tier("local", "filament", self.COMPAT)
+
+        oc, _c, _l, _s = sp._enrich_cloud_metadata(orca, _slot([]), local, _slot([]))
+
+        assert oc["filament"][0].compatible_printers == self.COMPAT
+
+    def test_process_slot_is_bridged_as_well(self):
+        local = self._tier("local", "process", self.COMPAT)
+        cloud = self._tier("cloud", "process", None)
+
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(_slot([]), cloud, local, _slot([]))
+
+        assert c["process"][0].compatible_printers == self.COMPAT
+
+    def test_never_overwrites_a_list_the_entry_already_has(self):
+        own = ["Bambu Lab P2S 0.4 nozzle"]
+        local = self._tier("local", "filament", self.COMPAT)
+        cloud = self._tier("cloud", "filament", own)
+
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(_slot([]), cloud, local, _slot([]))
+
+        assert c["filament"][0].compatible_printers == own
+
+    def test_no_donor_leaves_the_entry_unclassified(self):
+        """Absent evidence the entry must stay None — the SliceModal then
+        falls back to the name matcher instead of hiding the profile."""
+        cloud = self._tier("cloud", "filament", None)
+
+        _oc, c, _l, _s = sp._enrich_cloud_metadata(_slot([]), cloud, _slot([]), _slot([]))
+
+        assert c["filament"][0].compatible_printers is None
+
+    def test_borrowed_list_is_copied_not_shared(self):
+        """A later mutation of one tier's list must not reach through to the
+        other — these objects are cached per user between requests."""
+        local = self._tier("local", "filament", list(self.COMPAT))
+        cloud = self._tier("cloud", "filament", None)
+
+        _oc, c, l_, _s = sp._enrich_cloud_metadata(_slot([]), cloud, local, _slot([]))
+        l_["filament"][0].compatible_printers.append("Bambu Lab H2D 0.4 nozzle")
+
+        assert c["filament"][0].compatible_printers == self.COMPAT
+
+
 def _user_with_cloud_auth(user_id: int = 1) -> MagicMock:
     """Construct a mock User that passes the CLOUD_AUTH permission check.
 
@@ -272,6 +349,76 @@ class TestFetchOrcaCloudPresets:
         # per-preset fetch to enrich filament_type / filament_colour).
         assert filament[0].filament_type == "PLA"
         assert filament[0].filament_colour == "#000000"
+
+    @pytest.mark.asyncio
+    async def test_extracts_compatible_printers_from_content(self):
+        """#2628: Orca's sync_pull already carries the profile's own
+        compatible-printer list. Surfacing it lets the SliceModal reject a
+        profile built for another printer instead of falling back to reading
+        the model out of the NAME — which fails outright for names that carry
+        no model ("Overture PLA Matte @0.2")."""
+        sp._orca_cloud_cache.clear()
+        compat = ["Bambu Lab X1 Carbon 0.2 nozzle", "Bambu Lab P1S 0.2 nozzle"]
+        svc_mock = MagicMock()
+        svc_mock.list_profiles = AsyncMock(
+            return_value=[
+                {
+                    "id": "f1",
+                    "name": "Overture PLA Matte @0.2",
+                    "content": {
+                        "type": "filament",
+                        "filament_type": ["PLA"],
+                        "compatible_printers": compat,
+                    },
+                },
+                {
+                    "id": "p1",
+                    "name": "Orca 0.20mm",
+                    "content": {"type": "print", "compatible_printers": "Bambu Lab P2S 0.4 nozzle"},
+                },
+                {"id": "m1", "name": "Orca X1C", "content": {"type": "printer"}},
+            ]
+        )
+        svc_mock.close = AsyncMock()
+        user = MagicMock(id=1)
+        user.has_permission = MagicMock(return_value=True)
+        with (
+            patch.object(sp, "_load_orca_credentials", AsyncMock(return_value=self._orca_creds("tok"))),
+            patch.object(sp, "_build_orca_service", AsyncMock(return_value=svc_mock)),
+        ):
+            slots, status = await sp._fetch_orca_cloud_presets(MagicMock(), user)
+
+        assert status == "ok"
+        assert slots["filament"][0].compatible_printers == compat
+        # A single-printer profile may store a bare string — normalised to a list.
+        assert slots["process"][0].compatible_printers == ["Bambu Lab P2S 0.4 nozzle"]
+        # Printer presets have nothing to be compatible with.
+        assert slots["printer"][0].compatible_printers is None
+
+    @pytest.mark.asyncio
+    async def test_missing_or_malformed_compatible_printers_stays_none(self):
+        """No data must read as "unknown", never as "compatible with nothing" —
+        the SliceModal falls back to the name matcher for those."""
+        sp._orca_cloud_cache.clear()
+        svc_mock = MagicMock()
+        svc_mock.list_profiles = AsyncMock(
+            return_value=[
+                {"id": "f1", "name": "No list", "content": {"type": "filament"}},
+                {"id": "f2", "name": "Empty list", "content": {"type": "filament", "compatible_printers": []}},
+                {"id": "f3", "name": "Blanks", "content": {"type": "filament", "compatible_printers": ["", "  "]}},
+                {"id": "f4", "name": "Wrong type", "content": {"type": "filament", "compatible_printers": {"a": 1}}},
+            ]
+        )
+        svc_mock.close = AsyncMock()
+        user = MagicMock(id=1)
+        user.has_permission = MagicMock(return_value=True)
+        with (
+            patch.object(sp, "_load_orca_credentials", AsyncMock(return_value=self._orca_creds("tok"))),
+            patch.object(sp, "_build_orca_service", AsyncMock(return_value=svc_mock)),
+        ):
+            slots, _status = await sp._fetch_orca_cloud_presets(MagicMock(), user)
+
+        assert [p.compatible_printers for p in slots["filament"]] == [None, None, None, None]
 
     @pytest.mark.asyncio
     async def test_cache_hit_skips_orca_call(self):

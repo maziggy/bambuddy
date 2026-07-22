@@ -237,20 +237,31 @@ def merge_plate_3mfs(
 
 def substitute_unused_plate_filaments(source_3mf_bytes: bytes, plate_id: int | None, items: list[str]) -> list[str]:
     """Replace any filament-list entry whose 1-indexed slot isn't used by
-    ``plate_id`` with the entry at slot 1 (index 0).
+    ``plate_id`` with the entry from the plate's lowest *used* slot.
 
     Why: the slice modal lets the user pick a filament profile per slot,
     but each plate in a multi-plate project only uses a subset of those
     slots. The modal labels the unused rows "not used by this plate" yet
     still submits their dropdown values. BambuStudio then validates every
-    loaded filament for material compatibility — PLA in a used slot +
-    ABS defaulted into an unused slot trips
-    "the temperature difference of the filaments used is too large"
-    (exit 194), even though the plate's G-code never touches the ABS
-    slot. Substituting unused entries with slot 1's filament keeps the
-    per-filament array length intact (so the source 3MF's per-slot
-    references stay valid) while making the loaded-filament set
-    materially homogeneous, so the validator passes.
+    loaded filament — for material compatibility (PLA in a used slot +
+    ABS defaulted into an unused slot trips "the temperature difference
+    of the filaments used is too large", exit 194) and for printer
+    compatibility ("filament preset X (slot N) is not compatible with
+    printer Y", exit -5) — even though the plate's G-code never touches
+    the unused slot. Substituting unused entries with a used slot's
+    filament keeps the per-filament array length intact (so the source
+    3MF's per-slot references stay valid) while making the loaded set
+    both materially homogeneous and printer-correct, so both validators
+    pass.
+
+    The anchor is the lowest used slot, NOT slot 1 (#2628). Slot 1 is
+    itself unused on plenty of plates, and anchoring there did the two
+    things this function exists to prevent: the substitution became a
+    no-op for the slot that needed it most, and — with more than one
+    unused slot — it propagated slot 1's own preset (in the reported
+    case an ``@Bambu Lab H2D`` profile baked into the source 3MF) into
+    every other unused slot, blocking an A1 slice on slots the plate
+    doesn't even use.
 
     The substitution is a no-op when:
     - ``plate_id`` is None (we can't determine which slots are unused),
@@ -288,16 +299,26 @@ def substitute_unused_plate_filaments(source_3mf_bytes: bytes, plate_id: int | N
         # than to silently rewrite them.
         return items
     out = list(items)
+    # Anchor on the lowest used slot that actually exists in the list. A
+    # plate can reference a slot beyond the submitted list (a truncated or
+    # mismatched pick set) — those can't be an anchor, and if none of the
+    # used slots is in range there is nothing trustworthy to copy from, so
+    # leave the user's picks alone rather than inventing a substitution.
+    in_range_used = sorted(s for s in used if 1 <= s <= len(out))
+    if not in_range_used:
+        return items
+    anchor_slot = in_range_used[0]
     substituted = []
     for idx in range(len(out)):
         slot = idx + 1
         if slot not in used:
             substituted.append(slot)
-            out[idx] = out[0]
+            out[idx] = out[anchor_slot - 1]
     if substituted:
         logger.info(
-            "Substituted slot-1 filament for unused slot(s) %s on plate %s "
-            "(avoids loaded-filament temp-spread validator)",
+            "Substituted slot-%s filament for unused slot(s) %s on plate %s "
+            "(avoids loaded-filament temp-spread and printer-compatibility validators)",
+            anchor_slot,
             substituted,
             plate_id,
         )

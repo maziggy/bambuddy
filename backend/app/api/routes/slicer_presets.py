@@ -259,15 +259,23 @@ async def _fetch_orca_cloud_presets(
                     filament_colour = fc[0]
                 elif isinstance(fc, str):
                     filament_colour = fc
-            slots[slot].append(
-                UnifiedPreset(
-                    id=str(preset_id),
-                    name=str(name),
-                    source="orca_cloud",
-                    filament_type=filament_type,
-                    filament_colour=filament_colour,
-                )
+            preset = UnifiedPreset(
+                id=str(preset_id),
+                name=str(name),
+                source="orca_cloud",
+                filament_type=filament_type,
+                filament_colour=filament_colour,
             )
+            if slot in ("process", "filament"):
+                # The profile's own compatible-printer list, straight out of
+                # the content Orca already hands us (#2628). Without it the
+                # SliceModal falls back to reading the printer out of the
+                # profile NAME — and a profile whose name carries no model
+                # ("Overture PLA Matte @0.2") then reads as "can't tell",
+                # which the picker treats as usable and auto-picks for a
+                # printer the profile was never built for.
+                preset.compatible_printers = _content_compatible_printers(content)
+            slots[slot].append(preset)
         _orca_cloud_cache[cache_key] = (now, slots)
         return slots, "ok"
     finally:
@@ -295,6 +303,25 @@ async def _fetch_local_presets(db: AsyncSession) -> dict[str, list[UnifiedPreset
             preset.compatible_printers = _parse_compatible_printers(p.compatible_printers)
         slots[slot].append(preset)
     return slots
+
+
+def _content_compatible_printers(content: dict) -> list[str] | None:
+    """Pull ``compatible_printers`` out of an inline profile content dict.
+
+    Orca profiles carry it as a list of printer-preset names (the same shape
+    ``orca_profiles.py`` stores on import); a single-printer profile may store
+    a bare string. Returns ``None`` for missing / empty / malformed values so
+    the caller leaves the field unset and the SliceModal falls back to the
+    name-based matcher, rather than treating "no data" as "compatible with
+    nothing".
+    """
+    raw = content.get("compatible_printers")
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return None
+    names = [s.strip() for s in raw if isinstance(s, str) and s.strip()]
+    return names or None
 
 
 def _parse_compatible_printers(raw: str | None) -> list[str] | None:
@@ -442,6 +469,16 @@ def _enrich_cloud_metadata(
     in ``local`` / ``orca_cloud`` / ``standard``. This is the only reason
     this function exists post-#1712 — without the enrich the Bambu Cloud
     tier can't score in ``pickFilamentForSlot``.
+
+    Compatibility merge (#2628): the same name bridge carries
+    ``compatible_printers`` onto any process / filament entry that lacks it.
+    Bambu Cloud never ships the list, so a profile whose NAME carries no
+    printer model reads as "compatibility unknown" — which the SliceModal
+    treats as usable and auto-picks for whatever printer is selected. When
+    the very same profile is also present as a local import or an Orca Cloud
+    profile, that copy states the truth; borrowing it turns the auto-pick
+    into a correctly-rejected mismatch. Only ever fills a gap: an entry that
+    carries its own list keeps it.
     """
     # Build a name → metadata lookup from the tiers that carry it (local,
     # orca_cloud, standard). Bambu cloud is intentionally skipped — it
@@ -463,6 +500,24 @@ def _enrich_cloud_metadata(
                 p.filament_type = t
             if p.filament_colour is None and c is not None:
                 p.filament_colour = c
+
+    # Compatibility bridge (#2628). Runs over both slots that carry the
+    # list, and in both directions between the cloud tiers — whichever copy
+    # of a profile knows its printers teaches the ones that don't.
+    for slot in ("process", "filament"):
+        compat_by_name: dict[str, list[str]] = {}
+        for tier in (local, orca_cloud, cloud, standard):
+            for p in tier[slot]:
+                if p.compatible_printers and p.name not in compat_by_name:
+                    compat_by_name[p.name] = p.compatible_printers
+        if not compat_by_name:
+            continue
+        for tier in (orca_cloud, cloud):
+            for p in tier[slot]:
+                if not p.compatible_printers:
+                    borrowed = compat_by_name.get(p.name)
+                    if borrowed:
+                        p.compatible_printers = list(borrowed)
 
     return orca_cloud, cloud, local, standard
 

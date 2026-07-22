@@ -3590,9 +3590,11 @@ async def _run_slicer_with_fallback(
     # (e.g. ABS in slot 2 next to a PLA in the used slot 1) makes
     # BambuStudio reject the slice with "the temperature difference of
     # the filaments used is too large" (exit 194) even though the G-code
-    # never touches the unused slot. Replace unused-slot entries with the
-    # slot-1 selection before the real slice so the loaded-filament set
-    # is materially homogeneous.
+    # never touches the unused slot; a default scoped to another printer
+    # gets it rejected with "filament preset (slot N) is not compatible
+    # with printer …" (#2628). Replace unused-slot entries with the
+    # plate's lowest used slot before the real slice so the loaded set is
+    # materially homogeneous and printer-correct.
     if is_3mf and request.plate is not None:
         from backend.app.services.slicer_3mf_convert import substitute_unused_plate_filaments
 

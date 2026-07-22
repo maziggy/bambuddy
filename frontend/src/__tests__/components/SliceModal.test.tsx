@@ -1348,3 +1348,83 @@ describe('pickFilamentForSlot — printer-compat contract (#1851)', () => {
     expect(pick).toEqual({ source: 'standard', id: 'Generic PLA @BBL H2C' });
   });
 });
+
+describe('pickFilamentForSlot — long-form printer tag (#2628)', () => {
+  const index = buildCompatibilityIndex({
+    'Bambu Lab A1': 'A1',
+    'Bambu Lab H2D': 'H2D',
+  });
+
+  it('never auto-picks a user-saved preset scoped to another printer', () => {
+    // michaelklos's registry: a cloud-tier user preset carrying the full
+    // "@Bambu Lab H2D 0.4 nozzle" tag outscores the A1 preset on tier bonus
+    // alone. Until the matcher learned the long form it classified 'unknown'
+    // — indistinguishable from compatible — so it won the slot, landed in a
+    // dropdown the modal disables (slot not used by the plate), and the CLI
+    // rejected the whole slice.
+    const presets = makeUnified({
+      cloud: {
+        printer: [],
+        process: [],
+        filament: [
+          {
+            id: 'sunlu-tpu-h2d',
+            name: 'SUNLU TPU 95A @Bambu Lab H2D 0.4 nozzle',
+            source: 'cloud',
+            filament_type: 'PLA',
+            filament_colour: '#FF0000',
+          },
+        ],
+      },
+      standard: {
+        printer: [],
+        process: [],
+        filament: [
+          {
+            id: 'Bambu PLA Basic @BBL A1',
+            name: 'Bambu PLA Basic @BBL A1',
+            source: 'standard',
+            filament_type: 'PLA',
+            filament_colour: '#FFFFFF',
+          },
+        ],
+      },
+    });
+
+    const pick = pickFilamentForSlot(
+      presets,
+      { type: 'PLA', color: '#FF0000' },
+      'Bambu Lab A1 0.4 nozzle',
+      index,
+    );
+
+    expect(pick).toEqual({ source: 'standard', id: 'Bambu PLA Basic @BBL A1' });
+  });
+
+  it('still picks a long-form preset for its own printer', () => {
+    const presets = makeUnified({
+      cloud: {
+        printer: [],
+        process: [],
+        filament: [
+          {
+            id: 'sunlu-tpu-h2d',
+            name: 'SUNLU TPU 95A @Bambu Lab H2D 0.4 nozzle',
+            source: 'cloud',
+            filament_type: 'TPU',
+            filament_colour: '#FF0000',
+          },
+        ],
+      },
+    });
+
+    const pick = pickFilamentForSlot(
+      presets,
+      { type: 'TPU', color: '#FF0000' },
+      'Bambu Lab H2D 0.4 nozzle',
+      index,
+    );
+
+    expect(pick).toEqual({ source: 'cloud', id: 'sunlu-tpu-h2d' });
+  });
+});

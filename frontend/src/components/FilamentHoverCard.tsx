@@ -156,6 +156,19 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
     timeoutRef.current = setTimeout(() => setIsVisible(false), 100);
   };
 
+  // Dismiss the card immediately, for actions that open a dialog or navigate away.
+  //
+  // The card is portaled at z-[60] so it can escape sibling printer cards' stacking
+  // contexts, which puts it ABOVE ConfigureAmsSlotModal and LinkSpoolModal at z-50 —
+  // so a card left standing draws over the very dialog it just opened. Mouseleave is
+  // the only thing that normally hides it, and a touch device never sends one after
+  // the tap that opened the card, so on a tablet it stays up indefinitely (#2631).
+  // Clearing the timeout is not optional: a pending show timer would re-open it.
+  const dismiss = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setIsVisible(false);
+  };
+
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -328,6 +341,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          dismiss();
                           navigate(`/inventory?spool=${spoolman.linkedSpoolId}`);
                         }}
                         className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green"
@@ -380,6 +394,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            dismiss();
                             navigate(`/inventory?spool=${inventory.assignedSpool!.id}`);
                           }}
                           className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-green/20 hover:bg-bambu-green/30 text-bambu-green"
@@ -393,6 +408,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            dismiss();
                             inventory.onUnassignSpool?.();
                           }}
                           className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-red-100 dark:bg-red-500/20 hover:bg-red-200 dark:hover:bg-red-500/30 text-red-700 dark:text-red-400"
@@ -406,6 +422,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                     <button
                       onClick={inventory.isAssigned ? undefined : (e) => {
                         e.stopPropagation();
+                        dismiss();
                         inventory.onAssignSpool?.();
                       }}
                       disabled={!!inventory.isAssigned}
@@ -426,6 +443,7 @@ export function FilamentHoverCard({ data, children, disabled, className = '', sp
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      dismiss();
                       configureSlot.onConfigure?.();
                     }}
                     className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
@@ -534,6 +552,13 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot, on
     timeoutRef.current = setTimeout(() => setIsVisible(false), 100);
   };
 
+  // See FilamentHoverCard.dismiss — same z-[60]-over-a-z-50-dialog problem, and the
+  // same missing mouseleave on touch (#2631).
+  const dismiss = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setIsVisible(false);
+  };
+
   useEffect(() => {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -601,6 +626,7 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot, on
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      dismiss();
                       configureSlot.onConfigure?.();
                     }}
                     className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
@@ -612,7 +638,7 @@ export function EmptySlotHoverCard({ children, className = '', configureSlot, on
                 )}
                 {onAssignSpool && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); onAssignSpool(); }}
+                    onClick={(e) => { e.stopPropagation(); dismiss(); onAssignSpool(); }}
                     className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded transition-colors bg-bambu-blue/20 hover:bg-bambu-blue/30 text-bambu-blue"
                   >
                     <Package className="w-3.5 h-3.5" />

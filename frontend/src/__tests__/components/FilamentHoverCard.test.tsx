@@ -326,6 +326,93 @@ describe('FilamentHoverCard', () => {
       });
     });
   });
+
+  // The card is portaled at z-[60] — above ConfigureAmsSlotModal and
+  // LinkSpoolModal at z-50 — so a card left standing draws OVER the dialog its
+  // own button just opened. Mouseleave is the only thing that used to hide it,
+  // and a touch device never sends one after the tap that opened the card, so on
+  // a tablet it hung there indefinitely: two overlapping layers, competing focus.
+  describe('dismissal when an action opens a dialog (#2631)', () => {
+    it('closes the card when Configure is pressed, and still configures', async () => {
+      const onConfigure = vi.fn();
+      renderWithHover(
+        <FilamentHoverCard
+          data={baseFilamentData}
+          configureSlot={{ enabled: true, onConfigure }}
+        >
+          <div>trigger</div>
+        </FilamentHoverCard>
+      );
+      vi.advanceTimersByTime(100);
+      await waitFor(() => expect(screen.getByText(/configure/i)).toBeInTheDocument());
+
+      fireEvent.click(screen.getByText(/configure/i));
+
+      expect(onConfigure).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(screen.queryByText('PLA Basic')).not.toBeInTheDocument());
+    });
+
+    it('stays closed with no mouseleave, which is all a tablet ever gives us', async () => {
+      renderWithHover(
+        <FilamentHoverCard
+          data={baseFilamentData}
+          configureSlot={{ enabled: true, onConfigure: vi.fn() }}
+        >
+          <div>trigger</div>
+        </FilamentHoverCard>
+      );
+      vi.advanceTimersByTime(100);
+      await waitFor(() => expect(screen.getByText(/configure/i)).toBeInTheDocument());
+
+      fireEvent.click(screen.getByText(/configure/i));
+      await waitFor(() => expect(screen.queryByText('PLA Basic')).not.toBeInTheDocument());
+
+      // A pending show timer would resurrect the card on top of the dialog.
+      vi.advanceTimersByTime(1000);
+      expect(screen.queryByText('PLA Basic')).not.toBeInTheDocument();
+    });
+
+    it('closes the card when Assign Spool is pressed', async () => {
+      const onAssignSpool = vi.fn();
+      renderWithHover(
+        <FilamentHoverCard
+          data={baseFilamentData}
+          inventory={{ assignedSpool: null, onAssignSpool }}
+        >
+          <div>trigger</div>
+        </FilamentHoverCard>
+      );
+      vi.advanceTimersByTime(100);
+      await waitFor(() => expect(screen.getByText(/assign/i)).toBeInTheDocument());
+
+      fireEvent.click(screen.getByText(/assign/i));
+
+      expect(onAssignSpool).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(screen.queryByText('PLA Basic')).not.toBeInTheDocument());
+    });
+
+    it('closes the card when Unassign Spool is pressed', async () => {
+      const onUnassignSpool = vi.fn();
+      renderWithHover(
+        <FilamentHoverCard
+          data={baseFilamentData}
+          inventory={{
+            assignedSpool: { id: 7, material: 'PLA', brand: 'eSun', color_name: 'Black' },
+            onUnassignSpool,
+          }}
+        >
+          <div>trigger</div>
+        </FilamentHoverCard>
+      );
+      vi.advanceTimersByTime(100);
+      await waitFor(() => expect(screen.getByText(/unassign/i)).toBeInTheDocument());
+
+      fireEvent.click(screen.getByText(/unassign/i));
+
+      expect(onUnassignSpool).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(screen.queryByText('PLA Basic')).not.toBeInTheDocument());
+    });
+  });
 });
 
 // EmptySlotHoverCard is the hover wrapper rendered for a physically empty
@@ -396,5 +483,42 @@ describe('EmptySlotHoverCard (#1133)', () => {
     await waitFor(() => expect(screen.getByText(/assign spool/i)).toBeInTheDocument());
     fireEvent.click(screen.getByText(/assign spool/i));
     expect(onAssign).toHaveBeenCalledTimes(1);
+  });
+
+  // Same z-[60]-over-a-z-50-dialog problem as FilamentHoverCard (#2631).
+  describe('dismissal when an action opens a dialog (#2631)', () => {
+    it('closes the card when Configure is pressed, and still configures', async () => {
+      const onConfigure = vi.fn();
+      const result = render(
+        <EmptySlotHoverCard configureSlot={{ enabled: true, onConfigure }}>
+          <div>trigger</div>
+        </EmptySlotHoverCard>
+      );
+      fireEvent.mouseEnter(result.container.firstElementChild as HTMLElement);
+      vi.advanceTimersByTime(100);
+      await waitFor(() => expect(screen.getByText(/configure/i)).toBeInTheDocument());
+
+      fireEvent.click(screen.getByText(/configure/i));
+
+      expect(onConfigure).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(screen.queryByText(/empty/i)).not.toBeInTheDocument());
+    });
+
+    it('closes the card when Assign Spool is pressed', async () => {
+      const onAssign = vi.fn();
+      const result = render(
+        <EmptySlotHoverCard onAssignSpool={onAssign}>
+          <div>trigger</div>
+        </EmptySlotHoverCard>
+      );
+      fireEvent.mouseEnter(result.container.firstElementChild as HTMLElement);
+      vi.advanceTimersByTime(100);
+      await waitFor(() => expect(screen.getByText(/assign spool/i)).toBeInTheDocument());
+
+      fireEvent.click(screen.getByText(/assign spool/i));
+
+      expect(onAssign).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(screen.queryByText(/empty/i)).not.toBeInTheDocument());
+    });
   });
 });

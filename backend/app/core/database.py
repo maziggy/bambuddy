@@ -3841,8 +3841,8 @@ async def seed_notification_templates():
 async def seed_default_groups():
     """Seed default groups and migrate existing users to appropriate groups.
 
-    Creates the default system groups (Administrators, Operators, Viewers) if they
-    don't exist, then migrates existing users:
+    Creates the default groups (Administrators, Operators, Viewers) on fresh
+    installs, always ensures Administrators exists, then migrates existing users:
     - Users with role='admin' -> Administrators group
     - Users with role='user' -> Operators group
 
@@ -3907,10 +3907,16 @@ async def seed_default_groups():
         result = await session.execute(select(Group))
         existing_groups = {group.name: group for group in result.scalars().all()}
 
-        # Create default groups if they don't exist
+        # Create default groups for fresh installs. After a database already
+        # has groups, only Administrators is mandatory; Operators/Viewers are
+        # user-editable defaults and should stay deleted if an admin removes
+        # them.
         groups_created = []
+        create_optional_defaults = not existing_groups
         for group_name, group_config in DEFAULT_GROUPS.items():
             if group_name not in existing_groups:
+                if not group_config["is_system"] and not create_optional_defaults:
+                    continue
                 group = Group(
                     name=group_name,
                     description=group_config["description"],
@@ -3923,6 +3929,10 @@ async def seed_default_groups():
             else:
                 # Migrate existing group's permissions from old to new format
                 group = existing_groups[group_name]
+                expected_is_system = group_config["is_system"]
+                if group.is_system != expected_is_system:
+                    group.is_system = expected_is_system
+                    logger.info("Updated default group '%s' system flag to %s", group_name, expected_is_system)
                 if group.permissions:
                     updated = False
                     new_permissions = list(group.permissions)
@@ -4034,7 +4044,7 @@ async def seed_default_groups():
                 admin_group.permissions = perms
         await session.commit()
 
-        # Same OWN-tier backfill for non-admin system groups. Operators and
+        # Same OWN-tier backfill for non-admin default groups. Operators and
         # Viewers are seeded with _own on fresh installs (see DEFAULT_GROUPS),
         # but the legacy-rename migration above won't run on a role that
         # didn't carry the legacy `archives:read` flag. Without this block,

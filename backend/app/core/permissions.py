@@ -469,7 +469,7 @@ DEFAULT_GROUPS = {
             # WebSocket
             Permission.WEBSOCKET_CONNECT.value,
         ],
-        "is_system": True,
+        "is_system": False,
     },
     "Viewers": {
         "description": "Read-only access to printers, archives, and queue",
@@ -503,6 +503,6 @@ DEFAULT_GROUPS = {
             # MakerWorld browsing only (no import — that writes to library)
             Permission.MAKERWORLD_VIEW.value,
         ],
-        "is_system": True,
+        "is_system": False,
     },
 }

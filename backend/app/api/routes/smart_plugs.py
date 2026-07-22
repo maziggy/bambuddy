@@ -583,8 +583,9 @@ async def control_smart_plug(
         plug.last_state = expected_state
         if expected_state == "ON":
             plug.auto_off_executed = False  # Reset flag when manually turning on
-        elif expected_state == "OFF" and plug.printer_id:
-            # Mark printer offline immediately for faster UI update
+        elif expected_state == "OFF" and plug.printer_id and plug.controls_printer_power:
+            # Mark printer offline immediately for faster UI update. Skipped for
+            # accessory plugs, which are linked to a printer but don't feed it (#2629).
             printer_manager.mark_printer_offline(plug.printer_id)
     plug.last_checked = utcnow_naive()
     await db.commit()

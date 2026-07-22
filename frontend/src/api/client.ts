@@ -1928,6 +1928,9 @@ export interface SmartPlug {
   rest_energy_total_path: string | null;
   rest_energy_total_multiplier: number;
   printer_id: number | null;
+  // #2629: only a plug that really feeds the printer may mark it offline when
+  // switched off. Accessory plugs follow the print cycle without powering it.
+  controls_printer_power: boolean;
   enabled: boolean;
   auto_on: boolean;
   auto_off: boolean;
@@ -2004,6 +2007,8 @@ export interface SmartPlugCreate {
   rest_energy_total_path?: string | null;
   rest_energy_total_multiplier?: number;
   printer_id?: number | null;
+  // #2629
+  controls_printer_power?: boolean;
   enabled?: boolean;
   auto_on?: boolean;
   auto_off?: boolean;
@@ -2072,6 +2077,8 @@ export interface SmartPlugUpdate {
   rest_energy_total_path?: string | null;
   rest_energy_total_multiplier?: number;
   printer_id?: number | null;
+  // #2629
+  controls_printer_power?: boolean;
   enabled?: boolean;
   auto_on?: boolean;
   auto_off?: boolean;

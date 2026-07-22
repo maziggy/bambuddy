@@ -5243,6 +5243,8 @@ export default {
     autoOffDescription: 'Baskı tamamlandığında kapat (tek seferlik)',
     autoOffPersistent: 'Etkin Tut',
     autoOffPersistentDescription: 'Tek seferlik yerine baskılar arasında etkin kal',
+    controlsPrinterPower: 'Yazıcıya güç veriyor',
+    controlsPrinterPowerDescription: 'Bu priz yalnızca bir aksesuara (filtre fanı, aydınlatma) güç veriyorsa kapatın. Aksi halde prizi kapatmak yazıcıyı çevrimdışı olarak işaretler.',
     autoOffAfterDrying: 'Kurutmadan Sonra Otomatik Kapat',
     autoOffAfterDryingDescription: 'AMS kurutması tamamlandığında kapat',
     delayAfterDryingMinutes: 'Kurutma gecikmesi (dakika)',

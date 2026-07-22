@@ -317,6 +317,29 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                 </label>
               </div>
 
+              {/* Powers the printer (#2629) - only meaningful with a linked printer.
+                  When off, switching this plug off no longer marks the printer offline. */}
+              {plug.printer_id != null && (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Power className="w-4 h-4 text-bambu-green" />
+                    <div>
+                      <p className="text-sm text-white">{t('smartPlugs.controlsPrinterPower')}</p>
+                      <p className="text-xs text-bambu-gray">{t('smartPlugs.controlsPrinterPowerDescription')}</p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={plug.controls_printer_power}
+                      onChange={(e) => updateMutation.mutate({ controls_printer_power: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-bambu-green"></div>
+                  </label>
+                </div>
+              )}
+
               {/* Automation controls - only for controllable plugs (not MQTT) */}
               {plug.plug_type !== 'mqtt' && (
                 <>

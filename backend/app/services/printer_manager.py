@@ -698,6 +698,11 @@ class PrinterManager:
 
         This is used when we know the printer power was cut (e.g., smart plug turned off)
         to immediately update the UI without waiting for MQTT timeout.
+
+        The mark is a presumption, not a fact: the plug may not actually feed
+        the printer. ``BambuMQTTClient.mark_power_off`` records the state it
+        overwrites so the client can undo it as soon as the printer sends
+        another report (#2629).
         """
         import logging
 
@@ -705,10 +710,8 @@ class PrinterManager:
 
         if printer_id in self._clients:
             client = self._clients[printer_id]
-            if client.state.connected:
+            if client.mark_power_off():
                 logger.info("Marking printer %s as offline (smart plug power off)", printer_id)
-                client.state.connected = False
-                client.state.state = "unknown"
                 # Trigger the status change callback to broadcast via WebSocket
                 if self._on_status_change:
                     self._schedule_async(self._on_status_change(printer_id, client.state))

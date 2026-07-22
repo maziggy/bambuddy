@@ -40,6 +40,7 @@ const createMockPlug = (overrides: Partial<SmartPlug> = {}): SmartPlug => ({
   mqtt_state_path: null,
   mqtt_state_on_value: null,
   printer_id: 1,
+  controls_printer_power: true,
   enabled: true,
   auto_on: true,
   auto_off: true,
@@ -284,6 +285,33 @@ describe('SmartPlugCard', () => {
       await waitFor(() => {
         expect(screen.getByText('Keep Enabled')).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('powers the printer toggle (#2629)', () => {
+    it('shows the toggle when a printer is linked', async () => {
+      const user = userEvent.setup();
+      const plug = createMockPlug({ printer_id: 1, controls_printer_power: false });
+      render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
+
+      await user.click(screen.getByText('Automation Settings'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Powers the printer')).toBeInTheDocument();
+      });
+    });
+
+    it('hides the toggle when no printer is linked', async () => {
+      const user = userEvent.setup();
+      const plug = createMockPlug({ printer_id: null });
+      render(<SmartPlugCard plug={plug} onEdit={mockOnEdit} />);
+
+      await user.click(screen.getByText('Automation Settings'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Auto On')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Powers the printer')).not.toBeInTheDocument();
     });
   });
 

@@ -5268,6 +5268,8 @@ export default {
     autoOffDescription: 'Desligar quando a impressão terminar (única vez)',
     autoOffPersistent: 'Manter ativado',
     autoOffPersistentDescription: 'Permanecer ativado entre impressões em vez de única vez',
+    controlsPrinterPower: 'Alimenta a impressora',
+    controlsPrinterPowerDescription: 'Desative se esta tomada alimenta apenas um acessório (ventoinha do filtro, luzes). Caso contrário, desligá-la marca a impressora como offline.',
     autoOffAfterDrying: 'Desligar Após Secagem',
     autoOffAfterDryingDescription: 'Desligar quando a secagem do AMS terminar',
     delayAfterDryingMinutes: 'Atraso após secagem (minutos)',

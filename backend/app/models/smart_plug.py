@@ -83,6 +83,14 @@ class SmartPlug(Base):
     # Link to printer (multiple plugs/scripts can be linked to one printer)
     printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id", ondelete="SET NULL"), nullable=True)
 
+    # Whether this plug actually feeds the printer's own power (#2629). The
+    # printer link is also used for accessories that merely follow the print
+    # cycle — filter fans, chamber lights, enclosure heaters. Only a plug that
+    # really cuts printer power may mark the printer offline on auto-off;
+    # doing it for an accessory blanks the printer state and stalls the queue.
+    # Defaults to True so existing plugs keep their previous behaviour.
+    controls_printer_power: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+
     # Automation settings
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     auto_on: Mapped[bool] = mapped_column(Boolean, default=True)  # Turn on at print start

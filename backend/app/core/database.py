@@ -3751,6 +3751,20 @@ async def run_migrations(conn):
     # #2603 archive plate_id backfill above so print_archives.plate_id is populated.
     await _migrate_scope_run_filament_to_plate(conn)
 
+    # Migration: Add controls_printer_power to smart_plugs (#2629). Marks
+    # whether a plug actually feeds the printer's own power — only then may an
+    # auto-off mark the printer offline. Defaults to true so existing plugs
+    # keep the previous behaviour; accessory plugs (filter fan, lights) are
+    # opted out by the user. BOOLEAN literals differ per dialect (SQLite has
+    # no true/false keyword), so the default is dialect-branched.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN controls_printer_power BOOLEAN DEFAULT 1")
+    else:
+        await _safe_execute(
+            conn,
+            "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS controls_printer_power BOOLEAN DEFAULT true",
+        )
+
     # Migration: Disambiguate the four ``user_print_*`` notification template
     # names by appending " Email" (#1792). See ``_migrate_rename_user_print_template_names``.
     await _migrate_rename_user_print_template_names(conn)

@@ -66,6 +66,10 @@ class SmartPlugBase(BaseModel):
     rest_energy_total_multiplier: float = Field(default=1.0, ge=0.0001, le=10000)
 
     printer_id: int | None = None
+    # #2629: only a plug that really feeds the printer may mark it offline when
+    # it switches off. Accessory plugs (filter fan, lights) are linked to a
+    # printer purely to follow the print cycle.
+    controls_printer_power: bool = True
     enabled: bool = True
     auto_on: bool = True
     auto_off: bool = True
@@ -160,6 +164,8 @@ class SmartPlugUpdate(BaseModel):
     rest_energy_total_path: str | None = None
     rest_energy_total_multiplier: float | None = Field(default=None, ge=0.0001, le=10000)
     printer_id: int | None = None
+    # #2629: see SmartPlugBase.controls_printer_power.
+    controls_printer_power: bool | None = None
     enabled: bool | None = None
     auto_on: bool | None = None
     auto_off: bool | None = None

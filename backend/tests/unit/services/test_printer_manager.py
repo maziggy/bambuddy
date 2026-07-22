@@ -52,6 +52,19 @@ class TestPrinterManager:
         client.state.temperatures = {"nozzle": 25, "bed": 25}
         client.state.raw_data = {}
         client.logging_enabled = False
+
+        # mark_power_off is real logic on BambuMQTTClient (#2629) — mirror it so
+        # the manager tests still exercise the state transition they assert on.
+        # The real implementation (and its recovery path) is covered in
+        # test_bambu_mqtt.py::TestPresumedPowerOffRecovery.
+        def _mark_power_off():
+            if not client.state.connected:
+                return False
+            client.state.connected = False
+            client.state.state = "unknown"
+            return True
+
+        client.mark_power_off.side_effect = _mark_power_off
         return client
 
     # ========================================================================

@@ -5010,6 +5010,8 @@ export default {
     autoOffDescription: '인쇄 완료 시 끄기 (1회)',
     autoOffPersistent: '계속 활성화',
     autoOffPersistentDescription: '1회성 대신 인쇄 사이에 활성화 유지',
+    controlsPrinterPower: '프린터에 전원 공급',
+    controlsPrinterPowerDescription: '이 플러그가 액세서리(필터 팬, 조명)에만 전원을 공급한다면 끄세요. 그렇지 않으면 플러그를 끌 때 프린터가 오프라인으로 표시됩니다.',
     turnOffDelayMode: '끄기 지연 모드',
     time: '시간',
     temp: '온도',

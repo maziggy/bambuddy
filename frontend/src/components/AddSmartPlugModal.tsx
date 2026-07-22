@@ -84,6 +84,9 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
   const energyTotalDropdownRef = useRef<HTMLDivElement>(null);
 
   const [printerId, setPrinterId] = useState<number | null>(plug?.printer_id || null);
+  // #2629: defaults to true (a plug linked to a printer usually powers it);
+  // users turn it off for accessories like a filter fan or chamber light.
+  const [controlsPrinterPower, setControlsPrinterPower] = useState(plug?.controls_printer_power ?? true);
   const [testResult, setTestResult] = useState<{ success: boolean; state?: string | null; device_name?: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -388,6 +391,7 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
       username: plugType === 'tasmota' ? (username.trim() || null) : null,
       password: plugType === 'tasmota' ? (password.trim() || null) : null,
       printer_id: printerId,
+      controls_printer_power: controlsPrinterPower,
       // Power alerts
       power_alert_enabled: powerAlertEnabled,
       power_alert_high: powerAlertHigh ? parseFloat(powerAlertHigh) : null,
@@ -1505,6 +1509,26 @@ export function AddSmartPlugModal({ plug, onClose }: AddSmartPlugModalProps) {
               <p className="text-xs text-bambu-gray mt-1">
                 {t('smartPlugs.linkingDescription')}
               </p>
+
+              {/* Whether the plug feeds the printer itself, or is an accessory
+                  that merely follows the print cycle (#2629). */}
+              {printerId !== null && (
+                <div className="flex items-center justify-between mt-3">
+                  <div className="pr-3">
+                    <p className="text-sm text-white">{t('smartPlugs.controlsPrinterPower')}</p>
+                    <p className="text-xs text-bambu-gray">{t('smartPlugs.controlsPrinterPowerDescription')}</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={controlsPrinterPower}
+                      onChange={(e) => setControlsPrinterPower(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                  </label>
+                </div>
+              )}
             </div>
           )}
 

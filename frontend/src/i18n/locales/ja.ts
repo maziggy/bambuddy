@@ -5280,6 +5280,8 @@ export default {
     autoOffDescription: '印刷完了時にオフにする（ワンショット）',
     autoOffPersistent: '有効のまま維持',
     autoOffPersistentDescription: 'ワンショットではなく印刷間で有効のまま維持',
+    controlsPrinterPower: 'プリンターに給電',
+    controlsPrinterPowerDescription: 'このプラグがアクセサリー（フィルターファン、照明）のみに給電する場合はオフにします。オンのままだと、電源を切ったときにプリンターがオフラインとして扱われます。',
     autoOffAfterDrying: '乾燥完了後に自動オフ',
     autoOffAfterDryingDescription: 'AMSの乾燥が完了したらオフにする',
     delayAfterDryingMinutes: '乾燥後の遅延（分）',

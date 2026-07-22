@@ -5269,6 +5269,8 @@ export default {
     autoOffDescription: 'Éteindre à la fin de l\'impression (unique)',
     autoOffPersistent: 'Garder activé',
     autoOffPersistentDescription: 'Rester activé entre les impressions au lieu d\'une seule fois',
+    controlsPrinterPower: 'Alimente l\'imprimante',
+    controlsPrinterPowerDescription: 'Désactivez si cette prise n\'alimente qu\'un accessoire (ventilateur de filtre, éclairage). Sinon, l\'éteindre marque l\'imprimante hors ligne.',
     autoOffAfterDrying: 'Arrêt auto après séchage',
     autoOffAfterDryingDescription: 'Éteindre à la fin du séchage de l\'AMS',
     delayAfterDryingMinutes: 'Délai après séchage (minutes)',

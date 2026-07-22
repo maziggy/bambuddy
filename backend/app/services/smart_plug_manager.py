@@ -215,8 +215,8 @@ class SmartPlugManager:
                             plug.last_state = "OFF"
                             plug.last_checked = utcnow_naive()
                             self._last_schedule_check[plug.id] = f"off:{current_time}"
-                            # Mark printer offline if linked
-                            if plug.printer_id:
+                            # Mark printer offline if this plug feeds it (#2629)
+                            if plug.printer_id and plug.controls_printer_power:
                                 printer_manager.mark_printer_offline(plug.printer_id)
 
             await db.commit()
@@ -410,6 +410,7 @@ class SmartPlugManager:
                 plug.password,
                 printer_id,
                 delay_seconds,
+                controls_printer_power=plug.controls_printer_power,
                 rest_off_url=plug.rest_off_url if plug.plug_type == "rest" else None,
                 rest_off_body=plug.rest_off_body if plug.plug_type == "rest" else None,
                 rest_method=plug.rest_method if plug.plug_type == "rest" else None,
@@ -429,6 +430,7 @@ class SmartPlugManager:
         printer_id: int,
         delay_seconds: int,
         *,
+        controls_printer_power: bool = True,
         rest_off_url: str | None = None,
         rest_off_body: str | None = None,
         rest_method: str | None = None,
@@ -476,8 +478,10 @@ class SmartPlugManager:
             # Mark auto_off_executed in database and update printer status
             if success:
                 await self._mark_auto_off_executed(plug_id)
-                # Mark the printer as offline immediately
-                printer_manager.mark_printer_offline(printer_id)
+                # Mark the printer as offline immediately — but only when this
+                # plug actually feeds the printer (#2629).
+                if controls_printer_power:
+                    printer_manager.mark_printer_offline(printer_id)
 
         except asyncio.CancelledError:
             logger.debug("Delayed turn-off cancelled for plug %s", plug_id)
@@ -504,6 +508,7 @@ class SmartPlugManager:
                 plug.password,
                 printer_id,
                 temp_threshold,
+                controls_printer_power=plug.controls_printer_power,
                 rest_off_url=plug.rest_off_url if plug.plug_type == "rest" else None,
                 rest_off_body=plug.rest_off_body if plug.plug_type == "rest" else None,
                 rest_method=plug.rest_method if plug.plug_type == "rest" else None,
@@ -523,6 +528,7 @@ class SmartPlugManager:
         printer_id: int,
         temp_threshold: int,
         *,
+        controls_printer_power: bool = True,
         rest_off_url: str | None = None,
         rest_off_body: str | None = None,
         rest_method: str | None = None,
@@ -603,8 +609,10 @@ class SmartPlugManager:
                         # Mark auto_off_executed in database and update printer status
                         if success:
                             await self._mark_auto_off_executed(plug_id)
-                            # Mark the printer as offline immediately
-                            printer_manager.mark_printer_offline(printer_id)
+                            # Mark the printer as offline immediately — but only
+                            # when this plug actually feeds the printer (#2629).
+                            if controls_printer_power:
+                                printer_manager.mark_printer_offline(printer_id)
 
                         break
 
@@ -739,7 +747,8 @@ class SmartPlugManager:
                         success = await service.turn_off(plug)
                         if success:
                             await self._mark_auto_off_executed(plug.id)
-                            printer_manager.mark_printer_offline(plug.printer_id)
+                            if plug.controls_printer_power:
+                                printer_manager.mark_printer_offline(plug.printer_id)
 
                 if pending_plugs:
                     logger.info("Resumed %s pending auto-off(s)", len(pending_plugs))

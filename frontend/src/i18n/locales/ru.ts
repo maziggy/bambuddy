@@ -4998,6 +4998,8 @@ export default {
     autoOffDescription: "Выключать после завершения печати (однократно)",
     autoOffPersistent: "Оставлять включённым",
     autoOffPersistentDescription: "Не сбрасывать автовыключение после печати",
+    controlsPrinterPower: "Питает принтер",
+    controlsPrinterPowerDescription: "Отключите, если эта розетка питает только аксессуар (вентилятор фильтра, подсветку). Иначе её выключение помечает принтер как офлайн.",
     autoOffAfterDrying: "Выключать после сушки",
     autoOffAfterDryingDescription: "Выключать после завершения сушки в AMS",
     delayAfterDryingMinutes: "Задержка после сушки (мин)",

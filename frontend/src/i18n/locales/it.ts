@@ -5268,6 +5268,8 @@ export default {
     autoOffDescription: 'Spegni quando la stampa è completata (una tantum)',
     autoOffPersistent: 'Mantieni attivo',
     autoOffPersistentDescription: 'Resta attivo tra le stampe invece di una tantum',
+    controlsPrinterPower: 'Alimenta la stampante',
+    controlsPrinterPowerDescription: 'Disattiva se questa presa alimenta solo un accessorio (ventola del filtro, luci). Altrimenti spegnerla segna la stampante come offline.',
     autoOffAfterDrying: 'Spegni dopo asciugatura',
     autoOffAfterDryingDescription: 'Spegni al termine dell\'asciugatura AMS',
     delayAfterDryingMinutes: 'Ritardo dopo asciugatura (minuti)',

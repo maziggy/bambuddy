@@ -5323,6 +5323,8 @@ export default {
     autoOffDescription: 'Turn off when print completes (one-shot)',
     autoOffPersistent: 'Keep Enabled',
     autoOffPersistentDescription: 'Stay enabled between prints instead of one-shot',
+    controlsPrinterPower: 'Powers the printer',
+    controlsPrinterPowerDescription: 'Turn off if this plug only powers an accessory (filter fan, lights). Otherwise switching it off marks the printer offline.',
     autoOffAfterDrying: 'Auto Off After Drying',
     autoOffAfterDryingDescription: 'Turn off when AMS drying completes',
     delayAfterDryingMinutes: 'Drying delay (minutes)',

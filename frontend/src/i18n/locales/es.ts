@@ -5288,6 +5288,8 @@ export default {
     autoOffDescription: 'Apagar cuando se completa la impresión (una sola vez)',
     autoOffPersistent: 'Mantener activado',
     autoOffPersistentDescription: 'Permanecer activado entre impresiones en lugar de una sola vez',
+    controlsPrinterPower: 'Alimenta la impresora',
+    controlsPrinterPowerDescription: 'Desactívalo si este enchufe solo alimenta un accesorio (ventilador de filtro, luces). De lo contrario, apagarlo marca la impresora como desconectada.',
     autoOffAfterDrying: 'Apagado automático tras el secado',
     autoOffAfterDryingDescription: 'Apagar cuando se completa el secado del AMS',
     delayAfterDryingMinutes: 'Retardo de secado (minutos)',

@@ -518,11 +518,13 @@ class PrintScheduler:
                         auto_on_plugs = [p for p in plugs if p.auto_on and p.enabled]
                         if auto_on_plugs:
                             logger.info("Printer %s offline, attempting to power on via smart plug(s)", item.printer_id)
-                            # Power on using the first auto_on plug (the printer power plug)
-                            powered_on = await self._power_on_and_wait(auto_on_plugs[0], item.printer_id, db)
+                            # Power on using the plug that actually feeds the printer, and
+                            # wait for it to boot on that one only (#2629).
+                            primary_plug = self._pick_power_plug(auto_on_plugs)
+                            powered_on = await self._power_on_and_wait(primary_plug, item.printer_id, db)
                             if powered_on:
                                 # Also turn on any remaining auto_on plugs (e.g., filter)
-                                for extra_plug in auto_on_plugs[1:]:
+                                for extra_plug in [p for p in auto_on_plugs if p.id != primary_plug.id]:
                                     try:
                                         service = await smart_plug_manager.get_service_for_plug(extra_plug, db)
                                         await service.turn_on(extra_plug)
@@ -2406,6 +2408,21 @@ class PrintScheduler:
         """Get all smart plugs associated with a printer."""
         result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
         return list(result.scalars().all())
+
+    @staticmethod
+    def _pick_power_plug(auto_on_plugs: list[SmartPlug]) -> SmartPlug:
+        """Pick the plug to power-cycle a printer back online with (#2629).
+
+        Only a plug flagged ``controls_printer_power`` can actually bring the
+        printer back; waiting for a boot on an accessory (filter fan, lights)
+        just burns the power-on timeout and fails the dispatch. Falls back to
+        the first plug when none is flagged, which is the pre-#2629 behaviour.
+        Callers must pass a non-empty list.
+        """
+        for plug in auto_on_plugs:
+            if plug.controls_printer_power:
+                return plug
+        return auto_on_plugs[0]
 
     # Bundled defaults for preheat_filament_targets (#1468). Values are the
     # chamber-temperature recommendations BambuStudio ships for the matching

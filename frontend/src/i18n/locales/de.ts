@@ -5279,6 +5279,8 @@ export default {
     autoOffDescription: 'Ausschalten wenn Druck abgeschlossen (einmalig)',
     autoOffPersistent: 'Aktiviert lassen',
     autoOffPersistentDescription: 'Zwischen Drucken aktiviert bleiben statt einmalig',
+    controlsPrinterPower: 'Versorgt den Drucker',
+    controlsPrinterPowerDescription: 'Deaktivieren, wenn diese Steckdose nur Zubehör versorgt (Filterlüfter, Licht). Sonst wird der Drucker beim Ausschalten als offline markiert.',
     autoOffAfterDrying: 'Automatisch aus nach Trocknung',
     autoOffAfterDryingDescription: 'Ausschalten, wenn AMS-Trocknung abgeschlossen ist',
     delayAfterDryingMinutes: 'Verzögerung nach Trocknung (Minuten)',

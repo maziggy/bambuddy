@@ -652,6 +652,11 @@ class BambuMQTTClient:
         # to once per client lifetime so the stale loop doesn't spam it (#1465).
         self._report_messages_since_connect: int = 0
         self._zero_report_hint_logged: bool = False
+        # Set by mark_power_off() to the gcode_state held just before we
+        # optimistically forced the printer to "unknown" (#2629). Restored on
+        # the next inbound message, because message traffic proves the power
+        # was never actually cut. None whenever no power-off is presumed.
+        self._state_before_power_off: str | None = None
         # Raw-message fan-out for VP MQTT bridge (non-proxy modes republish the
         # printer's pushes verbatim to slicers connected to a virtual printer).
         # Handlers receive (topic, payload_bytes) before JSON parsing.
@@ -757,6 +762,55 @@ class BambuMQTTClient:
             return False  # Never received a message yet
         time_since_last = time.time() - self._last_message_time
         return time_since_last > self.STALE_TIMEOUT
+
+    def mark_power_off(self) -> bool:
+        """Presume the printer lost power (smart plug switched off).
+
+        Optimistic: it skips the MQTT stale timeout so the UI updates at once.
+        The presumption is undone by ``_on_message`` if the printer keeps
+        talking — inbound traffic proves the power was never cut (#2629).
+        Returns True when the state was actually changed.
+        """
+        if not self.state.connected:
+            return False
+        previous = self.state.state
+        # Blank the state BEFORE recording what to restore. This runs on the
+        # event loop while _on_message runs on the paho thread, and the restore
+        # is a two-step (read saved state, compare against "unknown"). Writing
+        # "unknown" first means an interleaved message either sees no saved
+        # state yet (and skips, leaving the next message to restore) or sees a
+        # consistent pair — never a saved state paired with a live state it
+        # then discards, which would strand the printer on "unknown".
+        self.state.connected = False
+        self.state.state = "unknown"
+        # Only the first mark wins: a second call before any message arrives
+        # must not overwrite the real state with the "unknown" it just wrote.
+        # Nothing to restore if the state was already blank.
+        if self._state_before_power_off is None and previous not in ("", "unknown"):
+            self._state_before_power_off = previous
+        return True
+
+    def _restore_state_after_false_power_off(self) -> bool:
+        """Undo a presumed power-off once the printer proves it is alive.
+
+        ``connected`` self-heals on the next message, but ``state`` does not:
+        it is only rewritten when a payload carries ``gcode_state``, and the
+        steady-state ``push_status`` frames are partial. Without this the
+        forced "unknown" sticks until a full pushall (a manual Force Refresh),
+        and the queue scheduler treats the printer as not idle the whole time
+        (#2629). Returns True when a state was restored.
+        """
+        previous = self._state_before_power_off
+        self._state_before_power_off = None
+        if previous is None or self.state.state != "unknown":
+            return False
+        logger.info(
+            "[%s] Printer still responding after presumed power-off — restoring state %s",
+            self.serial_number,
+            previous,
+        )
+        self.state.state = previous
+        return True
 
     # Minimum seconds between stale reconnect attempts.  Frontend polls
     # status every few seconds — without a cooldown, each poll would
@@ -897,6 +951,12 @@ class BambuMQTTClient:
         if rc == 0:
             self.state.connected = True
             self._stale_reconnecting = False  # Clear stale-reconnect flag on successful connect
+            # A dropped-and-restored MQTT session means the presumed power-off was
+            # real (or at least that the printer restarted): there is nothing
+            # legitimate left to restore, and the printer will send a full status
+            # push shortly. Dropping the saved state keeps a stale one from being
+            # broadcast ahead of the first real report (#2629, #1679).
+            self._state_before_power_off = None
             # Reset per-connection warning state so warnings fire once per (re)connection
             self._ams_version_warned = set()
             # Preserve cached developer_mode across auto-reconnects to avoid
@@ -1063,6 +1123,11 @@ class BambuMQTTClient:
             # "printer never sent a report" apart from a mid-session quiet gap.
             if msg.topic == self.topic_subscribe:
                 self._report_messages_since_connect += 1
+                # Only report-topic traffic proves the *printer* is alive — the
+                # request topic also carries slicer/Bambuddy commands.
+                if self._state_before_power_off is not None:
+                    if self._restore_state_after_false_power_off() and self.on_state_change:
+                        self.on_state_change(self.state)
 
             # Log message if logging is enabled
             if self._logging_enabled:

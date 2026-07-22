@@ -6320,3 +6320,151 @@ class TestLastLayerFinishPhotoTrigger:
 
         assert len(events) == 1
         assert len(completion_events) == 1
+
+
+class TestPresumedPowerOffRecovery:
+    """#2629: a smart-plug turn-off marks the printer offline optimistically.
+
+    When the plug does not actually feed the printer, the printer keeps
+    publishing — and the forced 'unknown' state must be undone, or it sticks
+    until the next full pushall and the queue scheduler stalls forever.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        client = BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+        client.state.connected = True
+        client.state.state = "FINISH"
+        return client
+
+    @staticmethod
+    def _report(client, payload):
+        """Feed a report-topic message through the real _on_message path."""
+
+        class _Msg:
+            def __init__(self, topic, data):
+                self.topic = topic
+                self.payload = json.dumps(data).encode()
+
+        client._on_message(None, None, _Msg(client.topic_subscribe, payload))
+
+    def test_mark_power_off_blanks_state_and_remembers_it(self, mqtt_client):
+        assert mqtt_client.mark_power_off() is True
+
+        assert mqtt_client.state.connected is False
+        assert mqtt_client.state.state == "unknown"
+        assert mqtt_client._state_before_power_off == "FINISH"
+
+    def test_mark_power_off_noop_when_already_disconnected(self, mqtt_client):
+        mqtt_client.state.connected = False
+
+        assert mqtt_client.mark_power_off() is False
+        assert mqtt_client._state_before_power_off is None
+
+    def test_second_mark_does_not_overwrite_saved_state(self, mqtt_client):
+        mqtt_client.mark_power_off()
+        # Something flips connected back (a partial message) before the second mark
+        mqtt_client.state.connected = True
+        mqtt_client.mark_power_off()
+
+        assert mqtt_client._state_before_power_off == "FINISH"
+
+    def test_partial_report_restores_state(self, mqtt_client):
+        """The steady-state push_status carries no gcode_state — the pre-off
+        state must come back anyway, otherwise 'unknown' is permanent."""
+        mqtt_client.mark_power_off()
+
+        self._report(mqtt_client, {"print": {"wifi_signal": "-30dBm"}})
+
+        assert mqtt_client.state.connected is True
+        assert mqtt_client.state.state == "FINISH"
+        assert mqtt_client._state_before_power_off is None
+
+    def test_restore_broadcasts_state_change(self, mqtt_client):
+        broadcasts = []
+        mqtt_client.on_state_change = lambda state: broadcasts.append(state.state)
+        mqtt_client.mark_power_off()
+
+        self._report(mqtt_client, {"print": {"wifi_signal": "-30dBm"}})
+
+        assert "FINISH" in broadcasts
+
+    def test_fresh_gcode_state_wins_over_restored_state(self, mqtt_client):
+        """A report that does carry gcode_state is authoritative."""
+        mqtt_client.mark_power_off()
+
+        self._report(mqtt_client, {"print": {"gcode_state": "IDLE"}})
+
+        assert mqtt_client.state.state == "IDLE"
+
+    def test_restore_happens_only_once(self, mqtt_client):
+        """After recovery a later genuine blank must not be undone by a stale
+        saved state."""
+        mqtt_client.mark_power_off()
+        self._report(mqtt_client, {"print": {"wifi_signal": "-30dBm"}})
+
+        # Printer really loses power now: state blanked, nothing to restore from
+        mqtt_client.state.state = "unknown"
+        assert mqtt_client._restore_state_after_false_power_off() is False
+        assert mqtt_client.state.state == "unknown"
+
+    def test_request_topic_traffic_does_not_restore(self, mqtt_client):
+        """Only the printer's own report topic proves it is alive; the request
+        topic also carries slicer/Bambuddy commands."""
+        mqtt_client.mark_power_off()
+
+        class _Msg:
+            topic = mqtt_client.topic_publish
+            payload = json.dumps({"print": {"command": "project_file"}}).encode()
+
+        mqtt_client._on_message(None, None, _Msg())
+
+        assert mqtt_client.state.state == "unknown"
+        assert mqtt_client._state_before_power_off == "FINISH"
+
+    def test_reconnect_discards_saved_state(self, mqtt_client):
+        """A real power cut drops the MQTT session; on reconnect the saved state
+        is stale and must not be broadcast ahead of the printer's first report."""
+        from unittest.mock import MagicMock
+
+        mqtt_client.mark_power_off()
+
+        paho = MagicMock()
+        paho.subscribe.return_value = (0, 1)  # (MQTT_ERR_SUCCESS, mid)
+        mqtt_client._on_connect(paho, None, {}, 0)
+
+        assert mqtt_client._state_before_power_off is None
+
+        self._report(mqtt_client, {"print": {"wifi_signal": "-30dBm"}})
+
+        assert mqtt_client.state.state == "unknown"
+
+    def test_already_unknown_state_is_not_saved(self, mqtt_client):
+        """A printer that never reported has nothing to restore — saving
+        'unknown' would make the recovery broadcast a no-op state change."""
+        mqtt_client.state.state = "unknown"
+
+        assert mqtt_client.mark_power_off() is True
+        assert mqtt_client._state_before_power_off is None
+
+    def test_message_interleaved_with_mark_does_not_strand_unknown(self, mqtt_client):
+        """mark_power_off runs on the event loop, _on_message on the paho
+        thread. A message landing mid-mark must not consume the saved state and
+        leave the printer stuck on 'unknown' — the next message must recover."""
+        # Simulate the worst interleaving: a report is processed after the state
+        # was blanked but before the previous state was recorded.
+        mqtt_client.state.connected = False
+        mqtt_client.state.state = "unknown"
+        self._report(mqtt_client, {"print": {"wifi_signal": "-30dBm"}})
+        # ...now the rest of the mark completes.
+        mqtt_client._state_before_power_off = "FINISH"
+
+        self._report(mqtt_client, {"print": {"wifi_signal": "-30dBm"}})
+
+        assert mqtt_client.state.state == "FINISH"

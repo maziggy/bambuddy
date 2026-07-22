@@ -5268,6 +5268,8 @@ export default {
     autoOffDescription: '列印完成時關閉（一次性）',
     autoOffPersistent: '保持啟用',
     autoOffPersistentDescription: '在列印之間保持啟用而非一次性',
+    controlsPrinterPower: '為印表機供電',
+    controlsPrinterPowerDescription: '若此插座僅為配件（濾網風扇、燈光）供電，請關閉此選項；否則關閉插座會將印表機標記為離線。',
     autoOffAfterDrying: '乾燥完成後自動關閉',
     autoOffAfterDryingDescription: 'AMS 乾燥完成後關閉',
     delayAfterDryingMinutes: '乾燥後延遲（分鐘）',

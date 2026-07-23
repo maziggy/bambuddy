@@ -66,6 +66,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@Shihchiun](https://github.com/Shihchiun)
 - [@kycrna](https://github.com/kycrna)
 - [@iljur](https://github.com/iljur)
+- [@bhamiltoncx](https://github.com/bhamiltoncx)
 
 ---
 

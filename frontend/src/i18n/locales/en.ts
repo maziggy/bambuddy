@@ -679,6 +679,7 @@ export default {
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Drying not supported',
       powerRequired: 'Connect AMS power adapter to enable drying',
+      cannotDryNow: 'AMS can\'t start drying right now',
       startingDrying: 'Starting drying...',
       toastCommandSent: 'Drying command sent',
       toastStopped: 'Drying stopped',
@@ -687,6 +688,16 @@ export default {
       stoppingDrying: 'Stopping drying...',
       rotateTray: 'Rotate spool during drying',
       rotateUnavailableReason: 'Unavailable — a slot in this AMS is loaded to the toolhead. The spool is locked by the feed tube and cannot rotate. Retract the filament first.',
+      startMode: 'Start time',
+      modeNow: 'Now',
+      modeDelay: 'After delay',
+      modeAtTime: 'At time',
+      // Verb (button label), not the noun.
+      schedule: 'Schedule',
+      scheduledFor: 'Drying scheduled for {{time}}',
+      scheduledAsap: 'Drying scheduled (waiting for printer)',
+      cancelScheduled: 'Cancel scheduled drying',
+      scheduleFailed: 'Failed to schedule drying',
     },
     // AMS Filament Backup status badge (printer-wide auto-switch to another spool)
     amsBackup: {

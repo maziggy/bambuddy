@@ -151,6 +151,7 @@ async def test_engine():
         printer,
         project,
         project_bom,
+        scheduled_drying,
         settings,
         slot_preset,
         smart_plug,

@@ -281,6 +281,30 @@ class TestPrintersAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_delete_printer_removes_scheduled_dryings(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        """Deleting a printer must also delete its scheduled_dryings rows, since
+        SQLite doesn't enforce FK cascades (#2638).
+        """
+        from backend.app.models.scheduled_drying import ScheduledDrying
+
+        printer = await printer_factory()
+        printer_id = printer.id
+
+        row = ScheduledDrying(printer_id=printer_id, ams_id=0, temp=55, duration_hours=8)
+        db_session.add(row)
+        await db_session.commit()
+        row_id = row.id
+
+        response = await async_client.delete(f"/api/v1/printers/{printer_id}")
+        assert response.status_code == 200
+
+        result = await db_session.execute(select(ScheduledDrying).where(ScheduledDrying.id == row_id))
+        assert result.scalar_one_or_none() is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_delete_nonexistent_printer(self, async_client: AsyncClient):
         """Verify deleting non-existent printer returns 404."""
         response = await async_client.delete("/api/v1/printers/9999")

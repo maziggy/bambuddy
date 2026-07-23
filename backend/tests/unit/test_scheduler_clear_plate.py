@@ -458,12 +458,23 @@ class TestSchedulerQueueCheckLogging:
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [mock_item]
 
+        empty_result = MagicMock()
+        empty_result.scalars.return_value.all.return_value = []
+
+        async def _execute_side_effect(stmt, *args, **kwargs):
+            # The scheduled-drying dispatch check (#2638) runs its own query
+            # every tick; keep it isolated from the pending-items mock above
+            # so it doesn't misread mock_item as a ScheduledDrying row.
+            if "scheduled_dryings" in str(stmt):
+                return empty_result
+            return mock_result
+
         with (
             patch("backend.app.services.print_scheduler.async_session") as mock_session_ctx,
             caplog.at_level(logging.INFO, logger="backend.app.services.print_scheduler"),
         ):
             mock_db = AsyncMock()
-            mock_db.execute = AsyncMock(return_value=mock_result)
+            mock_db.execute = AsyncMock(side_effect=_execute_side_effect)
             mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_db)
             mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
 

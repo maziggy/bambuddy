@@ -58,6 +58,7 @@ from backend.app.api.routes import (
     printer_sensor_history,
     printers,
     projects,
+    scheduled_dryings,
     settings as settings_routes,
     slice_jobs,
     slicer_pipelines,
@@ -8662,6 +8663,7 @@ app.include_router(smart_plugs.router, prefix=app_settings.api_prefix)
 app.include_router(ha_sensors.router, prefix=app_settings.api_prefix)
 app.include_router(print_log.router, prefix=app_settings.api_prefix)
 app.include_router(print_queue.router, prefix=app_settings.api_prefix)
+app.include_router(scheduled_dryings.router, prefix=app_settings.api_prefix)
 app.include_router(kprofiles.router, prefix=app_settings.api_prefix)
 app.include_router(notifications.router, prefix=app_settings.api_prefix)
 app.include_router(notification_templates.router, prefix=app_settings.api_prefix)

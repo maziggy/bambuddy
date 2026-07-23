@@ -435,6 +435,23 @@ export interface AMSUnit {
   module_type: string;    // "ams", "n3f", "n3s"
 }
 
+export interface ScheduledDrying {
+  id: number;
+  printer_id: number;
+  ams_id: number;
+  temp: number;
+  duration_hours: number;
+  filament: string;
+  rotate_tray: boolean;
+  start_after: string | null;  // UTC ISO with Z suffix, like the queue routes
+  status: string;
+  waiting_reason: string | null;
+  error_message: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
 export interface NozzleInfo {
   nozzle_type: string;  // "stainless_steel" or "hardened_steel"
   nozzle_diameter: string;  // e.g., "0.4"
@@ -4523,6 +4540,29 @@ export const api = {
       `/printers/${printerId}/drying/stop?ams_id=${amsId}`,
       { method: 'POST' }
     ),
+
+  // Scheduled (delayed) drying runs (#2638)
+  createScheduledDrying: (data: {
+    printer_id: number;
+    ams_id: number;
+    temp: number;
+    duration_hours: number;
+    filament?: string;
+    rotate_tray?: boolean;
+    start_after: string | null;
+  }) =>
+    request<ScheduledDrying>('/scheduled-dryings', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  // Omit printerId for the whole fleet in one request; the printer cards share
+  // that single query rather than each polling for its own id.
+  listScheduledDryings: (printerId?: number) =>
+    request<ScheduledDrying[]>(
+      printerId === undefined ? '/scheduled-dryings' : `/scheduled-dryings?printer_id=${printerId}`
+    ),
+  cancelScheduledDrying: (id: number) =>
+    request<{ status: string; id: number }>(`/scheduled-dryings/${id}`, { method: 'DELETE' }),
 
   // AMS Filament Backup (auto-switch to a backup spool when one runs out)
   setAmsFilamentBackup: (printerId: number, enabled: boolean) =>

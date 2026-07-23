@@ -599,6 +599,7 @@ export default {
       scheduledFor: 'Drying scheduled for {{time}}',
       scheduledAsap: 'Drying scheduled (waiting for printer)',
       cancelScheduled: 'Cancel scheduled drying',
+      scheduleFailed: 'Failed to schedule drying',
     },
     // AMS Filament Backup status badge (printer-wide auto-switch to another spool)
     amsBackup: {

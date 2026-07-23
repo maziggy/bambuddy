@@ -596,6 +596,7 @@ export default {
       scheduledFor: 'Séchage planifié pour {{time}}',
       scheduledAsap: 'Séchage planifié (en attente de l\'imprimante)',
       cancelScheduled: 'Annuler le séchage planifié',
+      scheduleFailed: 'Échec de la planification du séchage',
     },
     amsBackup: {
       titleOn: "AMS Filament Backup est ACTIVÉ. Cliquez pour désactiver.",

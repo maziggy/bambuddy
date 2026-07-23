@@ -596,6 +596,7 @@ export default {
       scheduledFor: 'Asciugatura pianificata per {{time}}',
       scheduledAsap: 'Asciugatura pianificata (in attesa della stampante)',
       cancelScheduled: 'Annulla asciugatura pianificata',
+      scheduleFailed: 'Pianificazione dell\'asciugatura non riuscita',
     },
     amsBackup: {
       titleOn: 'AMS Filament Backup è ATTIVO. Clicca per disabilitare.',

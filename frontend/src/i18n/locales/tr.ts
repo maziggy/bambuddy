@@ -596,6 +596,7 @@ export default {
       scheduledFor: 'Kurutma {{time}} için zamanlandı',
       scheduledAsap: 'Kurutma zamanlandı (yazıcı bekleniyor)',
       cancelScheduled: 'Zamanlanmış kurutmayı iptal et',
+      scheduleFailed: 'Kurutma zamanlanamadı',
     },
     amsBackup: {
       titleOn: 'AMS Filament Backup AÇIK. Devre dışı bırakmak için tıklayın.',

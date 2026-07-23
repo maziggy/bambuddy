@@ -1745,6 +1745,7 @@ const DRYING_PRESETS: Record<string, { n3f: number; n3s: number; n3f_hours: numb
 function ScheduledDryingBanner({ printerId }: { printerId: number }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const { data: scheduled = [] } = useQuery({
     queryKey: ['scheduled-dryings', printerId],
     queryFn: () => api.listScheduledDryings(printerId),
@@ -1753,6 +1754,7 @@ function ScheduledDryingBanner({ printerId }: { printerId: number }) {
   const cancelMutation = useMutation({
     mutationFn: (id: number) => api.cancelScheduledDrying(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduled-dryings', printerId] }),
+    onError: (error: Error) => showToast(error.message || t('printers.drying.scheduleFailed'), 'error'),
   });
   const pending = scheduled.filter(s => s.status === 'pending');
   if (pending.length === 0) return null;
@@ -1771,8 +1773,9 @@ function ScheduledDryingBanner({ printerId }: { printerId: number }) {
           </span>
           <button
             onClick={() => cancelMutation.mutate(s.id)}
+            disabled={cancelMutation.isPending}
             title={t('printers.drying.cancelScheduled')}
-            className="text-bambu-gray hover:text-red-400 transition-colors"
+            className="text-bambu-gray hover:text-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <X className="w-3 h-3" />
           </button>
@@ -2351,6 +2354,7 @@ function PrinterCard({
       queryClient.invalidateQueries({ queryKey: ['scheduled-dryings', printer.id] });
       setDryingPopoverAmsId(null);
     },
+    onError: (error: Error) => showToast(error.message || t('printers.drying.scheduleFailed'), 'error'),
   });
 
   const stopDryingMutation = useMutation({

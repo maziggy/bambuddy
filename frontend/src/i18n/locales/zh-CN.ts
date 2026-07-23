@@ -596,6 +596,7 @@ export default {
       scheduledFor: '干燥已预约：{{time}}',
       scheduledAsap: '干燥已预约（等待打印机）',
       cancelScheduled: '取消预约干燥',
+      scheduleFailed: '预约干燥失败',
     },
     amsBackup: {
       titleOn: 'AMS 备用料盘已开启。点击以禁用。',

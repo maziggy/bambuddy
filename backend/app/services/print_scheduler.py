@@ -252,6 +252,12 @@ class PrintScheduler:
         self._power_on_check_interval = 10  # seconds between connection checks
         # Track which printers are currently auto-drying (printer_id -> start timestamp)
         self._drying_in_progress: dict[int, float] = {}
+        # Printers with a scheduled drying row currently "running" (#2638). Rebuilt
+        # fresh at the top of every _check_scheduled_dryings call from the DB, so it
+        # also picks up route-side cancels. Auto-drying's stop-all branches must
+        # never stop/untrack these — they co-own _drying_in_progress with scheduled
+        # drying and would otherwise fight over the same printer.
+        self._scheduled_drying_printer_ids: set[int] = set()
         # Defensive in-memory dispatch hold (#1157): a printer that just received
         # a project_file command must not get a second dispatch until either it
         # transitions out of pre_state OR the hard timeout expires. The H2D Pro
@@ -2161,6 +2167,8 @@ class PrintScheduler:
             # Stop active drying on all printers if both features disabled
             if self._drying_in_progress:
                 for pid in list(self._drying_in_progress):
+                    if pid in self._scheduled_drying_printer_ids:
+                        continue
                     logger.info("Auto-drying: printer %d — stopping, auto-drying disabled", pid)
                     await self._stop_drying(pid)
             return
@@ -2182,6 +2190,8 @@ class PrintScheduler:
         # may still be eligible for mid-print drying regardless of queue state).
         if not ambient_drying_enabled and not printers_with_scheduled and not print_drying_enabled:
             for pid in list(self._drying_in_progress):
+                if pid in self._scheduled_drying_printer_ids:
+                    continue
                 logger.info("Auto-drying: printer %d — stopping, no scheduled prints in queue", pid)
                 await self._stop_drying(pid)
             return
@@ -2226,7 +2236,7 @@ class PrintScheduler:
             if not mid_print:
                 # In queue-only mode, only dry printers that have scheduled prints
                 if not ambient_drying_enabled and pid not in printers_with_scheduled:
-                    if self._drying_in_progress.get(pid):
+                    if self._drying_in_progress.get(pid) and pid not in self._scheduled_drying_printer_ids:
                         logger.info("Auto-drying: printer %d — stopping, no scheduled prints for this printer", pid)
                         await self._stop_drying(pid)
                     logger.debug("Auto-drying: printer %d skipped — no scheduled prints", pid)
@@ -2419,6 +2429,12 @@ class PrintScheduler:
         result = await db.execute(select(ScheduledDrying).where(ScheduledDrying.status.in_(("pending", "running"))))
         rows = list(result.scalars().all())
 
+        # Rebuild fresh from the DB every tick so this stays accurate across
+        # route-side cancels/completions — it's the source of truth auto-drying's
+        # stop-all branches consult to avoid stepping on a scheduled run (#2638).
+        self._scheduled_drying_printer_ids = {row.printer_id for row in rows if row.status == "running"}
+        running_printer_ids = set(self._scheduled_drying_printer_ids)
+
         for row in rows:
             if row.status == "running":
                 self._update_running_scheduled_drying(row, now)
@@ -2431,7 +2447,7 @@ class PrintScheduler:
             if not state:
                 row.waiting_reason = "printer_offline"
                 continue
-            if self._drying_in_progress.get(row.printer_id):
+            if self._drying_in_progress.get(row.printer_id) or row.printer_id in running_printer_ids:
                 row.waiting_reason = "already_drying"
                 continue
             if not self._is_printer_idle(row.printer_id, require_plate_clear=False):
@@ -2469,6 +2485,8 @@ class PrintScheduler:
                 row.started_at = now
                 row.waiting_reason = None
                 self._drying_in_progress[row.printer_id] = time.monotonic()
+                self._scheduled_drying_printer_ids.add(row.printer_id)
+                running_printer_ids.add(row.printer_id)
             else:
                 row.waiting_reason = "printer_offline"
 

@@ -1,7 +1,7 @@
 """Tests for PrintScheduler scheduled-drying dispatch (#2638)."""
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import select
@@ -171,3 +171,69 @@ async def test_running_within_grace_untouched(scheduler, db_session, printer_fac
         await scheduler._check_scheduled_dryings(db_session)
     await db_session.refresh(row)
     assert row.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_scheduled_drying_survives_auto_drying_stop_all(scheduler, db_session, printer_factory):
+    """Regression (#2638): a running scheduled drying must not be stopped or
+    untracked by _check_auto_drying's stop-all branch, even in the default
+    config where both auto-drying toggles are off. Before the fix, the two
+    features co-owned _drying_in_progress and auto-drying would stop/pop any
+    printer it didn't start drying on itself.
+    """
+    row = await _make_row(db_session, printer_factory, start_after=_utcnow_naive() - timedelta(minutes=1))
+    with (
+        patch("backend.app.services.print_scheduler.printer_manager") as mock_pm,
+        patch.object(scheduler, "_is_printer_idle", return_value=True),
+    ):
+        mock_pm.get_status.return_value = _mock_state()
+        mock_pm.send_drying_command.return_value = True
+        await scheduler._check_scheduled_dryings(db_session)
+
+        await db_session.refresh(row)
+        assert row.status == "running"
+        assert scheduler._drying_in_progress.get(row.printer_id)
+        assert row.printer_id in scheduler._scheduled_drying_printer_ids
+
+        mock_pm.reset_mock()
+        with patch.object(scheduler, "_get_bool_setting", AsyncMock(return_value=False)):
+            # Default config: queue_drying_enabled and ambient_drying_enabled both off.
+            await scheduler._check_auto_drying(db_session, [], set(), require_plate_clear=False)
+
+    mock_pm.send_drying_command.assert_not_called()
+    await db_session.refresh(row)
+    assert row.status == "running"
+    assert scheduler._drying_in_progress.get(row.printer_id)
+    assert row.printer_id in scheduler._scheduled_drying_printer_ids
+
+
+@pytest.mark.asyncio
+async def test_second_pending_row_for_same_printer_does_not_dispatch(scheduler, db_session, printer_factory):
+    """Regression (#2638): two pending rows for the same printer must not both
+    dispatch in the same tick — the second should see the first's dispatch via
+    the strengthened already-drying gate and stay pending.
+    """
+    printer = await printer_factory()
+    past = _utcnow_naive() - timedelta(minutes=1)
+    row1 = ScheduledDrying(printer_id=printer.id, ams_id=0, temp=65, duration_hours=8, start_after=past)
+    row2 = ScheduledDrying(printer_id=printer.id, ams_id=0, temp=60, duration_hours=6, start_after=past)
+    db_session.add_all([row1, row2])
+    await db_session.commit()
+    await db_session.refresh(row1)
+    await db_session.refresh(row2)
+
+    with (
+        patch("backend.app.services.print_scheduler.printer_manager") as mock_pm,
+        patch.object(scheduler, "_is_printer_idle", return_value=True),
+    ):
+        mock_pm.get_status.return_value = _mock_state()
+        mock_pm.send_drying_command.return_value = True
+        await scheduler._check_scheduled_dryings(db_session)
+
+    mock_pm.send_drying_command.assert_called_once()
+    await db_session.refresh(row1)
+    await db_session.refresh(row2)
+    dispatched, still_pending = (row1, row2) if row1.status == "running" else (row2, row1)
+    assert dispatched.status == "running"
+    assert still_pending.status == "pending"
+    assert still_pending.waiting_reason == "already_drying"

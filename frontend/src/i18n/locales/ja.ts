@@ -595,6 +595,7 @@ export default {
       scheduledFor: '乾燥予約: {{time}}',
       scheduledAsap: '乾燥予約済み（プリンター待ち）',
       cancelScheduled: '乾燥予約をキャンセル',
+      scheduleFailed: '乾燥の予約に失敗しました',
     },
     amsBackup: {
       titleOn: 'AMSフィラメントバックアップはONです。クリックして無効化します。',

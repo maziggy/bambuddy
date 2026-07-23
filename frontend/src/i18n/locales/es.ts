@@ -596,6 +596,7 @@ export default {
       scheduledFor: 'Secado programado para {{time}}',
       scheduledAsap: 'Secado programado (esperando la impresora)',
       cancelScheduled: 'Cancelar secado programado',
+      scheduleFailed: 'No se pudo programar el secado',
     },
     amsBackup: {
       titleOn: 'AMS Filament Backup está ACTIVADO. Haz clic para desactivar.',

@@ -564,6 +564,7 @@ export default {
       scheduledFor: "Сушка запланирована на {{time}}",
       scheduledAsap: "Сушка запланирована (ожидание принтера)",
       cancelScheduled: "Отменить запланированную сушку",
+      scheduleFailed: "Не удалось запланировать сушку",
     },
     amsBackup: {
       titleOn: "Резервный филамент AMS включён. Нажмите, чтобы отключить.",

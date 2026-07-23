@@ -596,6 +596,7 @@ export default {
       scheduledFor: 'Trocknung geplant für {{time}}',
       scheduledAsap: 'Trocknung geplant (wartet auf Drucker)',
       cancelScheduled: 'Geplante Trocknung abbrechen',
+      scheduleFailed: 'Trocknung konnte nicht geplant werden',
     },
     amsBackup: {
       titleOn: 'AMS Filament Backup ist EIN. Zum Deaktivieren klicken.',

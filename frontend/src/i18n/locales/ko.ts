@@ -558,7 +558,8 @@ export default {
       schedule: '예약',
       scheduledFor: '건조 예약: {{time}}',
       scheduledAsap: '건조 예약됨 (프린터 대기 중)',
-      cancelScheduled: '예약된 건조 취소'
+      cancelScheduled: '예약된 건조 취소',
+      scheduleFailed: '건조 예약에 실패했습니다'
     },
     amsBackup: {
       titleOn: 'AMS 필라멘트 백업이 켜져 있습니다. 비활성화하려면 클릭하세요.',

@@ -596,6 +596,7 @@ export default {
       scheduledFor: '乾燥已預約：{{time}}',
       scheduledAsap: '乾燥已預約（等待印表機）',
       cancelScheduled: '取消預約乾燥',
+      scheduleFailed: '預約乾燥失敗',
     },
     amsBackup: {
       titleOn: 'AMS 備用料盤已開啟。點擊以停用。',

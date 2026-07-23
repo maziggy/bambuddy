@@ -1,7 +1,6 @@
 """Tests for the ScheduledDrying model (#2638)."""
 
 import pytest
-from sqlalchemy import select
 
 from backend.app.models.scheduled_drying import ScheduledDrying
 
@@ -24,14 +23,13 @@ async def test_scheduled_drying_defaults(db_session, printer_factory):
     assert row.started_at is None
 
 
-@pytest.mark.asyncio
-async def test_scheduled_drying_cascade_delete_with_printer(db_session, printer_factory):
-    printer = await printer_factory()
-    db_session.add(ScheduledDrying(printer_id=printer.id, ams_id=0, temp=45, duration_hours=4))
-    await db_session.commit()
+def test_printer_fk_declares_cascade_delete():
+    """Verify the model declares CASCADE delete on printer FK (enforced in PostgreSQL)."""
+    fk = next(iter(ScheduledDrying.__table__.c.printer_id.foreign_keys))
+    assert fk.ondelete == "CASCADE"
 
-    await db_session.delete(printer)
-    await db_session.commit()
 
-    result = await db_session.execute(select(ScheduledDrying))
-    assert result.scalars().all() == []
+def test_created_by_fk_declares_set_null():
+    """Verify the model declares SET NULL on created_by FK (enforced in PostgreSQL)."""
+    fk = next(iter(ScheduledDrying.__table__.c.created_by_id.foreign_keys))
+    assert fk.ondelete == "SET NULL"

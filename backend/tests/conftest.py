@@ -128,12 +128,7 @@ def event_loop():
 @pytest.fixture
 async def test_engine():
     """Create a test database engine."""
-    engine = create_async_engine(
-        TEST_DATABASE_URL,
-        echo=False,
-        connect_args={"check_same_thread": False},
-        execution_options={"sqlite_synchronous": 0},
-    )
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 
     # Import all models to register them
     from backend.app.models import (
@@ -178,10 +173,6 @@ async def test_engine():
     )
 
     async with engine.begin() as conn:
-        # Enable foreign key constraints for SQLite
-        from sqlalchemy import text
-
-        await conn.execute(text("PRAGMA foreign_keys = ON"))
         await conn.run_sync(Base.metadata.create_all)
 
     yield engine

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { compareFwVersions } from '../utils/firmwareVersion';
 import { formatPrintName } from '../utils/printName';
 import { computePopoverPosition } from '../utils/popoverPosition';
+import { computeStartAfter, type DryingStartMode } from '../lib/scheduledDrying';
 import {
   BED_TEMP_DEFAULTS,
   CHAMBER_TEMP_DEFAULTS,
@@ -1849,6 +1850,11 @@ function PrinterCard({
   const [dryingTemp, setDryingTemp] = useState(50);
   const [dryingDuration, setDryingDuration] = useState(4);
   const [dryingRotateTray, setDryingRotateTray] = useState(false);
+  // Drying start mode (#2638): 'now' preserves the existing immediate-start behavior;
+  // 'delay' and 'at_time' route through scheduleDryingMutation instead.
+  const [dryingStartMode, setDryingStartMode] = useState<DryingStartMode>('now');
+  const [dryingDelayMinutes, setDryingDelayMinutes] = useState(120);
+  const [dryingStartAt, setDryingStartAt] = useState('');
   const [dryingPopoverPos, setDryingPopoverPos] = useState<{ top: number; left: number } | null>(null);
   // Which AMS we are waiting on to actually enter a drying cycle (#2533). Held as
   // an object rather than a bare id so restarting drying on the SAME unit produces
@@ -2287,6 +2293,24 @@ function PrinterCard({
       queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
     },
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
+  });
+
+  // Scheduled (delayed / at-time) drying runs (#2638) — the 'now' path above is untouched.
+  const scheduleDryingMutation = useMutation({
+    mutationFn: (params: { amsId: number; temp: number; duration: number; filament: string; rotateTray: boolean; startAfter: string }) =>
+      api.createScheduledDrying({
+        printer_id: printer.id,
+        ams_id: params.amsId,
+        temp: params.temp,
+        duration_hours: params.duration,
+        filament: params.filament,
+        rotate_tray: params.rotateTray,
+        start_after: params.startAfter,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduled-dryings', printer.id] });
+      setDryingPopoverAmsId(null);
+    },
   });
 
   const stopDryingMutation = useMutation({
@@ -6509,6 +6533,47 @@ function PrinterCard({
                     </button>
                   );
                 })()}
+                {/* Start mode: now / after delay / at time (#2638) */}
+                <div>
+                  <label className="text-[10px] text-white/70 font-medium mb-1 block">{t('printers.drying.startMode')}</label>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(['now', 'delay', 'at_time'] as const).map(mode => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setDryingStartMode(mode)}
+                        className={`py-1 rounded-lg border text-[10px] font-medium transition-colors ${
+                          dryingStartMode === mode
+                            ? 'bg-bambu-green border-bambu-green text-white'
+                            : 'bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary'
+                        }`}
+                      >
+                        {t(mode === 'now' ? 'printers.drying.modeNow' : mode === 'delay' ? 'printers.drying.modeDelay' : 'printers.drying.modeAtTime')}
+                      </button>
+                    ))}
+                  </div>
+                  {dryingStartMode === 'delay' && (
+                    <div className="mt-1.5">
+                      <ToolbarDropdown
+                        value={String(dryingDelayMinutes)}
+                        options={[30, 60, 120, 240, 480, 720, 1440].map(min => ({
+                          value: String(min),
+                          label: min < 60 ? `${min}m` : `${min / 60}h`,
+                        }))}
+                        onChange={value => setDryingDelayMinutes(Number(value))}
+                        fullWidth
+                      />
+                    </div>
+                  )}
+                  {dryingStartMode === 'at_time' && (
+                    <input
+                      type="datetime-local"
+                      value={dryingStartAt}
+                      onChange={e => setDryingStartAt(e.target.value)}
+                      className="mt-1.5 w-full px-2 py-1 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-[11px] focus:outline-none focus:border-bambu-green [color-scheme:dark]"
+                    />
+                  )}
+                </div>
               </div>
               <div className="shrink-0 h-px bg-bambu-dark-tertiary" />
               {/* Footer */}
@@ -6526,20 +6591,37 @@ function PrinterCard({
                       const trayLoadedInThisAms = (targetAms?.tray ?? []).some(
                         tray => tray.state === 11,
                       );
-                      startDryingMutation.mutate({
-                        amsId: dryingPopoverAmsId,
-                        temp: dryingTemp,
-                        duration: dryingDuration,
-                        filament: dryingFilament,
-                        rotateTray: dryingRotateTray && !trayLoadedInThisAms,
-                      });
+                      const rotate = dryingRotateTray && !trayLoadedInThisAms;
+                      if (dryingStartMode === 'now') {
+                        startDryingMutation.mutate({
+                          amsId: dryingPopoverAmsId,
+                          temp: dryingTemp,
+                          duration: dryingDuration,
+                          filament: dryingFilament,
+                          rotateTray: rotate,
+                        });
+                      } else {
+                        const startAfter = computeStartAfter(dryingStartMode, dryingDelayMinutes, dryingStartAt);
+                        if (startAfter) {
+                          scheduleDryingMutation.mutate({
+                            amsId: dryingPopoverAmsId,
+                            temp: dryingTemp,
+                            duration: dryingDuration,
+                            filament: dryingFilament,
+                            rotateTray: rotate,
+                            startAfter,
+                          });
+                        }
+                      }
                     }
                   }}
-                  disabled={startDryingMutation.isPending}
+                  disabled={startDryingMutation.isPending || scheduleDryingMutation.isPending || (dryingStartMode === 'at_time' && !dryingStartAt)}
                   data-testid="drying-start-confirm"
                   className="w-full py-1.5 bg-bambu-green hover:bg-bambu-green/80 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
                 >
-                  {startDryingMutation.isPending ? t('printers.drying.startingDrying') : t('printers.drying.start')}
+                  {dryingStartMode === 'now'
+                    ? (startDryingMutation.isPending ? t('printers.drying.startingDrying') : t('printers.drying.start'))
+                    : t('printers.drying.schedule')}
                 </button>
               </div>
             </div>

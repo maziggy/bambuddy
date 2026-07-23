@@ -550,7 +550,15 @@ export default {
       screenOnly: '이 프린터에서는 AMS 건조를 프린터 자체 화면에서만 제어할 수 있습니다 (Bambu 제한 사항)',
       stoppingDrying: '건조 정지 중...',
       rotateTray: '건조 중 스풀 회전',
-      rotateUnavailableReason: '사용할 수 없음 — 이 AMS의 슬롯이 툴헤드로 로드되어 있습니다. 스풀이 공급 튜브에 의해 고정되어 회전할 수 없습니다. 먼저 필라멘트를 뺀 후 다시 시도하십시오.'
+      rotateUnavailableReason: '사용할 수 없음 — 이 AMS의 슬롯이 툴헤드로 로드되어 있습니다. 스풀이 공급 튜브에 의해 고정되어 회전할 수 없습니다. 먼저 필라멘트를 뺀 후 다시 시도하십시오.',
+      startMode: '시작',
+      modeNow: '지금',
+      modeDelay: '지연 후',
+      modeAtTime: '시각 지정',
+      schedule: '예약',
+      scheduledFor: '건조 예약: {{time}}',
+      scheduledAsap: '건조 예약됨 (프린터 대기 중)',
+      cancelScheduled: '예약된 건조 취소'
     },
     amsBackup: {
       titleOn: 'AMS 필라멘트 백업이 켜져 있습니다. 비활성화하려면 클릭하세요.',

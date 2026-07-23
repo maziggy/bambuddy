@@ -1,0 +1,200 @@
+2026-07-23 12:49:32,092 INFO [uvicorn.access] [-] [IP]:59414 - "PATCH /api/v1/printers/3 HTTP/1.1" 200
+2026-07-23 12:49:32,477 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:49:34,845 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:49:35,956 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:49:39,047 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:49:47,221 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:49:51,597 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:49:52,123 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:50:03,343 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:50:21,702 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:50:22,251 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:50:33,652 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:50:51,934 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:50:52,386 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:51:03,858 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:51:22,062 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:51:22,598 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:51:34,020 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:51:52,183 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:51:52,701 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:52:04,132 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:52:22,346 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:52:22,854 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:52:34,365 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:52:52,469 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:52:52,978 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:53:04,520 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:53:22,588 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:53:23,362 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:53:28,697 INFO [uvicorn.access] [-] [IP]:52826 - "POST /api/v1/cloud/login HTTP/1.1" 200
+2026-07-23 12:53:34,668 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:53:52,752 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:53:53,497 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:54:04,799 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:54:22,927 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:54:23,647 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:54:34,958 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:54:53,063 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:54:53,797 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:55:05,082 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:55:23,216 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:55:23,987 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:55:35,271 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:55:53,498 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:55:54,135 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:56:05,429 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:56:23,632 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:56:24,540 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:56:35,602 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:56:53,833 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:56:54,657 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:57:05,701 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:57:23,660 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-23 12:57:23,984 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:57:24,891 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:57:25,282 INFO [uvicorn.access] [-] [IP]:54885 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-23 12:57:25,725 INFO [uvicorn.access] [-] [IP]:54889 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-23 12:57:26,126 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-07-23 12:57:26,126 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-23 12:57:26,129 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 3 printers
+2026-07-23 12:57:35,898 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:57:54,138 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:57:55,011 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:58:06,014 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:58:24,316 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:58:25,164 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:58:36,135 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:58:54,498 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:58:55,278 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:59:06,321 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:59:16,841 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Normal disconnection, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:59:16,841 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnected shortly after request topic subscription. Disabling request topic for this printer.
+2026-07-23 12:59:16,845 INFO [uvicorn.access] [-] [IP]:63694 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-07-23 12:59:17,175 INFO [uvicorn.access] [-] [IP]:63694 - "POST /api/v1/printers/ HTTP/1.1" 400
+2026-07-23 12:59:24,653 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:59:25,475 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:59:33,103 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Normal disconnection, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:59:33,105 INFO [uvicorn.access] [-] [IP]:63704 - "POST /api/v1/printers/diagnostic HTTP/1.1" 200
+2026-07-23 12:59:33,315 INFO [uvicorn.access] [-] [IP]:63704 - "POST /api/v1/printers/ HTTP/1.1" 400
+2026-07-23 12:59:36,449 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:59:41,762 INFO [uvicorn.access] [-] [IP]:57491 - "POST /api/v1/discovery/stop HTTP/1.1" 200
+2026-07-23 12:59:41,765 INFO [uvicorn.access] [-] [IP]:57492 - "POST /api/v1/discovery/scan/stop HTTP/1.1" 200
+2026-07-23 12:59:54,769 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 12:59:55,624 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:00:06,588 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:00:24,943 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:00:25,783 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:00:36,738 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:00:55,086 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:00:55,913 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:01:05,464 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:01:06,127 INFO [uvicorn.access] [-] [IP]:57581 - "POST /api/v1/printers/2/connect HTTP/1.1" 200
+2026-07-23 13:01:06,585 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:01:06,869 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:01:08,456 WARNING [backend.app.services.bambu_mqtt] [1d6ccd3a] [[SERIAL]] request_status_update: not connected
+2026-07-23 13:01:08,459 INFO [uvicorn.access] [-] [IP]:57581 - "POST /api/v1/printers/2/refresh-status HTTP/1.1" 400
+2026-07-23 13:01:08,715 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:01:12,833 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:01:21,001 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:01:26,012 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:01:36,980 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:01:37,184 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:01:56,254 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:02:07,142 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:02:07,342 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:02:26,633 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:02:37,253 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:02:37,510 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:02:56,755 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:03:07,424 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:03:07,628 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:03:26,891 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:03:37,635 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:03:37,867 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:03:57,090 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:04:07,803 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:04:08,012 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:04:27,230 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:04:37,986 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:04:38,155 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:04:57,337 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:05:08,108 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:05:08,287 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:05:27,479 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:05:38,233 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:05:38,427 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:05:57,584 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:06:08,334 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:06:08,551 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:06:22,184 INFO [backend.app.api.routes.support] [feb3f6eb] Log level changed to DEBUG
+2026-07-23 13:06:22,184 INFO [backend.app.api.routes.bug_report] [feb3f6eb] Bug report: enabled debug logging
+2026-07-23 13:06:22,184 WARNING [backend.app.services.bambu_mqtt] [feb3f6eb] [[SERIAL]] request_status_update: not connected
+2026-07-23 13:06:22,184 WARNING [backend.app.services.bambu_mqtt] [feb3f6eb] [[SERIAL]] request_status_update: not connected
+2026-07-23 13:06:22,184 WARNING [backend.app.services.bambu_mqtt] [feb3f6eb] [[SERIAL]] request_status_update: not connected
+2026-07-23 13:06:22,185 INFO [uvicorn.access] [-] [IP]:51220 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-07-23 13:06:24,740 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: not connected
+2026-07-23 13:06:24,740 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: not connected
+2026-07-23 13:06:24,741 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: not connected
+2026-07-23 13:06:27,693 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:06:32,662 DEBUG [backend.app.api.routes.printers] [a9f0885f] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-23 13:06:32,663 DEBUG [backend.app.api.routes.printers] [a9f0885f] Using tray_now directly as global ID: 255
+2026-07-23 13:06:36,499 DEBUG [backend.app.api.routes.printers] [4b724686] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-23 13:06:36,500 DEBUG [backend.app.api.routes.printers] [4b724686] Using tray_now directly as global ID: 255
+2026-07-23 13:06:37,728 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:06:38,442 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:06:38,626 INFO [uvicorn.access] [-] [IP]:51231 - "POST /api/v1/printers/2/connect HTTP/1.1" 200
+2026-07-23 13:06:38,731 DEBUG [backend.app.api.routes.printers] [3e9f8fbb] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-23 13:06:38,732 DEBUG [backend.app.api.routes.printers] [3e9f8fbb] Using tray_now directly as global ID: 255
+2026-07-23 13:06:38,818 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:06:41,037 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:06:45,127 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:06:47,898 WARNING [backend.app.services.bambu_mqtt] [78cb6a97] [[SERIAL]] request_status_update: not connected
+2026-07-23 13:06:47,901 INFO [uvicorn.access] [-] [IP]:51231 - "POST /api/v1/printers/3/refresh-status HTTP/1.1" 400
+2026-07-23 13:06:51,637 DEBUG [backend.app.api.routes.printers] [772891fc] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-23 13:06:51,637 DEBUG [backend.app.api.routes.printers] [772891fc] Using tray_now directly as global ID: 255
+2026-07-23 13:06:53,255 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:06:54,758 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: not connected
+2026-07-23 13:06:54,759 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: not connected
+2026-07-23 13:06:54,759 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: not connected
+2026-07-23 13:06:57,832 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:07:02,710 DEBUG [backend.app.api.routes.printers] [fe6c7ccd] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-23 13:07:02,710 DEBUG [backend.app.api.routes.printers] [fe6c7ccd] Using tray_now directly as global ID: 255
+2026-07-23 13:07:04,331 DEBUG [backend.app.api.routes.printers] [0ce19e10] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-23 13:07:04,331 DEBUG [backend.app.api.routes.printers] [0ce19e10] Using tray_now directly as global ID: 255
+2026-07-23 13:07:04,334 DEBUG [backend.app.api.routes.printers] [668cf740] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-23 13:07:04,334 DEBUG [backend.app.api.routes.printers] [668cf740] Using tray_now directly as global ID: 255
+2026-07-23 13:07:06,541 DEBUG [backend.app.api.routes.printers] [6bf1c14d] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-23 13:07:06,542 DEBUG [backend.app.api.routes.printers] [6bf1c14d] Using tray_now directly as global ID: 255
+2026-07-23 13:07:08,557 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:07:08,788 DEBUG [backend.app.api.routes.printers] [8cae0cf1] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-23 13:07:08,788 DEBUG [backend.app.api.routes.printers] [8cae0cf1] Using tray_now directly as global ID: 255
+2026-07-23 13:07:09,368 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:07:11,546 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:07:12,425 INFO [uvicorn.access] [-] [IP]:51231 - "POST /api/v1/printers/2/connect HTTP/1.1" 200
+2026-07-23 13:07:12,545 DEBUG [backend.app.api.routes.printers] [a4bb7cb1] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-23 13:07:12,546 DEBUG [backend.app.api.routes.printers] [a4bb7cb1] Using tray_now directly as global ID: 255
+2026-07-23 13:07:12,670 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:07:14,007 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:07:14,781 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:07:14,896 INFO [uvicorn.access] [-] [IP]:51231 - "POST /api/v1/printers/1/connect HTTP/1.1" 200
+2026-07-23 13:07:15,028 DEBUG [backend.app.api.routes.printers] [40ee41a4] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-23 13:07:15,029 DEBUG [backend.app.api.routes.printers] [40ee41a4] Using tray_now directly as global ID: 255
+2026-07-23 13:07:15,221 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:07:17,384 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:07:18,889 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:07:21,654 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:07:21,678 DEBUG [backend.app.api.routes.printers] [9ab9a001] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-23 13:07:21,678 DEBUG [backend.app.api.routes.printers] [9ab9a001] Using tray_now directly as global ID: 255
+2026-07-23 13:07:24,766 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: not connected
+2026-07-23 13:07:24,766 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: not connected
+2026-07-23 13:07:24,767 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: not connected
+2026-07-23 13:07:27,012 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:07:29,837 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:07:32,756 DEBUG [backend.app.api.routes.printers] [6e132434] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-23 13:07:32,756 DEBUG [backend.app.api.routes.printers] [6e132434] Using tray_now directly as global ID: 255
+2026-07-23 13:07:36,563 DEBUG [backend.app.api.routes.printers] [eb83745d] API returning ams_mapping: [], ams_extruder_map: {}
+2026-07-23 13:07:36,563 DEBUG [backend.app.api.routes.printers] [eb83745d] Using tray_now directly as global ID: 255
+2026-07-23 13:07:38,681 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:07:43,170 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:07:45,987 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)

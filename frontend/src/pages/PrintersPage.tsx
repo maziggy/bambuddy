@@ -1742,6 +1742,46 @@ const DRYING_PRESETS: Record<string, { n3f: number; n3s: number; n3f_hours: numb
   'PVA':   { n3f: 65, n3s: 85, n3f_hours: 12, n3s_hours: 18 },
 };
 
+function ScheduledDryingBanner({ printerId }: { printerId: number }) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { data: scheduled = [] } = useQuery({
+    queryKey: ['scheduled-dryings', printerId],
+    queryFn: () => api.listScheduledDryings(printerId),
+    refetchInterval: 30_000,
+  });
+  const cancelMutation = useMutation({
+    mutationFn: (id: number) => api.cancelScheduledDrying(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduled-dryings', printerId] }),
+  });
+  const pending = scheduled.filter(s => s.status === 'pending');
+  if (pending.length === 0) return null;
+  return (
+    <div className="mt-2 space-y-1">
+      {pending.map(s => (
+        <div
+          key={s.id}
+          className="flex items-center justify-between px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px]"
+        >
+          <span className="text-amber-700 dark:text-amber-400">
+            {s.start_after
+              ? // Backend datetimes are naive UTC — append Z before parsing
+                t('printers.drying.scheduledFor', { time: new Date(`${s.start_after}Z`).toLocaleString() })
+              : t('printers.drying.scheduledAsap')}
+          </span>
+          <button
+            onClick={() => cancelMutation.mutate(s.id)}
+            title={t('printers.drying.cancelScheduled')}
+            className="text-bambu-gray hover:text-red-400 transition-colors"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PrinterCard({
   printer,
   hideIfDisconnected,
@@ -6386,6 +6426,9 @@ function PrinterCard({
           onClose={() => setShowFirmwareModal(false)}
         />
       )}
+
+      {/* Scheduled Drying Banner */}
+      <ScheduledDryingBanner printerId={printer.id} />
 
       {/* AMS Drying Popover — fixed position to avoid overflow/z-index issues */}
       {dryingPopoverAmsId !== null && dryingPopoverPos && (() => {

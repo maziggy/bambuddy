@@ -93,16 +93,21 @@ class TestAuthSetupAPI:
         password the frontend still sends. Regression for the LDAP re-enable flow that
         previously 422'd because the Pydantic schema enforced complexity unconditionally.
         """
+        from sqlalchemy import select
+
         from backend.app.core.auth import get_password_hash
+        from backend.app.models.group import Group
         from backend.app.models.user import User
 
+        admin_group = (await db_session.execute(select(Group).where(Group.name == "Administrators"))).scalar_one()
         existing = User(
             username="existing_admin",
             # pragma: allowlist secret — test fixture only, not a real credential
             password_hash=get_password_hash("DoesNotMatter1!"),  # noqa: S106
-            role="admin",
+            role="user",
             is_active=True,
         )
+        existing.groups.append(admin_group)
         db_session.add(existing)
         await db_session.commit()
 
@@ -119,6 +124,68 @@ class TestAuthSetupAPI:
         result = response.json()
         assert result["auth_enabled"] is True
         assert result["admin_created"] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_seed_default_groups_migrates_legacy_role_admin_to_administrators(
+        self, async_client: AsyncClient, db_session
+    ):
+        """Startup migration moves legacy admins once and then leaves group changes alone."""
+        from sqlalchemy import delete, select
+        from sqlalchemy.orm import selectinload
+
+        from backend.app.core.auth import get_password_hash
+        from backend.app.core.database import seed_default_groups
+        from backend.app.models.settings import Settings
+        from backend.app.models.user import User
+
+        migration_key = "migration_role_admin_to_administrators_v1"
+        # The fixture seeds default groups before this test. Remove its marker
+        # to model an application database from before this migration shipped.
+        await db_session.execute(delete(Settings).where(Settings.key == migration_key))
+        legacy_admin = User(
+            username="legacy_role_admin",
+            password_hash=get_password_hash("DoesNotMatter1!"),  # noqa: S106
+            role="admin",
+            is_active=True,
+        )
+        db_session.add(legacy_admin)
+        await db_session.commit()
+
+        await seed_default_groups()
+
+        migrated = (
+            await db_session.execute(
+                select(User)
+                .where(User.username == "legacy_role_admin")
+                .options(selectinload(User.groups))
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        assert migrated.role == "user"
+        assert any(group.name == "Administrators" for group in migrated.groups)
+        assert migrated.is_admin is True
+        assert (
+            await db_session.execute(select(Settings).where(Settings.key == migration_key))
+        ).scalar_one().value == "complete"
+
+        # A later deliberate group removal must not be undone by another
+        # startup. The marker prevents the retired role field from regaining
+        # authority.
+        migrated.groups = []
+        await db_session.commit()
+        await seed_default_groups()
+
+        after_restart = (
+            await db_session.execute(
+                select(User)
+                .where(User.username == "legacy_role_admin")
+                .options(selectinload(User.groups))
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        assert after_restart.role == "user"
+        assert not any(group.name == "Administrators" for group in after_restart.groups)
 
 
 class TestAuthLoginAPI:
@@ -161,7 +228,9 @@ class TestAuthLoginAPI:
         assert "access_token" in result
         assert result["token_type"] == "bearer"
         assert result["user"]["username"] == "logintest"
-        assert result["user"]["role"] == "admin"
+        assert result["user"]["role"] == "user"
+        assert result["user"]["is_admin"] is True
+        assert any(group["name"] == "Administrators" for group in result["user"]["groups"])
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -227,13 +296,15 @@ class TestAuthMeAPI:
         assert response.status_code == 200
         result = response.json()
         assert result["username"] == "metest"
-        assert result["role"] == "admin"
+        assert result["role"] == "user"
+        assert result["is_admin"] is True
+        assert any(group["name"] == "Administrators" for group in result["groups"])
         assert result["is_active"] is True
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_me_with_api_key_bearer(self, async_client: AsyncClient, db_session):
-        """Verify /me returns synthetic admin user when using API key via Bearer token."""
+        """Verify /me does not present an API key as a group-admin user."""
         from backend.app.core.auth import generate_api_key
         from backend.app.models.api_key import APIKey
 
@@ -253,15 +324,16 @@ class TestAuthMeAPI:
         result = response.json()
         assert result["id"] == 0
         assert result["username"].startswith("api-key:")
-        assert result["role"] == "admin"
-        assert result["is_admin"] is True
+        assert result["role"] == "user"
+        assert result["is_admin"] is False
+        assert result["groups"] == []
         assert result["is_active"] is True
         assert len(result["permissions"]) > 0
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_me_with_api_key_header(self, async_client: AsyncClient, db_session):
-        """Verify /me returns synthetic admin user when using X-API-Key header."""
+        """Verify /me returns a canonical non-user-admin API-key identity."""
         from backend.app.core.auth import generate_api_key
         from backend.app.models.api_key import APIKey
 
@@ -279,7 +351,9 @@ class TestAuthMeAPI:
         result = response.json()
         assert result["id"] == 0
         assert result["username"].startswith("api-key:")
-        assert result["is_admin"] is True
+        assert result["role"] == "user"
+        assert result["is_admin"] is False
+        assert result["groups"] == []
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -357,7 +431,6 @@ class TestUsersAPI:
             json={
                 "username": "newuser",
                 "password": "Newuserpass1!",
-                "role": "user",
             },
         )
 
@@ -378,7 +451,6 @@ class TestUsersAPI:
             json={
                 "username": "duplicateuser",
                 "password": "Password123!",
-                "role": "user",
             },
         )
 
@@ -389,7 +461,6 @@ class TestUsersAPI:
             json={
                 "username": "duplicateuser",
                 "password": "Password456!",
-                "role": "user",
             },
         )
 
@@ -407,12 +478,11 @@ class TestUsersAPI:
             json={
                 "username": "updateuser",
                 "password": "Password123!",
-                "role": "user",
             },
         )
         user_id = create_response.json()["id"]
 
-        # Update user
+        # Role is deprecated/inert and ignored on update.
         response = await async_client.patch(
             f"/api/v1/users/{user_id}",
             headers={"Authorization": f"Bearer {auth_token}"},
@@ -420,7 +490,8 @@ class TestUsersAPI:
         )
 
         assert response.status_code == 200
-        assert response.json()["role"] == "admin"
+        assert response.json()["role"] == "user"
+        assert response.json()["is_admin"] is False
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -448,7 +519,6 @@ class TestUsersAPI:
             json={
                 "username": "deleteuser",
                 "password": "Password123!",
-                "role": "user",
             },
         )
         user_id = create_response.json()["id"]

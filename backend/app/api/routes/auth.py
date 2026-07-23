@@ -88,18 +88,35 @@ def _user_to_response(user: User) -> UserResponse:
 
 
 def _api_key_to_user_response(api_key) -> UserResponse:
-    """Create a synthetic admin UserResponse for a valid API key."""
+    """Create a synthetic API-key identity without user-group admin status."""
     return UserResponse(
         id=0,
         username=f"api-key:{api_key.key_prefix}",
         email=None,
-        role="admin",
+        role="user",
         is_active=True,
-        is_admin=True,
+        is_admin=False,
         groups=[],
         permissions=sorted(ALL_PERMISSIONS),
         created_at=api_key.created_at.isoformat(),
     )
+
+
+async def _ensure_administrators_group(db: AsyncSession) -> Group:
+    result = await db.execute(select(Group).where(Group.name == "Administrators").options(selectinload(Group.users)))
+    admin_group = result.scalar_one_or_none()
+    if admin_group is not None:
+        return admin_group
+
+    admin_group = Group(
+        name="Administrators",
+        description="Full access to all features",
+        permissions=ALL_PERMISSIONS,
+        is_system=True,
+    )
+    db.add(admin_group)
+    await db.flush()
+    return admin_group
 
 
 # ---------------------------------------------------------------------------
@@ -235,9 +252,8 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
         admin_created = False
 
         if request.auth_enabled:
-            # Check if admin users already exist
-            admin_users_result = await db.execute(select(User).where(User.role == "admin"))
-            existing_admin_users = list(admin_users_result.scalars().all())
+            admin_group = await _ensure_administrators_group(db)
+            existing_admin_users = [u for u in admin_group.users if u.is_active]
             has_admin_users = len(existing_admin_users) > 0
 
             if has_admin_users:
@@ -279,16 +295,12 @@ async def setup_auth(request: SetupRequest, db: AsyncSession = Depends(get_db)):
                     admin_user = User(
                         username=request.admin_username,
                         password_hash=get_password_hash(request.admin_password),
-                        role="admin",
+                        role="user",
                         is_active=True,
                     )
 
-                    # Try to add user to Administrators group if it exists
-                    admin_group_result = await db.execute(select(Group).where(Group.name == "Administrators"))
-                    admin_group = admin_group_result.scalar_one_or_none()
-                    if admin_group:
-                        admin_user.groups.append(admin_group)
-                        logger.info("Added new admin user to Administrators group")
+                    admin_user.groups.append(admin_group)
+                    logger.info("Added new admin user to Administrators group")
 
                     db.add(admin_user)
                     logger.info("Admin user added to session: %s", request.admin_username)

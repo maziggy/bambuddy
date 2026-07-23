@@ -1172,7 +1172,7 @@ class TestLibraryPermissions:
         password_hash = get_password_hash("password")
 
         # Create users
-        admin_user = User(username="admin_lib", password_hash=password_hash, role="admin", is_active=True)
+        admin_user = User(username="admin_lib", password_hash=password_hash, role="user", is_active=True)
         admin_user.groups.append(admin_group)
 
         operator_user = User(username="operator_lib", password_hash=password_hash, is_active=True)

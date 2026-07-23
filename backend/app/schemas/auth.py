@@ -50,7 +50,6 @@ class UserCreate(BaseModel):
     username: str = Field(..., max_length=150)
     password: str | None = Field(default=None, max_length=256)  # M-NEW-4: cap before pbkdf2
     email: str | None = Field(default=None, max_length=254)  # L-NEW-5: RFC 5321 max
-    role: str = "user"
     group_ids: list[int] | None = None
 
     @field_validator("password")
@@ -65,7 +64,6 @@ class UserUpdate(BaseModel):
     username: str | None = Field(default=None, max_length=150)
     password: str | None = Field(default=None, max_length=256)  # M-NEW-4: cap before pbkdf2
     email: str | None = Field(default=None, max_length=254)  # L-NEW-5: RFC 5321 max
-    role: str | None = None
     is_active: bool | None = None
     group_ids: list[int] | None = None
 
@@ -83,7 +81,7 @@ class UserResponse(BaseModel):
     email: str | None = None
     role: str  # Deprecated, kept for backward compatibility
     is_active: bool
-    is_admin: bool  # Computed from role and group membership
+    is_admin: bool  # Computed from Administrators group membership
     auth_source: str = "local"  # "local" or "ldap"
     groups: list[GroupBrief] = []
     permissions: list[str] = []  # All permissions from groups

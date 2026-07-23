@@ -3366,7 +3366,7 @@ export interface UserResponse {
   email?: string;
   role: string;  // Deprecated, kept for backward compatibility
   is_active: boolean;
-  is_admin: boolean;  // Computed from role and group membership
+  is_admin: boolean;  // Compatibility field computed from Administrators group membership
   auth_source: string;  // "local" or "ldap"
   groups: GroupBrief[];
   permissions: Permission[];  // All permissions from groups
@@ -3377,7 +3377,6 @@ export interface UserCreate {
   username: string;
   password?: string;  // Optional when advanced auth is enabled
   email?: string;
-  role: string;
   group_ids?: number[];
 }
 
@@ -3385,7 +3384,6 @@ export interface UserUpdate {
   username?: string;
   password?: string;
   email?: string;
-  role?: string;
   is_active?: boolean;
   group_ids?: number[];
 }

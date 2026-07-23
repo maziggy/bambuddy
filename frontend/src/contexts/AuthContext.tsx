@@ -213,8 +213,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Computed admin status
   const isAdmin = useMemo(() => {
     if (!authEnabled) return true; // Auth disabled = admin access
-    return user?.is_admin ?? false;
-  }, [authEnabled, user?.is_admin]);
+    return user?.groups?.some((group) => group.name === 'Administrators') ?? false;
+  }, [authEnabled, user?.groups]);
 
   // Permission check functions
   const hasPermission = useCallback((permission: Permission): boolean => {

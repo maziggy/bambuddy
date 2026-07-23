@@ -1,0 +1,200 @@
+2026-07-23 22:26:54,737 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Simple MQTT server listening on port 8883
+2026-07-23 22:26:54,738 INFO [backend.app.services.virtual_printer.tcp_proxy] [-] Camera-6000 TCP proxy listening on port 6000
+2026-07-23 22:26:54,738 INFO [backend.app.services.virtual_printer.bind_server] [-] Bind server listening on [IP]:3000 (plain)
+2026-07-23 22:26:54,742 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Starting periodic status push task
+2026-07-23 22:26:54,743 INFO [backend.app.services.virtual_printer.bind_server] [-] Bind server listening on [IP]:3002 (TLS)
+2026-07-23 22:26:54,744 INFO [backend.app.services.virtual_printer.manager] [-] [VP BamBuddy] Server-mode services started on [IP]
+2026-07-23 22:26:54,744 INFO [backend.app.services.virtual_printer.manager] [-] Started server-mode VP: BamBuddy on [IP]
+2026-07-23 22:26:54,744 INFO [root] [-] Virtual printer manager synced from database
+2026-07-23 22:26:54,996 INFO [backend.app.api.routes.websocket] [-] WebSocket connect refused: no token (auth enabled)
+2026-07-23 22:26:55,672 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-23 22:26:55,788 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] State is FINISH but completion NOT triggered: prev=None, was_running=False, already_triggered=False, has_callback=True
+2026-07-23 22:26:55,789 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Firmware version: 01.10.00.00
+2026-07-23 22:26:55,792 INFO [backend.app.main] [-] [Printer 1] Broadcasting AMS change via WebSocket
+2026-07-23 22:26:56,919 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] MQTT TLS connection from ('[IP]', 63535) - cipher=('TLS_AES_256_GCM_SHA384', 'TLSv1.3', 256), version=TLSv1.3
+2026-07-23 22:26:56,919 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] MQTT client connected: [IP]:63535
+2026-07-23 22:26:56,920 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] MQTT client authenticated successfully
+2026-07-23 22:26:56,921 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] MQTT client [IP]:63535 authenticated (negotiated keepalive=60s, idle disconnect disabled)
+2026-07-23 22:26:56,922 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] MQTT subscribe: device/[SERIAL]/report QoS=0
+2026-07-23 22:26:58,035 INFO [uvicorn.access] [-] [IP]:63533 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-23 22:26:58,049 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-23 22:26:58,052 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-23 22:26:58,053 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-07-23 22:27:03,033 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Probing developer mode via ams_filament_setting (seq=5)
+2026-07-23 22:27:03,104 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Developer mode probe: ENABLED (result='success')
+2026-07-23 22:27:04,145 INFO [backend.app.main] [-] Sending temperature alarm for [PRINTER] AMS-A: 40.2°C > 35.0°C
+2026-07-23 22:27:04,154 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-23 22:27:24,160 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-23 22:27:54,860 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 58 pushes/min to [IP]:63535
+2026-07-23 22:28:34,455 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20038","version":1}}...
+2026-07-23 22:28:34,455 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-07-23 22:28:34,455 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-07-23 22:28:54,959 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:29:55,057 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:30:55,170 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:31:55,273 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:32:04,161 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-23 22:32:55,385 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:33:35,447 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20039","version":1}}...
+2026-07-23 22:33:35,448 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-07-23 22:33:35,448 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-07-23 22:33:55,483 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:34:55,579 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:35:55,687 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:36:55,792 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:37:04,169 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-23 22:37:55,887 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:38:36,442 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20040","version":1}}...
+2026-07-23 22:38:36,442 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-07-23 22:38:36,442 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-07-23 22:38:55,989 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:39:56,086 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:40:56,185 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:41:56,281 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:42:04,179 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-23 22:42:56,387 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:43:37,439 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20041","version":1}}...
+2026-07-23 22:43:37,444 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-07-23 22:43:37,445 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-07-23 22:43:56,499 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:44:56,596 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:45:56,700 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:46:56,803 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:47:04,189 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-23 22:47:56,900 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:48:38,430 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20042","version":1}}...
+2026-07-23 22:48:38,430 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-07-23 22:48:38,430 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-07-23 22:48:57,005 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:49:57,101 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:50:57,201 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:51:28,694 INFO [backend.app.api.routes.cloud] [2d7e8c9c] get_filament_info called with 5 IDs: ['PFUSa4c7', 'GFB98', 'Pa0f4c72', 'GFL99', 'GFA50']
+2026-07-23 22:51:28,979 WARNING [backend.app.api.routes.cloud] [2d7e8c9c] Failed to get cloud preset PFUSa4c7 (API ID: PFUSa4c7): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-23 22:51:29,392 WARNING [backend.app.api.routes.cloud] [2d7e8c9c] Failed to get cloud preset Pa0f4c72 (API ID: Pa0f4c72): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-23 22:51:29,763 WARNING [backend.app.api.routes.cloud] [2d7e8c9c] Failed to get cloud preset GFA50 (API ID: GFSA50): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-23 22:51:29,768 INFO [uvicorn.access] [-] [IP]:59247 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-23 22:51:33,630 INFO [backend.app.services.homeassistant] [17c0bab8] Turned OFF HA entity 'Panda PWR Power Switch' (switch.power_switch)
+2026-07-23 22:51:33,630 INFO [backend.app.services.printer_manager] [17c0bab8] Marking printer 1 as offline (smart plug power off)
+2026-07-23 22:51:33,633 INFO [backend.app.main] [17c0bab8] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-23 22:51:33,644 INFO [uvicorn.access] [-] [IP]:62420 - "POST /api/v1/smart-plugs/1/control HTTP/1.1" 200
+2026-07-23 22:51:57,298 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:52:25,267 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 22:52:25,267 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Keep alive timeout, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 22:52:33,636 INFO [backend.app.main] [17c0bab8] [#1752] Printer 1 offline debounce elapsed: still_offline=True
+2026-07-23 22:52:33,638 INFO [backend.app.main] [17c0bab8] [#1752] Dispatching on_printer_offline for printer 1 ([PRINTER])
+2026-07-23 22:52:57,398 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:53:39,425 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20043","version":1}}...
+2026-07-23 22:53:39,425 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-07-23 22:53:39,425 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-07-23 22:53:57,499 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:54:57,606 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:55:57,717 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:56:57,822 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:57:57,923 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:58:40,420 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20044","version":1}}...
+2026-07-23 22:58:40,420 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-07-23 22:58:40,420 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-07-23 22:58:58,024 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 22:59:58,140 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:00:58,249 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:01:58,352 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:02:58,453 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:03:41,414 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20045","version":1}}...
+2026-07-23 23:03:41,414 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-07-23 23:03:41,414 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-07-23 23:03:58,561 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:04:58,675 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:05:58,779 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:06:58,887 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:07:58,985 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:08:42,408 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20046","version":1}}...
+2026-07-23 23:08:42,408 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-07-23 23:08:42,409 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-07-23 23:08:59,095 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:09:59,202 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:10:59,301 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:11:59,402 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:12:59,506 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:13:43,403 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20047","version":1}}...
+2026-07-23 23:13:43,403 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-07-23 23:13:43,404 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-07-23 23:13:59,607 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:14:59,719 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:15:59,837 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:16:59,947 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:18:00,053 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:18:44,397 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20048","version":1}}...
+2026-07-23 23:18:44,397 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-07-23 23:18:44,397 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-07-23 23:19:00,163 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:20:00,272 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:21:00,382 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:22:00,488 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:23:00,593 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:23:45,391 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT publish to device/[SERIAL]/request: {"pushing":{"command":"pushall","push_target":1,"sequence_id":"20049","version":1}}...
+2026-07-23 23:23:45,391 INFO [backend.app.services.virtual_printer.mqtt_server] [-] MQTT pushing command: pushall
+2026-07-23 23:23:45,391 INFO [backend.app.services.virtual_printer.mqtt_server] [-] Sending status report in response to pushall
+2026-07-23 23:24:00,696 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 60 pushes/min to [IP]:63535
+2026-07-23 23:25:00,779 INFO [backend.app.services.virtual_printer.mqtt_server] [-] [BamBuddy] 1Hz status push: 38 pushes/min to [IP]:63535
+2026-07-23 23:27:24,220 INFO [backend.app.services.smart_plug_manager] [-] Captured 1 energy snapshot(s)
+2026-07-23 23:37:19,500 INFO [uvicorn.access] [-] [IP]:49315 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-23 23:37:19,533 INFO [backend.app.api.routes.cloud] [fa90b4cd] get_filament_info called with 5 IDs: ['PFUSa4c7', 'GFB98', 'Pa0f4c72', 'GFL99', 'GFA50']
+2026-07-23 23:37:19,962 WARNING [backend.app.api.routes.cloud] [fa90b4cd] Failed to get cloud preset PFUSa4c7 (API ID: PFUSa4c7): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-23 23:37:20,343 WARNING [backend.app.api.routes.cloud] [fa90b4cd] Failed to get cloud preset Pa0f4c72 (API ID: Pa0f4c72): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-23 23:37:20,712 WARNING [backend.app.api.routes.cloud] [fa90b4cd] Failed to get cloud preset GFA50 (API ID: GFSA50): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-23 23:37:20,715 INFO [uvicorn.access] [-] [IP]:56680 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-23 23:37:25,667 INFO [backend.app.services.camera] [8a2edec6] Found ffmpeg at: /usr/bin/ffmpeg
+2026-07-23 23:37:28,579 INFO [backend.app.services.virtual_printer.certificate] [db40744f] Using existing CA certificate (expires in 7255 days)
+2026-07-23 23:37:28,604 WARNING [backend.app.services.network_utils] [960c08fa] ip addr show failed: BusyBox v1.37.0 (2025-11-23 13:10:04 UTC) multi-call binary.
+
+Usage: ip [OPTIONS] address|route|link|tunnel|neigh|rule [ARGS]
+
+OPTIONS := -f[amily] inet|inet6|link | -o[neline]
+
+ip addr add|del IFADDR dev IFACE | show|flush [dev IFACE] [to PREFIX]
+ip route list|flush|add|del|change|append|replace|test ROUTE
+ip link set IFACE [up|down] [arp on|off] [multicast on|off]
+	[promisc on|off] [mtu NUM] [name NAME] [qlen NUM] [address MAC]
+	[master IFACE | nomaster] [netns PID]
+ip tunnel add|change|del|show [NAME]
+	[mode ipip|gre|sit] [remote ADDR] [local ADDR] [ttl TTL]
+ip neigh show|flush [to PREFIX] [dev DEV] [nud STATE]
+ip rule [list] | add|del SELECTOR ACTION
+
+2026-07-23 23:41:42,265 WARNING [backend.app.services.network_utils] [f092b72a] ip addr show failed: BusyBox v1.37.0 (2025-11-23 13:10:04 UTC) multi-call binary.
+
+Usage: ip [OPTIONS] address|route|link|tunnel|neigh|rule [ARGS]
+
+OPTIONS := -f[amily] inet|inet6|link | -o[neline]
+
+ip addr add|del IFADDR dev IFACE | show|flush [dev IFACE] [to PREFIX]
+ip route list|flush|add|del|change|append|replace|test ROUTE
+ip link set IFACE [up|down] [arp on|off] [multicast on|off]
+	[promisc on|off] [mtu NUM] [name NAME] [qlen NUM] [address MAC]
+	[master IFACE | nomaster] [netns PID]
+ip tunnel add|change|del|show [NAME]
+	[mode ipip|gre|sit] [remote ADDR] [local ADDR] [ttl TTL]
+ip neigh show|flush [to PREFIX] [dev DEV] [nud STATE]
+ip rule [list] | add|del SELECTOR ACTION
+
+2026-07-23 23:56:46,120 WARNING [backend.app.services.network_utils] [36b87d9f] ip addr show failed: BusyBox v1.37.0 (2025-11-23 13:10:04 UTC) multi-call binary.
+
+Usage: ip [OPTIONS] address|route|link|tunnel|neigh|rule [ARGS]
+
+OPTIONS := -f[amily] inet|inet6|link | -o[neline]
+
+ip addr add|del IFADDR dev IFACE | show|flush [dev IFACE] [to PREFIX]
+ip route list|flush|add|del|change|append|replace|test ROUTE
+ip link set IFACE [up|down] [arp on|off] [multicast on|off]
+	[promisc on|off] [mtu NUM] [name NAME] [qlen NUM] [address MAC]
+	[master IFACE | nomaster] [netns PID]
+ip tunnel add|change|del|show [NAME]
+	[mode ipip|gre|sit] [remote ADDR] [local ADDR] [ttl TTL]
+ip neigh show|flush [to PREFIX] [dev DEV] [nud STATE]
+ip rule [list] | add|del SELECTOR ACTION
+
+2026-07-23 23:58:08,948 INFO [backend.app.api.routes.support] [852802b3] Log level changed to DEBUG
+2026-07-23 23:58:08,948 INFO [backend.app.api.routes.bug_report] [852802b3] Bug report: enabled debug logging
+2026-07-23 23:58:08,948 WARNING [backend.app.services.bambu_mqtt] [852802b3] [[SERIAL]] request_status_update: not connected
+2026-07-23 23:58:08,949 INFO [uvicorn.access] [-] [IP]:50612 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-07-23 23:58:09,716 DEBUG [backend.app.main] [-] [[PRINTER]] Runtime tracking: not connected

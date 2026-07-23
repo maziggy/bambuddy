@@ -19,6 +19,7 @@ from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
+from backend.app.models.scheduled_drying import ScheduledDrying
 from backend.app.models.settings import Settings
 from backend.app.models.smart_plug import SmartPlug
 from backend.app.models.spool_assignment import SpoolAssignment
@@ -391,6 +392,9 @@ class PrintScheduler:
             # blocking dispatch to FINISH-state printers forever with no UI path
             # to clear it (#1865).
             require_plate_clear = await self._get_bool_setting(db, "require_plate_clear", default=False)
+
+            # Scheduled manual drying runs (#2638) — dispatch/track every tick
+            await self._check_scheduled_dryings(db)
 
             if not items:
                 # No dispatchable pending items — still check auto-drying on idle
@@ -2403,6 +2407,106 @@ class PrintScheduler:
                 )
                 printer_manager.send_drying_command(printer_id, ams_id, 0, 0, mode=0)
         self._drying_in_progress.pop(printer_id, None)
+
+    # Scheduled manual drying (#2638) -----------------------------------
+
+    SCHEDULED_DRYING_GRACE_SECONDS = 120  # firmware needs time to report dry_time
+    SCHEDULED_DRYING_COMPLETE_FRACTION = 0.9  # dry_time==0 earlier than this = interrupted
+
+    async def _check_scheduled_dryings(self, db: AsyncSession):
+        """Dispatch due scheduled drying runs and track running ones."""
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        result = await db.execute(select(ScheduledDrying).where(ScheduledDrying.status.in_(("pending", "running"))))
+        rows = list(result.scalars().all())
+
+        for row in rows:
+            if row.status == "running":
+                self._update_running_scheduled_drying(row, now)
+                continue
+
+            if row.start_after is not None and row.start_after > now:
+                continue
+
+            state = printer_manager.get_status(row.printer_id)
+            if not state:
+                row.waiting_reason = "printer_offline"
+                continue
+            if self._drying_in_progress.get(row.printer_id):
+                row.waiting_reason = "already_drying"
+                continue
+            if not self._is_printer_idle(row.printer_id, require_plate_clear=False):
+                row.waiting_reason = "printer_busy"
+                continue
+
+            ams_list = state.raw_data.get("ams", [])
+            target = next((a for a in ams_list if int(a.get("id", -1)) == row.ams_id), None)
+            if target is None:
+                row.waiting_reason = "ams_not_found"
+                continue
+            if target.get("dry_sf_reason"):
+                row.waiting_reason = "ams_blocked"
+                continue
+
+            logger.info(
+                "Scheduled drying %d: starting on printer %d AMS %d — %d°C for %dh",
+                row.id,
+                row.printer_id,
+                row.ams_id,
+                row.temp,
+                row.duration_hours,
+            )
+            success = printer_manager.send_drying_command(
+                row.printer_id,
+                row.ams_id,
+                row.temp,
+                row.duration_hours,
+                mode=1,
+                filament=row.filament or "PLA",
+                rotate_tray=row.rotate_tray,
+            )
+            if success:
+                row.status = "running"
+                row.started_at = now
+                row.waiting_reason = None
+                self._drying_in_progress[row.printer_id] = time.monotonic()
+            else:
+                row.waiting_reason = "printer_offline"
+
+        await db.commit()
+
+    def _update_running_scheduled_drying(self, row: ScheduledDrying, now: datetime):
+        """Detect completion or interruption of a running scheduled drying.
+
+        The firmware reports remaining minutes in ams.dry_time; 0 means not
+        drying. Within the grace window after start we ignore dry_time==0
+        (the status lags the command). After that, dry_time==0 near the end
+        of the configured duration means completed; much earlier means the
+        run was stopped (print took priority, user stop) — re-queue it.
+        """
+        if row.started_at is None:
+            row.started_at = now
+            return
+        elapsed = (now - row.started_at).total_seconds()
+        if elapsed < self.SCHEDULED_DRYING_GRACE_SECONDS:
+            return
+
+        state = printer_manager.get_status(row.printer_id)
+        if not state:
+            return  # offline mid-dry — resolve when it reconnects
+
+        ams_list = state.raw_data.get("ams", [])
+        target = next((a for a in ams_list if int(a.get("id", -1)) == row.ams_id), None)
+        dry_time = int(target.get("dry_time") or 0) if target else 0
+        if dry_time > 0:
+            return
+
+        if elapsed >= row.duration_hours * 3600 * self.SCHEDULED_DRYING_COMPLETE_FRACTION:
+            row.status = "completed"
+            row.completed_at = now
+        else:
+            row.status = "pending"
+            row.started_at = None
+            row.waiting_reason = "interrupted"
 
     async def _get_smart_plugs(self, db: AsyncSession, printer_id: int) -> list[SmartPlug]:
         """Get all smart plugs associated with a printer."""

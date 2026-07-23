@@ -1,0 +1,200 @@
+2026-07-22 13:07:24,305 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 13:07:26,186 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 14:15:20,725 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 14:15:20,726 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 14:31:46,488 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 14:31:46,489 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 990.0s, forcing reconnect
+2026-07-22 14:31:46,489 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-22 14:31:46,490 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-22 14:31:46,504 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 14:31:47,297 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 15:09:40,146 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 15:09:40,147 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 15:09:42,022 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 15:16:20,684 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 15:16:20,685 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 15:16:22,472 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 15:22:19,217 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 15:22:19,218 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 15:22:21,105 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 15:40:30,163 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 15:40:30,164 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 15:40:32,048 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 15:40:32,049 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 929.9s, forcing reconnect
+2026-07-22 15:40:32,049 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-22 15:40:32,050 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-22 15:40:32,063 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 15:40:32,960 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 16:20:45,090 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 16:20:45,091 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 16:20:46,970 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 16:20:46,971 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 340.1s, forcing reconnect
+2026-07-22 16:20:46,972 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-22 16:20:46,972 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-22 16:20:46,986 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 16:20:47,886 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 16:40:09,696 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 16:40:09,697 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 16:40:11,568 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 16:40:11,569 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 997.2s, forcing reconnect
+2026-07-22 16:40:11,570 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-22 16:40:11,583 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 16:40:12,418 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 17:24:45,413 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 17:24:45,414 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 17:24:47,223 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 17:24:47,224 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 227.2s, forcing reconnect
+2026-07-22 17:24:47,224 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-22 17:24:47,225 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-22 17:24:47,238 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 17:24:48,025 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 17:25:42,496 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 17:25:42,497 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 17:25:44,253 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 17:32:08,305 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 17:32:08,306 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 17:32:10,177 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 18:22:33,212 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 18:22:33,213 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 18:22:35,089 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 18:32:51,674 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 18:32:51,675 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 18:32:53,551 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 19:38:47,932 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 19:38:47,932 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 19:38:49,798 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 19:38:49,799 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 962.8s, forcing reconnect
+2026-07-22 19:38:49,800 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-22 19:38:49,800 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-22 19:38:49,810 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 19:38:50,824 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 20:01:13,195 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 20:01:13,195 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 20:01:15,076 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 20:01:15,077 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 785.8s, forcing reconnect
+2026-07-22 20:01:15,077 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-22 20:01:15,089 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 20:01:15,904 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 21:16:30,903 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 21:16:30,903 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 21:16:32,781 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 21:16:32,783 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 929.8s, forcing reconnect
+2026-07-22 21:16:32,784 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-22 21:16:32,798 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 21:16:33,725 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 22:55:34,494 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 22:55:34,494 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 22:55:36,369 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-22 23:01:53,055 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-22 23:01:53,056 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-22 23:01:54,913 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-23 13:39:38,679 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 13:39:38,680 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-23 13:39:40,446 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-23 14:41:05,782 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 14:41:05,782 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-23 14:41:07,652 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-23 14:45:46,040 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 14:45:46,040 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-23 14:45:47,817 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-23 15:37:31,994 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 15:37:31,995 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-23 15:37:33,867 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-23 15:49:05,543 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 15:49:05,544 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-23 15:49:07,316 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-23 16:35:50,991 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 16:35:50,991 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-23 16:35:52,856 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-23 16:39:50,274 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 16:39:50,275 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-23 16:39:52,051 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-23 16:51:04,460 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 16:51:04,461 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-23 16:51:06,280 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-23 16:51:06,281 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Connection stale - no message for 184.2s, forcing reconnect
+2026-07-23 16:51:06,282 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-23 16:51:06,283 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Disconnect callback after stale reconnect (expected), rc=Normal disconnection
+2026-07-23 16:51:06,299 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-23 16:51:07,100 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-23 17:52:14,159 WARNING [backend.app.services.bambu_mqtt] [-] [[SERIAL]] MQTT disconnected: rc=Unspecified error, flags=DisconnectFlags(is_disconnect_packet_from_server=False)
+2026-07-23 17:52:14,160 INFO [backend.app.main] [-] [#1752] Printer 1 connected→disconnected edge; scheduling offline notification in 60s
+2026-07-23 17:52:15,941 INFO [backend.app.main] [-] [#1752] Printer 1 reconnected before debounce; cancelling pending offline notification
+2026-07-23 18:04:48,381 INFO [uvicorn.access] [-] [IP]:49638 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-23 18:04:48,383 INFO [backend.app.api.routes.cloud] [c91a03e6] get_filament_info called with 1 IDs: ['GFL03']
+2026-07-23 18:04:48,943 WARNING [backend.app.api.routes.cloud] [c91a03e6] Failed to get cloud preset GFL03 (API ID: GFSL03): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-23 18:04:48,947 INFO [uvicorn.access] [-] [IP]:41325 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-23 18:04:50,857 INFO [backend.app.services.firmware_check] [c6ab0d96] Got Bambu Lab build ID: erp_ySz0YZBljShqioQBM
+2026-07-23 18:04:51,347 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-23 18:04:51,686 INFO [uvicorn.access] [-] [IP]:62887 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-23 18:04:51,697 INFO [uvicorn.access] [-] [IP]:41325 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-23 18:04:51,710 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-07-23 18:04:51,710 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-23 18:04:51,711 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-07-23 18:04:51,767 INFO [backend.app.api.routes.cloud] [e6e2d32b] get_filament_info called with 1 IDs: ['GFL03']
+2026-07-23 18:04:51,768 INFO [uvicorn.access] [-] [IP]:41325 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-23 18:04:59,171 ERROR [backend.app.api.routes.updates] [cd910985] Failed to check for updates: 
+2026-07-23 18:05:06,398 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-23 18:05:06,697 INFO [uvicorn.access] [-] [IP]:58053 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-23 18:05:06,718 INFO [uvicorn.access] [-] [IP]:58053 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-23 18:05:06,751 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=<anonymous>)
+2026-07-23 18:05:06,752 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-23 18:05:06,752 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-07-23 18:05:12,933 INFO [backend.app.api.routes.cloud] [86496489] get_filament_info called with 1 IDs: ['GFL03']
+2026-07-23 18:05:12,934 INFO [uvicorn.access] [-] [IP]:32223 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-23 18:05:39,843 INFO [backend.app.api.routes.camera] [7c20cfc6] Using chamber image protocol for A1 Mini
+2026-07-23 18:05:39,843 INFO [backend.app.api.routes.camera] [7c20cfc6] Camera viewer attached to printer-1 (subscribers=1)
+2026-07-23 18:05:39,844 INFO [backend.app.api.routes.camera] [7c20cfc6] Starting chamber image stream for [IP] (stream_id=1-fanout, model=A1 Mini)
+2026-07-23 18:05:40,599 INFO [backend.app.services.camera] [7c20cfc6] Chamber image: connected to [IP]:6000
+2026-07-23 18:05:58,758 INFO [backend.app.services.bambu_mqtt] [8c49062f] [[SERIAL]] Set chamber lights on (seq=214)
+2026-07-23 18:05:58,759 INFO [uvicorn.access] [-] [IP]:35528 - "POST /api/v1/printers/1/chamber-light?on=true HTTP/1.1" 200
+2026-07-23 18:05:59,971 INFO [backend.app.services.bambu_mqtt] [65e2177c] [[SERIAL]] Set chamber lights off (seq=216)
+2026-07-23 18:05:59,972 INFO [uvicorn.access] [-] [IP]:35528 - "POST /api/v1/printers/1/chamber-light?on=false HTTP/1.1" 200
+2026-07-23 18:06:00,414 INFO [backend.app.services.bambu_mqtt] [0722aebb] [[SERIAL]] Set chamber lights on (seq=218)
+2026-07-23 18:06:00,415 INFO [uvicorn.access] [-] [IP]:35528 - "POST /api/v1/printers/1/chamber-light?on=true HTTP/1.1" 200
+2026-07-23 18:06:00,837 INFO [backend.app.services.bambu_mqtt] [34174ad0] [[SERIAL]] Set chamber lights off (seq=220)
+2026-07-23 18:06:00,838 INFO [uvicorn.access] [-] [IP]:35528 - "POST /api/v1/printers/1/chamber-light?on=false HTTP/1.1" 200
+2026-07-23 18:06:01,211 INFO [backend.app.services.bambu_mqtt] [1e706768] [[SERIAL]] Set chamber lights on (seq=222)
+2026-07-23 18:06:01,212 INFO [uvicorn.access] [-] [IP]:35528 - "POST /api/v1/printers/1/chamber-light?on=true HTTP/1.1" 200
+2026-07-23 18:06:01,640 INFO [backend.app.services.bambu_mqtt] [e72f95ac] [[SERIAL]] Set chamber lights off (seq=224)
+2026-07-23 18:06:01,641 INFO [uvicorn.access] [-] [IP]:35528 - "POST /api/v1/printers/1/chamber-light?on=false HTTP/1.1" 200
+2026-07-23 18:06:12,342 INFO [backend.app.api.routes.camera] [7c20cfc6] Camera viewer detached from printer-1 (subscribers=0)
+2026-07-23 18:06:12,350 INFO [backend.app.api.routes.camera] [7c20cfc6] Chamber image stream cancelled (stream_id=1-fanout)
+2026-07-23 18:06:12,373 INFO [backend.app.api.routes.camera] [7c20cfc6] Chamber image stream stopped for [IP] (stream_id=1-fanout)
+2026-07-23 18:06:12,374 INFO [backend.app.api.routes.camera] [553d8c8d] Shut down camera fan-out broadcaster for printer 1
+2026-07-23 18:06:12,374 INFO [backend.app.api.routes.camera] [553d8c8d] Stopped 0 camera stream(s) for printer 1
+2026-07-23 18:06:12,375 INFO [uvicorn.access] [-] [IP]:35528 - "POST /api/v1/printers/1/camera/stop HTTP/1.1" 200
+2026-07-23 18:11:27,328 INFO [backend.app.api.routes.cloud] [99494b02] get_filament_info called with 1 IDs: ['GFL03']
+2026-07-23 18:11:27,853 WARNING [backend.app.api.routes.cloud] [99494b02] Failed to get cloud preset GFL03 (API ID: GFSL03): Failed to get setting detail: 400 {"message":"missing","code":2,"error":"Please check specified resource exist or not.","public":null,"version":null,"type":null,"name":null,"update_time":null,"nickname":null,"base_id":null,"setting":n
+2026-07-23 18:11:27,856 INFO [uvicorn.access] [-] [IP]:59464 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-23 18:14:50,339 INFO [backend.app.api.routes.support] [cd44bd12] Log level changed to DEBUG
+2026-07-23 18:14:50,340 INFO [backend.app.api.routes.bug_report] [cd44bd12] Bug report: enabled debug logging
+2026-07-23 18:14:50,340 DEBUG [backend.app.services.bambu_mqtt] [cd44bd12] [[SERIAL]] Requesting status update (pushall)
+2026-07-23 18:14:50,341 INFO [uvicorn.access] [-] [IP]:35019 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-07-23 18:14:50,384 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-07-23 18:14:50,384 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-07-23 18:14:50,384 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: Flight Snoobar_plate_5
+2026-07-23 18:14:50,385 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '0', 'tray_exist_bits': '0', 'tray_is_bbl_bits': '0', 'tray_tar': '255', 'tray_now': '254', 'tray_pre': '254', 'tray_read_done_bits': '0', 'tray_reading_bits': '0', 'version': 4, 'insert_flag': True, 'power_on_flag': False}
+2026-07-23 18:14:50,385 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 254
+2026-07-23 18:14:50,385 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 0 new units, 0 total
+2026-07-23 18:14:50,385 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-07-23 18:14:50,385 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-23 18:14:50,385 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-07-23 18:14:50,385 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-07-23 18:14:50,386 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-07-23 18:14:50,386 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-07-23 18:14:50,386 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-07-23 18:14:50,386 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-07-23 18:14:50,386 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -61dBm
+2026-07-23 18:14:50,386 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-07-23 18:14:50,386 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: Flight Snoobar_plate_5
+2026-07-23 18:14:52,612 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-23 18:14:55,483 DEBUG [backend.app.services.bambu_mqtt] [7897c20f] [[SERIAL]] Sent G-code: G91
+G1 Y10.00 F6000
+G90...
+2026-07-23 18:14:55,485 INFO [uvicorn.access] [-] [IP]:35019 - "POST /api/v1/printers/1/xy-jog?x=0&y=10 HTTP/1.1" 200
+2026-07-23 18:14:55,502 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: gcode_line
+2026-07-23 18:14:56,504 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-23 18:14:56,505 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -60dBm
+2026-07-23 18:14:58,467 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-23 18:14:58,467 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -61dBm

@@ -518,6 +518,9 @@ class OIDCProviderResponse(BaseModel):
     icon_url: str | None = None
     default_group_id: int | None = None
     is_autologin: bool = False  # #1589
+    # #2593 — the UI renders this provider read-only; without the flag it would
+    # offer editable fields whose writes the API then refuses with 409.
+    is_env_managed: bool = False
     # Set explicitly in the route handler from `icon_content_type is not None`
     # rather than `@computed_field` (project policy) or `icon_data is not None`
     # (would trigger an async lazy-load on the deferred BLOB column).

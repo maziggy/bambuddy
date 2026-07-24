@@ -325,3 +325,54 @@ describe('OIDCProviderSettings', () => {
     });
   });
 });
+
+describe('env-managed provider (#2593)', () => {
+  const envManagedProvider = {
+    ...mockProviders[0],
+    id: 2,
+    name: 'EnvIdP',
+    is_env_managed: true,
+  };
+
+  it('marks the provider as environment managed', async () => {
+    server.use(
+      http.get('/api/v1/auth/oidc/providers/all', () => HttpResponse.json([envManagedProvider]))
+    );
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByText('EnvIdP')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Environment Managed/i)).toBeInTheDocument();
+  });
+
+  it('offers no edit or delete control for it', async () => {
+    server.use(
+      http.get('/api/v1/auth/oidc/providers/all', () => HttpResponse.json([envManagedProvider]))
+    );
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByText('EnvIdP')).toBeInTheDocument();
+    });
+    // Startup rewrites this row from the environment on every boot, and the API
+    // answers 409 — offering the controls would promise an edit that cannot land.
+    expect(screen.queryByTestId('edit-provider-2')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('delete-provider-2')).not.toBeInTheDocument();
+  });
+
+  it('still offers them for a UI-created provider', async () => {
+    server.use(
+      http.get('/api/v1/auth/oidc/providers/all', () =>
+        HttpResponse.json([{ ...mockProviders[0], is_env_managed: false }])
+      )
+    );
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByText('TestIdP')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('edit-provider-1')).toBeInTheDocument();
+    expect(screen.getByTestId('delete-provider-1')).toBeInTheDocument();
+  });
+});

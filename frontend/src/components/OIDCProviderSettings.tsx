@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, Trash2, Globe, Check, X, RefreshCw, ExternalLink, ImageOff } from 'lucide-react';
+import { Plus, Edit2, Trash2, Globe, Check, X, RefreshCw, ExternalLink, ImageOff, Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { Group, OIDCProvider, OIDCProviderCreate } from '../api/client';
@@ -386,6 +386,11 @@ export function OIDCProviderSettings() {
                       <X className="w-3 h-3" /> {t('common.disabled')}
                     </span>
                   )}
+                  {provider.is_env_managed && (
+                    <span className="flex items-center gap-1 text-xs text-bambu-green">
+                      <Lock className="w-3 h-3" /> {t('settings.environmentManagedLabel')}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 text-bambu-gray text-xs mt-0.5">
                   <ExternalLink className="w-3 h-3" />
@@ -417,21 +422,34 @@ export function OIDCProviderSettings() {
                     <ImageOff className="w-4 h-4" />
                   </Button>
                 )}
-                <Toggle
-                  checked={provider.is_enabled}
-                  onChange={() => toggleEnabled(provider)}
-                  disabled={updateMutation.isPending}
-                />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setEditingId(editingId === provider.id ? null : provider.id)}
-                >
-                  <Edit2 className="w-4 h-4" />
-                </Button>
-                <Button variant="danger" size="sm" onClick={() => setDeleteTarget(provider)}>
-                  <Trash2 className="w-4 h-4" />
-                </Button>
+                {/* #2593: startup rewrites the env-managed row from BAMBUDDY_OIDC_*
+                    and the API answers 409, so offering these would promise a
+                    change that cannot land. */}
+                {!provider.is_env_managed && (
+                  <>
+                    <Toggle
+                      checked={provider.is_enabled}
+                      onChange={() => toggleEnabled(provider)}
+                      disabled={updateMutation.isPending}
+                    />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setEditingId(editingId === provider.id ? null : provider.id)}
+                      data-testid={`edit-provider-${provider.id}`}
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => setDeleteTarget(provider)}
+                      data-testid={`delete-provider-${provider.id}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           </CardHeader>

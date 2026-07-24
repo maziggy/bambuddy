@@ -34,6 +34,19 @@ REPO = Path(__file__).resolve().parents[3]
 
 FLAG = "--timeout-graceful-shutdown"
 
+# These pin repo-root launcher files (Dockerfile, compose, service units,
+# install scripts) that the Docker test image deliberately does not ship —
+# Dockerfile.test copies only backend/, pyproject.toml, gcode_viewer/ and
+# requirements. In a source checkout the files are always present and the
+# guard below is live (a moved/deleted launcher still fails loudly on every
+# `test_backend.sh` run); inside the stripped test image there is nothing to
+# check, so skip rather than fail. `frontend/package.json` is present in every
+# checkout but never in the test image, so it distinguishes the two.
+pytestmark = pytest.mark.skipif(
+    not (REPO / "frontend" / "package.json").is_file(),
+    reason="launcher config files aren't shipped in the Docker test image; verified in native runs",
+)
+
 
 def _read(rel: str) -> str:
     path = REPO / rel

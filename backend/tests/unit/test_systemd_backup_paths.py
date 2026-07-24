@@ -20,6 +20,17 @@ REPO = Path(__file__).resolve().parents[3]
 
 INSTALLERS = ["install/install.sh", "spoolbuddy/install/install.sh"]
 
+# The service unit + install scripts these tests read live at the repo root and
+# are not copied into the Docker test image (Dockerfile.test ships only backend/,
+# pyproject.toml, gcode_viewer/ and requirements). In a source checkout they are
+# always present and the guard below is live; in the stripped test image there is
+# nothing to check, so skip rather than fail. `frontend/package.json` exists in
+# every checkout but never in the test image, so it distinguishes the two.
+pytestmark = pytest.mark.skipif(
+    not (REPO / "frontend" / "package.json").is_file(),
+    reason="launcher config files aren't shipped in the Docker test image; verified in native runs",
+)
+
 
 def _read(rel: str) -> str:
     path = REPO / rel

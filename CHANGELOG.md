@@ -4,6 +4,9 @@ All notable changes to Bambuddy will be documented in this file.
 
 ## [1.2.6b1] - Unreleased
 
+### Fixed
+- **Force color match dispatched a print onto the wrong PLA variant — Matte jobs went to Basic and Silk printers alike (#2650, reporter @MartinNYHC)** — With **Force color match** on, a job sliced for **White PLA Matte** was dispatched to every printer that had *any* white PLA loaded — the ones holding White PLA **Basic** and White PLA **Silk+** included — so a matte model came out glossy on the wrong machine. **Root cause.** Bambu's MQTT status reports every PLA sub-variant as `tray_type == "PLA"`; the Basic/Matte/Silk distinction is carried only in `tray_info_idx` (`GFA00` = Basic, `GFA01` = Matte, `GFA06` = Silk, …), which the 3MF's `slice_info.config` also records per filament. Two places dropped it: the Virtual-Printer queue built each force override as `{slot_id, type, color, force_color_match}` without the parsed `tray_info_idx`, and the scheduler's eligibility check (`_get_missing_force_color_slots`) compared loaded trays on `(type, colour)` only — so `(PLA, #FFFFFF)` matched Basic, Matte and Silk indiscriminately and all three printers looked eligible. **Fix.** The force override now carries the 3MF's `tray_info_idx`, and a slot counts as satisfied only when a loaded tray matches type **and** colour **and** the variant — identical `tray_info_idx`, *or* either side lacks one. A blank idx on either side (custom/third-party spools report none, and older 3MFs carry none) falls back to the historical type+colour behaviour, so those setups are unaffected. A job sliced for GFA01 now goes only to a printer with GFA01 loaded; Basic/Silk report a mismatch. Covered by scheduler tests (Matte requirement rejects Basic/Silk, accepts Matte, blank loaded idx falls back, requirement without an idx is unchanged) and a Virtual-Printer test asserting the override carries `tray_info_idx`.
+
 
 ## [1.2.5] - 2026-07-24
 

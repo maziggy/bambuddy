@@ -241,3 +241,54 @@ class TestComputeAmsMappingFallback:
             result = await scheduler._compute_ams_mapping_for_printer(db, 5, item)
 
         assert result is None
+
+
+class TestGetMissingForceColorSlotsVariant:
+    """force_color_match must distinguish Bambu PLA variants that share a base
+    type+colour but differ in tray_info_idx (Basic GFA00 / Matte GFA01 /
+    Silk GFA06), while still accepting spools that report no idx (#2650)."""
+
+    @pytest.fixture
+    def scheduler(self):
+        return PrintScheduler()
+
+    def _status(self, trays: list[dict]) -> MagicMock:
+        """One AMS unit whose trays are the given dicts (white PLA of assorted variants)."""
+        return MagicMock(raw_data={"ams": [{"id": 0, "tray": trays}]})
+
+    @staticmethod
+    def _white(idx: str) -> dict:
+        return {"id": 0, "tray_type": "PLA", "tray_color": "FFFFFFFF", "tray_info_idx": idx}
+
+    def _override(self, idx: str | None) -> list[dict]:
+        o = {"slot_id": 1, "type": "PLA", "color": "#FFFFFF", "force_color_match": True}
+        if idx is not None:
+            o["tray_info_idx"] = idx
+        return [o]
+
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    def test_matte_requirement_rejects_basic_and_silk(self, mock_pm, scheduler):
+        """A GFA01 (Matte) job is unsatisfied by a printer loaded with only
+        Basic/Silk white PLA — the core #2650 regression."""
+        mock_pm.get_status.return_value = self._status([self._white("GFA00"), self._white("GFA06")])
+        assert scheduler._get_missing_force_color_slots(5, self._override("GFA01")) == ["PLA (#FFFFFF)"]
+
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    def test_matte_requirement_accepts_matte(self, mock_pm, scheduler):
+        """The correct variant being loaded satisfies the override."""
+        mock_pm.get_status.return_value = self._status([self._white("GFA00"), self._white("GFA01")])
+        assert scheduler._get_missing_force_color_slots(5, self._override("GFA01")) == []
+
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    def test_blank_loaded_idx_falls_back_to_type_and_colour(self, mock_pm, scheduler):
+        """A custom/third-party spool reports a blank tray_info_idx, so it must
+        still satisfy a variant-specific requirement (type+colour fallback)."""
+        mock_pm.get_status.return_value = self._status([self._white("")])
+        assert scheduler._get_missing_force_color_slots(5, self._override("GFA01")) == []
+
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    def test_requirement_without_idx_unchanged(self, mock_pm, scheduler):
+        """An older 3MF whose override carries no idx keeps the historical
+        type+colour behaviour and matches any white PLA."""
+        mock_pm.get_status.return_value = self._status([self._white("GFA06")])
+        assert scheduler._get_missing_force_color_slots(5, self._override(None)) == []

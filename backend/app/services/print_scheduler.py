@@ -1158,6 +1158,14 @@ class PrintScheduler:
         to carry ``force_color_match: True``.  The printer must have **every** such slot loaded
         with an exact type+color match.
 
+        When both the override and a candidate tray carry a ``tray_info_idx``, they must also
+        match on it: Bambu reports every PLA variant as ``tray_type == "PLA"``, so the
+        Basic/Matte/Silk distinction lives only in ``tray_info_idx`` (GFA00/GFA01/GFA06/...).
+        Without this, a job sliced for PLA Matte matched every white PLA regardless of variant
+        (#2650). If either side lacks an idx (custom/third-party spools report a blank one, and
+        older 3MFs carry none) we fall back to the historical type+colour behaviour so those
+        setups are unaffected.
+
         Returns:
             List of ``"TYPE (color)"`` strings for unmatched slots (empty list means all match).
         """
@@ -1165,26 +1173,32 @@ class PrintScheduler:
         if not status:
             return [f"{o.get('type', '?')} ({o.get('color_name') or o.get('color', '?')})" for o in force_overrides]
 
-        # Build set of loaded type+colour pairs from AMS and external spool
-        loaded: set[tuple[str, str]] = set()
+        # Build loaded (type, colour, tray_info_idx) triples from AMS and external spool.
+        loaded: list[tuple[str, str, str]] = []
         for ams_unit in status.raw_data.get("ams", []):
             for tray in ams_unit.get("tray", []):
                 tray_type = tray.get("tray_type")
-                tray_color = tray.get("tray_color", "")
                 if tray_type:
-                    color_norm = tray_color.replace("#", "").lower()[:6]
-                    loaded.add((_canonical_filament_type(tray_type), color_norm))
+                    color_norm = (tray.get("tray_color", "") or "").replace("#", "").lower()[:6]
+                    loaded.append(
+                        (_canonical_filament_type(tray_type), color_norm, tray.get("tray_info_idx", "") or "")
+                    )
         for vt in status.raw_data.get("vt_tray") or []:
             vt_type = vt.get("tray_type")
             if vt_type:
                 color_norm = (vt.get("tray_color", "") or "").replace("#", "").lower()[:6]
-                loaded.add((_canonical_filament_type(vt_type), color_norm))
+                loaded.append((_canonical_filament_type(vt_type), color_norm, vt.get("tray_info_idx", "") or ""))
 
         missing = []
         for o in force_overrides:
             o_type = _canonical_filament_type(o.get("type") or "")
             o_color = (o.get("color") or "").replace("#", "").lower()[:6]
-            if (o_type, o_color) not in loaded:
+            o_idx = o.get("tray_info_idx") or ""
+            satisfied = any(
+                t_type == o_type and t_color == o_color and (not o_idx or not t_idx or o_idx == t_idx)
+                for t_type, t_color, t_idx in loaded
+            )
+            if not satisfied:
                 color_label = o.get("color_name") or o.get("color", "?")
                 missing.append(f"{o_type} ({color_label})")
         return missing

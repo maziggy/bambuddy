@@ -1169,11 +1169,76 @@ class TestVirtualPrinterInstance:
         assert queue_item.filament_overrides is not None
         overrides = json.loads(queue_item.filament_overrides)
         assert overrides == [
-            {"slot_id": 1, "type": "PLA", "color": "#FFFFFF", "force_color_match": True},
-            {"slot_id": 2, "type": "PLA", "color": "#FF00FF", "force_color_match": True},
+            {"slot_id": 1, "type": "PLA", "color": "#FFFFFF", "tray_info_idx": "", "force_color_match": True},
+            {"slot_id": 2, "type": "PLA", "color": "#FF00FF", "tray_info_idx": "", "force_color_match": True},
         ]
         # required_filament_types still populated alongside overrides.
         assert json.loads(queue_item.required_filament_types) == ["PLA"]
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_force_color_match_carries_tray_info_idx(self, tmp_path):
+        """#2650: the force override must carry the 3MF's ``tray_info_idx`` so the
+        scheduler can tell Bambu PLA variants apart (Basic GFA00 / Matte GFA01 /
+        Silk GFA06) — they all report ``tray_type == "PLA"`` with the same colour,
+        so type+colour alone dispatches onto the wrong variant."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items = []
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=added_items.append)
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=24,
+            name="Variant",
+            mode="queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800024",
+            auto_dispatch=True,
+            queue_force_color_match=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "variant.3mf"
+        _write_3mf_with_filaments(
+            file_path,
+            [
+                # White PLA Matte — same colour as Basic/Silk, distinguished only by idx.
+                {"id": "1", "type": "PLA", "color": "#FFFFFF", "used_g": "10.0", "tray_info_idx": "GFA01"},
+            ],
+            plate_index=1,
+        )
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "variant"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        overrides = json.loads(added_items[0].filament_overrides)
+        assert overrides == [
+            {"slot_id": 1, "type": "PLA", "color": "#FFFFFF", "tray_info_idx": "GFA01", "force_color_match": True},
+        ]
 
     @pytest.mark.asyncio
     async def test_add_to_print_queue_force_color_match_skips_when_3mf_unparseable(self, tmp_path):

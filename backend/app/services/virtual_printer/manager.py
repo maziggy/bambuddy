@@ -903,11 +903,20 @@ class VirtualPrinterInstance:
                             if types:
                                 required_filament_types_json = json.dumps(types)
                             if self.queue_force_color_match:
+                                # Carry tray_info_idx so force_color_match can
+                                # tell Bambu PLA variants apart (#2650). Bambu
+                                # reports Basic/Matte/Silk all as tray_type
+                                # "PLA"; the variant lives only in tray_info_idx
+                                # (GFA00/GFA01/GFA06/...). A blank idx (custom or
+                                # third-party spool) means "no variant
+                                # constraint" and the scheduler falls back to
+                                # type+colour.
                                 overrides = [
                                     {
                                         "slot_id": r["slot_id"],
                                         "type": r.get("type", ""),
                                         "color": r.get("color", ""),
+                                        "tray_info_idx": r.get("tray_info_idx", ""),
                                         "force_color_match": True,
                                     }
                                     for r in requirements

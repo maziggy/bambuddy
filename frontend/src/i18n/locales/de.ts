@@ -2460,6 +2460,11 @@ export default {
     // Updates
     printerFirmware: 'Drucker-Firmware',
     checkFirmwareDescription: 'Nach Firmware-Updates von Bambu Lab suchen',
+    cameraVideoProcessing: 'Videoverarbeitung',
+    cameraVideoProcessingSoftware: 'Software',
+    cameraVideoProcessingIntelQsv: 'Intel Quick Sync',
+    cameraVideoProcessingSoftwareDescription: 'Verarbeitung auf der CPU',
+    cameraVideoProcessingIntelQsvDescription: 'Verarbeitung auf der Intel-GPU',
     bambuddySoftware: 'Bambuddy-Software',
     autoCheckDescription: 'Automatisch beim Start nach neuen Versionen suchen',
     checkNow: 'Jetzt prüfen',

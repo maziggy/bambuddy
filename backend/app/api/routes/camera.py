@@ -21,6 +21,7 @@ from backend.app.core.auth import (
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
+from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.services.camera import (
     capture_camera_frame,
@@ -336,6 +337,7 @@ async def generate_rtsp_mjpeg_stream(
     stream_id: str | None = None,
     disconnect_event: asyncio.Event | None = None,
     printer_id: int | None = None,
+    video_processing: str = "software",
 ) -> AsyncGenerator[bytes, None]:
     """Generate MJPEG stream from printer camera using ffmpeg/RTSP.
 
@@ -362,42 +364,94 @@ async def generate_rtsp_mjpeg_stream(
     proxy_port, proxy_server = await create_tls_proxy(ip_address, port)
     camera_url = f"rtsp://bblp:{access_code}@127.0.0.1:{proxy_port}/streaming/live/1"
 
-    # ffmpeg command to output MJPEG stream to stdout
-    cmd = [
-        ffmpeg,
-        "-rtsp_transport",
-        "tcp",
-        "-rtsp_flags",
-        "prefer_tcp",
-        # Socket I/O timeout name varies by ffmpeg version (#1504); see
-        # rtsp_socket_timeout_flag(). The 30s value is microseconds for
-        # both names.
-        f"-{rtsp_socket_timeout_flag()}",
-        "30000000",
-        "-buffer_size",
-        "1024000",  # 1MB buffer
-        "-max_delay",
-        "500000",  # 0.5 seconds max delay
-        "-probesize",
-        str(profile.probesize),
-        "-analyzeduration",
-        str(profile.analyzeduration),
-        "-fflags",
-        "nobuffer",  # Reduce internal buffering
-        "-flags",
-        "low_delay",  # Minimize decode latency
-        *profile.extra_ffmpeg_input_args,
-        "-i",
-        camera_url,
-        "-f",
-        "mjpeg",
-        "-q:v",
-        "5",
-        "-r",
-        str(fps),
-        "-an",  # No audio
-        "-",  # Output to stdout
-    ]
+    # ffmpeg command to output MJPEG stream to stdout.
+    #
+    # Intel Quick Sync keeps both decoded H.264 frames and MJPEG encoder input
+    # in GPU video memory:
+    #
+    #     h264_qsv -> QSV video surface -> mjpeg_qsv
+    #
+    # Software processing remains the default for existing installations.
+    use_intel_qsv = video_processing == "intel_qsv"
+
+    cmd = [ffmpeg]
+
+    if use_intel_qsv:
+        cmd.extend(
+            [
+                "-init_hw_device",
+                "vaapi=va:/dev/dri/renderD128",
+                "-init_hw_device",
+                "qsv=qs@va",
+                "-filter_hw_device",
+                "qs",
+                "-hwaccel",
+                "qsv",
+                "-hwaccel_device",
+                "qs",
+                "-hwaccel_output_format",
+                "qsv",
+            ]
+        )
+
+    cmd.extend(
+        [
+            "-rtsp_transport",
+            "tcp",
+            "-rtsp_flags",
+            "prefer_tcp",
+            # Socket I/O timeout name varies by ffmpeg version (#1504); see
+            # rtsp_socket_timeout_flag(). The 30s value is microseconds for
+            # both names.
+            f"-{rtsp_socket_timeout_flag()}",
+            "30000000",
+            "-buffer_size",
+            "1024000",  # 1MB buffer
+            "-max_delay",
+            "500000",  # 0.5 seconds max delay
+            "-probesize",
+            str(profile.probesize),
+            "-analyzeduration",
+            str(profile.analyzeduration),
+            "-fflags",
+            "nobuffer",  # Reduce internal buffering
+            "-flags",
+            "low_delay",  # Minimize decode latency
+            *profile.extra_ffmpeg_input_args,
+            "-i",
+            camera_url,
+        ]
+    )
+
+    if use_intel_qsv:
+        cmd.extend(
+            [
+                "-c:v",
+                "mjpeg_qsv",
+                "-global_quality",
+                "80",
+            ]
+        )
+    else:
+        cmd.extend(
+            [
+                "-c:v",
+                "mjpeg",
+                "-q:v",
+                "5",
+            ]
+        )
+
+    cmd.extend(
+        [
+            "-r",
+            str(fps),
+            "-an",  # No audio
+            "-f",
+            "mjpeg",
+            "-",  # Output to stdout
+        ]
+    )
 
     # Register disconnect event so stop endpoint can signal us
     if stream_id and disconnect_event:
@@ -663,6 +717,9 @@ async def camera_stream(
     async with database.async_session() as db:
         printer = await get_printer_or_404(printer_id, db)
 
+        processing_result = await db.execute(select(Settings.value).where(Settings.key == "camera_video_processing"))
+        camera_video_processing = processing_result.scalar_one_or_none() or "software"
+
     # Check for external camera first
     if printer.external_camera_enabled and printer.external_camera_url:
         import time
@@ -715,7 +772,11 @@ async def camera_stream(
         logger.info("Using chamber image protocol for %s", printer.model)
     else:
         stream_generator = generate_rtsp_mjpeg_stream
-        logger.info("Using RTSP protocol for %s", printer.model)
+        logger.info(
+            "Using RTSP protocol for %s with %s video processing",
+            printer.model,
+            camera_video_processing,
+        )
 
     # Track stream start time. Set only if absent so the value reflects when
     # the SHARED upstream first started streaming, not when each new viewer
@@ -742,15 +803,20 @@ async def camera_stream(
         # Re-bind locals into the closure so the async generator below sees
         # them — disconnect_event is owned by the broadcaster and signalled
         # when the last subscriber leaves (after the grace window).
-        return stream_generator(
-            ip_address=printer.ip_address,
-            access_code=printer.access_code,
-            model=printer.model,
-            fps=fps,
-            stream_id=upstream_stream_id,
-            disconnect_event=disconnect_event,
-            printer_id=printer_id,
-        )
+        stream_kwargs = {
+            "ip_address": printer.ip_address,
+            "access_code": printer.access_code,
+            "model": printer.model,
+            "fps": fps,
+            "stream_id": upstream_stream_id,
+            "disconnect_event": disconnect_event,
+            "printer_id": printer_id,
+        }
+
+        if stream_generator is generate_rtsp_mjpeg_stream:
+            stream_kwargs["video_processing"] = camera_video_processing
+
+        return stream_generator(**stream_kwargs)
 
     # Subscribe with a one-shot retry to close a tiny race: the grace-window
     # teardown can flip the broadcaster to `stopped=True` between the registry

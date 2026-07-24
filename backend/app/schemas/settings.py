@@ -217,10 +217,14 @@ class AppSettings(BaseModel):
         description="Show warning when free disk space falls below this threshold (GB)",
     )
 
-    # Camera view settings
+    # Camera settings
     camera_view_mode: str = Field(
         default="window",
         description="Camera view mode: 'window' opens in new browser window, 'embedded' shows overlay on main screen",
+    )
+    camera_video_processing: str = Field(
+        default="software",
+        description="Built-in RTSP camera processing: 'software' or 'intel_qsv'",
     )
 
     # Preferred slicer application (server-side / API sidecar slicer)
@@ -546,6 +550,7 @@ class AppSettingsUpdate(BaseModel):
     library_archive_mode: str | None = None
     library_disk_warning_gb: float | None = None
     camera_view_mode: str | None = None
+    camera_video_processing: str | None = None
     preferred_slicer: str | None = None
     open_in_slicer: str | None = None
     use_slicer_api: bool | None = None
@@ -599,6 +604,15 @@ class AppSettingsUpdate(BaseModel):
     obico_enabled_printers: str | None = None
     default_sidebar_order: str | None = None
     forecast_global_lead_time_days: int | None = Field(default=None, ge=0)
+
+    @field_validator("camera_video_processing")
+    @classmethod
+    def validate_camera_video_processing(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if v not in ("software", "intel_qsv"):
+            raise ValueError("camera_video_processing must be 'software' or 'intel_qsv'")
+        return v
 
     @field_validator("gcode_snippets")
     @classmethod

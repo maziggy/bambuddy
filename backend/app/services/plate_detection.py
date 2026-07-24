@@ -24,6 +24,84 @@ except ImportError:
     logger.info("OpenCV not available - plate detection feature disabled")
 
 
+# --- Pillow + numpy image helpers ------------------------------------------
+# OpenCV's JPEG codec AND image-processing ops (imdecode/imread/imencode/
+# imwrite, cvtColor/GaussianBlur/normalize/absdiff) segfault under the
+# musl/gcompat shim used to run the manylinux cv2 wheel on Alpine/musl add-ons,
+# on images >= ~512px. Pillow ships its own libjpeg and uses its own (or numpy)
+# kernels, handling real camera frames (1280x720) fine, so all image I/O and
+# processing in this module is routed through Pillow + numpy instead of cv2.
+# cv2 is still imported above so the OPENCV_AVAILABLE gate (and the 503 route
+# guard / availability automation) keep their existing semantics, but it is no
+# longer called for any image operation.
+def _pil_decode(image_data: bytes):
+    """Decode JPEG/PNG bytes into a BGR uint8 HxWx3 array (cv2 convention).
+
+    Drop-in replacement for ``cv2.imdecode(np.frombuffer(buf, np.uint8), cv2.IMREAD_COLOR)``.
+    Returns None on failure (mirrors cv2's None-on-failure contract).
+    """
+    try:
+        from PIL import Image
+        import io
+
+        img = Image.open(io.BytesIO(image_data)).convert("RGB")
+        arr = np.asarray(img)  # RGB HxWx3 uint8
+        return arr[:, :, ::-1].copy()  # RGB -> BGR for cv2 consumers
+    except Exception as e:
+        logger.warning("Pillow decode failed: %s", e)
+        return None
+
+
+def _pil_read(path):
+    """Read a JPEG/PNG file into a BGR uint8 HxWx3 array.
+
+    Drop-in replacement for ``cv2.imread(str(path), cv2.IMREAD_COLOR)``.
+    """
+    try:
+        from PIL import Image
+
+        img = Image.open(str(path)).convert("RGB")
+        arr = np.asarray(img)
+        return arr[:, :, ::-1].copy()
+    except Exception as e:
+        logger.warning("Pillow read failed for %s: %s", path, e)
+        return None
+
+
+def _pil_encode(frame_bgr, quality: int = 95) -> bytes:
+    """Encode a BGR uint8 HxWx3 array to JPEG bytes.
+
+    Drop-in replacement for ``cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, q])``.
+    """
+    import io
+
+    from PIL import Image
+
+    rgb = np.ascontiguousarray(frame_bgr[:, :, ::-1])  # BGR -> RGB, contiguous
+    img = Image.fromarray(rgb)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
+
+
+def _pil_resize_bgr(frame_bgr, size, resample=None) -> np.ndarray:
+    """Resize a BGR uint8 array to (width, height).
+
+    Drop-in replacement for ``cv2.resize(frame, (w, h), interpolation=...)``.
+    ``resample`` accepts PIL resample constants (e.g. ``1``/LANCZOS for
+    downscaling, ``2``/BILINEAR for the cv2 INTER_LINEAR default).
+    """
+    from PIL import Image
+
+    if resample is None:
+        resample = Image.BILINEAR  # matches cv2.resize default (INTER_LINEAR)
+    rgb = np.ascontiguousarray(frame_bgr[:, :, ::-1])  # BGR -> RGB
+    img = Image.fromarray(rgb).resize((int(size[0]), int(size[1])), resample)
+    out = np.asarray(img)  # RGB
+    return out[:, :, ::-1].copy()  # RGB -> BGR
+# ---------------------------------------------------------------------------
+
+
 def _get_calibration_dir() -> Path:
     """Get the calibration directory from settings (ensures persistence in Docker)."""
     from backend.app.core.config import settings
@@ -259,7 +337,7 @@ class PlateDetector:
             return None
 
         try:
-            img = cv2.imread(str(path))
+            img = _pil_read(path)
             if img is None:
                 return None
 
@@ -272,9 +350,9 @@ class PlateDetector:
                 new_h = max_size
                 new_w = int(w * max_size / h)
 
-            thumb = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
-            _, buffer = cv2.imencode(".jpg", thumb, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            return buffer.tobytes()
+            # LANCZOS (=1) gives clean downscaling (cv2.INTER_AREA equivalent)
+            thumb = _pil_resize_bgr(img, (new_w, new_h), 1)
+            return _pil_encode(thumb, 80)
         except Exception as e:
             logger.error("Error creating thumbnail: %s", e)
             return None
@@ -300,11 +378,25 @@ class PlateDetector:
         and noise while preserving large objects. Then normalizes brightness
         to reduce lighting sensitivity.
         """
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # Implemented with Pillow + numpy (not cv2): OpenCV's image-processing ops
+        # (cvtColor/GaussianBlur/normalize) segfault on large images (>=512px)
+        # under the musl/gcompat shim on Alpine. Pillow uses its own kernels and
+        # handles real frames (1280x720) fine.
+        from PIL import Image, ImageFilter
+
+        # BGR (cv2 convention) -> RGB for Pillow
+        rgb = np.ascontiguousarray(frame[:, :, ::-1])
+        gray = np.asarray(Image.fromarray(rgb).convert("L"))
         # Very heavy blur to smooth texture, keep only large shapes
-        blurred = cv2.GaussianBlur(gray, (51, 51), 0)
+        # (PIL radius ~= cv2 (51,51) sigma ~= 8)
+        blurred = np.asarray(Image.fromarray(gray).filter(ImageFilter.GaussianBlur(radius=8)))
         # Normalize to 0-255 range to reduce brightness sensitivity
-        normalized = cv2.normalize(blurred, None, 0, 255, cv2.NORM_MINMAX)
+        mn = float(blurred.min())
+        mx = float(blurred.max())
+        if mx - mn > 1e-6:
+            normalized = ((blurred.astype(np.float32) - mn) / (mx - mn) * 255.0).astype(np.uint8)
+        else:
+            normalized = np.zeros_like(blurred)
         return normalized
 
     def calibrate(self, image_data: bytes, printer_id: int, label: str | None = None) -> tuple[bool, str, int]:
@@ -324,9 +416,12 @@ class PlateDetector:
         from datetime import datetime
 
         try:
-            # Decode image
-            nparr = np.frombuffer(image_data, np.uint8)
-            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            # Validate the image is decodable (rejects corrupt input). The
+            # decoded frame itself is not used further — the original JPEG
+            # bytes are written verbatim below to avoid a lossy decode/re-encode
+            # cycle. Implemented via Pillow (not cv2.imdecode) because OpenCV's
+            # JPEG codec segfaults on large images under the musl/gcompat shim.
+            frame = _pil_decode(image_data)
 
             if frame is None:
                 return False, "Failed to decode image", -1
@@ -343,10 +438,13 @@ class PlateDetector:
             # Save to next available slot
             slot_index = num_existing
             reference_path = _get_calibration_dir() / f"printer_{printer_id}_ref_{slot_index}.jpg"
-            write_success = cv2.imwrite(str(reference_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
-
-            if not write_success:
-                logger.error("cv2.imwrite failed for %s", reference_path)
+            # Write the original JPEG bytes verbatim — no decode/re-encode.
+            # (cv2.imwrite would re-encode at quality 95, adding generation loss
+            # and segfaulting under the musl/gcompat shim on large images.)
+            try:
+                reference_path.write_bytes(image_data)
+            except OSError as write_err:
+                logger.error("Failed to write reference image %s: %s", reference_path, write_err)
                 return False, "Failed to save reference image", -1
 
             # Verify the file actually exists and has content
@@ -430,9 +528,9 @@ class PlateDetector:
                     needs_calibration=True,
                 )
 
-            # Decode current image
-            nparr = np.frombuffer(image_data, np.uint8)
-            current_frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            # Decode current image (via Pillow — cv2.imdecode segfaults on large
+            # images under the musl/gcompat shim)
+            current_frame = _pil_decode(image_data)
 
             if current_frame is None:
                 return PlateDetectionResult(
@@ -452,21 +550,23 @@ class PlateDetector:
             best_diff = None
 
             for idx, ref_path in enumerate(reference_paths):
-                # Load reference image
-                reference_frame = cv2.imread(str(ref_path), cv2.IMREAD_COLOR)
+                # Load reference image (via Pillow — cv2.imread segfaults on
+                # large images under the musl/gcompat shim)
+                reference_frame = _pil_read(ref_path)
                 if reference_frame is None:
                     continue
 
                 # Ensure same dimensions
                 if current_frame.shape != reference_frame.shape:
-                    reference_frame = cv2.resize(reference_frame, (current_frame.shape[1], current_frame.shape[0]))
+                    reference_frame = _pil_resize_bgr(reference_frame, (current_frame.shape[1], current_frame.shape[0]))
 
                 # Extract ROI and preprocess
                 reference_roi, _, _, _, _ = self._extract_roi(reference_frame)
                 reference_processed = self._preprocess_for_comparison(reference_roi)
 
-                # Calculate absolute difference
-                diff = cv2.absdiff(current_processed, reference_processed)
+                # Calculate absolute difference (numpy — cv2.absdiff segfaults
+                # under the musl shim on large arrays)
+                diff = np.abs(current_processed.astype(np.int16) - reference_processed.astype(np.int16)).astype(np.uint8)
 
                 # Calculate mean difference as percentage
                 mean_diff = np.mean(diff)
@@ -508,59 +608,52 @@ class PlateDetector:
             else:
                 message = f"Objects detected on plate (difference: {difference_percent:.1f}%, best ref {best_ref_idx + 1}/{num_refs})"
 
-            # Generate debug image if requested
+            # Generate debug image if requested (via Pillow — cv2 drawing/encode
+            # ops segfault under the musl/gcompat shim on large frames)
             debug_image = None
             if include_debug_image and best_diff is not None:
-                debug_frame = current_frame.copy()
+                from PIL import Image, ImageDraw, ImageFont
 
-                # Draw ROI rectangle
-                cv2.rectangle(
-                    debug_frame,
-                    (x_start, y_start),
-                    (x_start + roi_width, y_start + roi_height),
-                    (0, 255, 0),
-                    2,
+                # Work in RGB for Pillow; debug_frame is BGR (cv2 convention)
+                debug_rgb = np.ascontiguousarray(current_frame[:, :, ::-1])
+                img = Image.fromarray(debug_rgb)
+                draw = ImageDraw.Draw(img)
+
+                # Draw ROI rectangle (green)
+                draw.rectangle(
+                    [x_start, y_start, x_start + roi_width, y_start + roi_height],
+                    outline=(0, 255, 0),
+                    width=2,
                 )
 
-                # Create colored difference overlay
-                # Red = areas that are different from reference
-                # Amplify diff for visibility (multiply by 3, cap at 255)
+                # Colored difference overlay: red where the frame differs from
+                # the best reference. Amplify diff for visibility (x3, cap 255).
                 diff_amplified = np.minimum(best_diff * 3, 255).astype(np.uint8)
-                diff_colored = cv2.cvtColor(diff_amplified, cv2.COLOR_GRAY2BGR)
-                diff_colored[:, :, 0] = 0  # Remove blue
-                diff_colored[:, :, 1] = 0  # Remove green
-                # Red channel has the diff
+                overlay = np.zeros((roi_height, roi_width, 3), dtype=np.uint8)
+                overlay[:, :, 0] = diff_amplified  # red channel (RGB)
+                # Blend overlay 0.5 with the ROI, write back onto the image
+                roi_rgb = np.ascontiguousarray(
+                    current_frame[y_start : y_start + roi_height, x_start : x_start + roi_width, ::-1]
+                )
+                blended = (overlay.astype(np.float32) * 0.5 + roi_rgb.astype(np.float32) * 0.5).astype(np.uint8)
+                img.paste(Image.fromarray(blended), (x_start, y_start))
 
-                # Overlay difference on ROI
-                roi_overlay = debug_frame[y_start : y_start + roi_height, x_start : x_start + roi_width]
-                cv2.addWeighted(diff_colored, 0.5, roi_overlay, 0.5, 0, roi_overlay)
-
-                # Add status text
+                # Add status text (red = objects detected, green = empty)
                 status_text = "EMPTY" if is_empty else "OBJECTS DETECTED"
-                color = (0, 255, 0) if is_empty else (0, 0, 255)
-                cv2.putText(debug_frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-                cv2.putText(
-                    debug_frame,
-                    f"Diff: {difference_percent:.1f}% (ref {best_ref_idx + 1}/{num_refs})",
-                    (10, 60),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    color,
-                    2,
-                )
-                cv2.putText(
-                    debug_frame,
-                    f"Confidence: {confidence:.0%}",
-                    (10, 90),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    color,
-                    2,
-                )
+                color = (0, 255, 0) if is_empty else (255, 0, 0)
+                try:
+                    font_lg = ImageFont.truetype("DejaVuSans.ttf", 24)
+                    font_sm = ImageFont.truetype("DejaVuSans.ttf", 17)
+                except OSError:
+                    font_lg = ImageFont.load_default()
+                    font_sm = font_lg
+                draw.text((10, 4), status_text, fill=color, font=font_lg)
+                draw.text((10, 32), f"Diff: {difference_percent:.1f}% (ref {best_ref_idx + 1}/{num_refs})", fill=color, font=font_sm)
+                draw.text((10, 56), f"Confidence: {confidence:.0%}", fill=color, font=font_sm)
 
                 # Encode debug image as JPEG
-                _, buffer = cv2.imencode(".jpg", debug_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                debug_image = buffer.tobytes()
+                debug_bgr = np.ascontiguousarray(np.asarray(img)[:, :, ::-1])  # RGB -> BGR
+                debug_image = _pil_encode(debug_bgr, 85)
 
             return PlateDetectionResult(
                 is_empty=is_empty,

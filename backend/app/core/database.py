@@ -282,6 +282,7 @@ async def init_db():
         spool,
         spool_assignment,
         spool_catalog,
+        spool_code,
         spool_k_profile,
         spool_usage_history,
         spoolbuddy_device,
@@ -3771,6 +3772,65 @@ async def run_migrations(conn):
     # Migration: Disambiguate the four ``user_print_*`` notification template
     # names by appending " Email" (#1792). See ``_migrate_rename_user_print_template_names``.
     await _migrate_rename_user_print_template_names(conn)
+
+    # Migration: Add barcode column to spool for scan-to-add lookups. Stores
+    # the canonicalized (no leading zeros) UPC/EAN of a scanned spool so a
+    # later scan of the same barcode resolves from the user's own inventory
+    # before falling back to the Open Filament Database.
+    await _safe_execute(conn, "ALTER TABLE spool ADD COLUMN barcode VARCHAR(64)")
+    await _safe_execute(conn, "CREATE INDEX IF NOT EXISTS ix_spool_barcode ON spool (barcode)")
+
+    # Migration: backfill the new one-to-many spool_code table from the
+    # existing single Spool.barcode column, so multi-code cross-referencing
+    # (see _resolve_barcode in routes/inventory.py) has a starting point for
+    # spools scanned before this feature shipped. Spool.barcode itself is
+    # unchanged and stays the denormalized "primary code" column. The
+    # spool_code table itself is created by Base.metadata.create_all() above
+    # (new model, not an ALTER), so this only needs to backfill rows.
+    await _migrate_backfill_spool_codes(conn)
+
+
+async def _migrate_backfill_spool_codes(conn) -> None:
+    """Backfill spool_code from every Spool.barcode set before this feature shipped.
+
+    Classifies each barcode individually via classify_code instead of assuming
+    'gtin' — Spool.barcode can hold an alphanumeric SKU (e.g. a manufacturer
+    article number with no UPC/EAN counterpart), and a hardcoded kind would
+    mis-classify those rows so they never match on a future scan.
+
+    Also heals rows already backfilled (or written by the multi-code feature
+    itself) whose kind disagrees with the current classification — covers
+    spools created by an earlier, buggier build of this feature on this
+    branch. Matching on (spool_id, code) is unique per the table's constraint,
+    so this and the insert are both safe to re-run on every startup.
+    """
+    from sqlalchemy import text
+
+    from backend.app.schemas.spool import classify_code
+
+    async with conn.begin_nested():
+        rows = (await conn.execute(text("SELECT id, barcode FROM spool WHERE barcode IS NOT NULL"))).all()
+        for spool_id, barcode in rows:
+            code, kind = classify_code(barcode)
+            existing = (
+                await conn.execute(
+                    text("SELECT kind FROM spool_code WHERE spool_id = :spool_id AND code = :code"),
+                    {"spool_id": spool_id, "code": code},
+                )
+            ).first()
+            if existing is None:
+                await conn.execute(
+                    text(
+                        "INSERT INTO spool_code (spool_id, code, kind, is_refill, is_primary) "
+                        "VALUES (:spool_id, :code, :kind, false, true)"
+                    ),
+                    {"spool_id": spool_id, "code": code, "kind": kind},
+                )
+            elif existing[0] != kind:
+                await conn.execute(
+                    text("UPDATE spool_code SET kind = :kind WHERE spool_id = :spool_id AND code = :code"),
+                    {"spool_id": spool_id, "code": code, "kind": kind},
+                )
 
 
 _USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (

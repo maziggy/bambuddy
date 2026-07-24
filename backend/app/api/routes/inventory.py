@@ -26,10 +26,14 @@ from backend.app.models.settings import Settings
 from backend.app.models.spool import Spool
 from backend.app.models.spool_assignment import SpoolAssignment
 from backend.app.models.spool_catalog import SpoolCatalogEntry
+from backend.app.models.spool_code import SpoolCode
 from backend.app.models.spool_k_profile import SpoolKProfile
 from backend.app.models.user import User
 from backend.app.schemas.location import LocationCreate, LocationResponse, LocationUpdate
 from backend.app.schemas.spool import (
+    MAX_EXTRA_COLOR_STOPS,
+    BarcodeLookupResponse,
+    LabelParseResponse,
     SpoolAssignmentCreate,
     SpoolAssignmentResponse,
     SpoolBulkCreate,
@@ -38,10 +42,13 @@ from backend.app.schemas.spool import (
     SpoolKProfileResponse,
     SpoolResponse,
     SpoolUpdate,
+    classify_code,
     normalize_effect_type,
     normalize_extra_colors,
 )
 from backend.app.schemas.spool_usage import SpoolUsageHistoryResponse
+from backend.app.services import ofd_client, spoolmandb_community_client
+from backend.app.services.filament_label_parser import extract_barcode, extract_sku, parse_title
 from backend.app.services.location_service import (
     DUPLICATE_LOCATION_NAME,
     assign_location_name,
@@ -1092,6 +1099,116 @@ async def sync_from_filamentcolors(
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
+def _derive_effect_type(variant: dict) -> str | None:
+    """Map SpoolmanDB-Community's overlapping effect-ish fields onto Bambuddy's
+    single ``effect_type`` enum (see ``ALLOWED_EFFECT_TYPES`` in schemas/spool.py).
+
+    Priority (most-structural signal first): a multi-color split (driven by
+    ``multi_color_direction`` + how many hex stops it has) beats a simple
+    glow/pattern/translucent/finish flag, since it describes the filament's
+    physical structure rather than just a surface accent.
+    """
+    hexes = variant.get("hexes") or []
+    direction = variant.get("multi_color_direction")
+    if direction and len(hexes) >= 2:
+        if direction == "longitudinal":
+            return "gradient"
+        if len(hexes) == 2:
+            return "dual-color"
+        if len(hexes) == 3:
+            return "tri-color"
+        return "multicolor"
+    if variant.get("glow"):
+        return "glow"
+    if variant.get("pattern") == "sparkle":
+        return "sparkle"
+    if variant.get("pattern") == "marble":
+        return "marble"
+    if variant.get("translucent"):
+        return "translucent"
+    if variant.get("finish") == "matte":
+        return "matte"
+    return None
+
+
+@router.post("/colors/sync-spoolmandb-community")
+async def sync_from_spoolmandb_community(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
+):
+    """Sync colors from SpoolmanDB-Community into the color catalog.
+
+    Unlike the FilamentColors.xyz sync above (a paginated live API, hence the
+    SSE progress stream), SpoolmanDB-Community is fetched as one bounded
+    download — a plain JSON response is enough.
+
+    Dedup key is (manufacturer, material, hex) rather than (manufacturer,
+    material, color_name): SpoolmanDB-Community's raw source files often give
+    the same physical color multiple names across manufacturer sub-lines
+    (e.g. "White" vs "Ivory White"), which a name-based check would treat as
+    distinct and let both into the catalog. Comparing hex instead catches
+    that regardless of naming, so each manufacturer/material only ever gets
+    one catalog row per distinct color.
+    """
+    try:
+        variants = await spoolmandb_community_client.get_filaments()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"SpoolmanDB-Community fetch failed: {e}") from e
+
+    added = 0
+    skipped = 0
+    seen_keys: set[tuple[str, str | None, str]] = set()
+    for variant in variants:
+        manufacturer = variant.get("brand")
+        color_name = variant.get("color_name")
+        material = variant.get("material") or None
+        rgba = variant.get("rgba")
+        if not manufacturer or not color_name or not rgba:
+            skipped += 1
+            continue
+
+        hex6 = rgba[:6].upper()
+        key = (manufacturer, material, hex6)
+        if key in seen_keys:
+            skipped += 1
+            continue
+        seen_keys.add(key)
+
+        existing = await db.execute(
+            select(ColorCatalogEntry)
+            .where(
+                ColorCatalogEntry.manufacturer == manufacturer,
+                ColorCatalogEntry.material == material,
+                func.upper(ColorCatalogEntry.hex_color) == f"#{hex6}",
+            )
+            .limit(1)
+        )
+        if existing.scalar_one_or_none():
+            skipped += 1
+            continue
+
+        hexes = variant.get("hexes") or []
+        # Canonical extra_colors form: lowercase, no '#', comma-joined (see
+        # normalize_extra_colors) — capped at MAX_EXTRA_COLOR_STOPS extra stops.
+        extra_stops = [h.lstrip("#").lower() for h in hexes[1 : 1 + MAX_EXTRA_COLOR_STOPS]]
+        extra_colors = ",".join(extra_stops) if extra_stops else None
+        db.add(
+            ColorCatalogEntry(
+                manufacturer=manufacturer,
+                color_name=color_name,
+                hex_color=f"#{hex6}",
+                material=material,
+                is_default=False,
+                extra_colors=extra_colors,
+                effect_type=_derive_effect_type(variant),
+            )
+        )
+        added += 1
+
+    await db.commit()
+    return {"added": added, "skipped": skipped, "total": len(variants)}
+
+
 # ── Spool CRUD ───────────────────────────────────────────────────────────────
 
 
@@ -1102,7 +1219,7 @@ async def list_spools(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ):
     """List all spools, excluding archived by default."""
-    query = select(Spool).options(selectinload(Spool.k_profiles))
+    query = select(Spool).options(selectinload(Spool.k_profiles), selectinload(Spool.codes))
     if not include_archived:
         query = query.where(Spool.archived_at.is_(None))
     query = query.order_by(Spool.material, Spool.brand, Spool.color_name)
@@ -1179,13 +1296,26 @@ async def import_spools_csv(
         return preview
 
     created = 0
+    created_spools: list[tuple[Spool, str | None]] = []
     for row in preview.rows:
         if row.status == "valid" and row.spool is not None:
-            db.add(Spool(**row.spool))
+            spool = Spool(**row.spool)
+            db.add(spool)
+            created_spools.append((spool, row.spool.get("barcode")))
             created += 1
 
     if created:
         await db.commit()
+        # Resolve each distinct barcode's external cross-reference once, not
+        # once per row — an import can have many rows sharing one barcode.
+        codes_by_barcode: dict[str, tuple[str, str, list[dict]]] = {}
+        for spool, barcode in created_spools:
+            if not barcode:
+                continue
+            if barcode not in codes_by_barcode:
+                codes_by_barcode[barcode] = await _resolve_codes_for_barcode(barcode)
+            code, kind, all_codes = codes_by_barcode[barcode]
+            await _persist_spool_codes(db, spool.id, code, kind, all_codes)
         await ws_manager.broadcast({"type": "inventory_changed"})
 
     return ImportResult(
@@ -1221,7 +1351,7 @@ async def get_spool_by_tag(
     if not normalized_tray_uuid and not normalized_tag_uid:
         raise HTTPException(400, "Provide tray_uuid and/or tag_uid")
 
-    base_query = select(Spool).options(selectinload(Spool.k_profiles))
+    base_query = select(Spool).options(selectinload(Spool.k_profiles), selectinload(Spool.codes))
     if not include_archived:
         base_query = base_query.where(Spool.archived_at.is_(None))
 
@@ -1246,7 +1376,9 @@ async def get_spool(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
 ):
     """Get a single spool with k_profiles."""
-    result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool_id))
+    result = await db.execute(
+        select(Spool).options(selectinload(Spool.k_profiles), selectinload(Spool.codes)).where(Spool.id == spool_id)
+    )
     spool = result.scalar_one_or_none()
     if not spool:
         raise HTTPException(404, "Spool not found")
@@ -1268,7 +1400,10 @@ async def create_spool(
     db.add(spool)
     await db.commit()
     await db.refresh(spool)
-    result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool.id))
+    await _persist_barcode_codes_for_spool(db, spool.id, spool.barcode)
+    result = await db.execute(
+        select(Spool).options(selectinload(Spool.k_profiles), selectinload(Spool.codes)).where(Spool.id == spool.id)
+    )
     await ws_manager.broadcast({"type": "inventory_changed"})
     return result.scalar_one()
 
@@ -1292,9 +1427,340 @@ async def bulk_create_spools(
         spools.append(spool)
     await db.commit()
     ids = [s.id for s in spools]
-    result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id.in_(ids)))
+    if payload.get("barcode"):
+        # All spools in a bulk-create batch share one barcode — resolve the
+        # external cross-reference once, not once per spool.
+        code, kind, all_codes = await _resolve_codes_for_barcode(payload["barcode"])
+        for spool_id in ids:
+            await _persist_spool_codes(db, spool_id, code, kind, all_codes)
+    result = await db.execute(
+        select(Spool).options(selectinload(Spool.k_profiles), selectinload(Spool.codes)).where(Spool.id.in_(ids))
+    )
     await ws_manager.broadcast({"type": "inventory_changed"})
     return list(result.scalars().all())
+
+
+_BARCODE_FIELD_KEYS = (
+    "material",
+    "brand",
+    "subtype",
+    "color_name",
+    "rgba",
+    "label_weight",
+    "nozzle_temp_min",
+    "nozzle_temp_max",
+)
+
+
+async def _external_all_codes(code: str, kind: str) -> tuple[dict, str, list[dict]] | None:
+    """Cross-reference OFD and SpoolmanDB-Community for `code`, merging both hits.
+
+    Returns (fields, source, all_codes) where `source` is whichever database
+    resolved first, `fields` prefers that source's values but fills any gaps
+    (e.g. missing nozzle temps) from the other, and `all_codes` is the union
+    of every sibling code (other package-size GTINs, the refill GTIN, the
+    SKU/article number) discovered across both databases. If only one
+    database resolves `code` directly, its sibling codes are also probed
+    against the *other* database to recover cross-referenced fields/codes.
+    """
+
+    async def _ofd_lookup(c: str, k: str) -> tuple[dict, list[dict]] | None:
+        return await (ofd_client.lookup(c) if k == "gtin" else ofd_client.lookup_article(c))
+
+    async def _smdb_lookup(c: str, k: str) -> tuple[dict, list[dict]] | None:
+        return await (
+            spoolmandb_community_client.lookup(c) if k == "gtin" else spoolmandb_community_client.lookup_sku(c)
+        )
+
+    try:
+        ofd_hit = await _ofd_lookup(code, kind)
+    except Exception:
+        logger.warning("OFD lookup failed for %s", code, exc_info=True)
+        ofd_hit = None
+    try:
+        smdb_hit = await _smdb_lookup(code, kind)
+    except Exception:
+        logger.warning("SpoolmanDB-Community lookup failed for %s", code, exc_info=True)
+        smdb_hit = None
+
+    if not ofd_hit and not smdb_hit:
+        return None
+
+    fields: dict = {}
+    all_codes: list[dict] = []
+    source: str | None = None
+
+    def _merge(hit: tuple[dict, list[dict]], src_name: str) -> None:
+        nonlocal source
+        hit_fields, hit_codes = hit
+        for key, value in hit_fields.items():
+            if value is not None and fields.get(key) is None:
+                fields[key] = value
+        for entry in hit_codes:
+            if not any(existing["code"] == entry["code"] for existing in all_codes):
+                all_codes.append(entry)
+        if source is None:
+            source = src_name
+
+    if ofd_hit:
+        _merge(ofd_hit, "ofd")
+    if smdb_hit:
+        _merge(smdb_hit, "spoolmandb-community")
+
+    tried = {code}
+    for entry in list(all_codes):
+        if ofd_hit and smdb_hit:
+            break
+        sibling_code = entry["code"]
+        if sibling_code in tried:
+            continue
+        tried.add(sibling_code)
+        if not ofd_hit:
+            try:
+                probe = await _ofd_lookup(sibling_code, entry["kind"])
+            except Exception:
+                probe = None
+            if probe:
+                _merge(probe, "ofd")
+                ofd_hit = probe
+        if not smdb_hit:
+            try:
+                probe = await _smdb_lookup(sibling_code, entry["kind"])
+            except Exception:
+                probe = None
+            if probe:
+                _merge(probe, "spoolmandb-community")
+                smdb_hit = probe
+
+    return fields, source, all_codes
+
+
+async def _resolve_barcode(
+    db: AsyncSession, code: str, kind: str, settings: dict[str, str]
+) -> tuple[dict, str | None, list[dict]]:
+    """Resolve a classified code (see `classify_code`): the user's own inventory
+    first, then OFD, then SpoolmanDB-Community, cross-referencing between the
+    two external databases along the way.
+
+    When Spoolman mode is active, "the user's own inventory" means Spoolman's
+    spools (barcode stored under extra.bambu_barcode — see find_spool_by_barcode)
+    since that's where the visible inventory actually lives; otherwise it means
+    the local ``Spool``/``SpoolCode`` tables. Falls back to OFD, then
+    SpoolmanDB-Community, if barcode_lookup_enabled — OFD stays first since
+    it's purpose-built for barcode lookups; SpoolmanDB-Community's coverage is
+    far sparser but broader in brand coverage, so it's a secondary fallback,
+    not a replacement.
+
+    Returns (fields, source, all_codes). ``source`` is "inventory", "ofd",
+    "spoolmandb-community", or None (no match). ``all_codes`` is every code
+    (GTIN or SKU) discovered alongside `code` — siblings to persist/display,
+    excluding `code` itself when the hit came from external cross-referencing
+    (own-inventory hits include every code already stored on that spool).
+    """
+    client = await _ensure_spoolman_client(settings)
+    if client:
+        try:
+            spool = await client.find_spool_by_barcode(code)
+        except Exception:
+            logger.warning("Spoolman barcode lookup failed for %s", code, exc_info=True)
+            spool = None
+        if spool:
+            from backend.app.api.routes._spoolman_helpers import _map_spoolman_spool
+
+            mapped = _map_spoolman_spool(spool)
+            fields = {key: mapped.get(key) for key in _BARCODE_FIELD_KEYS}
+            return fields, "inventory", mapped.get("linked_codes") or []
+    else:
+        # Match on `code` alone, not `kind` — a canonical code string
+        # identifies one product regardless of how it was classified at
+        # write time (`kind` is only used to route external-DB lookups and
+        # as row metadata). This also means a row written before the
+        # classify_code fix (mis-kinded due to the scan/persist split) still
+        # resolves on the next scan.
+        result = await db.execute(
+            select(SpoolCode).where(SpoolCode.code == code).order_by(SpoolCode.created_at.desc()).limit(1)
+        )
+        hit = result.scalars().first()
+        if hit:
+            spool_result = await db.execute(select(Spool).where(Spool.id == hit.spool_id))
+            existing = spool_result.scalars().first()
+            if existing:
+                fields = {key: getattr(existing, key) for key in _BARCODE_FIELD_KEYS}
+                codes_result = await db.execute(select(SpoolCode).where(SpoolCode.spool_id == existing.id))
+                all_codes = [
+                    {"code": c.code, "kind": c.kind, "is_refill": c.is_refill} for c in codes_result.scalars().all()
+                ]
+                return fields, "inventory", all_codes
+
+    lookup_enabled = settings.get("barcode_lookup_enabled", "true") == "true"
+    if not lookup_enabled:
+        return {}, None, []
+
+    external = await _external_all_codes(code, kind)
+    if external is None:
+        return {}, None, []
+    return external
+
+
+async def _persist_spool_codes(
+    db: AsyncSession, spool_id: int, primary_code: str, primary_kind: str, all_codes: list[dict]
+) -> None:
+    """Store `primary_code` plus every sibling in `all_codes` against `spool_id`,
+    deduped on (spool_id, code). The scanned/typed code is always `is_primary`."""
+    existing_result = await db.execute(select(SpoolCode.code).where(SpoolCode.spool_id == spool_id))
+    existing_codes = {row[0] for row in existing_result.all()}
+
+    to_insert: dict[str, dict] = {primary_code: {"kind": primary_kind, "is_refill": False, "is_primary": True}}
+    for entry in all_codes:
+        code_val = entry.get("code")
+        if not code_val or code_val == primary_code:
+            continue
+        to_insert.setdefault(
+            code_val,
+            {"kind": entry.get("kind") or "gtin", "is_refill": bool(entry.get("is_refill")), "is_primary": False},
+        )
+
+    for code_val, meta in to_insert.items():
+        if code_val in existing_codes:
+            continue
+        db.add(SpoolCode(spool_id=spool_id, code=code_val, **meta))
+    await db.commit()
+
+
+async def _resolve_codes_for_barcode(barcode: str) -> tuple[str, str, list[dict]]:
+    """Classify `barcode` and cross-reference it externally, returning
+    `(canonical_code, kind, sibling_codes)`. Swallows lookup failures — a spool
+    still gets created/imported with just its primary code if the external
+    databases are unreachable. `_external_all_codes` reads the 24h-cached
+    in-memory index, not the network, so batch callers should resolve once per
+    unique barcode rather than once per row/spool, but a repeat call for the
+    same barcode is cheap either way."""
+    code, kind = classify_code(barcode)
+    try:
+        external = await _external_all_codes(code, kind)
+    except Exception:
+        logger.warning("Cross-reference lookup failed while resolving codes for barcode %s", barcode, exc_info=True)
+        external = None
+    all_codes = external[2] if external else []
+    return code, kind, all_codes
+
+
+async def _persist_barcode_codes_for_spool(db: AsyncSession, spool_id: int, barcode: str | None) -> None:
+    """Replace every SpoolCode row for `spool_id` with the set cross-referenced
+    from `barcode` — or with nothing, if `barcode` is unset. Delete-then-insert
+    (mirrors Spoolman mode's reset-then-set of bambu_linked_codes in
+    _resolve_linked_codes_json) instead of only ever inserting: without this,
+    editing a barcode A -> B left A's rows in place alongside B's, so both
+    still resolved on scan, and clearing a barcode entirely left every
+    previously-discovered sibling code still matching. Safe to call
+    unconditionally on create/bulk-create too — a fresh spool has no rows to
+    delete."""
+    await db.execute(delete(SpoolCode).where(SpoolCode.spool_id == spool_id))
+    if not barcode:
+        await db.commit()
+        return
+    code, kind, all_codes = await _resolve_codes_for_barcode(barcode)
+    await _persist_spool_codes(db, spool_id, code, kind, all_codes)
+
+
+@router.get("/barcode/{barcode}", response_model=BarcodeLookupResponse)
+async def lookup_barcode(
+    barcode: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """Resolve a scanned/entered barcode to filament fields.
+
+    Checks the user's own inventory (any spool previously created from this
+    barcode) before falling back to the Open Filament Database, so repeat
+    scans of the same retail barcode get instant, exact matches without an
+    external call.
+    """
+    settings = await _load_settings_map(db)
+    lookup_enabled = settings.get("barcode_lookup_enabled", "true") == "true"
+    canonical, kind = classify_code(barcode)
+    fields, source, all_codes = await _resolve_barcode(db, canonical, kind, settings)
+    linked_codes = [c for c in all_codes if c["code"] != canonical]
+    return BarcodeLookupResponse(
+        enabled=lookup_enabled,
+        matched=source is not None,
+        source=source,
+        barcode=canonical,
+        linked_codes=linked_codes,
+        **fields,
+    )
+
+
+class LabelParseRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=4000)
+
+
+@router.post("/barcode/parse-label", response_model=LabelParseResponse)
+async def parse_label(
+    payload: LabelParseRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_READ),
+):
+    """Parse OCR'd label text into best-effort filament fields.
+
+    If the text also contains a barcode or a labelled SKU/article number
+    (e.g. "SKU: CA03006" — some boxes print only this, no scannable retail
+    barcode at all), that code is resolved through the same
+    inventory → OFD → SpoolmanDB-Community chain as ``GET /barcode/{barcode}``
+    and overrides the text-heuristic guesses where present. A GTIN takes
+    priority when both are present in the text.
+    """
+    settings = await _load_settings_map(db)
+
+    try:
+        extra_brands = await ofd_client.get_brands()
+    except Exception:
+        extra_brands = []
+    guessed = parse_title(payload.text, extra_brands=extra_brands)
+    # diameter_mm has no home on Spool — it's parse-only context, not persisted.
+    guessed.pop("diameter_mm", None)
+
+    code_text = extract_barcode(payload.text) or extract_sku(payload.text)
+    source = "parsed" if guessed else None
+    canonical: str | None = None
+    linked_codes: list[dict] = []
+    if code_text:
+        canonical, kind = classify_code(code_text)
+        fields, resolved_source, all_codes = await _resolve_barcode(db, canonical, kind, settings)
+        if resolved_source:
+            guessed = {**guessed, **{k: v for k, v in fields.items() if v is not None}}
+            source = resolved_source
+            linked_codes = [c for c in all_codes if c["code"] != canonical]
+
+    return LabelParseResponse(
+        matched=source in ("inventory", "ofd", "spoolmandb-community"),
+        source=source,
+        barcode=canonical,
+        linked_codes=linked_codes,
+        **guessed,
+    )
+
+
+@router.post("/barcode/refresh-database")
+async def refresh_barcode_database(
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+):
+    """Force a re-download of the OFD + SpoolmanDB-Community databases, bypassing the 24h cache TTL."""
+    try:
+        ofd_count = await ofd_client.refresh_database()
+    except Exception:
+        logger.warning("OFD refresh failed", exc_info=True)
+        ofd_count = 0
+    try:
+        spoolmandb_count = await spoolmandb_community_client.refresh_database()
+    except Exception:
+        logger.warning("SpoolmanDB-Community refresh failed", exc_info=True)
+        spoolmandb_count = 0
+    return {
+        "entries": ofd_count + spoolmandb_count,
+        "ofd_entries": ofd_count,
+        "spoolmandb_community_entries": spoolmandb_count,
+    }
 
 
 @router.patch("/spools/{spool_id}", response_model=SpoolResponse)
@@ -1319,11 +1785,18 @@ async def update_spool(
     if "weight_used" in update_data and "weight_locked" not in update_data:
         update_data["weight_locked"] = True
 
+    barcode_changed = "barcode" in update_data and update_data["barcode"] != spool.barcode
+    new_barcode = update_data.get("barcode")
+
     for field, value in update_data.items():
         setattr(spool, field, value)
 
     await db.commit()
-    result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool_id))
+    if barcode_changed:
+        await _persist_barcode_codes_for_spool(db, spool_id, new_barcode)
+    result = await db.execute(
+        select(Spool).options(selectinload(Spool.k_profiles), selectinload(Spool.codes)).where(Spool.id == spool_id)
+    )
     await ws_manager.broadcast({"type": "inventory_changed"})
     return result.scalar_one()
 
@@ -1362,7 +1835,9 @@ async def archive_spool(
 
     spool.archived_at = datetime.now(timezone.utc)
     await db.commit()
-    result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool_id))
+    result = await db.execute(
+        select(Spool).options(selectinload(Spool.k_profiles), selectinload(Spool.codes)).where(Spool.id == spool_id)
+    )
     await ws_manager.broadcast({"type": "inventory_changed"})
     return result.scalar_one()
 
@@ -1381,7 +1856,9 @@ async def restore_spool(
 
     spool.archived_at = None
     await db.commit()
-    result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool_id))
+    result = await db.execute(
+        select(Spool).options(selectinload(Spool.k_profiles), selectinload(Spool.codes)).where(Spool.id == spool_id)
+    )
     await ws_manager.broadcast({"type": "inventory_changed"})
     return result.scalar_one()
 
@@ -1413,7 +1890,9 @@ async def reset_spool_consumed_counter(
 
     spool.weight_used_baseline = spool.weight_used or 0
     await db.commit()
-    result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool_id))
+    result = await db.execute(
+        select(Spool).options(selectinload(Spool.k_profiles), selectinload(Spool.codes)).where(Spool.id == spool_id)
+    )
     await ws_manager.broadcast({"type": "inventory_changed"})
     return result.scalar_one()
 
@@ -1689,7 +2168,11 @@ async def assign_spool(
     from backend.app.services.printer_manager import printer_manager
 
     # 1. Validate spool exists and is not archived
-    result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == data.spool_id))
+    result = await db.execute(
+        select(Spool)
+        .options(selectinload(Spool.k_profiles), selectinload(Spool.codes))
+        .where(Spool.id == data.spool_id)
+    )
     spool = result.scalar_one_or_none()
     if not spool:
         raise HTTPException(404, "Spool not found")
@@ -1940,7 +2423,9 @@ async def link_tag_to_spool(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.INVENTORY_UPDATE),
 ):
     """Link an RFID tag_uid/tray_uuid to an existing spool."""
-    result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool_id))
+    result = await db.execute(
+        select(Spool).options(selectinload(Spool.k_profiles), selectinload(Spool.codes)).where(Spool.id == spool_id)
+    )
     spool = result.scalar_one_or_none()
     if not spool:
         raise HTTPException(404, "Spool not found")
@@ -2005,7 +2490,9 @@ async def link_tag_to_spool(
         spool.data_origin = data.data_origin
 
     await db.commit()
-    result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool_id))
+    result = await db.execute(
+        select(Spool).options(selectinload(Spool.k_profiles), selectinload(Spool.codes)).where(Spool.id == spool_id)
+    )
     return result.scalar_one()
 
 
@@ -2523,5 +3010,7 @@ async def create_spool_from_slot(
             "spool_id": spool.id,
         }
     )
-    result = await db.execute(select(Spool).options(selectinload(Spool.k_profiles)).where(Spool.id == spool.id))
+    result = await db.execute(
+        select(Spool).options(selectinload(Spool.k_profiles), selectinload(Spool.codes)).where(Spool.id == spool.id)
+    )
     return result.scalar_one()

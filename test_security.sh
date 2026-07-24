@@ -47,13 +47,16 @@ NC='\033[0m'
 WORK_DIR=$(mktemp -d)
 trap 'rm -rf "$WORK_DIR"' EXIT
 
-# Parallel job tracking
-declare -A PIDS=()       # scan_name -> PID
-declare -A RESULTS=()    # scan_name -> PASS|FAIL|SKIP
-declare -A DURATIONS=()  # scan_name -> seconds
-
-# Scan display order
-SCAN_ORDER=()
+# Parallel job tracking - plain indexed arrays, not associative. macOS ships
+# bash 3.2 (no `declare -A` support) with no newer bash on PATH by default;
+# under it `PIDS["bandit"]=$!` silently arithmetic-evaluates "bandit" as an
+# index instead of a key, and `set -u` then aborts with "bandit: unbound
+# variable" the first time a scan reaches that line. Indexed arrays keyed by
+# each scan's position in SCAN_ORDER work the same on bash 3.2 and 4+.
+SCAN_ORDER=()      # index -> scan_name
+PID_BY_IDX=()      # index -> PID
+RESULT_BY_IDX=()   # index -> PASS|FAIL|SKIP
+DURATION_BY_IDX=() # index -> seconds
 
 # ── SARIF parser (used for CodeQL result display) ────────────────────────
 
@@ -216,6 +219,7 @@ launch_scan() {
     local prefix
     prefix=$(printf "${DIM}[%-14s]${NC} " "$name")
 
+    local idx=${#SCAN_ORDER[@]}
     SCAN_ORDER+=("$name")
 
     (
@@ -229,18 +233,19 @@ launch_scan() {
         echo $(( $(date +%s) - start_time )) > "$WORK_DIR/${name}.duration"
         exit "$exit_code"
     ) &
-    PIDS["$name"]=$!
+    PID_BY_IDX[idx]=$!
 }
 
 # ── Wait for all scans ───────────────────────────────────────────────────
 
 wait_for_scans() {
-    local total=${#PIDS[@]}
+    local total=${#SCAN_ORDER[@]}
     local completed=0
 
     while [ "$completed" -lt "$total" ]; do
-        for name in "${SCAN_ORDER[@]}"; do
-            local pid=${PIDS[$name]:-}
+        for idx in "${!SCAN_ORDER[@]}"; do
+            local name="${SCAN_ORDER[$idx]}"
+            local pid=${PID_BY_IDX[$idx]:-}
             [ -z "$pid" ] && continue
 
             if ! kill -0 "$pid" 2>/dev/null; then
@@ -248,28 +253,28 @@ wait_for_scans() {
                 local exit_code=$?
 
                 if [ "$exit_code" -eq 2 ]; then
-                    RESULTS["$name"]="SKIP"
+                    RESULT_BY_IDX[idx]="SKIP"
                 elif [ "$exit_code" -eq 0 ]; then
-                    RESULTS["$name"]="PASS"
+                    RESULT_BY_IDX[idx]="PASS"
                 else
-                    RESULTS["$name"]="FAIL"
+                    RESULT_BY_IDX[idx]="FAIL"
                 fi
 
                 if [ -f "$WORK_DIR/${name}.duration" ]; then
-                    DURATIONS["$name"]=$(cat "$WORK_DIR/${name}.duration")
+                    DURATION_BY_IDX[idx]=$(cat "$WORK_DIR/${name}.duration")
                 else
-                    DURATIONS["$name"]="?"
+                    DURATION_BY_IDX[idx]="?"
                 fi
 
                 local status_color
-                case "${RESULTS[$name]}" in
+                case "${RESULT_BY_IDX[$idx]}" in
                     PASS) status_color="$GREEN" ;;
                     FAIL) status_color="$RED" ;;
                     SKIP) status_color="$YELLOW" ;;
                 esac
-                echo -e "${status_color}${BOLD}[${RESULTS[$name]}]${NC} ${name} ${DIM}(${DURATIONS[$name]}s)${NC}"
+                echo -e "${status_color}${BOLD}[${RESULT_BY_IDX[$idx]}]${NC} ${name} ${DIM}(${DURATION_BY_IDX[$idx]}s)${NC}"
 
-                unset "PIDS[$name]"
+                PID_BY_IDX[idx]=""
                 completed=$((completed + 1))
             fi
         done
@@ -282,8 +287,8 @@ wait_for_scans() {
 print_summary() {
     local pass=0 fail=0 skip=0
 
-    for name in "${SCAN_ORDER[@]}"; do
-        case "${RESULTS[$name]}" in
+    for idx in "${!SCAN_ORDER[@]}"; do
+        case "${RESULT_BY_IDX[$idx]}" in
             PASS) pass=$((pass + 1)) ;;
             FAIL) fail=$((fail + 1)) ;;
             SKIP) skip=$((skip + 1)) ;;
@@ -300,9 +305,10 @@ print_summary() {
     printf "  ${BOLD}%-6s  %-24s  %s${NC}\n" "Status" "Scan" "Duration"
     printf "  %-6s  %-24s  %s\n" "──────" "────────────────────────" "────────"
 
-    for name in "${SCAN_ORDER[@]}"; do
-        local status="${RESULTS[$name]}"
-        local duration="${DURATIONS[$name]:-?}s"
+    for idx in "${!SCAN_ORDER[@]}"; do
+        local name="${SCAN_ORDER[$idx]}"
+        local status="${RESULT_BY_IDX[$idx]}"
+        local duration="${DURATION_BY_IDX[$idx]:-?}s"
         local status_color
         case "$status" in
             PASS) status_color="$GREEN" ;;
@@ -317,11 +323,12 @@ print_summary() {
 
     # ── Full output per scan ─────────────────────────────────────────────
 
-    for name in "${SCAN_ORDER[@]}"; do
+    for idx in "${!SCAN_ORDER[@]}"; do
+        local name="${SCAN_ORDER[$idx]}"
         local log="$WORK_DIR/${name}.log"
         [ ! -f "$log" ] && continue
 
-        local status="${RESULTS[$name]}"
+        local status="${RESULT_BY_IDX[$idx]}"
         local status_color
 
         case "$status" in
@@ -354,8 +361,20 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
     exit 0
 fi
 
+# nproc is GNU coreutils only - macOS has neither it nor a package that
+# provides it by default, so fall back to the BSD/POSIX equivalents.
+cpu_count() {
+    if command -v nproc >/dev/null 2>&1; then
+        nproc
+    elif command -v sysctl >/dev/null 2>&1; then
+        sysctl -n hw.ncpu 2>/dev/null
+    else
+        getconf _NPROCESSORS_ONLN 2>/dev/null || echo "?"
+    fi
+}
+
 echo -e "${BOLD}Bambuddy Security Scanner${NC}"
-echo -e "${DIM}$(date '+%Y-%m-%d %H:%M:%S')  •  $(nproc) CPU cores available${NC}"
+echo -e "${DIM}$(date '+%Y-%m-%d %H:%M:%S')  •  $(cpu_count) CPU cores available${NC}"
 echo ""
 
 SCANS_TO_RUN=()

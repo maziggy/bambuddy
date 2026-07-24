@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2, Save, Beaker, Palette, Zap, Tag, Unlink } from 'lucide-react';
 import { api, ApiError } from '../api/client';
-import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, BuiltinFilament, SpoolmanBulkCreateResult, SpoolKProfileInput, SpoolmanFilamentEntry } from '../api/client';
+import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, BuiltinFilament, SpoolmanBulkCreateResult, SpoolKProfileInput, SpoolmanFilamentEntry, LinkedCode } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import type { SpoolFormData, PrinterWithCalibrations, ColorPreset } from './spool-form/types';
@@ -39,6 +39,21 @@ interface SpoolFormModalProps {
   spoolmanMode?: boolean;
   /** Query key to invalidate after mutations (differs for Spoolman vs local). */
   spoolsQueryKey?: string[];
+  /**
+   * Prefill for a fresh `create` (e.g. from the scan-to-add barcode/label
+   * flow). Merged over `defaultFormData` and switches the form into
+   * quick-add mode, since scanned data has no `slicer_filament` match.
+   */
+  initialData?: Partial<SpoolFormData>;
+  /** Forces `data_origin` on create (e.g. "barcode_scan"). Ignored when editing. */
+  forcedDataOrigin?: string;
+  /**
+   * Sibling GTIN/SKU codes discovered alongside `initialData.barcode` during
+   * a scan-to-add flow (see `ScannedFilamentResult.linked_codes`). Read-only
+   * display only — ignored when editing (the spool's own persisted
+   * `linked_codes` are used instead).
+   */
+  scannedLinkedCodes?: LinkedCode[];
 }
 
 export function SpoolFormModal({
@@ -51,6 +66,9 @@ export function SpoolFormModal({
   onSpoolsCreated,
   spoolmanMode = false,
   spoolsQueryKey = ['inventory-spools'],
+  initialData,
+  forcedDataOrigin,
+  scannedLinkedCodes,
 }: SpoolFormModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -371,6 +389,10 @@ export function SpoolFormModal({
           low_stock_threshold_pct: spool.low_stock_threshold_pct ?? null,
           location_id: spool.location_id ?? null,
           spoolman_filament_id: null,
+          // A copy represents a new, not-yet-scanned physical spool — carrying
+          // over the source's barcode would make it falsely resolve to this
+          // copy on a later scan of the original item.
+          barcode: isCopying ? '' : (spool.barcode || ''),
         });
         setPresetInputValue(spool.slicer_filament_name || spool.slicer_filament || '');
 
@@ -386,6 +408,15 @@ export function SpoolFormModal({
         } else {
           setSelectedProfiles(new Set());
         }
+      } else if (initialData) {
+        // Prefill from the scan-to-add barcode/label flow. Quick-add is the
+        // right validation mode here — scanned data has no `slicer_filament`
+        // match, and quick-add only requires `material`.
+        setFormData({ ...defaultFormData, ...initialData });
+        setPresetInputValue('');
+        setSelectedProfiles(new Set());
+        setQuickAdd(true);
+        setQuantity(1);
       } else {
         setFormData(defaultFormData);
         setPresetInputValue('');
@@ -398,7 +429,7 @@ export function SpoolFormModal({
       setWeightTouched(false);
       setLocationIdTouched(false);
     }
-  }, [isOpen, spool, mode, isCopying]);
+  }, [isOpen, spool, mode, isCopying, initialData]);
 
   // Legacy rows may have storage_location text but no location_id yet — link when catalog loads.
   useEffect(() => {
@@ -759,6 +790,7 @@ export function SpoolFormModal({
       cost_per_kg: formData.cost_per_kg,
       category: formData.category.trim() || null,
       low_stock_threshold_pct: formData.low_stock_threshold_pct,
+      barcode: formData.barcode.trim() || null,
       ...(spoolmanMode ? { spoolman_filament_id: formData.spoolman_filament_id } : {}),
     };
 
@@ -772,6 +804,11 @@ export function SpoolFormModal({
     // Backend derives storage_location; omitting on untouched edit avoids stale overwrites.
     if (!isEditing || locationIdTouched) {
       data.location_id = formData.location_id;
+    }
+
+    // Scan-to-add provenance: only applies to a fresh create, never an edit.
+    if (!isEditing && forcedDataOrigin) {
+      data.data_origin = forcedDataOrigin;
     }
 
     if (isEditing) {
@@ -959,6 +996,7 @@ export function SpoolFormModal({
                   }}
                   globalLowStockThreshold={globalLowStockThreshold}
                   spoolmanMode={spoolmanMode}
+                  linkedCodes={isEditing ? spool?.linked_codes : scannedLinkedCodes}
                 />
               </div>
 

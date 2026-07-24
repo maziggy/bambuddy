@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Palette, Plus, Trash2, RotateCcw, Loader2, Pencil, Check, X, Search, Download, Upload, Cloud } from 'lucide-react';
+import { Palette, Plus, Trash2, RotateCcw, Loader2, Pencil, Check, X, Search, Download, Upload, Cloud, Database } from 'lucide-react';
 import { api, getAuthToken } from '../api/client';
 import type { ColorCatalogEntry } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
@@ -36,6 +36,7 @@ export function ColorCatalogSettings() {
   // Sync state
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ fetched: number; total: number } | null>(null);
+  const [syncingSpoolmanDBCommunity, setSyncingSpoolmanDBCommunity] = useState(false);
 
   // Confirmation modals
   const [deleteEntry, setDeleteEntry] = useState<ColorCatalogEntry | null>(null);
@@ -235,6 +236,23 @@ export function ColorCatalogSettings() {
     }
   };
 
+  const handleSyncSpoolmanDBCommunity = async () => {
+    setSyncingSpoolmanDBCommunity(true);
+    try {
+      const result = await api.syncSpoolmanDBCommunityColors();
+      if (result.added === 0) {
+        showToast(t('settings.colorCatalog.syncUpToDate', { count: result.total }), 'success');
+      } else {
+        showToast(t('settings.colorCatalog.syncComplete', { added: result.added, skipped: result.skipped }), 'success');
+      }
+      await loadCatalog();
+    } catch {
+      showToast(t('settings.colorCatalog.syncFailed'), 'error');
+    } finally {
+      setSyncingSpoolmanDBCommunity(false);
+    }
+  };
+
   const toggleSelect = (id: number) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -363,6 +381,19 @@ export function ColorCatalogSettings() {
                   ? `${Math.min(syncProgress.fetched, syncProgress.total)} / ${syncProgress.total}`
                   : t('settings.colorCatalog.starting')
                 : t('settings.colorCatalog.sync')}
+            </span>
+          </button>
+          <button
+            onClick={handleSyncSpoolmanDBCommunity}
+            disabled={syncingSpoolmanDBCommunity}
+            className="px-3 py-1.5 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-bambu-gray hover:text-white transition-colors flex items-center gap-1.5"
+            title={t('settings.colorCatalog.syncSpoolmanDbCommunityTooltip')}
+          >
+            {syncingSpoolmanDBCommunity ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+            <span className="hidden sm:inline">
+              {syncingSpoolmanDBCommunity
+                ? t('settings.colorCatalog.starting')
+                : t('settings.colorCatalog.syncSpoolmanDbCommunity')}
             </span>
           </button>
           <button

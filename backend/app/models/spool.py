@@ -67,6 +67,9 @@ class Spool(Base):
     encode_time: Mapped[datetime | None] = mapped_column(DateTime)  # When spool was encoded/written to tag
     tag_uid: Mapped[str | None] = mapped_column(String(32))  # RFID tag UID (up to 32 hex chars)
     tray_uuid: Mapped[str | None] = mapped_column(String(32))  # Bambu Lab spool UUID (32 hex chars)
+    barcode: Mapped[str | None] = mapped_column(
+        String(64), index=True
+    )  # Scanned UPC/EAN (canonicalized, no leading zeros)
     data_origin: Mapped[str | None] = mapped_column(String(20))  # How data was populated: manual, rfid_auto, nfc_link
     tag_type: Mapped[str | None] = mapped_column(String(20))  # Tag vendor: bambulab, generic, etc.
     archived_at: Mapped[datetime | None] = mapped_column(DateTime)  # NULL = active
@@ -75,9 +78,21 @@ class Spool(Base):
 
     k_profiles: Mapped[list["SpoolKProfile"]] = relationship(back_populates="spool", cascade="all, delete-orphan")
     assignments: Mapped[list["SpoolAssignment"]] = relationship(back_populates="spool", cascade="all, delete-orphan")
+    codes: Mapped[list["SpoolCode"]] = relationship(back_populates="spool", cascade="all, delete-orphan")
     location: Mapped["Location | None"] = relationship(back_populates="spools")
+
+    @property
+    def linked_codes(self) -> list["SpoolCode"]:
+        """Every discovered code except the primary one (already shown via `barcode`).
+
+        Read-only display data for SpoolResponse's `linked_codes` field —
+        callers must eager-load `codes` (`selectinload(Spool.codes)`) first;
+        this never triggers its own lazy load in an async context.
+        """
+        return [c for c in self.codes if not c.is_primary]
 
 
 from backend.app.models.location import Location  # noqa: E402
 from backend.app.models.spool_assignment import SpoolAssignment  # noqa: E402
+from backend.app.models.spool_code import SpoolCode  # noqa: E402
 from backend.app.models.spool_k_profile import SpoolKProfile  # noqa: E402

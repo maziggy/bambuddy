@@ -276,6 +276,14 @@ class AppSettings(BaseModel):
         description="Low stock threshold percentage (%) for inventory filtering and display",
     )
 
+    # Gates the outbound lookups (Open Filament Database, SpoolmanDB-Community)
+    # used by scan-to-add barcode/label scanning. Scanning against the user's
+    # own inventory is always local and unaffected by this toggle.
+    barcode_lookup_enabled: bool = Field(
+        default=True,
+        description="Allow barcode/label scanning to query community filament databases (Open Filament Database, SpoolmanDB-Community)",
+    )
+
     # Session policy (#1706) — admin-set ceiling for user session lifetime.
     # Default 24h preserves the M-2 audit reduction from 7 days. Max 720h
     # (30 days) bounds blast radius if an admin chooses a long session.
@@ -554,6 +562,7 @@ class AppSettingsUpdate(BaseModel):
     prometheus_enabled: bool | None = None
     prometheus_token: str | None = None
     low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)
+    barcode_lookup_enabled: bool | None = None
     session_max_hours: int | None = Field(default=None, ge=1, le=720)
     user_notifications_enabled: bool | None = None
     default_bed_levelling: TriState | None = None

@@ -1,0 +1,134 @@
+"""Unit tests for the filament label OCR heuristic parser.
+
+Tests:
+- parse_title() field extraction (brand, material, subtype, color, weight, temps)
+- extract_barcode() labelled and bare-digit-run extraction
+"""
+
+from backend.app.services.filament_label_parser import extract_barcode, extract_sku, parse_title
+
+
+class TestParseTitle:
+    def test_empty_title_returns_empty_dict(self):
+        assert parse_title("") == {}
+        assert parse_title(None) == {}
+
+    def test_sunlu_pla_plus_black_1kg(self):
+        fields = parse_title("SUNLU PLA+ Filament 1.75mm Black 1KG")
+        assert fields["brand"] == "Sunlu"
+        assert fields["material"] == "PLA"
+        assert "Plus" in fields["subtype"]
+        assert fields["color_name"] == "Black"
+        assert fields["rgba"] == "000000FF"
+        assert fields["label_weight"] == 1000
+        assert fields["diameter_mm"] == 1.75
+
+    def test_overture_petg_matte_gray_1kg(self):
+        fields = parse_title("Overture PETG 1.75 mm Matte Gray 1kg Spool")
+        assert fields["brand"] == "Overture"
+        assert fields["material"] == "PETG"
+        assert fields["subtype"] == "Matte"
+        assert fields["color_name"] == "Gray"
+        assert fields["label_weight"] == 1000
+
+    def test_esun_abs_plus_red_1000g(self):
+        fields = parse_title("eSUN ABS+ 3D Printer Filament 1.75mm Red 1000g")
+        assert fields["brand"] == "eSUN"
+        assert fields["material"] == "ABS"
+        assert fields["color_name"] == "Red"
+        assert fields["label_weight"] == 1000
+
+    def test_polymaker_polyterra_carbon_fiber_500g(self):
+        fields = parse_title("Polymaker PolyTerra PLA Carbon Fiber 1.75mm 500g")
+        assert fields["brand"] == "Polymaker"
+        assert fields["material"] == "PLA"
+        assert fields["subtype"] == "Carbon Fiber"
+        assert fields["label_weight"] == 500
+
+    def test_short_material_token_does_not_false_match_inside_brand(self):
+        # "PA" (Nylon) must not fire on "PAnchroma" / similar; Panchroma isn't a
+        # known brand here, but the guard applies generally to brand-name overlap.
+        fields = parse_title("Overture PETG 1.75mm Black 1kg")
+        assert fields["material"] == "PETG"
+
+    def test_extra_brands_augment_builtin_list(self):
+        fields = parse_title("Panchroma PLA White 1kg", extra_brands=["Panchroma"])
+        assert fields["brand"] == "Panchroma"
+
+    def test_nozzle_temp_range(self):
+        fields = parse_title("Generic PLA 190-220C Black 1kg")
+        assert fields["nozzle_temp_min"] == 190
+        assert fields["nozzle_temp_max"] == 220
+
+    def test_explicit_hex_overrides_color_name_guess(self):
+        fields = parse_title("Generic PLA Black #FF00FF 1kg")
+        assert fields["rgba"] == "FF00FFFF"
+
+    def test_no_material_no_brand_returns_partial_fields(self):
+        fields = parse_title("Mystery Spool 1kg")
+        assert "material" not in fields
+        assert "brand" not in fields
+        assert fields["label_weight"] == 1000
+
+
+class TestExtractBarcode:
+    def test_labelled_ean(self):
+        assert extract_barcode("EAN: 6938936716785") == "6938936716785"
+
+    def test_labelled_upc_with_hash(self):
+        assert extract_barcode("UPC#012345678905") == "012345678905"
+
+    def test_bare_digit_run(self):
+        assert extract_barcode("Some label text 6938936716785 more text") == "6938936716785"
+
+    def test_no_barcode_present(self):
+        assert extract_barcode("SUNLU PLA+ Black 1KG") is None
+
+    def test_too_short_digit_run_rejected(self):
+        assert extract_barcode("Order #12345") is None
+
+    def test_too_long_digit_run_rejected(self):
+        assert extract_barcode("Serial 123456789012345678") is None
+
+    def test_out_of_range_labelled_match_falls_back_to_valid_bare_gtin(self):
+        """A labelled match outside the valid 8-14 digit range (e.g. OCR noise
+        glued extra digits onto the EAN field) must not block the bare-digit
+        fallback from finding a real GTIN elsewhere in the same text - the
+        out-of-range candidate is truthy, which previously short-circuited the
+        fallback and returned None even with a valid barcode right there."""
+        assert extract_barcode("EAN: 1234567890123456789 more text 6938936716785 end") == "6938936716785"
+
+
+class TestExtractSku:
+    """Fallback used by parse_label when extract_barcode finds no GTIN —
+    some boxes (e.g. Panchroma, Polylite) print only a labelled SKU, no
+    scannable retail barcode at all."""
+
+    def test_labelled_sku_with_colon(self):
+        assert extract_sku("Panchroma PLA Silk Gold SKU: CA03006") == "CA03006"
+
+    def test_labelled_sku_no_colon(self):
+        # OCR often loses the colon, or the label/value sit on separate
+        # lines that collapse to a single space after whitespace normalization.
+        assert extract_sku("PolyLite PLA Hedgehog SKU PA02106") == "PA02106"
+
+    def test_labelled_article_number(self):
+        assert extract_sku("Article #: ALZMNTABS01") == "ALZMNTABS01"
+
+    def test_labelled_p_slash_n(self):
+        assert extract_sku("P/N: X004ASRBVZ") == "X004ASRBVZ"
+
+    def test_labelled_ref(self):
+        assert extract_sku("REF: GF-A00123") == "GF-A00123"
+
+    def test_result_is_uppercased(self):
+        assert extract_sku("sku: alzmntabs01") == "ALZMNTABS01"
+
+    def test_no_label_present_returns_none(self):
+        assert extract_sku("SUNLU PLA+ Black 1KG") is None
+
+    def test_word_immediately_after_sku_is_not_mistaken_for_a_code(self):
+        """A pure word (no digits) right after "SKU" — e.g. plain sentence
+        text — must not be captured as if it were a code."""
+        assert extract_sku("no sku here at all, just PLA Basic 1kg") is None
+        assert extract_sku("This SKU is currently out of stock") is None

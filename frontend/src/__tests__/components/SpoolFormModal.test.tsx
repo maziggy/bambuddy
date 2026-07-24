@@ -1188,3 +1188,178 @@ describe('SpoolFormModal header spool ID (#1385)', () => {
     expect(screen.queryByText(/^#\d+$/)).not.toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Scan-to-add barcode/label prefill (initialData / forcedDataOrigin)
+// ---------------------------------------------------------------------------
+describe('SpoolFormModal scan-to-add prefill', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('prefills fields from initialData and switches into quick-add mode', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        mode="create"
+        currencySymbol="$"
+        initialData={{
+          material: 'PETG',
+          brand: 'Overture',
+          color_name: 'Blue',
+          rgba: '0050FFFF',
+          label_weight: 750,
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument();
+    });
+
+    // Quick add mode is switched on automatically — its Quantity field is a
+    // reliable, already-used proxy for quickAdd=true elsewhere in this file.
+    expect(screen.getByText('Quantity')).toBeInTheDocument();
+
+    const addButtons = screen.getAllByRole('button', { name: /add spool/i });
+    const submitButton = addButtons.find(btn => btn.tagName === 'BUTTON' && btn.querySelector('svg.lucide-save'));
+    fireEvent.click(submitButton!);
+
+    await waitFor(() => {
+      expect(api.createSpool).toHaveBeenCalledTimes(1);
+    });
+
+    const [payload] = vi.mocked(api.createSpool).mock.calls[0] as [Record<string, unknown>];
+    expect(payload).toHaveProperty('material', 'PETG');
+    expect(payload).toHaveProperty('brand', 'Overture');
+    expect(payload).toHaveProperty('color_name', 'Blue');
+    expect(payload).toHaveProperty('rgba', '0050FFFF');
+    expect(payload).toHaveProperty('label_weight', 750);
+  });
+
+  it('includes forcedDataOrigin and the scanned barcode in the create payload', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        mode="create"
+        currencySymbol="$"
+        initialData={{ material: 'PLA', barcode: '6938936716785' }}
+        forcedDataOrigin="barcode_scan"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument();
+    });
+
+    // The barcode field is visibly prefilled, not just silently carried in the payload.
+    expect(screen.getByDisplayValue('6938936716785')).toBeInTheDocument();
+
+    const addButtons = screen.getAllByRole('button', { name: /add spool/i });
+    const submitButton = addButtons.find(btn => btn.tagName === 'BUTTON' && btn.querySelector('svg.lucide-save'));
+    fireEvent.click(submitButton!);
+
+    await waitFor(() => {
+      expect(api.createSpool).toHaveBeenCalledTimes(1);
+    });
+
+    const [payload] = vi.mocked(api.createSpool).mock.calls[0] as [Record<string, unknown>];
+    expect(payload).toHaveProperty('data_origin', 'barcode_scan');
+    expect(payload).toHaveProperty('barcode', '6938936716785');
+  });
+
+  it('omits data_origin and sends a null barcode for a normal manual create', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        mode="create"
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Add Spool' })).toBeInTheDocument();
+    });
+
+    const addButtons = screen.getAllByRole('button', { name: /add spool/i });
+    const submitButton = addButtons.find(btn => btn.tagName === 'BUTTON' && btn.querySelector('svg.lucide-save'));
+    fireEvent.click(submitButton!);
+
+    await waitFor(() => {
+      expect(api.createSpool).toHaveBeenCalledTimes(1);
+    });
+
+    const [payload] = vi.mocked(api.createSpool).mock.calls[0] as [Record<string, unknown>];
+    expect(payload).not.toHaveProperty('data_origin');
+    expect(payload).toHaveProperty('barcode', null);
+  });
+
+  it('does not apply forcedDataOrigin when editing an existing spool', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={existingSpool}
+        mode="edit"
+        currencySymbol="$"
+        forcedDataOrigin="barcode_scan"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+
+    const saveButton = screen.getByRole('button', { name: /save/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(api.updateSpool).toHaveBeenCalledTimes(1);
+    });
+
+    const [, payload] = vi.mocked(api.updateSpool).mock.calls[0] as [number, Record<string, unknown>];
+    expect(payload).not.toHaveProperty('data_origin');
+    // barcode is a normal editable field now — always sent, null since
+    // existingSpool has none set.
+    expect(payload).toHaveProperty('barcode', null);
+  });
+
+  it('prefills the barcode field from an existing spool when editing', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={{ ...existingSpool, barcode: '6938936716785' }}
+        mode="edit"
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Spool')).toBeInTheDocument();
+    });
+
+    expect(screen.getByDisplayValue('6938936716785')).toBeInTheDocument();
+  });
+
+  it('clears the barcode field when copying a spool — a copy is a new, unscanned physical item', async () => {
+    render(
+      <SpoolFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        spool={{ ...existingSpool, barcode: '6938936716785' }}
+        mode="copy"
+        currencySymbol="$"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Copy Spool' })).toBeInTheDocument();
+    });
+
+    expect(screen.queryByDisplayValue('6938936716785')).not.toBeInTheDocument();
+  });
+});

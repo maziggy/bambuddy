@@ -1,5 +1,5 @@
 
-import type { Printer, SpoolKProfile } from '../../api/client';
+import type { LinkedCode, Printer, SpoolKProfile } from '../../api/client';
 
 // Catalog color display type (moved from component)
 export interface CatalogDisplayColor {
@@ -40,6 +40,10 @@ export interface SpoolFormData {
   // When set the spool is linked to a specific Spoolman filament catalog entry;
   // the backend skips find_or_create_filament() and uses this ID directly.
   spoolman_filament_id: number | null;
+  // Scanned UPC/EAN, populated automatically by the scan-to-add barcode/label
+  // flow, or entered manually to teach the native barcode lookup a mapping
+  // ahead of time. Optional and editable — not tied to any single source.
+  barcode: string;
 }
 
 export const defaultFormData: SpoolFormData = {
@@ -61,6 +65,7 @@ export const defaultFormData: SpoolFormData = {
   low_stock_threshold_pct: null,
   location_id: null,
   spoolman_filament_id: null,
+  barcode: '',
 };
 
 // Printer with calibrations type
@@ -148,6 +153,10 @@ export interface AdditionalSectionProps extends SectionProps {
   // When true the empty-spool weight is managed by Spoolman on the filament
   // object, so SpoolWeightPicker is hidden and an info notice is shown instead.
   spoolmanMode?: boolean;
+  // Sibling GTIN/SKU codes discovered by cross-referencing OFD/SpoolmanDB-Community
+  // against the primary Barcode field's value (see _resolve_barcode in
+  // routes/inventory.py) — read-only display only, never submitted with the form.
+  linkedCodes?: LinkedCode[];
 }
 
 // PA Profile section props

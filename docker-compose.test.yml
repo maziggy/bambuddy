@@ -8,6 +8,16 @@ services:
     container_name: bambuddy-backend-test
     volumes:
       - ./backend:/app/backend:ro
+      # test_launcher_shutdown_config.py checks these deployment files stay
+      # consistent (graceful-shutdown flags/timeouts) - they're not baked into
+      # the test image (Dockerfile.test only COPYs what's needed to run pytest),
+      # so surface them the same way ./backend already is.
+      - ./Dockerfile:/app/Dockerfile:ro
+      - ./docker-compose.yml:/app/docker-compose.yml:ro
+      - ./deploy:/app/deploy:ro
+      - ./install:/app/install:ro
+      - ./installers:/app/installers:ro
+      - ./spoolbuddy:/app/spoolbuddy:ro
     environment:
       - TESTING=1
       - PYTHONUNBUFFERED=1

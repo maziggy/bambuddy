@@ -30,6 +30,7 @@ class MappedSpoolFields(TypedDict):
     color_name: str | None
     color_name_is_synthesized: bool
     rgba: str | None
+    barcode: str | None
     label_weight: int | None
     core_weight: int | None
     core_weight_catalog_id: None
@@ -57,6 +58,7 @@ class MappedSpoolFields(TypedDict):
     storage_location: str | None
     location_id: int | None
     k_profiles: list[Any]
+    linked_codes: list[dict[str, Any]]
 
 
 class NormalizedVendorRef(TypedDict):
@@ -199,6 +201,35 @@ def _extract_extra_str(extra: dict, key: str) -> str:
     return decoded if isinstance(decoded, str) else ""
 
 
+def _extract_linked_codes(extra: dict, primary_barcode: str | None) -> list[dict[str, Any]]:
+    """Extract the sibling GTIN/SKU codes stored under extra.bambu_linked_codes.
+
+    Stored as a JSON-encoded list of ``{"code", "kind", "is_refill"}`` dicts
+    (same shape as ``SpoolCode`` rows in the relational-DB inventory mode —
+    see ``_persist_barcode_codes_for_spool`` in ``routes/inventory.py``).
+    Excludes `primary_barcode` itself since that's already shown via the
+    `barcode` field. Tolerates missing/malformed data (returns []).
+    """
+    raw = extra.get("bambu_linked_codes")
+    if not isinstance(raw, str) or not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        code = item.get("code")
+        if not isinstance(code, str) or not code or code == primary_barcode:
+            continue
+        result.append({"code": code, "kind": item.get("kind") or "gtin", "is_refill": bool(item.get("is_refill"))})
+    return result
+
+
 def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     """Convert a raw Spoolman spool dict to the InventorySpool-compatible format.
 
@@ -311,6 +342,10 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         "color_name": color_name,
         "color_name_is_synthesized": color_name_is_synthesized,
         "rgba": rgba,
+        # Spoolman has no native barcode field — persisted under
+        # spool.extra.bambu_barcode (JSON-encoded string), same pattern as
+        # bambu_slicer_filament/bambu_color_name.
+        "barcode": (_extract_extra_str(extra, "bambu_barcode") or None),
         "brand": vendor.get("name") or None,
         "label_weight": label_weight,
         "core_weight": _safe_int(
@@ -349,4 +384,5 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         "storage_location": spool.get("location") or None,
         "location_id": None,
         "k_profiles": [],
+        "linked_codes": _extract_linked_codes(extra, _extract_extra_str(extra, "bambu_barcode") or None),
     }

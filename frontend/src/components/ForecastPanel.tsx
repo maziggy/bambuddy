@@ -1273,7 +1273,7 @@ function ShoppingListPanel({
           nozzle_temp_min: null, nozzle_temp_max: null,
           note: item.note ?? null,
           tag_uid: null, tray_uuid: null,
-          data_origin: 'manual', tag_type: null,
+          data_origin: 'manual', tag_type: null, barcode: null,
           cost_per_kg: null,
           last_scale_weight: null, last_weighed_at: null,
           weight_used: 0,

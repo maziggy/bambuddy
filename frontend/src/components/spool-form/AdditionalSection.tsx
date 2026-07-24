@@ -178,6 +178,7 @@ export function AdditionalSection({
   onCreateLocation,
   globalLowStockThreshold,
   spoolmanMode = false,
+  linkedCodes = [],
 }: AdditionalSectionProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -370,6 +371,36 @@ export function AdditionalSection({
         <p className="text-xs text-bambu-gray mt-1">
           {t('inventory.lowStockThresholdOverrideHelp', { global: globalLowStockThreshold })}
         </p>
+      </div>
+
+      {/* Barcode — auto-filled by Scan to Add (scan/photo/manual, matched from
+          inventory or the Open Filament Database), or entered here manually
+          to teach the native lookup a mapping ahead of time. */}
+      <div>
+        <label className="block text-sm font-medium text-bambu-gray mb-1" htmlFor="spool-barcode">
+          {t('inventory.barcode', 'Barcode')}
+        </label>
+        <input
+          id="spool-barcode"
+          type="text"
+          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm font-mono placeholder:text-bambu-gray/50 placeholder:font-sans focus:outline-none focus:border-bambu-green"
+          placeholder={t('inventory.barcodePlaceholder', 'e.g. 6938936716785')}
+          value={formData.barcode}
+          maxLength={64}
+          onChange={(e) => updateField('barcode', e.target.value)}
+        />
+        <p className="text-xs text-bambu-gray mt-1">
+          {t('inventory.barcodeHelp', 'Filled in automatically by Scan Barcode. Enter one manually so a future scan of the same code matches this spool instantly.')}
+        </p>
+        {linkedCodes.length > 0 && (
+          <p className="text-xs text-bambu-gray mt-1 font-mono">
+            {t('inventory.linkedCodesLabel', 'Also matches: {{codes}}', {
+              codes: linkedCodes
+                .map((c) => (c.is_refill ? `${c.code} (${t('inventory.linkedCodesRefill', 'refill')})` : c.code))
+                .join(', '),
+            })}
+          </p>
+        )}
       </div>
 
       {/* Note */}

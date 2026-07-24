@@ -646,6 +646,8 @@ export default {
     fans: {
       partCooling: 'Parça Soğutma Fanı',
       auxiliary: 'Yardımcı Fan',
+      leftAuxiliary: 'Sol Yardımcı Fan',
+      exhaust: 'Egzoz',
       chamber: 'Hazne Fanı',
     },
     // HMS hataları

@@ -650,6 +650,8 @@ export default {
     fans: {
       partCooling: 'Part Cooling Fan',
       auxiliary: 'Auxiliary Fan',
+      leftAuxiliary: 'Left Auxiliary Fan',
+      exhaust: 'Exhaust',
       chamber: 'Chamber Fan',
     },
     // HMS errors

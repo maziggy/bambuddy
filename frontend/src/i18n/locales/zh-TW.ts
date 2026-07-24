@@ -646,6 +646,8 @@ export default {
     fans: {
       partCooling: '零件冷卻風扇',
       auxiliary: '輔助風扇',
+      leftAuxiliary: '左輔助風扇',
+      exhaust: '排氣',
       chamber: '腔室風扇',
     },
     // HMS errors

@@ -646,6 +646,8 @@ export default {
     fans: {
       partCooling: 'Ventilador de resfriamento da peça',
       auxiliary: 'Ventilador auxiliar',
+      leftAuxiliary: 'Ventilador auxiliar esquerdo',
+      exhaust: 'Exaustão',
       chamber: 'Ventilador da câmara',
     },
     // HMS errors

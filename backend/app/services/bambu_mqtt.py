@@ -357,6 +357,14 @@ class PrinterState:
     big_fan1_speed: int | None = None  # Auxiliary fan
     big_fan2_speed: int | None = None  # Chamber/exhaust fan
     heatbreak_fan_speed: int | None = None  # Hotend heatbreak fan
+    # Left auxiliary part cooling fan (optional accessory on P2S/X2D). Reported ONLY
+    # via device.airduct.parts (decoded part id 10 = FAN_REMOTE_COOLING_1 in Bambu
+    # Studio's AIR_FUN enum) — the firmware does NOT mirror it into any flat
+    # big_fanX_speed field, which is why it was previously dropped. 0-100 percent.
+    left_aux_fan_speed: int | None = None
+    # Chamber exhaust fan (P2S/X2D External Exhaust Fan kit). Presence is derived
+    # from the airduct parts list containing decoded id 3; a base P2S omits it.
+    exhaust_fan_present: bool = False
     # Tray change history during current print: [(global_tray_id, layer_num), ...]
     # Used by usage tracker to split filament weight on mid-print tray switch
     tray_change_log: list = field(default_factory=list)
@@ -2637,6 +2645,45 @@ class BambuMQTTClient:
                             f"[{self.serial_number}] airduct_mode changed: {self.state.airduct_mode} -> {new_mode}"
                         )
                     self.state.airduct_mode = new_mode
+                # Parse individual airduct fan parts (new-protocol models: P2S/X2D/H2*).
+                # Raw part ids are bit-packed — decoded id = raw_id >> 4 (bits 4-11),
+                # mirroring Bambu Studio DevFan::ParseV3_0. Decoded ids follow the
+                # AIR_FUN enum: 1=part cooling, 2=right aux, 3=chamber/exhaust,
+                # 10=left aux (FAN_REMOTE_COOLING_1). The airduct `parts` list only
+                # contains the fans that physically exist, so it doubles as a
+                # presence signal for the two P2S/X2D add-on kits:
+                #   - id 10 (left auxiliary part cooling fan) — reported ONLY here,
+                #     never mirrored into a flat big_fanX_speed field.
+                #   - id 3 (chamber exhaust fan) — its speed is mirrored into
+                #     big_fan2_speed, but the part is only listed when the External
+                #     Exhaust Fan kit (get_version module "eef") is installed.
+                # `state` is already a 0-100 percentage.
+                parts = airduct_data.get("parts")
+                if isinstance(parts, list):
+                    left_aux_speed = None
+                    exhaust_present = False
+                    for part in parts:
+                        if not isinstance(part, dict):
+                            continue
+                        try:
+                            part_id = int(part["id"]) >> 4
+                            part_state = int(part["state"])
+                        except (KeyError, ValueError, TypeError):
+                            continue
+                        if part_id == 10:
+                            left_aux_speed = max(0, min(100, part_state))
+                        elif part_id == 3:
+                            exhaust_present = True
+                    if left_aux_speed != self.state.left_aux_fan_speed:
+                        logger.debug(
+                            f"[{self.serial_number}] left_aux_fan_speed changed: "
+                            f"{self.state.left_aux_fan_speed} -> {left_aux_speed}"
+                        )
+                    # A full parts list without id 10 means the left aux fan is not
+                    # installed — report None so the UI can hide the widget.
+                    self.state.left_aux_fan_speed = left_aux_speed
+                    # id 3 present == chamber exhaust fan installed (base P2S omits it).
+                    self.state.exhaust_fan_present = exhaust_present
                 # Parse chamber temp - may be encoded as (target*65536+current) when > 500
                 # Check if we recently set the target locally (within 5 seconds)
                 local_set_time = self.state.temperatures.get("_chamber_target_set_time", 0)
@@ -4766,13 +4813,16 @@ class BambuMQTTClient:
         """Set fan speed.
 
         Args:
-            fan: Fan index (1=part cooling, 2=auxiliary, 3=chamber)
+            fan: Fan index (1=part cooling, 2=auxiliary, 3=chamber, 10=left auxiliary).
+                Index 10 is the optional left auxiliary part cooling fan on P2S/X2D
+                (airduct part id 10); Bambu's official machine profiles drive it with
+                "M106 P10" in start/layer-change gcode.
             speed: Speed 0-255 (0=off, 255=full)
 
         Returns:
             True if command was sent, False otherwise
         """
-        if fan not in (1, 2, 3):
+        if fan not in (1, 2, 3, 10):
             logger.warning("[%s] Invalid fan index: %s", self.serial_number, fan)
             return False
 
@@ -4790,6 +4840,10 @@ class BambuMQTTClient:
     def set_chamber_fan(self, speed: int) -> bool:
         """Set chamber fan speed (0-255)."""
         return self.set_fan_speed(3, speed)
+
+    def set_left_aux_fan(self, speed: int) -> bool:
+        """Set left auxiliary part cooling fan speed (0-255). P2S/X2D accessory."""
+        return self.set_fan_speed(10, speed)
 
     def set_airduct_mode(self, mode: str) -> bool:
         """Set air conditioning mode (cooling or heating).

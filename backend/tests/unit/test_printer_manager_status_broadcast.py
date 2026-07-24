@@ -90,6 +90,8 @@ def _fake_state(**overrides):
         "firmware_version": None,
         "gcode_file": None,
         "heatbreak_fan_speed": None,
+        "left_aux_fan_speed": None,
+        "exhaust_fan_present": False,
         "layer_num": None,
         "remaining_time": None,
         "speed_level": None,

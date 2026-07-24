@@ -603,6 +603,8 @@ export default {
     fans: {
       partCooling: '파트 냉각 팬',
       auxiliary: '보조 팬',
+      leftAuxiliary: '왼쪽 보조 팬',
+      exhaust: '배기',
       chamber: '챔버 팬'
     },
     clickToViewHmsErrors: 'HMS 오류 보기 클릭',

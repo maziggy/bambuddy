@@ -3645,8 +3645,10 @@ class TestSetChamberTemperatureAPI:
 class TestSetFanSpeedAPI:
     """Integration tests for POST /printers/{id}/fan-speed (#1661).
 
-    The fan-id mapping (part->1, aux->2, chamber->3) is the critical
-    correctness gate — wrong mapping would target the wrong physical fan.
+    The fan-id mapping (part->1, aux->2, chamber->3, aux2->10) is the
+    critical correctness gate — wrong mapping would target the wrong
+    physical fan. "aux2" (M106 P10) is the optional left auxiliary part
+    cooling fan on P2S/X2D.
     """
 
     @pytest.mark.asyncio
@@ -3669,7 +3671,7 @@ class TestSetFanSpeedAPI:
     @pytest.mark.integration
     @pytest.mark.parametrize(
         "fan_name,expected_fan_id",
-        [("part", 1), ("aux", 2), ("chamber", 3)],
+        [("part", 1), ("aux", 2), ("chamber", 3), ("aux2", 10)],
     )
     async def test_fan_id_mapping(self, async_client: AsyncClient, printer_factory, fan_name, expected_fan_id):
         """Verify each fan name maps to the correct hardware fan-id."""

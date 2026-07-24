@@ -1473,6 +1473,17 @@ const MODELS_WITH_CHAMBER_FAN: ReadonlySet<string> = new Set([
   'H2S',
 ]);
 
+// On the P2S/X2D, the enclosure fan (big_fan2 / airduct part id 3) is a
+// dedicated chamber EXHAUST fan: it's its own control and stays the same
+// regardless of cooling/heating mode (unlike the aux fan, id 2, which a flap
+// re-tasks between part-cooling and chamber-filter recirculation). Bambu's own
+// firmware/UI and Bambu Studio (FAN_CHAMBER_0_IDX -> "Exhaust") label it
+// "Exhaust" on these models. Other enclosed models (X1/P1S/H2*) keep "Chamber".
+const MODELS_WITH_EXHAUST_LABEL: ReadonlySet<string> = new Set([
+  'P2S',
+  'X2D',
+]);
+
 // Map SSDP model codes to display names
 function mapModelCode(ssdpModel: string | null): string {
   if (!ssdpModel) return '';
@@ -2338,7 +2349,7 @@ function PrinterCard({
   });
 
   const fanSpeedMutation = useMutation({
-    mutationFn: ({ fan, speed }: { fan: 'part' | 'aux' | 'chamber'; speed: number }) =>
+    mutationFn: ({ fan, speed }: { fan: 'part' | 'aux' | 'aux2' | 'chamber'; speed: number }) =>
       api.setFanSpeed(printer.id, fan, speed),
     onMutate: async ({ fan, speed }) => {
       await queryClient.cancelQueries({ queryKey: ['printerStatus', printer.id] });
@@ -2346,6 +2357,7 @@ function PrinterCard({
       const fanField = {
         part: 'cooling_fan_speed',
         aux: 'big_fan1_speed',
+        aux2: 'left_aux_fan_speed',
         chamber: 'big_fan2_speed',
       }[fan];
       queryClient.setQueryData(['printerStatus', printer.id], (old: PrinterStatus | undefined) =>
@@ -3709,7 +3721,24 @@ function PrinterCard({
               // control that does nothing. Mirrors the enclosure-door badge
               // gate above.
               const hasChamberFan = MODELS_WITH_CHAMBER_FAN.has(printer.model ?? '');
-              const fanItems = [
+              // On P2S/X2D the big_fan2 fan is the dedicated chamber EXHAUST fan
+              // ("Exhaust" in Bambu's naming) and is an add-on kit, not preinstalled:
+              // show it only when the printer actually reports it (airduct part id 3,
+              // surfaced as exhaust_fan_present). Other enclosed models (X1/P1S/H2*)
+              // have a built-in chamber fan that's always present, so they keep the
+              // existing model-list gate and the "Chamber Fan" label.
+              const isExhaustModel = MODELS_WITH_EXHAUST_LABEL.has(printer.model ?? '');
+              const chamberFanLabel = isExhaustModel
+                ? t('printers.fans.exhaust')
+                : t('printers.fans.chamber');
+              const showChamberFan = isExhaustModel ? status.exhaust_fan_present : hasChamberFan;
+              const fanItems: {
+                key: string;
+                label: string;
+                value: number;
+                Icon: typeof Fan;
+                activeClass: string;
+              }[] = [
                 {
                   key: 'part',
                   label: t('printers.fans.partCooling'),
@@ -3724,11 +3753,25 @@ function PrinterCard({
                   Icon: Wind,
                   activeClass: 'text-blue-600 dark:text-blue-400',
                 },
-                ...(hasChamberFan
+                // Left auxiliary part cooling fan (optional P2S/X2D accessory).
+                // Only reported (non-null) when the firmware lists airduct part
+                // id 10, i.e. when the fan is physically installed.
+                ...(status.left_aux_fan_speed != null
+                  ? [
+                      {
+                        key: 'aux2',
+                        label: t('printers.fans.leftAuxiliary'),
+                        value: status.left_aux_fan_speed,
+                        Icon: Wind,
+                        activeClass: 'text-indigo-600 dark:text-indigo-400',
+                      },
+                    ]
+                  : []),
+                ...(showChamberFan
                   ? [
                       {
                         key: 'chamber',
-                        label: t('printers.fans.chamber'),
+                        label: chamberFanLabel,
                         value: status.big_fan2_speed ?? 0,
                         Icon: AirVent,
                         activeClass: 'text-green-600 dark:text-green-400',
@@ -3980,7 +4023,7 @@ function PrinterCard({
                               isPending={fanSpeedMutation.isPending}
                               options={buildPresetOptions(fanSpeedPresets, '%')}
                               onClose={() => setStatusControlMenu(null)}
-                              onSubmit={(speed) => fanSpeedMutation.mutate({ fan: key as 'part' | 'aux' | 'chamber', speed })}
+                              onSubmit={(speed) => fanSpeedMutation.mutate({ fan: key as 'part' | 'aux' | 'aux2' | 'chamber', speed })}
                             />
                           )}
                         </div>

@@ -345,6 +345,11 @@ class PrinterStatus(BaseModel):
     big_fan1_speed: int | None = None  # Auxiliary fan
     big_fan2_speed: int | None = None  # Chamber/exhaust fan
     heatbreak_fan_speed: int | None = None  # Hotend heatbreak fan
+    # Left auxiliary part cooling fan (optional P2S/X2D accessory, airduct part id 10).
+    # None = not installed / not reported by this model.
+    left_aux_fan_speed: int | None = None
+    # Chamber exhaust fan present (P2S/X2D External Exhaust Fan kit; airduct part id 3).
+    exhaust_fan_present: bool = False
     # Firmware version (from info.module[name="ota"].sw_ver)
     firmware_version: str | None = None
     # Developer LAN mode: True = enabled, False = disabled (MQTT encryption), None = unknown

@@ -310,6 +310,91 @@ describe('PrintersPage', () => {
         expect(screen.getByTitle('Chamber Fan')).toBeInTheDocument();
       });
     });
+
+    // P2S/X2D left auxiliary part cooling fan (airduct part id 10) — optional
+    // hardware, so the badge must only appear when the firmware reports it.
+    const renderWithStatus = (
+      printer: typeof mockPrinters[number],
+      status: Record<string, unknown>,
+    ) => {
+      server.use(
+        http.get('/api/v1/printers/', () => HttpResponse.json([printer])),
+        http.get('/api/v1/printers/:id/status', () => HttpResponse.json(status)),
+      );
+      render(<PrintersPage />);
+    };
+
+    it('shows the exhaust tile labeled "Exhaust" on P2S when the kit is present', async () => {
+      // Exhaust fan is an add-on kit; the tile appears only when the printer
+      // reports it (airduct part id 3 -> exhaust_fan_present).
+      renderWithStatus(
+        { ...mockPrinters[0], model: 'P2S' },
+        { ...statusWithFans, exhaust_fan_present: true },
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Part Cooling Fan')).toBeInTheDocument();
+      });
+      expect(screen.getByTitle('Exhaust')).toBeInTheDocument();
+      expect(screen.queryByTitle('Chamber Fan')).not.toBeInTheDocument();
+    });
+
+    it('hides the exhaust tile on a base P2S without the kit', async () => {
+      renderWithStatus(
+        { ...mockPrinters[0], model: 'P2S' },
+        { ...statusWithFans, exhaust_fan_present: false },
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Part Cooling Fan')).toBeInTheDocument();
+      });
+      expect(screen.queryByTitle('Exhaust')).not.toBeInTheDocument();
+      expect(screen.queryByTitle('Chamber Fan')).not.toBeInTheDocument();
+    });
+
+    it('keeps the always-on "Chamber Fan" tile on X1C regardless of exhaust_fan_present', async () => {
+      renderWithStatus(
+        { ...mockPrinters[0], model: 'X1C' },
+        { ...statusWithFans, exhaust_fan_present: false },
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Chamber Fan')).toBeInTheDocument();
+      });
+      expect(screen.queryByTitle('Exhaust')).not.toBeInTheDocument();
+    });
+
+    it('hides the left aux badge when the accessory is not reported', async () => {
+      renderWithStatus({ ...mockPrinters[0], model: 'P2S' }, statusWithFans);
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Part Cooling Fan')).toBeInTheDocument();
+      });
+      expect(screen.queryByTitle('Left Auxiliary Fan')).not.toBeInTheDocument();
+    });
+
+    it('shows left aux fan badge when the accessory is installed (P2S)', async () => {
+      renderWithStatus(
+        { ...mockPrinters[0], model: 'P2S' },
+        { ...statusWithFans, left_aux_fan_speed: 80 },
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Left Auxiliary Fan')).toBeInTheDocument();
+      });
+    });
+
+    it('shows left aux fan badge even at 0% while installed', async () => {
+      renderWithStatus(
+        { ...mockPrinters[0], model: 'P2S' },
+        { ...statusWithFans, left_aux_fan_speed: 0 },
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Left Auxiliary Fan')).toBeInTheDocument();
+      });
+    });
+
   });
 
   describe('empty state', () => {

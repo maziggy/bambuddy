@@ -1,0 +1,200 @@
+2026-07-24 21:27:52,421 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-07-24 21:28:31,362 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-24 21:30:42,550 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 21:35:42,536 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 21:40:42,526 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 21:45:42,511 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 21:50:42,485 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 21:53:22,604 INFO [backend.app.services.bambu_mqtt] [2fd56462] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 21:53:22,675 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=22, 0 profiles, expected=0.4
+2026-07-24 21:53:22,675 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 21:53:22,675 INFO [backend.app.services.bambu_mqtt] [2fd56462] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 21:53:52,607 INFO [uvicorn.access] [-] [IP]:56024 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-24 21:54:04,133 INFO [uvicorn.access] [-] [IP]:32772 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-24 21:54:04,155 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-24 21:54:04,157 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-24 21:54:04,157 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-07-24 21:54:04,727 INFO [uvicorn.access] [-] [IP]:32772 - "POST /api/v1/inventory/spools HTTP/1.1" 200
+2026-07-24 21:54:04,759 INFO [uvicorn.access] [-] [IP]:32772 - "PUT /api/v1/inventory/spools/23/k-profiles HTTP/1.1" 200
+2026-07-24 21:54:17,577 INFO [backend.app.services.bambu_mqtt] [35626094] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 21:54:17,650 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=23, 0 profiles, expected=0.4
+2026-07-24 21:54:17,650 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 21:54:17,650 INFO [backend.app.services.bambu_mqtt] [35626094] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 21:54:58,754 INFO [backend.app.services.bambu_mqtt] [88560e16] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 21:54:58,820 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=24, 0 profiles, expected=0.4
+2026-07-24 21:54:58,820 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 21:54:58,821 INFO [backend.app.services.bambu_mqtt] [88560e16] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 21:55:29,472 INFO [uvicorn.access] [-] [IP]:55298 - "POST /api/v1/inventory/spools HTTP/1.1" 200
+2026-07-24 21:55:29,497 INFO [uvicorn.access] [-] [IP]:55298 - "PUT /api/v1/inventory/spools/24/k-profiles HTTP/1.1" 200
+2026-07-24 21:55:42,551 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 21:55:45,152 INFO [backend.app.services.bambu_mqtt] [11f1b5e6] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 21:55:45,212 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=25, 0 profiles, expected=0.4
+2026-07-24 21:55:45,212 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 21:55:45,213 INFO [backend.app.services.bambu_mqtt] [11f1b5e6] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 21:56:10,012 INFO [backend.app.services.bambu_mqtt] [76a7863e] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 21:56:10,223 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=26, 0 profiles, expected=0.4
+2026-07-24 21:56:10,223 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 21:56:10,224 INFO [backend.app.services.bambu_mqtt] [76a7863e] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 21:56:18,990 INFO [uvicorn.access] [-] [IP]:39896 - "PATCH /api/v1/inventory/spools/2 HTTP/1.1" 200
+2026-07-24 21:56:19,019 INFO [uvicorn.access] [-] [IP]:39896 - "PUT /api/v1/inventory/spools/2/k-profiles HTTP/1.1" 200
+2026-07-24 21:56:21,749 INFO [backend.app.services.bambu_mqtt] [b4bf7253] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 21:56:21,889 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=27, 0 profiles, expected=0.4
+2026-07-24 21:56:21,890 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 21:56:21,890 INFO [backend.app.services.bambu_mqtt] [b4bf7253] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 21:56:45,531 INFO [uvicorn.access] [-] [IP]:45014 - "POST /api/v1/inventory/spools HTTP/1.1" 200
+2026-07-24 21:56:45,636 INFO [uvicorn.access] [-] [IP]:45014 - "PUT /api/v1/inventory/spools/25/k-profiles HTTP/1.1" 200
+2026-07-24 22:00:42,531 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 22:03:33,092 INFO [backend.app.services.bambu_mqtt] [708be525] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 22:03:33,162 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=28, 0 profiles, expected=0.4
+2026-07-24 22:03:33,163 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 22:03:33,163 INFO [backend.app.services.bambu_mqtt] [708be525] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 22:03:48,530 INFO [backend.app.services.bambu_mqtt] [ae524af5] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 22:03:48,589 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=29, 0 profiles, expected=0.4
+2026-07-24 22:03:48,589 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 22:03:48,590 INFO [backend.app.services.bambu_mqtt] [ae524af5] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 22:03:52,670 INFO [backend.app.services.bambu_mqtt] [e5512888] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 22:03:52,762 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=30, 0 profiles, expected=0.4
+2026-07-24 22:03:52,762 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 22:03:52,764 INFO [backend.app.services.bambu_mqtt] [e5512888] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 22:04:18,290 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-24 22:04:18,703 INFO [uvicorn.access] [-] [IP]:41622 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-24 22:04:19,065 INFO [uvicorn.access] [-] [IP]:41644 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-24 22:04:19,149 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-24 22:04:19,156 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-24 22:04:19,157 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-07-24 22:05:42,526 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 22:06:01,382 INFO [backend.app.services.bambu_mqtt] [1f32d090] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 22:06:01,453 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=31, 0 profiles, expected=0.4
+2026-07-24 22:06:01,454 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 22:06:01,455 INFO [backend.app.services.bambu_mqtt] [1f32d090] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 22:06:21,047 INFO [backend.app.services.bambu_mqtt] [da05009f] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 22:06:21,135 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=32, 0 profiles, expected=0.4
+2026-07-24 22:06:21,137 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 22:06:21,139 INFO [backend.app.services.bambu_mqtt] [da05009f] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 22:06:26,382 INFO [backend.app.services.bambu_mqtt] [ae3338fd] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 22:06:26,529 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=33, 0 profiles, expected=0.4
+2026-07-24 22:06:26,529 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 22:06:26,530 INFO [backend.app.services.bambu_mqtt] [ae3338fd] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 22:06:32,115 INFO [uvicorn.access] [-] [IP]:35164 - "PATCH /api/v1/inventory/spools/1 HTTP/1.1" 200
+2026-07-24 22:06:32,139 INFO [uvicorn.access] [-] [IP]:35164 - "PUT /api/v1/inventory/spools/1/k-profiles HTTP/1.1" 200
+2026-07-24 22:07:20,855 INFO [backend.app.services.bambu_mqtt] [27f2820e] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 22:07:20,920 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=34, 0 profiles, expected=0.4
+2026-07-24 22:07:20,920 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 22:07:20,920 INFO [backend.app.services.bambu_mqtt] [27f2820e] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 22:07:28,151 INFO [backend.app.services.bambu_mqtt] [51094c44] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 22:07:28,217 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=35, 0 profiles, expected=0.4
+2026-07-24 22:07:28,218 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 22:07:28,219 INFO [backend.app.services.bambu_mqtt] [51094c44] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 22:07:31,762 INFO [uvicorn.access] [-] [IP]:57326 - "PATCH /api/v1/inventory/spools/1 HTTP/1.1" 200
+2026-07-24 22:07:31,800 INFO [uvicorn.access] [-] [IP]:57326 - "PUT /api/v1/inventory/spools/1/k-profiles HTTP/1.1" 200
+2026-07-24 22:07:46,865 INFO [backend.app.services.bambu_mqtt] [5ed42b26] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 22:07:46,925 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=36, 0 profiles, expected=0.4
+2026-07-24 22:07:46,926 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 22:07:46,926 INFO [backend.app.services.bambu_mqtt] [5ed42b26] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 22:07:55,354 INFO [backend.app.services.bambu_mqtt] [46859227] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 22:07:55,436 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=37, 0 profiles, expected=0.4
+2026-07-24 22:07:55,436 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 22:07:55,437 INFO [backend.app.services.bambu_mqtt] [46859227] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 22:08:04,097 INFO [backend.app.services.bambu_mqtt] [c6bdc716] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 22:08:04,165 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=38, 0 profiles, expected=0.4
+2026-07-24 22:08:04,165 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 22:08:04,166 INFO [backend.app.services.bambu_mqtt] [c6bdc716] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 22:10:42,519 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 22:11:35,397 INFO [backend.app.services.bambu_mqtt] [67cd9ca0] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 22:11:35,479 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=39, 0 profiles, expected=0.4
+2026-07-24 22:11:35,480 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 22:11:35,480 INFO [backend.app.services.bambu_mqtt] [67cd9ca0] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 22:11:45,322 INFO [uvicorn.access] [-] [IP]:50604 - "PATCH /api/v1/inventory/spools/1 HTTP/1.1" 200
+2026-07-24 22:11:45,347 INFO [uvicorn.access] [-] [IP]:50604 - "PUT /api/v1/inventory/spools/1/k-profiles HTTP/1.1" 200
+2026-07-24 22:11:55,285 INFO [backend.app.services.bambu_mqtt] [15cdef42] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 22:11:55,375 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=40, 0 profiles, expected=0.4
+2026-07-24 22:11:55,375 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 22:11:55,376 INFO [backend.app.services.bambu_mqtt] [15cdef42] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 22:12:02,353 INFO [backend.app.services.bambu_mqtt] [85823189] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 22:12:02,428 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=41, 0 profiles, expected=0.4
+2026-07-24 22:12:02,428 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 22:12:02,428 INFO [backend.app.services.bambu_mqtt] [85823189] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 22:12:08,078 INFO [uvicorn.access] [-] [IP]:49414 - "PATCH /api/v1/inventory/spools/1 HTTP/1.1" 200
+2026-07-24 22:12:08,101 INFO [uvicorn.access] [-] [IP]:49414 - "PUT /api/v1/inventory/spools/1/k-profiles HTTP/1.1" 200
+2026-07-24 22:12:13,418 INFO [backend.app.services.bambu_mqtt] [3f60a5b4] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 22:12:13,486 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=42, 0 profiles, expected=0.4
+2026-07-24 22:12:13,487 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 22:12:13,490 INFO [backend.app.services.bambu_mqtt] [3f60a5b4] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 22:12:25,376 INFO [uvicorn.access] [-] [IP]:53762 - "PATCH /api/v1/inventory/spools/1 HTTP/1.1" 200
+2026-07-24 22:12:25,399 INFO [uvicorn.access] [-] [IP]:53762 - "PUT /api/v1/inventory/spools/1/k-profiles HTTP/1.1" 200
+2026-07-24 22:15:42,506 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 22:20:10,808 INFO [uvicorn.access] [-] [IP]:43396 - "POST /api/v1/inventory/sku-settings HTTP/1.1" 200
+2026-07-24 22:20:11,664 INFO [uvicorn.access] [-] [IP]:43396 - "POST /api/v1/inventory/sku-settings HTTP/1.1" 200
+2026-07-24 22:20:42,492 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 22:20:47,463 INFO [backend.app.services.bambu_mqtt] [4b5b5dac] [[SERIAL]] Requesting K-profiles for nozzle_diameter=0.4 (attempt 1/3)
+2026-07-24 22:20:47,531 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] K-profile response: nozzle=0.4, seq_id=43, 0 profiles, expected=0.4
+2026-07-24 22:20:47,531 INFO [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Got 0 K-profiles for nozzle=0.4
+2026-07-24 22:20:47,533 INFO [backend.app.services.bambu_mqtt] [4b5b5dac] [[SERIAL]] Got 0 K-profiles for nozzle=0.4 on attempt 1
+2026-07-24 22:21:10,811 INFO [uvicorn.access] [-] [IP]:59568 - "POST /api/v1/inventory/spools HTTP/1.1" 200
+2026-07-24 22:21:10,844 INFO [uvicorn.access] [-] [IP]:59568 - "PUT /api/v1/inventory/spools/26/k-profiles HTTP/1.1" 200
+2026-07-24 22:22:14,583 INFO [backend.app.api.routes.cloud] [86cf7c20] get_filament_info called with 2 IDs: ['GFA01', 'GFA00']
+2026-07-24 22:22:14,813 INFO [uvicorn.access] [-] [IP]:42032 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-24 22:22:16,911 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-24 22:22:19,939 INFO [uvicorn.access] [-] [IP]:59630 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-24 22:22:19,962 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-24 22:22:19,966 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-24 22:22:19,966 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-07-24 22:22:58,908 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-24 22:25:42,484 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 22:30:42,456 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 22:35:42,433 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 22:40:42,391 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 22:45:42,367 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 22:50:42,326 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 22:55:42,303 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 23:00:42,281 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 23:01:27,462 INFO [uvicorn.access] [-] [IP]:42548 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-24 23:01:27,483 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-24 23:01:27,485 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-24 23:01:27,486 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-07-24 23:02:06,429 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-24 23:02:14,871 INFO [backend.app.api.routes.cloud] [5f411dac] get_filament_info called with 2 IDs: ['GFA01', 'GFA00']
+2026-07-24 23:02:15,129 INFO [uvicorn.access] [-] [IP]:54090 - "POST /api/v1/cloud/filament-info HTTP/1.1" 200
+2026-07-24 23:03:01,908 INFO [uvicorn.access] [-] [IP]:47914 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-24 23:03:01,930 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-24 23:03:01,932 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-24 23:03:01,933 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 1 printers
+2026-07-24 23:03:28,470 INFO [uvicorn.access] [-] [IP]:33386 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-24 23:04:25,637 INFO [uvicorn.access] [-] [IP]:47992 - "POST /api/v1/library/generate-stl-thumbnails HTTP/1.1" 200
+2026-07-24 23:05:42,251 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 23:10:42,231 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 23:15:42,218 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 23:20:42,216 INFO [backend.app.main] [-] Recorded 1 AMS sensor history entries
+2026-07-24 23:21:00,079 INFO [backend.app.api.routes.support] [5923b790] Log level changed to DEBUG
+2026-07-24 23:21:00,079 INFO [backend.app.api.routes.bug_report] [5923b790] Bug report: enabled debug logging
+2026-07-24 23:21:00,079 DEBUG [backend.app.services.bambu_mqtt] [5923b790] [[SERIAL]] Requesting status update (pushall)
+2026-07-24 23:21:00,080 INFO [uvicorn.access] [-] [IP]:49270 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200
+2026-07-24 23:21:00,984 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Found xcam inside print data: {'buildplate_marker_detector': True}
+2026-07-24 23:21:00,985 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Parsing xcam data - all fields: ['buildplate_marker_detector']
+2026-07-24 23:21:00,985 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received gcode_state: FINISH, gcode_file: , subtask_name: Aramco_-_green
+2026-07-24 23:21:00,985 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS dict fields: {'ams_exist_bits': '1', 'tray_exist_bits': 'f', 'tray_is_bbl_bits': 'f', 'tray_tar': '255', 'tray_now': '255', 'tray_pre': '255', 'tray_read_done_bits': 'f', 'tray_reading_bits': '0', 'version': 90, 'insert_flag': True, 'power_on_flag': True}
+2026-07-24 23:21:00,986 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] tray_now updated: 255
+2026-07-24 23:21:00,986 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Merged AMS data: 1 new units, 1 total
+2026-07-24 23:21:00,986 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] AMS 0 info=0x1002 -> extruder 0
+2026-07-24 23:21:00,986 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_extruder_map: {'0': 0}
+2026-07-24 23:21:00,987 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ams_status: 0 (main=0, sub=0)
+2026-07-24 23:21:00,987 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-24 23:21:00,987 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper raw value: 5.0
+2026-07-24 23:21:00,988 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] chamber_temper direct value: 5.0°C (heater OFF)
+2026-07-24 23:21:00,988 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber heating calculated: target=0.0, current=5.0, heating=False, respect_local=False
+2026-07-24 23:21:00,988 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Chamber temp updated to: 5.0, target: 0.0, heating: False
+2026-07-24 23:21:00,988 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] HMS data received: []
+2026-07-24 23:21:00,989 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] ipcam field: {'ipcam_dev': '1', 'ipcam_record': 'enable', 'timelapse': 'disable', 'resolution': '1080p', 'tutk_server': 'disable', 'mode_bits': 3}
+2026-07-24 23:21:00,990 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -62dBm
+2026-07-24 23:21:00,990 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] lights_report: [{'node': 'chamber_light', 'mode': 'off'}]
+2026-07-24 23:21:00,990 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] gcode_state: FINISH -> FINISH, file: , subtask: Aramco_-_green
+2026-07-24 23:21:02,967 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-24 23:21:07,007 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-24 23:21:07,007 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -61dBm
+2026-07-24 23:21:09,029 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-24 23:21:09,029 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -62dBm
+2026-07-24 23:21:11,071 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-24 23:21:11,071 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -63dBm
+2026-07-24 23:21:13,092 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-24 23:21:15,112 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] Received command response: push_status
+2026-07-24 23:21:15,113 DEBUG [backend.app.services.bambu_mqtt] [-] [[SERIAL]] wifi_signal received: -62dBm

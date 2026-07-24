@@ -8,6 +8,24 @@ from httpx import AsyncClient
 
 
 class TestUpdatesAPI:
+    @pytest.fixture(autouse=True)
+    def _reset_update_status(self):
+        """Isolate the module-global ``_update_status`` between tests.
+
+        ``POST /updates/apply`` short-circuits (line 850) when ``_update_status``
+        is ``"downloading"``/``"installing"``, returning a payload WITHOUT the
+        per-branch keys (``is_windows_installer`` etc.). A prior test that let an
+        apply flow run leaves the global mid-update, so a later test in the same
+        parallel worker hits the guard instead of its intended branch. This is
+        order-dependent — it passes locally but flakes on CI's sharded run
+        (``test_apply_update_windows_installer_rejection`` KeyError). Reset to
+        idle before every test so the guard never fires spuriously.
+        """
+        from backend.app.api.routes import updates as updates_module
+
+        updates_module._update_status = {"status": "idle", "progress": 0, "message": "", "error": None}
+        yield
+
     @pytest.mark.asyncio
     async def test_get_version(self, async_client: AsyncClient):
         response = await async_client.get("/api/v1/updates/version")

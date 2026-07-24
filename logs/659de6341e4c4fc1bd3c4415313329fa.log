@@ -1,0 +1,105 @@
+2026-07-24 11:37:20,993 INFO [root] [-] Logging to file: /app/logs/bambuddy.log
+2026-07-24 11:37:20,993 INFO [root] [-] Bambuddy starting - debug=False, log_level=INFO
+2026-07-24 11:37:20,994 INFO [backend.app.main.security_headers] [-] TRUSTED_FRAME_ORIGINS: http://[IP]:8123, http://homeassistant.local:8123
+2026-07-24 11:37:22,528 INFO [backend.app.core.encryption] [-] Generated new MFA encryption key and saved to /app/data/.mfa_encryption_key
+2026-07-24 11:37:22,637 INFO [backend.app.core.database] [-] Created default group: Administrators
+2026-07-24 11:37:22,638 INFO [backend.app.core.database] [-] Created default group: Operators
+2026-07-24 11:37:22,638 INFO [backend.app.core.database] [-] Created default group: Viewers
+2026-07-24 11:37:22,684 INFO [backend.app.core.database] [-] Seeded 91 default spool catalog entries
+2026-07-24 11:37:22,854 INFO [backend.app.core.database] [-] Seeded 638 default color catalog entries
+2026-07-24 11:37:22,889 INFO [backend.app.services.mqtt_relay] [-] MQTT relay disabled
+2026-07-24 11:37:22,893 INFO [backend.app.services.smart_plug_manager] [-] Smart plug scheduler started
+2026-07-24 11:37:22,893 INFO [backend.app.services.smart_plug_manager] [-] Smart plug energy snapshot loop started
+2026-07-24 11:37:22,898 INFO [backend.app.services.print_scheduler] [-] Print scheduler started
+2026-07-24 11:37:22,901 INFO [backend.app.services.notification_service] [-] Notification digest scheduler started
+2026-07-24 11:37:22,901 INFO [backend.app.services.github_backup] [-] Starting GitHub backup scheduler
+2026-07-24 11:37:22,901 INFO [backend.app.services.local_backup] [-] Starting local backup scheduler
+2026-07-24 11:37:22,904 INFO [backend.app.services.obico_detection] [-] Starting Obico detection service
+2026-07-24 11:37:22,904 INFO [backend.app.services.library_trash] [-] Starting library trash sweeper
+2026-07-24 11:37:22,904 INFO [backend.app.services.archive_purge] [-] Starting archive auto-purge sweeper
+2026-07-24 11:37:22,904 INFO [backend.app.main] [-] AMS history recording started
+2026-07-24 11:37:22,904 INFO [backend.app.main] [-] Printer sensor history recording started
+2026-07-24 11:37:22,904 INFO [backend.app.main] [-] Printer runtime tracking started
+2026-07-24 11:37:22,904 INFO [backend.app.main] [-] SpoolBuddy watchdog started
+2026-07-24 11:37:22,904 INFO [backend.app.main] [-] Camera stream cleanup started
+2026-07-24 11:37:22,904 INFO [backend.app.main] [-] Expected prints cleanup started
+2026-07-24 11:37:22,904 INFO [backend.app.main] [-] Auth periodic cleanup started
+2026-07-24 11:37:22,905 INFO [backend.app.services.loop_watchdog] [-] Event-loop stall watchdog started — dumps all thread stacks to stderr if the loop stalls for more than 30s
+2026-07-24 11:37:22,910 INFO [root] [-] Virtual printer manager synced from database
+2026-07-24 11:52:29,137 INFO [uvicorn.access] [-] [IP]:61666 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-24 11:52:29,220 INFO [uvicorn.access] [-] [IP]:61054 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-24 11:52:55,430 INFO [backend.app.api.routes.auth] [811d5b12] Creating admin user: [USER]
+2026-07-24 11:52:55,436 INFO [backend.app.api.routes.auth] [811d5b12] Added new admin user to Administrators group
+2026-07-24 11:52:55,436 INFO [backend.app.api.routes.auth] [811d5b12] Admin user added to session: [USER]
+2026-07-24 11:52:55,447 INFO [backend.app.api.routes.auth] [811d5b12] Admin user created successfully: 1
+2026-07-24 11:52:55,447 INFO [backend.app.api.routes.auth] [811d5b12] Setup completed: auth_enabled=True, admin_created=True
+2026-07-24 11:52:55,447 INFO [uvicorn.access] [-] [IP]:64453 - "POST /api/v1/auth/setup HTTP/1.1" 200
+2026-07-24 11:53:02,854 INFO [uvicorn.access] [-] [IP]:61925 - "POST /api/v1/auth/login HTTP/1.1" 200
+2026-07-24 11:53:02,937 INFO [uvicorn.access] [-] [IP]:61925 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-24 11:53:02,965 INFO [uvicorn.access] [-] [IP]:64260 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-24 11:53:02,990 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-24 11:53:02,995 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-24 11:53:02,995 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 0 printers
+2026-07-24 11:55:46,968 INFO [uvicorn.access] [-] [IP]:51725 - "POST /api/v1/cloud/token HTTP/1.1" 200
+2026-07-24 11:56:01,774 INFO [uvicorn.access] [-] [IP]:0 - "POST / HTTP/1.1" 405
+2026-07-24 11:56:15,094 INFO [uvicorn.access] [-] [IP]:58781 - "POST /api/v1/orca-cloud/device/start HTTP/1.1" 200
+2026-07-24 11:56:15,173 INFO [uvicorn.access] [-] [IP]:58781 - "POST /api/v1/orca-cloud/device/poll HTTP/1.1" 200
+2026-07-24 11:56:20,267 INFO [uvicorn.access] [-] [IP]:54337 - "POST /api/v1/orca-cloud/device/poll HTTP/1.1" 200
+2026-07-24 11:56:35,527 INFO [uvicorn.access] [-] [IP]:60147 - "POST /api/v1/orca-cloud/device/poll HTTP/1.1" 200
+2026-07-24 11:57:24,832 INFO [uvicorn.access] [-] [IP]:0 - "POST /graphql HTTP/1.1" 405
+2026-07-24 11:57:24,976 INFO [uvicorn.access] [-] [IP]:0 - "POST /api HTTP/1.1" 405
+2026-07-24 11:57:25,119 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/graphql HTTP/1.1" 401
+2026-07-24 11:57:25,261 INFO [uvicorn.access] [-] [IP]:0 - "POST /graphql/api HTTP/1.1" 405
+2026-07-24 11:57:25,405 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/gql HTTP/1.1" 401
+2026-07-24 11:58:33,210 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/auth/login HTTP/1.1" 200
+2026-07-24 11:58:33,263 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-24 11:58:33,373 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-24 11:58:33,399 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-24 11:58:33,402 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-24 11:58:33,402 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 0 printers
+2026-07-24 11:58:43,434 ERROR [backend.app.api.routes.updates] [4fb93eab] Failed to check for updates: 
+2026-07-24 11:59:04,118 INFO [backend.app.services.camera] [ade4fe93] Found ffmpeg at: /usr/bin/ffmpeg
+2026-07-24 11:59:04,687 INFO [backend.app.services.mqtt_relay] [e67d57ba] MQTT relay disabled
+2026-07-24 11:59:04,690 INFO [uvicorn.access] [-] [IP]:0 - "PUT /api/v1/settings/ HTTP/1.1" 200
+2026-07-24 12:03:55,431 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/inventory/locations HTTP/1.1" 201
+2026-07-24 12:04:03,751 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/inventory/locations HTTP/1.1" 201
+2026-07-24 12:05:00,345 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/inventory/spools HTTP/1.1" 200
+2026-07-24 12:05:00,360 INFO [uvicorn.access] [-] [IP]:0 - "PUT /api/v1/inventory/spools/1/k-profiles HTTP/1.1" 200
+2026-07-24 12:05:48,090 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/inventory/spools HTTP/1.1" 200
+2026-07-24 12:05:48,104 INFO [uvicorn.access] [-] [IP]:0 - "PUT /api/v1/inventory/spools/2/k-profiles HTTP/1.1" 200
+2026-07-24 12:08:12,048 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/inventory/spools/bulk HTTP/1.1" 200
+2026-07-24 12:16:26,844 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/inventory/spools/bulk HTTP/1.1" 200
+2026-07-24 12:16:43,064 INFO [uvicorn.access] [-] [IP]:0 - "PATCH /api/v1/inventory/spools/7 HTTP/1.1" 200
+2026-07-24 12:16:43,075 INFO [uvicorn.access] [-] [IP]:0 - "PUT /api/v1/inventory/spools/7/k-profiles HTTP/1.1" 200
+2026-07-24 12:16:57,242 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-24 12:16:57,561 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-24 12:16:57,607 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-24 12:16:57,635 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-24 12:16:57,641 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-24 12:16:57,641 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 0 printers
+2026-07-24 12:17:39,888 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/inventory/locations HTTP/1.1" 201
+2026-07-24 12:17:42,698 INFO [uvicorn.access] [-] [IP]:0 - "PATCH /api/v1/inventory/spools/8 HTTP/1.1" 200
+2026-07-24 12:17:42,713 INFO [uvicorn.access] [-] [IP]:0 - "PUT /api/v1/inventory/spools/8/k-profiles HTTP/1.1" 200
+2026-07-24 12:19:20,711 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 401
+2026-07-24 12:19:20,723 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/auth/ws-token HTTP/1.1" 401
+2026-07-24 12:24:51,012 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/inventory/spools/bulk HTTP/1.1" 200
+2026-07-24 12:30:54,840 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/inventory/spools HTTP/1.1" 200
+2026-07-24 12:30:54,853 INFO [uvicorn.access] [-] [IP]:0 - "PUT /api/v1/inventory/spools/18/k-profiles HTTP/1.1" 200
+2026-07-24 12:33:06,651 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/inventory/spools/bulk HTTP/1.1" 200
+2026-07-24 12:33:10,361 INFO [backend.app.api.routes.websocket] [-] WebSocket client disconnected normally
+2026-07-24 12:33:10,678 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/printers/camera/stream-token HTTP/1.1" 200
+2026-07-24 12:33:10,736 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/auth/ws-token HTTP/1.1" 200
+2026-07-24 12:33:10,753 INFO [backend.app.api.routes.websocket] [-] WebSocket client connecting (principal=[USER])
+2026-07-24 12:33:10,754 INFO [backend.app.api.routes.websocket] [-] WebSocket client connected
+2026-07-24 12:33:10,754 INFO [backend.app.api.routes.websocket] [-] Sent initial status for 0 printers
+2026-07-24 12:34:10,816 INFO [uvicorn.access] [-] [IP]:0 - "PATCH /api/v1/inventory/spools/18 HTTP/1.1" 200
+2026-07-24 12:34:10,826 INFO [uvicorn.access] [-] [IP]:0 - "PUT /api/v1/inventory/spools/18/k-profiles HTTP/1.1" 200
+2026-07-24 12:36:43,721 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/inventory/spools HTTP/1.1" 200
+2026-07-24 12:36:43,734 INFO [uvicorn.access] [-] [IP]:0 - "PUT /api/v1/inventory/spools/21/k-profiles HTTP/1.1" 200
+2026-07-24 12:39:10,256 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/inventory/spools HTTP/1.1" 200
+2026-07-24 12:39:10,269 INFO [uvicorn.access] [-] [IP]:0 - "PUT /api/v1/inventory/spools/22/k-profiles HTTP/1.1" 200
+2026-07-24 12:39:36,953 INFO [uvicorn.access] [-] [IP]:0 - "PATCH /api/v1/inventory/spools/21 HTTP/1.1" 200
+2026-07-24 12:39:36,965 INFO [uvicorn.access] [-] [IP]:0 - "PUT /api/v1/inventory/spools/21/k-profiles HTTP/1.1" 200
+2026-07-24 12:41:08,785 INFO [backend.app.api.routes.support] [1c1c0d4d] Log level changed to DEBUG
+2026-07-24 12:41:08,785 INFO [backend.app.api.routes.bug_report] [1c1c0d4d] Bug report: enabled debug logging
+2026-07-24 12:41:08,786 INFO [uvicorn.access] [-] [IP]:0 - "POST /api/v1/bug-report/start-logging HTTP/1.1" 200

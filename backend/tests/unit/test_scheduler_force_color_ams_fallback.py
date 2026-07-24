@@ -124,6 +124,27 @@ class TestBuildOverrideDirectMapping:
         # Should match by colour (#CBC6B8 ≈ CBC6B8FF after strip), not by tray_info_idx.
         assert result == [0]
 
+    def test_direct_mapping_pins_variant_when_override_carries_idx(self, scheduler):
+        """#2650: the no-3MF fallback honours a force override's own tray_info_idx,
+        so two same-colour PLA variants map to the intended slot rather than the
+        first same-colour tray."""
+        status = self._status(
+            ams=[
+                {
+                    "id": 0,
+                    "tray": [
+                        {"id": 0, "tray_type": "PLA", "tray_color": "FFFFFFFF", "tray_info_idx": "GFA00"},
+                        {"id": 1, "tray_type": "PLA", "tray_color": "FFFFFFFF", "tray_info_idx": "GFA01"},
+                    ],
+                }
+            ]
+        )
+        overrides = [
+            {"slot_id": 1, "type": "PLA", "color": "#FFFFFF", "tray_info_idx": "GFA01", "force_color_match": True}
+        ]
+        result = scheduler._build_override_direct_mapping(overrides, status)
+        assert result == [1]  # global_tray_id 1 = GFA01 (Matte), not GFA00 (Basic) at 0
+
 
 class TestComputeAmsMappingFallback:
     """Integration tests for the force-color fallback inside
@@ -241,6 +262,84 @@ class TestComputeAmsMappingFallback:
             result = await scheduler._compute_ams_mapping_for_printer(db, 5, item)
 
         assert result is None
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    async def test_force_color_override_pins_the_matching_variant_slot(self, mock_pm, scheduler):
+        """#2650 slot selection: with two same-colour PLA spools of different
+        variants loaded, applying a force_color_match override must map to the
+        tray whose tray_info_idx matches the 3MF (Matte GFA01), not the first
+        same-colour tray (Basic GFA00)."""
+        mock_pm.get_status.return_value = MagicMock(
+            raw_data={
+                "ams": [
+                    {
+                        "id": 0,
+                        "tray": [
+                            {"id": 0, "tray_type": "PLA", "tray_color": "FFFFFFFF", "tray_info_idx": "GFA00"},
+                            {"id": 1, "tray_type": "PLA", "tray_color": "FFFFFFFF", "tray_info_idx": "GFA01"},
+                        ],
+                    }
+                ]
+            },
+            ams_filament_backup=None,
+        )
+        item = self._make_item(
+            filament_overrides_json=(
+                '[{"slot_id": 1, "type": "PLA", "color": "#FFFFFF", '
+                '"tray_info_idx": "GFA01", "force_color_match": true}]'
+            )
+        )
+        filament_reqs = [{"slot_id": 1, "type": "PLA", "color": "#FFFFFF", "tray_info_idx": "GFA01"}]
+        db = AsyncMock()
+
+        with (
+            patch.object(scheduler, "_get_filament_requirements", return_value=filament_reqs),
+            patch.object(scheduler, "_get_bool_setting", new=AsyncMock(return_value=False)),
+        ):
+            result = await scheduler._compute_ams_mapping_for_printer(db, 5, item)
+
+        assert result == [1]  # global_tray_id 1 = GFA01 (Matte), not GFA00 (Basic) at 0
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    async def test_preference_override_still_clears_idx_so_a_swap_matches_by_colour(self, mock_pm, scheduler):
+        """A non-force (preference) override is a filament SWAP: its slot must
+        match by the new type+colour, never by a stale 3MF variant that would pin
+        the old spool. Only force_color_match overrides keep their idx — anything
+        else is cleared, exactly as before #2650."""
+        mock_pm.get_status.return_value = MagicMock(
+            raw_data={
+                "ams": [
+                    {
+                        "id": 0,
+                        "tray": [
+                            # The 3MF's original variant (blue GFA01) and the swapped-to red.
+                            {"id": 0, "tray_type": "PLA", "tray_color": "0000FFFF", "tray_info_idx": "GFA01"},
+                            {"id": 1, "tray_type": "PLA", "tray_color": "FF0000FF", "tray_info_idx": "GFA00"},
+                        ],
+                    }
+                ]
+            },
+            ams_filament_backup=None,
+        )
+        # 3MF wants blue GFA01; the user swaps this slot to red via a preference
+        # override that (defensively) also carries the stale GFA01 idx.
+        item = self._make_item(
+            filament_overrides_json='[{"slot_id": 1, "type": "PLA", "color": "#FF0000", "tray_info_idx": "GFA01"}]'
+        )
+        filament_reqs = [{"slot_id": 1, "type": "PLA", "color": "#0000FF", "tray_info_idx": "GFA01"}]
+        db = AsyncMock()
+
+        with (
+            patch.object(scheduler, "_get_filament_requirements", return_value=filament_reqs),
+            patch.object(scheduler, "_get_bool_setting", new=AsyncMock(return_value=False)),
+        ):
+            result = await scheduler._compute_ams_mapping_for_printer(db, 5, item)
+
+        # idx cleared → matches the swapped-to red spool (global 1), not the stale
+        # GFA01 blue (global 0) that a preserved idx would have pinned.
+        assert result == [1]
 
 
 class TestGetMissingForceColorSlotsVariant:

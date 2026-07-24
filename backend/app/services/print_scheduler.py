@@ -1388,9 +1388,18 @@ class PrintScheduler:
                         override = override_map[req["slot_id"]]
                         req["type"] = override["type"]
                         req["color"] = override["color"]
-                        # Clear tray_info_idx so matching uses type+color instead of
-                        # the original 3MF's tray_info_idx (which would match the old filament)
-                        req["tray_info_idx"] = ""
+                        # A manual/preference override SWAPS the slot's filament, so the
+                        # 3MF's original tray_info_idx now points at the old spool and must
+                        # be cleared — matching then falls back to type+colour. A
+                        # force_color_match override is not a swap: it carries the 3MF's
+                        # intended variant (Basic GFA00 / Matte GFA01 / Silk GFA06), so keep
+                        # it here too, letting the matcher pin the correct variant slot on a
+                        # printer holding two same-colour spools of different variants (#2650).
+                        # If that variant isn't loaded the matcher falls back to type+colour,
+                        # so an eligible printer never fails to map.
+                        req["tray_info_idx"] = (
+                            override.get("tray_info_idx", "") if override.get("force_color_match") else ""
+                        )
                         logger.debug(
                             "Queue item %s: Override slot %d -> %s %s",
                             item.id,
@@ -1454,7 +1463,11 @@ class PrintScheduler:
                 "slot_id": o["slot_id"],
                 "type": o.get("type", ""),
                 "color": o.get("color", ""),
-                "tray_info_idx": "",
+                # These are all force_color_match overrides, so the idx (when the
+                # 3MF carried one) is the intended variant, not a stale swap —
+                # keep it so the matcher pins the right variant slot, falling back
+                # to type+colour when it isn't loaded (#2650).
+                "tray_info_idx": o.get("tray_info_idx", ""),
             }
             for o in force_overrides
         ]

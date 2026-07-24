@@ -1990,6 +1990,30 @@ function PrinterCard({
     return filaments;
   }, [status?.ams, status?.vt_tray]);
 
+  // Collect loaded type+color+tray_info_idx triples for variant-aware force-color
+  // matching. Format: "TYPE:rrggbb:idx" (idx "" for custom/third-party spools) —
+  // distinguishes Bambu PLA sub-variants that share a base type+colour (#2650).
+  const loadedVariants = useMemo(() => {
+    const variants = new Set<string>();
+    if (status?.ams) {
+      for (const ams of status.ams) {
+        for (const tray of ams.tray || []) {
+          if (tray.tray_type && tray.tray_color) {
+            const color = tray.tray_color.replace('#', '').toLowerCase().slice(0, 6);
+            variants.add(`${tray.tray_type.toUpperCase()}:${color}:${tray.tray_info_idx || ''}`);
+          }
+        }
+      }
+    }
+    for (const vt of status?.vt_tray ?? []) {
+      if (vt.tray_type && vt.tray_color) {
+        const color = vt.tray_color.replace('#', '').toLowerCase().slice(0, 6);
+        variants.add(`${vt.tray_type.toUpperCase()}:${color}:${vt.tray_info_idx || ''}`);
+      }
+    }
+    return variants;
+  }, [status?.ams, status?.vt_tray]);
+
   // Fetch cloud filament info for tooltips (name includes color, also has K value)
   const { data: filamentInfo } = useQuery({
     queryKey: ['filamentInfo', trayInfoIds],
@@ -2163,8 +2187,8 @@ function PrinterCard({
   // An empty Set means no filaments are loaded — jobs requiring specific types are incompatible.
   const queueCount = useMemo(() => {
     if (!queueItems?.length) return 0;
-    return filterCompatibleQueueItems(queueItems, loadedFilamentTypes, loadedFilaments).length;
-  }, [queueItems, loadedFilamentTypes, loadedFilaments]);
+    return filterCompatibleQueueItems(queueItems, loadedFilamentTypes, loadedFilaments, loadedVariants).length;
+  }, [queueItems, loadedFilamentTypes, loadedFilaments, loadedVariants]);
 
   // Fetch currently printing queue item to show who started it (Issue #206)
   const { data: printingQueueItems } = useQuery({
@@ -3740,6 +3764,7 @@ function PrinterCard({
                         printerModel={printer.model}
                         loadedFilamentTypes={loadedFilamentTypes}
                         loadedFilaments={loadedFilaments}
+                        loadedVariants={loadedVariants}
                         variant="panelExtension"
                       />
                     </div>

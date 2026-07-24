@@ -11,10 +11,11 @@ interface PrinterQueueWidgetProps {
   printerModel?: string | null;
   loadedFilamentTypes?: Set<string>;
   loadedFilaments?: Set<string>;  // "TYPE:rrggbb" pairs for filament override color matching
+  loadedVariants?: Set<string>;  // "TYPE:rrggbb:idx" triples for PLA sub-variant matching (#2650)
   variant?: 'card' | 'panelExtension';
 }
 
-export function PrinterQueueWidget({ printerId, printerModel, loadedFilamentTypes, loadedFilaments, variant = 'card' }: PrinterQueueWidgetProps) {
+export function PrinterQueueWidget({ printerId, printerModel, loadedFilamentTypes, loadedFilaments, loadedVariants, variant = 'card' }: PrinterQueueWidgetProps) {
   const { t } = useTranslation();
   const { data: queue } = useQuery({
     queryKey: ['queue', printerId, 'pending', printerModel],
@@ -23,7 +24,7 @@ export function PrinterQueueWidget({ printerId, printerModel, loadedFilamentType
   });
 
   // Filter queue to items this printer can actually print (filament type + color check)
-  const compatibleQueue = queue ? filterCompatibleQueueItems(queue, loadedFilamentTypes, loadedFilaments) : undefined;
+  const compatibleQueue = queue ? filterCompatibleQueueItems(queue, loadedFilamentTypes, loadedFilaments, loadedVariants) : undefined;
   const totalPending = compatibleQueue?.length || 0;
 
   if (totalPending === 0) {

@@ -4160,8 +4160,14 @@ async def slice_library_file(
 
     src_result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     lib_file = src_result.scalar_one_or_none()
-    if not lib_file:
-        raise HTTPException(status_code=404, detail="File not found")
+    # Per-row ownership gate. LIBRARY_UPLOAD alone let a READ_OWN caller (e.g. the
+    # built-in Operators group) slice another user's model by raw id even though
+    # GET on that id returned 404 — the sliced output was then attributed to and
+    # downloadable by the requester. Enforce the same visibility the read routes
+    # use before reading the source off disk. API-key / auth-disabled callers
+    # (current_user is None) keep can_read_all=True — no per-row identity.
+    can_read_all = current_user is None or current_user.has_permission(Permission.LIBRARY_READ_ALL.value)
+    lib_file = _ensure_library_file_visible(lib_file, current_user, can_read_all)
 
     src_lower = (lib_file.filename or "").lower()
     if not (
@@ -4233,6 +4239,7 @@ async def slice_library_file(
         kind="library_file",
         source_id=lib_file.id,
         source_name=lib_file.filename,
+        owner_id=user_id,
         run=_run,
     )
     return {

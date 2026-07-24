@@ -3983,8 +3983,12 @@ async def slice_archive(
     )
 
     archive = await db.get(PrintArchive, archive_id)
-    if archive is None:
-        raise HTTPException(status_code=404, detail="Archive not found")
+    # Per-row ownership gate — mirror the archive read routes. LIBRARY_UPLOAD
+    # alone let a READ_OWN caller slice another user's archive by raw id even
+    # though GET on that id returned 404. API-key / auth-disabled callers
+    # (current_user is None) keep can_read_all=True — no per-row identity.
+    can_read_all = current_user is None or current_user.has_permission(Permission.ARCHIVES_READ_ALL.value)
+    archive = _ensure_archive_visible(archive, current_user, can_read_all)
 
     src_relative = archive.source_3mf_path or archive.file_path
     if not src_relative:
@@ -4055,6 +4059,7 @@ async def slice_archive(
         kind="archive",
         source_id=archive.id,
         source_name=archive.print_name or archive.filename or f"archive {archive.id}",
+        owner_id=user_id,
         run=_run,
     )
     return {

@@ -1417,3 +1417,223 @@ class TestWriteSubResourceIDORClosure(TestOwnershipPermissionsSetup):
             headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
         )
         assert response.status_code == 200
+
+
+class TestSliceOwnershipPermissions(TestOwnershipPermissionsSetup):
+    """IDOR regression: slicing and slice-job polling must honour per-row ownership.
+
+    Before the fix, ``POST /library/files/{id}/slice`` and
+    ``POST /archives/{id}/slice`` gated only on ``LIBRARY_UPLOAD``, so a
+    READ_OWN operator could slice another user's model by raw id even though a
+    direct GET on that id returned 404 — the sliced output was then attributed
+    to and downloadable by the requester. ``GET /slice-jobs/{id}`` had no owner
+    scoping at all. ``POST /slicer-pipelines/{id}/run`` (and check-eligibility)
+    resolved the source by raw id with the same gap.
+
+    The slice route enforces the gate before touching the source bytes, so the
+    owner/READ_ALL "control" cases reach the later on-disk check (a distinct 404
+    detail) rather than a real slice — enough to prove the gate lets them past.
+    """
+
+    # Any preset triplet: the ownership 404 fires before preset resolution.
+    _SLICE_BODY = {"printer_preset_id": 1, "process_preset_id": 2, "filament_preset_id": 3}
+
+    @pytest.fixture
+    async def library_file_factory(self, db_session):
+        _counter = [0]
+
+        async def _create_file(**kwargs):
+            from backend.app.models.library import LibraryFile
+
+            _counter[0] += 1
+            defaults = {
+                "filename": f"slice_src_{_counter[0]}.3mf",
+                "file_path": f"library/slice_src_{_counter[0]}.3mf",
+                "file_type": "3mf",
+                "file_size": 1024,
+            }
+            defaults.update(kwargs)
+            row = LibraryFile(**defaults)
+            db_session.add(row)
+            await db_session.commit()
+            await db_session.refresh(row)
+            return row
+
+        return _create_file
+
+    # --- library file slice ------------------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_slice_others_library_file(self, async_client, auth_setup, library_file_factory):
+        file = await library_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+        resp = await async_client.post(
+            f"/api/v1/library/files/{file.id}/slice",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json=self._SLICE_BODY,
+        )
+        assert resp.status_code == 404
+        # 404 (not 403) so a probing operator can't tell the id exists.
+        assert resp.json()["detail"] == "File not found"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_can_slice_own_library_file(self, async_client, auth_setup, library_file_factory):
+        file = await library_file_factory(created_by_id=auth_setup["operator_user"]["id"])
+        resp = await async_client.post(
+            f"/api/v1/library/files/{file.id}/slice",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json=self._SLICE_BODY,
+        )
+        # Past the ownership gate — only the on-disk source is missing in tests.
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Source file missing on disk"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_can_slice_any_library_file(self, async_client, auth_setup, library_file_factory):
+        file = await library_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+        resp = await async_client.post(
+            f"/api/v1/library/files/{file.id}/slice",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+            json=self._SLICE_BODY,
+        )
+        # READ_ALL passes the gate even on another user's file.
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Source file missing on disk"
+
+    # --- archive slice -----------------------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_slice_others_archive(
+        self, async_client, auth_setup, archive_factory, printer_factory
+    ):
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, created_by_id=auth_setup["operator2_user"]["id"])
+        resp = await async_client.post(
+            f"/api/v1/archives/{archive.id}/slice",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json=self._SLICE_BODY,
+        )
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Archive not found"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_can_slice_own_archive(self, async_client, auth_setup, archive_factory, printer_factory):
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, created_by_id=auth_setup["operator_user"]["id"])
+        resp = await async_client.post(
+            f"/api/v1/archives/{archive.id}/slice",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json=self._SLICE_BODY,
+        )
+        # Past the gate — the archive's source file isn't on disk in tests.
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Archive source file missing on disk"
+
+    # --- slice-job polling -------------------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_slice_job_polling_is_owner_scoped(self, async_client, auth_setup):
+        from backend.app.services.slice_dispatch import slice_dispatch
+
+        async def _noop(_job_id):
+            return {}
+
+        job = await slice_dispatch.enqueue(
+            kind="library_file",
+            source_id=1,
+            source_name="secret_model.3mf",
+            owner_id=auth_setup["operator2_user"]["id"],
+            run=_noop,
+        )
+
+        # Non-owner without READ_ALL cannot see the job (404, not 403).
+        other = await async_client.get(
+            f"/api/v1/slice-jobs/{job.id}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+        assert other.status_code == 404
+
+        # The owner and a READ_ALL admin can.
+        owner = await async_client.get(
+            f"/api/v1/slice-jobs/{job.id}",
+            headers={"Authorization": f"Bearer {auth_setup['operator2_token']}"},
+        )
+        assert owner.status_code == 200
+        admin = await async_client.get(
+            f"/api/v1/slice-jobs/{job.id}",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+        )
+        assert admin.status_code == 200
+
+    # --- pipeline source resolution ----------------------------------------
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_pipeline_run_cannot_reference_others_library_file(
+        self, async_client, auth_setup, library_file_factory, db_session
+    ):
+        """A pipeline runner with READ_OWN cannot resolve another user's source.
+
+        The built-in Operators group has no pipeline permissions, so this uses a
+        custom group carrying PIPELINES_RUN + READ_OWN — the realistic shape of
+        the exposure. check-eligibility resolves the source before any
+        eligibility work, so the ownership gate is what returns 404.
+        """
+        from backend.app.models.slicer_pipeline import SlicerPipeline
+
+        admin_headers = {"Authorization": f"Bearer {auth_setup['admin_token']}"}
+        group_resp = await async_client.post(
+            "/api/v1/groups/",
+            headers=admin_headers,
+            json={
+                "name": "pipeline_runners",
+                "permissions": [
+                    "pipelines:read",
+                    "pipelines:run",
+                    "library:read_own",
+                    "archives:read_own",
+                ],
+            },
+        )
+        assert group_resp.status_code == 201, group_resp.text
+        group_id = group_resp.json()["id"]
+
+        await async_client.post(
+            "/api/v1/users/",
+            headers=admin_headers,
+            json={"username": "runner1", "password": "Runnerpass1!", "group_ids": [group_id]},
+        )
+        runner_login = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": "runner1", "password": "Runnerpass1!"},
+        )
+        runner_token = runner_login.json()["access_token"]
+
+        pipeline = SlicerPipeline(
+            name="Cross-user pipeline",
+            printer_preset_source="local",
+            printer_preset_id="1",
+            process_preset_source="local",
+            process_preset_id="2",
+            filament_presets_json="[]",
+            target_kind="printer_class",
+            target_model_class="Bambu Lab X1 Carbon",
+        )
+        db_session.add(pipeline)
+        await db_session.commit()
+        await db_session.refresh(pipeline)
+
+        # Source owned by operator2, not the runner.
+        file = await library_file_factory(created_by_id=auth_setup["operator2_user"]["id"])
+        resp = await async_client.post(
+            f"/api/v1/slicer-pipelines/{pipeline.id}/check-eligibility",
+            headers={"Authorization": f"Bearer {runner_token}"},
+            json={"source_library_file_id": file.id},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "File not found"

@@ -535,6 +535,10 @@ class BambuMQTTClient:
 
     MQTT_PORT = 8883
 
+    # How long after a stop we sent to keep clamping straggler dry_time
+    # reports to 0.
+    DRYING_STOP_SUPPRESS_SECONDS = 60
+
     # Class-level cache: serial_number -> False when request topic is known unsupported.
     # Persists across client instances so reconnects don't re-trigger failed subscriptions.
     _request_topic_cache: dict[str, bool] = {}
@@ -620,6 +624,10 @@ class BambuMQTTClient:
         # — only the dry_time countdown — so we cache what we sent to drive
         # the UI badge. Cleared on stop or on the dry_time falling edge to 0.
         self._drying_targets: dict[int, dict[str, object]] = {}
+        # Per-AMS monotonic timestamp of the last stop we sent. Straggler
+        # reports after a stop can still carry the old countdown; dry_time is
+        # clamped to 0 while inside the suppression window.
+        self._drying_stop_times: dict[int, float] = {}
 
         self.state = PrinterState()
         self._client: mqtt.Client | None = None
@@ -2498,6 +2506,16 @@ class BambuMQTTClient:
                 current = int(raw_dry_time)
             except (TypeError, ValueError):
                 continue
+            # Straggler reports after a stop we sent can still carry the old
+            # countdown, resurrecting the badge; clamp to 0 while inside the
+            # suppression window. A new start lifts the clamp.
+            stop_ts = self._drying_stop_times.get(ams_id)
+            if stop_ts is not None:
+                if time.monotonic() - stop_ts > self.DRYING_STOP_SUPPRESS_SECONDS:
+                    self._drying_stop_times.pop(ams_id, None)
+                elif current > 0:
+                    ams_unit["dry_time"] = 0
+                    current = 0
             previous = self._previous_dry_times.get(ams_id, 0)
             self._previous_dry_times[ams_id] = current
             if previous > 0 and current == 0:
@@ -4855,8 +4873,10 @@ class BambuMQTTClient:
                 "filament": filament or "",
                 "temp": int(temp),
             }
+            self._drying_stop_times.pop(ams_id, None)
         else:
             self._drying_targets.pop(ams_id, None)
+            self._drying_stop_times[ams_id] = time.monotonic()
         return True
 
     def _handle_kprofile_response(self, data: dict):

@@ -1,6 +1,20 @@
 export interface PopoverPosition {
   top: number;
   left: number;
+  /** Which side of the trigger the popover landed on. */
+  placement: 'below' | 'above';
+  /**
+   * Viewport y of the popover edge facing the trigger: the top edge for
+   * 'below' (equals `top`), the bottom edge for 'above'. Anchoring an
+   * 'above' popover by this edge (CSS `bottom`) lets late-appearing content
+   * grow it upward, keeping it glued to the trigger.
+   */
+  anchorY: number;
+  /**
+   * X-offset within the popover for an anchor arrow pointing at the
+   * trigger's center, clamped inside the popover's rounded corners.
+   */
+  arrowLeft: number;
 }
 
 interface RectLike {
@@ -70,17 +84,18 @@ export function computePopoverPosition(opts: ComputePopoverPositionOpts): Popove
     horizontalAlign = 'right',
   } = opts;
 
-  // Vertical: prefer below, flip to above only when below overflows AND
-  // above would actually fit. If neither fits (a popover taller than the
-  // viewport), stay below — at least the top of the popover is visible
-  // and the user can scroll inside it, which is better than flipping to a
-  // top-clipped position where the action buttons might also be unreachable.
+  // Vertical: prefer below; flip above when below can't fit the full height
+  // and above either fits it or offers more room. Top clamps to the margin
+  // so the popover never runs off the top; callers cap the height and
+  // scroll internally.
   let top = triggerRect.bottom + gap;
-  const wouldOverflowBottom = top + estimatedHeight > viewportHeight - margin;
-  if (wouldOverflowBottom) {
-    const aboveTop = triggerRect.top - gap - estimatedHeight;
-    if (aboveTop >= margin) {
-      top = aboveTop;
+  let placement: PopoverPosition['placement'] = 'below';
+  const belowSpace = viewportHeight - margin - top;
+  if (belowSpace < estimatedHeight) {
+    const aboveSpace = triggerRect.top - gap - margin;
+    if (aboveSpace >= estimatedHeight || aboveSpace > belowSpace) {
+      top = Math.max(margin, triggerRect.top - gap - estimatedHeight);
+      placement = 'above';
     }
   }
 
@@ -95,5 +110,9 @@ export function computePopoverPosition(opts: ComputePopoverPositionOpts): Popove
     left = Math.max(margin, viewportWidth - popoverWidth - margin);
   }
 
-  return { top, left };
+  const anchorY = placement === 'above' ? triggerRect.top - gap : top;
+  // Keep the arrow clear of the popover's rounded corners.
+  const arrowLeft = Math.max(14, Math.min(popoverWidth - 14, triggerCenter - left));
+
+  return { top, left, placement, anchorY, arrowLeft };
 }

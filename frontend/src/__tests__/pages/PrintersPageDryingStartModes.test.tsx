@@ -1,0 +1,158 @@
+/**
+ * UX for the scheduled-drying start modes.
+ *
+ * "After delay" and "At time" reveal an extra control at the bottom of the
+ * drying popover. These used to render below the fold of a height-capped,
+ * scrollable body with no affordance; the delay options are now inline
+ * chips and an above-placed popover grows upward from its anchored bottom
+ * edge. The click that dismisses the native date picker must not tear down
+ * the popover.
+ */
+import { describe, it, expect, beforeEach } from 'vitest';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { render } from '../utils';
+import { PrintersPage } from '../../pages/PrintersPage';
+import { http, HttpResponse } from 'msw';
+import { server } from '../mocks/server';
+
+const mockPrinter = {
+  id: 1,
+  name: 'X1C',
+  ip_address: '192.168.1.100',
+  serial_number: '01P00A000000001',
+  access_code: '12345678',
+  model: 'X1C',
+  enabled: true,
+  nozzle_diameter: 0.4,
+  nozzle_type: 'stainless_steel',
+  location: 'Workshop',
+  auto_archive: true,
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+};
+
+const baseTray = {
+  tray_color: 'FF0000FF',
+  tray_type: 'PLA',
+  tray_sub_brands: 'PLA Basic',
+  tray_id_name: 'A00-R0',
+  tray_info_idx: 'GFA00',
+  remain: 80,
+  k: 0.02,
+  cali_idx: null,
+  tag_uid: null,
+  tray_uuid: null,
+  nozzle_temp_min: 190,
+  nozzle_temp_max: 230,
+  drying_temp: null,
+  drying_time: null,
+  state: 3,
+};
+
+/** AMS 2 Pro (n3f) on an idle printer that accepts remote drying commands. */
+const IDLE = {
+  connected: true,
+  state: 'IDLE',
+  progress: 0,
+  layer_num: 0,
+  total_layers: 0,
+  temperatures: { nozzle: 25, bed: 25, chamber: 25 },
+  remaining_time: 0,
+  filename: null,
+  wifi_signal: -29,
+  speed_level: 2,
+  supports_drying: true,
+  drying_screen_only: false,
+  vt_tray: [],
+  ams: [
+    {
+      id: 0,
+      humidity: 30,
+      temp: 33,
+      is_ams_ht: false,
+      serial_number: 'AMS00',
+      sw_ver: '03.00.21.29',
+      dry_sub_status: 0,
+      dry_sf_reason: [],
+      module_type: 'n3f',
+      dry_time: 0,
+      dry_status: 0,
+      tray: [
+        { id: 0, ...baseTray },
+        { id: 1, ...baseTray },
+        { id: 2, ...baseTray },
+        { id: 3, ...baseTray },
+      ],
+    },
+  ],
+};
+
+async function openDryingPopover(user: ReturnType<typeof userEvent.setup>) {
+  await waitFor(() => {
+    expect(screen.getAllByTitle('Start Drying').length).toBeGreaterThan(0);
+  });
+  await user.click(screen.getAllByTitle('Start Drying')[0]);
+  await screen.findByTestId('drying-start-confirm');
+}
+
+describe('PrintersPage - drying start modes', () => {
+  beforeEach(() => {
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json([mockPrinter])),
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json(IDLE)),
+      http.get('/api/v1/queue/', () => HttpResponse.json([])),
+      http.get('/api/v1/scheduled-dryings', () => HttpResponse.json([])),
+    );
+  });
+
+  it('reveals the delay chips when After delay is selected, with 2h preselected', async () => {
+    const user = userEvent.setup();
+    render(<PrintersPage />);
+    await openDryingPopover(user);
+
+    await user.click(screen.getByRole('button', { name: 'After delay' }));
+
+    for (const label of ['30m', '1h', '2h', '4h', '8h', '12h', '24h']) {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+    }
+    expect(screen.getByRole('button', { name: '2h' })).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(screen.getByRole('button', { name: '4h' }));
+    expect(screen.getByRole('button', { name: '4h' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '2h' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('reveals the datetime input for At time and keeps Schedule disabled until a time is set', async () => {
+    const user = userEvent.setup();
+    render(<PrintersPage />);
+    await openDryingPopover(user);
+
+    await user.click(screen.getByRole('button', { name: 'At time' }));
+
+    const input = await screen.findByTestId('drying-start-at');
+    expect(screen.getByTestId('drying-start-confirm')).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: '2099-01-15T18:00' } });
+    expect(screen.getByTestId('drying-start-confirm')).toBeEnabled();
+  });
+
+  it('does not close the popover on the outside click that dismisses the native date picker', async () => {
+    const user = userEvent.setup();
+    render(<PrintersPage />);
+    await openDryingPopover(user);
+
+    await user.click(screen.getByRole('button', { name: 'At time' }));
+    const input = await screen.findByTestId('drying-start-at');
+
+    // With the native picker open the input keeps focus; the click that
+    // dismisses the picker lands on the backdrop.
+    input.focus();
+    await user.click(screen.getByTestId('drying-popover-backdrop'));
+    expect(screen.getByTestId('drying-start-confirm')).toBeInTheDocument();
+
+    // A second outside click (input no longer focused) closes as before.
+    await user.click(screen.getByTestId('drying-popover-backdrop'));
+    expect(screen.queryByTestId('drying-start-confirm')).not.toBeInTheDocument();
+  });
+});

@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } fr
 import { createPortal } from 'react-dom';
 import { compareFwVersions } from '../utils/firmwareVersion';
 import { formatPrintName } from '../utils/printName';
-import { computePopoverPosition } from '../utils/popoverPosition';
+import { computePopoverPosition, type PopoverPosition } from '../utils/popoverPosition';
 import { computeStartAfter, type DryingStartMode } from '../lib/scheduledDrying';
 import {
   BED_TEMP_DEFAULTS,
@@ -19,7 +19,11 @@ import {
 // earlier); under-estimating leaves the popover clipped off the bottom (the
 // original bug at #1447).
 const DRYING_POPOVER_WIDTH = 240;
-const DRYING_POPOVER_ESTIMATED_HEIGHT = 320;
+// Height in "now" mode plus the tallest start-mode control; a conservative
+// over-estimate just flips the popover above the trigger sooner.
+const DRYING_POPOVER_ESTIMATED_HEIGHT = 440;
+// Delay presets for the "After delay" drying start mode, in minutes.
+const DRYING_DELAY_OPTIONS = [30, 60, 120, 240, 480, 720, 1440];
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
@@ -91,7 +95,7 @@ import {
 // Aliased: lucide-react already exports a `Link` icon into this module.
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withStreamToken, ApiError } from '../api/client';
-import { formatDateOnly, formatETA, formatDuration, parseUTCDate } from '../utils/date';
+import { formatDateOnly, formatETA, formatDuration, formatDurationFromHours, parseUTCDate } from '../utils/date';
 import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
@@ -1898,7 +1902,32 @@ function PrinterCard({
   const [dryingStartMode, setDryingStartMode] = useState<DryingStartMode>('now');
   const [dryingDelayMinutes, setDryingDelayMinutes] = useState(120);
   const [dryingStartAt, setDryingStartAt] = useState('');
-  const [dryingPopoverPos, setDryingPopoverPos] = useState<{ top: number; left: number } | null>(null);
+  const [dryingPopoverPos, setDryingPopoverPos] = useState<PopoverPosition | null>(null);
+  const [dryingPopoverAnchor, setDryingPopoverAnchor] = useState<HTMLElement | null>(null);
+  // Re-measure on resize/scroll so the popover and its arrow track the
+  // flame button, like IndicatorControlPopover.
+  useLayoutEffect(() => {
+    if (dryingPopoverAmsId === null || !dryingPopoverAnchor) return;
+    const measure = () => {
+      setDryingPopoverPos(computePopoverPosition({
+        triggerRect: dryingPopoverAnchor.getBoundingClientRect(),
+        popoverWidth: DRYING_POPOVER_WIDTH,
+        estimatedHeight: DRYING_POPOVER_ESTIMATED_HEIGHT,
+        horizontalAlign: 'center',
+      }));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+    };
+  }, [dryingPopoverAmsId, dryingPopoverAnchor]);
+  const dryingAtTimeInputRef = useRef<HTMLInputElement | null>(null);
+  // Whether the click hitting the backdrop is the one that dismissed the
+  // native datetime picker (see the backdrop's onMouseDown).
+  const dryingBackdropSkipCloseRef = useRef(false);
   // Which AMS we are waiting on to actually enter a drying cycle (#2533). Held as
   // an object rather than a bare id so restarting drying on the SAME unit produces
   // a new identity and rearms the timeout below.
@@ -4666,8 +4695,7 @@ function PrinterCard({
                                           setDryingRotateTray(false);
                                           setDryingPopoverModuleType(ams.module_type);
                                           setDryingPopoverAmsId(ams.id);
-                                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                          setDryingPopoverPos(computePopoverPosition({ triggerRect: rect, popoverWidth: DRYING_POPOVER_WIDTH, estimatedHeight: DRYING_POPOVER_ESTIMATED_HEIGHT, horizontalAlign: 'center' }));
+                                          setDryingPopoverAnchor(e.currentTarget as HTMLElement);
                                         }
                                       }}
                                       className={`ml-1 flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-colors ${
@@ -5198,8 +5226,7 @@ function PrinterCard({
                                         setDryingRotateTray(false);
                                         setDryingPopoverModuleType(ams.module_type);
                                         setDryingPopoverAmsId(ams.id);
-                                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                        setDryingPopoverPos(computePopoverPosition({ triggerRect: rect, popoverWidth: DRYING_POPOVER_WIDTH, estimatedHeight: DRYING_POPOVER_ESTIMATED_HEIGHT, horizontalAlign: 'center' }));
+                                        setDryingPopoverAnchor(e.currentTarget as HTMLElement);
                                       }
                                     }}
                                     className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] transition-colors ${
@@ -6442,22 +6469,45 @@ function PrinterCard({
         return (
           <>
             {/* Backdrop */}
-            <div className="fixed inset-0 z-[100]" onClick={() => setDryingPopoverAmsId(null)} />
-            {/* Popover */}
+            <div
+              className="fixed inset-0 z-[100]"
+              data-testid="drying-popover-backdrop"
+              onMouseDown={() => {
+                // The click that dismisses the native datetime picker lands
+                // here; it must not close the popover. The input is still
+                // focused at mousedown, so remember that and swallow the
+                // matching click.
+                dryingBackdropSkipCloseRef.current =
+                  dryingAtTimeInputRef.current !== null &&
+                  document.activeElement === dryingAtTimeInputRef.current;
+              }}
+              onClick={() => {
+                if (dryingBackdropSkipCloseRef.current) {
+                  dryingBackdropSkipCloseRef.current = false;
+                  return;
+                }
+                setDryingPopoverAmsId(null);
+              }}
+            />
+            {/* An 'above' popover is anchored by its bottom edge (CSS
+                bottom) so late-appearing content grows it upward, staying on
+                screen and glued to the trigger. maxHeight caps to the space
+                on the anchored side; when the viewport is too short the body
+                scrolls and the footer stays pinned. dvh so iOS Safari's
+                bottom toolbar doesn't clip the footer. */}
             <div
               className="fixed z-[101] flex flex-col w-[240px] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-xl shadow-2xl overflow-hidden"
               style={{
-                top: dryingPopoverPos.top,
                 left: dryingPopoverPos.left,
-                // Cap to the space between the popover's top and the bottom
-                // viewport margin (8px, matching computePopoverPosition's
-                // margin). When the popover is taller than that space — short
-                // viewport, landscape phone, zoomed-in — the body scrolls and
-                // the footer stays pinned, so the Start button is always
-                // reachable (#1458 / #1447 follow-up). dvh (not vh) so iOS
-                // Safari's bottom toolbar overlay doesn't clip the footer
-                // (#1669, iPhone 17 Safari).
-                maxHeight: `calc(100dvh - ${dryingPopoverPos.top}px - 8px)`,
+                ...(dryingPopoverPos.placement === 'above'
+                  ? {
+                      bottom: `calc(100dvh - ${dryingPopoverPos.anchorY}px)`,
+                      maxHeight: `${dryingPopoverPos.anchorY - 8}px`,
+                    }
+                  : {
+                      top: dryingPopoverPos.top,
+                      maxHeight: `calc(100dvh - ${dryingPopoverPos.top}px - 8px)`,
+                    }),
               }}
               onClick={e => e.stopPropagation()}
             >
@@ -6600,21 +6650,31 @@ function PrinterCard({
                     ))}
                   </div>
                   {dryingStartMode === 'delay' && (
-                    <div className="mt-1.5">
-                      <ToolbarDropdown
-                        value={String(dryingDelayMinutes)}
-                        options={[30, 60, 120, 240, 480, 720, 1440].map(min => ({
-                          value: String(min),
-                          label: min < 60 ? `${min}m` : `${min / 60}h`,
-                        }))}
-                        onChange={value => setDryingDelayMinutes(Number(value))}
-                        fullWidth
-                      />
+                    // Inline chips: a dropdown menu would be clipped by
+                    // the popover's scrollable body.
+                    <div className="mt-1.5 grid grid-cols-4 gap-1">
+                      {DRYING_DELAY_OPTIONS.map(min => (
+                        <button
+                          key={min}
+                          type="button"
+                          aria-pressed={dryingDelayMinutes === min}
+                          onClick={() => setDryingDelayMinutes(min)}
+                          className={`py-1 rounded-lg border text-[10px] font-medium transition-colors ${
+                            dryingDelayMinutes === min
+                              ? 'bg-bambu-green border-bambu-green text-white'
+                              : 'bg-bambu-dark border-bambu-dark-tertiary text-white hover:bg-bambu-dark-tertiary'
+                          }`}
+                        >
+                          {formatDurationFromHours(min / 60)}
+                        </button>
+                      ))}
                     </div>
                   )}
                   {dryingStartMode === 'at_time' && (
                     <input
+                      ref={dryingAtTimeInputRef}
                       type="datetime-local"
+                      data-testid="drying-start-at"
                       value={dryingStartAt}
                       onChange={e => setDryingStartAt(e.target.value)}
                       className="mt-1.5 w-full px-2 py-1 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-[11px] focus:outline-none focus:border-bambu-green [color-scheme:dark]"
@@ -6672,6 +6732,18 @@ function PrinterCard({
                 </button>
               </div>
             </div>
+            {/* Anchor arrow pointing at the flame button; a fixed sibling
+                since the popover clips its own overflow. */}
+            <div
+              className="fixed z-[102] w-2.5 h-2.5 rotate-45 bg-bambu-dark-secondary border-bambu-dark-tertiary pointer-events-none"
+              style={{
+                left: dryingPopoverPos.left + dryingPopoverPos.arrowLeft - 5,
+                top: dryingPopoverPos.anchorY - 5,
+                ...(dryingPopoverPos.placement === 'above'
+                  ? { borderRightWidth: 1, borderBottomWidth: 1 }
+                  : { borderLeftWidth: 1, borderTopWidth: 1 }),
+              }}
+            />
           </>
         );
       })()}

@@ -59,11 +59,9 @@ describe('computePopoverPosition (#1447)', () => {
     expect(pos.top).toBe(356);
   });
 
-  it('stays below when neither below nor above can fully fit (degraded)', () => {
-    // A popover taller than the viewport itself can never fit anywhere. Stay
-    // below so the user at least sees the top of the popover and can scroll
-    // through it — flipping to a top-clipped position would lose visibility
-    // of the action buttons at the bottom of the popover too.
+  it('picks the roomier side when neither below nor above can fully fit (degraded)', () => {
+    // A popover taller than the viewport can never fit anywhere. Pick the
+    // side with more room; callers cap the height and scroll internally.
     const tallPopover = { estimatedHeight: 900 };
     const trigger = { top: 380, bottom: 400, left: 400, right: 440 };
     const pos = computePopoverPosition({
@@ -72,6 +70,22 @@ describe('computePopoverPosition (#1447)', () => {
       ...tallPopover,
       ...viewport,
     });
+    // Above space (380 - 4 - 8 = 368) beats below space (768 - 8 - 404 = 356).
+    expect(pos.placement).toBe('above');
+    // Top clamps to the margin rather than going off-screen.
+    expect(pos.top).toBe(8);
+    expect(pos.anchorY).toBe(380 - 4);
+  });
+
+  it('stays below in the degraded case when below has more room', () => {
+    const trigger = { top: 100, bottom: 120, left: 400, right: 440 };
+    const pos = computePopoverPosition({
+      triggerRect: trigger,
+      popoverWidth: 240,
+      estimatedHeight: 900,
+      ...viewport,
+    });
+    expect(pos.placement).toBe('below');
     expect(pos.top).toBe(trigger.bottom + 4);
   });
 
@@ -213,5 +227,69 @@ describe('computePopoverPosition (#1669, iOS Safari visualViewport)', () => {
     });
     // 320 + 320 = 640 < 768 - 8, so no flip — uses the override, not the 200.
     expect(pos.top).toBe(324);
+  });
+});
+
+/**
+ * The drying popover's start-mode controls appear after the popover is
+ * positioned, so its real height can exceed the open-time estimate. The
+ * helper reports placement and the trigger-facing edge so an 'above'
+ * popover can be anchored by its bottom edge and carry an anchor arrow.
+ */
+describe('computePopoverPosition anchor metadata', () => {
+  const viewport = { viewportWidth: 1024, viewportHeight: 768 };
+
+  it('reports below placement with the anchor on the top edge', () => {
+    const trigger = { top: 300, bottom: 320, left: 400, right: 440 };
+    const pos = computePopoverPosition({
+      triggerRect: trigger,
+      popoverWidth: 240,
+      estimatedHeight: 320,
+      horizontalAlign: 'center',
+      ...viewport,
+    });
+    expect(pos.placement).toBe('below');
+    expect(pos.anchorY).toBe(pos.top); // 324
+  });
+
+  it('reports above placement with the anchor at the trigger-facing bottom edge', () => {
+    const trigger = { top: 680, bottom: 700, left: 400, right: 440 };
+    const pos = computePopoverPosition({
+      triggerRect: trigger,
+      popoverWidth: 240,
+      estimatedHeight: 320,
+      ...viewport,
+    });
+    expect(pos.placement).toBe('above');
+    expect(pos.anchorY).toBe(680 - 4); // trigger.top - gap
+  });
+
+  it('points the arrow at the trigger center', () => {
+    const trigger = { top: 300, bottom: 320, left: 400, right: 440 };
+    const pos = computePopoverPosition({
+      triggerRect: trigger,
+      popoverWidth: 240,
+      estimatedHeight: 320,
+      horizontalAlign: 'center',
+      ...viewport,
+    });
+    // Centered popover: the trigger center (420) sits mid-popover.
+    expect(pos.left + pos.arrowLeft).toBe(420);
+  });
+
+  it('clamps the arrow inside the corners when the popover is edge-clamped', () => {
+    // Trigger hugging the left viewport edge: popover clamps to left=8 while
+    // the trigger center stays at 30 — the arrow must stay clear of the
+    // rounded corner.
+    const trigger = { top: 300, bottom: 320, left: 10, right: 50 };
+    const pos = computePopoverPosition({
+      triggerRect: trigger,
+      popoverWidth: 240,
+      estimatedHeight: 320,
+      horizontalAlign: 'center',
+      ...viewport,
+    });
+    expect(pos.left).toBe(8);
+    expect(pos.arrowLeft).toBe(Math.max(14, 30 - 8));
   });
 });

@@ -595,6 +595,7 @@ export default {
       modeNow: 'Now',
       modeDelay: 'After delay',
       modeAtTime: 'At time',
+      // Verb (button label), not the noun.
       schedule: 'Schedule',
       scheduledFor: 'Drying scheduled for {{time}}',
       scheduledAsap: 'Drying scheduled (waiting for printer)',

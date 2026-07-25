@@ -591,7 +591,7 @@ export default {
       modeNow: '今すぐ',
       modeDelay: '時間経過後',
       modeAtTime: '時刻指定',
-      schedule: '予約',
+      schedule: '予約する',
       scheduledFor: '乾燥予約: {{time}}',
       scheduledAsap: '乾燥予約済み（プリンター待ち）',
       cancelScheduled: '乾燥予約をキャンセル',

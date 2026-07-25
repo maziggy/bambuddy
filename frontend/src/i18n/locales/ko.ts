@@ -555,7 +555,7 @@ export default {
       modeNow: '지금',
       modeDelay: '지연 후',
       modeAtTime: '시각 지정',
-      schedule: '예약',
+      schedule: '예약하기',
       scheduledFor: '건조 예약: {{time}}',
       scheduledAsap: '건조 예약됨 (프린터 대기 중)',
       cancelScheduled: '예약된 건조 취소',

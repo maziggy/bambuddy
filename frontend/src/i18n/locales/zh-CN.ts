@@ -580,6 +580,7 @@ export default {
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: '不支持干燥',
       powerRequired: '连接AMS电源适配器以启用干燥',
+      cannotDryNow: 'AMS 当前无法开始干燥',
       startingDrying: '正在启动干燥...',
       toastCommandSent: '已发送干燥命令',
       toastStopped: '已停止干燥',

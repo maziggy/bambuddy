@@ -580,6 +580,7 @@ export default {
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Essiccazione non supportata',
       powerRequired: 'Collegare l\'alimentatore AMS per abilitare l\'asciugatura',
+      cannotDryNow: 'L\'AMS non può avviare l\'asciugatura al momento',
       startingDrying: 'Avvio essiccazione...',
       toastCommandSent: 'Comando di essiccazione inviato',
       toastStopped: 'Essiccazione interrotta',

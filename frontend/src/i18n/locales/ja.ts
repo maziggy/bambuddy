@@ -579,6 +579,7 @@ export default {
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: '乾燥非対応',
       powerRequired: 'AMS電源アダプターを接続して乾燥を有効にしてください',
+      cannotDryNow: 'AMSは現在乾燥を開始できません',
       startingDrying: '乾燥を開始しています...',
       toastCommandSent: '乾燥コマンドを送信しました',
       toastStopped: '乾燥を停止しました',

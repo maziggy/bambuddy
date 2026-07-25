@@ -583,6 +583,7 @@ export default {
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Drying not supported',
       powerRequired: 'Connect AMS power adapter to enable drying',
+      cannotDryNow: 'AMS can\'t start drying right now',
       startingDrying: 'Starting drying...',
       toastCommandSent: 'Drying command sent',
       toastStopped: 'Drying stopped',

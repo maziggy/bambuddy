@@ -180,6 +180,24 @@ describe('PrintersPage - drying start modes', () => {
     });
   });
 
+  it('labels a transient cannot-dry reason accurately, not as a power problem', async () => {
+    const blocked = { ...IDLE, ams: [{ ...IDLE.ams[0], dry_sf_reason: [2] }] };
+    server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json(blocked)));
+    render(<PrintersPage />);
+    await waitFor(() => {
+      expect(screen.getAllByTitle("AMS can't start drying right now").length).toBeGreaterThan(0);
+    });
+  });
+
+  it('keeps the power tooltip for the power-supply reason codes', async () => {
+    const blocked = { ...IDLE, ams: [{ ...IDLE.ams[0], dry_sf_reason: [8] }] };
+    server.use(http.get('/api/v1/printers/:id/status', () => HttpResponse.json(blocked)));
+    render(<PrintersPage />);
+    await waitFor(() => {
+      expect(screen.getAllByTitle('Connect AMS power adapter to enable drying').length).toBeGreaterThan(0);
+    });
+  });
+
   it('does not close the popover on the outside click that dismisses the native date picker', async () => {
     const user = userEvent.setup();
     render(<PrintersPage />);

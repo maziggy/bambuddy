@@ -580,6 +580,7 @@ export default {
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Trocknung nicht unterstützt',
       powerRequired: 'AMS-Netzteil anschließen, um Trocknung zu aktivieren',
+      cannotDryNow: 'AMS kann das Trocknen gerade nicht starten',
       startingDrying: 'Trocknung wird gestartet...',
       toastCommandSent: 'Trocknungsbefehl gesendet',
       toastStopped: 'Trocknung gestoppt',

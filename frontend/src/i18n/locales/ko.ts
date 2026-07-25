@@ -543,6 +543,7 @@ export default {
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: '건조 지원 안 됨',
       powerRequired: '건조를 활성화하려면 AMS 전원 어댑터를 연결하세요',
+      cannotDryNow: 'AMS가 지금은 건조를 시작할 수 없습니다',
       startingDrying: '건조 시작 중...',
       toastCommandSent: '건조 명령을 전송했습니다',
       toastStopped: '건조를 중지했습니다',

@@ -580,6 +580,7 @@ export default {
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: '不支援乾燥',
       powerRequired: '連線AMS電源介面卡以啟用乾燥',
+      cannotDryNow: 'AMS 目前無法開始乾燥',
       startingDrying: '正在啟動乾燥...',
       toastCommandSent: '已傳送乾燥命令',
       toastStopped: '已停止乾燥',

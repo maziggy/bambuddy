@@ -548,6 +548,7 @@ export default {
       targetSummary: "{{filament}} при {{temp}} °C",
       notSupported: "Сушка не поддерживается",
       powerRequired: "Подключите адаптер питания AMS, чтобы включить сушку",
+      cannotDryNow: "AMS сейчас не может начать сушку",
       startingDrying: "Запуск сушки...",
       toastCommandSent: "Команда сушки отправлена",
       toastStopped: "Сушка остановлена",

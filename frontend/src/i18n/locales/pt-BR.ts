@@ -580,6 +580,7 @@ export default {
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Secagem não suportada',
       powerRequired: 'Conecte o adaptador de energia AMS para ativar a secagem',
+      cannotDryNow: 'O AMS não pode iniciar a secagem no momento',
       startingDrying: 'Iniciando secagem...',
       toastCommandSent: 'Comando de secagem enviado',
       toastStopped: 'Secagem interrompida',

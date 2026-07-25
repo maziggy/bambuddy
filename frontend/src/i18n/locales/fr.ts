@@ -580,6 +580,7 @@ export default {
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Séchage non pris en charge',
       powerRequired: 'Brancher l\'adaptateur secteur AMS pour activer le séchage',
+      cannotDryNow: 'L\'AMS ne peut pas démarrer le séchage pour le moment',
       startingDrying: 'Démarrage du séchage...',
       toastCommandSent: 'Commande de séchage envoyée',
       toastStopped: 'Séchage arrêté',

@@ -24,6 +24,13 @@ const DRYING_POPOVER_WIDTH = 240;
 const DRYING_POPOVER_ESTIMATED_HEIGHT = 440;
 // Delay presets for the "After delay" drying start mode, in minutes.
 const DRYING_DELAY_OPTIONS = [30, 60, 120, 240, 480, 720, 1440];
+
+// Firmware cannot-dry codes 1 and 8 mean a power-supply problem; the rest
+// are transient (AMS busy, cooling down, filament at the outlet).
+function dryingBlockedKey(reasons: Array<number | string> | undefined): string {
+  const powerRelated = (reasons ?? []).some(r => Number(r) === 1 || Number(r) === 8);
+  return powerRelated ? 'printers.drying.powerRequired' : 'printers.drying.cannotDryNow';
+}
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
@@ -4711,7 +4718,7 @@ function PrinterCard({
                                             ? 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
                                             : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark/80'
                                       }`}
-                                      title={status.drying_screen_only ? t('printers.drying.screenOnly') : ams.dry_time > 0 ? t('printers.drying.stop') : ams.dry_sf_reason?.length ? t('printers.drying.powerRequired') : t('printers.drying.start')}
+                                      title={status.drying_screen_only ? t('printers.drying.screenOnly') : ams.dry_time > 0 ? t('printers.drying.stop') : ams.dry_sf_reason?.length ? t(dryingBlockedKey(ams.dry_sf_reason)) : t('printers.drying.start')}
                                     >
                                       <Flame className="w-3 h-3" />
                                     </button>

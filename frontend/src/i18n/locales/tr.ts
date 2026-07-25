@@ -580,6 +580,7 @@ export default {
       targetSummary: '{{filament}} @ {{temp}}°C',
       notSupported: 'Kurutma desteklenmiyor',
       powerRequired: 'Kurutmayı etkinleştirmek için AMS güç adaptörünü bağlayın',
+      cannotDryNow: 'AMS şu anda kurutmayı başlatamıyor',
       startingDrying: 'Kurutma başlatılıyor...',
       toastCommandSent: 'Kurutma komutu gönderildi',
       toastStopped: 'Kurutma durduruldu',

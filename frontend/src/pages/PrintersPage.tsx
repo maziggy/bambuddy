@@ -1767,7 +1767,7 @@ function ScheduledDryingBanner({ printerId }: { printerId: number }) {
         >
           <span className="text-amber-700 dark:text-amber-400">
             {s.start_after
-              ? // Backend datetimes are naive UTC — append Z before parsing
+              ? // Backend datetimes are naive UTC; append Z before parsing
                 t('printers.drying.scheduledFor', { time: new Date(`${s.start_after}Z`).toLocaleString() })
               : t('printers.drying.scheduledAsap')}
           </span>
@@ -1893,8 +1893,8 @@ function PrinterCard({
   const [dryingTemp, setDryingTemp] = useState(50);
   const [dryingDuration, setDryingDuration] = useState(4);
   const [dryingRotateTray, setDryingRotateTray] = useState(false);
-  // Drying start mode (#2638): 'now' preserves the existing immediate-start behavior;
-  // 'delay' and 'at_time' route through scheduleDryingMutation instead.
+  // Drying start mode (#2638): 'now' starts immediately; 'delay' and 'at_time'
+  // go through scheduleDryingMutation.
   const [dryingStartMode, setDryingStartMode] = useState<DryingStartMode>('now');
   const [dryingDelayMinutes, setDryingDelayMinutes] = useState(120);
   const [dryingStartAt, setDryingStartAt] = useState('');
@@ -2338,7 +2338,7 @@ function PrinterCard({
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
   });
 
-  // Scheduled (delayed / at-time) drying runs (#2638) — the 'now' path above is untouched.
+  // Scheduled (delayed / at-time) drying runs (#2638)
   const scheduleDryingMutation = useMutation({
     mutationFn: (params: { amsId: number; temp: number; duration: number; filament: string; rotateTray: boolean; startAfter: string }) =>
       api.createScheduledDrying({

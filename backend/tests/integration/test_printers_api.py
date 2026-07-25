@@ -284,8 +284,8 @@ class TestPrintersAPI:
     async def test_delete_printer_removes_scheduled_dryings(
         self, async_client: AsyncClient, printer_factory, db_session
     ):
-        """Deleting a printer must also clean up its scheduled_dryings rows (#2638) —
-        SQLite doesn't enforce FK cascades, so these would otherwise be orphaned.
+        """Deleting a printer must also delete its scheduled_dryings rows, since
+        SQLite doesn't enforce FK cascades (#2638).
         """
         from backend.app.models.scheduled_drying import ScheduledDrying
 

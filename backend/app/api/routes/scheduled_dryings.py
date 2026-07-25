@@ -75,7 +75,7 @@ async def cancel_scheduled_drying(
         raise HTTPException(400, "Only pending or running dryings can be cancelled")
 
     if row.status == "running":
-        # Best effort — printer may be offline; cancellation proceeds regardless.
+        # Best effort; cancellation proceeds even if the printer is offline.
         printer_manager.send_drying_command(row.printer_id, row.ams_id, 0, 0, mode=0)
 
     row.status = "cancelled"

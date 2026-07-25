@@ -210,8 +210,8 @@ async def test_scheduled_drying_survives_auto_drying_stop_all(scheduler, db_sess
 @pytest.mark.asyncio
 async def test_second_pending_row_for_same_printer_does_not_dispatch(scheduler, db_session, printer_factory):
     """Regression (#2638): two pending rows for the same printer must not both
-    dispatch in the same tick — the second should see the first's dispatch via
-    the strengthened already-drying gate and stay pending.
+    dispatch in the same tick; the second should see the first's dispatch and
+    stay pending.
     """
     printer = await printer_factory()
     past = _utcnow_naive() - timedelta(minutes=1)

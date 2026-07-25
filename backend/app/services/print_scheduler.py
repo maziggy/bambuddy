@@ -253,11 +253,10 @@ class PrintScheduler:
         self._power_on_check_interval = 10  # seconds between connection checks
         # Track which printers are currently auto-drying (printer_id -> start timestamp)
         self._drying_in_progress: dict[int, float] = {}
-        # Printers with a scheduled drying row currently "running" (#2638). Rebuilt
-        # fresh at the top of every _check_scheduled_dryings call from the DB, so it
-        # also picks up route-side cancels. Auto-drying's stop-all branches must
-        # never stop/untrack these — they co-own _drying_in_progress with scheduled
-        # drying and would otherwise fight over the same printer.
+        # Printers with a "running" scheduled drying row (#2638). Rebuilt from the
+        # DB on every _check_scheduled_dryings call so route-side cancels show up.
+        # Auto-drying's stop-all branches must not stop or untrack these printers;
+        # both features share _drying_in_progress.
         self._scheduled_drying_printer_ids: set[int] = set()
         # Defensive in-memory dispatch hold (#1157): a printer that just received
         # a project_file command must not get a second dispatch until either it
@@ -400,7 +399,7 @@ class PrintScheduler:
             # to clear it (#1865).
             require_plate_clear = await self._get_bool_setting(db, "require_plate_clear", default=False)
 
-            # Scheduled manual drying runs (#2638) — dispatch/track every tick
+            # Dispatch and track scheduled drying runs (#2638)
             await self._check_scheduled_dryings(db)
 
             if not items:
@@ -2430,9 +2429,9 @@ class PrintScheduler:
         result = await db.execute(select(ScheduledDrying).where(ScheduledDrying.status.in_(("pending", "running"))))
         rows = list(result.scalars().all())
 
-        # Rebuild fresh from the DB every tick so this stays accurate across
-        # route-side cancels/completions — it's the source of truth auto-drying's
-        # stop-all branches consult to avoid stepping on a scheduled run (#2638).
+        # Rebuild from the DB every tick so route-side cancels and completions
+        # show up. Auto-drying's stop-all branches check this set before
+        # stopping anything (#2638).
         self._scheduled_drying_printer_ids = {row.printer_id for row in rows if row.status == "running"}
         running_printer_ids = set(self._scheduled_drying_printer_ids)
 
@@ -2465,7 +2464,7 @@ class PrintScheduler:
                 continue
 
             logger.info(
-                "Scheduled drying %d: starting on printer %d AMS %d — %d°C for %dh",
+                "Scheduled drying %d: starting on printer %d AMS %d at %d°C for %dh",
                 row.id,
                 row.printer_id,
                 row.ams_id,
@@ -2500,7 +2499,7 @@ class PrintScheduler:
         drying. Within the grace window after start we ignore dry_time==0
         (the status lags the command). After that, dry_time==0 near the end
         of the configured duration means completed; much earlier means the
-        run was stopped (print took priority, user stop) — re-queue it.
+        run was stopped (print took priority, user stop), so re-queue it.
         """
         if row.started_at is None:
             row.started_at = now
@@ -2511,7 +2510,7 @@ class PrintScheduler:
 
         state = printer_manager.get_status(row.printer_id)
         if not state:
-            return  # offline mid-dry — resolve when it reconnects
+            return  # offline mid-dry; resolve when it reconnects
 
         ams_list = state.raw_data.get("ams", [])
         target = next((a for a in ams_list if int(a.get("id", -1)) == row.ams_id), None)

@@ -588,7 +588,7 @@ export default {
       stoppingDrying: '正在停止乾燥...',
       rotateTray: '乾燥時旋轉料盤',
       rotateUnavailableReason: '無法使用 — 此 AMS 中有插槽已裝入列印頭。料盤被進料管固定，無法旋轉。請先退回耗材。',
-      startMode: '開始',
+      startMode: '開始時間',
       modeNow: '立即',
       modeDelay: '延遲後',
       modeAtTime: '指定時間',

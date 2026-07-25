@@ -588,7 +588,7 @@ export default {
       stoppingDrying: 'Arresto essiccazione...',
       rotateTray: 'Ruota la bobina durante l\'essiccazione',
       rotateUnavailableReason: 'Non disponibile — uno slot di questo AMS è caricato verso la testa di stampa. La bobina è bloccata dal tubo di alimentazione e non può ruotare. Ritrai prima il filamento.',
-      startMode: 'Avvio',
+      startMode: 'Ora di avvio',
       modeNow: 'Ora',
       modeDelay: 'Dopo un ritardo',
       modeAtTime: 'A un orario',

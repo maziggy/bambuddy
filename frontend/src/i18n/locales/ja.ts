@@ -587,7 +587,7 @@ export default {
       stoppingDrying: '乾燥を停止しています...',
       rotateTray: '乾燥中にスプールを回転',
       rotateUnavailableReason: '利用不可 — このAMSのスロットがツールヘッドにロードされています。スプールが供給チューブで固定されているため回転できません。先にフィラメントを引き戻してください。',
-      startMode: '開始',
+      startMode: '開始時刻',
       modeNow: '今すぐ',
       modeDelay: '時間経過後',
       modeAtTime: '時刻指定',

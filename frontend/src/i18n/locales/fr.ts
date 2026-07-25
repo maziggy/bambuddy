@@ -588,7 +588,7 @@ export default {
       stoppingDrying: 'Arrêt du séchage...',
       rotateTray: 'Tourner la bobine pendant le séchage',
       rotateUnavailableReason: 'Indisponible — un emplacement de cet AMS est chargé vers la tête d\'impression. La bobine est bloquée par le tube d\'alimentation et ne peut pas tourner. Rétractez d\'abord le filament.',
-      startMode: 'Démarrage',
+      startMode: 'Heure de démarrage',
       modeNow: 'Maintenant',
       modeDelay: 'Après un délai',
       modeAtTime: 'À une heure',

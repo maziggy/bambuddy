@@ -588,7 +588,7 @@ export default {
       stoppingDrying: 'Kurutma durduruluyor...',
       rotateTray: 'Kurutma sırasında makarayı döndür',
       rotateUnavailableReason: 'Kullanılamaz — bu AMS\'nin bir yuvası kafaya doğru yüklenmiş durumda. Makara besleme borusu tarafından kilitlendiği için döndürülemez. Önce filamenti geri çekin.',
-      startMode: 'Başlat',
+      startMode: 'Başlangıç zamanı',
       modeNow: 'Şimdi',
       modeDelay: 'Gecikme sonrası',
       modeAtTime: 'Belirli saatte',

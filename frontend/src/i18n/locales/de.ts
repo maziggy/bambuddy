@@ -588,7 +588,7 @@ export default {
       stoppingDrying: 'Trocknung wird gestoppt...',
       rotateTray: 'Spule während der Trocknung drehen',
       rotateUnavailableReason: 'Nicht verfügbar — in diesem AMS ist ein Slot zum Druckkopf hin geladen. Die Spule ist durch den Zuführschlauch blockiert und kann nicht rotieren. Filament zuerst zurückziehen.',
-      startMode: 'Start',
+      startMode: 'Startzeit',
       modeNow: 'Jetzt',
       modeDelay: 'Nach Verzögerung',
       modeAtTime: 'Zu Uhrzeit',

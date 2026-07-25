@@ -588,7 +588,7 @@ export default {
       stoppingDrying: '正在停止干燥...',
       rotateTray: '干燥时旋转料盘',
       rotateUnavailableReason: '不可用 — 此 AMS 中有插槽已装入打印头。料盘被送料管固定，无法旋转。请先回退耗材。',
-      startMode: '开始',
+      startMode: '开始时间',
       modeNow: '立即',
       modeDelay: '延迟后',
       modeAtTime: '指定时间',

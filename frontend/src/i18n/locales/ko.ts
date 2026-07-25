@@ -551,7 +551,7 @@ export default {
       stoppingDrying: '건조 정지 중...',
       rotateTray: '건조 중 스풀 회전',
       rotateUnavailableReason: '사용할 수 없음 — 이 AMS의 슬롯이 툴헤드로 로드되어 있습니다. 스풀이 공급 튜브에 의해 고정되어 회전할 수 없습니다. 먼저 필라멘트를 뺀 후 다시 시도하십시오.',
-      startMode: '시작',
+      startMode: '시작 시간',
       modeNow: '지금',
       modeDelay: '지연 후',
       modeAtTime: '시각 지정',

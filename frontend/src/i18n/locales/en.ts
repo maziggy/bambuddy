@@ -591,7 +591,7 @@ export default {
       stoppingDrying: 'Stopping drying...',
       rotateTray: 'Rotate spool during drying',
       rotateUnavailableReason: 'Unavailable — a slot in this AMS is loaded to the toolhead. The spool is locked by the feed tube and cannot rotate. Retract the filament first.',
-      startMode: 'Start',
+      startMode: 'Start time',
       modeNow: 'Now',
       modeDelay: 'After delay',
       modeAtTime: 'At time',

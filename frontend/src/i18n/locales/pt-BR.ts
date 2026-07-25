@@ -588,7 +588,7 @@ export default {
       stoppingDrying: 'Parando secagem...',
       rotateTray: 'Girar o carretel durante a secagem',
       rotateUnavailableReason: 'Indisponível — um slot deste AMS está carregado em direção ao cabeçote. O carretel está travado pelo tubo de alimentação e não pode girar. Retraia o filamento primeiro.',
-      startMode: 'Início',
+      startMode: 'Horário de início',
       modeNow: 'Agora',
       modeDelay: 'Após um atraso',
       modeAtTime: 'Em um horário',

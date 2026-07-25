@@ -1,6 +1,12 @@
-from datetime import datetime, timezone
+from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AfterValidator, BaseModel, Field
+
+from backend.app.utils.local_time import to_naive_utc
+
+# Coerces any client-sent UTC offset to the naive UTC the DB stores.
+NaiveUTCDatetime = Annotated[datetime | None, AfterValidator(to_naive_utc)]
 
 
 class ScheduledDryingCreate(BaseModel):
@@ -10,14 +16,7 @@ class ScheduledDryingCreate(BaseModel):
     duration_hours: int = Field(ge=1, le=24)
     filament: str = ""
     rotate_tray: bool = False
-    start_after: datetime | None = None
-
-    @field_validator("start_after")
-    @classmethod
-    def _normalize_to_naive_utc(cls, v: datetime | None) -> datetime | None:
-        if v is not None and v.tzinfo is not None:
-            v = v.astimezone(timezone.utc).replace(tzinfo=None)
-        return v
+    start_after: NaiveUTCDatetime = None
 
 
 class ScheduledDryingResponse(BaseModel):

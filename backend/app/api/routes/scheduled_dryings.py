@@ -1,7 +1,5 @@
 """Scheduled (delayed) manual AMS drying runs (#2638)."""
 
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +12,7 @@ from backend.app.models.scheduled_drying import ScheduledDrying
 from backend.app.models.user import User
 from backend.app.schemas.scheduled_drying import ScheduledDryingCreate, ScheduledDryingResponse
 from backend.app.services.printer_manager import printer_manager
+from backend.app.utils.local_time import utcnow_naive
 
 router = APIRouter(prefix="/scheduled-dryings", tags=["scheduled-dryings"])
 
@@ -30,10 +29,8 @@ async def create_scheduled_drying(
     if not result.scalar_one_or_none():
         raise HTTPException(404, "Printer not found")
 
-    if payload.start_after is not None:
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
-        if payload.start_after <= now:
-            raise HTTPException(400, "start_after must be in the future")
+    if payload.start_after is not None and payload.start_after <= utcnow_naive():
+        raise HTTPException(400, "start_after must be in the future")
 
     row = ScheduledDrying(
         printer_id=payload.printer_id,
@@ -82,6 +79,6 @@ async def cancel_scheduled_drying(
         printer_manager.send_drying_command(row.printer_id, row.ams_id, 0, 0, mode=0)
 
     row.status = "cancelled"
-    row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    row.completed_at = utcnow_naive()
     await db.commit()
     return {"status": "cancelled", "id": row.id}

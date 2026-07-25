@@ -44,6 +44,7 @@ from backend.app.services.printer_manager import (
 )
 from backend.app.services.smart_plug_manager import smart_plug_manager
 from backend.app.utils.filename import derive_remote_filename
+from backend.app.utils.local_time import utcnow_naive
 from backend.app.utils.printer_models import is_gcode_compatible, normalize_printer_model
 
 logger = logging.getLogger(__name__)
@@ -2425,7 +2426,7 @@ class PrintScheduler:
 
     async def _check_scheduled_dryings(self, db: AsyncSession):
         """Dispatch due scheduled drying runs and track running ones."""
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        now = utcnow_naive()
         result = await db.execute(select(ScheduledDrying).where(ScheduledDrying.status.in_(("pending", "running"))))
         rows = list(result.scalars().all())
 

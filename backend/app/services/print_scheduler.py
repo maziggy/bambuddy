@@ -2498,8 +2498,10 @@ class PrintScheduler:
         The firmware reports remaining minutes in ams.dry_time; 0 means not
         drying. Within the grace window after start we ignore dry_time==0
         (the status lags the command). After that, dry_time==0 near the end
-        of the configured duration means completed; much earlier means the
-        run was stopped (print took priority, user stop), so re-queue it.
+        of the configured duration means completed. Much earlier means the
+        run was stopped: re-queue it if a print preempted the dryer, but a
+        stop while the printer is idle was deliberate, so cancel the row
+        rather than restart drying the user just stopped.
         """
         if row.started_at is None:
             row.started_at = now
@@ -2521,10 +2523,13 @@ class PrintScheduler:
         if elapsed >= row.duration_hours * 3600 * self.SCHEDULED_DRYING_COMPLETE_FRACTION:
             row.status = "completed"
             row.completed_at = now
-        else:
+        elif not self._is_printer_idle(row.printer_id, require_plate_clear=False):
             row.status = "pending"
             row.started_at = None
             row.waiting_reason = "interrupted"
+        else:
+            row.status = "cancelled"
+            row.completed_at = now
 
     async def _get_smart_plugs(self, db: AsyncSession, printer_id: int) -> list[SmartPlug]:
         """Get all smart plugs associated with a printer."""

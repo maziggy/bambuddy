@@ -95,7 +95,7 @@ import {
 // Aliased: lucide-react already exports a `Link` icon into this module.
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { api, discoveryApi, firmwareApi, withStreamToken, ApiError } from '../api/client';
-import { formatDateOnly, formatETA, formatDuration, formatDurationFromHours, parseUTCDate } from '../utils/date';
+import { formatDateOnly, formatDateTime, formatETA, formatDuration, formatDurationFromHours, parseUTCDate } from '../utils/date';
 import type { Printer, PrinterCreate, PrinterStatus, AMSUnit, DiscoveredPrinter, FirmwareUpdateInfo, FirmwareUploadStatus, LinkedSpoolInfo, SpoolAssignment, HMSError, InventorySpool, SmartPlug, PrinterDiagnosticResult } from '../api/client';
 import { Card, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
@@ -1746,7 +1746,7 @@ const DRYING_PRESETS: Record<string, { n3f: number; n3s: number; n3f_hours: numb
   'PVA':   { n3f: 65, n3s: 85, n3f_hours: 12, n3s_hours: 18 },
 };
 
-function ScheduledDryingBanner({ printerId, dryingActive }: { printerId: number; dryingActive: boolean }) {
+function ScheduledDryingBanner({ printerId, dryingActive, timeFormat }: { printerId: number; dryingActive: boolean; timeFormat: 'system' | '12h' | '24h' }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -1778,8 +1778,7 @@ function ScheduledDryingBanner({ printerId, dryingActive }: { printerId: number;
         >
           <span className="text-amber-700 dark:text-amber-400">
             {s.start_after
-              ? // Backend datetimes are naive UTC; append Z before parsing
-                t('printers.drying.scheduledFor', { time: new Date(`${s.start_after}Z`).toLocaleString() })
+              ? t('printers.drying.scheduledFor', { time: formatDateTime(s.start_after, timeFormat) })
               : t('printers.drying.scheduledAsap')}
           </span>
           <button
@@ -6469,6 +6468,7 @@ function PrinterCard({
       <ScheduledDryingBanner
         printerId={printer.id}
         dryingActive={amsData.some(a => (a.dry_time ?? 0) > 0)}
+        timeFormat={timeFormat}
       />
 
       {/* AMS Drying Popover — fixed position to avoid overflow/z-index issues */}

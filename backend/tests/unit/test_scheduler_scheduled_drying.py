@@ -140,7 +140,7 @@ async def test_running_completes_after_duration(scheduler, db_session, printer_f
 
 
 @pytest.mark.asyncio
-async def test_running_interrupted_requeues(scheduler, db_session, printer_factory):
+async def test_running_interrupted_by_print_requeues(scheduler, db_session, printer_factory):
     row = await _make_row(
         db_session,
         printer_factory,
@@ -148,13 +148,37 @@ async def test_running_interrupted_requeues(scheduler, db_session, printer_facto
         duration_hours=8,
         started_at=_utcnow_naive() - timedelta(minutes=30),  # well past grace, far from done
     )
-    with patch("backend.app.services.print_scheduler.printer_manager") as mock_pm:
+    with (
+        patch("backend.app.services.print_scheduler.printer_manager") as mock_pm,
+        patch.object(scheduler, "_is_printer_idle", return_value=False),
+    ):
         mock_pm.get_status.return_value = _mock_state(dry_time=0)
         await scheduler._check_scheduled_dryings(db_session)
     await db_session.refresh(row)
     assert row.status == "pending"
     assert row.started_at is None
     assert row.waiting_reason == "interrupted"
+
+
+@pytest.mark.asyncio
+async def test_running_stopped_while_idle_cancels(scheduler, db_session, printer_factory):
+    """A stop on an idle printer is deliberate; the row must not resurrect."""
+    row = await _make_row(
+        db_session,
+        printer_factory,
+        status="running",
+        duration_hours=8,
+        started_at=_utcnow_naive() - timedelta(minutes=30),
+    )
+    with (
+        patch("backend.app.services.print_scheduler.printer_manager") as mock_pm,
+        patch.object(scheduler, "_is_printer_idle", return_value=True),
+    ):
+        mock_pm.get_status.return_value = _mock_state(dry_time=0)
+        await scheduler._check_scheduled_dryings(db_session)
+    await db_session.refresh(row)
+    assert row.status == "cancelled"
+    assert row.completed_at is not None
 
 
 @pytest.mark.asyncio

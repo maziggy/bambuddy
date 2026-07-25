@@ -423,14 +423,41 @@ setup_virtualenv() {
     log_success "Virtual environment configured"
 }
 
+# Run a command in the same account/PATH the frontend build uses: the current
+# user on macOS, the service user on Linux (via `sudo -H -u`, whose PATH is
+# sudo's secure_path — NOT the installing user's). Keep this in lockstep with
+# how build_frontend invokes npm, or the node check and the build disagree.
+as_build_user() {
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        "$@"
+    else
+        sudo -H -u "$SERVICE_USER" "$@"
+    fi
+}
+
 check_node_version() {
-    # Returns 0 if Node.js 20+ is available, 1 otherwise
-    if ! command -v node &>/dev/null; then
+    # Returns 0 if Node.js 20+ AND npm are available *to the account that will
+    # run the build*, 1 otherwise.
+    #
+    # The build runs `sudo -H -u "$SERVICE_USER" npm ci`, which resolves commands
+    # via sudo's secure_path and ignores the installing user's PATH. So node/npm
+    # installed under the installing user's home (nvm, asdf, fnm, Homebrew) are
+    # invisible to the build user. Probing `node` on the installing user's PATH
+    # here would falsely pass and then die later with "npm: command not found";
+    # probe as the same user the build uses instead. (`command -v` is a shell
+    # builtin, so run it through `sh -c`.)
+    if ! as_build_user sh -c 'command -v node >/dev/null 2>&1'; then
+        return 1
+    fi
+
+    # node without npm still fails `npm ci` — require both.
+    if ! as_build_user sh -c 'command -v npm >/dev/null 2>&1'; then
+        log_warn "Node.js is present but npm is not available to the build user; reinstalling Node.js"
         return 1
     fi
 
     local version
-    version=$(node --version 2>/dev/null | sed 's/^v//')
+    version=$(as_build_user sh -c 'node --version' 2>/dev/null | sed 's/^v//')
     local major
     major=$(echo "$version" | cut -d'.' -f1)
 

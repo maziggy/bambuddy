@@ -88,6 +88,30 @@ const IDLE = {
   ],
 };
 
+/** Same AMS mid-cycle: 12h remaining on the dryer. */
+const DRYING = {
+  ...IDLE,
+  ams: [{ ...IDLE.ams[0], dry_time: 720, dry_status: 2 }],
+};
+
+const PENDING_ROW = {
+  id: 1,
+  printer_id: 1,
+  ams_id: 0,
+  temp: 45,
+  duration_hours: 12,
+  filament: 'PLA',
+  rotate_tray: false,
+  start_after: '2026-07-25T23:24:00',
+  wait_for_off_peak: false,
+  status: 'pending',
+  waiting_reason: null,
+  error_message: null,
+  created_at: '2026-07-25T20:00:00',
+  started_at: null,
+  completed_at: null,
+};
+
 async function openDryingPopover(user: ReturnType<typeof userEvent.setup>) {
   await waitFor(() => {
     expect(screen.getAllByTitle('Start Drying').length).toBeGreaterThan(0);
@@ -135,6 +159,25 @@ describe('PrintersPage - drying start modes', () => {
 
     fireEvent.change(input, { target: { value: '2099-01-15T18:00' } });
     expect(screen.getByTestId('drying-start-confirm')).toBeEnabled();
+  });
+
+  it('drops the scheduled banner promptly once a drying cycle starts', async () => {
+    // The banner polls every 30s; without a nudge from the live AMS status
+    // it shows a dispatched schedule as still pending for up to that long.
+    let calls = 0;
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json(DRYING)),
+      http.get('/api/v1/scheduled-dryings', () => {
+        calls += 1;
+        return HttpResponse.json(calls === 1 ? [PENDING_ROW] : []);
+      }),
+    );
+    render(<PrintersPage />);
+
+    await waitFor(() => expect(calls).toBeGreaterThanOrEqual(2));
+    await waitFor(() => {
+      expect(screen.queryByText(/Drying scheduled for/)).not.toBeInTheDocument();
+    });
   });
 
   it('does not close the popover on the outside click that dismisses the native date picker', async () => {

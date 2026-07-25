@@ -1746,7 +1746,7 @@ const DRYING_PRESETS: Record<string, { n3f: number; n3s: number; n3f_hours: numb
   'PVA':   { n3f: 65, n3s: 85, n3f_hours: 12, n3s_hours: 18 },
 };
 
-function ScheduledDryingBanner({ printerId }: { printerId: number }) {
+function ScheduledDryingBanner({ printerId, dryingActive }: { printerId: number; dryingActive: boolean }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
@@ -1755,6 +1755,13 @@ function ScheduledDryingBanner({ printerId }: { printerId: number }) {
     queryFn: () => api.listScheduledDryings(printerId),
     refetchInterval: 30_000,
   });
+  // The live AMS status reports a starting cycle well before the next poll;
+  // refetch so a just-dispatched schedule doesn't linger as pending.
+  useEffect(() => {
+    if (dryingActive) {
+      queryClient.invalidateQueries({ queryKey: ['scheduled-dryings', printerId] });
+    }
+  }, [dryingActive, printerId, queryClient]);
   const cancelMutation = useMutation({
     mutationFn: (id: number) => api.cancelScheduledDrying(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduled-dryings', printerId] }),
@@ -6459,7 +6466,10 @@ function PrinterCard({
       )}
 
       {/* Scheduled Drying Banner */}
-      <ScheduledDryingBanner printerId={printer.id} />
+      <ScheduledDryingBanner
+        printerId={printer.id}
+        dryingActive={amsData.some(a => (a.dry_time ?? 0) > 0)}
+      />
 
       {/* AMS Drying Popover — fixed position to avoid overflow/z-index issues */}
       {dryingPopoverAmsId !== null && dryingPopoverPos && (() => {

@@ -1051,3 +1051,158 @@ class TestActivePrintGuard:
             mock_task.cancel.assert_called_once()  # cancelled despite auto_on=False
             assert mock_plug.id not in manager._pending_off
             mock_tasmota.turn_on.assert_not_called()  # but not powered on
+
+
+class TestAccessoryPlugDoesNotMarkPrinterOffline:
+    """#2629 — a plug linked to a printer is not necessarily its power supply.
+
+    Filter fans, chamber lights and enclosure heaters are linked so they follow
+    the print cycle. Marking the printer offline when one of those switches off
+    blanks the printer state and stalls the queue until a manual Force Refresh.
+    """
+
+    @pytest.fixture
+    def manager(self):
+        return SmartPlugManager()
+
+    @pytest.fixture
+    def accessory_plug(self):
+        plug = MagicMock()
+        plug.id = 1
+        plug.name = "BentoBox Filter"
+        plug.ip_address = "192.168.1.100"
+        plug.username = None
+        plug.password = None
+        plug.enabled = True
+        plug.auto_off = True
+        plug.off_delay_mode = "time"
+        plug.off_delay_minutes = 1
+        plug.off_temp_threshold = 70
+        plug.printer_id = 1
+        plug.plug_type = "tasmota"
+        plug.ha_entity_id = None
+        plug.controls_printer_power = False
+        return plug
+
+    @pytest.mark.asyncio
+    async def test_delayed_off_skips_offline_mark_for_accessory(self, manager):
+        mock_service = AsyncMock()
+        mock_service.turn_off = AsyncMock(return_value=True)
+        with (
+            patch("backend.app.services.smart_plug_manager.printer_manager") as mock_pm,
+            patch.object(manager, "get_service_for_plug", new_callable=AsyncMock, return_value=mock_service),
+            patch.object(manager, "_mark_auto_off_executed", new_callable=AsyncMock),
+        ):
+            mock_pm.is_print_active.return_value = False
+
+            await manager._delayed_off(
+                1, "tasmota", "1.2.3.4", None, None, None, printer_id=1, delay_seconds=0, controls_printer_power=False
+            )
+
+            mock_service.turn_off.assert_awaited_once()  # the plug still switches off
+            mock_pm.mark_printer_offline.assert_not_called()  # but the printer is untouched
+
+    @pytest.mark.asyncio
+    async def test_temp_based_off_skips_offline_mark_for_accessory(self, manager):
+        mock_service = AsyncMock()
+        mock_service.turn_off = AsyncMock(return_value=True)
+        with (
+            patch("backend.app.services.smart_plug_manager.printer_manager") as mock_pm,
+            patch("backend.app.services.smart_plug_manager.asyncio.sleep", new_callable=AsyncMock),
+            patch.object(manager, "get_service_for_plug", new_callable=AsyncMock, return_value=mock_service),
+            patch.object(manager, "_mark_auto_off_executed", new_callable=AsyncMock),
+        ):
+            mock_pm.get_status.return_value = MagicMock(state="FINISH", temperatures={"nozzle": 40})
+            mock_pm.is_print_active.return_value = False
+
+            await manager._temp_based_off(
+                1,
+                "tasmota",
+                "1.2.3.4",
+                None,
+                None,
+                None,
+                printer_id=1,
+                temp_threshold=55,
+                controls_printer_power=False,
+            )
+
+            mock_service.turn_off.assert_awaited_once()
+            mock_pm.mark_printer_offline.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_schedulers_forward_the_flag(self, manager, accessory_plug):
+        """The flag lives on the plug row; both schedulers must pass it into the
+        detached task, which only receives primitives."""
+        with (
+            patch.object(manager, "_mark_auto_off_pending", new_callable=AsyncMock),
+            patch.object(manager, "_delayed_off", new_callable=AsyncMock) as mock_delayed,
+            patch.object(manager, "_temp_based_off", new_callable=AsyncMock) as mock_temp,
+        ):
+            manager._schedule_delayed_off(accessory_plug, 1, 60)
+            manager._schedule_temp_based_off(accessory_plug, 1, 70)
+
+            assert mock_delayed.call_args.kwargs["controls_printer_power"] is False
+            assert mock_temp.call_args.kwargs["controls_printer_power"] is False
+
+    @pytest.mark.asyncio
+    async def test_scheduled_off_skips_offline_mark_for_accessory(self, manager, accessory_plug):
+        """The time-of-day schedule path has its own turn-off + offline mark."""
+        accessory_plug.schedule_enabled = True
+        accessory_plug.schedule_on_time = None
+        accessory_plug.schedule_off_time = "22:00"
+        with (
+            patch("backend.app.services.smart_plug_manager.datetime") as mock_datetime,
+            patch("backend.app.core.database.async_session") as mock_session_ctx,
+            patch("backend.app.services.smart_plug_manager.tasmota_service") as mock_tasmota,
+            patch("backend.app.services.smart_plug_manager.printer_manager") as mock_pm,
+        ):
+            mock_now = MagicMock()
+            mock_now.strftime.return_value = "22:00"
+            mock_datetime.now.return_value = mock_now
+
+            mock_db = AsyncMock()
+            mock_result = MagicMock()
+            mock_result.scalars.return_value.all.return_value = [accessory_plug]
+            mock_db.execute = AsyncMock(return_value=mock_result)
+            mock_db.commit = AsyncMock()
+            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+            mock_session_ctx.return_value.__aexit__ = AsyncMock()
+
+            mock_tasmota.turn_off = AsyncMock(return_value=True)
+
+            await manager._check_schedules()
+
+            mock_tasmota.turn_off.assert_awaited_once_with(accessory_plug)
+            mock_pm.mark_printer_offline.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_scheduled_off_still_marks_offline_for_power_plug(self, manager, accessory_plug):
+        """Default (a plug that really feeds the printer) keeps the old behaviour."""
+        accessory_plug.controls_printer_power = True
+        accessory_plug.schedule_enabled = True
+        accessory_plug.schedule_on_time = None
+        accessory_plug.schedule_off_time = "22:00"
+        with (
+            patch("backend.app.services.smart_plug_manager.datetime") as mock_datetime,
+            patch("backend.app.core.database.async_session") as mock_session_ctx,
+            patch("backend.app.services.smart_plug_manager.tasmota_service") as mock_tasmota,
+            patch("backend.app.services.smart_plug_manager.printer_manager") as mock_pm,
+        ):
+            mock_now = MagicMock()
+            mock_now.strftime.return_value = "22:00"
+            mock_datetime.now.return_value = mock_now
+
+            mock_db = AsyncMock()
+            mock_result = MagicMock()
+            mock_result.scalars.return_value.all.return_value = [accessory_plug]
+            mock_db.execute = AsyncMock(return_value=mock_result)
+            mock_db.commit = AsyncMock()
+            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+            mock_session_ctx.return_value.__aexit__ = AsyncMock()
+
+            mock_tasmota.turn_off = AsyncMock(return_value=True)
+
+            await manager._check_schedules()
+
+            mock_pm.mark_printer_offline.assert_called_once_with(1)

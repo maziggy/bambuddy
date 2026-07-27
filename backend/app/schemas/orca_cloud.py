@@ -1,50 +1,42 @@
-"""Schemas for Orca Cloud auth + profile sync endpoints."""
+"""Schemas for Orca Cloud device-pairing auth + profile sync endpoints."""
 
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-# The three OAuth providers Orca's sign-in surface offers. Supabase
-# accepts the bare lowercase provider name in the authorize query string.
-OrcaOAuthProvider = Literal["google", "apple", "github"]
+
+class OrcaDeviceStartResponse(BaseModel):
+    """Returned by ``POST /orca-cloud/device/start``. The frontend shows
+    ``user_code`` and a clickable/QR ``verification_uri_complete``; the user
+    approves in their Orca Cloud settings. The ``device_code`` itself is a
+    secret and stays server-side — it is deliberately NOT in this response."""
+
+    user_code: str = Field(..., description="Short code the user confirms on the approval page")
+    verification_uri: str = Field(..., description="Approval page URL")
+    verification_uri_complete: str = Field(..., description="Approval page URL with the code pre-filled")
+    interval: int = Field(..., description="Seconds the frontend should wait between poll calls")
+    expires_in: int = Field(..., description="Seconds until this pairing attempt expires")
 
 
-class OrcaAuthStartRequest(BaseModel):
-    """Body for ``POST /orca-cloud/auth/start``. Provider defaults to
-    ``google`` so existing clients that send an empty body keep working."""
-
-    provider: OrcaOAuthProvider = Field(default="google", description="OAuth provider to use for sign-in")
-
-
-class OrcaAuthStartResponse(BaseModel):
-    """Returned by ``POST /orca-cloud/auth/start``. The frontend opens
-    ``auth_url`` in a new tab. After the user signs in to Orca, they copy the
-    redirected URL from their address bar and POST it to
-    ``/orca-cloud/auth/finish`` to complete the handshake."""
-
-    auth_url: str = Field(..., description="URL to open for Orca Cloud sign-in")
+# Poll outcomes surfaced to the frontend. ``authorization_pending`` /
+# ``slow_down`` mean keep polling; ``access_denied`` / ``expired_token`` are
+# terminal (restart the flow); ``complete`` means paired.
+OrcaDevicePollStatus = Literal[
+    "authorization_pending",
+    "slow_down",
+    "access_denied",
+    "expired_token",
+    "complete",
+]
 
 
-class OrcaAuthFinishRequest(BaseModel):
-    """Submitted by the frontend after the user pastes the callback URL from
-    their browser. The URL contains a Supabase ``code`` (and our ``state``)
-    that we exchange for tokens."""
+class OrcaDevicePollResponse(BaseModel):
+    """Returned by ``POST /orca-cloud/device/poll`` — one poll attempt."""
 
-    callback_url: str = Field(..., description="The full URL the browser was redirected to after sign-in")
-
-
-class OrcaAuthPasswordRequest(BaseModel):
-    """Body for ``POST /orca-cloud/auth/password``. Whether this succeeds
-    depends on Orca's Supabase project — their desktop client refuses
-    password payloads, but the web sign-in offers email+password as one
-    option. We forward the credentials and surface the server's response.
-    ``email`` is plain ``str`` rather than Pydantic's ``EmailStr`` to avoid
-    pulling in the optional ``email-validator`` dependency — Supabase will
-    reject malformed addresses with a clear error itself, and the existing
-    Bambu Cloud login schema uses the same approach."""
-
-    email: str = Field(..., min_length=1)
-    password: str = Field(..., min_length=1)
+    status: OrcaDevicePollStatus
+    connected: bool = False
+    email: str | None = None
+    user_id: str | None = None
 
 
 class OrcaAuthStatusResponse(BaseModel):

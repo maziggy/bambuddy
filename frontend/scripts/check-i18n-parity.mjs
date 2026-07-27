@@ -141,6 +141,8 @@ function isAlwaysAllowedIdentical(value) {
 // German loanwords / cognates from English are extensive. Most short technical
 // UI labels are identical in DE. List below curates the legitimate ones.
 const DE_COGNATES = [
+  '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the DE term too
+  'Auto',  // calibrationMode_auto — German UI uses the loanword (matches BambuStudio DE)
   'Name', 'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Modus',
   'Stop', 'Reset', 'Test', 'Code', 'Token', 'Server', 'Port', 'Bug', 'Job',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
@@ -220,6 +222,7 @@ const FR_COGNATES = [
 
 // Italian cognates.
 const IT_COGNATES = [
+  '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the IT term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Email',  // common loanword in Italian, used verbatim in UI labels
@@ -267,6 +270,7 @@ const JA_COGNATES = [
 
 // Portuguese (BR) cognates.
 const PT_BR_COGNATES = [
+  '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the PT-BR term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Pipeline', 'Pipelines',  // #1425 — Slicer Pipelines (PT-BR)
@@ -341,6 +345,7 @@ const KO_COGNATES = [
 
 // Spanish cognates — words/phrases that are genuinely identical in Spanish.
 const ES_COGNATES = [
+  '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the ES term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Pipeline', 'Pipelines',  // #1425 — Slicer Pipelines (ES)
@@ -363,6 +368,7 @@ const ES_COGNATES = [
 // Turkish cognates — technical UI labels that Turkish speakers use verbatim
 // from English (loanwords + acronyms + format strings). Curated, not a shortcut.
 const TR_COGNATES = [
+  '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the TR term too
   'Filament', 'Firmware', 'Disk', 'Hex', 'Test', 'Port', 'Model', 'Metal',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
@@ -377,6 +383,18 @@ const TR_COGNATES = [
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
 ];
 
+const RU_COGNATES = [
+  'MakerWorld: {{designer}}',
+  'email',
+  '{{printer}}: {{error}}',
+  'Bambu Cloud',
+  'Orca Cloud',
+  '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
+  'EC984C,#6CD4BC,A66EB9,D87694',
+  '({{count}}/8)',
+  '(25%, 50%, 75%)',
+];
+
 const IDENTICAL_TO_EN_ALLOWED = {
   de: new Set(DE_COGNATES),
   fr: new Set(FR_COGNATES),
@@ -388,6 +406,7 @@ const IDENTICAL_TO_EN_ALLOWED = {
   'zh-CN': new Set(ZH_CN_COGNATES),
   'zh-TW': new Set(ZH_TW_COGNATES),
   tr: new Set(TR_COGNATES),
+  ru: new Set(RU_COGNATES),
 };
 
 // Pure comparison logic, exported so tests can verify each failure mode

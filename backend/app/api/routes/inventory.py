@@ -287,6 +287,21 @@ async def apply_spool_to_slot_via_mqtt(
             spool.id,
         )
 
+    # Register a read-back verification so the next AMS pushes can confirm the
+    # tray actually accepted this assignment (#2582). We record the same
+    # effective filament id we pushed plus the cali_idx we selected (or -1 for
+    # the Default-K reset above), and the client fires on_assignment_verified
+    # on match/timeout. Colour is informational only — the match keys on the
+    # filament id the slicer echoes back.
+    verify_cali_idx = matching_kp.cali_idx if (matching_kp and matching_kp.cali_idx is not None) else -1
+    client.register_assignment_verification(
+        ams_id=ams_id,
+        tray_id=tray_id,
+        tray_info_idx=effective_tray_info_idx,
+        tray_color=tray_color,
+        cali_idx=verify_cali_idx,
+    )
+
     # Persist slot preset mapping for UI display (preset_name on hover card).
     # Shared with the RFID auto-assign path — both must keep this row in sync
     # with the currently-assigned spool, otherwise the slot card surfaces the
@@ -1803,6 +1818,18 @@ async def assign_spool(
             )
         except Exception as e:
             logger.warning("MQTT auto-configure failed for spool %d: %s", spool.id, e)
+        else:
+            # Nudge a fresh pushall so the read-back verification registered in
+            # apply_spool_to_slot_via_mqtt (#2582) has current tray telemetry to
+            # compare against within its window, instead of waiting for the next
+            # idle push. Best-effort — the periodic push is the fallback.
+            if configured:
+                try:
+                    client = printer_manager.get_client(data.printer_id)
+                    if client:
+                        client.request_status_update()
+                except Exception:
+                    pass
     # pending_config is the "config not landed yet" UI marker. True when the
     # firmware said empty, OR when MQTT couldn't actually publish (printer
     # offline, no client, transient failure). on_ams_change replay re-fires

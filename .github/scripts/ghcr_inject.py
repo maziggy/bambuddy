@@ -181,11 +181,13 @@ def build_vega_spec(series: dict[str, int]) -> dict:
                 "type": "temporal",
             },
             "y": {
-                "axis": {"values": [1, 10, 50, 100, 500, 1000, 5000, 10000, 50000]},
+                # Linear, not symlog: pulls sit in a tight band far above zero, so a log-ish
+                # axis squeezes the whole series into its top decade and flattens the line.
+                "axis": {"format": "~s"},
                 "field": "daily_count",
                 "scale": {
                     "domain": [0, y_max * 1.1 if y_max > 0 else 1],
-                    "type": "symlog",
+                    "type": "linear",
                     "zero": True,
                 },
                 "title": "container pulls per day",

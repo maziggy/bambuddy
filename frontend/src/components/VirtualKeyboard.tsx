@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import Keyboard from 'react-simple-keyboard';
+import KeyboardImport from 'react-simple-keyboard';
 import 'react-simple-keyboard/build/css/index.css';
 import './VirtualKeyboard.css';
+import { resolveInteropDefault } from '../utils/interopDefault';
+
+// react-simple-keyboard is published as CommonJS. Depending on the bundler's
+// CJS->ESM interop, the default import arrives either as the Keyboard component
+// itself or as the module namespace object ({ KeyboardReact, default }). Under
+// the current Vite build (and Node's ESM loader) it's the latter, so rendering
+// <KeyboardImport> puts an object where an element type belongs and React throws
+// "Element type is invalid ... got: object" (#130) — crashing every SpoolBuddy
+// screen the instant a text input is focused and this keyboard mounts (#2616).
+// Resolve the real component defensively so it renders under any interop shape.
+// The TYPE of the default import is already the component (from the .d.ts), so
+// the cast keeps JSX + ref typing intact while fixing only the runtime value.
+const Keyboard = resolveInteropDefault<typeof KeyboardImport>(KeyboardImport, ['KeyboardReact']);
 
 const FOCUSABLE_TYPES = new Set(['text', 'password', 'email', 'search', 'url', 'number']);
 

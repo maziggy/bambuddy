@@ -1,10 +1,12 @@
 """Unit tests for print log service and schema."""
 
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from backend.app.schemas.print_log import PrintLogEntrySchema, PrintLogResponse
+from backend.app.services.print_log import write_log_entry
 
 
 class TestPrintLogEntrySchema:
@@ -102,3 +104,44 @@ class TestWriteLogEntry:
         if started_at and completed:
             duration = int((completed - started_at).total_seconds())
         assert duration is None
+
+
+class TestWriteLogEntryReconciledDuration:
+    """write_log_entry duration handling for reconciled (synthetic) completions (#2592).
+
+    A reconciled abort closes out a stale ``status="printing"`` archive at
+    reconnect; its real end time is unknown, so ``completed_at - started_at``
+    would bank the whole disconnect gap as print time. Those entries must log
+    0, while genuine prints (including >24h ones) keep their real duration.
+    """
+
+    @staticmethod
+    async def _write(**kwargs):
+        db = MagicMock()
+        db.flush = AsyncMock()
+        return await write_log_entry(db, **kwargs)
+
+    @pytest.mark.asyncio
+    async def test_reconciled_logs_zero_despite_multiday_gap(self):
+        started = datetime(2026, 7, 15, 10, 0, 0)
+        completed = started + timedelta(days=2, hours=4)  # the reconnect moment, not the real end
+        entry = await self._write(status="aborted", started_at=started, completed_at=completed, reconciled=True)
+        assert entry.duration_seconds == 0
+
+    @pytest.mark.asyncio
+    async def test_reconciled_logs_zero_even_without_timestamps(self):
+        entry = await self._write(status="aborted", reconciled=True)
+        assert entry.duration_seconds == 0
+
+    @pytest.mark.asyncio
+    async def test_genuine_long_print_retains_full_duration(self):
+        """A legitimate >24h print keeps its real duration — no cap, no zeroing."""
+        started = datetime(2026, 7, 15, 10, 0, 0)
+        completed = started + timedelta(hours=30)
+        entry = await self._write(status="completed", started_at=started, completed_at=completed)
+        assert entry.duration_seconds == 30 * 3600
+
+    @pytest.mark.asyncio
+    async def test_non_reconciled_missing_times_is_none(self):
+        entry = await self._write(status="completed", started_at=datetime(2026, 7, 15, 10, 0, 0))
+        assert entry.duration_seconds is None

@@ -196,10 +196,16 @@ export default {
       extraLarge: 'Çok büyük kartlar',
     },
     pageView: {
+      openCamWallPage: 'Kamera duvarını sayfa olarak aç',
       cards: 'Kartlar',
       camWall: 'Kamera duvarı',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          'Bu kamera duvarı bağlantısı artık geçerli değil. Belirtecin süresi dolmuş veya belirteç iptal edilmiş olabilir.',
+        loadFailed: 'Yazıcılar yüklenemedi.',
+      },
       noPrinters: 'Gösterilecek yazıcı yok',
       noSignal: 'Sinyal yok',
       live: 'Canlı',
@@ -349,6 +355,9 @@ export default {
     toast: {
       printerDeleted: 'Yazıcı silindi',
       missingSpoolAssignment: '{{printer}} üzerinde baskı başladı. Şunlar için eksik makara ataması: {{slots}}',
+      assignmentVerified: '{{slot}} yuvasına filament yüklendi ({{printer}})',
+      assignmentVerifiedNoKprofile: '{{printer}} üzerindeki {{slot}} yuvası yüklendi, ancak akış kalibrasyonu profili (K profili) uygulanmadı',
+      assignmentNotConfirmed: '{{printer}} üzerindeki {{slot}} yuvası ataması doğrulanamadı — AMS yuvasını kontrol edin',
       printerAdded: 'Yazıcı eklendi',
       printerUpdated: 'Yazıcı güncellendi',
       failedToDelete: 'Yazıcı silinemedi',
@@ -416,6 +425,7 @@ export default {
       unload: 'Çıkar',
     },
     bedJog: {
+      limitWarning: 'Manuel hareketlerde hareket sınırları uygulanmaz — bir Bambu donanım yazılımı hatası, uzaktan komutlarda yazılım limit anahtarlarını yok sayar. Çarpışmayı önlemek için dikkatlice hareket ettirin.',
       title: 'Jog kontrolleri',
       bed: 'Tabla',
       step: 'Adım (mm)',
@@ -471,6 +481,8 @@ export default {
       skip: 'Atla',
       confirmTitle: 'Nesne Atlansın mı?',
       confirmMessage: '"{{name}}" atlamak istediğinizden emin misiniz? Bu geri alınamaz.',
+      confirmAllMessage: 'Kalan tüm nesneler seçildi. Bu, yazdırma işini durduracaktır. Devam edilsin mi?',
+      confirmMultipleMessage: 'Seçilen {{count}} nesne atlansın mı? Bu geri alınamaz.',
     },
     // Onay modalleri
     confirm: {
@@ -569,6 +581,10 @@ export default {
       notSupported: 'Kurutma desteklenmiyor',
       powerRequired: 'Kurutmayı etkinleştirmek için AMS güç adaptörünü bağlayın',
       startingDrying: 'Kurutma başlatılıyor...',
+      toastCommandSent: 'Kurutma komutu gönderildi',
+      toastStopped: 'Kurutma durduruldu',
+      toastNotStarted: 'Yazıcı komutu kabul etti ancak AMS kurutmayı başlatmadı. AMS güç adaptörünün bağlı olduğundan ve yazıcının boşta olduğundan emin olun.',
+      screenOnly: 'Bu yazıcıda AMS kurutma yalnızca yazıcının kendi ekranından kontrol edilebilir (Bambu kısıtlaması)',
       stoppingDrying: 'Kurutma durduruluyor...',
       rotateTray: 'Kurutma sırasında makarayı döndür',
       rotateUnavailableReason: 'Kullanılamaz — bu AMS\'nin bir yuvası kafaya doğru yüklenmiş durumda. Makara besleme borusu tarafından kilitlendiği için döndürülemez. Önce filamenti geri çekin.',
@@ -592,6 +608,12 @@ export default {
     activeJobSlot: {
       title: 'Bu slot, aktif baskıdaki {{n}} numaralı filament',
       ariaLabel: 'Aktif baskı slotu {{n}}',
+    },
+    expectedSlot: {
+      title: 'Yazıcı bu slotta filament bekliyor',
+      ariaLabel: 'Beklenen filament slotu {{n}}',
+      label: '{{ams}} · Slot {{slot}}',
+      external: 'Harici makara',
     },
     // Filamentler bölümü
     filaments: 'Filamentler',
@@ -1183,6 +1205,8 @@ export default {
     history: {
       emptyTitle: 'Henüz geçmiş yok',
       emptyDescription: 'Tamamlanan, iptal edilen ve başarısız baskılar burada görünür.',
+      showMore: 'Daha fazla göster',
+      showingCount: '{{total}} öğeden {{shown}} tanesi gösteriliyor',
     },
     dragGhost: {
       multiCount: '{{count}} öğe',
@@ -2069,6 +2093,10 @@ export default {
     tempFanPresetsChamber: 'Hazne sıcaklığı',
     tempFanPresetsFan: 'Fan hızı',
     tempFanPresetsReset: 'Varsayılanlara sıfırla',
+    concurrentUploadsTitle: 'Eşzamanlı Yüklemeler',
+    concurrentUploadsDescription: 'Kuyruğun aynı anda kaç yazıcıya dosya gönderebileceği. Yazıcılar dosyaları yavaş alır (büyük bir baskı birkaç dakika sürebilir) ve her biri sırasını bekler; bu nedenle büyük bir filoda bu değeri artırmak, bir gruptaki son yazıcının kendisinden önceki tüm aktarımları beklemesini önler. Ağınız veya Bambuddy sunucunuz paralel aktarımlarda zorlanıyorsa değeri düşürün.',
+    concurrentUploadsLabel: 'Aynı anda dosya gönderilen yazıcı sayısı',
+    concurrentUploadsHelp: "1, aynı anda tek yazıcıya gönderir (eski davranış). Varsayılan 4'tür.",
     staggeredStart: 'Kademeli Başlatma',
     staggeredStartDescription: 'Çoklu yazıcı toplu başlatmaları kademelendirilirken varsayılan grup boyutu ve aralığı. Baskı modalinde yığın başına geçersiz kılınabilir.',
     preheatTitle: 'Ön Isıtma & Heat Soak',
@@ -2089,6 +2117,9 @@ export default {
     preheatOverride_inherit: 'Devral',
     preheatOverride_on: 'Açık',
     preheatOverride_off: 'Kapalı',
+    calibrationMode_off: 'Kapalı',
+    calibrationMode_on: 'Açık',
+    calibrationMode_auto: 'Otomatik',
     preheatTargetOverride: 'Oda hedefini geçersiz kıl (°C, boş = filament varsayılanı)',
     plateClear: 'Plaka Temizleme Onayı',
     requirePlateClear: 'Plaka temizleme onayı gerektir',
@@ -2794,6 +2825,9 @@ export default {
     clearFailed: 'HMS hataları temizlenemedi',
     actionSuccess: 'Eylem yazıcıya gönderildi',
     actionFailed: 'Eylem gönderilemedi',
+    runoutExpectedSlot: '{{ranOut}} slotundaki filament bitti. Yazıcı şimdi {{expected}} slotunda uyumlu filament bekliyor. {{expected}} slotuna bir makara takın ve ardından Yeniden Dene\'yi seçin.',
+    runoutExpectedSlotOnly: 'Yazıcı {{expected}} slotunda uyumlu filament bekliyor. Oraya bir makara takın ve ardından Yeniden Dene\'yi seçin.',
+    runoutSlotUnknown: 'Filament bitti ve baskı duraklatıldı. Bambuddy yazıcının şu anda hangi slotu beklediğini belirleyemedi — istenen slot için yazıcının ekranını kontrol edin.',
     actions: {
       RESUME_PRINTING: 'Baskıyı sürdür',
       RESUME_PRINTING_DEFECTS: 'Sürdür (kusurlar kabul edilebilir)',
@@ -3244,37 +3278,24 @@ export default {
     },
     orcaCloud: {
       connectedAs: 'Bağlı kullanıcı',
+      connectedShort: 'Orca Cloud\'a bağlanıldı',
       logout: 'Bağlantıyı kes',
       noLogoutPermission: 'Bağlantıyı kesme izniniz yok',
       noConnectPermission: 'Orca Cloud\'a bağlanma izniniz yok',
       retry: 'Yeniden dene',
-      back: 'Farklı bir giriş yöntemi kullan',
+      connectButton: 'Orca Cloud\'a bağlan',
       connect: {
         title: 'Orca Cloud\'a bağlan',
         description: 'Dilimleyici profillerinizi Bambuddy ile senkronize etmek için Orca Cloud hesabınıza giriş yapın.',
       },
-      providers: {
-        google: 'Google ile giriş yap',
-        apple: 'Apple ile giriş yap',
-        github: 'GitHub ile giriş yap',
-        email: 'E-posta ve şifre ile giriş yap',
-      },
-      password: {
-        title: 'E-posta ve şifre ile giriş yap',
-        email: 'E-posta',
-        emailPlaceholder: 'sen@ornek.com',
-        password: 'Şifre',
-        submit: 'Giriş yap',
-      },
-      paste: {
-        title: 'Girişi tamamla',
-        step1: 'Yeni bir sekme Orca Cloud giriş sayfasıyla açıldı. Orca hesabınızla giriş yapın.',
-        step2: 'Tarayıcınız yüklenemeyen bir "localhost" URL\'sine yönlendirilecektir. Bu beklenen bir durumdur — bize gereken URL budur.',
-        step3: 'Tarayıcınızın adres çubuğundaki URL\'nin tamamını kopyalayın ve aşağıya yapıştırın.',
-        signInUrl: 'Giriş sekmesi açılmadıysa bu URL\'ye tıklayın:',
-        label: 'Geri çağrı URL\'sini buraya yapıştırın',
-        placeholder: 'http://localhost:41172/callback?code=...&state=...',
-        submit: 'Bağlantıyı tamamla',
+      device: {
+        title: 'Orca Cloud\'da Bambuddy\'yi onayla',
+        instruction: 'Orca Cloud\'u açın ve bu kodu onaylayın. Onayladığınızda Bambuddy otomatik olarak bağlanır.',
+        codeLabel: 'Eşleştirme kodunuz',
+        openButton: 'Orca Cloud onay sayfasını aç',
+        manualHint: 'Ya da {{url}} adresine gidin ve yukarıdaki kodu girin.',
+        waiting: 'Onayınız bekleniyor…',
+        cancel: 'İptal',
       },
       profiles: {
         title: 'Orca Cloud profilleriniz ({{count}})',
@@ -3282,16 +3303,13 @@ export default {
         empty: 'Orca Cloud hesabınızda henüz profil bulunamadı.',
       },
       toast: {
-        connected: '{{email}} olarak Orca Cloud\'a bağlanıldı',
         disconnected: 'Orca Cloud bağlantısı kesildi',
       },
       errors: {
         startFailed: 'Orca Cloud giriş akışı başlatılamadı.',
-        finishFailed: 'Orca Cloud girişi tamamlanamadı.',
-        passwordFailed: 'Bu e-posta ve şifreyle giriş yapılamadı.',
-        passwordEmpty: 'Lütfen hem e-postanızı hem de şifrenizi girin.',
-        emptyPaste: 'Lütfen tarayıcınızdan geri çağrı URL\'sini yapıştırın.',
-        noCode: 'Bu URL bir Orca Cloud geri çağrısına benzemiyor (code parametresi yok). Tam URL\'yi adres çubuğundan kopyalayın.',
+        denied: 'Eşleştirme Orca Cloud\'da reddedildi.',
+        expired: 'Eşleştirme kodunun süresi doldu. Tekrar denemek için Bağlan\'a tıklayın.',
+        pollFailed: 'Onay beklenirken bağlantı kesildi. Lütfen tekrar deneyin.',
       },
     },
     localProfiles: {
@@ -3330,6 +3348,8 @@ export default {
       },
     },
     connectedAs: 'Bağlı kullanıcı',
+    signInExpiredTitle: 'Bambu Cloud oturumu sona erdi',
+    signInExpiredBody: 'Bambu Lab kayıtlı belirteci artık kabul etmiyor. Bulut profillerini, MakerWorld içe aktarmalarını ve donanım yazılımı denetimlerini geri yüklemek için yeniden oturum açın.',
     logout: 'Çıkış',
     noLogoutPermission: 'Çıkış yapma izniniz yok',
     failedToLoad: 'Profiller yüklenemedi',
@@ -3578,6 +3598,9 @@ export default {
     searchSubfoldersHint: 'Alt klasörler dahil',
     readme: {
       truncated: 'Kısaltıldı',
+      show: 'README’yi göster',
+      hide: 'README’yi gizle',
+      label: 'README',
     },
     tags: {
       title: 'Etiketler',
@@ -3622,6 +3645,9 @@ export default {
     prints: 'Baskılar',
     ascending: 'Artan',
     descending: 'Azalan',
+    showModified: 'Değiştirme tarihlerini göster',
+    hideModified: 'Değiştirme tarihlerini gizle',
+    lastModified: 'Son değiştirme',
     resultsCount: '{{total}} dosyadan {{showing}} tanesi',
     selectAll: 'Tümünü Seç',
     deselectAll: 'Seçimi Kaldır',
@@ -3926,6 +3952,10 @@ export default {
     toastArchives: '{{count}} baskı Bambuddy ile arşivlendi. Bağımsız kalmasını sağlayanları gör.',
     toastAnniversary: 'Bambuddy ile bir yılı doldurdun! Projeyi bağımsız tutanları gör.',
     toastVersionUpdate: 'v{{version}} sürümüne güncellendi. Bambuddy, destekçileri sayesinde ücretsiz kalıyor.',
+    toastBusiness: "Bambuddy'yi {{count}} yazıcıda mı çalıştırıyorsunuz? Ekipler için bir destek planı var: öncelikli düzeltmeler, faturalandırma ve geliştiriciye doğrudan erişim.",
+    businessCta: 'Kurumsal Bambuddy',
+    businessTitle: 'Kurumsal Bambuddy',
+    businessTagline: '{{count}} yazıcı çalıştırıyorsunuz. Ekipler ve baskı çiftlikleri için öncelikli destek, ticari lisanslama ve faturalandırma mevcut.',
   },
 
   // Kütüphane (K Profilleri)
@@ -4005,6 +4035,8 @@ export default {
     refreshPresets: 'Yenile',
     refreshPresetsTitle: "Ön ayarları yenile — en güncel bulut ve paketli listeleri getir (Bambu Studio veya Bambu Handy'de bir ön ayar sildikten sonra kullanın)",
     allPresetsRequired: 'Tüm ön ayarlar seçilmelidir',
+    useEmbedded: 'Dosyanın yerleşik ayarlarını kullan',
+    useEmbeddedHint: 'Yukarıdaki profiller yerine tasarımcının ayarladığı gibi (duvarlar, dolgu, filament) dilimle. Yazıcınız dosyayla eşleştiği için sunuluyor.',
     enqueuing: 'Dilimleme işi gönderiliyor…',
     queued: 'Kuyrukta…',
     failed: 'Dilimleme başarısız. Dilimleyici yardımcı bileşen günlüklerini kontrol edin.',
@@ -4181,6 +4213,8 @@ export default {
       title: 'Makara etiketleri yazdır',
       selectedCount: '{{count}} seçildi',
       pickSpools: 'Hangi makaralar için etiket yazdırılacağını seçin:',
+      monochrome: 'Tek renk (siyah beyaz yazıcı)',
+      monochromeHint: 'Renk örneğini kaldırır ve metni genişletir',
       searchPlaceholder: 'Ad, marka veya #ID ara',
       filterByMaterial: 'Malzeme:',
       allMaterials: 'Tümü',
@@ -4525,6 +4559,8 @@ export default {
     selectPrinter: 'Yazıcı Seç',
     selectPlate: 'Plaka Seç',
     filamentMapping: 'Filament Eşlemesi',
+    plateN: 'Plaka {{n}}',
+    plateFilamentsUnreadable: 'Seçili bir plakanın filamentleri okunamadı, bu yüzden eşleştirilemiyor. Diğerlerini kuyruğa almak için o plakanın seçimini kaldırın.',
     totalCost: 'Toplam maliyet:',
     slotRemainingShort: ' - {{grams}}g kaldı',
     printSettings: 'Baskı Ayarları',
@@ -4562,6 +4598,7 @@ export default {
     overrideWith: 'Şununla geçersiz kıl',
     resetToOriginal: 'Orijinale sıfırla',
     insufficientFilamentTitle: 'Yeterli filament yok',
+    waitingForAmsStatus: '{{printer}} için AMS durumu bekleniyor…',
     insufficientFilamentMessage: 'Bazı atanmış makaralarda bu baskının ihtiyaç duyduğundan daha az filament kaldı:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: {{required}}g gerekli, {{remaining}}g kaldı',
     printAnyway: 'Yine de yazdır',
@@ -4758,6 +4795,20 @@ export default {
     backupSize: 'Boyut',
     localTimeHint: 'Yerel saat ({{tz}})',
     defaultPathLabel: 'Varsayılan:',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'Bambuddy bu dizine yazamıyor',
+      howToFix: 'Nasıl düzeltilir:',
+      sandboxed: 'Bambuddy servisi {{path}} dizinine yazamıyor. systemd birimi ProtectSystem=strict ile çalıştığı için kurulum, veri ve günlük dizinleri dışındaki her dizin servis açısından salt okunurdur - kendi kabuğunuzdan yazabildiğiniz bir dizin olsa bile.',
+      read_only: '{{path}} salt okunur bir dosya sisteminde.',
+      permission_denied: 'Bambuddy\'nin {{path}} dizinine yazma izni yok. Dizinin sahibini ve izinlerini kontrol edin.',
+      no_space: '{{path}} dizinini barındıran dosya sistemi dolu.',
+      not_a_directory: '{{path}} var ancak bir dizin değil.',
+      missing: '{{path}} yok ve oluşturulamadı.',
+      error: 'Bambuddy {{path}} dizinine yazamıyor.',
+      ephemeralTitle: 'Bu yedekler kapsayıcı yeniden oluşturulduğunda kaybolur',
+      container_ephemeral: '{{path}} ana makinede değil, Bambuddy kapsayıcısının içinde. Oraya yazılan yedekler kapsayıcı yeniden oluşturulduğunda kaybolur. Dizini ana makineden bağlayın:',
+    },
 
     categories: {
       settings: 'Ayarlar',
@@ -5199,6 +5250,8 @@ export default {
     autoOffDescription: 'Baskı tamamlandığında kapat (tek seferlik)',
     autoOffPersistent: 'Etkin Tut',
     autoOffPersistentDescription: 'Tek seferlik yerine baskılar arasında etkin kal',
+    controlsPrinterPower: 'Yazıcıya güç veriyor',
+    controlsPrinterPowerDescription: 'Bu priz yalnızca bir aksesuara (filtre fanı, aydınlatma) güç veriyorsa kapatın. Aksi halde prizi kapatmak yazıcıyı çevrimdışı olarak işaretler.',
     autoOffAfterDrying: 'Kurutmadan Sonra Otomatik Kapat',
     autoOffAfterDryingDescription: 'AMS kurutması tamamlandığında kapat',
     delayAfterDryingMinutes: 'Kurutma gecikmesi (dakika)',
@@ -5297,7 +5350,12 @@ export default {
     restPowerPath: 'Güç JSON Yolu',
     restPowerMultiplier: 'Güç Çarpanı',
     restEnergyUrl: 'Enerji URL\'si',
-    restEnergyPath: 'Enerji JSON Yolu',
+    restEnergyPath: 'Enerji JSON yolu (bugün)',
+    restEnergyTotalPath: 'Enerji JSON yolu (toplam sayaç)',
+    restEnergyTotalMultiplier: 'Toplam sayaç çarpanı',
+    restEnergyTotalPathHint: 'örn. aenergy.total',
+    restEnergyTotalHint:
+      "Birçok priz — tüm Shelly'ler dahil — yalnızca hiç sıfırlanmayan bir toplam sayaç bildirir. Bu değer yukarıdaki alana değil, buraya girilmelidir: bugünün tüketimi olarak okunursa gece yarısı sıfırlanmaz, Dün ve Toplam da boş kalır. Bambuddy Bugün ve Dün değerlerini bundan hesaplar; bunun için bir iki günlük ölçüm gerekir. Shelly watt-saat bildirdiğinden çarpan olarak 0.001 kullanın.",
     restEnergyMultiplier: 'Enerji Çarpanı',
     restUrlRequired: 'REST prizleri için en az bir URL (ON veya OFF) gerekli',
     restHeadersHint: 'örn. {"Authorization": "Bearer your-token"}',
@@ -5464,6 +5522,8 @@ export default {
     userKey: 'Kullanıcı Anahtarı',
     appToken: 'Uygulama Belirteci',
     priority: 'Öncelik',
+    pushoverRetry: 'Acil yeniden deneme (sn)',
+    pushoverExpire: 'Acil sona erme (sn)',
     botToken: 'Bot Belirteci',
     chatId: 'Sohbet ID',
     smtpServer: 'SMTP Sunucusu',
@@ -6173,6 +6233,7 @@ export default {
         pass: 'Yazıcı bu seçeneğin açık olduğunu bildiriyor — gönderilen dosyalar SD kartta saklanacak ve arşivler küçük resim ve dilimleyici meta verileri içerecek.',
         fail: 'Yazıcı bu seçeneğin kapalı olduğunu bildiriyor. "Gönderilen dosyaları harici depolamada sakla" seçeneğini etkinleştirin — yeni donanım yazılımlarında (P2S 01.02 / Bambu Studio 2.6+) düğme yazıcının Baskı Ayarları\'nda; eski sürümlerde Bambu Studio / OrcaSlicer\'in Cihaz sekmesindedir. Bu seçenek olmadan, arşivlenen her baskıda küçük resim ve dilimleyici meta verisi olmayacak.',
         skip: 'Kontrol edilmedi — etkin bir MQTT bağlantısı gerekli. Bu ayarın yalnızca dilimleyicide bulunduğu eski dilimleyicilerde yazıcı bunu bildirmez, bu nedenle seçenek kapalı olsa bile bu kontrol geçer — kurulum adımı 4\'ü manuel olarak doğrulayın.',
+        skip_unsupported_model: 'Bu modelde SD yuvası var ancak seçeneği açmanın bir yolu yok — mevcut P1 serisi bellenim, Bambu Studio\'da bu anahtarı göstermiyor ve yazıcının ekranı yok. Burada düzeltilecek bir şey yok; Bambu Lab bellenim desteği ekleyene kadar arşivlenen baskılarda küçük resimler ve dilimleyici meta verileri eksik olabilir.',
       },
       port_rtsps: {
         title: 'Kamera portu ({{protocol}} {{port}})',
@@ -6394,6 +6455,8 @@ export default {
     resolveButton: 'Çöz',
     signInRequiredTitle: 'İndirme için Bambu Cloud girişi gerekli',
     signInRequiredBody: 'Model ayrıntılarına anonim olarak göz atabilirsiniz, ancak MakerWorld 3MF dosyalarını indirmek için bir Bambu Cloud hesabı gerektirir.',
+    signInExpiredTitle: 'Bambu Cloud oturumu sona erdi',
+    signInExpiredBody: 'Bambuddy oturumunuz açık kalmaya devam ediyor, ancak Bambu Lab kayıtlı belirteci artık kabul etmediği için indirmeler başarısız olacak. Bambu Cloud oturumunu yeniden açın.',
     openCloudSettings: 'Bulut ayarlarını aç',
     untitledModel: 'Adsız model',
     byCreator: '{{name}} tarafından',
@@ -6567,10 +6630,15 @@ export default {
     saveFailed: 'Otomatik temizleme ayarları kaydedilemedi.',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: 'Kamera akışı',
+      camwall: 'Kamera duvarı',
+      overlay: 'Yayın bindirmesi',
+    },
     title: 'Kamera API Belirteçleri',
     navTitle: 'Kamera API belirteçleri',
     description:
-      'Kamera akışını Home Assistant, Frigate, kiosklar veya kararlı bir URL\'ye ihtiyaç duyan başka herhangi bir araca gömmek için uzun ömürlü belirteçler. Her belirteç yalnızca kamera akışı içindir ve herhangi bir zamanda iptal edilebilir.',
+      'Kamera akışını Home Assistant, Frigate, kiosk ekranları veya sabit bir adres gerektiren başka araçlara gömmek için uzun ömürlü belirteçler. Kapsam oluşturma sırasında seçilir; belirteç istediğiniz zaman iptal edilebilir.',
     loading: 'Yükleniyor…',
     confirmRevoke: {
       title: 'Bu belirteç iptal edilsin mi?',
@@ -6579,6 +6647,13 @@ export default {
       confirm: 'İptal Et',
     },
     create: {
+      scopeLabel: 'Kapsam',
+      hintCameraStream:
+        'Kamera akışı belirteci yalnızca kamera akışlarını ve anlık görüntüleri alabilir. Home Assistant, Frigate veya tek bir kamerayı gömen her şey için kullanın.',
+      hintCamWall:
+        'Kamera duvarı belirteci, oturum açmadan bir ekranda /camwall adresini açar. Her yazıcının adını ve durumunu, ayrıca kamera akışlarını görebilir. Dosya adlarını, adresleri veya erişim kodlarını göremez.',
+      hintOverlay:
+        'Yayın bindirmesi belirteci, oturum açmadan bir ekranda /overlay/{printerId} adresini açar — OBS veya herhangi bir canlı yayın için. Bir yazıcının kamera akışını ve ekranda gösterilen dosya adı dahil canlı yazdırma durumunu görebilir. Adresleri veya erişim kodlarını göremez.',
       title: 'Yeni belirteç oluştur',
       nameLabel: 'Belirteç adı',
       namePlaceholder: 'örn. Home Assistant',
@@ -6588,6 +6663,12 @@ export default {
         'Maksimum ömür 365 gün. Belirteç değeri oluşturmada yalnızca bir kez gösterilir — şimdi kopyalayın.',
     },
     created: {
+      camWallUrlTitle: 'Bu ekran için kamera duvarı adresi',
+      camWallUrlHint:
+        'Bu adresi ekranda açın. Adresi okuyabilen herkes duvarı izleyebilir, bu yüzden onu bir anahtar gibi görün; ekranın erişimini kesmek için belirteci iptal edin.',
+      overlayUrlTitle: 'OBS için bindirme adresi',
+      overlayUrlHint:
+        'Bunu OBS\'ye Tarayıcı Kaynağı olarak ekleyin. /overlay/1 içindeki sayıyı yazıcınızın numarasıyla değiştirin (Yazıcılar sayfasındaki adresinden). Adresi okuyabilen herkes yayını izleyebilir, bu yüzden onu bir anahtar gibi görün — erişimi kesmek için belirteci iptal edin.',
       title: 'Belirteç oluşturuldu — şimdi kopyalayın',
       warning:
         'Bu, bu belirtecin görünür olacağı tek seferdir. Bu iletişim kutusunu kapattıktan sonra onu bir daha asla görüntüleyemezsiniz.',
@@ -6595,6 +6676,7 @@ export default {
       dismiss: 'Kaydettim',
     },
     list: {
+      scope: 'Kapsam',
       myTitle: 'Belirteçlerim',
       allTitle: 'Tüm kullanıcılar (yönetici görünümü)',
       empty: 'Henüz belirteç yok.',

@@ -266,7 +266,7 @@ function PickStep({
                     ) : targetName ? (
                       <span>{targetName}</span>
                     ) : (
-                      <span className="text-amber-400">
+                      <span className="text-amber-700 dark:text-amber-400">
                         {t('library.runWithPipeline.noTarget', 'No target printer set')}
                       </span>
                     )}
@@ -323,7 +323,7 @@ function ConfirmStep({
       <ul className="space-y-1.5">
         {report.issues.map((issue, idx) => (
           <li key={idx} className="flex items-start gap-2 text-xs">
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
             <span className="text-bambu-gray">
               <IssueText issue={issue} />
             </span>

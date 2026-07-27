@@ -287,19 +287,61 @@ export interface SystemHealthResult {
   };
 }
 
-// Long-lived camera-stream tokens (#1108). The `token` field is populated
-// only on the create response — listing endpoints set it to null because
-// the plaintext value is shown to the user exactly once.
+// Long-lived camera tokens (#1108). The `token` field is populated only on the
+// create response — listing endpoints set it to null because the plaintext
+// value is shown to the user exactly once.
+//
+// 'camera_stream' reaches the video endpoints only. 'camwall' additionally
+// reaches the read-only Cam Wall feed, which names the printers (#2531), so it
+// is a separate scope rather than a widening of tokens already in the wild.
+export type LongLivedTokenScope = 'camera_stream' | 'camwall' | 'overlay';
+
 export interface LongLivedCameraToken {
   id: number;
   user_id: number;
   name: string;
-  scope: 'camera_stream';
+  scope: LongLivedTokenScope;
   lookup_prefix: string;
   created_at: string;
   expires_at: string;
   last_used_at: string | null;
   token: string | null;
+}
+
+// One row of the token-authenticated Cam Wall feed (#2531). Deliberately
+// smaller than PrinterStatus: no serial, no IP, no print filename — a kiosk URL
+// is not a secret, so the payload behind it must not be either.
+export interface CamWallPrinter {
+  id: number;
+  name: string;
+  camera_rotation: number;
+  connected: boolean;
+  state: string | null;
+  progress: number | null;
+  remaining_time: number | null;
+  layer_num: number | null;
+  total_layers: number | null;
+  hms_errors: HMSError[];
+}
+
+// Streaming-overlay feed (#2613). The subset of print state the /overlay page
+// draws for one printer, served behind an `overlay`-scoped token so OBS embeds
+// with no login session can read it. Unlike CamWallPrinter this names the file
+// being printed (the overlay shows the part on screen).
+export interface OverlayStatus {
+  id: number;
+  name: string;
+  camera_rotation: number;
+  connected: boolean;
+  state: string | null;
+  current_print: string | null;
+  gcode_file: string | null;
+  progress: number | null;
+  remaining_time: number | null;
+  layer_num: number | null;
+  total_layers: number | null;
+  stg_cur_name: string | null;
+  time_format: 'system' | '12h' | '24h';
 }
 
 // Printer types
@@ -365,6 +407,7 @@ export interface AMSTray {
   drying_temp: number | null;      // RFID-recommended drying temp
   drying_time: number | null;      // RFID-recommended drying time (hours)
   state: number | null;            // AMS tray state: 9=empty, 10=spool present not loaded, 11=loaded
+  exists?: boolean | null;         // Firmware tray_exist_bits: spool physically present (non-RFID → "?" not "Empty", #2527)
 }
 
 export interface AMSUnit {
@@ -499,6 +542,14 @@ export interface PrinterStatus {
   fila_switch: FilaSwitchState | null;
   // Currently loaded tray (global tray ID, 255 = no filament loaded, 254 = external spool)
   tray_now: number;
+  // Runout / filament-replacement guidance (#2587). Populated only while PAUSED.
+  // Global tray IDs (ams_id*4+slot, 128-135 = AMS-HT, 254 = external), matching
+  // the same numbering as tray_now so the AMS graphic can highlight them.
+  //   expected_tray = the slot the firmware now expects filament in (null = idle,
+  //                   not paused, or unresolvable → "check the printer").
+  //   previous_tray = the slot that ran out (null = unknown).
+  expected_tray: number | null;
+  previous_tray: number | null;
   // AMS status for filament change tracking (0=idle, 1=filament_change, 2=rfid_identifying, 3=assist, 4=calibration)
   ams_status_main: number;
   // AMS sub-status for filament change step (when main=1): 4=retraction, 6=load verification, 7=purge
@@ -525,6 +576,8 @@ export interface PrinterStatus {
   awaiting_plate_clear: boolean;
   // AMS drying support
   supports_drying: boolean;
+  // The AMS can dry, but only from the printer's own screen (P1 series, #2533).
+  drying_screen_only?: boolean;
   // Active chamber heater (responds to M141). True only for H2C/H2D/H2DPro/H2S/X2D.
   supports_chamber_heater?: boolean;
 }
@@ -620,6 +673,7 @@ export interface Archive {
   original_archive_id: number | null;  // ID of the first/original archive
   object_count: number | null;
   print_name: string | null;
+  plate_id: number | null;  // Selected plate of a multi-plate 3MF (#2603)
   print_time_seconds: number | null;
   actual_time_seconds: number | null;  // Computed from started_at/completed_at
   time_accuracy: number | null;  // Percentage: 100 = perfect, >100 = faster than estimated
@@ -898,6 +952,9 @@ export interface ProjectListItem {
   target_count: number | null;  // Target number of plates/print jobs
   target_parts_count: number | null;  // Target number of parts/objects
   budget: number | null;
+  tags: string | null;  // #2536 — the shared edit dialog seeds itself from this
+  due_date: string | null;  // #2536
+  priority: string;  // #2536
   created_at: string;
   archive_count: number;  // Number of print jobs (plates)
   total_items: number;  // Sum of quantities (total items printed, including failed)
@@ -933,8 +990,8 @@ export interface ProjectUpdate {
   target_count?: number;
   target_parts_count?: number;
   notes?: string;
-  tags?: string;
-  due_date?: string;
+  tags?: string | null;  // #2536 — explicit null clears the tags
+  due_date?: string | null;  // #2536 — explicit null clears the due date
   priority?: string;
   budget?: number | null;
   parent_id?: number;
@@ -1097,6 +1154,13 @@ export interface APIKeyUpdate {
   expires_at?: string | null;
 }
 
+/**
+ * Tri-state calibration option (BambuStudio parity): "off" never runs it,
+ * "on" forces it every print, "auto" lets the printer skip it if it was done
+ * recently. Used by bed_levelling, flow_cali, and nozzle_offset_cali.
+ */
+export type CalibrationMode = 'off' | 'on' | 'auto';
+
 // Settings types
 export interface AppSettings {
   auto_archive: boolean;
@@ -1206,12 +1270,12 @@ export interface AppSettings {
   // User email notifications toggle
   user_notifications_enabled: boolean;
   // Default print options
-  default_bed_levelling: boolean;
-  default_flow_cali: boolean;
+  default_bed_levelling: CalibrationMode;
+  default_flow_cali: CalibrationMode;
   default_vibration_cali: boolean;
   default_layer_inspect: boolean;
   default_timelapse: boolean;
-  default_nozzle_offset_cali: boolean;
+  default_nozzle_offset_cali: CalibrationMode;
   // Staggered batch start defaults
   stagger_group_size: number;
   stagger_interval_minutes: number;
@@ -1219,6 +1283,10 @@ export interface AppSettings {
   require_plate_clear: boolean;
   // Shortest job first scheduling
   queue_shortest_first: boolean;
+  // How many printers the queue may upload to at once (#2555). 1 restores the
+  // old strictly-serial behaviour, where every printer waited out every other
+  // printer's transfer.
+  queue_max_concurrent_uploads: number;
   // Preheat / heat-soak before queued prints (#1468). Master toggle is the
   // default for new queue items; per-item PrintQueueItem.preheat_override can
   // flip the decision per print. Chamber target derives from the loaded AMS
@@ -1273,6 +1341,8 @@ export interface CloudAuthStatus {
   is_authenticated: boolean;
   email: string | null;
   region?: 'global' | 'china' | null;
+  /** A token is stored but Bambu no longer accepts it — tell the user why the login form is back. */
+  sign_in_expired?: boolean;
 }
 
 export interface CloudLoginResponse {
@@ -1286,10 +1356,26 @@ export interface CloudLoginResponse {
 // Orca Cloud types — paste-flow PKCE handshake against auth.orcaslicer.com.
 // See backend/app/services/orca_cloud.py for the deep dive on why this
 // flow is paste-based rather than callback-based.
-export type OrcaOAuthProvider = 'google' | 'apple' | 'github';
+export interface OrcaDeviceStartResponse {
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete: string;
+  interval: number;
+  expires_in: number;
+}
 
-export interface OrcaAuthStartResponse {
-  auth_url: string;
+export type OrcaDevicePollStatus =
+  | 'authorization_pending'
+  | 'slow_down'
+  | 'access_denied'
+  | 'expired_token'
+  | 'complete';
+
+export interface OrcaDevicePollResponse {
+  status: OrcaDevicePollStatus;
+  connected: boolean;
+  email: string | null;
+  user_id: string | null;
 }
 
 export interface OrcaAuthStatusResponse {
@@ -1334,6 +1420,8 @@ export interface OrcaProfileDetail {
 export interface MakerworldStatus {
   has_cloud_token: boolean;
   can_download: boolean;
+  /** A token is stored but Bambu rejected it — downloads will fail until the user signs in again. */
+  sign_in_expired?: boolean;
 }
 
 export interface MakerworldResolvedModel {
@@ -1482,6 +1570,11 @@ export interface SliceRequest {
   // "Textured PEI Plate", "Smooth PEI Plate", "Cool Plate (SuperTack)",
   // "Supertack Plate".
   bed_type?: string | null;
+  // "Slice as designed" (#2611). 3MF only: slice using the file's embedded
+  // project_settings.config (the designer's own wall count, infill, etc.)
+  // instead of the picked profile triplet. The preset refs above are still
+  // required by the backend validator but go unused on this path.
+  use_embedded_settings?: boolean;
 }
 
 // GET /api/v1/slicer/presets — unified listing across cloud / local / standard.
@@ -1830,7 +1923,14 @@ export interface SmartPlug {
   rest_energy_url: string | null;
   rest_energy_path: string | null;
   rest_energy_multiplier: number;
+  // Lifetime counter, separate from the daily one (#2539). A Shelly reports only
+  // this; Today and Yesterday are derived from its hourly snapshots.
+  rest_energy_total_path: string | null;
+  rest_energy_total_multiplier: number;
   printer_id: number | null;
+  // #2629: only a plug that really feeds the printer may mark it offline when
+  // switched off. Accessory plugs follow the print cycle without powering it.
+  controls_printer_power: boolean;
   enabled: boolean;
   auto_on: boolean;
   auto_off: boolean;
@@ -1904,7 +2004,11 @@ export interface SmartPlugCreate {
   rest_energy_url?: string | null;
   rest_energy_path?: string | null;
   rest_energy_multiplier?: number;
+  rest_energy_total_path?: string | null;
+  rest_energy_total_multiplier?: number;
   printer_id?: number | null;
+  // #2629
+  controls_printer_power?: boolean;
   enabled?: boolean;
   auto_on?: boolean;
   auto_off?: boolean;
@@ -1970,7 +2074,11 @@ export interface SmartPlugUpdate {
   rest_energy_url?: string | null;
   rest_energy_path?: string | null;
   rest_energy_multiplier?: number;
+  rest_energy_total_path?: string | null;
+  rest_energy_total_multiplier?: number;
   printer_id?: number | null;
+  // #2629
+  controls_printer_power?: boolean;
   enabled?: boolean;
   auto_on?: boolean;
   auto_off?: boolean;
@@ -2084,16 +2192,16 @@ export interface PrintQueueItem {
   // PrintModal's deficit warning was acknowledged.
   skip_filament_check: boolean;
   ams_mapping: number[] | null;  // AMS slot mapping for multi-color prints
-  filament_overrides: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;  // Filament overrides for model-based assignment
+  filament_overrides: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;  // Filament overrides for model-based assignment
   plate_id: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
-  bed_levelling: boolean;
-  flow_cali: boolean;
+  bed_levelling: CalibrationMode;
+  flow_cali: CalibrationMode;
   vibration_cali: boolean;
   layer_inspect: boolean;
   timelapse: boolean;
   use_ams: boolean;
-  nozzle_offset_cali: boolean;
+  nozzle_offset_cali: CalibrationMode;
   preheat_override: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override: number | null;
   status: 'pending' | 'printing' | 'completed' | 'failed' | 'skipped' | 'cancelled';
@@ -2164,13 +2272,13 @@ export interface PrintQueueItemCreate {
   ams_mapping?: number[] | null;  // AMS slot mapping for multi-color prints
   plate_id?: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
-  bed_levelling?: boolean;
-  flow_cali?: boolean;
+  bed_levelling?: CalibrationMode;
+  flow_cali?: CalibrationMode;
   vibration_cali?: boolean;
   layer_inspect?: boolean;
   timelapse?: boolean;
   use_ams?: boolean;
-  nozzle_offset_cali?: boolean;
+  nozzle_offset_cali?: CalibrationMode;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -2208,13 +2316,13 @@ export interface PrintQueueItemUpdate {
   ams_mapping?: number[];
   plate_id?: number | null;  // Plate ID for multi-plate 3MF files
   // Print options
-  bed_levelling?: boolean;
-  flow_cali?: boolean;
+  bed_levelling?: CalibrationMode;
+  flow_cali?: CalibrationMode;
   vibration_cali?: boolean;
   layer_inspect?: boolean;
   timelapse?: boolean;
   use_ams?: boolean;
-  nozzle_offset_cali?: boolean;
+  nozzle_offset_cali?: CalibrationMode;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -2229,13 +2337,13 @@ export interface PrintQueueBulkUpdate {
   auto_off_after?: boolean;
   manual_start?: boolean;
   // Print options
-  bed_levelling?: boolean;
-  flow_cali?: boolean;
+  bed_levelling?: CalibrationMode;
+  flow_cali?: CalibrationMode;
   vibration_cali?: boolean;
   layer_inspect?: boolean;
   timelapse?: boolean;
   use_ams?: boolean;
-  nozzle_offset_cali?: boolean;
+  nozzle_offset_cali?: CalibrationMode;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -2593,6 +2701,21 @@ export interface LocalBackupFile {
   filename: string;
   size: number;
   created_at: string;
+}
+
+/** Result of writing a probe file into the configured backup directory (#2544). */
+export interface LocalBackupPathCheck {
+  writable: boolean;
+  path: string;
+  /** 'ok' | 'sandboxed' | 'read_only' | 'permission_denied' | 'no_space' | 'not_a_directory' | 'missing' | 'error' */
+  code: string;
+  /** Raw OS error, shown as-is under the translated explanation. */
+  detail: string | null;
+  /** Copy-pasteable fix (systemd drop-in, compose snippet) — not translated. */
+  remedy: string | null;
+  message: string;
+  /** 'container_ephemeral' — writable, but the backups die with the container. */
+  warning: string | null;
 }
 
 export interface ObicoDetectionEvent {
@@ -3800,9 +3923,9 @@ export const api = {
     }),
 
   // Bed (Z-axis) jog
-  bedJog: (printerId: number, distance: number, force: boolean = false) =>
+  bedJog: (printerId: number, distance: number) =>
     request<{ success: boolean; message: string }>(
-      `/printers/${printerId}/bed-jog?distance=${distance}&force=${force}`,
+      `/printers/${printerId}/bed-jog?distance=${distance}`,
       { method: 'POST' }
     ),
   xyJog: (printerId: number, x: number, y: number) =>
@@ -4743,24 +4866,17 @@ export const api = {
   cloudLogout: () =>
     request<{ success: boolean }>('/cloud/logout', { method: 'POST' }),
 
-  // Orca Cloud — paste-based PKCE flow for OAuth (Google/Apple/GitHub),
-  // direct credentials for email+password. start() returns an auth URL the
-  // user opens in their browser; after sign-in they paste the callback URL
-  // back via finish(). password() skips the dance entirely.
-  orcaCloudStartAuth: (provider: OrcaOAuthProvider = 'google') =>
-    request<OrcaAuthStartResponse>('/orca-cloud/auth/start', {
+  // Orca Cloud — RFC 8628 device pairing. deviceStart() returns a short
+  // user_code + verification link; the user approves it in their Orca Cloud
+  // settings while the frontend polls devicePoll() every `interval` seconds
+  // until the status flips to 'complete' (or a terminal deny/expire).
+  orcaCloudDeviceStart: () =>
+    request<OrcaDeviceStartResponse>('/orca-cloud/device/start', {
       method: 'POST',
-      body: JSON.stringify({ provider }),
     }),
-  orcaCloudFinishAuth: (callback_url: string) =>
-    request<OrcaAuthStatusResponse>('/orca-cloud/auth/finish', {
+  orcaCloudDevicePoll: () =>
+    request<OrcaDevicePollResponse>('/orca-cloud/device/poll', {
       method: 'POST',
-      body: JSON.stringify({ callback_url }),
-    }),
-  orcaCloudPasswordLogin: (email: string, password: string) =>
-    request<OrcaAuthStatusResponse>('/orca-cloud/auth/password', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
     }),
   orcaCloudStatus: () =>
     request<OrcaAuthStatusResponse>('/orca-cloud/status'),
@@ -5351,7 +5467,7 @@ export const api = {
   // ── Spool label printing (#809) ──────────────────────────────────────────
   // Both endpoints return application/pdf. Frontend opens the resulting Blob
   // in a new tab so the user can print or save from the browser's PDF viewer.
-  printSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate }): Promise<Blob> => {
+  printSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate; monochrome?: boolean }): Promise<Blob> => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
     const response = await fetch(`${API_BASE}/inventory/labels`, {
@@ -5365,7 +5481,7 @@ export const api = {
     }
     return response.blob();
   },
-  printSpoolmanSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate }): Promise<Blob> => {
+  printSpoolmanSpoolLabels: async (data: { spool_ids: number[]; template: SpoolLabelTemplate; monochrome?: boolean }): Promise<Blob> => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
     const response = await fetch(`${API_BASE}/spoolman/labels`, {
@@ -5642,11 +5758,15 @@ export const api = {
   getWebSocketToken: () =>
     request<{ token: string }>('/auth/ws-token', { method: 'POST' }),
 
-  // Long-lived camera-stream tokens (#1108)
-  createLongLivedCameraToken: (payload: { name: string; expires_in_days: number }) =>
+  // Long-lived camera tokens (#1108, #2531)
+  createLongLivedCameraToken: (payload: {
+    name: string;
+    expires_in_days: number;
+    scope?: LongLivedTokenScope;
+  }) =>
     request<LongLivedCameraToken>('/auth/tokens', {
       method: 'POST',
-      body: JSON.stringify({ ...payload, scope: 'camera_stream' }),
+      body: JSON.stringify({ scope: 'camera_stream', ...payload }),
     }),
   listMyLongLivedCameraTokens: () =>
     request<LongLivedCameraToken[]>('/auth/tokens'),
@@ -5656,6 +5776,21 @@ export const api = {
     request<LongLivedCameraToken[]>(`/auth/tokens?user_id=${userId}`),
   revokeLongLivedCameraToken: (tokenId: number) =>
     request<void>(`/auth/tokens/${tokenId}`, { method: 'DELETE' }),
+  // Token-authenticated Cam Wall feed (#2531). `token` is omitted only when
+  // auth is disabled, where the backend gate is a no-op anyway.
+  getCamWallPrinters: (token?: string) =>
+    request<CamWallPrinter[]>(
+      token ? `/camwall/printers?token=${encodeURIComponent(token)}` : '/camwall/printers',
+    ),
+  // Token-authenticated streaming-overlay feed (#2613). OBS (or any embed with
+  // no login session) loads /overlay/{id}?token=... and this backs it. `token`
+  // is omitted only when auth is disabled, where the backend gate is a no-op.
+  getOverlayStatus: (printerId: number, token?: string) =>
+    request<OverlayStatus>(
+      token
+        ? `/printers/${printerId}/overlay-status?token=${encodeURIComponent(token)}`
+        : `/printers/${printerId}/overlay-status`,
+    ),
   getCameraStreamUrl: (printerId: number, fps = 10) =>
     withStreamToken(`${API_BASE}/printers/${printerId}/camera/stream?fps=${fps}`),
   getCameraSnapshotUrl: (printerId: number) =>
@@ -6306,6 +6441,9 @@ export const api = {
   triggerLocalBackup: () =>
     request<{ success: boolean; message: string; filename?: string }>('/local-backup/run', { method: 'POST' }),
 
+  checkLocalBackupPath: () =>
+    request<LocalBackupPathCheck>('/local-backup/path-check'),
+
   getLocalBackups: () =>
     request<LocalBackupFile[]>('/local-backup/backups'),
 
@@ -6747,6 +6885,9 @@ export interface LibraryFileListItem {
   created_by_id: number | null;
   created_by_username: string | null;
   created_at: string;
+  // Real on-disk modification time (#2680). Null for managed uploads; the date
+  // sort and "Modified" column use `fs_modified_at ?? created_at`.
+  fs_modified_at: string | null;
   print_name: string | null;
   print_time_seconds: number | null;
   filament_used_grams: number | null;

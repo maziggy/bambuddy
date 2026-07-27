@@ -128,9 +128,11 @@ export function CameraTile({
     `/api/v1/printers/${printerId}/camera/snapshot?t=${bust}`,
   );
 
-  const handleClick = () => {
-    if (onClick) onClick();
-  };
+  // A kiosk wall passes no onClick — there is no pointer at a TV, and the page
+  // is authenticated by a token that cannot open the single-camera view. Render
+  // the tile as plain, non-focusable content rather than a button that looks
+  // clickable and then does nothing.
+  const interactive = onClick != null;
 
   const transform = cameraRotation ? `rotate(${cameraRotation}deg)` : undefined;
 
@@ -145,13 +147,12 @@ export function CameraTile({
   const hasLayers = layerNum != null && totalLayers != null && totalLayers > 0;
   const hasRemaining = remainingMin != null && remainingMin > 0;
 
-  return (
-    <button
-      type="button"
-      onClick={handleClick}
-      className="group relative aspect-video w-full overflow-hidden rounded-lg border border-bambu-dark-tertiary bg-black text-left focus:outline-none focus:ring-2 focus:ring-bambu-green"
-      title={printerName}
-    >
+  const rootClass = `group relative aspect-video w-full overflow-hidden rounded-lg border border-bambu-dark-tertiary bg-black text-left ${
+    interactive ? 'focus:outline-none focus:ring-2 focus:ring-bambu-green' : 'cursor-default'
+  }`;
+
+  const content = (
+    <>
       {!connected || mode === 'paused' ? (
         <div className="absolute inset-0 flex items-center justify-center bg-bambu-dark/60">
           {connected ? (
@@ -243,6 +244,20 @@ export function CameraTile({
         )}
         <span className="block truncate text-xs font-medium">{printerName}</span>
       </div>
+    </>
+  );
+
+  if (!interactive) {
+    return (
+      <div className={rootClass} title={printerName}>
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <button type="button" onClick={onClick} className={rootClass} title={printerName}>
+      {content}
     </button>
   );
 }

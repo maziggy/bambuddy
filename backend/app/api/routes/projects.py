@@ -263,6 +263,9 @@ async def list_projects(
                 target_count=project.target_count,
                 target_parts_count=project.target_parts_count,
                 budget=project.budget,
+                tags=project.tags,
+                due_date=project.due_date,
+                priority=project.priority,
                 created_at=project.created_at,
                 archive_count=archive_count,
                 total_items=total_items,
@@ -370,7 +373,11 @@ async def list_templates(
                 color=project.color,
                 status=project.status,
                 target_count=project.target_count,
+                target_parts_count=project.target_parts_count,
                 budget=project.budget,
+                tags=project.tags,
+                due_date=project.due_date,
+                priority=project.priority,
                 created_at=project.created_at,
                 archive_count=archive_count,
                 queue_count=0,
@@ -585,9 +592,12 @@ async def update_project(
         project.target_parts_count = data.target_parts_count
     if data.notes is not None:
         project.notes = data.notes
-    if data.tags is not None:
+    # Sent-but-null clears the field; omitted leaves it alone. Guarding on
+    # ``is not None`` would make an emptied tags field or a removed due date
+    # silently revert to the stored value (#2536).
+    if "tags" in data.model_fields_set:
         project.tags = data.tags
-    if data.due_date is not None:
+    if "due_date" in data.model_fields_set:
         project.due_date = data.due_date
     if data.priority is not None:
         if data.priority not in ["low", "normal", "high", "urgent"]:

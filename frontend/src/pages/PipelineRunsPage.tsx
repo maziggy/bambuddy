@@ -268,7 +268,7 @@ export function PipelineRunsView() {
             type="button"
             onClick={() => setShowClearConfirm(true)}
             disabled={total === 0}
-            className="flex items-center gap-1 px-2 py-1 text-red-400 hover:bg-red-500/10 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-1 px-2 py-1 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Trash2 className="w-3 h-3" />
             {t('pipelineRuns.clearLog', 'Clear log')}
@@ -291,7 +291,7 @@ export function PipelineRunsView() {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-base font-semibold text-white flex items-center gap-2">
-              <Trash2 className="w-4 h-4 text-red-400" />
+              <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
               {t('pipelineRuns.clearConfirmTitle', 'Clear log?')}
             </h3>
             <p className="text-sm text-bambu-gray mt-2">
@@ -490,7 +490,7 @@ function RunRow({
                 {run.copies_failed > 0 && (
                   <>
                     <span className="text-bambu-gray/40">·</span>
-                    <span className="text-red-400">
+                    <span className="text-red-700 dark:text-red-400">
                       {t('pipelineRuns.failedCount', '{{n}} failed', { n: run.copies_failed })}
                     </span>
                   </>
@@ -506,7 +506,7 @@ function RunRow({
               onClick={onCancel}
               disabled={cancelling}
               aria-label={t('common.cancel', 'Cancel')}
-              className="text-xs px-2 py-1 text-red-400 hover:bg-red-500/10 rounded disabled:opacity-50 flex items-center gap-1"
+              className="text-xs px-2 py-1 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded disabled:opacity-50 flex items-center gap-1"
             >
               <X className="w-3 h-3" />
               {t('common.cancel', 'Cancel')}
@@ -542,7 +542,7 @@ function RunRow({
                   </span>
                 )}
                 {job.error_message && (
-                  <span className="text-red-400 truncate" title={job.error_message}>
+                  <span className="text-red-700 dark:text-red-400 truncate" title={job.error_message}>
                     {job.error_message}
                   </span>
                 )}
@@ -550,7 +550,7 @@ function RunRow({
             ))}
           </div>
           {run.error_message && !userCancelled && (
-            <div className="text-xs text-red-400 mt-2 pt-2 border-t border-bambu-dark-tertiary">
+            <div className="text-xs text-red-700 dark:text-red-400 mt-2 pt-2 border-t border-bambu-dark-tertiary">
               {run.error_message}
             </div>
           )}

@@ -510,6 +510,56 @@ describe('useWebSocket hook', () => {
       vi.unstubAllGlobals();
     });
 
+    it('handles spool_assignment_verified messages (success and failure) without error', async () => {
+      vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+        cb(0);
+        return 0;
+      });
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+
+      renderHook(() => useWebSocket(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      const ws = await waitForWs();
+      act(() => {
+        ws.open();
+      });
+
+      // #2582: verified (loaded), loaded-but-no-K-profile, and not-confirmed
+      // all route to a toast — assert none of the branches throw.
+      expect(() => {
+        act(() => {
+          ws.simulateMessage({
+            type: 'spool_assignment_verified',
+            printer_id: 3,
+            printer_name: 'Printer A',
+            slot: 'A1',
+            verified: true,
+            kprofile_applied: true,
+          });
+          ws.simulateMessage({
+            type: 'spool_assignment_verified',
+            printer_id: 3,
+            printer_name: 'Printer A',
+            slot: 'A1',
+            verified: true,
+            kprofile_applied: false,
+          });
+          ws.simulateMessage({
+            type: 'spool_assignment_verified',
+            printer_id: 3,
+            printer_name: 'Printer A',
+            slot: 'A1',
+            verified: false,
+            saw_tray: true,
+          });
+        });
+      }).not.toThrow();
+
+      vi.unstubAllGlobals();
+    });
+
     it('ignores pong messages without error', async () => {
       const { useWebSocket } = await import('../../hooks/useWebSocket');
 

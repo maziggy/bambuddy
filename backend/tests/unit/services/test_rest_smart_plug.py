@@ -34,6 +34,11 @@ def mock_plug():
     plug.rest_energy_url = None
     plug.rest_energy_path = "energy.today"
     plug.rest_energy_multiplier = 1.0
+    # Pinned to None rather than left as a MagicMock: an auto-created attribute is
+    # truthy, so get_energy would think a lifetime path was configured and take a
+    # branch no test meant to exercise.
+    plug.rest_energy_total_path = None
+    plug.rest_energy_total_multiplier = 1.0
     return plug
 
 
@@ -183,6 +188,91 @@ class TestGetEnergy:
 
         assert result["power"] == 42.5
         assert result["today"] == 1.23
+
+
+class TestGetEnergyLifetimeCounter:
+    """#2539. A Shelly Plug S Gen3 reports exactly one energy figure, and it is
+    cumulative. It has to land in ``total``, not ``today``.
+    """
+
+    # The reporter's own Switch.GetStatus payload.
+    SHELLY = {"apower": 84.0, "aenergy": {"total": 2620.197}}
+
+    @pytest.fixture
+    def shelly(self, mock_plug):
+        mock_plug.rest_power_path = "apower"
+        mock_plug.rest_power_multiplier = 1.0
+        mock_plug.rest_energy_path = None  # a Shelly has no notion of "today"
+        mock_plug.rest_energy_total_path = "aenergy.total"
+        mock_plug.rest_energy_total_multiplier = 0.001  # Wh -> kWh
+        return mock_plug
+
+    @pytest.mark.asyncio
+    async def test_lifetime_counter_lands_in_total_not_today(self, service, shelly):
+        response = MagicMock()
+        response.json.return_value = self.SHELLY
+
+        with patch.object(service, "_send_request", new_callable=AsyncMock, return_value=response):
+            result = await service.get_energy(shelly)
+
+        assert result["power"] == 84.0
+        assert result["total"] == pytest.approx(2.620197)
+        # The bug: this used to be 2.620197, a lifetime figure wearing today's
+        # label, which then never reset at midnight.
+        assert "today" not in result
+
+    @pytest.mark.asyncio
+    async def test_a_plug_reporting_both_counters_keeps_them_apart(self, service, mock_plug):
+        """A Tasmota behind a REST bridge exposes Today and Total. Neither may
+        overwrite the other.
+        """
+        mock_plug.rest_power_path = "power"
+        mock_plug.rest_energy_path = "energy.today"
+        mock_plug.rest_energy_multiplier = 1.0
+        mock_plug.rest_energy_total_path = "energy.total"
+        mock_plug.rest_energy_total_multiplier = 1.0
+
+        response = MagicMock()
+        response.json.return_value = {"power": 42.5, "energy": {"today": 1.23, "total": 987.6}}
+
+        with patch.object(service, "_send_request", new_callable=AsyncMock, return_value=response):
+            result = await service.get_energy(mock_plug)
+
+        assert result["today"] == 1.23
+        assert result["total"] == 987.6
+
+    @pytest.mark.asyncio
+    async def test_total_path_alone_is_enough_to_read_energy(self, service, mock_plug):
+        """No power path, no today path — only the lifetime counter. get_energy
+        used to bail out entirely, since its guard only knew about the other two.
+        """
+        mock_plug.rest_power_path = None
+        mock_plug.rest_energy_path = None
+        mock_plug.rest_energy_total_path = "aenergy.total"
+        mock_plug.rest_energy_total_multiplier = 0.001
+
+        response = MagicMock()
+        response.json.return_value = self.SHELLY
+
+        with patch.object(service, "_send_request", new_callable=AsyncMock, return_value=response):
+            result = await service.get_energy(mock_plug)
+
+        assert result == {"total": pytest.approx(2.620197)}
+
+    @pytest.mark.asyncio
+    async def test_both_counters_share_one_fetch(self, service, shelly):
+        """Today and Total ride on the same Shelly response. Reading them must not
+        cost two HTTP round-trips against a device on the end of a wifi link.
+        """
+        shelly.rest_energy_path = "aenergy.total"  # same URL as the total path
+
+        response = MagicMock()
+        response.json.return_value = self.SHELLY
+
+        with patch.object(service, "_send_request", new_callable=AsyncMock, return_value=response) as send:
+            await service.get_energy(shelly)
+
+        assert send.await_count == 1
 
     @pytest.mark.asyncio
     async def test_energy_no_status_url_no_separate_urls(self, service, mock_plug):

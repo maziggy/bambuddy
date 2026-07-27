@@ -361,3 +361,127 @@ describe('presetCompatibility with Bambu cloud A1M rename (#1649)', () => {
     ).toBe('mismatch');
   });
 });
+
+describe('presetCompatibility — long-form @Bambu Lab printer tag (#2628)', () => {
+  const A1 = 'Bambu Lab A1 0.4 nozzle';
+  const A1_MINI = 'Bambu Lab A1 mini 0.4 nozzle';
+  const H2D = 'Bambu Lab H2D 0.4 nozzle';
+  const idx = buildCompatibilityIndex(PRINTER_MODELS);
+
+  it('flags a user-saved H2D filament preset as a mismatch on an A1', () => {
+    // michaelklos's report: this exact preset sat in an unused filament slot
+    // of a multi-plate 3MF. Classified 'unknown' it was treated as usable,
+    // auto-picked, and the CLI rejected the slice with "filament preset
+    // (slot 1) is not compatible with printer Bambu Lab A1 0.4 nozzle".
+    expect(
+      presetCompatibility({ name: 'SUNLU TPU 95A @Bambu Lab H2D 0.4 nozzle' }, 'filament', A1, idx),
+    ).toBe('mismatch');
+  });
+
+  it('matches the same preset against its own printer', () => {
+    expect(
+      presetCompatibility({ name: 'SUNLU TPU 95A @Bambu Lab H2D 0.4 nozzle' }, 'filament', H2D, idx),
+    ).toBe('match');
+  });
+
+  it('resolves a long-form model whose display name differs from its short code', () => {
+    const name = 'My PETG @Bambu Lab X1 Carbon 0.4 nozzle';
+    expect(presetCompatibility({ name }, 'filament', X1C, idx)).toBe('match');
+    expect(presetCompatibility({ name }, 'filament', A1, idx)).toBe('mismatch');
+  });
+
+  it('applies the nozzle filter to the long form too', () => {
+    expect(
+      presetCompatibility({ name: 'My PETG @Bambu Lab A1 0.6 nozzle' }, 'filament', A1, idx),
+    ).toBe('mismatch');
+  });
+
+  it('ignores a trailing "(Custom)" suffix rather than mangling the model token', () => {
+    // The slicer appends this to user-saved presets. Parsed naively the tag
+    // becomes "H2D 0.4 nozzle (Custom)" — which would brand the preset a
+    // mismatch against its own printer and hide it from the dropdown.
+    const name = 'Devil Design PLA Basic @Bambu Lab H2D 0.4 nozzle (Custom)';
+    expect(presetCompatibility({ name }, 'filament', H2D, idx)).toBe('match');
+    expect(presetCompatibility({ name }, 'filament', A1, idx)).toBe('mismatch');
+  });
+
+  it('keeps the A1M alias working through the long form', () => {
+    expect(
+      presetCompatibility({ name: 'My PLA @Bambu Lab A1 mini 0.4 nozzle' }, 'filament', A1_MINI, idx),
+    ).toBe('match');
+    expect(
+      presetCompatibility({ name: 'My PLA @Bambu Lab A1 mini 0.4 nozzle' }, 'filament', A1, idx),
+    ).toBe('mismatch');
+  });
+
+  it('stays unknown for an @-tag that names no recognisable printer', () => {
+    // "@Voron 0.4 nozzle" is not a Bambu printer preset — the matcher must
+    // not guess, so the preset keeps its place in the main dropdown list.
+    expect(
+      presetCompatibility({ name: 'My PLA @Voron 0.4 nozzle' }, 'filament', A1, idx),
+    ).toBe('unknown');
+  });
+
+  it('reads the tag from the last @ so a stray earlier one cannot swallow it', () => {
+    expect(
+      presetCompatibility({ name: 'My @work PLA @Bambu Lab H2D 0.4 nozzle' }, 'filament', A1, idx),
+    ).toBe('mismatch');
+    expect(
+      presetCompatibility({ name: 'My @work PLA @Bambu Lab H2D 0.4 nozzle' }, 'filament', H2D, idx),
+    ).toBe('match');
+  });
+});
+
+describe('presetCompatibility — nozzle-only @<size> tag (#2628 follow-up)', () => {
+  const P2S_04 = 'Bambu Lab P2S 0.4 nozzle';
+  const X1C_02 = 'Bambu Lab X1 Carbon 0.2 nozzle';
+  const idx = buildCompatibilityIndex(PRINTER_MODELS);
+
+  it('rules out a 0.2-nozzle profile on a 0.4-nozzle printer', () => {
+    // The live case: "Overture PLA Matte @0.2" inherits from the X1C 0.2
+    // nozzle system profile, so the slicer rejected a P2S 0.4 slice with
+    // "not compatible with printer Bambu Lab P2S 0.4 nozzle". The name
+    // carries no model, so this size is the only signal available.
+    expect(
+      presetCompatibility({ name: 'Overture PLA Matte @0.2' }, 'filament', P2S_04, idx),
+    ).toBe('mismatch');
+  });
+
+  it('stays unknown when the size agrees — a size is not a model', () => {
+    // The profile might belong to a different printer with the same nozzle;
+    // promoting this to 'match' would claim knowledge we don't have.
+    expect(
+      presetCompatibility({ name: 'Overture PLA Matte @0.2' }, 'filament', X1C_02, idx),
+    ).toBe('unknown');
+  });
+
+  it('accepts the "0.2 nozzle" and "0.2mm" spellings of the same tag', () => {
+    for (const name of ['My PLA @0.2 nozzle', 'My PLA @0.2mm']) {
+      expect(presetCompatibility({ name }, 'filament', P2S_04, idx)).toBe('mismatch');
+    }
+  });
+
+  it('compares sizes numerically so 0.20 and 0.2 are one size', () => {
+    expect(
+      presetCompatibility({ name: 'My PLA @0.20' }, 'filament', X1C_02, idx),
+    ).toBe('unknown');
+  });
+
+  it('ignores a numeric tag that cannot be a nozzle', () => {
+    // "@2026" is a year, not a 2026 mm nozzle — guessing here would brand
+    // the profile incompatible with every printer that exists.
+    expect(presetCompatibility({ name: 'My PLA @2026' }, 'filament', P2S_04, idx)).toBe('unknown');
+    expect(presetCompatibility({ name: 'My PLA @0.05' }, 'filament', P2S_04, idx)).toBe('unknown');
+  });
+
+  it('leaves a model-bearing tag on the model path', () => {
+    // Regression guard: the nozzle-only branch must not swallow the forms
+    // that carry a model — those still resolve to match/mismatch.
+    expect(
+      presetCompatibility({ name: 'Bambu PLA Basic @BBL P2S' }, 'filament', P2S_04, idx),
+    ).toBe('match');
+    expect(
+      presetCompatibility({ name: 'My PLA @Bambu Lab X1 Carbon 0.4 nozzle' }, 'filament', P2S_04, idx),
+    ).toBe('mismatch');
+  });
+});

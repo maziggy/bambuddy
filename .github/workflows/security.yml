@@ -125,7 +125,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          # Upgrade setuptools too: the runner's Python toolcache ships an old
+          # setuptools that trips pip-audit (PYSEC-2026-3447, fixed in 83.0.0).
+          # A fix exists, so we upgrade rather than --ignore-vuln.
+          python -m pip install --upgrade pip setuptools
           pip install -r requirements.txt
           pip install pip-audit
 
@@ -305,13 +308,46 @@ jobs:
               }
             }
             const vulns = results.vulnerabilities || {};
+            // Documented advisory exceptions (keyed by GHSA id) - see ci.yml for the
+            // full rationale and the matching hard gate. GHSA-qwww-vcr4-c8h2: React
+            // Router RSC-mode CSRF, not reachable from Bambuddy's BrowserRouter SPA
+            // (@react-router/server not installed); react-router/-dom pinned to 7.18.1
+            // (the most-patched 7.x), no non-major fix exists. Auto-surfaces again if a
+            // non-major fix ships.
+            const ALLOWLIST = new Set(['GHSA-qwww-vcr4-c8h2']);
+            function advisoryIds(name, seen) {
+              seen = seen || new Set();
+              if (seen.has(name)) return new Set();
+              seen.add(name);
+              const ids = new Set();
+              for (const item of (vulns[name] || {}).via || []) {
+                if (item && typeof item === 'object') {
+                  const url = item.url || '';
+                  if (url.includes('/advisories/')) ids.add(url.split('/').pop());
+                } else if (typeof item === 'string') {
+                  for (const id of advisoryIds(item, seen)) ids.add(id);
+                }
+              }
+              return ids;
+            }
+            function fixIsMajor(info) {
+              const fa = info.fixAvailable;
+              return fa && typeof fa === 'object' && fa.isSemVerMajor;
+            }
+            function exempt(name, info) {
+              const ids = advisoryIds(name);
+              return ids.size > 0 && [...ids].every(id => ALLOWLIST.has(id)) && fixIsMajor(info);
+            }
             const filtered = {};
+            const flagged = {};
             for (const [name, info] of Object.entries(vulns)) {
-              if (prodDeps.has(name)) filtered[name] = info;
+              if (!prodDeps.has(name)) continue;
+              filtered[name] = info;
+              if (!exempt(name, info)) flagged[name] = info;
             }
             results.vulnerabilities = filtered;
             fs.writeFileSync('npm-audit-results.json', JSON.stringify(results, null, 2));
-            const count = Object.keys(filtered).length;
+            const count = Object.keys(flagged).length;
             console.log(count > 0
               ? count + ' production vulnerabilities found'
               : 'No production vulnerabilities (filtered ' + Object.keys(vulns).length + ' npm-internal entries)');

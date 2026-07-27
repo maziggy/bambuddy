@@ -95,6 +95,22 @@ def reset_spoolman_location_sync_cache():
     _spoolman_location_sync_cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def reset_auth_enabled_cache():
+    """Drop the module-level auth-enabled cache between tests (issue #2572).
+
+    ``is_auth_enabled`` caches an enabled=True result for a TTL. Without this
+    reset a test that enables auth would leave ``True`` cached, so a later test
+    running in auth-disabled mode (without going through ``set_auth_enabled``)
+    would wrongly see auth as enabled until the TTL expired — order-dependent
+    flakiness."""
+    from backend.app.core.auth import invalidate_auth_enabled_cache
+
+    invalidate_auth_enabled_cache()
+    yield
+    invalidate_auth_enabled_cache()
+
+
 @pytest.fixture(scope="session")
 def event_loop():
     """Create an instance of the default event loop for each test session."""

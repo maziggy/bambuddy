@@ -129,7 +129,7 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
                   className="w-full flex items-center gap-3 p-3 rounded-lg bg-bambu-dark hover:bg-bambu-dark-tertiary border border-bambu-dark-tertiary transition-colors text-left disabled:opacity-50"
                 >
                   <div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center shrink-0">
-                    <XCircle className="w-4 h-4 text-red-400" />
+                    <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-white font-medium">Remove from project</p>

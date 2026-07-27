@@ -195,10 +195,16 @@ export default {
       extraLarge: '特大',
     },
     pageView: {
+      openCamWallPage: 'カメラウォールをページとして開く',
       cards: 'カード',
       camWall: 'カメラウォール',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          'このカメラウォールのリンクは無効です。トークンの有効期限が切れたか、取り消された可能性があります。',
+        loadFailed: 'プリンターを読み込めませんでした。',
+      },
       noPrinters: '表示するプリンターがありません',
       noSignal: '信号なし',
       live: 'ライブ',
@@ -348,6 +354,9 @@ export default {
     toast: {
       printerDeleted: 'プリンターを削除しました',
       missingSpoolAssignment: '{{printer}}で印刷を開始しました。以下のスプール割り当てがありません: {{slots}}',
+      assignmentVerified: 'スロット{{slot}}にフィラメントを読み込みました（{{printer}}）',
+      assignmentVerifiedNoKprofile: '{{printer}}のスロット{{slot}}を読み込みましたが、フロー校正プロファイル（Kプロファイル）は適用されませんでした',
+      assignmentNotConfirmed: '{{printer}}のスロット{{slot}}の割り当てを確認できませんでした。AMSスロットを確認してください',
       printerAdded: 'プリンターを追加しました',
       printerUpdated: 'プリンターを更新しました',
       failedToDelete: 'プリンターの削除に失敗しました',
@@ -415,6 +424,7 @@ export default {
       unload: 'アンロード',
     },
     bedJog: {
+      limitWarning: '手動移動では可動範囲の制限が適用されません。Bambu のファームウェアの不具合により、リモートコマンドではソフトウェアリミットが無視されます。衝突しないよう注意して操作してください。',
       title: 'ジョグ操作',
       bed: 'ベッド',
       step: 'ステップ (mm)',
@@ -470,6 +480,8 @@ export default {
       skip: 'スキップ',
       confirmTitle: 'オブジェクトをスキップしますか？',
       confirmMessage: '「{{name}}」をスキップしますか？この操作は元に戻せません。',
+      confirmAllMessage: '残りのオブジェクトがすべて選択されています。印刷ジョブは停止します。続行しますか？',
+      confirmMultipleMessage: '選択した{{count}}個のオブジェクトをスキップしますか？この操作は元に戻せません。',
     },
     // Confirm modals
     confirm: {
@@ -568,6 +580,10 @@ export default {
       notSupported: '乾燥非対応',
       powerRequired: 'AMS電源アダプターを接続して乾燥を有効にしてください',
       startingDrying: '乾燥を開始しています...',
+      toastCommandSent: '乾燥コマンドを送信しました',
+      toastStopped: '乾燥を停止しました',
+      toastNotStarted: 'プリンターはコマンドを受け付けましたが、AMS は乾燥を開始しませんでした。AMS の電源アダプターが接続されているか、プリンターがアイドル状態かを確認してください。',
+      screenOnly: 'このプリンターでは、AMS の乾燥はプリンター本体の画面からのみ操作できます (Bambu の仕様上の制限)',
       stoppingDrying: '乾燥を停止しています...',
       rotateTray: '乾燥中にスプールを回転',
       rotateUnavailableReason: '利用不可 — このAMSのスロットがツールヘッドにロードされています。スプールが供給チューブで固定されているため回転できません。先にフィラメントを引き戻してください。',
@@ -591,6 +607,12 @@ export default {
     activeJobSlot: {
       title: 'このスロットはアクティブな印刷のフィラメント {{n}} です',
       ariaLabel: 'アクティブ印刷スロット {{n}}',
+    },
+    expectedSlot: {
+      title: 'プリンターはこのスロットのフィラメントを待っています',
+      ariaLabel: '要求スロット {{n}}',
+      label: '{{ams}} · スロット {{slot}}',
+      external: '外部スプール',
     },
     // Filaments section
     filaments: 'フィラメント',
@@ -1182,6 +1204,8 @@ export default {
     history: {
       emptyTitle: '履歴はまだありません',
       emptyDescription: '完了・キャンセル・失敗した印刷がここに表示されます。',
+      showMore: 'さらに表示',
+      showingCount: '{{total}} 件中 {{shown}} 件を表示',
     },
     dragGhost: {
       multiCount: '{{count}}件',
@@ -2064,6 +2088,10 @@ export default {
     tempFanPresetsChamber: 'チャンバー温度',
     tempFanPresetsFan: 'ファン速度',
     tempFanPresetsReset: 'デフォルトにリセット',
+    concurrentUploadsTitle: '同時アップロード',
+    concurrentUploadsDescription: 'キューが同時にファイルを送信できるプリンター数です。プリンターのファイル受信は遅く（大きな造形では数分かかることもあります）、各プリンターは順番を待ちます。台数の多い環境では、この値を上げることで、バッチ内の最後のプリンターが先行するすべての転送を待たずに済みます。ネットワークや Bambuddy ホストが並列転送に耐えられない場合は下げてください。',
+    concurrentUploadsLabel: '同時に送信するプリンター数',
+    concurrentUploadsHelp: '1 にすると 1 台ずつ送信します（従来の動作）。既定値は 4 です。',
     staggeredStart: '段階的開始',
     staggeredStartDescription: '複数プリンターのバッチ開始を段階的に行う際のデフォルトのグループサイズと間隔。プリントモーダルでバッチごとに上書き可能。',
     preheatTitle: 'プレヒート & ヒートソーク',
@@ -2084,6 +2112,9 @@ export default {
     preheatOverride_inherit: '継承',
     preheatOverride_on: 'オン',
     preheatOverride_off: 'オフ',
+    calibrationMode_off: 'オフ',
+    calibrationMode_on: 'オン',
+    calibrationMode_auto: '自動',
     preheatTargetOverride: 'チャンバー目標を上書き (°C、空欄でフィラメント既定値)',
     plateClear: 'プレートクリア確認',
     requirePlateClear: 'プレートクリア確認を必須にする',
@@ -2790,6 +2821,9 @@ export default {
     clearFailed: 'HMSエラーのクリアに失敗しました',
     actionSuccess: 'アクションをプリンターに送信しました',
     actionFailed: 'アクションの送信に失敗しました',
+    runoutExpectedSlot: '{{ranOut}} のフィラメントが切れました。プリンターは現在 {{expected}} に対応するフィラメントを待っています。{{expected}} にスプールをセットして、「再試行」を選択してください。',
+    runoutExpectedSlotOnly: 'プリンターは {{expected}} に対応するフィラメントを待っています。そこにスプールをセットして、「再試行」を選択してください。',
+    runoutSlotUnknown: 'フィラメントが切れて印刷が一時停止しています。プリンターが現在要求しているスロットを Bambuddy が特定できませんでした。プリンターの画面で要求されているスロットを確認してください。',
     actions: {
       RESUME_PRINTING: '印刷を再開',
       RESUME_PRINTING_DEFECTS: '再開（不具合を許容）',
@@ -3240,37 +3274,24 @@ export default {
     },
     orcaCloud: {
       connectedAs: '接続中',
+      connectedShort: 'Orca Cloudに接続済み',
       logout: '切断',
       noLogoutPermission: '切断する権限がありません',
       noConnectPermission: 'Orca Cloudに接続する権限がありません',
       retry: '再試行',
-      back: '別のサインイン方法を使用',
+      connectButton: 'Orca Cloudに接続',
       connect: {
         title: 'Orca Cloudに接続',
         description: 'Orca Cloudアカウントにサインインして、スライサープロファイルをBambuddyに同期します。',
       },
-      providers: {
-        google: 'Googleでサインイン',
-        apple: 'Appleでサインイン',
-        github: 'GitHubでサインイン',
-        email: 'メールとパスワードでサインイン',
-      },
-      password: {
-        title: 'メールとパスワードでサインイン',
-        email: 'メールアドレス',
-        emailPlaceholder: 'you@example.com',
-        password: 'パスワード',
-        submit: 'サインイン',
-      },
-      paste: {
-        title: 'サインインを完了',
-        step1: 'Orca Cloudのサインインページが新しいタブで開きました。Orcaアカウントでサインインしてください。',
-        step2: 'ブラウザは「localhost」のURLにリダイレクトされ、読み込みに失敗します。それは想定通りです — そのURLが必要です。',
-        step3: 'ブラウザのアドレスバーからURL全体をコピーして、下に貼り付けてください。',
-        signInUrl: 'サインインタブが開かなかった場合は、このURLをクリックしてください:',
-        label: 'コールバックURLをここに貼り付け',
-        placeholder: 'http://localhost:41172/callback?code=...&state=...',
-        submit: '接続を完了',
+      device: {
+        title: 'Orca CloudでBambuddyを承認',
+        instruction: 'Orca Cloudを開いてこのコードを承認してください。承認するとBambuddyが自動的に接続されます。',
+        codeLabel: 'ペアリングコード',
+        openButton: 'Orca Cloud承認ページを開く',
+        manualHint: 'または {{url}} にアクセスして、上記のコードを入力してください。',
+        waiting: '承認をお待ちしています…',
+        cancel: 'キャンセル',
       },
       profiles: {
         title: 'Orca Cloudプロファイル ({{count}})',
@@ -3278,16 +3299,13 @@ export default {
         empty: 'Orca Cloudアカウントにまだプロファイルがありません。',
       },
       toast: {
-        connected: '{{email}}としてOrca Cloudに接続しました',
         disconnected: 'Orca Cloudから切断しました',
       },
       errors: {
         startFailed: 'Orca Cloudのサインインを開始できませんでした。',
-        finishFailed: 'Orca Cloudのサインインを完了できませんでした。',
-        passwordFailed: 'そのメールとパスワードでサインインできませんでした。',
-        passwordEmpty: 'メールアドレスとパスワードの両方を入力してください。',
-        emptyPaste: 'ブラウザからコールバックURLを貼り付けてください。',
-        noCode: 'このURLはOrca Cloudのコールバックではないようです (codeパラメータがありません)。アドレスバーから完全なURLをコピーしてください。',
+        denied: 'Orca Cloudでペアリングが拒否されました。',
+        expired: 'ペアリングコードの有効期限が切れました。「接続」をクリックしてもう一度お試しください。',
+        pollFailed: '承認の待機中に接続が失われました。もう一度お試しください。',
       },
     },
     localProfiles: {
@@ -3326,6 +3344,8 @@ export default {
       },
     },
     connectedAs: '接続中:',
+    signInExpiredTitle: 'Bambu Cloud のサインインの有効期限が切れました',
+    signInExpiredBody: '保存されたトークンは Bambu Lab に受け付けられなくなりました。クラウドプロファイル、MakerWorld のインポート、ファームウェア確認を復元するには、再度サインインしてください。',
     logout: 'ログアウト',
     noLogoutPermission: 'ログアウトする権限がありません',
     failedToLoad: 'ファイルの読み込みに失敗しました',
@@ -3582,6 +3602,9 @@ export default {
     searchSubfoldersHint: 'サブフォルダーを含む',
     readme: {
       truncated: '切り詰め',
+      show: 'READMEを表示',
+      hide: 'READMEを非表示',
+      label: 'README',
     },
     tags: {
       title: 'タグ',
@@ -3626,6 +3649,9 @@ export default {
     prints: '印刷回数',
     ascending: '昇順',
     descending: '降順',
+    showModified: '更新日時を表示',
+    hideModified: '更新日時を非表示',
+    lastModified: '最終更新',
     resultsCount: '{{total}}件中{{showing}}件',
     selectAll: 'すべて選択',
     deselectAll: 'すべて選択解除',
@@ -3936,6 +3962,10 @@ export default {
     toastArchives: '{{count}}件の印刷をBambuddyでアーカイブしました。独立を支えてくれている方々をご覧ください。',
     toastAnniversary: 'Bambuddyとの1周年です！プロジェクトを支えてくれている方々をご覧ください。',
     toastVersionUpdate: 'v{{version}}にアップデートされました。Bambuddyは支援者のおかげで無料で提供されています。',
+    toastBusiness: '{{count}}台のプリンターでBambuddyを運用中ですね。チーム向けのサポートプランがあります（優先対応、請求書発行、開発者への直接窓口）。',
+    businessCta: 'ビジネス向けBambuddy',
+    businessTitle: 'ビジネス向けBambuddy',
+    businessTagline: '{{count}}台のプリンターを運用中です。チームやプリントファーム向けに、優先サポート、商用ライセンス、請求書発行をご用意しています。',
   },
 
   // Library (K Profiles)
@@ -4015,6 +4045,8 @@ export default {
     refreshPresets: '再読み込み',
     refreshPresetsTitle: 'プリセットを再取得 — クラウドとバンドルの最新リストを取得します（Bambu Studio または Bambu Handy でプリセットを削除した後にお使いください）',
     allPresetsRequired: 'すべてのプリセットを選択する必要があります',
+    useEmbedded: 'ファイルに埋め込まれた設定を使用',
+    useEmbeddedHint: '上のプロファイルではなく、設計者が設定したとおり（ウォール、インフィル、フィラメント）にスライスします。お使いのプリンターがファイルと一致するため利用できます。',
     enqueuing: 'スライスジョブを送信中…',
     queued: '待機中…',
     failed: 'スライスに失敗。サイドカーのログを確認してください。',
@@ -4191,6 +4223,8 @@ export default {
       title: 'スプールラベルを印刷',
       selectedCount: '{{count}}件選択中',
       pickSpools: 'ラベルを印刷するスプールを選択:',
+      monochrome: 'モノクロ（白黒プリンター）',
+      monochromeHint: 'カラースウォッチを削除してテキストを広げます',
       searchPlaceholder: '名前、ブランド、#IDで検索',
       filterByMaterial: '素材:',
       allMaterials: 'すべて',
@@ -4547,6 +4581,8 @@ export default {
     selectPrinter: 'プリンターを選択',
     selectPlate: 'プレートを選択',
     filamentMapping: 'フィラメントマッピング',
+    plateN: 'プレート {{n}}',
+    plateFilamentsUnreadable: '選択したプレートのフィラメントを読み取れなかったため、割り当てできません。そのプレートの選択を解除すると、残りをキューに追加できます。',
     totalCost: '合計コスト:',
     slotRemainingShort: ' - 残{{grams}}g',
     printSettings: '印刷設定',
@@ -4584,6 +4620,7 @@ export default {
     overrideWith: '変更先',
     resetToOriginal: 'オリジナルに戻す',
     insufficientFilamentTitle: 'フィラメントが不足しています',
+    waitingForAmsStatus: '{{printer}} のAMSステータスを待機しています…',
     insufficientFilamentMessage: '割り当てられたスプールの一部は、この印刷に必要な量より残量が少ないです:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: 必要 {{required}}g、残り {{remaining}}g',
     printAnyway: 'それでも印刷',
@@ -4782,6 +4819,20 @@ export default {
     backupSize: 'サイズ',
     localTimeHint: '現地時刻 ({{tz}})',
     defaultPathLabel: 'デフォルト:',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'Bambuddy はこのディレクトリに書き込めません',
+      howToFix: '対処方法:',
+      sandboxed: 'Bambuddy サービスは {{path}} に書き込めません。systemd ユニットが ProtectSystem=strict で動作しているため、インストール・データ・ログの各ディレクトリ以外はすべてサービスから読み取り専用になります。自分のシェルからは書き込める場所であっても同様です。',
+      read_only: '{{path}} は読み取り専用のファイルシステム上にあります。',
+      permission_denied: 'Bambuddy には {{path}} への書き込み権限がありません。ディレクトリの所有者とパーミッションを確認してください。',
+      no_space: '{{path}} があるファイルシステムに空き容量がありません。',
+      not_a_directory: '{{path}} は存在しますが、ディレクトリではありません。',
+      missing: '{{path}} は存在せず、作成もできませんでした。',
+      error: 'Bambuddy は {{path}} に書き込めません。',
+      ephemeralTitle: 'これらのバックアップはコンテナの再作成で失われます',
+      container_ephemeral: '{{path}} はホストではなく Bambuddy コンテナ内にあります。そこに書き込まれたバックアップはコンテナを再作成すると失われます。ホスト側のディレクトリをマウントしてください:',
+    },
 
     // Category labels
     categories: {
@@ -5236,6 +5287,8 @@ export default {
     autoOffDescription: '印刷完了時にオフにする（ワンショット）',
     autoOffPersistent: '有効のまま維持',
     autoOffPersistentDescription: 'ワンショットではなく印刷間で有効のまま維持',
+    controlsPrinterPower: 'プリンターに給電',
+    controlsPrinterPowerDescription: 'このプラグがアクセサリー（フィルターファン、照明）のみに給電する場合はオフにします。オンのままだと、電源を切ったときにプリンターがオフラインとして扱われます。',
     autoOffAfterDrying: '乾燥完了後に自動オフ',
     autoOffAfterDryingDescription: 'AMSの乾燥が完了したらオフにする',
     delayAfterDryingMinutes: '乾燥後の遅延（分）',
@@ -5335,7 +5388,12 @@ export default {
     restPowerPath: '電力JSONパス',
     restPowerMultiplier: '電力乗数',
     restEnergyUrl: 'エネルギーURL',
-    restEnergyPath: '電力量JSONパス',
+    restEnergyPath: 'エネルギーの JSON パス (今日)',
+    restEnergyTotalPath: 'エネルギーの JSON パス (積算値)',
+    restEnergyTotalMultiplier: '積算値の乗数',
+    restEnergyTotalPathHint: '例: aenergy.total',
+    restEnergyTotalHint:
+      '多くのスマートプラグ (Shelly はすべて) は、リセットされない積算カウンターしか返しません。その値は上の欄ではなく、ここに入力してください。今日の使用量として読むと深夜にリセットされず、昨日と合計は空のままになります。Bambuddy は積算値から今日と昨日を算出しますが、そのためには 1〜2 日分の測定値が必要です。Shelly はワット時で返すため、乗数には 0.001 を指定してください。',
     restEnergyMultiplier: 'エネルギー乗数',
     restUrlRequired: 'RESTプラグには少なくとも1つのURL（ONまたはOFF）が必要',
     restHeadersHint: '例: {"Authorization": "Bearer your-token"}',
@@ -5516,6 +5574,8 @@ export default {
     userKey: 'ユーザーキー',
     appToken: 'アプリトークン',
     priority: '優先度',
+    pushoverRetry: '緊急再通知 (秒)',
+    pushoverExpire: '緊急有効期限 (秒)',
     botToken: 'ボットトークン',
     chatId: 'チャットID',
     smtpServer: 'SMTPサーバー',
@@ -6234,6 +6294,7 @@ export default {
         pass: 'プリンターはこのオプションが有効と報告しています — 送信されたファイルはSDカードに保存され、アーカイブにはサムネイルとスライサーメタデータが含まれます。',
         fail: 'プリンターはこのオプションが無効と報告しています。「送信ファイルを外部ストレージに保存」を有効にしてください — 新しいファームウェア (P2S 01.02 / Bambu Studio 2.6以降) ではプリンター本体の印刷設定にトグルがあります。古いバージョンでは Bambu Studio / OrcaSlicer のデバイスタブにあります。この設定がないと、アーカイブされた印刷にはサムネイルもスライサーメタデータも残りません。',
         skip: '未確認 — アクティブなMQTT接続が必要です。古いスライサーでこの設定がスライサー側のみに存在する場合、プリンターはそれを報告しないため、オプションが無効でもこのチェックは通過します — インストール手順4を手動で確認してください。',
+        skip_unsupported_model: 'このモデルにはSDスロットがありますが、オプションを有効にする方法がありません — 現在のP1シリーズのファームウェアはBambu Studioにトグルを表示せず、プリンターに画面もありません。ここで修正すべきことはありません。Bambu Labがファームウェアで対応するまで、アーカイブされた印刷にはサムネイルやスライサーのメタデータが欠ける場合があります。',
       },
       port_rtsps: {
         title: 'カメラポート ({{protocol}} {{port}})',
@@ -6454,6 +6515,8 @@ export default {
     resolveButton: '読み込む',
     signInRequiredTitle: 'ダウンロードには Bambu Cloud へのサインインが必要です',
     signInRequiredBody: 'モデルの詳細は匿名で閲覧できますが、3MF ファイルをダウンロードするには Bambu Cloud アカウントが必要です。',
+    signInExpiredTitle: 'Bambu Cloud のサインインの有効期限が切れました',
+    signInExpiredBody: 'Bambuddy にはサインインしたままですが、Bambu Lab が保存されたトークンを受け付けなくなったため、ダウンロードは失敗します。Bambu Cloud に再度サインインしてください。',
     openCloudSettings: 'Cloud 設定を開く',
     untitledModel: '無題のモデル',
     byCreator: '作成者: {{name}}',
@@ -6626,10 +6689,15 @@ export default {
     saveFailed: '自動削除設定を保存できませんでした。',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: 'カメラストリーム',
+      camwall: 'カメラウォール',
+      overlay: '配信オーバーレイ',
+    },
     title: 'カメラAPIトークン',
     navTitle: 'カメラAPIトークン',
     description:
-      'Home Assistant、Frigate、キオスク、その他安定したURLが必要なツールにカメラストリームを埋め込むための長期トークン。各トークンはカメラストリーム専用で、いつでも取り消し可能。',
+      'Home Assistant、Frigate、キオスク画面など、安定した URL を必要とするツールにカメラ映像を埋め込むための長期トークンです。スコープは作成時に選択し、トークンはいつでも取り消せます。',
     loading: '読み込み中…',
     confirmRevoke: {
       title: 'このトークンを取り消しますか？',
@@ -6638,6 +6706,13 @@ export default {
       confirm: '取り消し',
     },
     create: {
+      scopeLabel: 'スコープ',
+      hintCameraStream:
+        'カメラストリームトークンで取得できるのは、カメラの映像とスナップショットだけです。Home Assistant や Frigate など、単一のカメラを埋め込む用途に使用してください。',
+      hintCamWall:
+        'カメラウォールトークンは、ログインなしの画面で /camwall を開きます。各プリンターの名前と状態、そしてカメラ映像を見ることができます。ファイル名、アドレス、アクセスコードは見えません。',
+      hintOverlay:
+        '配信オーバーレイトークンは、ログインなしの画面で /overlay/{printerId} を開きます — OBS やライブ配信向けです。1台のプリンターのカメラ映像に加え、画面に表示されるファイル名を含むライブの印刷状況を見ることができます。アドレスやアクセスコードは見えません。',
       title: '新しいトークンを作成',
       nameLabel: 'トークン名',
       namePlaceholder: '例：Home Assistant',
@@ -6647,6 +6722,12 @@ export default {
         '最大有効期間は365日。トークン値は作成時に一度だけ表示されます — 今すぐコピーしてください。',
     },
     created: {
+      camWallUrlTitle: 'この画面用のカメラウォール URL',
+      camWallUrlHint:
+        'この URL を画面で開いてください。URL を読める人は誰でもウォールを見られるため、鍵と同じように扱ってください。トークンを取り消すと、その画面は遮断されます。',
+      overlayUrlTitle: 'OBS 用のオーバーレイ URL',
+      overlayUrlHint:
+        'これを OBS の「ブラウザ」ソース（Browser Source）として追加してください。/overlay/1 の番号を、お使いのプリンターの番号（プリンターページの URL に表示）に変更します。URL を読める人は誰でも配信を見られるため、鍵と同じように扱い、遮断するにはトークンを取り消してください。',
       title: 'トークンを作成しました – 今すぐコピー',
       warning:
         'このトークンが表示されるのは今回限りです。このダイアログを閉じると二度と表示できません。',
@@ -6654,6 +6735,7 @@ export default {
       dismiss: '保存しました',
     },
     list: {
+      scope: 'スコープ',
       myTitle: 'マイトークン',
       allTitle: '全ユーザー（管理者ビュー）',
       empty: 'トークンはまだありません。',

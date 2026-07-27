@@ -24,6 +24,7 @@ import { defaultFormData, validateForm } from '../../components/spool-form/types
 import {
   buildFilamentOptions,
   extractBrandsFromPresets,
+  fetchPrinterCalibrations,
   findPresetOption,
   loadRecentColors,
   parsePresetName,
@@ -521,21 +522,9 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
           const connected = status?.connected ?? false;
           let calibrations: PrinterWithCalibrations['calibrations'] = [];
           if (connected) {
-            try {
-              const kRes = await api.getKProfiles(printer.id);
-              calibrations = kRes.profiles.map(p => ({
-                cali_idx: p.slot_id,
-                filament_id: p.filament_id,
-                setting_id: p.setting_id || '',
-                name: p.name,
-                k_value: parseFloat(p.k_value) || 0,
-                n_coef: parseFloat(p.n_coef) || 0,
-                extruder_id: p.extruder_id,
-                nozzle_diameter: p.nozzle_diameter,
-              }));
-            } catch {
-              // ignore per-printer unsupported profile endpoints
-            }
+            // Fetch across every installed nozzle so dual-nozzle printers
+            // surface both the 0.4mm and 0.6mm K-profiles, not just 0.4 (#2618).
+            calibrations = await fetchPrinterCalibrations(printer.id, status);
           }
           results.push({ printer: { ...printer, connected }, calibrations });
         }

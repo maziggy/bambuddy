@@ -196,10 +196,16 @@ export default {
       extraLarge: '超大卡片',
     },
     pageView: {
+      openCamWallPage: '在独立页面中打开摄像头墙',
       cards: '卡片',
       camWall: '摄像头墙',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          '此摄像头墙链接已失效。令牌可能已过期或被撤销。',
+        loadFailed: '无法加载打印机。',
+      },
       noPrinters: '没有可显示的打印机',
       noSignal: '无信号',
       live: '直播',
@@ -349,6 +355,9 @@ export default {
     toast: {
       printerDeleted: '打印机已删除',
       missingSpoolAssignment: '已在{{printer}}上开始打印。以下料槽未分配耗材: {{slots}}',
+      assignmentVerified: '耗材已加载到料槽{{slot}}（{{printer}}）',
+      assignmentVerifiedNoKprofile: '{{printer}}的料槽{{slot}}已加载，但流量校准配置（K配置）未应用',
+      assignmentNotConfirmed: '无法确认{{printer}}上料槽{{slot}}的分配，请检查AMS料槽',
       printerAdded: '打印机已添加',
       printerUpdated: '打印机已更新',
       failedToDelete: '删除打印机失败',
@@ -416,6 +425,7 @@ export default {
       unload: '卸载',
     },
     bedJog: {
+      limitWarning: '手动移动时不会强制执行行程限位——Bambu 固件存在缺陷，远程指令会忽略软件限位。请小心移动以避免碰撞。',
       title: '点动控制',
       bed: '热床',
       step: '步长 (mm)',
@@ -471,6 +481,8 @@ export default {
       skip: '跳过',
       confirmTitle: '跳过对象？',
       confirmMessage: '确定要跳过"{{name}}"吗？此操作无法撤销。',
+      confirmAllMessage: '已选择所有剩余对象。这将停止打印任务。是否继续？',
+      confirmMultipleMessage: '跳过选中的 {{count}} 个对象？此操作无法撤销。',
     },
     // Confirm modals
     confirm: {
@@ -569,6 +581,10 @@ export default {
       notSupported: '不支持干燥',
       powerRequired: '连接AMS电源适配器以启用干燥',
       startingDrying: '正在启动干燥...',
+      toastCommandSent: '已发送干燥命令',
+      toastStopped: '已停止干燥',
+      toastNotStarted: '打印机已接受命令，但 AMS 未开始干燥。请检查 AMS 电源适配器是否已连接，以及打印机是否处于空闲状态。',
+      screenOnly: '此打印机的 AMS 干燥只能在打印机自带的屏幕上操作（Bambu 的限制）',
       stoppingDrying: '正在停止干燥...',
       rotateTray: '干燥时旋转料盘',
       rotateUnavailableReason: '不可用 — 此 AMS 中有插槽已装入打印头。料盘被送料管固定，无法旋转。请先回退耗材。',
@@ -592,6 +608,12 @@ export default {
     activeJobSlot: {
       title: '此料槽在当前打印中是耗材 {{n}}',
       ariaLabel: '当前打印料槽 {{n}}',
+    },
+    expectedSlot: {
+      title: '打印机正在等待此料槽装入耗材',
+      ariaLabel: '需要装料的料槽 {{n}}',
+      label: '{{ams}} · 料槽 {{slot}}',
+      external: '外部料卷',
     },
     // Filaments section
     filaments: '耗材',
@@ -1183,6 +1205,8 @@ export default {
     history: {
       emptyTitle: '暂无历史',
       emptyDescription: '已完成、已取消和失败的打印将在此显示。',
+      showMore: '显示更多',
+      showingCount: '显示 {{total}} 项中的 {{shown}} 项',
     },
     dragGhost: {
       multiCount: '{{count}} 项',
@@ -2066,6 +2090,10 @@ export default {
     tempFanPresetsChamber: '腔室温度',
     tempFanPresetsFan: '风扇速度',
     tempFanPresetsReset: '恢复默认值',
+    concurrentUploadsTitle: '并发上传',
+    concurrentUploadsDescription: '队列可以同时向多少台打印机发送文件。打印机接收文件很慢（大型打印可能需要几分钟），并且每台都要排队等候——因此在打印机较多时，调高该值可以避免批次中最后一台打印机等完前面所有传输。如果网络或 Bambuddy 主机难以承受并行传输，请调低该值。',
+    concurrentUploadsLabel: '同时上传的打印机数量',
+    concurrentUploadsHelp: '设为 1 时一次只向一台打印机发送（旧行为）。默认值为 4。',
     staggeredStart: '错峰启动',
     staggeredStartDescription: '错峰启动多台打印机批次时的默认组大小和间隔。可在打印对话框中按批次覆盖。',
     preheatTitle: '预热与热保温',
@@ -2086,6 +2114,9 @@ export default {
     preheatOverride_inherit: '继承',
     preheatOverride_on: '开启',
     preheatOverride_off: '关闭',
+    calibrationMode_off: '关闭',
+    calibrationMode_on: '开启',
+    calibrationMode_auto: '自动',
     preheatTargetOverride: '覆盖腔体目标 (°C，留空使用耗材默认)',
     plateClear: '热床清空确认',
     requirePlateClear: '需要热床清空确认',
@@ -2778,6 +2809,9 @@ export default {
     clearFailed: '清除 HMS 错误失败',
     actionSuccess: '已向打印机发送操作',
     actionFailed: '操作发送失败',
+    runoutExpectedSlot: '{{ranOut}} 的耗材已用尽。打印机现在正在等待 {{expected}} 装入兼容耗材。请将料卷装入 {{expected}}，然后选择"重试"。',
+    runoutExpectedSlotOnly: '打印机正在等待 {{expected}} 装入兼容耗材。请在该料槽装入料卷，然后选择"重试"。',
+    runoutSlotUnknown: '耗材已用尽，打印已暂停。Bambuddy 无法确定打印机现在需要哪个料槽——请在打印机屏幕上查看所请求的料槽。',
     actions: {
       RESUME_PRINTING: '恢复打印',
       RESUME_PRINTING_DEFECTS: '恢复 (缺陷可接受)',
@@ -3228,37 +3262,24 @@ export default {
     },
     orcaCloud: {
       connectedAs: '已连接',
+      connectedShort: '已连接到 Orca Cloud',
       logout: '断开连接',
       noLogoutPermission: '您没有断开连接的权限',
       noConnectPermission: '您没有连接到 Orca Cloud 的权限',
       retry: '重试',
-      back: '使用其他登录方式',
+      connectButton: '连接 Orca Cloud',
       connect: {
         title: '连接到 Orca Cloud',
         description: '登录您的 Orca Cloud 账户,将切片机配置同步到 Bambuddy。',
       },
-      providers: {
-        google: '使用 Google 登录',
-        apple: '使用 Apple 登录',
-        github: '使用 GitHub 登录',
-        email: '使用邮箱和密码登录',
-      },
-      password: {
-        title: '使用邮箱和密码登录',
-        email: '邮箱',
-        emailPlaceholder: 'you@example.com',
-        password: '密码',
-        submit: '登录',
-      },
-      paste: {
-        title: '完成登录',
-        step1: '已在新标签页中打开 Orca Cloud 登录页面。请使用您的 Orca 账户登录。',
-        step2: '您的浏览器将被重定向到一个 "localhost" URL,该 URL 无法加载。这是正常的 — 我们需要的就是这个 URL。',
-        step3: '从浏览器的地址栏复制整个 URL,粘贴到下方。',
-        signInUrl: '如果登录标签页未打开,请点击此 URL:',
-        label: '在此处粘贴回调 URL',
-        placeholder: 'http://localhost:41172/callback?code=...&state=...',
-        submit: '完成连接',
+      device: {
+        title: '在 Orca Cloud 中批准 Bambuddy',
+        instruction: '打开 Orca Cloud 并批准此代码。批准后 Bambuddy 会自动连接。',
+        codeLabel: '您的配对代码',
+        openButton: '打开 Orca Cloud 批准页面',
+        manualHint: '或前往 {{url}} 并输入上方的代码。',
+        waiting: '正在等待您批准…',
+        cancel: '取消',
       },
       profiles: {
         title: '您的 Orca Cloud 配置文件 ({{count}})',
@@ -3266,16 +3287,13 @@ export default {
         empty: '您的 Orca Cloud 账户中尚无配置文件。',
       },
       toast: {
-        connected: '已以 {{email}} 身份连接到 Orca Cloud',
         disconnected: '已从 Orca Cloud 断开连接',
       },
       errors: {
         startFailed: '无法启动 Orca Cloud 登录流程。',
-        finishFailed: '无法完成 Orca Cloud 登录。',
-        passwordFailed: '无法使用该邮箱和密码登录。',
-        passwordEmpty: '请输入邮箱和密码。',
-        emptyPaste: '请从浏览器粘贴回调 URL。',
-        noCode: '该 URL 不像 Orca Cloud 回调 (缺少 code 参数)。请从地址栏复制完整 URL。',
+        denied: '配对在 Orca Cloud 中被拒绝。',
+        expired: '配对代码已过期。请点击"连接"重试。',
+        pollFailed: '等待批准时连接中断。请重试。',
       },
     },
     localProfiles: {
@@ -3314,6 +3332,8 @@ export default {
       },
     },
     connectedAs: '已连接为',
+    signInExpiredTitle: 'Bambu Cloud 登录已过期',
+    signInExpiredBody: 'Bambu Lab 不再接受已保存的令牌。请重新登录以恢复云配置文件、MakerWorld 导入和固件检查。',
     logout: '退出登录',
     noLogoutPermission: '您没有退出登录的权限',
     failedToLoad: '加载配置文件失败',
@@ -3570,6 +3590,9 @@ export default {
     searchSubfoldersHint: '包含子文件夹',
     readme: {
       truncated: '已截断',
+      show: '显示 README',
+      hide: '隐藏 README',
+      label: 'README',
     },
     tags: {
       title: '标签',
@@ -3614,6 +3637,9 @@ export default {
     prints: '打印',
     ascending: '升序',
     descending: '降序',
+    showModified: '显示修改日期',
+    hideModified: '隐藏修改日期',
+    lastModified: '最后修改',
     resultsCount: '{{showing}} / {{total}} 个文件',
     selectAll: '全选',
     deselectAll: '取消全选',
@@ -3924,6 +3950,10 @@ export default {
     toastArchives: '用 Bambuddy 归档了 {{count}} 次打印。看看是谁让它保持独立。',
     toastAnniversary: '与 Bambuddy 相伴一年了！看看是谁让项目保持独立。',
     toastVersionUpdate: '已更新至 v{{version}}。Bambuddy 之所以免费，离不开支持者。',
+    toastBusiness: '您正在 {{count}} 台打印机上运行 Bambuddy？我们为团队提供支持方案：优先修复、开具发票，以及与维护者的直接沟通渠道。',
+    businessCta: 'Bambuddy 商业版',
+    businessTitle: 'Bambuddy 商业版',
+    businessTagline: '您正在管理 {{count}} 台打印机。我们为团队和打印农场提供优先支持、商业授权和发票开具。',
   },
 
   // Library (K Profiles)
@@ -4003,6 +4033,8 @@ export default {
     refreshPresets: '刷新',
     refreshPresetsTitle: '刷新预设 — 获取最新的云端和打包配置列表（在 Bambu Studio 或 Bambu Handy 中删除预设后使用）',
     allPresetsRequired: '必须选择所有预设',
+    useEmbedded: '使用文件的内置设置',
+    useEmbeddedHint: '按设计者的设置（壁、填充、耗材）切片，而非上方的配置文件。因您的打印机与文件匹配而可用。',
     enqueuing: '提交切片任务中…',
     queued: '已排队…',
     failed: '切片失败。请检查切片器 sidecar 日志。',
@@ -4179,6 +4211,8 @@ export default {
       title: '打印线材标签',
       selectedCount: '已选 {{count}} 项',
       pickSpools: '选择要打印标签的线材：',
+      monochrome: '单色（黑白打印机）',
+      monochromeHint: '移除颜色色块并加宽文本',
       searchPlaceholder: '按名称、品牌或 #ID 搜索',
       filterByMaterial: '材料：',
       allMaterials: '全部',
@@ -4535,6 +4569,8 @@ export default {
     selectPrinter: '选择打印机',
     selectPlate: '选择板',
     filamentMapping: '耗材映射',
+    plateN: '板 {{n}}',
+    plateFilamentsUnreadable: '无法读取所选盘的耗材信息，因此无法进行映射。取消选择该盘即可将其余盘加入队列。',
     totalCost: '总成本：',
     slotRemainingShort: ' - 剩余 {{grams}}g',
     printSettings: '打印设置',
@@ -4572,6 +4608,7 @@ export default {
     overrideWith: '覆盖为',
     resetToOriginal: '恢复为原始',
     insufficientFilamentTitle: '耗材不足',
+    waitingForAmsStatus: '正在等待 {{printer}} 的 AMS 状态…',
     insufficientFilamentMessage: '部分已分配线轴的剩余耗材少于本次打印所需：',
     insufficientFilamentLine: '{{printer}} - {{slot}}：需要 {{required}}g，剩余 {{remaining}}g',
     printAnyway: '仍然打印',
@@ -4770,6 +4807,20 @@ export default {
     backupSize: '大小',
     localTimeHint: '本地时间 ({{tz}})',
     defaultPathLabel: '默认：',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'Bambuddy 无法写入该目录',
+      howToFix: '解决方法：',
+      sandboxed: 'Bambuddy 服务无法写入 {{path}}。它的 systemd 单元以 ProtectSystem=strict 运行，因此除安装、数据和日志目录之外的所有目录对服务而言都是只读的，即使你自己的 shell 可以写入也一样。',
+      read_only: '{{path}} 位于只读文件系统上。',
+      permission_denied: 'Bambuddy 无权写入 {{path}}。请检查该目录的属主和权限。',
+      no_space: '{{path}} 所在的文件系统已满。',
+      not_a_directory: '{{path}} 存在，但不是目录。',
+      missing: '{{path}} 不存在且无法创建。',
+      error: 'Bambuddy 无法写入 {{path}}。',
+      ephemeralTitle: '这些备份在容器重建后会丢失',
+      container_ephemeral: '{{path}} 位于 Bambuddy 容器内部，而不是宿主机上。写入其中的备份会在容器重建时丢失。请从宿主机挂载该目录：',
+    },
 
     // Category labels
     categories: {
@@ -5224,6 +5275,8 @@ export default {
     autoOffDescription: '打印完成时关闭（一次性）',
     autoOffPersistent: '保持启用',
     autoOffPersistentDescription: '在打印之间保持启用而非一次性',
+    controlsPrinterPower: '为打印机供电',
+    controlsPrinterPowerDescription: '如果此插座仅为配件（滤芯风扇、灯光）供电，请关闭此选项；否则关闭插座会将打印机标记为离线。',
     autoOffAfterDrying: '干燥完成后自动关闭',
     autoOffAfterDryingDescription: 'AMS 干燥完成后关闭',
     delayAfterDryingMinutes: '干燥后延迟（分钟）',
@@ -5323,7 +5376,12 @@ export default {
     restPowerPath: '功率 JSON 路径',
     restPowerMultiplier: '功率乘数',
     restEnergyUrl: '能耗URL',
-    restEnergyPath: '能耗 JSON 路径',
+    restEnergyPath: '能耗 JSON 路径（今日）',
+    restEnergyTotalPath: '能耗 JSON 路径（累计值）',
+    restEnergyTotalMultiplier: '累计值倍数',
+    restEnergyTotalPathHint: '例如 aenergy.total',
+    restEnergyTotalHint:
+      '许多插座（包括所有 Shelly）只提供永不归零的累计计数值。该值应填在此处，而不是上面的字段：若当作今日用量读取，它在午夜不会归零，而“昨日”和“总计”会一直为空。Bambuddy 会据此推算“今日”和“昨日”，这需要一到两天的采样数据。Shelly 以瓦时为单位，因此倍数请填 0.001。',
     restEnergyMultiplier: '能耗乘数',
     restUrlRequired: 'REST 插座至少需要一个 URL（ON 或 OFF）',
     restHeadersHint: '例如 {"Authorization": "Bearer your-token"}',
@@ -5504,6 +5562,8 @@ export default {
     userKey: '用户密钥',
     appToken: '应用令牌',
     priority: '优先级',
+    pushoverRetry: '紧急重试 (秒)',
+    pushoverExpire: '紧急过期 (秒)',
     botToken: '机器人令牌',
     chatId: '聊天 ID',
     smtpServer: 'SMTP 服务器',
@@ -6221,6 +6281,7 @@ export default {
         pass: '打印机报告此选项已开启 — 发送的文件将存储在 SD 卡上，归档将包含缩略图和切片机元数据。',
         fail: '打印机报告此选项已关闭。请启用"将发送的文件存储在外部存储中" — 在较新固件 (P2S 01.02 / Bambu Studio 2.6+) 中，开关位于打印机的打印设置中；在较旧版本中位于 Bambu Studio / OrcaSlicer 的设备选项卡中。如果不启用此选项，每次归档的打印都将没有缩略图也没有切片机元数据。',
         skip: '未检查 — 需要有效的 MQTT 连接。在该设置仅存在于切片机中的较旧切片机上，打印机不会报告此设置，因此即使选项已关闭，此检查也会通过 — 请手动验证安装步骤 4。',
+        skip_unsupported_model: '此型号有 SD 卡槽，但无法开启该选项 — 当前 P1 系列固件不会在 Bambu Studio 中显示此开关，且打印机没有屏幕。这里无需修复；在 Bambu Lab 通过固件添加支持之前，存档的打印可能缺少缩略图和切片元数据。',
       },
       port_rtsps: {
         title: '摄像头端口（{{protocol}} {{port}}）',
@@ -6441,6 +6502,8 @@ export default {
     resolveButton: '解析',
     signInRequiredTitle: '下载需要登录 Bambu Cloud',
     signInRequiredBody: '您可以匿名浏览模型详情，但下载 3MF 文件需要 Bambu Cloud 账户。',
+    signInExpiredTitle: 'Bambu Cloud 登录已过期',
+    signInExpiredBody: '您仍处于 Bambuddy 的登录状态，但 Bambu Lab 已不再接受已保存的令牌，因此下载会失败。请重新登录 Bambu Cloud。',
     openCloudSettings: '打开云设置',
     untitledModel: '无标题模型',
     byCreator: '作者: {{name}}',
@@ -6613,10 +6676,15 @@ export default {
     saveFailed: '无法保存自动清除设置。',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: '摄像头视频流',
+      camwall: '摄像头墙',
+      overlay: '直播叠加层',
+    },
     title: '摄像头 API 令牌',
     navTitle: '摄像头 API 令牌',
     description:
-      '长期令牌，用于将摄像头流嵌入 Home Assistant、Frigate、信息亭或其他需要稳定 URL 的工具。每个令牌仅限摄像头流，可随时撤销。',
+      '长期令牌，用于将摄像头视频流嵌入 Home Assistant、Frigate、自助展示屏或其他需要稳定网址的工具。权限范围在创建时选择，令牌可随时撤销。',
     loading: '加载中…',
     confirmRevoke: {
       title: '撤销此令牌？',
@@ -6625,6 +6693,13 @@ export default {
       confirm: '撤销',
     },
     create: {
+      scopeLabel: '权限范围',
+      hintCameraStream:
+        '摄像头视频流令牌只能获取摄像头视频流和快照。适用于 Home Assistant、Frigate 或任何嵌入单个摄像头的场景。',
+      hintCamWall:
+        '摄像头墙令牌可在无需登录的屏幕上打开 /camwall，能看到每台打印机的名称和状态以及摄像头视频流，但看不到文件名、地址或访问码。',
+      hintOverlay:
+        '直播叠加层令牌可在无需登录的屏幕上打开 /overlay/{printerId}——供 OBS 或任何直播使用。它能看到一台打印机的摄像头视频流以及实时打印状态，包括屏幕上显示的文件名，但看不到地址或访问码。',
       title: '创建新令牌',
       nameLabel: '令牌名称',
       namePlaceholder: '例如 Home Assistant',
@@ -6634,6 +6709,12 @@ export default {
         '最大有效期 365 天。令牌值仅在创建时显示一次 — 请立即复制。',
     },
     created: {
+      camWallUrlTitle: '此屏幕的摄像头墙网址',
+      camWallUrlHint:
+        '在屏幕上打开此网址。任何能看到该网址的人都能观看摄像头墙，请像对待钥匙一样对待它——撤销令牌即可切断该屏幕的访问。',
+      overlayUrlTitle: '用于 OBS 的叠加层网址',
+      overlayUrlHint:
+        '在 OBS 中将其添加为“浏览器”源（Browser Source）。将 /overlay/1 中的数字改为您打印机的编号（可在“打印机”页面的网址中查看）。任何能看到该网址的人都能观看直播，请像对待钥匙一样对待它——撤销令牌即可切断访问。',
       title: '令牌已创建 — 立即复制',
       warning:
         '这是此令牌唯一一次可见。关闭此对话框后您将无法再次查看。',
@@ -6641,6 +6722,7 @@ export default {
       dismiss: '我已保存',
     },
     list: {
+      scope: '权限范围',
       myTitle: '我的令牌',
       allTitle: '所有用户（管理员视图）',
       empty: '暂无令牌。',

@@ -297,6 +297,104 @@ class TestExternalFolderScan:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_scan_indexes_pre_existing_markdown(
+        self, async_client: AsyncClient, db_session, external_folder, external_dir
+    ):
+        """Scan should index a README.md already on disk (#2520 item 1).
+
+        Markdown dropped into the folder by external tools (not the Upload
+        dialog) must be picked up so the Folder Readme panel can show it.
+        """
+        (external_dir / "README.md").write_text("# Fishing Floats\n\nDescription.")
+
+        response = await async_client.post(f"/api/v1/library/folders/{external_folder['id']}/scan")
+        assert response.status_code == 200
+        # 4 supported files from the fixture + the new README.md
+        assert response.json()["added"] == 5
+
+        response = await async_client.get(f"/api/v1/library/files?folder_id={external_folder['id']}")
+        root_filenames = {f["filename"] for f in response.json()}
+        assert "README.md" in root_filenames
+
+        # Readme panel can now resolve it.
+        response = await async_client.get(f"/api/v1/library/folders/{external_folder['id']}/readme")
+        assert response.status_code == 200
+        assert response.json()["filename"] == "README.md"
+        assert "Fishing Floats" in response.json()["content"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_preserves_uploaded_markdown(self, async_client: AsyncClient, db_session, tmp_path):
+        """Scanning must not delete an uploaded README.md (#2520 destructive-cleanup bug).
+
+        Before the fix, .md was absent from _SCANNABLE_EXTENSIONS, so an
+        uploaded markdown record was never re-found during the walk and the
+        cleanup pass purged it — the Readme panel then 404'd and hid.
+        """
+        import io
+
+        writable_dir = tmp_path / "writable"
+        writable_dir.mkdir()
+        response = await async_client.post(
+            "/api/v1/library/folders/external",
+            json={"name": "Writable", "external_path": str(writable_dir), "readonly": False},
+        )
+        folder = response.json()
+
+        upload = await async_client.post(
+            f"/api/v1/library/files?folder_id={folder['id']}",
+            files={"file": ("README.md", io.BytesIO(b"# Model\n\nHello"), "text/markdown")},
+        )
+        assert upload.status_code in (200, 201)
+
+        # Panel works before the scan.
+        readme = await async_client.get(f"/api/v1/library/folders/{folder['id']}/readme")
+        assert readme.status_code == 200
+
+        # The scan that used to nuke the record.
+        scan = await async_client.post(f"/api/v1/library/folders/{folder['id']}/scan")
+        assert scan.status_code == 200
+        assert scan.json()["removed"] == 0
+
+        # Record and panel survive.
+        readme = await async_client.get(f"/api/v1/library/folders/{folder['id']}/readme")
+        assert readme.status_code == 200
+        assert readme.json()["filename"] == "README.md"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_preserves_non_scannable_file_on_disk(self, async_client: AsyncClient, db_session, tmp_path):
+        """Cleanup must gate on disk presence, not scannable-extension membership (#2520).
+
+        Any uploaded file whose extension is outside _SCANNABLE_EXTENSIONS
+        (here a .txt) stays on disk, so its DB record must survive a scan
+        rather than being treated as deleted.
+        """
+        import io
+
+        writable_dir = tmp_path / "writable_txt"
+        writable_dir.mkdir()
+        response = await async_client.post(
+            "/api/v1/library/folders/external",
+            json={"name": "Writable Txt", "external_path": str(writable_dir), "readonly": False},
+        )
+        folder = response.json()
+
+        upload = await async_client.post(
+            f"/api/v1/library/files?folder_id={folder['id']}",
+            files={"file": ("notes.txt", io.BytesIO(b"keep me"), "text/plain")},
+        )
+        assert upload.status_code in (200, 201)
+
+        scan = await async_client.post(f"/api/v1/library/folders/{folder['id']}/scan")
+        assert scan.status_code == 200
+        assert scan.json()["removed"] == 0
+
+        files = await async_client.get(f"/api/v1/library/files?folder_id={folder['id']}")
+        assert "notes.txt" in {f["filename"] for f in files.json()}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_scan_non_external_folder_fails(self, async_client: AsyncClient, db_session):
         """Verify scan fails on regular (non-external) folder."""
         # Create a regular folder
@@ -442,6 +540,144 @@ class TestExternalFolderScan:
         subfolder = find_folder_in_tree(response.json(), "subfolder")
         assert subfolder is not None
         assert subfolder["external_readonly"] is True
+
+
+class TestExternalFolderModifiedTime:
+    """Filesystem mtime capture + recursive activity sort (#2680).
+
+    The folder tree's "sort by recent activity" and the file pane's date sort
+    must track the real on-disk mtime (``ls -t``), not the DB ``updated_at`` (the
+    scan instant, identical across a bulk scan).
+    """
+
+    @staticmethod
+    def _set_mtime(path: Path, epoch: float) -> None:
+        os.utime(path, (epoch, epoch))
+
+    @pytest.fixture
+    async def make_folder(self, async_client, db_session):
+        async def _make(ext_dir: Path, name: str = "MTime Test") -> dict:
+            data = {
+                "name": name,
+                "external_path": str(ext_dir),
+                "readonly": True,
+                "show_hidden": False,
+            }
+            resp = await async_client.post("/api/v1/library/folders/external", json=data)
+            assert resp.status_code == 200
+            return resp.json()
+
+        return _make
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_captures_file_fs_mtime(self, async_client, db_session, tmp_path, make_folder):
+        """Each scanned file carries its real on-disk mtime, not the scan time."""
+        ext = tmp_path / "prints"
+        ext.mkdir()
+        old = ext / "old.3mf"
+        new = ext / "new.3mf"
+        old.write_bytes(b"a")
+        new.write_bytes(b"b")
+        # old.3mf modified 2021-01-01, new.3mf modified 2024-01-01.
+        self._set_mtime(old, 1609459200.0)  # 2021-01-01T00:00:00Z
+        self._set_mtime(new, 1704067200.0)  # 2024-01-01T00:00:00Z
+
+        folder = await make_folder(ext)
+        await async_client.post(f"/api/v1/library/folders/{folder['id']}/scan")
+
+        resp = await async_client.get(f"/api/v1/library/files?folder_id={folder['id']}")
+        files = {f["filename"]: f for f in resp.json()}
+        assert files["old.3mf"]["fs_modified_at"] is not None
+        assert files["new.3mf"]["fs_modified_at"] is not None
+        # The real mtime, not "now": the 2021 file must predate the 2024 file.
+        assert files["old.3mf"]["fs_modified_at"] < files["new.3mf"]["fs_modified_at"]
+        assert files["old.3mf"]["fs_modified_at"].startswith("2021")
+        assert files["new.3mf"]["fs_modified_at"].startswith("2024")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_rescan_refreshes_changed_file_mtime(self, async_client, db_session, tmp_path, make_folder):
+        """A file edited over the mount re-sorts on the next scan (#2680)."""
+        ext = tmp_path / "prints"
+        ext.mkdir()
+        f = ext / "part.3mf"
+        f.write_bytes(b"a")
+        self._set_mtime(f, 1609459200.0)  # 2021
+
+        folder = await make_folder(ext)
+        await async_client.post(f"/api/v1/library/folders/{folder['id']}/scan")
+
+        # File touched later (samba edit); re-scan must pick up the new mtime.
+        self._set_mtime(f, 1704067200.0)  # 2024
+        await async_client.post(f"/api/v1/library/folders/{folder['id']}/scan")
+
+        resp = await async_client.get(f"/api/v1/library/files?folder_id={folder['id']}")
+        got = resp.json()[0]
+        assert got["fs_modified_at"].startswith("2024")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_recursive_activity_bubbles_deep_file_to_root(self, async_client, db_session, tmp_path, make_folder):
+        """A freshly-added deep file lifts every ancestor's activity (#2680).
+
+        ``a`` holds only an OLD file directly but a NEW file three levels down;
+        ``b`` holds a MIDDLE-aged file directly. Recursive bubble must rank ``a``
+        (newest descendant) ahead of ``b`` even though a's own direct file and
+        directory are older.
+        """
+        root = tmp_path / "root"
+        deep = root / "a" / "x" / "y"
+        deep.mkdir(parents=True)
+        (root / "b").mkdir()
+
+        a_direct = root / "a" / "shallow.3mf"
+        deep_file = deep / "deep.3mf"
+        b_direct = root / "b" / "mid.3mf"
+        for p, data in ((a_direct, b"1"), (deep_file, b"2"), (b_direct, b"3")):
+            p.write_bytes(data)
+
+        self._set_mtime(a_direct, 1609459200.0)  # 2021 (oldest)
+        self._set_mtime(b_direct, 1656633600.0)  # 2022-07 (middle)
+        self._set_mtime(deep_file, 1704067200.0)  # 2024 (newest, deep under a)
+        # Directory mtimes are all old so only the deep FILE can lift branch a.
+        for d in (root, root / "a", root / "a" / "x", deep, root / "b"):
+            self._set_mtime(d, 1609459200.0)
+
+        folder = await make_folder(root)
+        await async_client.post(f"/api/v1/library/folders/{folder['id']}/scan")
+
+        tree = (await async_client.get("/api/v1/library/folders")).json()
+        top = find_folder_in_tree(tree, folder["name"])
+        assert top is not None
+        children = {c["name"]: c for c in top["children"]}
+        assert "a" in children and "b" in children
+        # Branch a's activity == the deep 2024 file; b's == its 2022 file.
+        assert children["a"]["latest_activity_at"] > children["b"]["latest_activity_at"]
+        assert children["a"]["latest_activity_at"].startswith("2024")
+        # The root itself bubbles up to the newest descendant anywhere inside it.
+        assert top["latest_activity_at"].startswith("2024")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_scan_captures_folder_fs_mtime(self, async_client, db_session, tmp_path, make_folder):
+        """An empty-but-recently-touched subfolder still carries a real mtime."""
+        root = tmp_path / "root"
+        sub = root / "sub"
+        sub.mkdir(parents=True)
+        # A file so the subfolder survives the empty-subfolder cleanup.
+        (sub / "keep.3mf").write_bytes(b"a")
+        self._set_mtime(sub / "keep.3mf", 1609459200.0)  # 2021
+        self._set_mtime(sub, 1704067200.0)  # dir touched 2024
+
+        folder = await make_folder(root)
+        await async_client.post(f"/api/v1/library/folders/{folder['id']}/scan")
+
+        tree = (await async_client.get("/api/v1/library/folders")).json()
+        subfolder = find_folder_in_tree(tree, "sub")
+        assert subfolder is not None
+        # Dir mtime (2024) beats the single 2021 file → folder activity is 2024.
+        assert subfolder["latest_activity_at"].startswith("2024")
 
 
 class TestExternalFolderProtections:

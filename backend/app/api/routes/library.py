@@ -751,24 +751,34 @@ async def list_folders(
     )
     file_counts = dict(file_counts_result.all())
 
-    # Latest immediate-child file activity per folder (#1770). Sibling of the
-    # file_counts subquery — same WHERE clause, MAX(updated_at) instead of
-    # COUNT(id). Subfolder descent is not aggregated here; the frontend's
-    # "sort by recent activity" mode is satisfied by immediate-parent bubble.
+    # Latest immediate-child file activity per folder (#1770/#2680). Real on-disk
+    # mtime when we have it (external scans populate ``fs_modified_at``), else the
+    # DB ``updated_at`` — COALESCE so external rows scanned before this field
+    # existed, and internal uploads, still contribute a signal. This is the
+    # per-folder *leaf* value; subtree descent is aggregated recursively below.
     latest_file_activity_result = await db.execute(
-        select(LibraryFile.folder_id, func.max(LibraryFile.updated_at))
+        select(
+            LibraryFile.folder_id,
+            func.max(func.coalesce(LibraryFile.fs_modified_at, LibraryFile.updated_at)),
+        )
         .where(LibraryFile.folder_id.isnot(None), LibraryFile.deleted_at.is_(None))
         .group_by(LibraryFile.folder_id)
     )
     latest_file_activity = dict(latest_file_activity_result.all())
 
-    # Build tree structure
+    # Build tree structure. Each folder's initial ``latest_activity_at`` is its own
+    # leaf activity: the newer of its real directory mtime (fallback updated_at)
+    # and its immediate files' mtime. The recursive bubble below then rolls each
+    # subtree's newest descendant up to its ancestors (#2680 — sorting must match
+    # ``ls -t`` recursively, so a freshly-added deep file lifts every parent).
     folder_map = {}
     root_folders = []
 
     for folder, project_name, archive_name in rows:
+        own_activity = folder.fs_modified_at or folder.updated_at
         latest_file = latest_file_activity.get(folder.id)
-        latest_activity_at = max(folder.updated_at, latest_file) if latest_file is not None else folder.updated_at
+        if latest_file is not None and latest_file > own_activity:
+            own_activity = latest_file
         folder_item = FolderTreeItem(
             id=folder.id,
             name=folder.name,
@@ -781,7 +791,7 @@ async def list_folders(
             external_path=folder.external_path,
             external_readonly=folder.external_readonly,
             file_count=file_counts.get(folder.id, 0),
-            latest_activity_at=latest_activity_at,
+            latest_activity_at=own_activity,
             children=[],
         )
         folder_map[folder.id] = folder_item
@@ -793,6 +803,28 @@ async def list_folders(
             root_folders.append(folder_item)
         elif folder.parent_id in folder_map:
             folder_map[folder.parent_id].children.append(folder_item)
+
+    # Recursive newest-descendant bubble (#2680). Post-order: a folder's activity
+    # becomes the max of its own leaf activity and every descendant's, so sorting
+    # the tree by ``latest_activity_at`` surfaces the branch with the most recent
+    # activity anywhere inside it. Iterative stack keeps deep external mounts off
+    # Python's recursion limit.
+    def _bubble(root: FolderTreeItem) -> None:
+        order: list[FolderTreeItem] = []
+        stack = [root]
+        while stack:
+            node = stack.pop()
+            order.append(node)
+            stack.extend(node.children)
+        for node in reversed(order):  # deepest first
+            for child in node.children:
+                if child.latest_activity_at is not None and (
+                    node.latest_activity_at is None or child.latest_activity_at > node.latest_activity_at
+                ):
+                    node.latest_activity_at = child.latest_activity_at
+
+    for root in root_folders:
+        _bubble(root)
 
     return root_folders
 
@@ -819,11 +851,12 @@ async def get_folders_by_project(
 
     folders = []
     for folder, project_name in rows:
-        # Get file count + latest file activity (#1770) in one trip
+        # Get file count + latest file activity (#1770/#2680) in one trip. Prefer
+        # the real on-disk mtime (external scans), fall back to the DB updated_at.
         agg_result = await db.execute(
             select(
                 func.count(LibraryFile.id),
-                func.max(LibraryFile.updated_at),
+                func.max(func.coalesce(LibraryFile.fs_modified_at, LibraryFile.updated_at)),
             ).where(
                 LibraryFile.folder_id == folder.id,
                 LibraryFile.deleted_at.is_(None),
@@ -831,7 +864,8 @@ async def get_folders_by_project(
         )
         file_count, latest_file = agg_result.one()
         file_count = file_count or 0
-        latest_activity_at = max(folder.updated_at, latest_file) if latest_file is not None else folder.updated_at
+        own_activity = folder.fs_modified_at or folder.updated_at
+        latest_activity_at = max(own_activity, latest_file) if latest_file is not None else own_activity
 
         folders.append(
             FolderResponse(
@@ -878,11 +912,12 @@ async def get_folders_by_archive(
 
     folders = []
     for folder, archive_name in rows:
-        # Get file count + latest file activity (#1770) in one trip
+        # Get file count + latest file activity (#1770/#2680) in one trip. Prefer
+        # the real on-disk mtime (external scans), fall back to the DB updated_at.
         agg_result = await db.execute(
             select(
                 func.count(LibraryFile.id),
-                func.max(LibraryFile.updated_at),
+                func.max(func.coalesce(LibraryFile.fs_modified_at, LibraryFile.updated_at)),
             ).where(
                 LibraryFile.folder_id == folder.id,
                 LibraryFile.deleted_at.is_(None),
@@ -890,7 +925,8 @@ async def get_folders_by_archive(
         )
         file_count, latest_file = agg_result.one()
         file_count = file_count or 0
-        latest_activity_at = max(folder.updated_at, latest_file) if latest_file is not None else folder.updated_at
+        own_activity = folder.fs_modified_at or folder.updated_at
+        latest_activity_at = max(own_activity, latest_file) if latest_file is not None else own_activity
 
         folders.append(
             FolderResponse(
@@ -1353,6 +1389,7 @@ _SCANNABLE_EXTENSIONS = {
     ".gif",
     ".webp",
     ".svg",
+    ".md",
 }
 
 
@@ -1481,6 +1518,16 @@ async def create_external_folder(
     )
 
 
+def _mtime_to_datetime(mtime: float) -> datetime:
+    """Convert an ``os.stat().st_mtime`` epoch value to a naive-UTC datetime (#2680).
+
+    Naive UTC to match the other library timestamp columns (``created_at`` /
+    ``updated_at`` are naive ``func.now()``), so activity comparisons never mix
+    naive and aware values on either dialect.
+    """
+    return datetime.fromtimestamp(mtime, tz=timezone.utc).replace(tzinfo=None)
+
+
 @router.post("/folders/{folder_id}/scan")
 async def scan_external_folder(
     folder_id: int,
@@ -1556,6 +1603,8 @@ async def scan_external_folder(
     removed = 0
     found_paths: set[str] = set()
     seen_rel_dirs: set[str] = set()
+    # Real on-disk mtime per visited folder id (#2680), applied after the walk.
+    folder_mtimes: dict[int, datetime] = {}
 
     for dirpath, dirnames, filenames in os.walk(ext_path):
         # Filter hidden directories unless configured
@@ -1605,6 +1654,15 @@ async def scan_external_folder(
 
         target_folder_id = folder_cache.get(rel_dir, folder_id)
 
+        # Record this directory's own mtime (#2680). os.walk visits every
+        # directory once, so this covers the root external folder and every
+        # subfolder (existing or just created). Applied to the folder rows
+        # after the walk completes.
+        try:
+            folder_mtimes[target_folder_id] = _mtime_to_datetime(os.stat(dirpath).st_mtime)
+        except OSError:
+            pass
+
         for filename in filenames:
             # Skip hidden files unless configured
             if not folder.external_show_hidden and filename.startswith("."):
@@ -1633,7 +1691,17 @@ async def scan_external_folder(
             found_paths.add(file_path_str)
 
             if file_path_str in existing_files:
-                continue  # Already tracked
+                # Already tracked — refresh its on-disk mtime (#2680) so a file
+                # edited/replaced over the mount (samba, etc.) re-sorts correctly
+                # and old rows scanned before this field existed get backfilled.
+                tracked = existing_files[file_path_str]
+                try:
+                    fs_mtime = _mtime_to_datetime(filepath.stat().st_mtime)
+                except OSError:
+                    fs_mtime = None
+                if fs_mtime is not None and tracked.fs_modified_at != fs_mtime:
+                    tracked.fs_modified_at = fs_mtime
+                continue
 
             # Get file info
             try:
@@ -1716,13 +1784,22 @@ async def scan_external_folder(
                 file_hash=None,  # Skip hashing external files for performance
                 thumbnail_path=thumbnail_path,
                 file_metadata=_without_print_name(file_metadata),
+                fs_modified_at=_mtime_to_datetime(stat.st_mtime),  # #2680: real on-disk mtime
             )
             db.add(db_file)
             added += 1
 
-    # Remove DB entries for files that no longer exist on disk
+    # Remove DB entries for files that no longer exist on disk.
+    #
+    # Gate on actual disk presence, NOT merely absence from found_paths:
+    # found_paths only collects extensions in _SCANNABLE_EXTENSIONS, so a
+    # record for any other file the upload path admitted (e.g. a .md README,
+    # #2520) would otherwise be treated as "deleted from disk" and purged on
+    # every scan even though the file is still there. os.path.exists keeps
+    # such records; genuinely-deleted files (absent from disk) are still
+    # cleaned up. External file_path is the absolute on-disk path.
     for path_str, db_file in existing_files.items():
-        if path_str not in found_paths:
+        if path_str not in found_paths and not os.path.exists(path_str):
             # Clean up thumbnail if we generated one
             if db_file.thumbnail_path:
                 try:
@@ -1758,6 +1835,16 @@ async def scan_external_folder(
                 sub_folder_obj = sub_folder_result.scalar_one_or_none()
                 if sub_folder_obj:
                     await db.delete(sub_folder_obj)
+                    folder_mtimes.pop(sub_fid, None)
+
+    # Persist each visited folder's real directory mtime (#2680). Fetched in one
+    # trip; folders deleted by the cleanup above were dropped from folder_mtimes.
+    if folder_mtimes:
+        folders_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id.in_(list(folder_mtimes.keys()))))
+        for folder_obj in folders_result.scalars().all():
+            new_mtime = folder_mtimes.get(folder_obj.id)
+            if new_mtime is not None and folder_obj.fs_modified_at != new_mtime:
+                folder_obj.fs_modified_at = new_mtime
 
     await db.commit()
 
@@ -1919,6 +2006,7 @@ async def list_files(
                 created_by_id=f.created_by_id,
                 created_by_username=f.created_by.username if f.created_by else None,
                 created_at=f.created_at,
+                fs_modified_at=f.fs_modified_at,
                 print_name=print_name,
                 print_time_seconds=print_time,
                 filament_used_grams=filament_grams,
@@ -3519,6 +3607,12 @@ async def _run_slicer_with_fallback(
         presets["process"] = _patch_process_support_settings(presets["process"], primary_bytes)
 
     used_embedded_settings = False
+    # "Slice as designed" (#2611): honour the file's embedded
+    # project_settings.config instead of the picked profile triplet. Only
+    # meaningful for a 3MF that actually carries embedded settings; the UI
+    # gates the toggle on the picked printer matching the design's target,
+    # so this path never re-targets across printer models.
+    embedded_mode = bool(request.use_embedded_settings and is_3mf)
     service = SlicerApiService(api_url)
 
     # #1493: cross-nozzle-class re-slice (single <-> dual). Without
@@ -3575,9 +3669,11 @@ async def _run_slicer_with_fallback(
     # (e.g. ABS in slot 2 next to a PLA in the used slot 1) makes
     # BambuStudio reject the slice with "the temperature difference of
     # the filaments used is too large" (exit 194) even though the G-code
-    # never touches the unused slot. Replace unused-slot entries with the
-    # slot-1 selection before the real slice so the loaded-filament set
-    # is materially homogeneous.
+    # never touches the unused slot; a default scoped to another printer
+    # gets it rejected with "filament preset (slot N) is not compatible
+    # with printer …" (#2628). Replace unused-slot entries with the
+    # plate's lowest used slot before the real slice so the loaded set is
+    # materially homogeneous and printer-correct.
     if is_3mf and request.plate is not None:
         from backend.app.services.slicer_3mf_convert import substitute_unused_plate_filaments
 
@@ -3597,7 +3693,22 @@ async def _run_slicer_with_fallback(
 
     try:
         try:
-            if use_cross_class_slice_all:
+            if embedded_mode:
+                # No --load-settings: feed the CLI the file's own
+                # project_settings.config untouched so the designer's tweaks
+                # (walls, infill, etc.) drive the slice. primary_bytes is
+                # already sentinel-sanitised above, the same bytes the
+                # crash-fallback uses. The resolved presets go unused here.
+                result = await service.slice_without_profiles(
+                    model_bytes=primary_bytes,
+                    model_filename=model_filename,
+                    plate=request.plate,
+                    export_3mf=request.export_3mf,
+                    request_id=progress_request_id,
+                    on_progress=progress_callback,
+                )
+                used_embedded_settings = True
+            elif use_cross_class_slice_all:
                 from backend.app.services.slicer_3mf_convert import (
                     count_plates_in_3mf,
                     merge_plate_3mfs,
@@ -3699,7 +3810,11 @@ async def _run_slicer_with_fallback(
                 # (e.g. re-slicing an H2D model for an X1C: the object is off
                 # the smaller bed). Surface the slicer's reason instead.
                 raise HTTPException(status_code=400, detail=rejection) from exc
-            if not is_3mf:
+            if not is_3mf or embedded_mode:
+                # embedded_mode already sliced with the file's own settings —
+                # there is nothing to fall back TO, so surface the server
+                # error (the outer handler turns it into a 502) instead of
+                # re-running the same embedded slice.
                 raise
             logger.warning(
                 "Slicer CLI failed on the --load-settings path for %s (%s); retrying with embedded settings",
@@ -4124,8 +4239,14 @@ async def slice_library_file(
 
     src_result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     lib_file = src_result.scalar_one_or_none()
-    if not lib_file:
-        raise HTTPException(status_code=404, detail="File not found")
+    # Per-row ownership gate. LIBRARY_UPLOAD alone let a READ_OWN caller (e.g. the
+    # built-in Operators group) slice another user's model by raw id even though
+    # GET on that id returned 404 — the sliced output was then attributed to and
+    # downloadable by the requester. Enforce the same visibility the read routes
+    # use before reading the source off disk. API-key / auth-disabled callers
+    # (current_user is None) keep can_read_all=True — no per-row identity.
+    can_read_all = current_user is None or current_user.has_permission(Permission.LIBRARY_READ_ALL.value)
+    lib_file = _ensure_library_file_visible(lib_file, current_user, can_read_all)
 
     src_lower = (lib_file.filename or "").lower()
     if not (
@@ -4197,6 +4318,7 @@ async def slice_library_file(
         kind="library_file",
         source_id=lib_file.id,
         source_name=lib_file.filename,
+        owner_id=user_id,
         run=_run,
     )
     return {

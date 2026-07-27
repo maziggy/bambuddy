@@ -181,6 +181,10 @@ class AMSTray(BaseModel):
     drying_temp: int | None = None  # RFID-recommended drying temp
     drying_time: int | None = None  # RFID-recommended drying time (hours)
     state: int | None = None  # AMS tray state: 9=empty, 10=spool present not loaded, 11=loaded
+    # Firmware's authoritative "spool physically present" bit (from tray_exist_bits).
+    # True for a non-RFID spool the firmware can't identify — the UI shows "?" rather
+    # than "Empty" (#2527). None when the bitmask was unavailable (→ state-based fallback).
+    exists: bool | None = None
 
 
 class AMSUnit(BaseModel):
@@ -328,6 +332,17 @@ class PrinterStatus(BaseModel):
     fila_switch: FilaSwitchResponse | None = None
     # Currently loaded tray (global ID): 254 = external spool, 255 = no filament
     tray_now: int = 255
+    # Runout / filament-replacement guidance (#2587). Populated only while the
+    # print is PAUSED. Both are globalised tray IDs (ams_id*4+slot, or 128-135 for
+    # AMS-HT, or 254 for external) so the frontend can highlight them with the same
+    # logic it uses for tray_now:
+    #   expected_tray = the slot the firmware now expects filament in (from tray_tar).
+    #                   None when idle, not paused, or the slot can't be resolved
+    #                   (multi-AMS ambiguity) — the UI then says "check the printer".
+    #   previous_tray = the slot loaded before the pause, i.e. the one that ran out
+    #                   (from tray_pre). None when unknown.
+    expected_tray: int | None = None
+    previous_tray: int | None = None
     # AMS status for filament change tracking
     # Main status: 0=idle, 1=filament_change, 2=rfid_identifying, 3=assist, 4=calibration
     ams_status_main: int = 0
@@ -361,6 +376,10 @@ class PrinterStatus(BaseModel):
     # AMS "Print While Drying" — drying mid-print. Verified per Bambu wiki release notes;
     # see _DRY_WHILE_PRINTING_MIN_FIRMWARE in printer_manager.py for the matrix.
     supports_drying_while_printing: bool = False
+    # The AMS can dry, but only from the printer's own screen (P1 series, #2533).
+    # supports_drying is False on these; the UI keeps the control visible but disabled
+    # and says why, rather than dropping it without explanation.
+    drying_screen_only: bool = False
     # Active chamber heater (responds to M141). True only for H2C/H2D/H2DPro/H2S/X2D.
     supports_chamber_heater: bool = False
     # Linked archive for the active print (resolved via subtask_id). Frontend uses

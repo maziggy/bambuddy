@@ -374,11 +374,21 @@ async def _resolve_source(
     *,
     library_file_id: int | None,
     archive_id: int | None,
+    user: User | None,
 ) -> tuple[SourceKind, int, str, Path]:
+    # Per-row ownership gate (IDOR fix): a caller may only run a pipeline on a
+    # source they can see. Without this a READ_OWN caller could reference
+    # another user's library file / archive by raw id and have it sliced (and,
+    # via /run, printed) even though a direct GET on that id returned 404.
+    # Auth-disabled and API-key callers (user is None) keep can_read_all=True —
+    # no per-row identity, matching the library/archive read helpers.
+    from backend.app.api.routes.archives import _ensure_archive_visible
+    from backend.app.api.routes.library import _ensure_library_file_visible
+
     if library_file_id is not None:
         lib = (await db.execute(select(LibraryFile).where(LibraryFile.id == library_file_id))).scalar_one_or_none()
-        if lib is None:
-            raise HTTPException(404, "Source library file not found")
+        can_read_all = user is None or user.has_permission(Permission.LIBRARY_READ_ALL.value)
+        lib = _ensure_library_file_visible(lib, user, can_read_all)
         src_path = (
             Path(app_settings.base_dir) / lib.file_path
         )  # SEC-PATH-OK: lib.file_path is a LibraryFile DB column set only by the upload route, which writes a UUID-named file under base_dir/library_files/.
@@ -388,8 +398,8 @@ async def _resolve_source(
 
     assert archive_id is not None
     arc = (await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))).scalar_one_or_none()
-    if arc is None:
-        raise HTTPException(404, "Source archive not found")
+    can_read_all = user is None or user.has_permission(Permission.ARCHIVES_READ_ALL.value)
+    arc = _ensure_archive_visible(arc, user, can_read_all)
     rel = arc.source_3mf_path or arc.file_path
     if not rel:
         raise HTTPException(400, "Archive has no source file to slice")
@@ -625,7 +635,7 @@ def _make_orchestration_callable(
 async def check_eligibility(
     pipeline_id: int,
     body: CheckEligibilityRequest,
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_READ),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_READ),
     db: AsyncSession = Depends(get_db),
 ):
     pipeline = await _load_pipeline(db, pipeline_id)
@@ -633,6 +643,7 @@ async def check_eligibility(
         db,
         library_file_id=body.source_library_file_id,
         archive_id=body.source_archive_id,
+        user=current_user,
     )
     if pipeline.target_kind == "printer_class" and pipeline.target_printer_id is None:
         report = await check_pipeline_eligibility(db, pipeline, status_lookup=_make_status_lookup())
@@ -662,6 +673,7 @@ async def run_pipeline(
         db,
         library_file_id=body.source_library_file_id,
         archive_id=body.source_archive_id,
+        user=current_user,
     )
 
     # Cap copies against the configured ceiling.
@@ -732,6 +744,7 @@ async def run_pipeline(
         kind="library_file" if src_kind == "library_file" else "archive",
         source_id=src_id,
         source_name=src_filename,
+        owner_id=current_user.id if current_user else None,
         run=orchestrate,
     )
 

@@ -330,6 +330,55 @@ class TestSanitizeLogContent:
         assert "/home/[user]/" in result
         assert "[IP]" in result
 
+    def test_ldap_dn_redacted_reporter_line(self):
+        """#2681: the exact reporter line — the CN (real name) must not survive."""
+        from backend.app.services.log_reader import sanitize_log_content as _sanitize_log_content
+
+        content = (
+            "LDAP authentication successful for user: jschmoe "
+            "(DN: CN=Joe Schmoe,CN=Users,DC=ad,DC=example,DC=com, groups: 4)"
+        )
+        result = _sanitize_log_content(content)
+        assert "Joe Schmoe" not in result
+        assert "DC=example" not in result
+        assert result == "LDAP authentication successful for user: jschmoe (DN: [DN], groups: 4)"
+
+    def test_ldap_dn_redacted_in_exception_string(self):
+        """DNs that leak indirectly via ldap3 exception text are caught too."""
+        from backend.app.services.log_reader import sanitize_log_content as _sanitize_log_content
+
+        content = "LDAP bind failed for user jschmoe: invalidCredentials at uid=jschmoe,ou=people,dc=example,dc=org"
+        result = _sanitize_log_content(content)
+        assert "uid=jschmoe" not in result
+        assert "[DN]" in result
+
+    def test_ldap_group_dn_redacted(self):
+        """Group DNs (from group-mapping logs) are PII-bearing and redacted."""
+        from backend.app.services.log_reader import sanitize_log_content as _sanitize_log_content
+
+        content = "Mapped CN=Admins,OU=Groups,DC=corp,DC=local -> Administrators"
+        result = _sanitize_log_content(content)
+        assert "CN=Admins" not in result
+        assert "DC=corp" not in result
+        assert "[DN]" in result
+        assert "Administrators" in result  # the non-PII target group name survives
+
+    def test_non_dn_key_value_line_not_clobbered(self):
+        """An ordinary key=value log line must not be mistaken for a DN."""
+        from backend.app.services.log_reader import sanitize_log_content as _sanitize_log_content
+
+        content = "Dispatch decision: mode=queue, state=FINISH, printer=1"
+        result = _sanitize_log_content(content)
+        assert result == content
+
+    def test_single_rdn_not_redacted(self):
+        """A lone attr=value (not a multi-component DN) is left alone."""
+        from backend.app.services.log_reader import sanitize_log_content as _sanitize_log_content
+
+        content = "Country C=US selected"
+        result = _sanitize_log_content(content)
+        assert result == content
+
 
 class TestCollectSupportInfo:
     """Tests for _collect_support_info() new diagnostic sections."""
@@ -1166,8 +1215,8 @@ class TestRedactRawPushStatus:
         out = _redact_raw_push_status(raw)
 
         # LAN topology must be scrubbed (mirrors the #1429 VP fix).
-        assert out["net"]["info"][0]["ip"] == "0.0.0.0"
-        assert out["net"]["info"][1]["ip"] == "0.0.0.0"
+        assert out["net"]["info"][0]["ip"] == "0.0.0.0"  # nosec B104 - redaction sentinel, not a bind address
+        assert out["net"]["info"][1]["ip"] == "0.0.0.0"  # nosec B104 - redaction sentinel, not a bind address
         # Non-IP siblings inside the entry survive so the shape stays
         # diagnosable (interface count, mask presence, etc.).
         assert out["net"]["info"][0]["mask"] == "255.255.255.0"

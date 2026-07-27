@@ -56,7 +56,7 @@ export function ApiKeyQRCodeModal({ apiKey, baseUrl, onClose }: ApiKeyQRCodeModa
           <div className="bg-white p-4 rounded-lg mb-4">
             <QRCodeSVG value={payload} size={256} />
           </div>
-          <div className="flex items-start gap-2 text-xs text-amber-400 mb-4">
+          <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400 mb-4">
             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <span>{t('settings.apiKeyQrWarning')}</span>
           </div>

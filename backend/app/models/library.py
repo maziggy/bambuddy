@@ -31,6 +31,14 @@ class LibraryFolder(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    # Real on-disk modification time of the directory this folder mirrors (#2680).
+    # For external folders this is captured from ``os.stat().st_mtime`` on scan so
+    # the tree's "sort by recent activity" matches ``ls -t`` instead of ordering by
+    # the DB row's ``updated_at`` (which is the scan instant, identical for every
+    # row of a bulk scan). Null for managed (internal) folders, which have no
+    # meaningful directory mtime — callers fall back to ``updated_at``/``created_at``.
+    fs_modified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     # Relationships
     parent: Mapped["LibraryFolder | None"] = relationship(
         "LibraryFolder",
@@ -101,6 +109,14 @@ class LibraryFile(Base):
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # Real on-disk modification time of the file (#2680). Captured from
+    # ``os.stat().st_mtime`` for external files on scan so the file pane's date
+    # sort and the folder tree's recursive "recent activity" bubble reflect the
+    # actual filesystem mtime (``ls -t``) rather than the DB ``updated_at`` (the
+    # scan instant, identical across a bulk scan). Null for managed uploads —
+    # callers fall back to ``created_at``.
+    fs_modified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Relationships
     folder: Mapped["LibraryFolder | None"] = relationship(back_populates="files")

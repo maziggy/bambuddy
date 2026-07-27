@@ -571,6 +571,33 @@ create_systemd_service() {
         protect_home="read-only"
     fi
 
+    # This function overwrites /etc/systemd/system/bambuddy.service outright. Any
+    # ReadWritePaths the operator added by hand — a NAS share for Scheduled
+    # Backups, typically — used to disappear with it, and the next backup failed
+    # with EROFS ("Read-only file system"), which reads like a permission problem
+    # and is not one (issue #2544). Back the old unit up and carry those paths
+    # forward.
+    local existing_unit="/etc/systemd/system/bambuddy.service"
+    local extra_rw=""
+    if [[ -f "$existing_unit" ]]; then
+        local backup_unit="${existing_unit}.bak-$(date +%Y%m%d-%H%M%S)"
+        sudo cp "$existing_unit" "$backup_unit"
+        log_info "Existing service backed up to $backup_unit"
+
+        local prev_rw
+        prev_rw=$(sudo grep -hE '^ReadWritePaths=' "$existing_unit" 2>/dev/null | sed 's/^ReadWritePaths=//' || true)
+        local p
+        for p in $prev_rw; do
+            case "$p" in
+                "$DATA_DIR" | "$LOG_DIR" | "$INSTALL_PATH") continue ;;
+            esac
+            extra_rw+=" $p"
+        done
+        if [[ -n "$extra_rw" ]]; then
+            log_info "Keeping custom writable paths from the previous service:$extra_rw"
+        fi
+    fi
+
     cat > /tmp/bambuddy.service << EOF
 [Unit]
 Description=BamBuddy - Bambu Lab Print Management
@@ -592,9 +619,15 @@ Environment="LOG_DIR=$LOG_DIR"
 Environment="TZ=$TIMEZONE"
 
 # --loop asyncio required: uvloop can truncate VP FTP uploads (#1896)
-ExecStart=$INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host $BIND_ADDRESS --port $PORT --loop asyncio
+# --timeout-graceful-shutdown required: uvicorn otherwise waits forever for
+# in-flight requests, and an MJPEG camera stream never completes — one open
+# camera tile hangs the stop until systemd SIGKILLs, skipping the WAL
+# checkpoint and the MQTT / virtual-printer teardown.
+ExecStart=$INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host $BIND_ADDRESS --port $PORT --loop asyncio --timeout-graceful-shutdown 5
 Restart=on-failure
 RestartSec=5
+# Backstop only — uvicorn bounds its own wait at 5s and teardown takes ~1-2s.
+TimeoutStopSec=30
 StandardOutput=journal
 StandardError=journal
 
@@ -606,7 +639,16 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=$protect_home
-ReadWritePaths=$DATA_DIR $LOG_DIR $INSTALL_PATH
+# ProtectSystem=strict makes EVERY path outside the ones below read-only for this
+# service — including a NAS share you mounted yourself and can write to from your
+# own shell. If you point Scheduled Backups at such a directory, add it here, or
+# better in a drop-in that survives a reinstall (#2544):
+#
+#   sudo systemctl edit bambuddy
+#   [Service]
+#   ReadWritePaths=/mnt/your-nas-share
+#
+ReadWritePaths=$DATA_DIR $LOG_DIR $INSTALL_PATH$extra_rw
 
 [Install]
 WantedBy=multi-user.target
@@ -660,6 +702,11 @@ create_launchd_service() {
         <!-- the loop asyncio flag below is required: uvloop can truncate VP FTP uploads, #1896 -->
         <string>--loop</string>
         <string>asyncio</string>
+        <!-- required: uvicorn otherwise waits forever for in-flight requests, and an
+             MJPEG camera stream never completes — one open camera tile hangs the stop
+             until launchd SIGKILLs, skipping the WAL checkpoint and MQTT teardown -->
+        <string>--timeout-graceful-shutdown</string>
+        <string>5</string>
     </array>
     <key>WorkingDirectory</key>
     <string>$INSTALL_PATH</string>

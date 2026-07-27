@@ -8,7 +8,7 @@ import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import type { SpoolFormData, PrinterWithCalibrations, ColorPreset } from './spool-form/types';
 import { defaultFormData, validateForm, SPOOLMAN_LINKED_FIELDS } from './spool-form/types';
-import { buildFilamentOptions, extractBrandsFromPresets, findPresetOption, loadRecentColors, parsePresetName, saveRecentColor } from './spool-form/utils';
+import { buildFilamentOptions, extractBrandsFromPresets, fetchPrinterCalibrations, findPresetOption, loadRecentColors, parsePresetName, saveRecentColor } from './spool-form/utils';
 import { MATERIALS } from './spool-form/constants';
 import { FilamentSection } from './spool-form/FilamentSection';
 import { ColorSection } from './spool-form/ColorSection';
@@ -201,21 +201,9 @@ export function SpoolFormModal({
               const connected = status?.connected ?? false;
               let calibrations: PrinterWithCalibrations['calibrations'] = [];
               if (connected) {
-                try {
-                  const kRes = await api.getKProfiles(printer.id);
-                  calibrations = kRes.profiles.map(p => ({
-                    cali_idx: p.slot_id,
-                    filament_id: p.filament_id,
-                    setting_id: p.setting_id || '',
-                    name: p.name,
-                    k_value: parseFloat(p.k_value) || 0,
-                    n_coef: parseFloat(p.n_coef) || 0,
-                    extruder_id: p.extruder_id,
-                    nozzle_diameter: p.nozzle_diameter,
-                  }));
-                } catch {
-                  // Printer may not support K-profiles
-                }
+                // Fetch across every installed nozzle so dual-nozzle printers
+                // surface both the 0.4mm and 0.6mm K-profiles, not just 0.4 (#2618).
+                calibrations = await fetchPrinterCalibrations(printer.id, status);
               }
               results.push({ printer: { ...printer, connected }, calibrations });
             }
@@ -817,7 +805,7 @@ export function SpoolFormModal({
         {mode === 'create' && (
           <div className="flex items-center justify-between px-4 py-2 border-b border-bambu-dark-tertiary flex-shrink-0">
             <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-amber-400" />
+              <Zap className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               <span className="text-sm text-white">{t('inventory.quickAdd')}</span>
             </div>
             <button
@@ -880,7 +868,7 @@ export function SpoolFormModal({
               {spoolmanMode && !isEditing && (
                 <div>
                   {filamentsError ? (
-                    <p className="text-sm text-red-400 px-1">{t('inventory.spoolmanCatalogLoadFailed')}</p>
+                    <p className="text-sm text-red-700 dark:text-red-400 px-1">{t('inventory.spoolmanCatalogLoadFailed')}</p>
                   ) : (
                     <SpoolmanFilamentPicker
                       filaments={spoolmanFilaments}

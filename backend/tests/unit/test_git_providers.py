@@ -463,6 +463,26 @@ class TestGiteaBackendApiBase:
         assert owner == "owner"
         assert repo == "repo"
 
+    def test_parse_url_subpath_hosted(self):
+        # Gitea under a ROOT_URL path prefix, e.g. https://host/gitea (#2642)
+        owner, repo = self.backend.parse_repo_url("https://DOMAIN/gitea/user/repo")
+        assert owner == "user"
+        assert repo == "repo"
+
+    def test_parse_url_subpath_hosted_with_git_suffix(self):
+        owner, repo = self.backend.parse_repo_url("https://DOMAIN/gitea/user/repo.git")
+        assert owner == "user"
+        assert repo == "repo"
+
+    def test_derives_api_base_subpath_hosted(self):
+        # API base must keep the path prefix so calls hit /gitea/api/v1 (#2642)
+        result = self.backend.get_api_base("https://DOMAIN/gitea/user/repo")
+        assert result == "https://DOMAIN/gitea/api/v1"
+
+    def test_derives_api_base_subpath_hosted_with_port(self):
+        result = self.backend.get_api_base("https://DOMAIN:3000/gitea/user/repo")
+        assert result == "https://DOMAIN:3000/gitea/api/v1"
+
 
 class TestGiteaBackendPushFiles:
     def setup_method(self):
@@ -1357,6 +1377,16 @@ class TestForgejoBackendApiBase:
         owner, repo = self.backend.parse_repo_url("https://forgejo.example.com/owner/repo")
         assert owner == "owner"
         assert repo == "repo"
+
+    def test_parse_url_subpath_hosted(self):
+        # Forgejo inherits GiteaBackend's subpath handling (#2642)
+        owner, repo = self.backend.parse_repo_url("https://DOMAIN/forgejo/user/repo")
+        assert owner == "user"
+        assert repo == "repo"
+
+    def test_derives_api_base_subpath_hosted(self):
+        result = self.backend.get_api_base("https://DOMAIN/forgejo/user/repo")
+        assert result == "https://DOMAIN/forgejo/api/v1"
 
 
 class TestForgejoTestConnection:

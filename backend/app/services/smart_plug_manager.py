@@ -13,6 +13,7 @@ from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.printer_manager import printer_manager
 from backend.app.services.rest_smart_plug import rest_smart_plug_service
 from backend.app.services.tasmota import tasmota_service
+from backend.app.utils.local_time import next_local_hour, to_naive_utc, utcnow_naive
 
 if TYPE_CHECKING:
     from backend.app.models.smart_plug import SmartPlug
@@ -98,26 +99,34 @@ class SmartPlugManager:
             await asyncio.sleep(60)
 
     async def _snapshot_loop(self):
-        """Background loop that captures each plug's lifetime energy counter hourly.
+        """Background loop that captures each plug's lifetime energy counter.
 
-        Powers date-range queries in "total consumption" energy mode (#941). Takes
-        a snapshot shortly after startup so the first bucket isn't empty, then
-        every hour.
+        Powers date-range queries in "total consumption" energy mode (#941) and,
+        since #2539, the derived Today / Yesterday figures for every plug that
+        reports only a cumulative counter.
+
+        Ticks on the local hour rather than every 3600s from boot. That is what
+        makes the derivation exact: a drifting timer leaves the last snapshot
+        before midnight up to an hour early, and an hour of a printer's draw is
+        a real number of watt-hours to lose off the day boundary. Aligning to the
+        *local* hour also lands a tick on local midnight in the half-hour-offset
+        timezones (India, Nepal), where midnight is not on a UTC hour at all.
         """
-        # Short warm-up delay so other services finish booting; still gives us
-        # an initial snapshot well before the first hour mark.
+        # Short warm-up delay so other services finish booting; still gives us an
+        # initial snapshot well before the first boundary.
         await asyncio.sleep(30)
         while True:
             try:
                 await self._capture_energy_snapshots()
             except Exception as e:
                 logger.error("Error in energy snapshot capture: %s", e)
-            await asyncio.sleep(3600)  # 1 hour
+
+            now = datetime.now(timezone.utc)
+            delay = (next_local_hour(now) - now).total_seconds()
+            await asyncio.sleep(max(delay, 60))
 
     async def _capture_energy_snapshots(self):
         """Capture one energy snapshot row per plug with a usable lifetime counter."""
-        from datetime import timezone
-
         from backend.app.core.database import async_session
         from backend.app.models.smart_plug import SmartPlug
         from backend.app.models.smart_plug_energy_snapshot import SmartPlugEnergySnapshot
@@ -128,7 +137,10 @@ class SmartPlugManager:
             if not plugs:
                 return
 
-            now = datetime.now(timezone.utc)
+            # Naive UTC: the column is naive, and asyncpg rejects an aware value
+            # outright (SQLite quietly drops the offset, which is why this went
+            # unnoticed — on Postgres the whole capture raised).
+            now = utcnow_naive()
             captured = 0
             for plug in plugs:
                 # MQTT plugs only publish a "today" counter that resets at midnight —
@@ -146,8 +158,9 @@ class SmartPlugManager:
                     continue
                 lifetime = energy.get("total")
                 if lifetime is None:
-                    # MQTT / REST plugs that only expose "today" can't be used for
-                    # cumulative snapshots — skip them.
+                    # The plug exposes no cumulative counter — a REST plug with only
+                    # rest_energy_path set, say. Nothing to snapshot, and its Today
+                    # comes straight from the device anyway.
                     continue
                 db.add(
                     SmartPlugEnergySnapshot(
@@ -189,7 +202,7 @@ class SmartPlugManager:
                         success = await service.turn_on(plug)
                         if success:
                             plug.last_state = "ON"
-                            plug.last_checked = datetime.now(timezone.utc)
+                            plug.last_checked = utcnow_naive()
                             self._last_schedule_check[plug.id] = f"on:{current_time}"
 
                 # Check if we should turn off
@@ -200,10 +213,10 @@ class SmartPlugManager:
                         success = await service.turn_off(plug)
                         if success:
                             plug.last_state = "OFF"
-                            plug.last_checked = datetime.now(timezone.utc)
+                            plug.last_checked = utcnow_naive()
                             self._last_schedule_check[plug.id] = f"off:{current_time}"
-                            # Mark printer offline if linked
-                            if plug.printer_id:
+                            # Mark printer offline if this plug feeds it (#2629)
+                            if plug.printer_id and plug.controls_printer_power:
                                 printer_manager.mark_printer_offline(plug.printer_id)
 
             await db.commit()
@@ -245,7 +258,7 @@ class SmartPlugManager:
 
                 if success:
                     plug.last_state = "ON"
-                    plug.last_checked = datetime.now(timezone.utc)
+                    plug.last_checked = utcnow_naive()
                     plug.auto_off_executed = False  # Reset flag when turning on
             except Exception as e:
                 logger.warning("Failed to turn on plug '%s' for printer %s: %s", plug.name, printer_id, e)
@@ -397,6 +410,7 @@ class SmartPlugManager:
                 plug.password,
                 printer_id,
                 delay_seconds,
+                controls_printer_power=plug.controls_printer_power,
                 rest_off_url=plug.rest_off_url if plug.plug_type == "rest" else None,
                 rest_off_body=plug.rest_off_body if plug.plug_type == "rest" else None,
                 rest_method=plug.rest_method if plug.plug_type == "rest" else None,
@@ -416,6 +430,7 @@ class SmartPlugManager:
         printer_id: int,
         delay_seconds: int,
         *,
+        controls_printer_power: bool = True,
         rest_off_url: str | None = None,
         rest_off_body: str | None = None,
         rest_method: str | None = None,
@@ -463,8 +478,10 @@ class SmartPlugManager:
             # Mark auto_off_executed in database and update printer status
             if success:
                 await self._mark_auto_off_executed(plug_id)
-                # Mark the printer as offline immediately
-                printer_manager.mark_printer_offline(printer_id)
+                # Mark the printer as offline immediately — but only when this
+                # plug actually feeds the printer (#2629).
+                if controls_printer_power:
+                    printer_manager.mark_printer_offline(printer_id)
 
         except asyncio.CancelledError:
             logger.debug("Delayed turn-off cancelled for plug %s", plug_id)
@@ -491,6 +508,7 @@ class SmartPlugManager:
                 plug.password,
                 printer_id,
                 temp_threshold,
+                controls_printer_power=plug.controls_printer_power,
                 rest_off_url=plug.rest_off_url if plug.plug_type == "rest" else None,
                 rest_off_body=plug.rest_off_body if plug.plug_type == "rest" else None,
                 rest_method=plug.rest_method if plug.plug_type == "rest" else None,
@@ -510,6 +528,7 @@ class SmartPlugManager:
         printer_id: int,
         temp_threshold: int,
         *,
+        controls_printer_power: bool = True,
         rest_off_url: str | None = None,
         rest_off_body: str | None = None,
         rest_method: str | None = None,
@@ -590,8 +609,10 @@ class SmartPlugManager:
                         # Mark auto_off_executed in database and update printer status
                         if success:
                             await self._mark_auto_off_executed(plug_id)
-                            # Mark the printer as offline immediately
-                            printer_manager.mark_printer_offline(printer_id)
+                            # Mark the printer as offline immediately — but only
+                            # when this plug actually feeds the printer (#2629).
+                            if controls_printer_power:
+                                printer_manager.mark_printer_offline(printer_id)
 
                         break
 
@@ -617,7 +638,7 @@ class SmartPlugManager:
                 plug = result.scalar_one_or_none()
                 if plug:
                     plug.auto_off_pending = pending
-                    plug.auto_off_pending_since = datetime.now(timezone.utc) if pending else None
+                    plug.auto_off_pending_since = utcnow_naive() if pending else None
                     await db.commit()
                     logger.debug("Marked plug %s auto_off_pending=%s", plug_id, pending)
         except Exception as e:
@@ -639,7 +660,7 @@ class SmartPlugManager:
                     plug.auto_off_pending = False  # Clear pending state
                     plug.auto_off_pending_since = None
                     plug.last_state = "OFF"
-                    plug.last_checked = datetime.now(timezone.utc)
+                    plug.last_checked = utcnow_naive()
                     await db.commit()
                     if plug.auto_off_persistent:
                         logger.info("Auto-off executed for plug %s (persistent, stays enabled)", plug_id)
@@ -685,10 +706,8 @@ class SmartPlugManager:
                 for plug in pending_plugs:
                     # Check how long it's been pending (timeout after 2 hours)
                     if plug.auto_off_pending_since:
-                        pending_since = plug.auto_off_pending_since
-                        if pending_since.tzinfo is None:
-                            pending_since = pending_since.replace(tzinfo=timezone.utc)
-                        elapsed = (datetime.now(timezone.utc) - pending_since).total_seconds()
+                        pending_since = to_naive_utc(plug.auto_off_pending_since)
+                        elapsed = (utcnow_naive() - pending_since).total_seconds()
                         if elapsed > 7200:  # 2 hours
                             logger.warning(
                                 f"Auto-off for plug '{plug.name}' was pending for {elapsed / 60:.0f} minutes, "
@@ -728,7 +747,8 @@ class SmartPlugManager:
                         success = await service.turn_off(plug)
                         if success:
                             await self._mark_auto_off_executed(plug.id)
-                            printer_manager.mark_printer_offline(plug.printer_id)
+                            if plug.controls_printer_power:
+                                printer_manager.mark_printer_offline(plug.printer_id)
 
                 if pending_plugs:
                     logger.info("Resumed %s pending auto-off(s)", len(pending_plugs))

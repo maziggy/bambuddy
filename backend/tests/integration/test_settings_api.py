@@ -485,8 +485,9 @@ class TestSettingsAPI:
         response = await async_client.get("/api/v1/settings/")
         result = response.json()
 
-        assert result["default_bed_levelling"] is True
-        assert result["default_flow_cali"] is False
+        # bed_levelling / flow_cali are tri-state, defaulting to "auto".
+        assert result["default_bed_levelling"] == "auto"
+        assert result["default_flow_cali"] == "auto"
         assert result["default_vibration_cali"] is True
         assert result["default_layer_inspect"] is False
         assert result["default_timelapse"] is False
@@ -494,12 +495,12 @@ class TestSettingsAPI:
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_update_default_print_options(self, async_client: AsyncClient):
-        """Verify default print options can be updated."""
+        """Verify default print options can be updated (tri-state + booleans)."""
         response = await async_client.put(
             "/api/v1/settings/",
             json={
-                "default_bed_levelling": False,
-                "default_flow_cali": True,
+                "default_bed_levelling": "off",
+                "default_flow_cali": "on",
                 "default_vibration_cali": False,
                 "default_layer_inspect": True,
                 "default_timelapse": True,
@@ -508,11 +509,28 @@ class TestSettingsAPI:
 
         assert response.status_code == 200
         result = response.json()
-        assert result["default_bed_levelling"] is False
-        assert result["default_flow_cali"] is True
+        assert result["default_bed_levelling"] == "off"
+        assert result["default_flow_cali"] == "on"
         assert result["default_vibration_cali"] is False
         assert result["default_layer_inspect"] is True
         assert result["default_timelapse"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_default_print_options_legacy_bool_coerced(self, async_client: AsyncClient):
+        """Old clients sending booleans for the tri-state options still work.
+
+        The TriState validator maps true->"on", false->"off" on input so a
+        pre-upgrade frontend never writes an invalid value.
+        """
+        response = await async_client.put(
+            "/api/v1/settings/",
+            json={"default_bed_levelling": False, "default_flow_cali": True},
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["default_bed_levelling"] == "off"
+        assert result["default_flow_cali"] == "on"
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -521,14 +539,14 @@ class TestSettingsAPI:
         await async_client.put(
             "/api/v1/settings/",
             json={
-                "default_bed_levelling": False,
+                "default_bed_levelling": "on",
                 "default_timelapse": True,
             },
         )
 
         response = await async_client.get("/api/v1/settings/")
         result = response.json()
-        assert result["default_bed_levelling"] is False
+        assert result["default_bed_levelling"] == "on"
         assert result["default_timelapse"] is True
 
     @pytest.mark.asyncio
@@ -539,21 +557,21 @@ class TestSettingsAPI:
         await async_client.put(
             "/api/v1/settings/",
             json={
-                "default_bed_levelling": False,
-                "default_flow_cali": True,
+                "default_bed_levelling": "off",
+                "default_flow_cali": "on",
             },
         )
 
         # Update only one
         response = await async_client.put(
             "/api/v1/settings/",
-            json={"default_bed_levelling": True},
+            json={"default_bed_levelling": "auto"},
         )
 
         assert response.status_code == 200
         result = response.json()
-        assert result["default_bed_levelling"] is True
-        assert result["default_flow_cali"] is True  # Should remain from previous update
+        assert result["default_bed_levelling"] == "auto"
+        assert result["default_flow_cali"] == "on"  # Should remain from previous update
 
     # ========================================================================
     # Home Assistant environment variable tests

@@ -46,8 +46,8 @@ function BackupCodesDisplay({ codes, onDone }: { codes: string[]; onDone: () => 
 
   return (
     <div className="space-y-4">
-      <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
-        <p className="text-amber-400 text-sm font-medium">{t('settings.twoFa.backupCodesWarning')}</p>
+      <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 rounded-lg p-4">
+        <p className="text-amber-700 dark:text-amber-400 text-sm font-medium">{t('settings.twoFa.backupCodesWarning')}</p>
       </div>
       <div className="grid grid-cols-2 gap-2">
         {codes.map((code, index) => (
@@ -289,8 +289,8 @@ export function TwoFactorSettings() {
       <Card id="card-2fa-totp">
         <CardHeader>
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${status?.totp_enabled ? 'bg-green-500/20' : 'bg-gray-500/20'}`}>
-              <Smartphone className={`w-5 h-5 ${status?.totp_enabled ? 'text-green-400' : 'text-gray-400'}`} />
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${status?.totp_enabled ? 'bg-green-100 dark:bg-green-500/20' : 'bg-gray-500/20'}`}>
+              <Smartphone className={`w-5 h-5 ${status?.totp_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`} />
             </div>
             <div>
               <h3 className="text-white font-semibold">{t('settings.twoFa.totpTitle')}</h3>
@@ -298,7 +298,7 @@ export function TwoFactorSettings() {
             </div>
             <div className="ml-auto">
               {status?.totp_enabled ? (
-                <span className="flex items-center gap-1 text-green-400 text-sm font-medium">
+                <span className="flex items-center gap-1 text-green-700 dark:text-green-400 text-sm font-medium">
                   <ShieldCheck className="w-4 h-4" /> {t('common.enabled')}
                 </span>
               ) : (
@@ -394,8 +394,8 @@ export function TwoFactorSettings() {
       <Card id="card-2fa-emailotp">
         <CardHeader>
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${status?.email_otp_enabled ? 'bg-green-500/20' : 'bg-gray-500/20'}`}>
-              <Mail className={`w-5 h-5 ${status?.email_otp_enabled ? 'text-green-400' : 'text-gray-400'}`} />
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${status?.email_otp_enabled ? 'bg-green-100 dark:bg-green-500/20' : 'bg-gray-500/20'}`}>
+              <Mail className={`w-5 h-5 ${status?.email_otp_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`} />
             </div>
             <div className="flex-1">
               <h3 className="text-white font-semibold">{t('settings.twoFa.emailOtpTitle')}</h3>
@@ -408,7 +408,7 @@ export function TwoFactorSettings() {
             {/* Show status badge; enable/disable handled in CardContent */}
             <div className="ml-auto">
               {status?.email_otp_enabled ? (
-                <span className="flex items-center gap-1 text-green-400 text-sm font-medium">
+                <span className="flex items-center gap-1 text-green-700 dark:text-green-400 text-sm font-medium">
                   <ShieldCheck className="w-4 h-4" /> {t('common.enabled')}
                 </span>
               ) : (
@@ -421,7 +421,7 @@ export function TwoFactorSettings() {
         </CardHeader>
         <CardContent>
           {!hasEmail ? (
-            <p className="text-amber-400 text-sm">{t('settings.twoFa.addEmailFirst')}</p>
+            <p className="text-amber-700 dark:text-amber-400 text-sm">{t('settings.twoFa.addEmailFirst')}</p>
           ) : emailSetupToken ? (
             /* Step 2: enter the code that was sent to the email */
             <div className="space-y-4">

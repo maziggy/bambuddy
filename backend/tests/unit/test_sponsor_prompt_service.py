@@ -47,7 +47,7 @@ async def _add_archives(db: AsyncSession, *, user_id: int | None, count: int) ->
         db.add(
             PrintArchive(
                 filename=f"archive-{i}.zip",
-                file_path=f"/tmp/archive-{i}.zip",
+                file_path=f"/tmp/archive-{i}.zip",  # nosec B108
                 file_size=1024,
                 created_by_id=user_id,
             )

@@ -10,6 +10,7 @@ from backend.app.utils.printer_models import (
     get_rod_type,
     has_ethernet,
     has_external_storage,
+    has_remote_storage_toggle,
     is_dual_nozzle_model,
     normalize_printer_model,
     normalize_printer_model_id,
@@ -242,3 +243,28 @@ class TestHasExternalStorage:
     def test_none_and_empty_default_to_true(self):
         assert has_external_storage(None) is True
         assert has_external_storage("") is True
+
+
+class TestHasRemoteStorageToggle:
+    """#2524: P1-series have a slot but no reachable control to enable the
+    "Store sent files on external storage" option. The diagnostic uses this
+    to skip (not fail) on those models. A false add here would silently
+    disable the genuine fail signal for X1/P2S/H2 users."""
+
+    @pytest.mark.parametrize("model", ["P1S", "P1P", "p1s", "P1-S", "P1 S"])
+    def test_p1_series_has_no_reachable_toggle(self, model: str):
+        assert has_remote_storage_toggle(model) is False
+
+    @pytest.mark.parametrize(
+        "model",
+        ["X1C", "X1E", "X1", "P2S", "H2D", "H2D Pro", "H2C", "H2S", "X2D", "A1", "A1 Mini"],
+    )
+    def test_other_models_have_reachable_toggle(self, model: str):
+        assert has_remote_storage_toggle(model) is True
+
+    def test_unknown_and_empty_default_to_true(self):
+        # Default-true keeps the fail signal active for models not explicitly
+        # listed — the skip only applies to known no-toggle firmware.
+        assert has_remote_storage_toggle("BrandNewModel2027") is True
+        assert has_remote_storage_toggle(None) is True
+        assert has_remote_storage_toggle("") is True

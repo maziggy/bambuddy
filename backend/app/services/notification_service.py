@@ -334,7 +334,10 @@ class NotificationService:
         """
         user_key = config.get("user_key", "").strip()
         app_token = config.get("app_token", "").strip()
-        priority = config.get("priority", 0)
+        try:
+            priority = int(config.get("priority", 0))
+        except (TypeError, ValueError):
+            priority = 0
 
         if not user_key or not app_token:
             return False, "User key and app token are required"
@@ -347,6 +350,22 @@ class NotificationService:
             "message": message,
             "priority": priority,
         }
+
+        # Emergency priority (2) keeps re-alerting until acknowledged, so
+        # Pushover *requires* retry (how often, >= 30s) and expire (when to
+        # give up, <= 10800s). Without them the API rejects the message. Only
+        # send them at priority 2 — Pushover ignores them at other priorities.
+        if priority == 2:
+            try:
+                retry = int(config.get("retry", 60))
+            except (TypeError, ValueError):
+                retry = 60
+            try:
+                expire = int(config.get("expire", 3600))
+            except (TypeError, ValueError):
+                expire = 3600
+            data["retry"] = max(30, min(retry, 10800))
+            data["expire"] = max(30, min(expire, 10800))
 
         client = await self._get_client()
 
@@ -493,22 +512,43 @@ class NotificationService:
                 msg["Subject"] = f"[Bambuddy] {subject}"
                 msg.attach(MIMEText(body, "plain"))
 
-            if security == "ssl":
-                # Direct SSL connection (typically port 465)
-                server = smtplib.SMTP_SSL(smtp_server, smtp_port)
-            elif security == "starttls":
-                # STARTTLS upgrade (typically port 587)
-                server = smtplib.SMTP(smtp_server, smtp_port)
-                server.starttls()
-            else:
-                # No encryption (typically port 25) - use with caution
-                server = smtplib.SMTP(smtp_server, smtp_port)
+            # smtplib is synchronous and blocking: a wedged / greylisting /
+            # firewall-dropped relay leaves recv() stuck. Two problems, two
+            # fixes (#2572):
+            #   1. No timeout — smtplib defaults to the global socket timeout,
+            #      which this app never sets, so a stuck relay blocks forever.
+            #      Pass an explicit timeout to every connect.
+            #   2. Run on the event loop — a stuck (or merely slow) send freezes
+            #      every other coroutine, including a DB session a caller is
+            #      holding open across this notification. Offload to a worker
+            #      thread so the loop stays live and the connection is released
+            #      on schedule.
+            smtp_timeout = 30.0
+            msg_str = msg.as_string()
 
-            if auth_enabled:
-                server.login(username, password)
+            def _blocking_send() -> None:
+                if security == "ssl":
+                    # Direct SSL connection (typically port 465)
+                    server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=smtp_timeout)
+                elif security == "starttls":
+                    # STARTTLS upgrade (typically port 587)
+                    server = smtplib.SMTP(smtp_server, smtp_port, timeout=smtp_timeout)
+                    server.starttls()
+                else:
+                    # No encryption (typically port 25) - use with caution
+                    server = smtplib.SMTP(smtp_server, smtp_port, timeout=smtp_timeout)
+                try:
+                    if auth_enabled:
+                        server.login(username, password)
+                    server.sendmail(from_email, to_email, msg_str)
+                finally:
+                    # quit() in finally so a send error doesn't leak the socket.
+                    try:
+                        server.quit()
+                    except Exception:  # noqa: BLE001 — closing a broken connection is best-effort
+                        pass
 
-            server.sendmail(from_email, to_email, msg.as_string())
-            server.quit()
+            await asyncio.to_thread(_blocking_send)
 
             return True, "Email sent successfully"
         except smtplib.SMTPAuthenticationError:

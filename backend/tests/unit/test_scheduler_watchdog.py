@@ -14,12 +14,12 @@ tick.
 """
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from backend.app.models.print_queue import PrintQueueItem
-from backend.app.services.print_scheduler import PrintScheduler
+from backend.app.services.print_scheduler import DISPATCH_MAX_ATTEMPTS, PrintScheduler
 
 
 @pytest.fixture
@@ -489,3 +489,121 @@ class TestGcodeFileDiscriminator:
             )
 
         client.force_reconnect_stale_session.assert_called_once()
+
+
+class TestWatchdogRetryBudget:
+    """A revert hands the item straight back to the next queue pass, which
+    re-uploads the whole 3MF and waits the watchdog out again. For a printer
+    that is genuinely wedged that loop never terminates — the #2555 reporter had
+    one printer "since this morning still not launch" — and every lap also burns
+    an upload slot the rest of the farm is queueing for. Retrying is right;
+    retrying forever is not.
+    """
+
+    @staticmethod
+    async def _wedge(db_session, *, item_id: int = 1):
+        """Run one watchdog cycle against a printer that accepts but never starts."""
+        get_status = MagicMock(return_value=_status("IDLE", "NEW_SUBTASK", gcode_file="/new.3mf"))
+        get_client = MagicMock(return_value=MagicMock())
+
+        with (
+            patch("backend.app.services.print_scheduler.printer_manager.get_status", get_status),
+            patch("backend.app.services.print_scheduler.printer_manager.get_client", get_client),
+            patch("backend.app.services.print_scheduler.async_session", db_session),
+            patch("backend.app.core.database.async_session", db_session),
+            patch(
+                "backend.app.services.notification_service.notification_service.on_queue_job_failed",
+                AsyncMock(),
+            ) as notify,
+        ):
+            await PrintScheduler._watchdog_print_start(
+                queue_item_id=item_id,
+                printer_id=42,
+                pre_state="IDLE",
+                pre_subtask_id="OLD_SUBTASK",
+                pre_gcode_file="/old.3mf",
+                timeout=0.2,
+                phase_b_timeout=0.2,
+                poll_interval=0.05,
+            )
+        return notify
+
+    @pytest.mark.asyncio
+    async def test_early_wedges_still_revert_for_retry(self, db_session):
+        """Attempts below the budget must keep the existing #1678 behaviour.
+
+        The transient causes are real and the watchdog already recovers from
+        them (a publish lost on a half-broken session is fixed by the forced
+        reconnect on the very next attempt), so the first wedges must not fail
+        the job.
+        """
+        await self._wedge(db_session)
+
+        async with db_session() as db:
+            item = await db.get(PrintQueueItem, 1)
+            assert item.status == "pending", "first wedge must still be retried"
+            assert item.dispatch_attempts == 1
+            assert item.started_at is None
+
+    @pytest.mark.asyncio
+    async def test_attempts_accumulate_across_wedges(self, db_session):
+        """The counter is what bounds the loop, so it must survive the revert."""
+        for expected in (1, 2):
+            # Each pass starts from a fresh dispatch, i.e. the row is 'printing' again.
+            async with db_session() as db:
+                item = await db.get(PrintQueueItem, 1)
+                item.status = "printing"
+                await db.commit()
+
+            await self._wedge(db_session)
+
+            async with db_session() as db:
+                item = await db.get(PrintQueueItem, 1)
+                assert item.dispatch_attempts == expected
+                assert item.status == "pending"
+
+    @pytest.mark.asyncio
+    async def test_gives_up_and_fails_the_item_at_the_budget(self, db_session):
+        """The third wedge fails the row instead of queueing a fourth re-upload."""
+        notify = None
+        for _ in range(DISPATCH_MAX_ATTEMPTS):
+            async with db_session() as db:
+                item = await db.get(PrintQueueItem, 1)
+                item.status = "printing"
+                await db.commit()
+            notify = await self._wedge(db_session)
+
+        async with db_session() as db:
+            item = await db.get(PrintQueueItem, 1)
+            assert item.status == "failed", f"after {DISPATCH_MAX_ATTEMPTS} wedges the item must stop going round again"
+            assert item.dispatch_attempts == DISPATCH_MAX_ATTEMPTS
+            assert item.completed_at is not None
+            # The message has to tell the user where to look — the fault is on
+            # the printer, and no amount of retrying from our side will fix it.
+            assert "never started printing" in item.error_message
+
+        notify.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_a_successful_start_never_touches_the_counter(self, db_session):
+        """Only the revert path increments. A printer that picks the job up
+        must not accumulate attempts towards a future give-up."""
+        get_status = MagicMock(return_value=_status("RUNNING", "NEW_SUBTASK"))
+        with (
+            patch("backend.app.services.print_scheduler.printer_manager.get_status", get_status),
+            patch("backend.app.services.print_scheduler.async_session", db_session),
+            patch("backend.app.core.database.async_session", db_session),
+        ):
+            await PrintScheduler._watchdog_print_start(
+                queue_item_id=1,
+                printer_id=42,
+                pre_state="IDLE",
+                pre_subtask_id="OLD_SUBTASK",
+                timeout=0.2,
+                poll_interval=0.05,
+            )
+
+        async with db_session() as db:
+            item = await db.get(PrintQueueItem, 1)
+            assert item.status == "printing"
+            assert item.dispatch_attempts == 0

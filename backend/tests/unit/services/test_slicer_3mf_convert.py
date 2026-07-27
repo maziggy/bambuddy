@@ -253,10 +253,10 @@ def p1_project(zip_bytes: bytes) -> bytes:
 
 
 class TestSubstituteUnusedPlateFilaments:
-    """Slot 1 carries the used filament; unused-slot entries are
-    overwritten with slot 1 so BambuStudio's filament-temp validator
-    doesn't trip on heterogeneous loaded filaments that the plate's
-    G-code never actually touches."""
+    """Unused-slot entries are overwritten with the plate's lowest *used*
+    slot so BambuStudio's validators don't trip on loaded filaments the
+    plate's G-code never actually touches — neither the filament-temp
+    spread nor the preset-vs-printer compatibility check."""
 
     @staticmethod
     def _model_settings_xml(per_plate_extruders: list[tuple[int, list[int]]]) -> bytes:
@@ -371,3 +371,75 @@ class TestSubstituteUnusedPlateFilaments:
         items = ["pla.json", "abs_never_used.json"]
         result = substitute_unused_plate_filaments(zip_bytes, plate_id=1, items=items)
         assert result == ["pla.json", "pla.json"]
+
+    # ---- #2628: the anchor is the lowest USED slot, not slot 1 ----------
+
+    def test_substitutes_from_first_used_slot_when_slot_1_is_unused(self):
+        """michaelklos's report: plate 2 of a multi-plate project uses only
+        slot 2, while slot 1 carries an ``@Bambu Lab H2D`` preset baked into
+        the source 3MF. Anchoring on slot 1 made the substitution a no-op for
+        the one slot that needed it, and the CLI rejected the A1 slice with
+        "filament preset (slot 1) is not compatible with printer
+        Bambu Lab A1 0.4 nozzle"."""
+        zip_bytes = _make_3mf({"Metadata/model_settings.config": self._model_settings_xml([(1, [1]), (2, [2])])})
+        items = ["tpu_at_h2d.json", "pla_at_a1.json"]
+
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=2, items=items)
+
+        assert result == ["pla_at_a1.json", "pla_at_a1.json"]
+
+    def test_unused_slot_1_does_not_poison_the_other_unused_slots(self):
+        """With more than one unused slot, the old anchor propagated slot 1's
+        own (foreign-printer) preset into every other unused slot — the exact
+        poisoning #1851 removed from the picker."""
+        zip_bytes = _make_3mf({"Metadata/model_settings.config": self._model_settings_xml([(1, [1]), (2, [3])])})
+        items = ["tpu_at_h2d.json", "abs.json", "pla_at_a1.json"]
+
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=2, items=items)
+
+        assert result == ["pla_at_a1.json", "pla_at_a1.json", "pla_at_a1.json"]
+
+    def test_anchor_is_the_lowest_used_slot_not_merely_a_used_one(self):
+        """Deterministic pick so the same project always slices identically."""
+        zip_bytes = _make_3mf({"Metadata/model_settings.config": self._model_settings_xml([(1, [1]), (2, [2, 4])])})
+        items = ["slot1.json", "slot2.json", "slot3.json", "slot4.json"]
+
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=2, items=items)
+
+        assert result == ["slot2.json", "slot2.json", "slot2.json", "slot4.json"]
+
+    def test_no_op_when_every_used_slot_is_outside_the_submitted_list(self):
+        """A plate referencing only slots beyond the picked list leaves nothing
+        trustworthy to copy from — keep the user's picks rather than invent a
+        substitution from a slot the plate doesn't use."""
+        zip_bytes = _make_3mf({"Metadata/model_settings.config": self._model_settings_xml([(1, [1]), (2, [5])])})
+        items = ["a.json", "b.json"]
+
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=2, items=items)
+
+        assert result == ["a.json", "b.json"]
+
+    def test_support_slot_can_be_the_anchor(self):
+        """The support-filament union (#1881) feeds the same used-slot set, so
+        a plate whose only geometry slot is 2 with PVA supports in 3 anchors on
+        2 — never on the unused slot 1."""
+        model_settings = self._model_settings_xml([(1, [1]), (2, [2])])
+        project_settings = json.dumps(
+            {
+                "enable_support": "1",
+                "support_filament": "3",
+                "support_interface_filament": "3",
+                "filament_type": ["PLA", "PLA", "PVA"],
+            }
+        ).encode()
+        zip_bytes = _make_3mf(
+            {
+                "Metadata/model_settings.config": model_settings,
+                "Metadata/project_settings.config": project_settings,
+            }
+        )
+        items = ["tpu_at_h2d.json", "pla.json", "pva.json"]
+
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=2, items=items)
+
+        assert result == ["pla.json", "pla.json", "pva.json"]

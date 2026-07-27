@@ -180,7 +180,7 @@ export function SlicerPipelinesPanel() {
           </div>
         )}
         {error && (
-          <div className="text-sm text-red-400">
+          <div className="text-sm text-red-700 dark:text-red-400">
             {t('settings.pipelines.loadError', 'Could not load pipelines.')}
           </div>
         )}
@@ -532,7 +532,7 @@ function PipelineRow({
                 <span
                   className={`text-xs px-1.5 py-0.5 rounded inline-flex items-center gap-1 ${
                     needsTarget
-                      ? 'bg-amber-500/15 text-amber-400'
+                      ? 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400'
                       : 'bg-bambu-dark-tertiary text-bambu-gray'
                   }`}
                 >
@@ -597,7 +597,7 @@ function PipelineRow({
                 onClick={onDelete}
                 disabled={deleting}
                 aria-label={t('settings.pipelines.action.delete', 'Delete')}
-                className="p-1.5 text-bambu-gray hover:text-red-400 hover:bg-bambu-dark-tertiary rounded disabled:opacity-50"
+                className="p-1.5 text-bambu-gray hover:text-red-600 dark:hover:text-red-400 hover:bg-bambu-dark-tertiary rounded disabled:opacity-50"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -689,7 +689,7 @@ function PipelineRow({
       )}
 
       {needsTarget && !editing && (
-        <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-400">
+        <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
           <AlertTriangle className="w-3.5 h-3.5" />
           {t(
             'settings.pipelines.noTargetWarning',
@@ -699,7 +699,7 @@ function PipelineRow({
       )}
 
       {hasStaleRef && !editing && (
-        <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-400">
+        <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
           <AlertTriangle className="w-3.5 h-3.5" />
           {t(
             'settings.pipelines.staleWarning',
@@ -715,12 +715,12 @@ function RunStatusBadge({ status }: { status: PipelineRun['status'] }) {
   const { t } = useTranslation();
   const colourClass: Record<PipelineRun['status'], string> = {
     queued: 'text-bambu-gray',
-    slicing: 'text-blue-400',
-    dispatching: 'text-blue-400',
+    slicing: 'text-blue-700 dark:text-blue-400',
+    dispatching: 'text-blue-700 dark:text-blue-400',
     in_progress: 'text-bambu-green',
     completed: 'text-bambu-green',
-    failed: 'text-red-400',
-    partial_failure: 'text-amber-400',
+    failed: 'text-red-700 dark:text-red-400',
+    partial_failure: 'text-amber-700 dark:text-amber-400',
     cancelled: 'text-bambu-gray',
   };
   return (
@@ -745,7 +745,7 @@ function PresetLine({
       {name ? (
         <span className="text-white">{name}</span>
       ) : (
-        <span className="text-amber-400">[{SOURCE_LABEL[ref.source]} #{ref.id}]</span>
+        <span className="text-amber-700 dark:text-amber-400">[{SOURCE_LABEL[ref.source]} #{ref.id}]</span>
       )}
     </div>
   );

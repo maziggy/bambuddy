@@ -196,10 +196,16 @@ export default {
       extraLarge: 'Tarjetas extragrandes',
     },
     pageView: {
+      openCamWallPage: 'Abrir el muro de cámaras como página',
       cards: 'Tarjetas',
       camWall: 'Muro de cámaras',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          'Este enlace del muro de cámaras ya no es válido. Es posible que el token haya caducado o se haya revocado.',
+        loadFailed: 'No se han podido cargar las impresoras.',
+      },
       noPrinters: 'No hay impresoras que mostrar',
       noSignal: 'Sin señal',
       live: 'En vivo',
@@ -349,6 +355,9 @@ export default {
     toast: {
       printerDeleted: 'Impresora eliminada',
       missingSpoolAssignment: 'Impresión iniciada en {{printer}}. Falta la asignación de bobina para: {{slots}}',
+      assignmentVerified: 'Filamento cargado en la ranura {{slot}} ({{printer}})',
+      assignmentVerifiedNoKprofile: 'Ranura {{slot}} en {{printer}} cargada, pero no se aplicó el perfil de calibración de flujo (perfil K)',
+      assignmentNotConfirmed: 'No se pudo confirmar la asignación de la ranura {{slot}} en {{printer}}: revisa la ranura AMS',
       printerAdded: 'Impresora añadida',
       printerUpdated: 'Impresora actualizada',
       failedToDelete: 'Error al eliminar la impresora',
@@ -416,6 +425,7 @@ export default {
       unload: 'Descargar',
     },
     bedJog: {
+      limitWarning: 'Los límites de recorrido no se aplican en los movimientos manuales: un error del firmware de Bambu ignora los finales de carrera por software en los comandos remotos. Muévelo con cuidado para evitar colisiones.',
       title: 'Controles de movimiento',
       bed: 'Cama',
       step: 'Paso (mm)',
@@ -471,6 +481,8 @@ export default {
       skip: 'Omitir',
       confirmTitle: '¿Omitir objeto?',
       confirmMessage: '¿Está seguro de que desea omitir "{{name}}"? Esto no se puede deshacer.',
+      confirmAllMessage: 'Se han seleccionado todos los objetos restantes. Esto detendrá el trabajo de impresión. ¿Continuar?',
+      confirmMultipleMessage: '¿Omitir {{count}} objetos seleccionados? Esto no se puede deshacer.',
     },
     // Confirm modals
     confirm: {
@@ -569,6 +581,10 @@ export default {
       notSupported: 'Secado no compatible',
       powerRequired: 'Conecte el adaptador de corriente del AMS para activar el secado',
       startingDrying: 'Iniciando el secado...',
+      toastCommandSent: 'Comando de secado enviado',
+      toastStopped: 'Secado detenido',
+      toastNotStarted: 'La impresora aceptó el comando, pero el AMS no inició el secado. Comprueba que el adaptador de corriente del AMS esté conectado y que la impresora esté inactiva.',
+      screenOnly: 'En esta impresora, el secado del AMS solo se puede controlar desde la pantalla de la propia impresora (limitación de Bambu)',
       stoppingDrying: 'Deteniendo el secado...',
       rotateTray: 'Girar la bobina durante el secado',
       rotateUnavailableReason: 'No disponible — un slot de este AMS está cargado hacia el cabezal. La bobina está bloqueada por el tubo de alimentación y no puede girar. Retira el filamento primero.',
@@ -592,6 +608,12 @@ export default {
     activeJobSlot: {
       title: 'Este slot es el filamento {{n}} en la impresión activa',
       ariaLabel: 'Slot de impresión activa {{n}}',
+    },
+    expectedSlot: {
+      title: 'La impresora está esperando filamento en este slot',
+      ariaLabel: 'Slot de filamento esperado {{n}}',
+      label: '{{ams}} · Slot {{slot}}',
+      external: 'Bobina externa',
     },
     // Filaments section
     filaments: 'Filamentos',
@@ -1183,6 +1205,8 @@ export default {
     history: {
       emptyTitle: 'Sin historial todavía',
       emptyDescription: 'Las impresiones completadas, canceladas y fallidas aparecerán aquí.',
+      showMore: 'Mostrar más',
+      showingCount: 'Mostrando {{shown}} de {{total}}',
     },
     dragGhost: {
       multiCount: '{{count}} elementos',
@@ -2068,6 +2092,10 @@ export default {
     tempFanPresetsChamber: 'Temperatura de la cámara',
     tempFanPresetsFan: 'Velocidad del ventilador',
     tempFanPresetsReset: 'Restablecer valores predeterminados',
+    concurrentUploadsTitle: 'Subidas simultáneas',
+    concurrentUploadsDescription: 'Cuántas impresoras pueden recibir archivos de la cola al mismo tiempo. Las impresoras reciben los archivos lentamente (una impresión grande puede tardar varios minutos) y cada una espera su turno, así que en una granja grande subir este valor evita que la última impresora de un lote tenga que esperar a que terminen todas las transferencias anteriores. Bájalo si tu red o el host de Bambuddy tienen problemas con transferencias en paralelo.',
+    concurrentUploadsLabel: 'Impresoras atendidas a la vez',
+    concurrentUploadsHelp: '1 envía a una impresora cada vez (el comportamiento anterior). El valor predeterminado es 4.',
     staggeredStart: 'Inicio escalonado',
     staggeredStartDescription: 'Tamaño de grupo e intervalo predeterminados al escalonar los inicios de lotes en varias impresoras. Se pueden anular por lote en la ventana de impresión.',
     preheatTitle: 'Precalentamiento y Heat Soak',
@@ -2088,6 +2116,9 @@ export default {
     preheatOverride_inherit: 'Heredar',
     preheatOverride_on: 'Activado',
     preheatOverride_off: 'Desactivado',
+    calibrationMode_off: 'Desactivado',
+    calibrationMode_on: 'Activado',
+    calibrationMode_auto: 'Automático',
     preheatTargetOverride: 'Sobrescribir objetivo de cámara (°C, vacío = por filamento)',
     plateClear: 'Confirmación de cama despejada',
     requirePlateClear: 'Requerir confirmación de cama despejada',
@@ -2793,6 +2824,9 @@ export default {
     clearFailed: 'Error al borrar los errores HMS',
     actionSuccess: 'Acción enviada a la impresora',
     actionFailed: 'No se pudo enviar la acción',
+    runoutExpectedSlot: 'El filamento se agotó en {{ranOut}}. La impresora ahora espera filamento compatible en {{expected}}. Inserta una bobina en {{expected}} y luego selecciona Reintentar.',
+    runoutExpectedSlotOnly: 'La impresora está esperando filamento compatible en {{expected}}. Inserta una bobina ahí y luego selecciona Reintentar.',
+    runoutSlotUnknown: 'El filamento se agotó y la impresión está en pausa. Bambuddy no pudo determinar qué slot espera ahora la impresora — revisa la pantalla de la impresora para ver el slot solicitado.',
     actions: {
       RESUME_PRINTING: 'Reanudar impresión',
       RESUME_PRINTING_DEFECTS: 'Reanudar (defectos aceptables)',
@@ -3243,37 +3277,24 @@ export default {
     },
     orcaCloud: {
       connectedAs: 'Conectado como',
+      connectedShort: 'Conectado a Orca Cloud',
       logout: 'Desconectar',
       noLogoutPermission: 'No tienes permiso para desconectar',
       noConnectPermission: 'No tienes permiso para conectar a Orca Cloud',
       retry: 'Reintentar',
-      back: 'Usar otro método de inicio de sesión',
+      connectButton: 'Conectar Orca Cloud',
       connect: {
         title: 'Conectar a Orca Cloud',
         description: 'Inicia sesión en tu cuenta Orca Cloud para sincronizar tus perfiles de slicer en Bambuddy.',
       },
-      providers: {
-        google: 'Iniciar sesión con Google',
-        apple: 'Iniciar sesión con Apple',
-        github: 'Iniciar sesión con GitHub',
-        email: 'Iniciar sesión con correo y contraseña',
-      },
-      password: {
-        title: 'Iniciar sesión con correo y contraseña',
-        email: 'Correo electrónico',
-        emailPlaceholder: 'tu@ejemplo.com',
-        password: 'Contraseña',
-        submit: 'Iniciar sesión',
-      },
-      paste: {
-        title: 'Finalizar inicio de sesión',
-        step1: 'Se abrió una nueva pestaña con la página de inicio de sesión de Orca Cloud. Inicia sesión con tu cuenta de Orca.',
-        step2: 'Tu navegador será redirigido a una URL "localhost" que no se cargará. Es lo esperado — esa URL es lo que necesitamos.',
-        step3: 'Copia la URL completa desde la barra de direcciones del navegador y pégala abajo.',
-        signInUrl: 'Si la pestaña de inicio de sesión no se abrió, haz clic en esta URL:',
-        label: 'Pega aquí la URL de callback',
-        placeholder: 'http://localhost:41172/callback?code=...&state=...',
-        submit: 'Finalizar conexión',
+      device: {
+        title: 'Aprueba Bambuddy en Orca Cloud',
+        instruction: 'Abre Orca Cloud y aprueba este código. Bambuddy se conecta automáticamente en cuanto lo apruebes.',
+        codeLabel: 'Tu código de emparejamiento',
+        openButton: 'Abrir la página de aprobación de Orca Cloud',
+        manualHint: 'O ve a {{url}} e introduce el código de arriba.',
+        waiting: 'Esperando a que apruebes…',
+        cancel: 'Cancelar',
       },
       profiles: {
         title: 'Tus perfiles de Orca Cloud ({{count}})',
@@ -3281,16 +3302,13 @@ export default {
         empty: 'Aún no hay perfiles en tu cuenta de Orca Cloud.',
       },
       toast: {
-        connected: 'Conectado a Orca Cloud como {{email}}',
         disconnected: 'Desconectado de Orca Cloud',
       },
       errors: {
         startFailed: 'No se pudo iniciar el inicio de sesión de Orca Cloud.',
-        finishFailed: 'No se pudo finalizar el inicio de sesión de Orca Cloud.',
-        passwordFailed: 'No se pudo iniciar sesión con ese correo y contraseña.',
-        passwordEmpty: 'Por favor introduce tanto tu correo como tu contraseña.',
-        emptyPaste: 'Pega la URL de callback desde tu navegador.',
-        noCode: 'Esa URL no parece un callback de Orca Cloud (sin parámetro code). Copia la URL completa desde la barra de direcciones.',
+        denied: 'El emparejamiento fue rechazado en Orca Cloud.',
+        expired: 'El código de emparejamiento caducó. Haz clic en Conectar para intentarlo de nuevo.',
+        pollFailed: 'Se perdió la conexión mientras se esperaba la aprobación. Inténtalo de nuevo.',
       },
     },
     localProfiles: {
@@ -3329,6 +3347,8 @@ export default {
       },
     },
     connectedAs: 'Conectado como',
+    signInExpiredTitle: 'La sesión de Bambu Cloud ha caducado',
+    signInExpiredBody: 'Bambu Lab ya no acepta el token almacenado. Inicie sesión de nuevo para restaurar los perfiles en la nube, las importaciones de MakerWorld y las comprobaciones de firmware.',
     logout: 'Cerrar sesión',
     noLogoutPermission: 'No tiene permiso para cerrar sesión',
     failedToLoad: 'Error al cargar los perfiles',
@@ -3585,6 +3605,9 @@ export default {
     searchSubfoldersHint: 'Incluyendo subcarpetas',
     readme: {
       truncated: 'Truncado',
+      show: 'Mostrar README',
+      hide: 'Ocultar README',
+      label: 'README',
     },
     tags: {
       title: 'Etiquetas',
@@ -3629,6 +3652,9 @@ export default {
     prints: 'Impresiones',
     ascending: 'Ascendente',
     descending: 'Descendente',
+    showModified: 'Mostrar fechas de modificación',
+    hideModified: 'Ocultar fechas de modificación',
+    lastModified: 'Última modificación',
     resultsCount: '{{showing}} de {{total}} archivos',
     selectAll: 'Seleccionar todo',
     deselectAll: 'Deseleccionar todo',
@@ -3939,6 +3965,10 @@ export default {
     toastArchives: '{{count}} impresiones archivadas con Bambuddy. Mira quién lo mantiene independiente.',
     toastAnniversary: '¡Un año con Bambuddy! Mira quién mantiene el proyecto independiente.',
     toastVersionUpdate: 'Actualizado a v{{version}}. Bambuddy sigue siendo gratuito gracias a quienes lo apoyan.',
+    toastBusiness: '¿Usas Bambuddy en {{count}} impresoras? Existe un plan de soporte para equipos: correcciones prioritarias, facturación y contacto directo con el responsable del proyecto.',
+    businessCta: 'Bambuddy para empresas',
+    businessTitle: 'Bambuddy para empresas',
+    businessTagline: 'Estás gestionando {{count}} impresoras. Hay soporte prioritario, licencias comerciales y facturación disponibles para equipos y granjas de impresión.',
   },
 
   // Library (K Profiles)
@@ -4018,6 +4048,8 @@ export default {
     refreshPresets: 'Actualizar',
     refreshPresetsTitle: 'Actualizar preajustes — recuperar los listados más recientes de la nube y los paquetes (úselo tras eliminar un preajuste en Bambu Studio o Bambu Handy)',
     allPresetsRequired: 'Deben seleccionarse todos los preajustes',
+    useEmbedded: 'Usar la configuración incorporada del archivo',
+    useEmbeddedHint: 'Laminar tal como lo configuró el diseñador (perímetros, relleno, filamento) en lugar de los perfiles de arriba. Disponible porque tu impresora coincide con la del archivo.',
     enqueuing: 'Enviando el trabajo de laminado…',
     queued: 'En cola…',
     failed: 'Error al laminar. Consulte los registros del contenedor auxiliar del laminador.',
@@ -4194,6 +4226,8 @@ export default {
       title: 'Imprimir etiquetas de bobinas',
       selectedCount: '{{count}} seleccionadas',
       pickSpools: 'Elija para qué bobinas imprimir etiquetas:',
+      monochrome: 'Monocromo (impresora en blanco y negro)',
+      monochromeHint: 'Elimina la muestra de color y amplía el texto',
       searchPlaceholder: 'Buscar nombre, marca o n.º de ID',
       filterByMaterial: 'Material:',
       allMaterials: 'Todos',
@@ -4555,6 +4589,8 @@ export default {
     selectPrinter: 'Seleccionar impresora',
     selectPlate: 'Seleccionar cama',
     filamentMapping: 'Mapeo de filamentos',
+    plateN: 'Cama {{n}}',
+    plateFilamentsUnreadable: 'No se han podido leer los filamentos de una cama seleccionada, por lo que no se puede asignar. Deselecciónala para encolar las demás.',
     totalCost: 'Coste total:',
     slotRemainingShort: ' - quedan {{grams}} g',
     printSettings: 'Ajustes de impresión',
@@ -4592,6 +4628,7 @@ export default {
     overrideWith: 'Anular con',
     resetToOriginal: 'Restablecer al original',
     insufficientFilamentTitle: 'No hay suficiente filamento',
+    waitingForAmsStatus: 'Esperando el estado del AMS de {{printer}}…',
     insufficientFilamentMessage: 'Algunas bobinas asignadas tienen menos filamento restante del que necesita esta impresión:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: necesita {{required}} g, restante {{remaining}} g',
     printAnyway: 'Imprimir de todos modos',
@@ -4790,6 +4827,20 @@ export default {
     backupSize: 'Tamaño',
     localTimeHint: 'Hora local ({{tz}})',
     defaultPathLabel: 'Predeterminada:',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'Bambuddy no puede escribir en este directorio',
+      howToFix: 'Cómo solucionarlo:',
+      sandboxed: 'El servicio de Bambuddy no puede escribir en {{path}}. Su unidad de systemd se ejecuta con ProtectSystem=strict, lo que hace que todo directorio fuera de los de instalación, datos y registros sea de solo lectura para el servicio, incluso uno en el que usted sí puede escribir desde su propia shell.',
+      read_only: '{{path}} está en un sistema de archivos de solo lectura.',
+      permission_denied: 'Bambuddy no tiene permiso para escribir en {{path}}. Compruebe el propietario y los permisos del directorio.',
+      no_space: 'El sistema de archivos que contiene {{path}} está lleno.',
+      not_a_directory: '{{path}} existe pero no es un directorio.',
+      missing: '{{path}} no existe y no se pudo crear.',
+      error: 'Bambuddy no puede escribir en {{path}}.',
+      ephemeralTitle: 'Estas copias de seguridad no sobrevivirán a la recreación del contenedor',
+      container_ephemeral: '{{path}} está dentro del contenedor de Bambuddy, no en el host. Las copias escritas ahí se pierden cuando se recrea el contenedor. Monte el directorio desde el host:',
+    },
 
     // Category labels
     categories: {
@@ -5244,6 +5295,8 @@ export default {
     autoOffDescription: 'Apagar cuando se completa la impresión (una sola vez)',
     autoOffPersistent: 'Mantener activado',
     autoOffPersistentDescription: 'Permanecer activado entre impresiones en lugar de una sola vez',
+    controlsPrinterPower: 'Alimenta la impresora',
+    controlsPrinterPowerDescription: 'Desactívalo si este enchufe solo alimenta un accesorio (ventilador de filtro, luces). De lo contrario, apagarlo marca la impresora como desconectada.',
     autoOffAfterDrying: 'Apagado automático tras el secado',
     autoOffAfterDryingDescription: 'Apagar cuando se completa el secado del AMS',
     delayAfterDryingMinutes: 'Retardo de secado (minutos)',
@@ -5343,7 +5396,12 @@ export default {
     restPowerPath: 'Ruta JSON de la potencia',
     restPowerMultiplier: 'Multiplicador de potencia',
     restEnergyUrl: 'URL de energía',
-    restEnergyPath: 'Ruta JSON de la energía',
+    restEnergyPath: 'Ruta JSON de energía (hoy)',
+    restEnergyTotalPath: 'Ruta JSON de energía (contador total)',
+    restEnergyTotalMultiplier: 'Multiplicador del contador total',
+    restEnergyTotalPathHint: 'p. ej. aenergy.total',
+    restEnergyTotalHint:
+      'Muchos enchufes — todos los Shelly entre ellos — solo informan de un contador acumulado que nunca se reinicia. Va aquí, no en el campo de arriba: leído como el consumo de hoy nunca se pondría a cero a medianoche, y Ayer y Total seguirían vacíos. Bambuddy deduce Hoy y Ayer a partir de él, lo que requiere uno o dos días de lecturas. Un Shelly informa en vatios-hora, así que usa un multiplicador de 0.001.',
     restEnergyMultiplier: 'Multiplicador de energía',
     restUrlRequired: 'Se requiere al menos una URL (de encendido o apagado) para los enchufes REST',
     restHeadersHint: 'p. ej. {"Authorization": "Bearer your-token"}',
@@ -5524,6 +5582,8 @@ export default {
     userKey: 'Clave de usuario',
     appToken: 'Token de la aplicación',
     priority: 'Prioridad',
+    pushoverRetry: 'Reintento de emergencia (s)',
+    pushoverExpire: 'Expiración de emergencia (s)',
     botToken: 'Token del bot',
     chatId: 'ID del chat',
     smtpServer: 'Servidor SMTP',
@@ -6242,6 +6302,7 @@ export default {
         pass: 'La impresora informa que esta opción está activada — los archivos enviados se guardarán en la tarjeta SD y los archivos tendrán miniaturas y metadatos del slicer.',
         fail: 'La impresora informa que esta opción está desactivada. Active "Almacenar archivos enviados en almacenamiento externo" — en firmware reciente (P2S 01.02 / Bambu Studio 2.6+) el conmutador está en los Ajustes de Impresión de la impresora; en versiones anteriores está en la pestaña Dispositivo de Bambu Studio / OrcaSlicer. Sin esta opción, cada impresión archivada queda sin miniatura ni metadatos del slicer.',
         skip: 'No comprobado — se necesita una conexión MQTT activa. En slicers más antiguos donde este ajuste solo existe en el slicer, la impresora no lo reporta, así que esta comprobación pasa aunque la opción esté desactivada — verifique el paso 4 de la instalación manualmente.',
+        skip_unsupported_model: 'Este modelo tiene ranura SD pero no hay forma de activar la opción — el firmware actual de la serie P1 no muestra el interruptor en Bambu Studio y la impresora no tiene pantalla. Aquí no hay nada que arreglar; a las impresiones archivadas pueden faltarles miniaturas y metadatos del slicer hasta que Bambu Lab lo admita por firmware.',
       },
       port_rtsps: {
         title: 'Puerto de la cámara ({{protocol}} {{port}})',
@@ -6463,6 +6524,8 @@ export default {
     resolveButton: 'Resolver',
     signInRequiredTitle: 'Se requiere iniciar sesión en Bambu Cloud para descargar',
     signInRequiredBody: 'Puede explorar los detalles del modelo de forma anónima, pero MakerWorld requiere una cuenta de Bambu Cloud para descargar archivos 3MF.',
+    signInExpiredTitle: 'La sesión de Bambu Cloud ha caducado',
+    signInExpiredBody: 'Sigue conectado a Bambuddy, pero Bambu Lab ha dejado de aceptar el token almacenado, por lo que las descargas fallarán. Inicie sesión de nuevo en Bambu Cloud.',
     openCloudSettings: 'Abrir los ajustes de la nube',
     untitledModel: 'Modelo sin título',
     byCreator: 'de {{name}}',
@@ -6636,10 +6699,15 @@ export default {
     saveFailed: 'No se pudieron guardar los ajustes de purga automática.',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: 'Transmisión de cámara',
+      camwall: 'Muro de cámaras',
+      overlay: 'Superposición de streaming',
+    },
     title: 'Tokens de API de la cámara',
     navTitle: 'Tokens de API de la cámara',
     description:
-      'Tokens de larga duración para incrustar la transmisión de la cámara en Home Assistant, Frigate, quioscos o cualquier otra herramienta que necesite una URL estable. Cada token es exclusivo de la transmisión de la cámara y se puede revocar en cualquier momento.',
+      'Tokens de larga duración para incrustar la transmisión de la cámara en Home Assistant, Frigate, pantallas en modo quiosco o cualquier otra herramienta que necesite una dirección estable. El alcance se elige al crearlos; un token se puede revocar en cualquier momento.',
     loading: 'Cargando…',
     confirmRevoke: {
       title: '¿Revocar este token?',
@@ -6648,6 +6716,13 @@ export default {
       confirm: 'Revocar',
     },
     create: {
+      scopeLabel: 'Alcance',
+      hintCameraStream:
+        'Un token de transmisión de cámara solo puede obtener transmisiones e instantáneas. Úsalo para Home Assistant, Frigate o cualquier cosa que incruste una sola cámara.',
+      hintCamWall:
+        'Un token de muro de cámaras abre /camwall en una pantalla sin iniciar sesión. Puede ver el nombre y el estado de cada impresora, y sus transmisiones de cámara. No puede ver nombres de archivo, direcciones ni códigos de acceso.',
+      hintOverlay:
+        'Un token de superposición de streaming abre /overlay/{printerId} en una pantalla sin iniciar sesión, para OBS o cualquier transmisión en vivo. Puede ver la transmisión de la cámara de una impresora y su estado de impresión en vivo, incluido el nombre de archivo que aparece en pantalla. No puede ver direcciones ni códigos de acceso.',
       title: 'Crear nuevo token',
       nameLabel: 'Nombre del token',
       namePlaceholder: 'p. ej. Home Assistant',
@@ -6657,6 +6732,12 @@ export default {
         'La vida útil máxima es de 365 días. El valor del token se muestra solo una vez al crearlo — cópielo ahora.',
     },
     created: {
+      camWallUrlTitle: 'Dirección del muro de cámaras para esta pantalla',
+      camWallUrlHint:
+        'Abre esta dirección en la pantalla. Cualquiera que pueda leerla puede ver el muro, así que trátala como una llave: revoca el token para dejar la pantalla sin acceso.',
+      overlayUrlTitle: 'Dirección de superposición para OBS',
+      overlayUrlHint:
+        'Agrega esto como Fuente de navegador en OBS. Cambia el número de /overlay/1 por el número de tu impresora (de su dirección en la página Impresoras). Cualquiera que pueda leer la dirección puede ver la transmisión, así que trátala como una llave: revoca el token para cortar el acceso.',
       title: 'Token creado — cópielo ahora',
       warning:
         'Esta es la única vez que este token estará visible. Después de cerrar este diálogo no podrá volver a verlo nunca.',
@@ -6664,6 +6745,7 @@ export default {
       dismiss: 'Lo he guardado',
     },
     list: {
+      scope: 'Alcance',
       myTitle: 'Mis tokens',
       allTitle: 'Todos los usuarios (vista de administración)',
       empty: 'Aún no hay tokens.',

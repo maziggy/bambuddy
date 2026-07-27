@@ -114,6 +114,25 @@ describe('AmsUnitCard', () => {
     expect(screen.getByText('Empty')).toBeDefined();
   });
 
+  it('shows "?" for a non-RFID spool the firmware reports as state 9 (#2527)', () => {
+    // A non-Bambu spool with no RFID is physically present (tray_exist_bits →
+    // exists=true) but some firmware (standard AMS on P1-series) reports its
+    // tray as state=9 with no tray_type — identical to a truly-empty slot at
+    // the tray level. exists is authoritative, so it must read "?" not "Empty".
+    const unit = makeUnit({
+      tray: [
+        makeTray({ id: 0, tray_type: 'PLA', remain: 80 }),
+        makeTray({ id: 1, tray_color: null, tray_type: '', remain: 0, state: 9, exists: true }),
+        makeTray({ id: 2, tray_type: 'ABS', remain: 10 }),
+        // exists=false with the same state=9 is a genuinely empty slot.
+        makeTray({ id: 3, tray_color: null, tray_type: '', remain: 0, state: 9, exists: false }),
+      ],
+    });
+    render(<AmsUnitCard unit={unit} activeSlot={null} />);
+    expect(screen.getByText('?')).toBeDefined();
+    expect(screen.getByText('Empty')).toBeDefined();
+  });
+
   it('renders fill level bars for slots with filament', () => {
     const { container } = render(
       <AmsUnitCard unit={makeUnit()} activeSlot={null} />

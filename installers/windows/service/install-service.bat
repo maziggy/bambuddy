@@ -30,7 +30,11 @@ REM "service not found" returns non-zero and we want to proceed.
 REM Register the service. NSSM wraps uvicorn so Windows treats it as a
 REM proper service (autostart, recovery, supervised restart).
 REM --loop asyncio required: uvloop can truncate VP FTP uploads (#1896).
-"%NSSM%" install Bambuddy "%PYTHON%" "-m uvicorn backend.app.main:app --host 0.0.0.0 --port %PORT% --loop asyncio"
+REM --timeout-graceful-shutdown required: uvicorn otherwise waits forever for
+REM in-flight requests, and an MJPEG camera stream is a response that never
+REM completes — one open camera tile hangs the stop until NSSM force-kills,
+REM skipping the WAL checkpoint and the MQTT / virtual-printer teardown.
+"%NSSM%" install Bambuddy "%PYTHON%" "-m uvicorn backend.app.main:app --host 0.0.0.0 --port %PORT% --loop asyncio --timeout-graceful-shutdown 5"
 if errorlevel 1 (
     echo [install-service] nssm install failed
     exit /b 1
@@ -41,6 +45,19 @@ REM Service configuration
 "%NSSM%" set Bambuddy DisplayName "Bambuddy"
 "%NSSM%" set Bambuddy Description "Bambuddy — local-first Bambu Lab printer manager"
 "%NSSM%" set Bambuddy Start SERVICE_AUTO_START
+
+REM Shutdown behaviour. NSSM's stop sequence is Ctrl-C, then WM_CLOSE, then a
+REM thread message, then TerminateProcess — each with a 1500 ms default wait.
+REM Uvicorn shuts down on the Ctrl-C, but needs longer than 1.5 seconds to
+REM finish: it drains in-flight requests (bounded at 5s by the flag above) and
+REM then runs the app teardown — WAL checkpoint, MQTT disconnect, virtual-
+REM printer stop. At the default timeout Windows force-killed it mid-teardown.
+REM
+REM Skip=6 drops the WM_CLOSE (2) and thread-message (4) methods: uvicorn is a
+REM console app with no window and no message loop, so both were only burning
+REM another 3 seconds before the kill. Ctrl-C is the one that works.
+"%NSSM%" set Bambuddy AppStopMethodSkip 6
+"%NSSM%" set Bambuddy AppStopMethodConsole 15000
 
 REM Environment: point DATA_DIR + LOG_DIR at ProgramData, prepend our
 REM bin/ to PATH so ffmpeg/ffprobe are found by the shutil.which() lookup

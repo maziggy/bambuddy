@@ -373,7 +373,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 
 ## 📸 Screenshots
 
-> **Refreshed printer card in 0.2.5b2** — tighter layout, popovers for all controls (temperature setpoints, fan speeds, jog), and a bottom-aligned power row. The screenshots below predate the refresh.
+> **Refreshed printer card in 1.2.5b2** — tighter layout, popovers for all controls (temperature setpoints, fan speeds, jog), and a bottom-aligned power row. The screenshots below predate the refresh.
 
 <details>
 <summary><strong>Click to expand screenshots</strong></summary>

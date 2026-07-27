@@ -1,6 +1,47 @@
+import { api } from '../../api/client';
 import type { SlicerSetting, LocalPreset, BuiltinFilament } from '../../api/client';
-import type { ColorPreset, FilamentOption } from './types';
+import { installedNozzleDiameters } from '../../utils/amsHelpers';
+import type { CalibrationProfile, ColorPreset, FilamentOption } from './types';
 import { KNOWN_VARIANTS, DEFAULT_BRANDS, RECENT_COLORS_KEY, MAX_RECENT_COLORS } from './constants';
+
+/**
+ * Fetch a printer's K-profiles across every nozzle it actually has installed
+ * (#2618) and flatten them into CalibrationProfile rows for the PA-Profil
+ * picker. `getKProfiles` filters strictly by nozzle diameter and defaults to
+ * "0.4", so a single call hides non-0.4 profiles (e.g. a 0.6mm PAHT-CF K
+ * value) — the picker then shows only one of two nozzle-specific profiles.
+ * We query each installed diameter and merge. Falls back to "0.4" when the
+ * printer hasn't reported nozzle hardware, preserving prior behaviour.
+ * Per-diameter failures are swallowed (a printer that doesn't support the
+ * endpoint just yields no rows), matching the callers' previous try/catch.
+ */
+export async function fetchPrinterCalibrations(
+  printerId: number,
+  status: { nozzles?: { nozzle_diameter?: string }[] } | null | undefined,
+): Promise<CalibrationProfile[]> {
+  const diameters = installedNozzleDiameters(status);
+  const toFetch = diameters.length > 0 ? diameters : ['0.4'];
+  const responses = await Promise.all(
+    toFetch.map(d => api.getKProfiles(printerId, d).catch(() => null)),
+  );
+  const calibrations: CalibrationProfile[] = [];
+  for (const res of responses) {
+    if (!res) continue;
+    for (const p of res.profiles) {
+      calibrations.push({
+        cali_idx: p.slot_id,
+        filament_id: p.filament_id,
+        setting_id: p.setting_id || '',
+        name: p.name,
+        k_value: parseFloat(p.k_value) || 0,
+        n_coef: parseFloat(p.n_coef) || 0,
+        extruder_id: p.extruder_id,
+        nozzle_diameter: p.nozzle_diameter,
+      });
+    }
+  }
+  return calibrations;
+}
 
 // Fallback filament presets when cloud is not available
 const FALLBACK_PRESETS: FilamentOption[] = [

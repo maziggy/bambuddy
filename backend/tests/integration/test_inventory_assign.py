@@ -885,6 +885,89 @@ class TestAssignSpoolEmptySlotPreConfig:
         await db_session.refresh(pre_assignment)
         assert pre_assignment.fingerprint_type == "PLA"
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auto_unlink_broadcasts_assignment_change(
+        self, async_client: AsyncClient, printer_factory, spool_factory, db_session: AsyncSession
+    ):
+        """#2575 follow-up: when on_ams_change auto-unlinks a stale external-spool
+        assignment, it must broadcast spool_assignment_changed. Only the manual
+        REST endpoints did, so open browsers kept rendering the unlinked spool —
+        the reporter read that as "the fix didn't work" when the DB was correct."""
+        from unittest.mock import AsyncMock
+
+        from sqlalchemy import select
+
+        from backend.app.main import on_ams_change
+        from backend.app.models.spool_assignment import SpoolAssignment
+
+        printer = await printer_factory(name="X1C")
+        spool = await spool_factory(slicer_filament="GFU01", material="TPU")
+
+        # TPU inventory spool assigned to the external slot (ams_id=255, tray 0)
+        assignment = SpoolAssignment(
+            spool_id=spool.id,
+            printer_id=printer.id,
+            ams_id=255,
+            tray_id=0,
+            fingerprint_color="000000FF",
+            fingerprint_type="TPU",
+        )
+        db_session.add(assignment)
+        await db_session.commit()
+
+        # The printer's external spool now reports ABS — the assignment is stale.
+        vt_tray = [
+            {
+                "id": "254",
+                "tray_type": "ABS",
+                "tray_color": "000000FF",
+                "tag_uid": "0000000000000000",
+                "tray_uuid": "00000000000000000000000000000000",
+            }
+        ]
+        status = _make_mock_status(ams_data=[], vt_tray=vt_tray)
+        printer_info = MagicMock(name="X1C", serial_number="00M00A391800004")
+
+        with (
+            patch("backend.app.main.printer_manager") as mock_pm_main,
+            patch("backend.app.services.printer_manager.printer_manager") as mock_pm_inv,
+            patch("backend.app.main.mqtt_relay") as mock_relay,
+            patch("backend.app.main.ws_manager") as mock_ws,
+        ):
+            mock_pm_main.get_printer.return_value = printer_info
+            mock_pm_main.get_status.return_value = status
+            mock_pm_main.get_client.return_value = MagicMock()
+            mock_pm_main.get_model.return_value = "X1C"
+            mock_pm_inv.get_client.return_value = MagicMock()
+            mock_pm_inv.get_status.return_value = status
+            mock_relay.on_ams_change = AsyncMock()
+            mock_ws.send_printer_status = AsyncMock()
+            mock_ws.broadcast = AsyncMock()
+
+            await on_ams_change(printer.id, [])
+
+            # The stale TPU assignment on the now-ABS external slot was unlinked...
+            gone = await db_session.execute(
+                select(SpoolAssignment).where(
+                    SpoolAssignment.printer_id == printer.id,
+                    SpoolAssignment.ams_id == 255,
+                    SpoolAssignment.tray_id == 0,
+                )
+            )
+            assert gone.scalar_one_or_none() is None
+
+            # ...and the frontend was told about it.
+            change_events = [
+                c.args[0]
+                for c in mock_ws.broadcast.await_args_list
+                if c.args and isinstance(c.args[0], dict) and c.args[0].get("type") == "spool_assignment_changed"
+            ]
+            assert change_events, "auto-unlink must broadcast spool_assignment_changed"
+            assert change_events[0]["printer_id"] == printer.id
+            assert change_events[0]["ams_id"] == 255
+            assert change_events[0]["tray_id"] == 0
+
 
 class TestAssignSpoolEmptyDetection:
     """Bambu firmware reports tray.state — 11=loaded, 9=empty, 10=spool present

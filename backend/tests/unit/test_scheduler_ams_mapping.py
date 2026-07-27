@@ -1501,3 +1501,50 @@ class TestX1CModel:
         ]
         result = scheduler._match_filaments_to_slots(required, loaded)
         assert result == [5, 7]
+
+
+class TestFtsNozzleBypass:
+    """#2186: with a Filament Track Switch (FTS) installed, the per-nozzle hard
+    filter in the dispatch mapping must be skipped so a spool loaded in the OTHER
+    nozzle's AMS can be routed to the requested nozzle. Without an FTS the filter
+    still applies (cross-nozzle assignment fails on the printer).
+    """
+
+    @pytest.fixture
+    def scheduler(self):
+        return PrintScheduler()
+
+    def _repro_loaded(self):
+        # Mirrors the reporter's H2C: AMS-A (id 0) on the LEFT extruder (1) holds
+        # the black PLA the model wants; AMS-B (id 1) on the RIGHT extruder (0)
+        # holds a red PLA.
+        return [
+            {"type": "PLA", "color": "#000000", "global_tray_id": 1, "extruder_id": 1},  # AMS-A slot2 black, LEFT
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 6, "extruder_id": 0},  # AMS-B slot3 red, RIGHT
+        ]
+
+    def test_fts_routes_correct_colour_from_other_nozzle(self, scheduler):
+        """Model wants black PLA on the RIGHT nozzle; the black spool sits on the
+        LEFT AMS. With FTS the nozzle filter is skipped, so it picks the black spool
+        (gtid 1) — not the wrong-colour red already on the right (gtid 6).
+        Reproduces #2186 (b3 fed red instead of black)."""
+        required = [{"slot_id": 1, "type": "PLA", "color": "#000000", "nozzle_id": 0}]
+        result = scheduler._match_filaments_to_slots(required, self._repro_loaded(), fts_installed=True)
+        assert result == [1]  # black PLA from AMS-A, routed to the right nozzle by the FTS
+
+    def test_without_fts_nozzle_filter_still_applies(self, scheduler):
+        """No FTS: cross-nozzle assignment isn't possible, so a RIGHT-nozzle request
+        is restricted to right-side trays and matches the red PLA by type. Correct
+        non-FTS behaviour — and exactly why #2186 needed the FTS bypass."""
+        required = [{"slot_id": 1, "type": "PLA", "color": "#000000", "nozzle_id": 0}]
+        result = scheduler._match_filaments_to_slots(required, self._repro_loaded(), fts_installed=False)
+        assert result == [6]  # only the right-side PLA is eligible
+
+    def test_fts_flag_is_noop_without_nozzle_id(self, scheduler):
+        """Single-nozzle 3MFs carry no nozzle_id, so the per-nozzle filter never
+        runs and the FTS flag changes nothing — the exact-colour match wins either
+        way. (Single-nozzle printers also never have an FTS.)"""
+        required = [{"slot_id": 1, "type": "PLA", "color": "#000000"}]
+        for fts in (True, False):
+            result = scheduler._match_filaments_to_slots(required, self._repro_loaded(), fts_installed=fts)
+            assert result == [1]  # exact black match, no nozzle involved

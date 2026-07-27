@@ -130,7 +130,13 @@ def _qr_png_bytes(payload: str, *, box_size: int = 4, border: int = 2) -> bytes:
         return b""
     qr = qrcode.QRCode(
         version=None,
-        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        # ERROR_CORRECT_L (7% recovery) rather than M (15%): a label QR only
+        # needs to survive being scanned off clean stock, not physical damage,
+        # and L encodes the same payload in a lower version (fewer, chunkier
+        # modules). That extra module size is what makes the code printable on
+        # low-resolution 203 dpi thermal printers, where M-level density bled
+        # the modules together on small labels (#1870).
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
         box_size=box_size,
         border=border,
     )
@@ -168,6 +174,19 @@ def _draw_swatch(c: rl_canvas.Canvas, x: float, y: float, w: float, h: float, da
     c.rect(x, y, w, h, stroke=1, fill=0)
 
 
+def _roomy_qr_size(inner_w: float, inner_h: float) -> float:
+    """QR edge length (points) for the roomy layout.
+
+    Historically a flat 20% of inner width, which on the narrowest label
+    (box_40x30, ~37.6 mm inner) rendered a ~7.5 mm QR — at 203 dpi each module
+    fell below ~2 dots and the code bled into itself on thermal printers
+    (#1870). A 12 mm floor keeps small labels scannable; the code is still
+    capped by the inner height, an 18 mm absolute max, and ~45% of inner width
+    so it can't crowd out the text column on an ultra-narrow label.
+    """
+    return min(max(inner_w * 0.20, 12 * mm), inner_h, 18 * mm, inner_w * 0.45)
+
+
 def _draw_qr(c: rl_canvas.Canvas, x: float, y: float, size: float, payload: str) -> None:
     """Embed a square QR at (x, y) with edge length ``size`` (in points)."""
     png = _qr_png_bytes(payload)
@@ -189,7 +208,9 @@ def _truncate_to_width(c: rl_canvas.Canvas, text: str, font: str, size: float, m
     return text + ell if text else ell
 
 
-def _draw_label(c: rl_canvas.Canvas, x: float, y: float, w: float, h: float, data: LabelData) -> None:
+def _draw_label(
+    c: rl_canvas.Canvas, x: float, y: float, w: float, h: float, data: LabelData, monochrome: bool = False
+) -> None:
     """Render one label inside the box (x, y, w, h). Origin is bottom-left.
 
     Two layouts, picked by available height:
@@ -219,9 +240,9 @@ def _draw_label(c: rl_canvas.Canvas, x: float, y: float, w: float, h: float, dat
     is_tight = h < 20 * mm
 
     if is_tight:
-        _draw_label_tight(c, x, y, w, h, inner_x, inner_y, inner_w, inner_h, pad, data)
+        _draw_label_tight(c, x, y, w, h, inner_x, inner_y, inner_w, inner_h, pad, data, monochrome)
     else:
-        _draw_label_roomy(c, x, y, w, h, inner_x, inner_y, inner_w, inner_h, pad, data)
+        _draw_label_roomy(c, x, y, w, h, inner_x, inner_y, inner_w, inner_h, pad, data, monochrome)
 
 
 def _draw_label_tight(
@@ -236,11 +257,17 @@ def _draw_label_tight(
     inner_h: float,
     pad: float,
     data: LabelData,
+    monochrome: bool = False,
 ) -> None:
     """Tight layout (h < 20 mm). Swatch + brand/material/hex/ID, no QR."""
-    swatch_w = min(inner_h, inner_w * 0.35)
-    swatch_y = inner_y + (inner_h - swatch_w) / 2
-    _draw_swatch(c, inner_x, swatch_y, swatch_w, swatch_w, data)
+    # Monochrome: drop the colour swatch (see _draw_label_roomy) and give the
+    # width to the text column (#1870).
+    if monochrome:
+        swatch_w = 0.0
+    else:
+        swatch_w = min(inner_h, inner_w * 0.35)
+        swatch_y = inner_y + (inner_h - swatch_w) / 2
+        _draw_swatch(c, inner_x, swatch_y, swatch_w, swatch_w, data)
 
     text_x = inner_x + swatch_w + pad
     text_w = inner_w - swatch_w - pad
@@ -296,17 +323,22 @@ def _draw_label_roomy(
     inner_h: float,
     pad: float,
     data: LabelData,
+    monochrome: bool = False,
 ) -> None:
     """Box-label / Avery layout. Swatch left, QR right, text middle."""
     # Swatch: full inner height, ~18% of inner width but capped so we never
-    # eat the text column on extreme aspect ratios.
-    swatch_w = min(inner_w * 0.18, inner_h, 16 * mm)
-    swatch_h = inner_h
-    _draw_swatch(c, inner_x, inner_y, swatch_w, swatch_h, data)
+    # eat the text column on extreme aspect ratios. Omitted entirely in
+    # monochrome mode — on a B&W thermal printer a colour block prints as a
+    # muddy grey that conveys nothing, so we reclaim the space for text and
+    # rely on the hex-code line to carry the colour (#1870, requested by
+    # @Geoff-S). The hex code already renders below whenever rgba is set.
+    if monochrome:
+        swatch_w = 0.0
+    else:
+        swatch_w = min(inner_w * 0.18, inner_h, 16 * mm)
+        _draw_swatch(c, inner_x, inner_y, swatch_w, inner_h, data)
 
-    # QR: square, capped at the smaller of (a fraction of width, the inner
-    # height, or 18 mm — beyond that the QR is overkill for the print size).
-    qr_size = min(inner_w * 0.20, inner_h, 18 * mm)
+    qr_size = _roomy_qr_size(inner_w, inner_h)
     qr_x = x + w - pad - qr_size
     qr_y = inner_y + (inner_h - qr_size) / 2
     _draw_qr(c, qr_x, qr_y, qr_size, data.deeplink_url)
@@ -394,7 +426,7 @@ _SHEET_TEMPLATES: dict[str, tuple] = {
 }
 
 
-def _render_single_label_pdf(template: TemplateName, data_list: list[LabelData]) -> bytes:
+def _render_single_label_pdf(template: TemplateName, data_list: list[LabelData], monochrome: bool = False) -> bytes:
     w_mm, h_mm = _SINGLE_LABEL_SIZES_MM[template]
     page_w, page_h = w_mm * mm, h_mm * mm
 
@@ -403,14 +435,14 @@ def _render_single_label_pdf(template: TemplateName, data_list: list[LabelData])
     c.setTitle(f"Bambuddy spool labels ({template})")
 
     for data in data_list:
-        _draw_label(c, 0, 0, page_w, page_h, data)
+        _draw_label(c, 0, 0, page_w, page_h, data, monochrome)
         c.showPage()
 
     c.save()
     return buf.getvalue()
 
 
-def _render_sheet_pdf(template: TemplateName, data_list: list[LabelData]) -> bytes:
+def _render_sheet_pdf(template: TemplateName, data_list: list[LabelData], monochrome: bool = False) -> bytes:
     page_size, w_mm, h_mm, cols, rows, top_mm, left_mm, col_gap_mm, row_gap_mm = _SHEET_TEMPLATES[template]
     page_w, page_h = page_size
 
@@ -433,23 +465,27 @@ def _render_sheet_pdf(template: TemplateName, data_list: list[LabelData]) -> byt
             col = idx % cols
             x = left_margin + col * (label_w + col_gap)
             y = page_h - top_margin - (row + 1) * label_h - row * row_gap
-            _draw_label(c, x, y, label_w, label_h, data)
+            _draw_label(c, x, y, label_w, label_h, data, monochrome)
         c.showPage()
 
     c.save()
     return buf.getvalue()
 
 
-def render_labels(template: TemplateName, data_list: list[LabelData]) -> bytes:
+def render_labels(template: TemplateName, data_list: list[LabelData], *, monochrome: bool = False) -> bytes:
     """Render ``data_list`` to a PDF using the named template. Returns bytes.
 
     Empty ``data_list`` still produces a valid (empty) PDF — callers should
     short-circuit beforehand if that's not desired.
+
+    ``monochrome`` drops the colour swatch (which prints as a useless grey block
+    on black-and-white thermal printers) and reclaims the space for text; the
+    hex-code line still carries the colour. See #1870.
     """
     if template in _SINGLE_LABEL_SIZES_MM:
-        return _render_single_label_pdf(template, data_list)
+        return _render_single_label_pdf(template, data_list, monochrome)
     if template in _SHEET_TEMPLATES:
-        return _render_sheet_pdf(template, data_list)
+        return _render_sheet_pdf(template, data_list, monochrome)
     raise ValueError(f"Unknown label template: {template!r}")
 
 

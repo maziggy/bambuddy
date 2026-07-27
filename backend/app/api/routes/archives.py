@@ -593,8 +593,12 @@ async def list_archives_slim(
                 # print_time_seconds (slicer estimate) for non-completed
                 # events would diverge from Quick Stats — so expose the
                 # measured value here unconditionally.
+                #
+                # Trust an explicit 0 (reconciled aborts store it deliberately;
+                # their real end time is unknown) instead of recomputing the
+                # multi-day disconnect gap from the timestamps (#2592).
                 r.duration_seconds
-                if r.duration_seconds and r.duration_seconds > 0
+                if r.duration_seconds is not None
                 else (
                     int((r.completed_at - r.started_at).total_seconds())
                     if r.started_at and r.completed_at and (r.completed_at - r.started_at).total_seconds() > 0
@@ -1071,7 +1075,12 @@ async def get_archive_stats(
     )
     total_seconds = 0
     for duration_seconds, started_at, completed_at in time_rows.all():
-        if duration_seconds:
+        # Trust an explicitly stored duration, INCLUDING 0: a reconciled abort
+        # stores 0 on purpose because its real end time is unknown, and the
+        # started_at→completed_at fallback would otherwise bank the whole
+        # multi-day disconnect gap as print time (#2592). Only rows with a NULL
+        # duration (legacy entries that never recorded one) fall back.
+        if duration_seconds is not None:
             total_seconds += duration_seconds
         elif started_at and completed_at:
             elapsed = (completed_at - started_at).total_seconds()
@@ -1277,6 +1286,13 @@ async def _sum_snapshot_deltas(
     """
     from backend.app.models.smart_plug import SmartPlug
     from backend.app.models.smart_plug_energy_snapshot import SmartPlugEnergySnapshot
+    from backend.app.utils.local_time import to_naive_utc
+
+    # ``recorded_at`` is a naive column holding UTC. Binding an aware datetime
+    # against it raises DataError on asyncpg (SQLite silently drops the offset),
+    # which took the whole date-filtered energy figure down on Postgres.
+    dt_from = to_naive_utc(dt_from)
+    dt_to = to_naive_utc(dt_to)
 
     plug_ids_result = await db.execute(select(SmartPlug.id))
     plug_ids = [row[0] for row in plug_ids_result.all()]
@@ -1651,13 +1667,17 @@ async def update_archive(
 async def toggle_favorite(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_UPDATE_ALL,
+            Permission.ARCHIVES_UPDATE_OWN,
+        )
+    ),
 ):
     """Toggle favorite status for an archive."""
+    user, can_modify_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_modify_all)
 
     archive.is_favorite = not archive.is_favorite
     await db.commit()
@@ -2206,13 +2226,17 @@ async def get_timelapse(
 async def delete_timelapse(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_DELETE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_DELETE_ALL,
+            Permission.ARCHIVES_DELETE_OWN,
+        )
+    ),
 ):
     """Remove the timelapse video from an archive."""
+    user, can_modify_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_modify_all)
 
     if not archive.timelapse_path:
         raise HTTPException(404, "No timelapse attached to this archive")
@@ -2232,10 +2256,10 @@ async def delete_timelapse(
 @router.post("/{archive_id}/timelapse/scan")
 async def scan_timelapse(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
     """Scan printer for timelapse matching this archive and attach it."""
+    from backend.app.core.database import async_session
     from backend.app.models.printer import Printer
     from backend.app.services.bambu_ftp import (
         download_file_bytes_async,
@@ -2244,22 +2268,27 @@ async def scan_timelapse(
         with_ftp_retry,
     )
 
-    service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    # Read the archive + printer in a short session and release the pooled DB
+    # connection BEFORE the FTP scan/download below — a timelapse pull walks
+    # several directories and fetches a 100MB+ video, so holding Depends(get_db)
+    # across it pinned one connection idle-in-transaction for minutes (#2572).
+    # Scalar columns stay readable on the detached rows (expire_on_commit=False);
+    # the attach at the end runs in its own fresh short session.
+    async with async_session() as db:
+        archive = await ArchiveService(db).get_archive(archive_id)
+        if not archive:
+            raise HTTPException(404, "Archive not found")
 
-    if archive.timelapse_path:
-        return {"status": "exists", "message": "Timelapse already attached"}
+        if archive.timelapse_path:
+            return {"status": "exists", "message": "Timelapse already attached"}
 
-    if not archive.printer_id:
-        raise HTTPException(400, "Archive has no associated printer")
+        if not archive.printer_id:
+            raise HTTPException(400, "Archive has no associated printer")
 
-    # Get printer
-    result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+        result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
+        printer = result.scalar_one_or_none()
+        if not printer:
+            raise HTTPException(404, "Printer not found")
 
     # Get base name from archive filename (without .3mf extension)
     base_name = Path(archive.filename).stem
@@ -2398,8 +2427,9 @@ async def scan_timelapse(
     if not timelapse_data:
         raise HTTPException(500, "Failed to download timelapse")
 
-    # Attach timelapse to archive
-    success = await service.attach_timelapse(archive_id, timelapse_data, matching_file["name"])
+    # Attach in a fresh short session (the read session was released before FTP).
+    async with async_session() as db:
+        success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, matching_file["name"])
 
     if not success:
         raise HTTPException(500, "Failed to attach timelapse")
@@ -2415,10 +2445,10 @@ async def scan_timelapse(
 async def select_timelapse(
     archive_id: int,
     filename: str = Query(..., description="Timelapse filename to attach"),
-    db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
     """Manually select a timelapse from the printer to attach."""
+    from backend.app.core.database import async_session
     from backend.app.models.printer import Printer
     from backend.app.services.bambu_ftp import (
         download_file_bytes_async,
@@ -2427,18 +2457,21 @@ async def select_timelapse(
         with_ftp_retry,
     )
 
-    service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    # Read the archive + printer in a short session and release the pooled DB
+    # connection BEFORE the FTP scan/download below (#2572); scalars stay
+    # readable after close (expire_on_commit=False), the attach reopens one.
+    async with async_session() as db:
+        archive = await ArchiveService(db).get_archive(archive_id)
+        if not archive:
+            raise HTTPException(404, "Archive not found")
 
-    if not archive.printer_id:
-        raise HTTPException(400, "Archive has no associated printer")
+        if not archive.printer_id:
+            raise HTTPException(400, "Archive has no associated printer")
 
-    result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+        result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
+        printer = result.scalar_one_or_none()
+        if not printer:
+            raise HTTPException(404, "Printer not found")
 
     # Find the file on the printer
     files = []
@@ -2487,7 +2520,9 @@ async def select_timelapse(
     if not timelapse_data:
         raise HTTPException(500, "Failed to download timelapse")
 
-    success = await service.attach_timelapse(archive_id, timelapse_data, filename)
+    # Attach in a fresh short session (the read session was released before FTP).
+    async with async_session() as db:
+        success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, filename)
     if not success:
         raise HTTPException(500, "Failed to attach timelapse")
 
@@ -2720,13 +2755,17 @@ async def upload_photo(
     archive_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_UPDATE_ALL,
+            Permission.ARCHIVES_UPDATE_OWN,
+        )
+    ),
 ):
     """Upload a photo of the printed result."""
+    user, can_modify_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_modify_all)
 
     if not file.filename or not file.filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
         raise HTTPException(400, "File must be an image (.jpg, .jpeg, .png, .webp)")
@@ -2810,13 +2849,17 @@ async def delete_photo(
     archive_id: int,
     filename: str,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_DELETE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_DELETE_ALL,
+            Permission.ARCHIVES_DELETE_OWN,
+        )
+    ),
 ):
     """Delete a photo."""
+    user, can_modify_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_modify_all)
 
     if not archive.photos or filename not in archive.photos:
         raise HTTPException(404, "Photo not found")
@@ -3940,8 +3983,12 @@ async def slice_archive(
     )
 
     archive = await db.get(PrintArchive, archive_id)
-    if archive is None:
-        raise HTTPException(status_code=404, detail="Archive not found")
+    # Per-row ownership gate — mirror the archive read routes. LIBRARY_UPLOAD
+    # alone let a READ_OWN caller slice another user's archive by raw id even
+    # though GET on that id returned 404. API-key / auth-disabled callers
+    # (current_user is None) keep can_read_all=True — no per-row identity.
+    can_read_all = current_user is None or current_user.has_permission(Permission.ARCHIVES_READ_ALL.value)
+    archive = _ensure_archive_visible(archive, current_user, can_read_all)
 
     src_relative = archive.source_3mf_path or archive.file_path
     if not src_relative:
@@ -4012,6 +4059,7 @@ async def slice_archive(
         kind="archive",
         source_id=archive.id,
         source_name=archive.print_name or archive.filename or f"archive {archive.id}",
+        owner_id=user_id,
         run=_run,
     )
     return {
@@ -4084,15 +4132,19 @@ async def update_project_page(
     archive_id: int,
     update_data: dict,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_UPDATE_ALL,
+            Permission.ARCHIVES_UPDATE_OWN,
+        )
+    ),
 ):
     """Update project page metadata in the 3MF file."""
     from backend.app.services.archive import ProjectPageParser
 
+    user, can_modify_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_modify_all)
 
     file_path = settings.base_dir / archive.file_path
     if not file_path.is_file():
@@ -4202,13 +4254,17 @@ async def upload_source_3mf(
     archive_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_UPDATE_ALL,
+            Permission.ARCHIVES_UPDATE_OWN,
+        )
+    ),
 ):
     """Upload the original source 3MF project file for an archive."""
+    user, can_modify_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_modify_all)
 
     if not file.filename or not file.filename.endswith(".3mf"):
         raise HTTPException(400, "File must be a .3mf file")
@@ -4463,13 +4519,17 @@ async def upload_source_3mf_by_name(
 async def delete_source_3mf(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_DELETE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_DELETE_ALL,
+            Permission.ARCHIVES_DELETE_OWN,
+        )
+    ),
 ):
     """Delete the source 3MF project file from an archive."""
+    user, can_modify_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_modify_all)
 
     if not archive.source_3mf_path:
         raise HTTPException(404, "No source 3MF attached to this archive")
@@ -4496,13 +4556,17 @@ async def upload_f3d(
     archive_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_UPDATE_ALL,
+            Permission.ARCHIVES_UPDATE_OWN,
+        )
+    ),
 ):
     """Upload a Fusion 360 design file for an archive."""
+    user, can_modify_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_modify_all)
 
     if not file.filename or not file.filename.endswith(".f3d"):
         raise HTTPException(400, "File must be a .f3d file")
@@ -4576,13 +4640,17 @@ async def download_f3d(
 async def delete_f3d(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_DELETE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_DELETE_ALL,
+            Permission.ARCHIVES_DELETE_OWN,
+        )
+    ),
 ):
     """Delete the Fusion 360 design file from an archive."""
+    user, can_modify_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_modify_all)
 
     if not archive.f3d_path:
         raise HTTPException(404, "No F3D file attached to this archive")

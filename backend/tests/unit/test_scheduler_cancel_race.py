@@ -83,13 +83,13 @@ async def queue_factory(tmp_path):
                 printer_id=printer.id,
                 archive_id=archive.id,
                 status=status,
-                bed_levelling=True,
-                flow_cali=False,
+                bed_levelling="on",
+                flow_cali="off",
                 vibration_cali=True,
                 layer_inspect=False,
                 timelapse=False,
                 use_ams=True,
-                nozzle_offset_cali=True,
+                nozzle_offset_cali="on",
             )
             db.add(item)
             await db.commit()

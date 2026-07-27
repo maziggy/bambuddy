@@ -92,3 +92,6 @@ gitleaks-report.json
 scripts/pip-audit.sh
 
 security/
+
+test_pipeline_archive_source.3mf
+test_pipeline_run_1.3mf

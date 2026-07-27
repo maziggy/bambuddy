@@ -255,8 +255,8 @@ export function SpoolCatalogSettings() {
         </div>
 
         {selectedIds.size > 0 && (
-          <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
-            <span className="text-sm text-red-400">
+          <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30 rounded-lg">
+            <span className="text-sm text-red-700 dark:text-red-400">
               {t('settings.catalog.selectedCount', { count: selectedIds.size })}
             </span>
             <button

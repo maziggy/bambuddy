@@ -843,20 +843,20 @@ export function Layout() {
       }`}>
         {/* Debug logging indicator */}
         {debugLoggingState?.enabled && (
-          <div className="bg-amber-500/20 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between">
+          <div className="bg-amber-100 dark:bg-amber-500/20 border-b border-amber-300 dark:border-amber-500/30 px-4 py-2 flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm">
               <Bug className="w-4 h-4 text-amber-500 animate-pulse" />
-              <span className="text-amber-200">
+              <span className="text-amber-800 dark:text-amber-200">
                 {t('support.debugLoggingActive', { defaultValue: 'Debug logging is active' })}
                 {debugDuration !== null && (
-                  <span className="text-amber-300/70 ml-2">
+                  <span className="text-amber-700/80 dark:text-amber-300/70 ml-2">
                     ({Math.floor(debugDuration / 60)}m {debugDuration % 60}s)
                   </span>
                 )}
               </span>
               <button
                 onClick={() => navigate('/system')}
-                className="text-amber-400 hover:text-amber-300 font-medium underline ml-2"
+                className="text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 font-medium underline ml-2"
               >
                 {t('support.manageLogs', { defaultValue: 'Manage' })}
               </button>
@@ -864,10 +864,10 @@ export function Layout() {
           </div>
         )}
         {devModeWarnings && devModeWarnings.length > 0 && (
-          <div className="bg-orange-500/20 border-b border-orange-500/30 px-4 py-2 flex items-center justify-between">
+          <div className="bg-orange-100 dark:bg-orange-500/20 border-b border-orange-300 dark:border-orange-500/30 px-4 py-2 flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm">
               <ShieldAlert className="w-4 h-4 text-orange-500" />
-              <span className="text-orange-200">
+              <span className="text-orange-800 dark:text-orange-200">
                 {t('printers.developerModeWarning', {
                   names: devModeWarnings.map(w => w.name).join(', '),
                   defaultValue: `Developer LAN mode is not enabled on: ${devModeWarnings.map(w => w.name).join(', ')}. Some features may not work.`
@@ -875,7 +875,7 @@ export function Layout() {
               </span>
               <a href="https://wiki.bambulab.com/en/knowledge-sharing/enable-developer-mode"
                  target="_blank" rel="noopener noreferrer"
-                 className="text-orange-400 hover:text-orange-300 font-medium underline ml-2">
+                 className="text-orange-700 dark:text-orange-400 hover:text-orange-900 dark:hover:text-orange-300 font-medium underline ml-2">
                 {t('printers.howToEnable', { defaultValue: 'How to enable' })}
               </a>
             </div>
@@ -944,7 +944,7 @@ export function Layout() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
               </div>
-              <h2 className="text-xl font-bold text-yellow-400 mb-2">
+              <h2 className="text-xl font-bold text-yellow-700 dark:text-yellow-400 mb-2">
                 {t('plateAlert.title')}
               </h2>
               <p className="text-lg text-white mb-2">
@@ -1052,7 +1052,7 @@ export function Layout() {
                     minLength={6}
                   />
                   {changePasswordData.confirmPassword && changePasswordData.newPassword !== changePasswordData.confirmPassword && (
-                    <p className="text-red-400 text-xs mt-1">{t('changePassword.passwordsDoNotMatch')}</p>
+                    <p className="text-red-700 dark:text-red-400 text-xs mt-1">{t('changePassword.passwordsDoNotMatch')}</p>
                   )}
                 </div>
               </div>

@@ -18,6 +18,11 @@ interface WebSocketMessage {
   data?: Record<string, unknown>;
   printer_name?: string;
   missing_slots?: Array<{ slot?: string }>;
+  // Spool-assignment read-back verification (#2582).
+  slot?: string;
+  verified?: boolean;
+  kprofile_applied?: boolean;
+  saw_tray?: boolean;
   // Slicer Pipeline run events (#1425 PR C). ``run`` carries the full
   // PipelineRunResponse payload — typed loosely here so the WebSocket hook
   // doesn't pull the full client.ts types in.
@@ -337,6 +342,31 @@ export function useWebSocket() {
         debouncedInvalidate('spool-assignments');
         debouncedInvalidate('slotPresets');
         break;
+
+      case 'spool_assignment_verified': {
+        // #2582: the backend read the AMS telemetry back after an assignment
+        // and either confirmed the tray accepted it or timed out. Toast the
+        // outcome so the AMS→Studio hand-off is no longer silent.
+        // Backend always supplies printer_name (falls back to "Printer <id>"),
+        // so the '||' here only guards a malformed payload.
+        const printer = message.printer_name || 'Printer';
+        const slot = message.slot || '?';
+        if (message.verified) {
+          if (message.kprofile_applied === false) {
+            // Filament id landed but the K-profile (cali_idx) did not — the
+            // exact "loaded but no flow profile" case the reporter chased.
+            showToast(
+              t('printers.toast.assignmentVerifiedNoKprofile', { slot, printer }),
+              'warning'
+            );
+          } else {
+            showToast(t('printers.toast.assignmentVerified', { slot, printer }), 'success');
+          }
+        } else {
+          showToast(t('printers.toast.assignmentNotConfirmed', { slot, printer }), 'warning');
+        }
+        break;
+      }
 
       case 'spool_auto_assigned':
         // RFID tag matched - refresh inventory and assignment data

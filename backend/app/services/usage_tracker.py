@@ -117,6 +117,47 @@ def _archive_colors_from_spools(filament_usage: list[dict], results: list[dict])
     return ordered
 
 
+def _archive_types_from_spools(filament_usage: list[dict], results: list[dict]) -> list[str] | None:
+    """Slot-ordered, de-duplicated materials for an archive's ``filament_type``,
+    taken from the inventory spools that actually fed the print (#2563).
+
+    The slicer's 3MF records the filament type it was *sliced for*. When the
+    user manually maps a slot to a differently-typed loaded spool in the Print
+    dialog — a PLA slice routed to the only loaded PETG slot — that sliced type
+    misclassifies the run in the archive card, the Print Log and the material
+    statistics, even though the deduction correctly hit the PETG spool. Once
+    usage tracking has resolved every used slot to an inventory spool, the
+    spool's declared material is the authoritative record of what was consumed,
+    the same reasoning that already adopts the spool colour (#1494).
+
+    Returns ``None`` — leave the 3MF type untouched — unless *every* slot with
+    non-zero usage was matched to a spool that carries a material. All-or-
+    nothing, exactly like ``_archive_colors_from_spools``: a partial rewrite
+    would silently drop the unmatched slots' types from the archive (and the
+    material stats).
+    """
+    used_slots = {u["slot_id"] for u in filament_usage if u.get("used_g", 0) > 0 and u.get("slot_id") is not None}
+    if not used_slots:
+        return None
+
+    slot_material: dict[int, str] = {}
+    for r in results:
+        slot_id = r.get("slot_id")
+        material = (r.get("material") or "").strip()
+        if slot_id is not None and material:
+            slot_material.setdefault(slot_id, material)
+
+    if not used_slots.issubset(slot_material):
+        return None
+
+    ordered: list[str] = []
+    for slot_id in sorted(used_slots):
+        material = slot_material[slot_id]
+        if material not in ordered:
+            ordered.append(material)
+    return ordered
+
+
 def _match_slots_by_color(
     filament_usage: list[dict],
     ams_raw: dict | list | None,
@@ -1395,5 +1436,20 @@ async def _track_from_3mf(
                     joined,
                 )
                 archive.filament_color = joined
+
+        # Adopt the matched spools' materials too (#2563) — a slot mapped to a
+        # differently-typed spool than it was sliced for otherwise records the
+        # sliced type in the archive, Print Log and material stats.
+        spool_types = _archive_types_from_spools(filament_usage, results)
+        if spool_types:
+            joined_types = ",".join(spool_types)
+            if joined_types != archive.filament_type:
+                logger.info(
+                    "[UsageTracker] 3MF: archive %s filament_type %r -> %r (from inventory spools)",
+                    archive_id,
+                    archive.filament_type,
+                    joined_types,
+                )
+                archive.filament_type = joined_types
 
     return results

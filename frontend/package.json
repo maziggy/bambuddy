@@ -40,14 +40,17 @@
     "react-dom": "^19.2.0",
     "react-i18next": "^16.3.5",
     "react-markdown": "^9.1.0",
-    "react-router-dom": "^7.16.0",
+    "react-router-dom": "7.18.1",
     "react-simple-keyboard": "^3.8.164",
     "recharts": "^3.5.1",
     "remark-gfm": "^4.0.1",
     "three": "^0.181.2"
   },
   "overrides": {
-    "minimatch": "^10.2.1"
+    "minimatch": "^10.2.1",
+    "brace-expansion": "^5.0.8",
+    "js-yaml": "^4.3.0",
+    "react-router": "7.18.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

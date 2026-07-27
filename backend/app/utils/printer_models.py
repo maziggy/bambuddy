@@ -137,6 +137,27 @@ NO_EXTERNAL_STORAGE_MODELS = frozenset(
 )
 
 
+# Models that HAVE a MicroSD slot but expose NO reachable control to enable
+# the "Store sent files on external storage" option. The toggle only renders
+# in Bambu Studio when the printer publishes the
+# `support_save_remote_print_file_to_storage` capability in its live status;
+# current P1-series firmware (through 01.10.00.00) never publishes it, and
+# the P1S/P1P have no on-printer screen, so `store_to_sdcard` (home_flag bit
+# 11) is stuck at False with no way for the user to change it. The
+# external_storage diagnostic must therefore skip (not fail) on these models
+# — a hard fail would be permanently unresolvable (#2524). If a future
+# firmware surfaces the capability, remove the model here and the check
+# reactivates. Bambu Lab's own storage-cache wiki lists P1 Series as "Not
+# Supported", corroborating this.
+NO_REMOTE_STORAGE_TOGGLE_MODELS = frozenset(
+    [
+        # Display names (uppercase, no spaces)
+        "P1S",
+        "P1P",
+    ]
+)
+
+
 # Models with an ethernet port.
 # X1, P1P, A1, A1 Mini do NOT have ethernet.
 ETHERNET_MODELS = frozenset(
@@ -214,6 +235,23 @@ def has_external_storage(model: str | None) -> bool:
     return normalized not in NO_EXTERNAL_STORAGE_MODELS
 
 
+def has_remote_storage_toggle(model: str | None) -> bool:
+    """Return True if the model exposes a reachable control for the
+    "Store sent files on external storage" option.
+
+    False for P1-series (has an SD slot, but no on-printer screen and no
+    published `support_save_remote_print_file_to_storage` capability, so the
+    Bambu Studio toggle never renders). The external_storage diagnostic uses
+    this to skip rather than report an unresolvable fail (#2524). Defaults to
+    True for unknown models so the check keeps working on anything not
+    explicitly listed.
+    """
+    if not model:
+        return True
+    normalized = model.strip().upper().replace(" ", "").replace("-", "")
+    return normalized not in NO_REMOTE_STORAGE_TOGGLE_MODELS
+
+
 def is_dual_nozzle_model(model: str | None) -> bool:
     """Return True if the printer model has two nozzles (H2D family / X2D)."""
     if not model:
@@ -241,6 +279,41 @@ def get_rod_type(model: str | None) -> str | None:
     if normalized in LINEAR_RAIL_MODELS:
         return "linear_rail"
     return None
+
+
+# G-code interchange families (#2578). A sliced 3MF may target a different
+# model ONLY within its family: same kinematics, build volume and G-code
+# dialect. X1/P1 series are the one proven-interchangeable group (256mm
+# CoreXY, single nozzle — mixed farms intentionally run X1-sliced jobs on
+# P1S/P1P). Everything else is exact-match only; extend deliberately, never
+# by assumption — a wrong entry here dispatches G-code onto hardware it was
+# not sliced for.
+# Short display names only (uppercase, no spaces) — is_gcode_compatible()
+# resolves internal codes (C11, O1D, ...) to short names before lookup.
+GCODE_COMPAT_FAMILIES = (frozenset(["X1", "X1C", "X1E", "P1P", "P1S"]),)
+
+
+def is_gcode_compatible(sliced_for_model: str | None, target_model: str | None) -> bool:
+    """Return True when G-code sliced for one model may be dispatched to the other.
+
+    Unknown/missing metadata on either side returns True — we can only
+    validate what the 3MF declares, and legacy files without
+    ``sliced_for_model`` must keep working.
+    """
+    if not sliced_for_model or not target_model:
+        return True
+
+    def _norm(model: str) -> str:
+        # Internal codes (e.g. "C11") → short names first, so "C11" vs "X1C"
+        # compares equal instead of leaning on family membership.
+        resolved = PRINTER_MODEL_ID_MAP.get(model.strip(), model)
+        return resolved.strip().upper().replace(" ", "").replace("-", "")
+
+    a = _norm(sliced_for_model)
+    b = _norm(target_model)
+    if a == b:
+        return True
+    return any(a in family and b in family for family in GCODE_COMPAT_FAMILIES)
 
 
 def normalize_printer_model_id(model_id: str | None) -> str | None:

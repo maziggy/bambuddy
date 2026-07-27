@@ -10,6 +10,7 @@ import pytest
 
 from backend.app.services.printer_manager import (
     PrinterManager,
+    drying_screen_only,
     get_derived_status_name,
     has_stg_cur_idle_bug,
     init_printer_connections,
@@ -51,6 +52,19 @@ class TestPrinterManager:
         client.state.temperatures = {"nozzle": 25, "bed": 25}
         client.state.raw_data = {}
         client.logging_enabled = False
+
+        # mark_power_off is real logic on BambuMQTTClient (#2629) — mirror it so
+        # the manager tests still exercise the state transition they assert on.
+        # The real implementation (and its recovery path) is covered in
+        # test_bambu_mqtt.py::TestPresumedPowerOffRecovery.
+        def _mark_power_off():
+            if not client.state.connected:
+                return False
+            client.state.connected = False
+            client.state.state = "unknown"
+            return True
+
+        client.mark_power_off.side_effect = _mark_power_off
         return client
 
     # ========================================================================
@@ -373,12 +387,12 @@ class TestPrinterManager:
             1,
             ams_mapping=None,
             timelapse=False,
-            bed_levelling=True,
-            flow_cali=False,
+            bed_levelling="auto",
+            flow_cali="auto",
             vibration_cali=True,
             layer_inspect=False,
             use_ams=True,
-            nozzle_offset_cali=False,
+            nozzle_offset_cali="auto",
             nozzle_mapping=None,
         )
         assert result is True
@@ -475,6 +489,46 @@ class TestPrinterManager:
         result = await manager.wait_for_cooldown(1, target_temp=50)
 
         assert result is True
+
+    # ========================================================================
+    # Tests for is_print_active (#1890)
+    # ========================================================================
+
+    @pytest.mark.parametrize(
+        "state,expected",
+        [
+            ("RUNNING", True),
+            ("PAUSE", True),
+            ("PREPARE", True),
+            ("SLICING", True),
+            ("FINISH", False),
+            ("IDLE", False),
+            ("FAILED", False),
+            ("unknown", False),
+        ],
+    )
+    def test_is_print_active_state_matrix(self, manager, mock_client, state, expected):
+        """A job-loaded state is 'active'; idle/terminal states are not."""
+        mock_client.state.connected = True
+        mock_client.state.state = state
+        mock_client.check_staleness.return_value = True
+        manager._clients[1] = mock_client
+
+        assert manager.is_print_active(1) is expected
+
+    def test_is_print_active_false_when_disconnected(self, manager, mock_client):
+        """Even in RUNNING, a disconnected printer is not treated as active —
+        we fail safe (no active print) only for the 'nothing printing' cases."""
+        mock_client.state.connected = False
+        mock_client.state.state = "RUNNING"
+        mock_client.check_staleness.return_value = False
+        manager._clients[1] = mock_client
+
+        assert manager.is_print_active(1) is False
+
+    def test_is_print_active_false_for_unknown_printer(self, manager):
+        """Unknown printer id → not active (no client)."""
+        assert manager.is_print_active(999) is False
 
     # ========================================================================
     # Tests for logging methods
@@ -931,6 +985,39 @@ class TestPrinterStateToDict:
         result = printer_state_to_dict(mock_state)
 
         assert result["ams"][0]["tray"][0]["tag_uid"] is None
+
+    def test_exists_bit_is_serialized_for_websocket(self, mock_state):
+        """#2670: the WS status payload must carry the firmware presence bit
+        `exists` (set by apply_tray_exist_bits) — the REST serializer already
+        does. Without it the frontend shallow-merge drops `exists` after the
+        first WS frame and getEmptySlotKind falls back to the firmware-variant
+        state 9/10 heuristic, which is wrong for AMS-HT in both directions.
+        """
+        mock_state.raw_data = {
+            "ams": [
+                {
+                    "id": 128,
+                    "tray": [
+                        # Empty HT: apply_tray_exist_bits cleared it and set exists=False.
+                        {"id": 0, "state": 9, "tray_type": "", "exists": False},
+                    ],
+                },
+                {
+                    "id": 0,
+                    "tray": [
+                        # Present non-RFID spool: exists=True, no tray_type ("?").
+                        {"id": 0, "state": 10, "tray_type": "", "exists": True},
+                    ],
+                },
+            ]
+        }
+
+        result = printer_state_to_dict(mock_state)
+
+        ht_tray = result["ams"][0]["tray"][0]
+        reg_tray = result["ams"][1]["tray"][0]
+        assert ht_tray["exists"] is False
+        assert reg_tray["exists"] is True
 
     def test_vt_tray_parsing(self, mock_state):
         """Verify virtual tray is parsed correctly as a list."""
@@ -1450,7 +1537,6 @@ class TestSupportsDrying:
     def test_known_supported_with_firmware(self):
         """Verify known models with sufficient firmware return True."""
         assert supports_drying("X1C", "01.09.00.00") is True
-        assert supports_drying("P1S", "01.08.00.00") is True
         assert supports_drying("H2D", "01.02.30.00") is True
         assert supports_drying("H2S", "01.02.00.00") is True
         assert supports_drying("H2C", "01.02.00.00") is True
@@ -1462,7 +1548,6 @@ class TestSupportsDrying:
     def test_known_supported_old_firmware(self):
         """Verify known models with old firmware return False."""
         assert supports_drying("X1C", "01.08.00.00") is False
-        assert supports_drying("P1S", "01.07.00.00") is False
         assert supports_drying("H2S", "01.01.00.00") is False
         assert supports_drying("H2C", "01.01.99.99") is False
         assert supports_drying("O1C", "01.01.99.99") is False
@@ -1503,6 +1588,32 @@ class TestSupportsDrying:
         assert supports_drying("x1c", "01.09.00.00") is True
         assert supports_drying("p2s", "01.02.00.00") is True
         assert supports_drying("a1", "99.99.99.99") is False
+
+
+class TestDryingScreenOnly:
+    """P1-series AMS drying is screen-only (#2533).
+
+    Bambu's P1 manual: "P1S connected AMS drying functions may only be controlled
+    from the P1S screen." The firmware acks `ams_filament_drying` with
+    result: success and then does nothing — so no command we send can ever start a
+    cycle, whatever the firmware version.
+    """
+
+    @pytest.mark.parametrize("model", ["P1S", "P1P", "p1s", " p1p "])
+    def test_screen_only_models_reject_remote_drying(self, model):
+        assert drying_screen_only(model) is True
+        # Not firmware-gated: even the newest firmware won't take the command.
+        assert supports_drying(model, "99.99.99.99") is False
+
+    @pytest.mark.parametrize("model", ["X1C", "P2S", "H2D", "A1", None])
+    def test_other_models_are_not_screen_only(self, model):
+        assert drying_screen_only(model) is False
+
+    def test_screen_only_is_not_the_same_as_unsupported(self):
+        # The A1 has no drying-capable AMS at all; the P1S does, it just can't be
+        # driven remotely. The UI needs to tell those two apart.
+        assert drying_screen_only("A1") is False
+        assert supports_drying("A1", "99.99.99.99") is False
 
 
 class TestSupportsDryingWhilePrinting:
@@ -1738,6 +1849,37 @@ class TestInitPrinterConnections:
             await init_printer_connections(mock_db)
 
             mock_manager.connect_printer.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_one_failing_printer_does_not_abort_the_rest(self):
+        """A single unreachable printer must not abort startup or the others (#2572).
+
+        The connections are gathered with return_exceptions=True. The old serial
+        ``await`` loop had no error handling, so the first printer that raised
+        propagated straight out of init_printer_connections and failed the
+        FastAPI lifespan — taking the whole app down over one bad row, and
+        skipping every printer after it. This asserts the isolation: every
+        printer is still attempted and the exception never escapes.
+        """
+        mock_db = AsyncMock()
+        printers = [MagicMock(id=i, name=f"p{i}", is_active=True) for i in range(3)]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = printers
+        mock_db.execute.return_value = mock_result
+
+        async def connect(printer):
+            if printer.id == 1:
+                raise ConnectionError("printer 1 is unreachable")
+            return True
+
+        with patch("backend.app.services.printer_manager.printer_manager") as mock_manager:
+            mock_manager.connect_printer = AsyncMock(side_effect=connect)
+
+            # Must not raise despite printer 1 failing.
+            await init_printer_connections(mock_db)
+
+            # All three were still attempted (not aborted at the failing one).
+            assert mock_manager.connect_printer.call_count == 3
 
 
 class TestAmsChangeCallback:

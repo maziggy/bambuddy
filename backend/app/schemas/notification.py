@@ -233,6 +233,10 @@ class PushoverConfig(BaseModel):
     user_key: str = Field(..., description="Your Pushover user key")
     app_token: str = Field(..., description="Your Pushover application token")
     priority: int = Field(default=0, ge=-2, le=2, description="Message priority (-2 to 2)")
+    # Emergency priority (2) only: how often to re-alert and when to stop.
+    # Pushover requires retry >= 30s and expire <= 10800s (3h).
+    retry: int = Field(default=60, ge=30, le=10800, description="Emergency re-alert interval in seconds (priority 2)")
+    expire: int = Field(default=3600, ge=30, le=10800, description="Emergency alert expiry in seconds (priority 2)")
 
 
 class TelegramConfig(BaseModel):

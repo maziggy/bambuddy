@@ -5,7 +5,7 @@ import { X, ExternalLink, Box, Code2, Cog, Loader2, Layers, Check, Maximize2, Mi
 import { ModelViewer } from './ModelViewer';
 import { GcodeViewer } from './GcodeViewer';
 import { Button } from './Button';
-import { api } from '../api/client';
+import { api, withStreamToken } from '../api/client';
 import { openInSlicer, type SlicerType } from '../utils/slicer';
 import type { ArchivePlatesResponse, LibraryFilePlatesResponse, PlateMetadata } from '../types/plates';
 
@@ -477,7 +477,7 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
                           >
                             {plate.has_thumbnail && plate.thumbnail_url ? (
                               <img
-                                src={plate.thumbnail_url}
+                                src={withStreamToken(plate.thumbnail_url)}
                                 alt={`Plate ${plate.index}`}
                                 className={`${splitFullscreen ? 'w-8 h-8' : 'w-10 h-10'} rounded object-cover bg-bambu-dark-tertiary`}
                               />

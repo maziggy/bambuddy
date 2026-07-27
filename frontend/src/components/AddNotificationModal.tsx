@@ -205,6 +205,24 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
           { key: 'user_key', label: 'User Key', placeholder: 'Your Pushover user key', type: 'text', required: true },
           { key: 'app_token', label: 'App Token', placeholder: 'Your Pushover app token', type: 'text', required: true },
           { key: 'priority', label: 'Priority', placeholder: '0 (normal)', type: 'number', required: false },
+          // Emergency priority (2) requires retry/expire — Pushover rejects the
+          // message otherwise. Only shown when priority is set to 2.
+          {
+            key: 'retry',
+            label: t('notifications.pushoverRetry'),
+            placeholder: '60',
+            type: 'number',
+            required: false,
+            showIf: (cfg: Record<string, string>) => cfg.priority === '2',
+          },
+          {
+            key: 'expire',
+            label: t('notifications.pushoverExpire'),
+            placeholder: '3600',
+            type: 'number',
+            required: false,
+            showIf: (cfg: Record<string, string>) => cfg.priority === '2',
+          },
         ];
       case 'telegram':
         return [
@@ -284,7 +302,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
-            <div className="p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-sm text-red-400">
+            <div className="p-3 bg-red-100 dark:bg-red-500/20 border border-red-300 dark:border-red-500/50 rounded-lg text-sm text-red-700 dark:text-red-400">
               {error}
             </div>
           )}
@@ -392,7 +410,7 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
             <div className={`p-3 rounded-lg flex items-center gap-2 ${
               testResult.success
                 ? 'bg-bambu-green/20 border border-bambu-green/50 text-bambu-green'
-                : 'bg-red-500/20 border border-red-500/50 text-red-400'
+                : 'bg-red-100 dark:bg-red-500/20 border border-red-300 dark:border-red-500/50 text-red-700 dark:text-red-400'
             }`}>
               {testResult.success ? (
                 <>

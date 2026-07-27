@@ -19,8 +19,8 @@ import {
 
 function StatusIcon({ status }: { status: DiagnosticStatus }) {
   if (status === 'pass') return <CheckCircle2 className="w-5 h-5 text-bambu-green flex-shrink-0" />;
-  if (status === 'fail') return <XCircle className="w-5 h-5 text-red-400 flex-shrink-0" />;
-  if (status === 'warn') return <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0" />;
+  if (status === 'fail') return <XCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />;
+  if (status === 'warn') return <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />;
   return <MinusCircle className="w-5 h-5 text-bambu-gray flex-shrink-0" />;
 }
 
@@ -36,18 +36,27 @@ export function DiagnosticChecklist({ result }: { result: PrinterDiagnosticResul
     result.overall === 'ok'
       ? 'bg-bambu-green/10 border-bambu-green/30 text-bambu-green'
       : result.overall === 'warnings'
-        ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-        : 'bg-red-500/10 border-red-500/30 text-red-300';
+        ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-300'
+        : 'bg-red-50 dark:bg-red-500/10 border-red-300 dark:border-red-500/30 text-red-700 dark:text-red-300';
 
   const renderCheck = (check: DiagnosticCheck) => {
     const params =
       check.id === 'port_rtsps'
         ? { protocol: 'RTSPS', port: 322, ...check.params }
         : check.params;
-    const detail = t(`diagnostic.check.${check.id}.${check.status}`, {
-      ...params,
-      defaultValue: '',
-    });
+    // A check may carry a `reason` to select a more specific message variant
+    // (e.g. external_storage skip on P1-series → skip_unsupported_model #2524);
+    // fall back to the plain per-status text when no variant key exists.
+    const reason = (check.params as { reason?: string } | undefined)?.reason;
+    const detail = t(
+      `diagnostic.check.${check.id}.${check.status}${reason ? `_${reason}` : ''}`,
+      {
+        ...params,
+        defaultValue: reason
+          ? t(`diagnostic.check.${check.id}.${check.status}`, { ...params, defaultValue: '' })
+          : '',
+      },
+    );
     return (
       <li
         key={check.id}
@@ -189,7 +198,7 @@ export function ConnectionDiagnosticModal(props: ConnectionDiagnosticModalProps)
           )}
 
           {diagnose.isError && (
-            <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-300">
+            <div className="rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-300">
               {t('diagnostic.runFailed', { error: (diagnose.error as Error).message })}
             </div>
           )}

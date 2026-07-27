@@ -62,6 +62,9 @@ const mockFiles = [
     print_count: 5,
     duplicate_count: 0,
     created_at: '2024-01-01T00:00:00Z',
+    // #2680: real on-disk mtime in a distinctive year so the display test can
+    // prove fs_modified_at is preferred over created_at (2024).
+    fs_modified_at: '2030-06-15T12:00:00Z',
   },
   {
     id: 2,
@@ -1078,6 +1081,35 @@ describe('FileManagerPage', () => {
       });
       // Sanity-check: the buggy call would have sent include_root=true here.
       expect(includeRootValues).toContain('false');
+    });
+  });
+
+  describe('last-modified date display (#2680)', () => {
+    it('is hidden by default and revealed by the toolbar toggle', async () => {
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Benchy')).toBeInTheDocument();
+      });
+
+      // Hidden by default.
+      expect(screen.queryByText(/2030/)).not.toBeInTheDocument();
+
+      // Toggle on via the toolbar button.
+      await user.click(screen.getByTitle('Show modified dates'));
+
+      // benchy carries fs_modified_at in 2030, which must be preferred over its
+      // created_at (2024) — proving the real on-disk mtime drives the display.
+      await waitFor(() => {
+        expect(screen.getByText(/2030/)).toBeInTheDocument();
+      });
+
+      // Toggling off hides it again.
+      await user.click(screen.getByTitle('Hide modified dates'));
+      await waitFor(() => {
+        expect(screen.queryByText(/2030/)).not.toBeInTheDocument();
+      });
     });
   });
 });

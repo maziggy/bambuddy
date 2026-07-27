@@ -13,6 +13,7 @@ import logging
 import os
 import random
 import ssl
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -475,6 +476,43 @@ class FTPSession:
                 pass
             await self.send(426, f"Transfer failed: {write_failed}")
             return
+
+        # Defense in depth (#1896): a clean read-loop EOF does NOT prove the
+        # upload arrived intact. Under uvloop, the SSL layer can silently drop
+        # already-received but still-buffered data when the client closes the
+        # data connection without a TLS close_notify (a "ragged EOF") while the
+        # transport is flow-control-paused on slow storage — read() then returns
+        # b"" and we would otherwise reply 226 for a tail-truncated file, archive
+        # it, queue it, and forward the corrupt job to the real printer.
+        #
+        # Bambu 3MF uploads are ZIP containers whose End-Of-Central-Directory
+        # record sits at the very end of the file, so any lost tail makes the
+        # archive impossible to open. Verify that before acknowledging success:
+        # a truncated file is treated exactly like a failed transfer (426 +
+        # drop) so the slicer surfaces an actionable send error instead of the
+        # printer choking on a half-written job later. Only ZIP-based (.3mf)
+        # uploads are validated — other filetypes keep the prior pass-through
+        # behaviour. Reading the central directory is O(dir), not O(file): no
+        # decompression, negligible next to the write loop above.
+        if filename.lower().endswith(".3mf"):
+            try:
+                with zipfile.ZipFile(file_path) as zf:
+                    zf.namelist()
+            except Exception as e:
+                logger.error(
+                    "FTP upload of %s is a corrupt/truncated 3MF (%s bytes): %s(%s) — "
+                    "rejecting with 426 instead of archiving a broken file",
+                    filename,
+                    total_received,
+                    type(e).__name__,
+                    e,
+                )
+                try:
+                    file_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                await self.send(426, "Transfer failed: uploaded 3MF is incomplete or corrupt")
+                return
 
         # Confirm + notify
         logger.info("FTP saved file: %s (%s bytes)", file_path, total_received)

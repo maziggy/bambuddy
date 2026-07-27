@@ -112,7 +112,7 @@ def test_qr_payload_is_present_in_pdf_stream():
 # ── Regression tests for the two render bugs found in the first cut ──
 
 
-def _render_uncompressed(template, data):
+def _render_uncompressed(template, data, monochrome=False):
     """Render with pageCompression=0 so the resulting PDF contains text as
     ASCII bytes. Lets tests assert "X is on the label" by grepping the PDF.
 
@@ -140,7 +140,7 @@ def _render_uncompressed(template, data):
         buf = _io.BytesIO()
         c = _rl_canvas.Canvas(buf, pagesize=(page_w, page_h), pageCompression=0)
         for d in data:
-            _draw_label(c, 0, 0, page_w, page_h, d)
+            _draw_label(c, 0, 0, page_w, page_h, d, monochrome)
             c.showPage()
         c.save()
         return buf.getvalue()
@@ -303,3 +303,71 @@ def test_box_template_does_not_truncate_normal_brand_or_name():
     assert b"Shelf 3, slot B" in pdf, "box template must render the storage location"
     # Big spool ID at bottom.
     assert b"#7" in pdf or (b"7" in pdf and b"#" in pdf), "box template must render the spool ID"
+
+
+# ── #1870: low-res thermal-printer optimisations ──
+
+
+@pytest.mark.parametrize("template", ALL_TEMPLATES)
+def test_monochrome_renders_valid_pdf_for_each_template(template):
+    """Monochrome mode must render a valid PDF for every template (#1870)."""
+    pdf = render_labels(template, [_sample(7), _sample(8)], monochrome=True)
+    assert pdf.startswith(b"%PDF"), f"{template} monochrome did not produce a PDF header"
+
+
+def test_monochrome_omits_colour_swatch():
+    """Monochrome drops the colour swatch (useless grey block on a B&W printer)
+    while the default keeps it (#1870, requested by @Geoff-S)."""
+    from unittest.mock import patch
+
+    import backend.app.services.label_renderer as lr
+
+    with patch.object(lr, "_draw_swatch") as mock_swatch:
+        render_labels("box_40x30", [_sample(1)], monochrome=True)
+        assert mock_swatch.call_count == 0, "monochrome must not draw the colour swatch"
+
+    with patch.object(lr, "_draw_swatch") as mock_swatch:
+        render_labels("box_40x30", [_sample(1)], monochrome=False)
+        assert mock_swatch.call_count == 1, "colour mode must draw the swatch"
+
+
+def test_monochrome_still_renders_text_and_hex():
+    """Dropping the swatch must not lose the colour info — the hex code line and
+    the text fields still render (the hex is how colour is conveyed in B&W)."""
+    data = [
+        LabelData(
+            spool_id=42,
+            name="Polymaker Ivory",
+            material="PLA",
+            brand="Polymaker",
+            subtype="Matte",
+            rgba="F5E6D3FF",
+            deeplink_url="https://example.test/inventory?spool=42",
+        )
+    ]
+    pdf = _render_uncompressed("box_40x30", data, monochrome=True)
+    assert b"Polymaker" in pdf, "monochrome label must still render the brand"
+    assert b"#F5E6D3" in pdf, "monochrome label must still render the hex colour code"
+    assert b"#42" in pdf or (b"42" in pdf and b"#" in pdf), "monochrome label must render the spool ID"
+
+
+def test_roomy_qr_size_has_floor_for_narrow_labels():
+    """#1870 regression: box_40x30's QR must not shrink below a scannable size.
+    The pre-fix ``inner_w * 0.20`` gave ~7.5 mm on that label; the floor keeps
+    it at 12 mm so each module clears ~3 dots on a 203 dpi thermal head.
+    """
+    from reportlab.lib.units import mm
+
+    from backend.app.services.label_renderer import _roomy_qr_size
+
+    pad = 1.2 * mm
+    # box_40x30 inner dimensions.
+    inner_w = 40 * mm - 2 * pad
+    inner_h = 30 * mm - 2 * pad
+    assert _roomy_qr_size(inner_w, inner_h) >= 12 * mm - 0.01
+
+    # Larger templates are unaffected (already above the floor) and still capped.
+    inner_w_big = 75 * mm - 2 * pad
+    inner_h_big = 55 * mm - 2 * pad
+    size_big = _roomy_qr_size(inner_w_big, inner_h_big)
+    assert 12 * mm <= size_big <= 18 * mm

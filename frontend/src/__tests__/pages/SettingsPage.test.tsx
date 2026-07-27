@@ -303,7 +303,7 @@ describe('SettingsPage', () => {
 
       expect(localStorage.setItem).toHaveBeenCalledWith(
         SIDEBAR_ORDER_KEY,
-        JSON.stringify(['ext-7', 'printers', 'inventory', 'archives', 'queue', 'projects', 'files', 'makerworld', 'profiles', 'maintenance', 'stats', 'settings']),
+        JSON.stringify(['ext-7', 'printers', 'inventory', 'archives', 'queue', 'projects', 'files', 'makerworld', 'profiles', 'maintenance', 'stats', 'notifications', 'settings']),
       );
     });
 
@@ -345,7 +345,7 @@ describe('SettingsPage', () => {
       expect(localStorage.setItem).toHaveBeenCalledWith(SIDEBAR_HIDDEN_SYSTEM_ITEMS_KEY, JSON.stringify([]));
       expect(localStorage.setItem).toHaveBeenCalledWith(
         SIDEBAR_ORDER_KEY,
-        JSON.stringify(['printers', 'inventory', 'archives', 'queue', 'projects', 'files', 'makerworld', 'profiles', 'maintenance', 'stats', 'settings', 'ext-7']),
+        JSON.stringify(['printers', 'inventory', 'archives', 'queue', 'projects', 'files', 'makerworld', 'profiles', 'maintenance', 'stats', 'notifications', 'settings', 'ext-7']),
       );
 
       const settingsRow = screen.getAllByText('Settings')
@@ -416,6 +416,7 @@ describe('SettingsPage', () => {
           'profiles',
           'maintenance',
           'stats',
+          'notifications',
           'settings',
         ],
         hiddenSystemItemIds: ['stats'],
@@ -1288,5 +1289,111 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Settings saved')).toBeInTheDocument();
       });
     });
+  });
+
+  // --------------------------------------------------------------------
+  // Slicer Pipelines (#1425) — Workflow tab sub-tabs
+  // --------------------------------------------------------------------
+  describe('workflow sub-tabs (#1425)', () => {
+    beforeEach(() => {
+      // Endpoints the Pipelines panel calls (#1425).
+      server.use(
+        http.get('/api/v1/slicer-pipelines/', () => HttpResponse.json({ pipelines: [] })),
+        http.get('/api/v1/slicer/presets', () =>
+          HttpResponse.json({
+            orca_cloud: { printer: [], process: [], filament: [] },
+            cloud: { printer: [], process: [], filament: [] },
+            local: { printer: [], process: [], filament: [] },
+            standard: { printer: [], process: [], filament: [] },
+            cloud_status: 'ok',
+            orca_cloud_status: 'ok',
+          }),
+        ),
+      );
+    });
+
+    it('renders Queue & Dispatch + Pipelines sub-tabs under Workflow', async () => {
+      render(<SettingsPage />);
+      const user = userEvent.setup();
+      await waitFor(() => {
+        // Workflow tab in the sidebar — exact match to avoid colliding with
+        // "Print Queue" or "Queue Settings" labels elsewhere on the page.
+        expect(screen.getByRole('button', { name: 'Workflow' })).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole('button', { name: 'Workflow' }));
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Queue & Dispatch/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^Pipelines$/i })).toBeInTheDocument();
+      });
+    });
+
+    it('clicking Pipelines sub-tab shows the empty-state hint and updates the URL', async () => {
+      render(<SettingsPage />);
+      const user = userEvent.setup();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Workflow' })).toBeInTheDocument());
+      await user.click(screen.getByRole('button', { name: 'Workflow' }));
+      await user.click(screen.getByRole('button', { name: /^Pipelines$/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/No pipelines yet/i)).toBeInTheDocument();
+        // Deep-link URL carries both ?tab=queue and ?sub=pipelines
+        expect(window.location.search).toContain('tab=queue');
+        expect(window.location.search).toContain('sub=pipelines');
+      });
+    });
+  });
+});
+
+/**
+ * Sponsor banner on Settings -> General.
+ *
+ * Below the fleet threshold it makes the community/donation ask; at or above it
+ * the same slot makes the commercial ask and points at business.html. A print
+ * farm asked to chip in $5 is a wasted impression, and a hobbyist pitched a
+ * support contract is an annoyed user — so both directions are pinned.
+ */
+describe('SettingsPage — sponsor banner audience', () => {
+  beforeEach(() => {
+    // BrowserRouter shares window.location across tests and the banner only
+    // renders on the General tab — without this reset a prior test's ?tab=queue
+    // leaks in and the banner never mounts.
+    window.history.replaceState({}, '', '/');
+  });
+
+  const fleet = (count: number) =>
+    server.use(
+      http.get('/api/v1/printers/', () =>
+        HttpResponse.json(
+          Array.from({ length: count }, (_, i) => ({
+            id: i + 1,
+            name: `Printer ${i + 1}`,
+            serial_number: `SN${i + 1}`,
+            ip_address: '192.168.1.10',
+            model: 'X1C',
+            is_active: true,
+          })),
+        ),
+      ),
+    );
+
+  it('shows the community ask for a small fleet', async () => {
+    fleet(2);
+    render(<SettingsPage />);
+
+    const banner = await screen.findByRole('link', { name: /Independent & community-funded/i });
+    expect(banner).toHaveAttribute('href', 'https://bambuddy.cool/sponsors.html?from=app-settings');
+    expect(screen.queryByText(/Bambuddy for business/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the commercial ask for a business-sized fleet', async () => {
+    fleet(6);
+    render(<SettingsPage />);
+
+    const banner = await screen.findByRole('link', { name: /Bambuddy for business/i });
+    expect(banner).toHaveAttribute('href', 'https://bambuddy.cool/business.html?from=app-settings');
+    // The donation copy is replaced, not merely supplemented.
+    expect(screen.queryByText(/Independent & community-funded/i)).not.toBeInTheDocument();
+    // The ask names the fleet back to them.
+    expect(screen.getByText(/6 printers/i)).toBeInTheDocument();
   });
 });

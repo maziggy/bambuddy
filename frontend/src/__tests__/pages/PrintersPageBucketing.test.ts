@@ -20,7 +20,7 @@ import { describe, it, expect } from 'vitest';
 type Status = {
   connected: boolean;
   state: string | null;
-  hms_errors?: { code: string; attr: number; severity: number }[];
+  hms_errors?: { code: string; attr: number; severity: number; actions?: string[] }[];
 };
 
 type Bucket = 'printing' | 'paused' | 'finished' | 'idle' | 'offline' | 'error';
@@ -32,7 +32,8 @@ function filterKnownHMSErrors(errors: Status['hms_errors']): NonNullable<Status[
     const codeNum = parseInt(e.code.replace('0x', ''), 16) || 0;
     const module = ((e.attr >> 16) & 0xFFFF).toString(16).padStart(4, '0').toUpperCase();
     const code = (codeNum & 0xFFFF).toString(16).padStart(4, '0').toUpperCase();
-    return KNOWN_HMS_CODES.has(`${module}_${code}`);
+    if (KNOWN_HMS_CODES.has(`${module}_${code}`)) return true;
+    return (e.actions?.length ?? 0) > 0;
   });
 }
 
@@ -75,6 +76,20 @@ describe('FAILED-without-HMS bucketing', () => {
       hms_errors: [{ code: '0x2001b', attr: 0x0C00_0C00, severity: 1 }], // 0C00_001B not in known set
     };
     expect(classifyPrinterStatus(cancelEcho)).toBe('finished');
+  });
+
+  it('classifies PAUSE + uncataloged HMS WITH actions as "error" (#1840: H2C 0500_809C carries actions but isnt in the bundled catalog)', () => {
+    const h2cActionableFault: Status = {
+      connected: true,
+      state: 'PAUSE',
+      hms_errors: [{
+        code: '0x809c',
+        attr: 0x0500_809C,
+        severity: 3,
+        actions: ['IGNORE_RESUME', 'PROBLEM_SOLVED_RESUME'],
+      }],
+    };
+    expect(classifyPrinterStatus(h2cActionableFault)).toBe('error');
   });
 
   it('classifies FINISH as "finished" (unchanged baseline)', () => {

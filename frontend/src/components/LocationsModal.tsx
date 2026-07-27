@@ -200,7 +200,7 @@ export function LocationsModal({ open, onClose, onPickLocation }: LocationsModal
                         </button>
                         <button
                           type="button"
-                          className="p-1.5 text-bambu-gray hover:text-red-400 rounded disabled:opacity-40"
+                          className="p-1.5 text-bambu-gray hover:text-red-600 dark:hover:text-red-400 rounded disabled:opacity-40"
                           disabled={loc.spool_count > 0}
                           onClick={() => setDeleteTarget(loc)}
                           title={loc.spool_count > 0 ? t('locations.deleteBlocked') : t('common.delete')}

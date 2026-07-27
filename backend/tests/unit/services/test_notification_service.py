@@ -2379,9 +2379,13 @@ class TestEmailProvider:
     @staticmethod
     def _fake_smtp_class(captured: dict):
         class FakeSMTP:
-            def __init__(self, host, port):
+            # timeout matches the real smtplib.SMTP/SMTP_SSL signature — the
+            # service passes an explicit timeout so a wedged relay can't hang
+            # the send (#2572).
+            def __init__(self, host, port, timeout=None):
                 captured["host"] = host
                 captured["port"] = port
+                captured["timeout"] = timeout
 
             def starttls(self):
                 captured["starttls"] = True

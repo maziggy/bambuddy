@@ -751,24 +751,34 @@ async def list_folders(
     )
     file_counts = dict(file_counts_result.all())
 
-    # Latest immediate-child file activity per folder (#1770). Sibling of the
-    # file_counts subquery — same WHERE clause, MAX(updated_at) instead of
-    # COUNT(id). Subfolder descent is not aggregated here; the frontend's
-    # "sort by recent activity" mode is satisfied by immediate-parent bubble.
+    # Latest immediate-child file activity per folder (#1770/#2680). Real on-disk
+    # mtime when we have it (external scans populate ``fs_modified_at``), else the
+    # DB ``updated_at`` — COALESCE so external rows scanned before this field
+    # existed, and internal uploads, still contribute a signal. This is the
+    # per-folder *leaf* value; subtree descent is aggregated recursively below.
     latest_file_activity_result = await db.execute(
-        select(LibraryFile.folder_id, func.max(LibraryFile.updated_at))
+        select(
+            LibraryFile.folder_id,
+            func.max(func.coalesce(LibraryFile.fs_modified_at, LibraryFile.updated_at)),
+        )
         .where(LibraryFile.folder_id.isnot(None), LibraryFile.deleted_at.is_(None))
         .group_by(LibraryFile.folder_id)
     )
     latest_file_activity = dict(latest_file_activity_result.all())
 
-    # Build tree structure
+    # Build tree structure. Each folder's initial ``latest_activity_at`` is its own
+    # leaf activity: the newer of its real directory mtime (fallback updated_at)
+    # and its immediate files' mtime. The recursive bubble below then rolls each
+    # subtree's newest descendant up to its ancestors (#2680 — sorting must match
+    # ``ls -t`` recursively, so a freshly-added deep file lifts every parent).
     folder_map = {}
     root_folders = []
 
     for folder, project_name, archive_name in rows:
+        own_activity = folder.fs_modified_at or folder.updated_at
         latest_file = latest_file_activity.get(folder.id)
-        latest_activity_at = max(folder.updated_at, latest_file) if latest_file is not None else folder.updated_at
+        if latest_file is not None and latest_file > own_activity:
+            own_activity = latest_file
         folder_item = FolderTreeItem(
             id=folder.id,
             name=folder.name,
@@ -781,7 +791,7 @@ async def list_folders(
             external_path=folder.external_path,
             external_readonly=folder.external_readonly,
             file_count=file_counts.get(folder.id, 0),
-            latest_activity_at=latest_activity_at,
+            latest_activity_at=own_activity,
             children=[],
         )
         folder_map[folder.id] = folder_item
@@ -793,6 +803,28 @@ async def list_folders(
             root_folders.append(folder_item)
         elif folder.parent_id in folder_map:
             folder_map[folder.parent_id].children.append(folder_item)
+
+    # Recursive newest-descendant bubble (#2680). Post-order: a folder's activity
+    # becomes the max of its own leaf activity and every descendant's, so sorting
+    # the tree by ``latest_activity_at`` surfaces the branch with the most recent
+    # activity anywhere inside it. Iterative stack keeps deep external mounts off
+    # Python's recursion limit.
+    def _bubble(root: FolderTreeItem) -> None:
+        order: list[FolderTreeItem] = []
+        stack = [root]
+        while stack:
+            node = stack.pop()
+            order.append(node)
+            stack.extend(node.children)
+        for node in reversed(order):  # deepest first
+            for child in node.children:
+                if child.latest_activity_at is not None and (
+                    node.latest_activity_at is None or child.latest_activity_at > node.latest_activity_at
+                ):
+                    node.latest_activity_at = child.latest_activity_at
+
+    for root in root_folders:
+        _bubble(root)
 
     return root_folders
 
@@ -819,11 +851,12 @@ async def get_folders_by_project(
 
     folders = []
     for folder, project_name in rows:
-        # Get file count + latest file activity (#1770) in one trip
+        # Get file count + latest file activity (#1770/#2680) in one trip. Prefer
+        # the real on-disk mtime (external scans), fall back to the DB updated_at.
         agg_result = await db.execute(
             select(
                 func.count(LibraryFile.id),
-                func.max(LibraryFile.updated_at),
+                func.max(func.coalesce(LibraryFile.fs_modified_at, LibraryFile.updated_at)),
             ).where(
                 LibraryFile.folder_id == folder.id,
                 LibraryFile.deleted_at.is_(None),
@@ -831,7 +864,8 @@ async def get_folders_by_project(
         )
         file_count, latest_file = agg_result.one()
         file_count = file_count or 0
-        latest_activity_at = max(folder.updated_at, latest_file) if latest_file is not None else folder.updated_at
+        own_activity = folder.fs_modified_at or folder.updated_at
+        latest_activity_at = max(own_activity, latest_file) if latest_file is not None else own_activity
 
         folders.append(
             FolderResponse(
@@ -878,11 +912,12 @@ async def get_folders_by_archive(
 
     folders = []
     for folder, archive_name in rows:
-        # Get file count + latest file activity (#1770) in one trip
+        # Get file count + latest file activity (#1770/#2680) in one trip. Prefer
+        # the real on-disk mtime (external scans), fall back to the DB updated_at.
         agg_result = await db.execute(
             select(
                 func.count(LibraryFile.id),
-                func.max(LibraryFile.updated_at),
+                func.max(func.coalesce(LibraryFile.fs_modified_at, LibraryFile.updated_at)),
             ).where(
                 LibraryFile.folder_id == folder.id,
                 LibraryFile.deleted_at.is_(None),
@@ -890,7 +925,8 @@ async def get_folders_by_archive(
         )
         file_count, latest_file = agg_result.one()
         file_count = file_count or 0
-        latest_activity_at = max(folder.updated_at, latest_file) if latest_file is not None else folder.updated_at
+        own_activity = folder.fs_modified_at or folder.updated_at
+        latest_activity_at = max(own_activity, latest_file) if latest_file is not None else own_activity
 
         folders.append(
             FolderResponse(
@@ -1353,6 +1389,7 @@ _SCANNABLE_EXTENSIONS = {
     ".gif",
     ".webp",
     ".svg",
+    ".md",
 }
 
 
@@ -1481,6 +1518,16 @@ async def create_external_folder(
     )
 
 
+def _mtime_to_datetime(mtime: float) -> datetime:
+    """Convert an ``os.stat().st_mtime`` epoch value to a naive-UTC datetime (#2680).
+
+    Naive UTC to match the other library timestamp columns (``created_at`` /
+    ``updated_at`` are naive ``func.now()``), so activity comparisons never mix
+    naive and aware values on either dialect.
+    """
+    return datetime.fromtimestamp(mtime, tz=timezone.utc).replace(tzinfo=None)
+
+
 @router.post("/folders/{folder_id}/scan")
 async def scan_external_folder(
     folder_id: int,
@@ -1556,6 +1603,8 @@ async def scan_external_folder(
     removed = 0
     found_paths: set[str] = set()
     seen_rel_dirs: set[str] = set()
+    # Real on-disk mtime per visited folder id (#2680), applied after the walk.
+    folder_mtimes: dict[int, datetime] = {}
 
     for dirpath, dirnames, filenames in os.walk(ext_path):
         # Filter hidden directories unless configured
@@ -1605,6 +1654,15 @@ async def scan_external_folder(
 
         target_folder_id = folder_cache.get(rel_dir, folder_id)
 
+        # Record this directory's own mtime (#2680). os.walk visits every
+        # directory once, so this covers the root external folder and every
+        # subfolder (existing or just created). Applied to the folder rows
+        # after the walk completes.
+        try:
+            folder_mtimes[target_folder_id] = _mtime_to_datetime(os.stat(dirpath).st_mtime)
+        except OSError:
+            pass
+
         for filename in filenames:
             # Skip hidden files unless configured
             if not folder.external_show_hidden and filename.startswith("."):
@@ -1633,7 +1691,17 @@ async def scan_external_folder(
             found_paths.add(file_path_str)
 
             if file_path_str in existing_files:
-                continue  # Already tracked
+                # Already tracked — refresh its on-disk mtime (#2680) so a file
+                # edited/replaced over the mount (samba, etc.) re-sorts correctly
+                # and old rows scanned before this field existed get backfilled.
+                tracked = existing_files[file_path_str]
+                try:
+                    fs_mtime = _mtime_to_datetime(filepath.stat().st_mtime)
+                except OSError:
+                    fs_mtime = None
+                if fs_mtime is not None and tracked.fs_modified_at != fs_mtime:
+                    tracked.fs_modified_at = fs_mtime
+                continue
 
             # Get file info
             try:
@@ -1716,13 +1784,22 @@ async def scan_external_folder(
                 file_hash=None,  # Skip hashing external files for performance
                 thumbnail_path=thumbnail_path,
                 file_metadata=_without_print_name(file_metadata),
+                fs_modified_at=_mtime_to_datetime(stat.st_mtime),  # #2680: real on-disk mtime
             )
             db.add(db_file)
             added += 1
 
-    # Remove DB entries for files that no longer exist on disk
+    # Remove DB entries for files that no longer exist on disk.
+    #
+    # Gate on actual disk presence, NOT merely absence from found_paths:
+    # found_paths only collects extensions in _SCANNABLE_EXTENSIONS, so a
+    # record for any other file the upload path admitted (e.g. a .md README,
+    # #2520) would otherwise be treated as "deleted from disk" and purged on
+    # every scan even though the file is still there. os.path.exists keeps
+    # such records; genuinely-deleted files (absent from disk) are still
+    # cleaned up. External file_path is the absolute on-disk path.
     for path_str, db_file in existing_files.items():
-        if path_str not in found_paths:
+        if path_str not in found_paths and not os.path.exists(path_str):
             # Clean up thumbnail if we generated one
             if db_file.thumbnail_path:
                 try:
@@ -1758,6 +1835,16 @@ async def scan_external_folder(
                 sub_folder_obj = sub_folder_result.scalar_one_or_none()
                 if sub_folder_obj:
                     await db.delete(sub_folder_obj)
+                    folder_mtimes.pop(sub_fid, None)
+
+    # Persist each visited folder's real directory mtime (#2680). Fetched in one
+    # trip; folders deleted by the cleanup above were dropped from folder_mtimes.
+    if folder_mtimes:
+        folders_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id.in_(list(folder_mtimes.keys()))))
+        for folder_obj in folders_result.scalars().all():
+            new_mtime = folder_mtimes.get(folder_obj.id)
+            if new_mtime is not None and folder_obj.fs_modified_at != new_mtime:
+                folder_obj.fs_modified_at = new_mtime
 
     await db.commit()
 
@@ -1919,6 +2006,7 @@ async def list_files(
                 created_by_id=f.created_by_id,
                 created_by_username=f.created_by.username if f.created_by else None,
                 created_at=f.created_at,
+                fs_modified_at=f.fs_modified_at,
                 print_name=print_name,
                 print_time_seconds=print_time,
                 filament_used_grams=filament_grams,
@@ -3285,11 +3373,78 @@ def _patch_process_bed_type(process_json: str, bed_type: str) -> str:
     return json.dumps(profile)
 
 
+# Support-related keys we lift from the source 3MF's project_settings.config
+# into the picked process preset before `--load-settings` sees it (#1881).
+# BambuStudio's shipped process presets ("0.20mm Standard @BBL H2D" etc.)
+# define `enable_support: 0` as their default — supports are a per-print
+# decision, not a per-quality one. `--load-settings` is authoritative, so
+# without preserving these fields the source's per-project support intent
+# (supports on, PVA in the interface slot, tree vs normal) gets discarded
+# and the slicer produces a single-material output with no supports at all.
+_SOURCE_PROCESS_SUPPORT_KEYS_TO_PRESERVE = (
+    "enable_support",
+    "support_filament",
+    "support_interface_filament",
+    "support_type",
+)
+
+
+def _patch_process_support_settings(process_json: str, source_3mf_bytes: bytes) -> str:
+    """Overlay the source 3MF's support configuration onto the process JSON.
+
+    Only fires on 3MF sources — STL / STEP don't carry `project_settings.
+    config`. Silently no-ops when the source doesn't have the config, has
+    a malformed one, or when the process JSON isn't parseable — the slice
+    then runs with the process preset's own defaults, which is the safe
+    fall-back for both this bug and the pre-fix behaviour.
+    """
+    from io import BytesIO
+
+    try:
+        with zipfile.ZipFile(BytesIO(source_3mf_bytes), "r") as zf:
+            if "Metadata/project_settings.config" not in zf.namelist():
+                return process_json
+            src_cfg = json.loads(zf.read("Metadata/project_settings.config").decode("utf-8"))
+    except (zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError, OSError, KeyError):
+        return process_json
+    if not isinstance(src_cfg, dict):
+        return process_json
+
+    try:
+        process_cfg = json.loads(process_json)
+    except json.JSONDecodeError:
+        return process_json
+    if not isinstance(process_cfg, dict):
+        return process_json
+
+    for key in _SOURCE_PROCESS_SUPPORT_KEYS_TO_PRESERVE:
+        if key in src_cfg:
+            process_cfg[key] = src_cfg[key]
+
+    return json.dumps(process_cfg)
+
+
 # The sidecar prefixes the slicer CLI's own error_string with this when the
 # slicer ran and rejected the job (model off the bed, incompatible filament
 # temps, range validation) — as opposed to the CLI crashing before it could
 # evaluate the job at all.
 _SLICER_REJECTION_MARKER = "Slicing failed with error from slicer:"
+
+# The CLI writes its real diagnostic to stdout/stderr on the `[error]` level.
+# Format is `[<timestamp>] [error] run <NNNN>: <message>` (or sometimes without
+# the `run NNNN:` prefix). The bracketed timestamp is optional; the `[error]`
+# tag is what we anchor on. Used to recover the actual rejection reason for
+# the `error_string: "The input preset file is invalid and can not be parsed."`
+# case (#1851) — the CLI emits that generic placeholder for every -5 exit
+# including real preset-compat rejections, and the per-incident specifics
+# only live in the stdout dump.
+_CLI_ERROR_LINE_RE = re.compile(r"\[error\]\s*(?:run\s+\d+:\s*)?(.+?)\s*$", re.MULTILINE)
+
+# The placeholder error_string Bambu Studio writes to result.json for any
+# `--load-settings` parse / compat rejection (-5 exit). When the sidecar
+# surfaces this, the real reason lives in the stdout `[error]` line that we
+# mine via _CLI_ERROR_LINE_RE.
+_INPUT_PRESET_INVALID_PLACEHOLDER = "The input preset file is invalid and can not be parsed."
 
 
 def _slicer_rejection_message(error_text: str) -> str | None:
@@ -3301,16 +3456,34 @@ def _slicer_rejection_message(error_text: str) -> str | None:
     no. Retrying with the 3MF's embedded settings would then only "succeed"
     by silently reverting to the source file's original printer, masking the
     real problem; such failures must reach the user instead.
+
+    When the sidecar's `error_string` is Bambu Studio's generic
+    "The input preset file is invalid and can not be parsed." placeholder
+    (#1851) — emitted for every -5 exit, including the actual preset-compat
+    rejections whose real reason is logged to stdout as
+    `[error] run NNNN: <diagnostic>` — prefer the stdout `[error]` line so
+    the user sees which preset clashed with which printer.
     """
     if _SLICER_REJECTION_MARKER not in error_text:
         return None
     reason = error_text.split(_SLICER_REJECTION_MARKER, 1)[1]
+    # Mine the stdout/stderr dump for a more specific CLI diagnostic before
+    # we trim it off below. Done first so the lookup window covers the full
+    # response, not just the headline.
+    cli_diagnostic_match = _CLI_ERROR_LINE_RE.search(reason)
+    cli_diagnostic = cli_diagnostic_match.group(1).strip() if cli_diagnostic_match else None
     # Trim the sidecar's trailing exit-code note and any stderr/stdout dump.
     for cut in (": Slicer process failed", "\nstderr:", "\nstdout:"):
         idx = reason.find(cut)
         if idx != -1:
             reason = reason[:idx]
-    return reason.strip() or None
+    reason = reason.strip() or None
+    # When the headline is Bambu Studio's catch-all placeholder, the real
+    # reason is in the stdout `[error]` line. Substitute it. The placeholder
+    # by itself tells the user nothing about why their slice was rejected.
+    if cli_diagnostic and (reason is None or reason == _INPUT_PRESET_INVALID_PLACEHOLDER):
+        return cli_diagnostic
+    return reason
 
 
 async def _run_slicer_with_fallback(
@@ -3424,7 +3597,22 @@ async def _run_slicer_with_fallback(
         # didn't touch) still drive the slice.
         primary_bytes = _sanitize_project_settings_sentinels(primary_bytes)
 
+        # #1881: preserve the source 3MF's support configuration on top of
+        # the picked process preset. Bambu's shipped process presets set
+        # `enable_support: 0` by default (supports are a per-print, not
+        # per-quality, decision); `--load-settings` is authoritative so
+        # without patching, the source's `enable_support: 1` + support-slot
+        # assignments get discarded and the slice comes out single-material
+        # with a PVA slot loaded but never used.
+        presets["process"] = _patch_process_support_settings(presets["process"], primary_bytes)
+
     used_embedded_settings = False
+    # "Slice as designed" (#2611): honour the file's embedded
+    # project_settings.config instead of the picked profile triplet. Only
+    # meaningful for a 3MF that actually carries embedded settings; the UI
+    # gates the toggle on the picked printer matching the design's target,
+    # so this path never re-targets across printer models.
+    embedded_mode = bool(request.use_embedded_settings and is_3mf)
     service = SlicerApiService(api_url)
 
     # #1493: cross-nozzle-class re-slice (single <-> dual). Without
@@ -3481,9 +3669,11 @@ async def _run_slicer_with_fallback(
     # (e.g. ABS in slot 2 next to a PLA in the used slot 1) makes
     # BambuStudio reject the slice with "the temperature difference of
     # the filaments used is too large" (exit 194) even though the G-code
-    # never touches the unused slot. Replace unused-slot entries with the
-    # slot-1 selection before the real slice so the loaded-filament set
-    # is materially homogeneous.
+    # never touches the unused slot; a default scoped to another printer
+    # gets it rejected with "filament preset (slot N) is not compatible
+    # with printer …" (#2628). Replace unused-slot entries with the
+    # plate's lowest used slot before the real slice so the loaded set is
+    # materially homogeneous and printer-correct.
     if is_3mf and request.plate is not None:
         from backend.app.services.slicer_3mf_convert import substitute_unused_plate_filaments
 
@@ -3503,7 +3693,22 @@ async def _run_slicer_with_fallback(
 
     try:
         try:
-            if use_cross_class_slice_all:
+            if embedded_mode:
+                # No --load-settings: feed the CLI the file's own
+                # project_settings.config untouched so the designer's tweaks
+                # (walls, infill, etc.) drive the slice. primary_bytes is
+                # already sentinel-sanitised above, the same bytes the
+                # crash-fallback uses. The resolved presets go unused here.
+                result = await service.slice_without_profiles(
+                    model_bytes=primary_bytes,
+                    model_filename=model_filename,
+                    plate=request.plate,
+                    export_3mf=request.export_3mf,
+                    request_id=progress_request_id,
+                    on_progress=progress_callback,
+                )
+                used_embedded_settings = True
+            elif use_cross_class_slice_all:
                 from backend.app.services.slicer_3mf_convert import (
                     count_plates_in_3mf,
                     merge_plate_3mfs,
@@ -3605,7 +3810,11 @@ async def _run_slicer_with_fallback(
                 # (e.g. re-slicing an H2D model for an X1C: the object is off
                 # the smaller bed). Surface the slicer's reason instead.
                 raise HTTPException(status_code=400, detail=rejection) from exc
-            if not is_3mf:
+            if not is_3mf or embedded_mode:
+                # embedded_mode already sliced with the file's own settings —
+                # there is nothing to fall back TO, so surface the server
+                # error (the outer handler turns it into a 502) instead of
+                # re-running the same embedded slice.
                 raise
             logger.warning(
                 "Slicer CLI failed on the --load-settings path for %s (%s); retrying with embedded settings",
@@ -4030,8 +4239,14 @@ async def slice_library_file(
 
     src_result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     lib_file = src_result.scalar_one_or_none()
-    if not lib_file:
-        raise HTTPException(status_code=404, detail="File not found")
+    # Per-row ownership gate. LIBRARY_UPLOAD alone let a READ_OWN caller (e.g. the
+    # built-in Operators group) slice another user's model by raw id even though
+    # GET on that id returned 404 — the sliced output was then attributed to and
+    # downloadable by the requester. Enforce the same visibility the read routes
+    # use before reading the source off disk. API-key / auth-disabled callers
+    # (current_user is None) keep can_read_all=True — no per-row identity.
+    can_read_all = current_user is None or current_user.has_permission(Permission.LIBRARY_READ_ALL.value)
+    lib_file = _ensure_library_file_visible(lib_file, current_user, can_read_all)
 
     src_lower = (lib_file.filename or "").lower()
     if not (
@@ -4103,6 +4318,7 @@ async def slice_library_file(
         kind="library_file",
         source_id=lib_file.id,
         source_name=lib_file.filename,
+        owner_id=user_id,
         run=_run,
     )
     return {

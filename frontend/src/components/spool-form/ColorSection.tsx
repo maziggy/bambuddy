@@ -495,7 +495,7 @@ export function ColorSection({
             data-testid="extra-colors-input"
           />
           {extraColorsErrors.length > 0 && (
-            <p className="text-xs text-red-400 mt-1">
+            <p className="text-xs text-red-700 dark:text-red-400 mt-1">
               {t('inventory.extraColorsInvalid', { tokens: extraColorsErrors.join(', ') })}
             </p>
           )}

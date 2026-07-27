@@ -32,14 +32,26 @@ EnvironmentFile=-INSTALL_PATH/.env
 Environment="PATH=INSTALL_PATH/venv/bin:/usr/local/bin:/usr/bin:/bin"
 
 # Server configuration
-ExecStart=INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+# --loop asyncio is required: uvloop's SSL layer can silently truncate VP FTP
+# uploads on a ragged client close over slow storage (#1896). Do not remove.
+#
+# --timeout-graceful-shutdown is also required. Uvicorn's default is to wait
+# forever for in-flight requests, and an MJPEG camera stream is a response that
+# never completes — one open camera tile would hang the stop until systemd gave
+# up and SIGKILLed, skipping the WAL checkpoint, the MQTT disconnect and the
+# virtual-printer teardown entirely. On timeout uvicorn cancels the request
+# tasks; the camera generators unwind cleanly on CancelledError.
+ExecStart=INSTALL_PATH/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000} --loop asyncio --timeout-graceful-shutdown 5
 
 # Restart policy
 Restart=on-failure
 RestartSec=5
 
-# Graceful shutdown
-TimeoutStopSec=10
+# Graceful shutdown. Uvicorn now bounds its own wait at 5s and the app's own
+# teardown takes ~1-2s, so this only has to be comfortably longer than that —
+# it is the backstop, not the mechanism. The old 10s could clip a slow teardown
+# on a Pi with several virtual printers.
+TimeoutStopSec=30
 
 # Kill zombie ffmpeg processes (timelapse processing)
 ExecStartPre=-/usr/bin/pkill -9 -f "ffmpeg.*bambuddy"
@@ -58,6 +70,19 @@ ProtectSystem=strict
 # under /home (issue #1685). Default is the safer read-only; flip to true if
 # your INSTALL_PATH is outside /home (e.g. /opt/bambuddy).
 ProtectHome=read-only
+#
+# ProtectSystem=strict mounts EVERYTHING outside these three paths read-only for
+# this service — including a NAS share you have mounted yourself and can write to
+# from your own shell. Writes there fail with EROFS ("Read-only file system"),
+# which looks like a permission problem but is not one (issue #2544).
+#
+# So if you point Scheduled Backups at a directory outside the install, data and
+# log dirs, add it here — or better, in a drop-in that survives a reinstall:
+#
+#   sudo systemctl edit bambuddy
+#   [Service]
+#   ReadWritePaths=/mnt/your-nas-share
+#
 ReadWritePaths=DATA_DIR LOG_DIR INSTALL_PATH
 
 [Install]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
@@ -49,15 +50,17 @@ logger = logging.getLogger(__name__)
 # entries also satisfy "not in the allowlist", so they fail closed regardless.
 #
 # Mapping rationale (see wiki/features/api-keys.md):
-#   can_read_status     → every ``*_READ`` + camera + stats + system + websocket
-#   can_queue           → queue write ops + archive reprint
-#   can_control_printer → physical printer + smart-plug control
-#   can_manage_library  → library upload/own + MakerWorld import (separate
-#                         trust level from queue management, hence its own flag)
-#   admin-only          → unmapped (default-deny); covers all create/update/
-#                         delete of admin resources, settings writes, user/
-#                         group/api-key/backup admin ops, discovery scan,
-#                         cloud auth, library ALL-ownership perms, purges
+#   can_read_status       → every ``*_READ`` + camera + stats + system + websocket
+#   can_queue             → queue write ops + archive reprint
+#   can_control_printer   → physical printer + smart-plug control
+#   can_manage_library    → library upload/own + MakerWorld import (separate
+#                           trust level from queue management, hence its own flag)
+#   can_manage_inventory  → spool/catalog/forecast writes + SpoolBuddy kiosk writes
+#   can_manage_maintenance→ per-printer maintenance log/reset + type-catalog CRUD
+#   admin-only            → unmapped (default-deny); covers all create/update/
+#                           delete of admin resources, settings writes, user/
+#                           group/api-key/backup admin ops, discovery scan,
+#                           cloud auth, library ALL-ownership perms, purges
 _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     # can_read_status — read-only access to status, history, and configuration
     Permission.PRINTERS_READ: "can_read_status",
@@ -112,13 +115,21 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     Permission.PRINTERS_AMS_RFID: "can_control_printer",
     Permission.PRINTERS_CLEAR_PLATE: "can_control_printer",
     Permission.SMART_PLUGS_CONTROL: "can_control_printer",
-    # can_manage_library — file-manager scope (upload/rename/delete OWN library
+    # can_manage_library — file-manager scope (upload/rename/delete library
     # entries + MakerWorld import which downloads files into the library).
-    # Bulk/ALL-ownership library ops (UPDATE_ALL / DELETE_ALL / PURGE) stay
-    # admin-only because they cross the user boundary.
+    # OWN and ALL ownership variants map to the same scope so the
+    # `require_ownership_permission` checker (which gates on `all_perm`)
+    # passes the API key through. This matches `can_queue` and the
+    # archives/inventory scopes — API keys have no per-row ownership identity
+    # (line 1663), so splitting OWN/ALL across allowlist/denylist made the
+    # whole library curation surface unreachable for API keys (#1832).
+    # LIBRARY_PURGE stays admin-only as a genuinely destructive op that
+    # bypasses the soft-delete window.
     Permission.LIBRARY_UPLOAD: "can_manage_library",
     Permission.LIBRARY_UPDATE_OWN: "can_manage_library",
+    Permission.LIBRARY_UPDATE_ALL: "can_manage_library",
     Permission.LIBRARY_DELETE_OWN: "can_manage_library",
+    Permission.LIBRARY_DELETE_ALL: "can_manage_library",
     Permission.MAKERWORLD_IMPORT: "can_manage_library",
     # can_manage_inventory — inventory write scope. Covers the documented
     # spool/catalog/forecast write surface AND the SpoolBuddy kiosk endpoints
@@ -130,6 +141,44 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     Permission.INVENTORY_UPDATE: "can_manage_inventory",
     Permission.INVENTORY_DELETE: "can_manage_inventory",
     Permission.INVENTORY_FORECAST_WRITE: "can_manage_inventory",
+    # can_manage_maintenance — carved out of the admin denylist so HA-style
+    # automations can log "cleaned nozzle" / reset a maintenance counter via
+    # `POST /maintenance/items/{item_id}/perform` without granting broader
+    # printer control or settings write (#1832 follow-up). Also covers the
+    # per-printer maintenance CRUD (assign/remove items, edit intervals) and
+    # the type-catalog CRUD — the type catalog is a config surface (system
+    # types are auto-seeded, custom types are user-defined), so grouping it
+    # with the item writes matches the operator mental model of "keys that
+    # log maintenance can also manage what gets tracked." MAINTENANCE_READ
+    # stays under can_read_status.
+    Permission.MAINTENANCE_CREATE: "can_manage_maintenance",
+    Permission.MAINTENANCE_UPDATE: "can_manage_maintenance",
+    Permission.MAINTENANCE_DELETE: "can_manage_maintenance",
+    # can_manage_archives — print-history curation. Carved out of the admin
+    # denylist so automations can prune old prints via API key (#1888): the
+    # archive delete/update routes gate on
+    # ``require_ownership_permission(ARCHIVES_*_ALL, ARCHIVES_*_OWN)``, which
+    # resolves the ALL permission for API keys (no per-row ownership identity,
+    # same as can_queue / can_manage_library), so OWN and ALL map to the same
+    # scope. ARCHIVES_PURGE stays admin-only (see denylist) as a genuinely
+    # destructive op that drops the stats contribution, mirroring LIBRARY_PURGE.
+    # ARCHIVES_REPRINT_* stays under can_queue (it enqueues a print).
+    Permission.ARCHIVES_CREATE: "can_manage_archives",
+    Permission.ARCHIVES_UPDATE_OWN: "can_manage_archives",
+    Permission.ARCHIVES_UPDATE_ALL: "can_manage_archives",
+    Permission.ARCHIVES_DELETE_OWN: "can_manage_archives",
+    Permission.ARCHIVES_DELETE_ALL: "can_manage_archives",
+    # can_manage_projects — project curation. Carved out of the admin denylist
+    # so automations can create projects and batch-add archives via API key
+    # (#1893). The project mutation routes gate on plain
+    # ``RequirePermissionIfAuthEnabled(Permission.PROJECTS_*)`` (no OWN/ALL
+    # ownership split — projects have no per-row ownership permission), so the
+    # three CRUD permissions map directly to the one scope. Membership edits
+    # (e.g. add-archives-to-project) gate on PROJECTS_UPDATE, so they're covered.
+    # PROJECTS_READ stays under can_read_status (unchanged).
+    Permission.PROJECTS_CREATE: "can_manage_projects",
+    Permission.PROJECTS_UPDATE: "can_manage_projects",
+    Permission.PROJECTS_DELETE: "can_manage_projects",
     # can_access_cloud — narrow opt-in scope, gated by the router-level
     # ``_cloud_api_key_gate`` and additionally enforced here so the route-
     # level ``cloud_caller(Permission.CLOUD_AUTH)`` dep also fails closed
@@ -177,24 +226,29 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
         Permission.PRINTERS_CREATE,
         Permission.PRINTERS_UPDATE,
         Permission.PRINTERS_DELETE,
-        Permission.ARCHIVES_CREATE,
-        Permission.ARCHIVES_UPDATE_OWN,
-        Permission.ARCHIVES_UPDATE_ALL,
-        Permission.ARCHIVES_DELETE_OWN,
-        Permission.ARCHIVES_DELETE_ALL,
+        # ARCHIVES_CREATE / _UPDATE_OWN / _UPDATE_ALL / _DELETE_OWN /
+        # _DELETE_ALL moved to the allowlist under `can_manage_archives`
+        # (#1888) — split between allow/deny made the whole archive-management
+        # surface unreachable for API keys via `require_ownership_permission`
+        # (same regression class as the library/maintenance carve-outs in
+        # #1832). ARCHIVES_PURGE stays denied as a genuinely destructive op
+        # that drops the print's stats contribution.
         Permission.ARCHIVES_PURGE,
-        Permission.LIBRARY_UPDATE_ALL,
-        Permission.LIBRARY_DELETE_ALL,
+        # LIBRARY_UPDATE_ALL / LIBRARY_DELETE_ALL moved to the allowlist
+        # under `can_manage_library` (#1832) — split between allow/deny made
+        # the whole library curation surface unreachable for API keys via
+        # `require_ownership_permission`. Purge stays denied as a genuinely
+        # destructive op.
         Permission.LIBRARY_PURGE,
-        Permission.PROJECTS_CREATE,
-        Permission.PROJECTS_UPDATE,
-        Permission.PROJECTS_DELETE,
+        # PROJECTS_CREATE / _UPDATE / _DELETE moved to the allowlist under
+        # `can_manage_projects` (#1893) — they were denied for every API key,
+        # making the project-management surface (create, add-archives, delete)
+        # unreachable, same regression class as the archives/library carve-outs.
         Permission.FILAMENTS_CREATE,
         Permission.FILAMENTS_UPDATE,
         Permission.FILAMENTS_DELETE,
-        Permission.MAINTENANCE_CREATE,
-        Permission.MAINTENANCE_UPDATE,
-        Permission.MAINTENANCE_DELETE,
+        # MAINTENANCE_CREATE / MAINTENANCE_UPDATE / MAINTENANCE_DELETE moved
+        # to the allowlist under `can_manage_maintenance` (#1832 follow-up).
         Permission.KPROFILES_CREATE,
         Permission.KPROFILES_UPDATE,
         Permission.KPROFILES_DELETE,
@@ -211,6 +265,13 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
         Permission.SMART_PLUGS_DELETE,
         # Network scanning — operator only (no API-key scope for this).
         Permission.DISCOVERY_SCAN,
+        # Slicer Pipelines (#1425) — admin authoring + the print-spending Run
+        # action. PR A only ships CRUD; PR B / PR C may move PIPELINES_RUN onto
+        # `can_queue` (it queues prints) once the run dispatch lands. PR A keeps
+        # all three denied so they fail closed for any API-key surface.
+        Permission.PIPELINES_READ,
+        Permission.PIPELINES_WRITE,
+        Permission.PIPELINES_RUN,
     }
 )
 
@@ -335,7 +396,7 @@ def require_energy_cost_update():
                 if username is None:
                     raise credentials_exception
                 jti: str | None = payload.get("jti")
-                if not jti or await is_jti_revoked(jti):
+                if not jti or await is_jti_revoked(jti, db):
                     raise credentials_exception
                 iat: int | float | None = payload.get("iat")
             except JWTError:
@@ -640,9 +701,44 @@ async def verify_camera_stream_token(token: str) -> bool:
 
         # Long-lived path. Imported lazily so the auth module stays importable
         # at startup before the long_lived_tokens model is registered.
+        from backend.app.services.long_lived_tokens import STREAM_SCOPES, verify_token as verify_long_lived
+
+        record = await verify_long_lived(db, token, scope=STREAM_SCOPES)
+        return record is not None
+
+
+async def verify_camwall_token(token: str) -> bool:
+    """Verify a Cam Wall token (#2531). Reusable — does not consume it.
+
+    Deliberately narrower than :func:`verify_camera_stream_token`: only the
+    long-lived ``camwall`` scope passes. The 60-minute ephemeral token belongs
+    to a logged-in browser, which already reaches the wall's metadata through
+    the ordinary printers API and has no need of this endpoint; and a
+    ``camera_stream`` token was handed out for video alone, so it must not
+    acquire the ability to enumerate printers by name just because a new
+    feature shipped.
+    """
+    async with async_session() as db:
         from backend.app.services.long_lived_tokens import verify_token as verify_long_lived
 
-        record = await verify_long_lived(db, token, scope="camera_stream")
+        record = await verify_long_lived(db, token, scope="camwall")
+        return record is not None
+
+
+async def verify_overlay_token(token: str) -> bool:
+    """Verify a streaming-overlay token (#2613). Reusable — does not consume it.
+
+    Like :func:`verify_camwall_token`, only the matching long-lived scope passes:
+    the overlay status feed names the file being printed, so it must not be
+    reachable by a ``camwall`` token (which is trusted to hide the part name) or
+    a bare ``camera_stream`` token (handed out for video alone). The 60-minute
+    ephemeral token belongs to a logged-in browser, which reaches the same data
+    through the ordinary printers API and has no need of this endpoint.
+    """
+    async with async_session() as db:
+        from backend.app.services.long_lived_tokens import verify_token as verify_long_lived
+
+        record = await verify_long_lived(db, token, scope="overlay")
         return record is not None
 
 
@@ -720,16 +816,29 @@ async def revoke_jti(jti: str, expires_at: datetime, username: str | None = None
             await db.rollback()  # jti already revoked — desired state, ignore
 
 
-async def is_jti_revoked(jti: str) -> bool:
-    """Return True if the given jti has been revoked."""
-    async with async_session() as db:
-        result = await db.execute(
+async def is_jti_revoked(jti: str, db: AsyncSession | None = None) -> bool:
+    """Return True if the given jti has been revoked.
+
+    Pass ``db`` to reuse the caller's session instead of opening a new one
+    (issue #2572): the permission dependencies already hold a session, and a
+    second checkout per request doubled pool pressure — a login burst then
+    exhausted the pool. With ``db`` omitted a short session is opened as before,
+    for callers that check the jti before they have a session open.
+    """
+
+    async def _query(session: AsyncSession) -> bool:
+        result = await session.execute(
             select(AuthEphemeralToken).where(
                 AuthEphemeralToken.token == jti,
                 AuthEphemeralToken.token_type == "revoked_jti",
             )
         )
         return result.scalar_one_or_none() is not None
+
+    if db is not None:
+        return await _query(db)
+    async with async_session() as own_db:
+        return await _query(own_db)
 
 
 async def get_user_by_username(db: AsyncSession, username: str) -> User | None:
@@ -784,6 +893,33 @@ async def authenticate_user_by_email(db: AsyncSession, email: str, password: str
     return user
 
 
+# Short-lived cache for the auth-enabled flag (issue #2572). The middleware
+# and every ownership/permission dependency probe this once (or more) per
+# request; on a large farm that DB round-trip is pure overhead because the
+# value changes only when an admin toggles auth.
+#
+# SECURITY: only a ``True`` (auth-enabled) result is EVER cached. A disabled /
+# unconfigured result is never cached, so a stale cache can only ever cause a
+# request to REQUIRE auth that a moment ago wasn't required — it can never skip
+# an auth check that is now required. Staleness fails CLOSED, never open (cf.
+# GHSA-6mf4-q26m-47pv). ``set_auth_enabled`` invalidates explicitly on any
+# toggle; the TTL is only a backstop for out-of-band changes (a direct DB edit,
+# or another worker process in a multi-worker deployment).
+_AUTH_ENABLED_CACHE_TTL_SECONDS = 30.0
+_auth_enabled_cached_value: bool = False
+_auth_enabled_cached_until: float = 0.0
+
+
+def invalidate_auth_enabled_cache() -> None:
+    """Drop the cached auth-enabled flag so the next probe re-reads the DB.
+
+    Call after any write that toggles the ``auth_enabled`` setting.
+    """
+    global _auth_enabled_cached_value, _auth_enabled_cached_until
+    _auth_enabled_cached_value = False
+    _auth_enabled_cached_until = 0.0
+
+
 async def is_auth_enabled(db: AsyncSession) -> bool:
     """Check if authentication is enabled.
 
@@ -800,12 +936,25 @@ async def is_auth_enabled(db: AsyncSession) -> bool:
     no exception. Any OTHER failure (connection error, fd exhaustion,
     schema mismatch, …) propagates so the caller can deny the request
     (503 / 500). Fail-closed is the only safe default for an auth probe.
+
+    Result is cached briefly to cut per-request DB load on large farms; only
+    the enabled=True result is cached, so a stale read can only fail closed.
+    See the module-level cache comment above.
     """
+    global _auth_enabled_cached_value, _auth_enabled_cached_until
+    if _auth_enabled_cached_value and time.monotonic() < _auth_enabled_cached_until:
+        return True
+
     result = await db.execute(select(Settings).where(Settings.key == "auth_enabled"))
     setting = result.scalar_one_or_none()
-    if setting is None:
-        return False
-    return setting.value.lower() == "true"
+    enabled = setting is not None and setting.value.lower() == "true"
+    if enabled:
+        _auth_enabled_cached_value = True
+        _auth_enabled_cached_until = time.monotonic() + _AUTH_ENABLED_CACHE_TTL_SECONDS
+    else:
+        # Never cache "disabled" — keep failing closed on any future staleness.
+        _auth_enabled_cached_value = False
+    return enabled
 
 
 async def _user_from_api_key(db: AsyncSession, api_key: APIKey) -> User | None:
@@ -895,13 +1044,16 @@ async def get_current_user_optional(
         if username is None:
             raise _unauthorized
         jti: str | None = payload.get("jti")
-        if not jti or await is_jti_revoked(jti):
-            raise _unauthorized  # I6: revoked token → 401, not anonymous
         iat: int | float | None = payload.get("iat")
     except JWTError:
         raise _unauthorized
 
+    if not jti:
+        raise _unauthorized  # I6: revoked token → 401, not anonymous
+
     async with async_session() as db:
+        if await is_jti_revoked(jti, db):
+            raise _unauthorized  # I6: revoked token → 401, not anonymous
         user = await get_user_by_username(db, username)
         if user is None or not user.is_active:
             raise _unauthorized
@@ -928,13 +1080,16 @@ async def get_current_user(
         if username is None:
             raise credentials_exception
         jti: str | None = payload.get("jti")
-        if not jti or await is_jti_revoked(jti):
-            raise credentials_exception
         iat: int | float | None = payload.get("iat")
     except JWTError:
         raise credentials_exception
 
+    if not jti:
+        raise credentials_exception
+
     async with async_session() as db:
+        if await is_jti_revoked(jti, db):
+            raise credentials_exception
         user = await get_user_by_username(db, username)
         if user is None:
             raise credentials_exception
@@ -1004,7 +1159,7 @@ async def require_auth_if_enabled(
                         headers={"WWW-Authenticate": "Bearer"},
                     )
                 jti: str | None = payload.get("jti")
-                if not jti or await is_jti_revoked(jti):
+                if not jti or await is_jti_revoked(jti, db):
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Could not validate credentials",
@@ -1113,7 +1268,7 @@ def require_admin_if_auth_enabled():
                         headers={"WWW-Authenticate": "Bearer"},
                     )
                 jti: str | None = payload.get("jti")
-                if not jti or await is_jti_revoked(jti):
+                if not jti or await is_jti_revoked(jti, db):
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Could not validate credentials",
@@ -1353,7 +1508,7 @@ def require_permission(*permissions: str | Permission):
                 if username is None:
                     raise credentials_exception
                 jti: str | None = payload.get("jti")
-                if not jti or await is_jti_revoked(jti):
+                if not jti or await is_jti_revoked(jti, db):
                     raise credentials_exception
                 iat: int | float | None = payload.get("iat")
             except JWTError:
@@ -1440,7 +1595,7 @@ def require_permission_if_auth_enabled(*permissions: str | Permission):
                             headers={"WWW-Authenticate": "Bearer"},
                         )
                     jti: str | None = payload.get("jti")
-                    if not jti or await is_jti_revoked(jti):
+                    if not jti or await is_jti_revoked(jti, db):
                         raise HTTPException(
                             status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Could not validate credentials",
@@ -1540,7 +1695,7 @@ def require_any_permission_if_auth_enabled(*permissions: str | Permission):
                             headers={"WWW-Authenticate": "Bearer"},
                         )
                     jti: str | None = payload.get("jti")
-                    if not jti or await is_jti_revoked(jti):
+                    if not jti or await is_jti_revoked(jti, db):
                         raise HTTPException(
                             status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Could not validate credentials",
@@ -1611,6 +1766,54 @@ def require_camera_stream_token_if_auth_enabled():
 
 
 RequireCameraStreamTokenIfAuthEnabled = Depends(require_camera_stream_token_if_auth_enabled())
+
+
+def require_camwall_token_if_auth_enabled():
+    """Dependency that validates a Cam Wall token query param when auth is enabled.
+
+    Used by the read-only Cam Wall feed (#2531), which a kiosk browser loads
+    with the token in the URL because it has no login session to carry a JWT.
+    """
+
+    async def checker(token: str | None = None) -> None:
+        async with async_session() as db:
+            if not await is_auth_enabled(db):
+                return  # Auth disabled, allow access
+        if not token or not await verify_camwall_token(token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Valid Cam Wall token required. Create one under Settings > API Keys with the 'Cam Wall' scope.",
+            )
+
+    return checker
+
+
+RequireCamWallTokenIfAuthEnabled = Depends(require_camwall_token_if_auth_enabled())
+
+
+def require_overlay_token_if_auth_enabled():
+    """Dependency that validates a streaming-overlay token query param when auth
+    is enabled.
+
+    Used by the read-only overlay status feed (#2613), which OBS (or any
+    embed with no login session) loads with the token in the URL because it
+    has no JWT to carry.
+    """
+
+    async def checker(token: str | None = None) -> None:
+        async with async_session() as db:
+            if not await is_auth_enabled(db):
+                return  # Auth disabled, allow access
+        if not token or not await verify_overlay_token(token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Valid overlay token required. Create one under Settings > API Keys with the 'Streaming Overlay' scope.",
+            )
+
+    return checker
+
+
+RequireOverlayTokenIfAuthEnabled = Depends(require_overlay_token_if_auth_enabled())
 
 
 def require_ownership_permission(
@@ -1694,7 +1897,7 @@ def require_ownership_permission(
                             headers={"WWW-Authenticate": "Bearer"},
                         )
                     jti: str | None = payload.get("jti")
-                    if not jti or await is_jti_revoked(jti):
+                    if not jti or await is_jti_revoked(jti, db):
                         raise HTTPException(
                             status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Could not validate credentials",

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart } from 'lucide-react';
+import { Loader2, Plus, Plug, AlertTriangle, RotateCcw, Bell, Download, RefreshCw, ExternalLink, Globe, Droplets, Thermometer, FileText, Edit2, Send, CheckCircle, XCircle, History, Trash2, Zap, TrendingUp, Calendar, DollarSign, Power, PowerOff, Key, Copy, Database, X, Shield, Printer, Cylinder, Wifi, Home, Video, Users, Lock, Unlock, ChevronDown, Save, Mail, Flame, Layers, ListOrdered, Code, Search, Scale, Settings as SettingsIcon, ScanEye, Cog, QrCode, Heart, Briefcase, Workflow, UploadCloud } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -7,10 +7,14 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatDateOnly } from '../utils/date';
 import { getCurrencySymbol, SUPPORTED_CURRENCIES } from '../utils/currency';
 import { checkPasswordComplexity } from '../utils/password';
+import { fleetAudience, sponsorHref } from '../utils/fleetAudience';
 import { PRESET_CATEGORIES, parsePresetTriple } from '../utils/temperatureFanPresets';
-import type { APIKey, AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse } from '../api/client';
+import { CALIBRATION_MODES, CALIBRATION_MODE_ACTIVE, CALIBRATION_MODE_INACTIVE } from '../utils/calibrationMode';
+import { PreheatFilamentTargetsEditor } from '../components/PreheatFilamentTargetsEditor';
+import type { APIKey, AppSettings, AppSettingsUpdate, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse, CalibrationMode } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
 import { SlicerBundlesPanel } from '../components/SlicerBundlesPanel';
+import { SlicerPipelinesPanel } from '../components/SlicerPipelinesPanel';
 import { CameraTokensSection } from './CameraTokensPage';
 import { Collapsible } from '../components/Collapsible';
 import { Button } from '../components/Button';
@@ -69,6 +73,7 @@ registerSettingsSearch({ labelKey: 'settings.defaultPrintOptions', labelFallback
 registerSettingsSearch({ labelKey: 'settings.tempFanPresetsTitle', labelFallback: 'Temperature & Fan Presets', tab: 'queue', keywords: 'temperature fan presets nozzle bed chamber quick buttons popover', anchor: 'card-temp-fan-presets' });
 registerSettingsSearch({ labelKey: 'settings.staggeredStart', labelFallback: 'Staggered Start', tab: 'queue', keywords: 'staggered batch delay start queue group', anchor: 'card-staggered' });
 registerSettingsSearch({ labelKey: 'settings.plateClear', labelFallback: 'Plate-Clear Confirmation', tab: 'queue', keywords: 'plate clear confirm auto queue', anchor: 'card-plate' });
+registerSettingsSearch({ labelKey: 'settings.concurrentUploadsTitle', labelFallback: 'Concurrent Uploads', tab: 'queue', keywords: 'concurrent parallel upload transfer ftp queue slow farm simultaneous', anchor: 'card-concurrent-uploads' });
 registerSettingsSearch({ labelKey: 'settings.gcodeInjection', labelFallback: 'G-code Injection', tab: 'queue', keywords: 'gcode injection start end autoprint farmloop swapmod autoclear printflow', anchor: 'card-gcode' });
 registerSettingsSearch({ labelKey: 'settings.slicerCard', labelFallback: 'Slicer', tab: 'queue', keywords: 'slicer orcaslicer bambustudio orca bambu api sidecar url docker preferred', anchor: 'card-slicer' });
 registerSettingsSearch({ labelKey: 'settings.queueDrying', tab: 'queue', keywords: 'drying presets temperature time humidity ams', anchor: 'card-drying' });
@@ -190,6 +195,11 @@ export function SettingsPage() {
   const initialTab = isLegacyEmailTab ? 'users' : (tabParam && validTabs.includes(tabParam as TabType) ? tabParam as TabType : 'general');
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [usersSubTab, setUsersSubTab] = useState<UsersSubTab>(isLegacyEmailTab ? 'email' : 'users');
+  // Workflow tab sub-tabs (#1425): 'dispatch' = current Workflow content,
+  // 'pipelines' = Slicer Pipelines management. URL: ?tab=queue&sub=pipelines.
+  const initialQueueSub: 'dispatch' | 'pipelines' =
+    tabParam === 'queue' && searchParams.get('sub') === 'pipelines' ? 'pipelines' : 'dispatch';
+  const [queueSubTab, setQueueSubTab] = useState<'dispatch' | 'pipelines'>(initialQueueSub);
 
   // Update URL when tab changes
   const handleTabChange = (tab: TabType) => {
@@ -197,10 +207,25 @@ export function SettingsPage() {
     if (tab === 'users') {
       setUsersSubTab('users');
     }
+    if (tab === 'queue') {
+      setQueueSubTab('dispatch');
+      searchParams.delete('sub');
+    }
     if (tab === 'general') {
       searchParams.delete('tab');
     } else {
       searchParams.set('tab', tab);
+    }
+    setSearchParams(searchParams, { replace: true });
+  };
+
+  // Switch the Workflow tab's sub-tab and reflect it in the URL so deep-links work.
+  const handleQueueSubTabChange = (sub: 'dispatch' | 'pipelines') => {
+    setQueueSubTab(sub);
+    if (sub === 'pipelines') {
+      searchParams.set('sub', 'pipelines');
+    } else {
+      searchParams.delete('sub');
     }
     setSearchParams(searchParams, { replace: true });
   };
@@ -212,6 +237,9 @@ export function SettingsPage() {
     can_read_status: true,
     can_manage_library: true,
     can_manage_inventory: true,
+    can_manage_maintenance: true,
+    can_manage_archives: true,
+    can_manage_projects: true,
     can_access_cloud: false,
     can_update_energy_cost: false,
   });
@@ -371,7 +399,7 @@ export function SettingsPage() {
   });
 
   const createAPIKeyMutation = useMutation({
-    mutationFn: (data: { name: string; can_queue: boolean; can_control_printer: boolean; can_read_status: boolean; can_manage_library: boolean; can_manage_inventory: boolean; can_access_cloud: boolean }) =>
+    mutationFn: (data: { name: string; can_queue: boolean; can_control_printer: boolean; can_read_status: boolean; can_manage_library: boolean; can_manage_inventory: boolean; can_manage_maintenance: boolean; can_manage_archives: boolean; can_manage_projects: boolean; can_access_cloud: boolean }) =>
       api.createAPIKey(data),
     onSuccess: (data) => {
       setCreatedAPIKey(data.key || null);
@@ -402,6 +430,9 @@ export function SettingsPage() {
     queryKey: ['printers'],
     queryFn: api.getPrinters,
   });
+
+  // A business-sized fleet gets the commercial ask instead of the donation ask.
+  const sponsorAudience = fleetAudience(printers?.length ?? 0);
 
   const { data: notificationTemplates, isLoading: templatesLoading } = useQuery({
     queryKey: ['notification-templates'],
@@ -980,15 +1011,20 @@ export function SettingsPage() {
       settings.prometheus_enabled !== localSettings.prometheus_enabled ||
       settings.prometheus_token !== localSettings.prometheus_token ||
       (settings.user_notifications_enabled ?? true) !== (localSettings.user_notifications_enabled ?? true) ||
-      (settings.default_bed_levelling ?? true) !== (localSettings.default_bed_levelling ?? true) ||
-      (settings.default_flow_cali ?? false) !== (localSettings.default_flow_cali ?? false) ||
+      (settings.default_bed_levelling ?? 'auto') !== (localSettings.default_bed_levelling ?? 'auto') ||
+      (settings.default_flow_cali ?? 'auto') !== (localSettings.default_flow_cali ?? 'auto') ||
       (settings.default_vibration_cali ?? true) !== (localSettings.default_vibration_cali ?? true) ||
       (settings.default_layer_inspect ?? false) !== (localSettings.default_layer_inspect ?? false) ||
       (settings.default_timelapse ?? false) !== (localSettings.default_timelapse ?? false) ||
-      (settings.default_nozzle_offset_cali ?? true) !== (localSettings.default_nozzle_offset_cali ?? true) ||
+      (settings.default_nozzle_offset_cali ?? 'auto') !== (localSettings.default_nozzle_offset_cali ?? 'auto') ||
       (settings.stagger_group_size ?? 2) !== (localSettings.stagger_group_size ?? 2) ||
       (settings.stagger_interval_minutes ?? 5) !== (localSettings.stagger_interval_minutes ?? 5) ||
       (settings.require_plate_clear ?? false) !== (localSettings.require_plate_clear ?? false) ||
+      (settings.queue_max_concurrent_uploads ?? 4) !== (localSettings.queue_max_concurrent_uploads ?? 4) ||
+      (settings.preheat_enabled ?? false) !== (localSettings.preheat_enabled ?? false) ||
+      (settings.preheat_filament_targets ?? '') !== (localSettings.preheat_filament_targets ?? '') ||
+      (settings.preheat_max_wait_seconds ?? 900) !== (localSettings.preheat_max_wait_seconds ?? 900) ||
+      (settings.preheat_soak_seconds ?? 300) !== (localSettings.preheat_soak_seconds ?? 300) ||
       (settings.nozzle_temp_presets ?? '') !== (localSettings.nozzle_temp_presets ?? '') ||
       (settings.bed_temp_presets ?? '') !== (localSettings.bed_temp_presets ?? '') ||
       (settings.chamber_temp_presets ?? '') !== (localSettings.chamber_temp_presets ?? '') ||
@@ -1083,6 +1119,11 @@ export function SettingsPage() {
         stagger_group_size: localSettings.stagger_group_size,
         stagger_interval_minutes: localSettings.stagger_interval_minutes,
         require_plate_clear: localSettings.require_plate_clear,
+        queue_max_concurrent_uploads: localSettings.queue_max_concurrent_uploads,
+        preheat_enabled: localSettings.preheat_enabled,
+        preheat_filament_targets: localSettings.preheat_filament_targets,
+        preheat_max_wait_seconds: localSettings.preheat_max_wait_seconds,
+        preheat_soak_seconds: localSettings.preheat_soak_seconds,
         nozzle_temp_presets: localSettings.nozzle_temp_presets,
         bed_temp_presets: localSettings.bed_temp_presets,
         chamber_temp_presets: localSettings.chamber_temp_presets,
@@ -1471,30 +1512,41 @@ export function SettingsPage() {
       <div className="flex-1 min-w-0">
       {activeTab === 'general' && (
       <>
-      {/* Sponsor banner — prominent independence callout */}
+      {/* Sponsor banner — independence callout, or the commercial ask on a
+          business-sized fleet (see utils/fleetAudience). */}
       <a
-        href="https://bambuddy.cool/sponsors.html?from=app-settings"
+        href={sponsorHref(sponsorAudience, 'app-settings')}
         target="_blank"
         rel="noopener noreferrer"
         className="group block mb-4 lg:mb-6 rounded-xl border border-bambu-green/30 bg-gradient-to-br from-bambu-green/15 via-bambu-green/5 to-transparent hover:border-bambu-green/50 hover:from-bambu-green/20 transition-colors"
       >
         <div className="flex flex-col md:flex-row items-start md:items-center gap-4 p-4 md:p-5">
           <div className="p-3 rounded-lg bg-bambu-green/20 text-bambu-green flex-shrink-0">
-            <Heart className="w-6 h-6" />
+            {sponsorAudience === 'business' ? <Briefcase className="w-6 h-6" /> : <Heart className="w-6 h-6" />}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-base font-semibold text-white">
-              {t('sponsors.sectionTitle', 'Independent & community-funded')}
+              {sponsorAudience === 'business'
+                ? t('sponsors.businessTitle', 'Bambuddy for business')
+                : t('sponsors.sectionTitle', 'Independent & community-funded')}
             </p>
             <p className="text-sm text-bambu-gray mt-0.5">
-              {t(
-                'sponsors.tagline',
-                'Bambuddy is free and stays that way because people choose to support it. No VC, no cloud lock-in.'
-              )}
+              {sponsorAudience === 'business'
+                ? t(
+                    'sponsors.businessTagline',
+                    "You're running {{count}} printers. Priority support, commercial licensing and invoicing are available for teams and print farms.",
+                    { count: printers?.length ?? 0 }
+                  )
+                : t(
+                    'sponsors.tagline',
+                    'Bambuddy is free and stays that way because people choose to support it. No VC, no cloud lock-in.'
+                  )}
             </p>
           </div>
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-bambu-green/20 text-bambu-green group-hover:bg-bambu-green/30 text-sm font-medium whitespace-nowrap self-start md:self-auto">
-            {t('sponsors.viewSupporters', 'View supporters')}
+            {sponsorAudience === 'business'
+              ? t('sponsors.businessCta', 'Bambuddy for business')
+              : t('sponsors.viewSupporters', 'View supporters')}
             <ExternalLink className="w-4 h-4" />
           </div>
         </div>
@@ -2342,7 +2394,7 @@ export function SettingsPage() {
                       <div className="mt-2 text-xs text-bambu-gray">
                         {t('settings.storageUsageTotal', 'Total')}: <span className="text-white">{storageUsage.total_formatted}</span>
                         {storageUsage.scan_errors > 0 && (
-                          <span className="ml-2 text-amber-400">
+                          <span className="ml-2 text-amber-700 dark:text-amber-400">
                             {t('settings.storageUsageErrors', 'Scan errors')}: {storageUsage.scan_errors}
                           </span>
                         )}
@@ -2542,7 +2594,7 @@ export function SettingsPage() {
                         {updateStatus.message}
                       </div>
                     ) : updateStatus?.status === 'error' ? (
-                      <div className="mt-3 p-2 bg-red-500/20 rounded text-sm text-red-400">
+                      <div className="mt-3 p-2 bg-red-100 dark:bg-red-500/20 rounded text-sm text-red-700 dark:text-red-400">
                         {updateStatus.error || updateStatus.message}
                       </div>
                     ) : updateCheck?.is_ha_addon ? (
@@ -2591,7 +2643,7 @@ export function SettingsPage() {
                     )}
                   </div>
                 ) : updateCheck?.error ? (
-                  <div className="mt-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-sm text-red-400">
+                  <div className="mt-2 p-2 bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30 rounded text-sm text-red-700 dark:text-red-400">
                     {t('settings.failedToCheckUpdates', { error: updateCheck.error })}
                   </div>
                 ) : updateCheck && !updateCheck.update_available ? (
@@ -2619,7 +2671,7 @@ export function SettingsPage() {
           <Card id="card-externalurl">
             <CardHeader>
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Globe className="w-5 h-5 text-blue-400" />
+                <Globe className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 {t('settings.externalUrl')}
               </h2>
             </CardHeader>
@@ -2648,7 +2700,7 @@ export function SettingsPage() {
           <Card id="card-ftpretry">
             <CardHeader>
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <RefreshCw className="w-5 h-5 text-blue-400" />
+                <RefreshCw className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 {t('settings.ftpRetry')}
               </h2>
             </CardHeader>
@@ -2752,7 +2804,7 @@ export function SettingsPage() {
                 {localSettings.ha_enabled && haTestResult && (
                   <div className="flex items-center gap-2">
                     <span className={`w-2.5 h-2.5 rounded-full ${haTestResult.success ? 'bg-green-400' : 'bg-red-400'}`} />
-                    <span className={`text-sm ${haTestResult.success ? 'text-green-400' : 'text-red-400'}`}>
+                    <span className={`text-sm ${haTestResult.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
                       {haTestResult.success ? t('settings.connected') : t('settings.disconnected')}
                     </span>
                   </div>
@@ -2893,13 +2945,13 @@ export function SettingsPage() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                  <Wifi className="w-5 h-5 text-blue-400" />
+                  <Wifi className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                   {t('settings.mqttPublishing')}
                 </h2>
                 {mqttStatus?.enabled && (
                   <div className="flex items-center gap-2">
                     <span className={`w-2.5 h-2.5 rounded-full ${mqttStatus.connected ? 'bg-green-400' : 'bg-red-400'}`} />
-                    <span className={`text-sm ${mqttStatus.connected ? 'text-green-400' : 'text-red-400'}`}>
+                    <span className={`text-sm ${mqttStatus.connected ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
                       {mqttStatus.connected ? t('settings.connected') : t('settings.disconnected')}
                     </span>
                   </div>
@@ -3050,7 +3102,7 @@ export function SettingsPage() {
           <Card id="card-prometheus">
             <CardHeader>
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-orange-400" />
+                <TrendingUp className="w-5 h-5 text-orange-600 dark:text-orange-400" />
                 {t('settings.prometheusMetrics')}
               </h2>
             </CardHeader>
@@ -3096,12 +3148,12 @@ export function SettingsPage() {
                   <div className="pt-2 border-t border-bambu-dark-tertiary">
                     <p className="text-sm text-white mb-2">{t('settings.availableMetrics')}</p>
                     <div className="text-xs text-bambu-gray space-y-1">
-                      <p><code className="text-orange-400">bambuddy_printer_connected</code> - {t('settings.metricsConnectionStatus')}</p>
-                      <p><code className="text-orange-400">bambuddy_printer_state</code> - {t('settings.metricsPrinterState')}</p>
-                      <p><code className="text-orange-400">bambuddy_print_progress</code> - {t('settings.metricsPrintProgress')}</p>
-                      <p><code className="text-orange-400">bambuddy_bed_temp_celsius</code> - {t('settings.metricsBedTemp')}</p>
-                      <p><code className="text-orange-400">bambuddy_nozzle_temp_celsius</code> - {t('settings.metricsNozzleTemp')}</p>
-                      <p><code className="text-orange-400">bambuddy_prints_total</code> - {t('settings.metricsPrintsTotal')}</p>
+                      <p><code className="text-orange-700 dark:text-orange-400">bambuddy_printer_connected</code> - {t('settings.metricsConnectionStatus')}</p>
+                      <p><code className="text-orange-700 dark:text-orange-400">bambuddy_printer_state</code> - {t('settings.metricsPrinterState')}</p>
+                      <p><code className="text-orange-700 dark:text-orange-400">bambuddy_print_progress</code> - {t('settings.metricsPrintProgress')}</p>
+                      <p><code className="text-orange-700 dark:text-orange-400">bambuddy_bed_temp_celsius</code> - {t('settings.metricsBedTemp')}</p>
+                      <p><code className="text-orange-700 dark:text-orange-400">bambuddy_nozzle_temp_celsius</code> - {t('settings.metricsNozzleTemp')}</p>
+                      <p><code className="text-orange-700 dark:text-orange-400">bambuddy_prints_total</code> - {t('settings.metricsPrintsTotal')}</p>
                       <p className="text-bambu-gray/70 italic">{t('settings.metricsMore')}</p>
                     </div>
                   </div>
@@ -3119,9 +3171,9 @@ export function SettingsPage() {
           <div className="bg-bambu-dark-secondary rounded-lg p-6 max-w-md w-full mx-4">
             <div className="flex items-center gap-3 mb-4">
               {haTestResult.success ? (
-                <CheckCircle className="w-8 h-8 text-green-400" />
+                <CheckCircle className="w-8 h-8 text-green-600 dark:text-green-400" />
               ) : (
-                <XCircle className="w-8 h-8 text-red-400" />
+                <XCircle className="w-8 h-8 text-red-600 dark:text-red-400" />
               )}
               <h3 className="text-lg font-medium text-white">
                 {haTestResult.success ? t('settings.connectionSuccessful') : t('settings.connectionFailed')}
@@ -3186,7 +3238,7 @@ export function SettingsPage() {
                     {bulkPlugActionMutation.isPending ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
-                      <PowerOff className="w-4 h-4 text-red-400" />
+                      <PowerOff className="w-4 h-4 text-red-600 dark:text-red-400" />
                     )}
                     {t('settings.allOff')}
                   </Button>
@@ -3210,7 +3262,7 @@ export function SettingsPage() {
             <Card className="mb-6">
               <CardHeader>
                 <h3 className="text-base font-semibold text-white flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-yellow-400" />
+                  <Zap className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
                   {t('settings.energySummary')}
                   {energyLoading && (
                     <Loader2 className="w-4 h-4 animate-spin text-bambu-gray ml-2" />
@@ -3477,7 +3529,7 @@ export function SettingsPage() {
                       {t('settings.testPassedCount', { count: testAllResult.success })}
                     </span>
                     {testAllResult.failed > 0 && (
-                      <span className="flex items-center gap-1 text-red-400">
+                      <span className="flex items-center gap-1 text-red-700 dark:text-red-400">
                         <XCircle className="w-4 h-4" />
                         {t('settings.testFailedCount', { count: testAllResult.failed })}
                       </span>
@@ -3486,7 +3538,7 @@ export function SettingsPage() {
                   {testAllResult.results.filter(r => !r.success).length > 0 && (
                     <div className="space-y-1 mt-2 pt-2 border-t border-bambu-dark-tertiary">
                       {testAllResult.results.filter(r => !r.success).map((result) => (
-                        <div key={result.provider_id} className="text-xs text-red-400">
+                        <div key={result.provider_id} className="text-xs text-red-700 dark:text-red-400">
                           <span className="font-medium">{result.provider_name}:</span> {result.message}
                         </div>
                       ))}
@@ -3831,6 +3883,42 @@ export function SettingsPage() {
                       <label className="flex items-center gap-3 cursor-pointer">
                         <input
                           type="checkbox"
+                          checked={newAPIKeyPermissions.can_manage_maintenance}
+                          onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_manage_maintenance: e.target.checked }))}
+                          className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
+                        />
+                        <div>
+                          <span className="text-white">{t('settings.manageMaintenance')}</span>
+                          <p className="text-xs text-bambu-gray">{t('settings.manageMaintenanceDescription')}</p>
+                        </div>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newAPIKeyPermissions.can_manage_archives}
+                          onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_manage_archives: e.target.checked }))}
+                          className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
+                        />
+                        <div>
+                          <span className="text-white">{t('settings.manageArchives')}</span>
+                          <p className="text-xs text-bambu-gray">{t('settings.manageArchivesDescription')}</p>
+                        </div>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newAPIKeyPermissions.can_manage_projects}
+                          onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_manage_projects: e.target.checked }))}
+                          className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
+                        />
+                        <div>
+                          <span className="text-white">{t('settings.manageProjects')}</span>
+                          <p className="text-xs text-bambu-gray">{t('settings.manageProjectsDescription')}</p>
+                        </div>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
                           checked={newAPIKeyPermissions.can_access_cloud}
                           onChange={(e) => setNewAPIKeyPermissions(prev => ({ ...prev, can_access_cloud: e.target.checked }))}
                           className="w-4 h-4 text-bambu-green rounded border-bambu-dark-tertiary bg-bambu-dark focus:ring-bambu-green"
@@ -3901,29 +3989,38 @@ export function SettingsPage() {
                         <div className="flex items-center gap-2">
                           <div className="flex gap-1 text-xs flex-wrap justify-end">
                             {key.can_read_status && (
-                              <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded">{t('settings.read')}</span>
+                              <span className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 rounded">{t('settings.read')}</span>
                             )}
                             {key.can_queue && (
-                              <span className="px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded">{t('queue.title')}</span>
+                              <span className="px-1.5 py-0.5 bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 rounded">{t('queue.title')}</span>
                             )}
                             {key.can_control_printer && (
-                              <span className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 rounded">{t('settings.control')}</span>
+                              <span className="px-1.5 py-0.5 bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400 rounded">{t('settings.control')}</span>
                             )}
                             {key.can_manage_library && (
-                              <span className="px-1.5 py-0.5 bg-cyan-500/20 text-cyan-400 rounded">{t('settings.libraryBadge')}</span>
+                              <span className="px-1.5 py-0.5 bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 rounded">{t('settings.libraryBadge')}</span>
                             )}
                             {key.can_manage_inventory && (
-                              <span className="px-1.5 py-0.5 bg-pink-500/20 text-pink-400 rounded">{t('settings.inventoryBadge')}</span>
+                              <span className="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-500/20 text-pink-700 dark:text-pink-400 rounded">{t('settings.inventoryBadge')}</span>
+                            )}
+                            {key.can_manage_maintenance && (
+                              <span className="px-1.5 py-0.5 bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-400 rounded">{t('settings.maintenanceBadge')}</span>
+                            )}
+                            {key.can_manage_archives && (
+                              <span className="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 rounded">{t('settings.archivesBadge')}</span>
+                            )}
+                            {key.can_manage_projects && (
+                              <span className="px-1.5 py-0.5 bg-lime-100 dark:bg-lime-500/20 text-lime-700 dark:text-lime-400 rounded">{t('settings.projectsBadge')}</span>
                             )}
                             {key.can_access_cloud && (
-                              <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded">{t('settings.cloudBadge', 'Cloud')}</span>
+                              <span className="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 rounded">{t('settings.cloudBadge', 'Cloud')}</span>
                             )}
                             {key.can_update_energy_cost && (
-                              <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded">{t('settings.energyCostBadge')}</span>
+                              <span className="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 rounded">{t('settings.energyCostBadge')}</span>
                             )}
                             {key.user_id === null && (
                               <span
-                                className="px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded"
+                                className="px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 rounded"
                                 title={t('settings.legacyKeyTooltip', 'Created before per-user ownership; recreate to use cloud access')}
                               >
                                 {t('settings.legacyKey', 'Legacy')}
@@ -3935,7 +4032,7 @@ export function SettingsPage() {
                             size="sm"
                             onClick={() => setShowDeleteAPIKeyConfirm(key.id)}
                           >
-                            <Trash2 className="w-4 h-4 text-red-400" />
+                            <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
                           </Button>
                         </div>
                       </div>
@@ -3970,32 +4067,32 @@ export function SettingsPage() {
                 </p>
                 <div className="space-y-2 font-mono text-xs">
                   <div className="p-2 bg-bambu-dark rounded">
-                    <span className="text-blue-400">GET</span>{' '}
+                    <span className="text-blue-700 dark:text-blue-400">GET</span>{' '}
                     <span className="text-white">/api/v1/webhook/status</span>
                     <span className="text-bambu-gray"> - {t('settings.webhook.getAllStatus')}</span>
                   </div>
                   <div className="p-2 bg-bambu-dark rounded">
-                    <span className="text-blue-400">GET</span>{' '}
+                    <span className="text-blue-700 dark:text-blue-400">GET</span>{' '}
                     <span className="text-white">/api/v1/webhook/status/:id</span>
                     <span className="text-bambu-gray"> - {t('settings.webhook.getSpecificStatus')}</span>
                   </div>
                   <div className="p-2 bg-bambu-dark rounded">
-                    <span className="text-green-400">POST</span>{' '}
+                    <span className="text-green-700 dark:text-green-400">POST</span>{' '}
                     <span className="text-white">/api/v1/webhook/queue</span>
                     <span className="text-bambu-gray"> - {t('settings.webhook.addToQueue')}</span>
                   </div>
                   <div className="p-2 bg-bambu-dark rounded">
-                    <span className="text-orange-400">POST</span>{' '}
+                    <span className="text-orange-700 dark:text-orange-400">POST</span>{' '}
                     <span className="text-white">/api/v1/webhook/printer/:id/pause</span>
                     <span className="text-bambu-gray"> - {t('settings.webhook.pausePrint')}</span>
                   </div>
                   <div className="p-2 bg-bambu-dark rounded">
-                    <span className="text-orange-400">POST</span>{' '}
+                    <span className="text-orange-700 dark:text-orange-400">POST</span>{' '}
                     <span className="text-white">/api/v1/webhook/printer/:id/resume</span>
                     <span className="text-bambu-gray"> - {t('settings.webhook.resumePrint')}</span>
                   </div>
                   <div className="p-2 bg-bambu-dark rounded">
-                    <span className="text-red-400">POST</span>{' '}
+                    <span className="text-red-700 dark:text-red-400">POST</span>{' '}
                     <span className="text-white">/api/v1/webhook/printer/:id/stop</span>
                     <span className="text-bambu-gray"> - {t('settings.webhook.stopPrint')}</span>
                   </div>
@@ -4070,8 +4167,37 @@ export function SettingsPage() {
       )}
 
       {/* Filament Tab */}
-      {/* Queue Tab */}
-      {activeTab === 'queue' && localSettings && (
+      {/* Queue Tab — sub-tabs: Queue & Dispatch (current content) / Pipelines (#1425) */}
+      {activeTab === 'queue' && (
+        <div className="space-y-3">
+          {/* Sub-tab nav, mirroring the Authentication tab pattern */}
+          <div className="flex gap-1 border-b border-bambu-dark-tertiary">
+            <button
+              onClick={() => handleQueueSubTabChange('dispatch')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+                queueSubTab === 'dispatch'
+                  ? 'text-bambu-green border-bambu-green'
+                  : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+              }`}
+            >
+              <ListOrdered className="w-4 h-4" />
+              {t('settings.tabs.queueDispatch', 'Queue & Dispatch')}
+            </button>
+            <button
+              onClick={() => handleQueueSubTabChange('pipelines')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+                queueSubTab === 'pipelines'
+                  ? 'text-bambu-green border-bambu-green'
+                  : 'text-bambu-gray hover:text-gray-900 dark:hover:text-white border-transparent'
+              }`}
+            >
+              <Workflow className="w-4 h-4" />
+              {t('settings.tabs.queuePipelines', 'Pipelines')}
+            </button>
+          </div>
+
+          {queueSubTab === 'pipelines' && <SlicerPipelinesPanel />}
+          {queueSubTab === 'dispatch' && localSettings && (
         <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
           {/* Left Column */}
           <div className="lg:w-1/2 space-y-3">
@@ -4088,31 +4214,94 @@ export function SettingsPage() {
                 {t('settings.defaultPrintOptionsDescription', 'Set default values for print options when starting new prints. These can be overridden per print in the print dialog.')}
               </p>
               {[
-                { key: 'default_bed_levelling' as const, label: t('settings.defaultBedLevelling', 'Bed Levelling'), desc: t('settings.defaultBedLevellingDesc', 'Auto-level bed before print'), fallback: true, dualNozzleOnly: false },
-                { key: 'default_flow_cali' as const, label: t('settings.defaultFlowCali', 'Flow Calibration'), desc: t('settings.defaultFlowCaliDesc', 'Calibrate extrusion flow'), fallback: false, dualNozzleOnly: false },
-                { key: 'default_vibration_cali' as const, label: t('settings.defaultVibrationCali', 'Vibration Calibration'), desc: t('settings.defaultVibrationCaliDesc', 'Reduce ringing artifacts'), fallback: true, dualNozzleOnly: false },
-                { key: 'default_layer_inspect' as const, label: t('settings.defaultLayerInspect', 'First Layer Inspection'), desc: t('settings.defaultLayerInspectDesc', 'AI inspection of first layer'), fallback: false, dualNozzleOnly: false },
-                { key: 'default_timelapse' as const, label: t('settings.defaultTimelapse', 'Timelapse'), desc: t('settings.defaultTimelapseDesc', 'Record timelapse video'), fallback: false, dualNozzleOnly: false },
-                { key: 'default_nozzle_offset_cali' as const, label: t('settings.defaultNozzleOffsetCali', 'Nozzle Offset Calibration'), desc: t('settings.defaultNozzleOffsetCaliDesc', 'Calibrate nozzle offsets between extruders'), fallback: true, dualNozzleOnly: true },
+                { key: 'default_bed_levelling' as const, label: t('settings.defaultBedLevelling', 'Bed Levelling'), desc: t('settings.defaultBedLevellingDesc', 'Auto-level bed before print'), fallback: true, dualNozzleOnly: false, tristate: true },
+                { key: 'default_flow_cali' as const, label: t('settings.defaultFlowCali', 'Flow Calibration'), desc: t('settings.defaultFlowCaliDesc', 'Calibrate extrusion flow'), fallback: false, dualNozzleOnly: false, tristate: true },
+                { key: 'default_vibration_cali' as const, label: t('settings.defaultVibrationCali', 'Vibration Calibration'), desc: t('settings.defaultVibrationCaliDesc', 'Reduce ringing artifacts'), fallback: true, dualNozzleOnly: false, tristate: false },
+                { key: 'default_layer_inspect' as const, label: t('settings.defaultLayerInspect', 'First Layer Inspection'), desc: t('settings.defaultLayerInspectDesc', 'AI inspection of first layer'), fallback: false, dualNozzleOnly: false, tristate: false },
+                { key: 'default_timelapse' as const, label: t('settings.defaultTimelapse', 'Timelapse'), desc: t('settings.defaultTimelapseDesc', 'Record timelapse video'), fallback: false, dualNozzleOnly: false, tristate: false },
+                { key: 'default_nozzle_offset_cali' as const, label: t('settings.defaultNozzleOffsetCali', 'Nozzle Offset Calibration'), desc: t('settings.defaultNozzleOffsetCaliDesc', 'Calibrate nozzle offsets between extruders'), fallback: true, dualNozzleOnly: true, tristate: true },
               ]
               .filter(({ dualNozzleOnly }) => !dualNozzleOnly || (printers || []).some(p => p.nozzle_count === 2))
-              .map(({ key, label, desc, fallback }) => (
+              .map(({ key, label, desc, fallback, tristate }) => (
                 <div key={key} className="flex items-center justify-between">
                   <div className="flex-1 mr-4">
                     <p className="text-sm text-white">{label}</p>
                     <p className="text-xs text-bambu-gray mt-0.5">{desc}</p>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={localSettings[key] ?? fallback}
-                      onChange={(e) => updateSetting(key, e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
-                  </label>
+                  {tristate ? (
+                    <div className="flex gap-1 shrink-0">
+                      {CALIBRATION_MODES.map((mode) => {
+                        const current = (localSettings[key] as CalibrationMode | undefined) ?? 'auto';
+                        return (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => updateSetting(key, mode)}
+                            className={`px-2.5 py-1 text-xs rounded transition-colors ${
+                              current === mode
+                                ? CALIBRATION_MODE_ACTIVE[mode]
+                                : CALIBRATION_MODE_INACTIVE
+                            }`}
+                          >
+                            {t(`settings.calibrationMode_${mode}`)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="flex gap-1 shrink-0">
+                      {(['off', 'on'] as const).map((mode) => {
+                        const current = ((localSettings[key] as boolean | undefined) ?? fallback) ? 'on' : 'off';
+                        return (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => updateSetting(key, mode === 'on')}
+                            className={`px-2.5 py-1 text-xs rounded transition-colors ${
+                              current === mode
+                                ? CALIBRATION_MODE_ACTIVE[mode]
+                                : CALIBRATION_MODE_INACTIVE
+                            }`}
+                          >
+                            {t(`settings.calibrationMode_${mode}`)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               ))}
+            </CardContent>
+          </Card>
+
+          {/* Plate-Clear Confirmation */}
+          <Card id="card-plate">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Shield className="w-4 h-4 text-bambu-green" />
+                {t('settings.plateClear', 'Plate-Clear Confirmation')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 mr-4">
+                  <p className="text-sm text-white">
+                    {t('settings.requirePlateClear', 'Require plate-clear confirmation')}
+                  </p>
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.requirePlateClearDescription', 'When enabled, the scheduler waits for per-printer plate-clear confirmation before starting queued prints on printers with finished jobs. Disabling this also hides the plate status badge and the "Mark plate as cleared" button on printer cards.')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.require_plate_clear ?? false}
+                    onChange={(e) => updateSetting('require_plate_clear', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
             </CardContent>
           </Card>
 
@@ -4234,34 +4423,132 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Plate-Clear Confirmation */}
-          <Card id="card-plate">
+          {/* Concurrent queue uploads (#2555) */}
+          <Card id="card-concurrent-uploads">
             <CardHeader>
               <h3 className="text-base font-semibold text-white flex items-center gap-2">
-                <Shield className="w-4 h-4 text-bambu-green" />
-                {t('settings.plateClear', 'Plate-Clear Confirmation')}
+                <UploadCloud className="w-4 h-4 text-bambu-green" />
+                {t('settings.concurrentUploadsTitle', 'Concurrent Uploads')}
               </h3>
             </CardHeader>
             <CardContent className="space-y-3">
+              <p className="text-xs text-bambu-gray">
+                {t('settings.concurrentUploadsDescription', 'How many printers the queue may send files to at the same time. Printers receive files slowly (a large print can take several minutes), and each one waits its turn — so on a bigger fleet, raising this is what stops the last printer in a batch from waiting out every transfer before it. Lower it if your network or Bambuddy host struggles with parallel transfers.')}
+              </p>
+              <div className="w-full sm:w-1/2">
+                <label className="block text-xs text-bambu-gray mb-1">
+                  {t('settings.concurrentUploadsLabel', 'Printers uploaded to at once')}
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={16}
+                  value={localSettings.queue_max_concurrent_uploads ?? 4}
+                  onChange={(e) => updateSetting('queue_max_concurrent_uploads', Math.max(1, Math.min(16, parseInt(e.target.value) || 1)))}
+                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+                />
+                <p className="text-xs text-bambu-gray mt-1">
+                  {t('settings.concurrentUploadsHelp', '1 sends to one printer at a time (the old behaviour). Default is 4.')}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Preheat & Heat Soak (#1468) */}
+          <Card id="card-preheat">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Flame className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                {t('settings.preheatTitle', 'Preheat & Heat Soak')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-bambu-gray">
+                {t('settings.preheatDescription', 'Heat the bed (and chamber, if supported) and hold at temperature before each queued print starts. Helpful for engineering filaments (PA, ABS) on printers without an active chamber heater — the bed warms the chamber by radiation while the soak timer runs. The bed target is read from the print file; chamber behaviour depends on printer model.')}
+              </p>
               <div className="flex items-center justify-between">
                 <div className="flex-1 mr-4">
                   <p className="text-sm text-white">
-                    {t('settings.requirePlateClear', 'Require plate-clear confirmation')}
+                    {t('settings.preheatEnabled', 'Enable preheat & soak')}
                   </p>
-                  <p className="text-xs text-bambu-gray mt-1">
-                    {t('settings.requirePlateClearDescription', 'When enabled, the scheduler waits for per-printer plate-clear confirmation before starting queued prints on printers with finished jobs. Disabling this also hides the plate status badge and the "Mark plate as cleared" button on printer cards.')}
+                  <p className="text-xs text-bambu-gray mt-0.5">
+                    {t('settings.preheatEnabledDesc', 'When off, queued prints dispatch immediately.')}
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={localSettings.require_plate_clear ?? false}
-                    onChange={(e) => updateSetting('require_plate_clear', e.target.checked)}
+                    checked={localSettings.preheat_enabled ?? false}
+                    onChange={(e) => updateSetting('preheat_enabled', e.target.checked)}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
                 </label>
               </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="block text-xs text-bambu-gray mb-1">
+                    {t('settings.preheatMaxWait', 'Max wait (seconds)')}
+                  </label>
+                  <input
+                    type="number"
+                    min={60}
+                    max={3600}
+                    value={localSettings.preheat_max_wait_seconds ?? 900}
+                    onChange={(e) => updateSetting('preheat_max_wait_seconds', Math.max(60, Math.min(3600, parseInt(e.target.value) || 900)))}
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green disabled:opacity-50"
+                    disabled={!(localSettings.preheat_enabled ?? false)}
+                  />
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.preheatMaxWaitHelp', 'Cap on the chamber warm-up phase before falling through.')}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs text-bambu-gray mb-1">
+                    {t('settings.preheatSoak', 'Soak (seconds)')}
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={1800}
+                    value={localSettings.preheat_soak_seconds ?? 300}
+                    onChange={(e) => updateSetting('preheat_soak_seconds', Math.max(0, Math.min(1800, parseInt(e.target.value) || 0)))}
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green disabled:opacity-50"
+                    disabled={!(localSettings.preheat_enabled ?? false)}
+                  />
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.preheatSoakHelp', 'Hold time after target reached or max-wait elapsed.')}
+                  </p>
+                </div>
+              </div>
+              {/* Per-filament chamber target editor (#1468) */}
+              <div className="pt-2 border-t border-bambu-dark-tertiary/50">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-sm text-white">
+                    {t('settings.preheatFilamentTargetsLabel', 'Per-filament chamber target (°C)')}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => updateSetting('preheat_filament_targets', '')}
+                    title={t('settings.preheatFilamentTargetsReset', 'Reset to defaults')}
+                    className="text-bambu-gray hover:text-white transition-colors p-1 rounded hover:bg-bambu-dark-tertiary"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <p className="text-xs text-bambu-gray mb-2">
+                  {t('settings.preheatFilamentTargetsHint', 'Bambuddy picks the highest target across the loaded AMS slots; PLA-only prints derive 0 and skip the chamber phase automatically.')}
+                </p>
+                <PreheatFilamentTargetsEditor
+                  value={localSettings.preheat_filament_targets ?? ''}
+                  onChange={(v) => updateSetting('preheat_filament_targets', v)}
+                  disabled={!(localSettings.preheat_enabled ?? false)}
+                />
+              </div>
+              <p className="text-xs text-bambu-gray pt-1 border-t border-bambu-dark-tertiary/50">
+                <span className="font-medium text-bambu-gray/90">{t('settings.preheatHardwareTitle', 'Per-printer behaviour:')}</span>{' '}
+                {t('settings.preheatHardwareDetail', 'H2C/H2D/H2D Pro/H2S/X2D/X1E actively heat the chamber via M141. X1C/P2S read chamber temp but rely on bed-radiation heating. P1S/P1P/A1/A1 Mini have no chamber sensor — only the soak timer applies.')}
+              </p>
             </CardContent>
           </Card>
 
@@ -4375,6 +4662,47 @@ export function SettingsPage() {
           </div>
           {/* Right Column */}
           <div className="lg:w-1/2 space-y-3">
+
+          {/* Slicer Pipelines (#1425 PR C). Cap on the copies input in
+              the Run-with-pipeline modal to prevent fat-fingered queue
+              floods. Hard ceiling at 1000 enforced server-side. */}
+          <Card id="card-pipelines">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Workflow className="w-4 h-4 text-bambu-green" />
+                {t('settings.pipelineLimits.title', 'Slicer Pipeline limits')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1">
+                  <p className="text-sm text-white">
+                    {t('settings.pipelineLimits.maxCopiesLabel', 'Max copies per run')}
+                  </p>
+                  <p className="text-xs text-bambu-gray mt-0.5">
+                    {t(
+                      'settings.pipelineLimits.maxCopiesDesc',
+                      'Upper bound on the copies operators can request when running a pipeline. Server-side hard cap is 1000.',
+                    )}
+                  </p>
+                </div>
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={localSettings.pipeline_max_copies ?? 50}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value, 10);
+                    if (Number.isNaN(n)) return;
+                    updateSetting('pipeline_max_copies', Math.max(1, Math.min(1000, n)));
+                  }}
+                  aria-label={t('settings.pipelineLimits.maxCopiesLabel', 'Max copies per run')}
+                  className="w-24 px-2 py-1 bg-bambu-dark border border-bambu-dark-tertiary rounded text-white text-sm"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Slicer */}
           <Card id="card-slicer">
             <CardHeader>
@@ -4413,7 +4741,7 @@ export function SettingsPage() {
                 {(localSettings.preferred_slicer ?? 'bambu_studio') === 'orcaslicer' && (
                   <div
                     role="alert"
-                    className="text-xs text-amber-200 bg-amber-900/20 border border-amber-700/40 rounded p-2 mt-2"
+                    className="text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700/40 rounded p-2 mt-2"
                   >
                     {t(
                       'settings.orcaslicerKnownIssuesWarning',
@@ -4520,7 +4848,7 @@ export function SettingsPage() {
           <Card>
             <CardHeader>
               <h3 className="text-base font-semibold text-white flex items-center gap-2" id="card-drying">
-                <Flame className="w-4 h-4 text-amber-400" />
+                <Flame className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                 {t('settings.queueDrying')}
               </h3>
             </CardHeader>
@@ -4798,6 +5126,8 @@ export function SettingsPage() {
           </Card>
           </div>
         </div>
+          )}
+        </div>
       )}
 
       {activeTab === 'filament' && localSettings && (
@@ -4890,7 +5220,7 @@ export function SettingsPage() {
                 {/* Humidity Thresholds */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 text-white">
-                    <Droplets className="w-4 h-4 text-blue-400" />
+                    <Droplets className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                     <span className="font-medium">{t('settings.humidity')}</span>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -4930,7 +5260,7 @@ export function SettingsPage() {
                   <p className="text-xs text-bambu-gray">
                     {t('settings.aboveFairBad')}
                   </p>
-                  <p className="text-xs text-amber-400/70">
+                  <p className="text-xs text-amber-700/80 dark:text-amber-400/70">
                     {t('settings.fairAlsoDryingThreshold')}
                   </p>
                 </div>
@@ -4938,7 +5268,7 @@ export function SettingsPage() {
                 {/* Temperature Thresholds */}
                 <div className="space-y-3 pt-2 border-t border-bambu-dark-tertiary">
                   <div className="flex items-center gap-2 text-white">
-                    <Thermometer className="w-4 h-4 text-orange-400" />
+                    <Thermometer className="w-4 h-4 text-orange-600 dark:text-orange-400" />
                     <span className="font-medium">{t('settings.temperature')}</span>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -4985,7 +5315,7 @@ export function SettingsPage() {
                 {/* History Retention */}
                 <div className="space-y-3 pt-4 border-t border-bambu-dark-tertiary">
                   <div className="flex items-center gap-2 text-white">
-                    <Database className="w-4 h-4 text-purple-400" />
+                    <Database className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                     <span className="font-medium">{t('settings.historyRetention')}</span>
                   </div>
                   <div>
@@ -5287,7 +5617,7 @@ export function SettingsPage() {
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center ${authEnabled ? 'bg-green-500/20' : 'bg-gray-500/20'}`}>
                     {authEnabled ? (
-                      <Lock className="w-5 h-5 text-green-400" />
+                      <Lock className="w-5 h-5 text-green-600 dark:text-green-400" />
                     ) : (
                       <Unlock className="w-5 h-5 text-gray-400" />
                     )}
@@ -5322,7 +5652,7 @@ export function SettingsPage() {
               <CardContent className="py-4">
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-full flex items-center justify-center bg-blue-500/20 flex-shrink-0">
-                    <Mail className="w-5 h-5 text-blue-400" />
+                    <Mail className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div>
                     <h3 className="text-white font-medium">{t('settings.email.advancedAuthEnabled')}</h3>
@@ -5394,9 +5724,9 @@ export function SettingsPage() {
                       </div>
                     </div>
                     {(localSettings?.session_max_hours ?? 24) > 24 && (
-                      <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-                        <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                        <p className="text-xs text-yellow-200">
+                      <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-500/30">
+                        <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
+                        <p className="text-xs text-yellow-800 dark:text-yellow-200">
                           {t('settings.sessionPolicy.warning')}
                         </p>
                       </div>
@@ -5427,7 +5757,7 @@ export function SettingsPage() {
                           <p className="text-white font-medium text-lg">{user.username}</p>
                           <div className="flex flex-wrap gap-1 mt-2">
                             {user.is_admin && (
-                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300">
+                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300">
                                 {t('settings.admin')}
                               </span>
                             )}
@@ -5436,11 +5766,11 @@ export function SettingsPage() {
                                 key={group.id}
                                 className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                                   group.name === 'Administrators'
-                                    ? 'bg-purple-500/20 text-purple-300'
+                                    ? 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300'
                                     : group.name === 'Operators'
-                                    ? 'bg-blue-500/20 text-blue-300'
+                                    ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300'
                                     : group.name === 'Viewers'
-                                    ? 'bg-green-500/20 text-green-300'
+                                    ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300'
                                     : 'bg-gray-500/20 text-gray-300'
                                 }`}
                               >
@@ -5491,12 +5821,12 @@ export function SettingsPage() {
                               <p className="text-white font-medium truncate">{userItem.username}</p>
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {userItem.auth_source === 'ldap' && (
-                                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-cyan-500/20 text-cyan-300">
+                                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300">
                                     LDAP
                                   </span>
                                 )}
                                 {userItem.is_admin && (
-                                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300">
+                                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300">
                                     {t('settings.admin')}
                                   </span>
                                 )}
@@ -5505,11 +5835,11 @@ export function SettingsPage() {
                                     key={group.id}
                                     className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                                       group.name === 'Administrators'
-                                        ? 'bg-purple-500/20 text-purple-300'
+                                        ? 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300'
                                         : group.name === 'Operators'
-                                        ? 'bg-blue-500/20 text-blue-300'
+                                        ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300'
                                         : group.name === 'Viewers'
-                                        ? 'bg-green-500/20 text-green-300'
+                                        ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300'
                                         : 'bg-gray-500/20 text-gray-300'
                                     }`}
                                   >
@@ -5574,17 +5904,17 @@ export function SettingsPage() {
                                 <Shield
                                   className={`w-4 h-4 ${
                                     group.name === 'Administrators'
-                                      ? 'text-purple-400'
+                                      ? 'text-purple-600 dark:text-purple-400'
                                       : group.name === 'Operators'
-                                      ? 'text-blue-400'
+                                      ? 'text-blue-600 dark:text-blue-400'
                                       : group.name === 'Viewers'
-                                      ? 'text-green-400'
+                                      ? 'text-green-600 dark:text-green-400'
                                       : 'text-bambu-gray'
                                   }`}
                                 />
                                 <span className="text-white font-medium">{group.name}</span>
                                 {group.is_system && (
-                                  <span className="px-2 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-400">
+                                  <span className="px-2 py-0.5 rounded text-xs bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400">
                                     {t('settings.system')}
                                   </span>
                                 )}
@@ -5836,7 +6166,7 @@ export function SettingsPage() {
                     minLength={6}
                   />
                   {userFormData.confirmPassword && userFormData.password !== userFormData.confirmPassword && (
-                    <p className="text-red-400 text-xs mt-1">{t('settings.passwordsDoNotMatch')}</p>
+                    <p className="text-red-700 dark:text-red-400 text-xs mt-1">{t('settings.passwordsDoNotMatch')}</p>
                   )}
                 </div>
                 <div>
@@ -5855,7 +6185,7 @@ export function SettingsPage() {
                         />
                         <span className="text-sm text-white">{group.name}</span>
                         {group.is_system && (
-                          <span className="text-xs text-yellow-400">{t('settings.systemBadge')}</span>
+                          <span className="text-xs text-yellow-700 dark:text-yellow-400">{t('settings.systemBadge')}</span>
                         )}
                       </label>
                     ))}
@@ -5959,7 +6289,7 @@ export function SettingsPage() {
                 {/* Username Field */}
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    {t('settings.username')} {advancedAuthStatus?.advanced_auth_enabled && <span className="text-red-400">*</span>}
+                    {t('settings.username')} {advancedAuthStatus?.advanced_auth_enabled && <span className="text-red-700 dark:text-red-400">*</span>}
                   </label>
                   <input
                     type="text"
@@ -5974,7 +6304,7 @@ export function SettingsPage() {
                 {/* Email Field */}
                 <div>
                   <label className="block text-sm font-medium text-white mb-2">
-                    {t('users.form.email') || 'Email'} {advancedAuthStatus?.advanced_auth_enabled ? <span className="text-red-400">*</span> : <span className="text-bambu-gray font-normal">({t('users.form.optional') || 'optional'})</span>}
+                    {t('users.form.email') || 'Email'} {advancedAuthStatus?.advanced_auth_enabled ? <span className="text-red-700 dark:text-red-400">*</span> : <span className="text-bambu-gray font-normal">({t('users.form.optional') || 'optional'})</span>}
                   </label>
                   <input
                     type="email"
@@ -6021,7 +6351,7 @@ export function SettingsPage() {
                           minLength={6}
                         />
                         {userFormData.confirmPassword && userFormData.password !== userFormData.confirmPassword && (
-                          <p className="text-red-400 text-xs mt-1">{t('settings.passwordsDoNotMatch')}</p>
+                          <p className="text-red-700 dark:text-red-400 text-xs mt-1">{t('settings.passwordsDoNotMatch')}</p>
                         )}
                       </div>
                     )}
@@ -6073,7 +6403,7 @@ export function SettingsPage() {
                         />
                         <span className="text-sm text-white">{group.name}</span>
                         {group.is_system && (
-                          <span className="text-xs text-yellow-400">({t('users.system') || 'System'})</span>
+                          <span className="text-xs text-yellow-700 dark:text-yellow-400">({t('users.system') || 'System'})</span>
                         )}
                       </label>
                     ))}
@@ -6132,7 +6462,7 @@ export function SettingsPage() {
             onClick={(e: React.MouseEvent) => e.stopPropagation()}
           >
             <CardHeader>
-              <div className="flex items-center gap-2 text-red-400">
+              <div className="flex items-center gap-2 text-red-700 dark:text-red-400">
                 <Trash2 className="w-5 h-5" />
                 <h3 className="text-lg font-semibold">{t('settings.deleteUserTitle')}</h3>
               </div>
@@ -6241,9 +6571,9 @@ export function SettingsPage() {
 
       {activeTab === 'backup' && (
         <div id="card-backup">
-          <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-start gap-2">
-            <Shield className="text-amber-400 flex-shrink-0 mt-0.5" size={16} />
-            <p className="text-sm text-amber-400">{t('backup.includesEncryptionKey')}</p>
+          <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 rounded-lg flex items-start gap-2">
+            <Shield className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" size={16} />
+            <p className="text-sm text-amber-700 dark:text-amber-400">{t('backup.includesEncryptionKey')}</p>
           </div>
           <GitHubBackupSettings />
         </div>
@@ -6351,7 +6681,7 @@ export function SettingsPage() {
                     minLength={6}
                   />
                   {changePasswordData.confirmPassword && changePasswordData.newPassword !== changePasswordData.confirmPassword && (
-                    <p className="text-red-400 text-xs mt-1">{t('settings.passwordsDoNotMatch')}</p>
+                    <p className="text-red-700 dark:text-red-400 text-xs mt-1">{t('settings.passwordsDoNotMatch')}</p>
                   )}
                 </div>
               </div>

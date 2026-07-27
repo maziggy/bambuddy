@@ -938,3 +938,76 @@ class TestMultiPlateSliceInfoSum:
         assert meta["print_time_seconds"] == 300
         # Only the second plate's weight contributed.
         assert meta["filament_used_grams"] == 5.0
+
+
+class TestThreeMFParserSupportMaterial:
+    """#1881: `_extract_filament_info` used to filter out support materials
+    (any slot where `filament_is_support == "1"`). That hid PVA / BVOH from
+    the archive card of unsliced source 3MFs — a PLA-model + PVA-support
+    project looked single-material until the print completed. This class
+    covers the follow-up: support materials must be included in
+    `filament_type` / `filament_color`.
+    """
+
+    @staticmethod
+    def _make_3mf_with_project_settings(project_settings: dict) -> str:
+        import json
+        import os
+        import tempfile
+        import zipfile
+
+        fd, path = tempfile.mkstemp(suffix=".3mf")
+        os.close(fd)
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr("Metadata/project_settings.config", json.dumps(project_settings))
+        return path
+
+    def test_support_filament_included_on_source_3mf(self):
+        # Reporter's exact config: PLA model + PVA support. Both must show
+        # on the archive card badge, in slot order.
+        from backend.app.services.archive import ThreeMFParser
+
+        path = self._make_3mf_with_project_settings(
+            {
+                "filament_type": ["PLA", "PVA"],
+                "filament_colour": ["#FFFFFF", "#00AA00"],
+                "filament_is_support": ["0", "1"],
+            }
+        )
+        meta = ThreeMFParser(path).parse()
+        assert meta["filament_type"] == "PLA, PVA"
+        assert meta["filament_color"] == "#FFFFFF,#00AA00"
+
+    def test_single_support_material_still_populated(self):
+        # Degenerate case: only material configured happens to be marked
+        # support. Old fallback picked the first entry; new logic keeps
+        # the same shape.
+        from backend.app.services.archive import ThreeMFParser
+
+        path = self._make_3mf_with_project_settings(
+            {
+                "filament_type": ["PVA"],
+                "filament_colour": ["#FFFFFF"],
+                "filament_is_support": ["1"],
+            }
+        )
+        meta = ThreeMFParser(path).parse()
+        assert meta["filament_type"] == "PVA"
+        assert meta["filament_color"] == "#FFFFFF"
+
+    def test_duplicate_material_types_deduped(self):
+        # Two AMS slots both PLA of different colours: type list dedupes
+        # but colour list keeps both (multi-colour print).
+        from backend.app.services.archive import ThreeMFParser
+
+        path = self._make_3mf_with_project_settings(
+            {
+                "filament_type": ["PLA", "PLA"],
+                "filament_colour": ["#FFFFFF", "#000000"],
+                "filament_is_support": ["0", "0"],
+            }
+        )
+        meta = ThreeMFParser(path).parse()
+        assert meta["filament_type"] == "PLA"
+        assert meta["filament_color"] == "#FFFFFF,#000000"

@@ -1,31 +1,34 @@
 """
 Orca Cloud API Routes
 
-PKCE-based connect/disconnect + profile sync endpoints for the
-Orca Cloud (Supabase) profile-sync surface.
+Device-pairing (RFC 8628) connect/disconnect + profile sync endpoints for the
+Orca Cloud external-app surface.
 
 Auth shape (see :mod:`backend.app.services.orca_cloud` for the deep dive):
 
-    POST /orca-cloud/auth/start
-        Generate PKCE + state, persist them (TTL 10 min), return the auth URL.
-    POST /orca-cloud/auth/finish
-        Parse the pasted callback URL, validate state for CSRF, exchange the
-        code for tokens, persist them atomically.
+    POST /orca-cloud/device/start
+        Request a device code, persist it server-side (TTL 10 min), return the
+        user_code + verification URIs + poll interval.
+    POST /orca-cloud/device/poll
+        One poll of the token endpoint. Returns an in-progress status while the
+        user approves; on approval, persists the token pair and reports
+        connected. The frontend calls this every ``interval`` seconds.
     GET  /orca-cloud/status
-        Connected/disconnected + email + user_id.
+        Connected/disconnected + user_id.
     POST /orca-cloud/logout
-        Clear stored tokens (no Supabase-side revocation — token still
-        survives until its 1h expiry, but Bambuddy has no way to use it).
+        Clear stored tokens (Bambuddy then has no token to use; the user can
+        also disconnect from Orca Cloud's own settings to revoke server-side).
     GET  /orca-cloud/profiles
-        Paginated list of the user's Orca Cloud profiles. JIT-refreshes the
-        access token if it's within the 5-min leeway of expiry.
+        List of the user's Orca Cloud profiles, grouped by type. JIT-refreshes
+        the access token if it's within the refresh leeway of expiry.
     GET  /orca-cloud/profiles/{id}
         Single profile's full content.
 
-Storage shape mirrors the Bambu Cloud surface: per-user columns on
-``users`` when auth is enabled, fallback to global ``settings`` keys when
-auth is disabled. The transient PKCE state (verifier, state, pending_at)
-is stored alongside the tokens — same dual-mode pattern.
+Storage shape mirrors the Bambu Cloud surface: per-user columns on ``users``
+when auth is enabled, fallback to global ``settings`` keys when auth is
+disabled. The transient pending device-code state (device_code, interval,
+started_at) reuses the ``orca_cloud_pending_*`` columns — same dual-mode
+pattern; no schema change from the previous PKCE flow.
 """
 
 from __future__ import annotations
@@ -33,7 +36,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,23 +46,19 @@ from backend.app.core.permissions import Permission
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.schemas.orca_cloud import (
-    OrcaAuthFinishRequest,
-    OrcaAuthPasswordRequest,
-    OrcaAuthStartRequest,
-    OrcaAuthStartResponse,
     OrcaAuthStatusResponse,
+    OrcaDevicePollResponse,
+    OrcaDeviceStartResponse,
     OrcaProfileDetail,
     OrcaProfileListResponse,
     OrcaProfileMeta,
 )
 from backend.app.services.orca_cloud import (
-    PENDING_PKCE_TTL,
+    DEVICE_CODE_TTL,
+    DevicePoll,
     OrcaCloudAuthError,
     OrcaCloudError,
     OrcaCloudService,
-    build_authorize_url,
-    generate_pkce,
-    parse_callback_url,
 )
 
 logger = logging.getLogger(__name__)
@@ -90,9 +89,9 @@ _ORCA_TYPE_TO_BAMBU = {
 
 
 def _orca_to_setting(orca_profile: dict) -> OrcaProfileMeta | None:
-    """Normalize one Orca ``ProfileUpsert`` (``{id, name, content, ...}``)
-    into a ``SlicerSetting``-shaped row. Returns ``None`` if the content
-    isn't a dict or the type isn't one we render."""
+    """Normalize one Orca profile (``{id, name, content, ...}``) into a
+    ``SlicerSetting``-shaped row. Returns ``None`` if the content isn't a dict
+    or the type isn't one we render."""
     content = orca_profile.get("content") or {}
     if not isinstance(content, dict):
         return None
@@ -130,15 +129,16 @@ def _str_or_none(value: object) -> str | None:
 
 # Settings table keys for the auth-disabled fallback. Mirrors the Bambu Cloud
 # pattern (``bambu_cloud_token`` etc.) so administrators inspecting the
-# settings table see a consistent prefix.
+# settings table see a consistent prefix. The ``pending_*`` keys hold the
+# transient device-code state (device_code / interval / started_at).
 _SETTINGS_KEYS = {
     "token": "orca_cloud_token",
     "refresh_token": "orca_cloud_refresh_token",
     "expires_at": "orca_cloud_expires_at",  # ISO 8601 UTC string
     "email": "orca_cloud_email",
     "user_id": "orca_cloud_user_id",
-    "pending_verifier": "orca_cloud_pending_verifier",
-    "pending_state": "orca_cloud_pending_state",
+    "pending_device_code": "orca_cloud_pending_verifier",  # reused column
+    "pending_interval": "orca_cloud_pending_state",  # reused column
     "pending_at": "orca_cloud_pending_at",  # ISO 8601 UTC string
 }
 
@@ -184,7 +184,11 @@ def _parse_iso(value: str | None) -> datetime | None:
 class _OrcaCredentials:
     """Lightweight bag for stored Orca Cloud credentials. We use a class
     rather than a dataclass so the helpers can mutate it as needed during
-    JIT-refresh without rebuilding the whole object."""
+    JIT-refresh without rebuilding the whole object.
+
+    ``pending_device_code`` / ``pending_interval`` / ``pending_at`` hold the
+    in-flight device-code pairing state (reusing the ``orca_cloud_pending_*``
+    columns that the old PKCE flow used for its verifier/state)."""
 
     __slots__ = (
         "token",
@@ -192,8 +196,8 @@ class _OrcaCredentials:
         "expires_at",
         "email",
         "user_id",
-        "pending_verifier",
-        "pending_state",
+        "pending_device_code",
+        "pending_interval",
         "pending_at",
     )
 
@@ -203,8 +207,8 @@ class _OrcaCredentials:
         self.expires_at: datetime | None = None
         self.email: str | None = None
         self.user_id: str | None = None
-        self.pending_verifier: str | None = None
-        self.pending_state: str | None = None
+        self.pending_device_code: str | None = None
+        self.pending_interval: str | None = None
         self.pending_at: datetime | None = None
 
 
@@ -227,8 +231,8 @@ async def _load_credentials(db: AsyncSession, user: User | None) -> _OrcaCredent
         creds.expires_at = _as_utc(user.orca_cloud_expires_at)
         creds.email = user.orca_cloud_email
         creds.user_id = user.orca_cloud_user_id
-        creds.pending_verifier = user.orca_cloud_pending_verifier
-        creds.pending_state = user.orca_cloud_pending_state
+        creds.pending_device_code = user.orca_cloud_pending_verifier
+        creds.pending_interval = user.orca_cloud_pending_state
         creds.pending_at = _as_utc(user.orca_cloud_pending_at)
         return creds
 
@@ -239,27 +243,28 @@ async def _load_credentials(db: AsyncSession, user: User | None) -> _OrcaCredent
     creds.expires_at = _parse_iso(raw.get(_SETTINGS_KEYS["expires_at"]))
     creds.email = raw.get(_SETTINGS_KEYS["email"])
     creds.user_id = raw.get(_SETTINGS_KEYS["user_id"])
-    creds.pending_verifier = raw.get(_SETTINGS_KEYS["pending_verifier"])
-    creds.pending_state = raw.get(_SETTINGS_KEYS["pending_state"])
+    creds.pending_device_code = raw.get(_SETTINGS_KEYS["pending_device_code"])
+    creds.pending_interval = raw.get(_SETTINGS_KEYS["pending_interval"])
     creds.pending_at = _parse_iso(raw.get(_SETTINGS_KEYS["pending_at"]))
     return creds
 
 
-async def _persist_pending_pkce(
+async def _persist_pending_device(
     db: AsyncSession,
     user: User | None,
-    verifier: str,
-    state: str,
+    device_code: str,
+    interval: int,
     when: datetime,
 ) -> None:
-    """Store the transient PKCE state used by ``/auth/start`` -> ``/auth/finish``."""
+    """Store the transient device-code state used by ``/device/start`` ->
+    ``/device/poll``. The device_code is a secret kept server-side."""
     if user is not None:
         await db.execute(
             update(User)
             .where(User.id == user.id)
             .values(
-                orca_cloud_pending_verifier=verifier,
-                orca_cloud_pending_state=state,
+                orca_cloud_pending_verifier=device_code,
+                orca_cloud_pending_state=str(interval),
                 orca_cloud_pending_at=when,
             )
         )
@@ -268,9 +273,34 @@ async def _persist_pending_pkce(
     await _upsert_settings(
         db,
         {
-            _SETTINGS_KEYS["pending_verifier"]: verifier,
-            _SETTINGS_KEYS["pending_state"]: state,
+            _SETTINGS_KEYS["pending_device_code"]: device_code,
+            _SETTINGS_KEYS["pending_interval"]: str(interval),
             _SETTINGS_KEYS["pending_at"]: _iso(when),
+        },
+    )
+
+
+async def _clear_pending_device(db: AsyncSession, user: User | None) -> None:
+    """Wipe just the pending device-code state (on terminal poll outcomes),
+    leaving any existing tokens untouched."""
+    if user is not None:
+        await db.execute(
+            update(User)
+            .where(User.id == user.id)
+            .values(
+                orca_cloud_pending_verifier=None,
+                orca_cloud_pending_state=None,
+                orca_cloud_pending_at=None,
+            )
+        )
+        await db.commit()
+        return
+    await _upsert_settings(
+        db,
+        {
+            _SETTINGS_KEYS["pending_device_code"]: None,
+            _SETTINGS_KEYS["pending_interval"]: None,
+            _SETTINGS_KEYS["pending_at"]: None,
         },
     )
 
@@ -285,8 +315,8 @@ async def _persist_tokens(
     user_id: str | None,
 ) -> None:
     """Atomically write the new access/refresh pair to whichever backing store
-    the deployment uses. Also clears the pending PKCE state on the same write,
-    since by this point the handshake is complete."""
+    the deployment uses. Also clears the pending device-code state on the same
+    write, since by this point the pairing is complete."""
     if user is not None:
         await db.execute(
             update(User)
@@ -312,8 +342,8 @@ async def _persist_tokens(
             _SETTINGS_KEYS["expires_at"]: _iso(expires_at),
             _SETTINGS_KEYS["email"]: email,
             _SETTINGS_KEYS["user_id"]: user_id,
-            _SETTINGS_KEYS["pending_verifier"]: None,
-            _SETTINGS_KEYS["pending_state"]: None,
+            _SETTINGS_KEYS["pending_device_code"]: None,
+            _SETTINGS_KEYS["pending_interval"]: None,
             _SETTINGS_KEYS["pending_at"]: None,
         },
     )
@@ -327,7 +357,7 @@ async def _persist_rotated_tokens(
     expires_at: datetime | None,
 ) -> None:
     """Persist tokens after a refresh — does NOT touch email/user_id and does
-    NOT touch the pending PKCE state (refresh happens long after the handshake)."""
+    NOT touch the pending state (refresh happens long after pairing)."""
     if user is not None:
         await db.execute(
             update(User)
@@ -405,7 +435,12 @@ async def _build_authenticated_service(
     """Construct an :class:`OrcaCloudService` pre-populated with stored
     credentials. If the access token is within the refresh-leeway of expiry,
     proactively refresh and persist the new pair BEFORE returning, so the
-    next API call doesn't time out mid-flight on an expired token."""
+    next API call doesn't time out mid-flight on an expired token.
+
+    We don't lock around the refresh: Orca tolerates concurrent refreshes for
+    ~60s (each racer gets its own valid pair on the same connection rather than
+    a revoke), so a lost race here is harmless — last-write-wins on the stored
+    pair, and whichever pair we keep is valid."""
     creds = await _load_credentials(db, user)
     if not creds.token:
         raise HTTPException(status_code=401, detail="Orca Cloud is not connected — sign in first.")
@@ -439,128 +474,97 @@ async def _build_authenticated_service(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/auth/start", response_model=OrcaAuthStartResponse)
-async def auth_start(
-    payload: OrcaAuthStartRequest = OrcaAuthStartRequest(),
+@router.post("/device/start", response_model=OrcaDeviceStartResponse)
+async def device_start(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = cloud_caller(Permission.ORCA_CLOUD_AUTH),
 ):
-    """Generate PKCE state and return the Supabase authorize URL for the
-    requested OAuth provider (google / apple / github). The frontend opens
-    the URL in a new tab; after sign-in the user pastes the callback URL
-    back into ``/auth/finish``.
-
-    ``state`` is generated but NOT sent to Supabase (it would clash with
-    GoTrue's internal redirect_to-tracking state). We still persist it so
-    a future flow change can re-introduce state-based CSRF if needed; CSRF
-    protection today comes from the PKCE verifier itself, which is
-    single-use, server-side, and bound to the caller's user row."""
-    verifier, challenge, state = generate_pkce()
-    await _persist_pending_pkce(db, current_user, verifier, state, datetime.now(timezone.utc))
-    return OrcaAuthStartResponse(auth_url=build_authorize_url(challenge, provider=payload.provider))
-
-
-@router.post("/auth/password", response_model=OrcaAuthStatusResponse)
-async def auth_password(
-    payload: OrcaAuthPasswordRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User | None = cloud_caller(Permission.ORCA_CLOUD_AUTH),
-):
-    """Direct email+password sign-in. No browser redirect, no paste flow —
-    Bambuddy POSTs the credentials to Supabase and stores the returned
-    tokens. Whether this succeeds depends on Orca's Supabase project
-    accepting the password grant; if it rejects (the SDK refuses passwords
-    by design, the backend may follow suit), the caller falls back to an
-    OAuth provider via ``/auth/start``."""
+    """Begin device pairing. Requests a device code from Orca, stores it
+    server-side (the device_code is a secret and never leaves the backend),
+    and returns the user_code + verification URIs + poll interval for the
+    frontend to display and poll against."""
     svc = OrcaCloudService()
+    # instance_url/label are display-only anti-phishing context on the approval
+    # card. base_url may be off behind a reverse proxy, but it's harmless if so.
+    instance_url = str(request.base_url).rstrip("/") or None
     try:
-        await svc.password_login(payload.email, payload.password)
+        data = await svc.request_device_code(instance_url=instance_url, instance_label="Bambuddy")
     except OrcaCloudAuthError as e:
-        raise HTTPException(status_code=400, detail=f"Orca Cloud rejected the sign-in: {e}") from e
+        # invalid_client etc. — an operator misconfiguration, not user error.
+        raise HTTPException(status_code=502, detail=f"Orca Cloud pairing is misconfigured: {e}") from e
     except OrcaCloudError as e:
         raise HTTPException(status_code=502, detail=f"Orca Cloud unreachable: {e}") from e
 
-    email: str | None = None
-    user_id: str | None = None
-    try:
-        user_info = await svc.get_user_info()
-        if isinstance(user_info, dict):
-            email = user_info.get("email")
-            user_id = user_info.get("id")
-    except OrcaCloudError as e:
-        logger.warning("Orca Cloud user-info fetch failed after successful password auth: %s", e)
+    device_code = data.get("device_code")
+    user_code = data.get("user_code")
+    if not device_code or not user_code:
+        raise HTTPException(status_code=502, detail="Orca Cloud returned an incomplete device-code response.")
 
-    await _persist_tokens(db, current_user, svc.access_token, svc.refresh_token, svc.token_expiry, email, user_id)
-    return OrcaAuthStatusResponse(connected=True, email=email, user_id=user_id)
+    interval = int(data.get("interval") or 5)
+    expires_in = int(data.get("expires_in") or DEVICE_CODE_TTL.total_seconds())
+    await _persist_pending_device(db, current_user, device_code, interval, datetime.now(timezone.utc))
+
+    return OrcaDeviceStartResponse(
+        user_code=user_code,
+        verification_uri=str(data.get("verification_uri") or ""),
+        verification_uri_complete=str(data.get("verification_uri_complete") or ""),
+        interval=interval,
+        expires_in=expires_in,
+    )
 
 
-@router.post("/auth/finish", response_model=OrcaAuthStatusResponse)
-async def auth_finish(
-    payload: OrcaAuthFinishRequest,
+@router.post("/device/poll", response_model=OrcaDevicePollResponse)
+async def device_poll(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = cloud_caller(Permission.ORCA_CLOUD_AUTH),
 ):
-    """Complete the PKCE handshake — parse the pasted callback URL, validate
-    state (CSRF), exchange the code for tokens, persist."""
+    """Poll the token endpoint once for the in-flight pairing. Returns an
+    in-progress status while the user approves; on approval persists the token
+    pair (clearing the pending state) and reports connected."""
     creds = await _load_credentials(db, current_user)
-    if not creds.pending_verifier or not creds.pending_state or not creds.pending_at:
+    if not creds.pending_device_code or not creds.pending_at:
         raise HTTPException(
             status_code=400,
-            detail="No pending Orca Cloud sign-in. Click Connect first to start the flow.",
+            detail="No pending Orca Cloud pairing. Click Connect first to start the flow.",
         )
 
     # creds.pending_at is already tz-aware UTC after _load_credentials' _as_utc
-    # normalization. Subtracting two aware UTC datetimes gives a real wall-clock
-    # delta with no local-offset shift.
+    # normalization. Subtracting two aware UTC datetimes gives a real delta.
     age = datetime.now(timezone.utc) - creds.pending_at
-    if age > PENDING_PKCE_TTL:
-        # Don't leave the stale state in the DB — clear it so the user has to
-        # restart fresh, which forces a new verifier/state pair.
-        await _persist_pending_pkce(db, current_user, "", "", datetime.fromtimestamp(0, tz=timezone.utc))
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"The Orca Cloud sign-in flow expired after {PENDING_PKCE_TTL.total_seconds() / 60:.0f} minutes. "
-                "Click Connect again to start over."
-            ),
-        )
-
-    code, _callback_state = parse_callback_url(payload.callback_url)
-    if not code:
-        raise HTTPException(
-            status_code=400,
-            detail="No `code` parameter in the pasted callback URL. Copy the full URL from your browser's address bar.",
-        )
-    # We do NOT validate ``state`` here: Supabase doesn't echo back a state we
-    # don't send (see :func:`build_authorize_url` for why we can't send one).
-    # CSRF is protected by PKCE: the verifier is server-side and single-use,
-    # so an attacker can't complete the exchange with a code they obtained
-    # separately. ``pending_state`` is still stored for forward compatibility
-    # if Supabase ever supports a client-passed state alongside redirect_to.
+    if age > DEVICE_CODE_TTL:
+        await _clear_pending_device(db, current_user)
+        return OrcaDevicePollResponse(status=DevicePoll.EXPIRED, connected=False)
 
     svc = OrcaCloudService()
     try:
-        await svc.exchange_code(code, creds.pending_verifier)
-    except OrcaCloudAuthError as e:
-        raise HTTPException(status_code=400, detail=f"Orca Cloud rejected the sign-in: {e}") from e
+        status, token_data = await svc.poll_token(creds.pending_device_code)
     except OrcaCloudError as e:
         raise HTTPException(status_code=502, detail=f"Orca Cloud unreachable: {e}") from e
 
-    # Fetch user info so we can show the connected email in the UI.
-    email: str | None = None
+    if status in DevicePoll.ONGOING:
+        return OrcaDevicePollResponse(status=status, connected=False)
+
+    if status in DevicePoll.TERMINAL:
+        # access_denied / expired_token — the attempt is dead; clear it so the
+        # user starts fresh next time.
+        await _clear_pending_device(db, current_user)
+        return OrcaDevicePollResponse(status=status, connected=False)
+
+    # COMPLETE — tokens issued and applied to svc. Introspect for the user_id
+    # (the external API's /me doesn't return an email, so email stays None).
     user_id: str | None = None
     try:
-        user_info = await svc.get_user_info()
-        if isinstance(user_info, dict):
-            email = user_info.get("email")
-            user_id = user_info.get("id")
+        info = await svc.introspect()
+        if isinstance(info, dict):
+            user_id = _str_or_none(info.get("user_id"))
     except OrcaCloudError as e:
-        # Don't fail the whole connect flow just because the user-info side
-        # call hiccuped — we have valid tokens, that's the load-bearing part.
-        logger.warning("Orca Cloud user-info fetch failed after successful auth: %s", e)
+        # Don't fail the whole pairing over the side introspection call — we
+        # have valid tokens, which is the load-bearing part.
+        logger.warning("Orca Cloud introspection failed after successful pairing: %s", e)
 
-    await _persist_tokens(db, current_user, svc.access_token, svc.refresh_token, svc.token_expiry, email, user_id)
-    return OrcaAuthStatusResponse(connected=True, email=email, user_id=user_id)
+    await _persist_tokens(db, current_user, svc.access_token, svc.refresh_token, svc.token_expiry, None, user_id)
+    return OrcaDevicePollResponse(status=DevicePoll.COMPLETE, connected=True, email=None, user_id=user_id)
 
 
 @router.get("/status", response_model=OrcaAuthStatusResponse)
@@ -583,9 +587,9 @@ async def logout(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = cloud_caller(Permission.ORCA_CLOUD_AUTH),
 ):
-    """Clear stored Orca Cloud credentials. Does not call Supabase's
-    ``/logout`` endpoint (the token would still survive its 1h expiry there
-    either way, and Bambuddy will no longer have it to use)."""
+    """Clear stored Orca Cloud credentials. Does not call Orca's disconnect
+    endpoint (the user can revoke server-side from Orca Cloud's own settings;
+    Bambuddy will no longer have the token to use either way)."""
     await _clear_credentials(db, current_user)
     return {"success": True}
 

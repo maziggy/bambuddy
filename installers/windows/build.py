@@ -61,6 +61,19 @@ FFMPEG_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffm
 # get-pip.py for bootstrapping pip into the embedded distribution
 GET_PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
 
+# C++ runtime DLLs the embeddable distribution does NOT ship. The python.org
+# embeddable zip includes vcruntime140.dll but not vcruntime140_1.dll or
+# msvcp140.dll. python313.dll is pure C and only needs vcruntime140.dll, so
+# python.exe starts fine — but greenlet's _greenlet.pyd is C++ and needs
+# vcruntime140_1.dll (table-based exception handling). On a fresh Windows box
+# that never had the VC++ 2015-2022 redistributable installed, loading greenlet
+# fails with "DLL load failed ... The specified module could not be found",
+# SQLAlchemy's async engine can't start, init_db() raises, and the app never
+# binds its port — the service shows "running" but the dashboard refuses the
+# connection (issue #2474). These runtime DLLs are redistributable, so we ship
+# them app-locally next to python.exe (where vcruntime140.dll already lives).
+VCRUNTIME_DLLS = ("vcruntime140_1.dll", "msvcp140.dll")
+
 
 def log(msg: str) -> None:
     print(f"[build] {msg}", flush=True)
@@ -141,6 +154,34 @@ def stage_embedded_python() -> Path:
     )
 
     return target
+
+
+def stage_vcruntime(python_dir: Path) -> None:
+    """Ship the C++ runtime DLLs the embeddable distribution omits.
+
+    Placed next to python.exe so the extension-module loader (which searches the
+    interpreter's own directory) finds them without a redistributable install on
+    the target machine. Prefers vendored copies under installers/windows/vendor/
+    for reproducibility; falls back to the build runner's System32, where the
+    redistributable runtime lives. Fails loudly if neither source has them, so a
+    misconfigured build machine is caught here instead of by end users.
+    """
+    vendor = INSTALLER_DIR / "vendor"
+    system32 = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32"
+    for dll in VCRUNTIME_DLLS:
+        dst = python_dir / dll
+        if dst.exists():
+            log(f"{dll} already present in embedded Python")
+            continue
+        src = vendor / dll if (vendor / dll).exists() else system32 / dll
+        if not src.exists():
+            raise RuntimeError(
+                f"required C++ runtime DLL not found: looked in {vendor} and {system32} "
+                f"for {dll}. Install the Microsoft Visual C++ 2015-2022 Redistributable "
+                f"(x64) on the build machine, or vendor {dll} under installers/windows/vendor/."
+            )
+        log(f"staging {dll} from {src}")
+        shutil.copy(src, dst)
 
 
 def install_requirements(python_dir: Path) -> None:
@@ -370,6 +411,7 @@ def main() -> int:
     STAGING.mkdir(parents=True, exist_ok=True)
 
     python_dir = stage_embedded_python()
+    stage_vcruntime(python_dir)
     if not args.skip_pip:
         install_requirements(python_dir)
 

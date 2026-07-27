@@ -207,6 +207,7 @@ describe('LabelTemplatePickerModal', () => {
       expect(api.printSpoolLabels).toHaveBeenCalledWith({
         spool_ids: [1, 3],
         template: 'box_62x29',
+        monochrome: false,
       });
     });
     await waitFor(() => expect(onClose).toHaveBeenCalled());
@@ -232,6 +233,7 @@ describe('LabelTemplatePickerModal', () => {
       expect(api.printSpoolmanSpoolLabels).toHaveBeenCalledWith({
         spool_ids: [1],
         template: 'ams_holder_75x55',
+        monochrome: false,
       });
     });
     expect(api.printSpoolLabels).not.toHaveBeenCalled();
@@ -361,6 +363,7 @@ describe('LabelTemplatePickerModal', () => {
       expect(api.printSpoolLabels).toHaveBeenCalledWith({
         spool_ids: [1, 4, 2, 3],
         template: 'box_62x29',
+        monochrome: false,
       });
     });
   });
@@ -385,6 +388,31 @@ describe('LabelTemplatePickerModal', () => {
       expect(api.printSpoolLabels).toHaveBeenCalledWith({
         spool_ids: [1, 2, 3, 4],
         template: 'box_40x30',
+        monochrome: false,
+      });
+    });
+  });
+
+  it('sends monochrome:true when the black & white checkbox is ticked (#1870)', async () => {
+    vi.mocked(api.printSpoolLabels).mockResolvedValue(PDF_BLOB);
+    render(
+      <LabelTemplatePickerModal
+        isOpen={true}
+        onClose={vi.fn()}
+        availableSpools={SPOOLS}
+        initialSelectedIds={[1]}
+        spoolmanMode={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByText(/black & white printer/i));
+    fireEvent.click(screen.getByText(/Box label \(40 × 30 mm\)/i));
+
+    await waitFor(() => {
+      expect(api.printSpoolLabels).toHaveBeenCalledWith({
+        spool_ids: [1],
+        template: 'box_40x30',
+        monochrome: true,
       });
     });
   });

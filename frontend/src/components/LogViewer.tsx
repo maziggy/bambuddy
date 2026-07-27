@@ -162,7 +162,7 @@ export function LogViewer() {
                     e.stopPropagation();
                     setIsStreaming(false);
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-500/30 rounded transition-colors"
                 >
                   <Square className="w-4 h-4" />
                   Stop

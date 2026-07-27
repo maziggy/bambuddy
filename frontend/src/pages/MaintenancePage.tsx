@@ -159,8 +159,8 @@ function MaintenanceCard({
 
   const getStatusColor = () => {
     if (!item.enabled) return 'text-bambu-gray';
-    if (item.is_due) return 'text-red-400';
-    if (item.is_warning) return 'text-amber-400';
+    if (item.is_due) return 'text-red-700 dark:text-red-400';
+    if (item.is_warning) return 'text-amber-700 dark:text-amber-400';
     return 'text-bambu-green';
   };
 
@@ -333,13 +333,13 @@ function PrinterSection({
             <h2 className="text-xl font-semibold text-white">{overview.printer_name}</h2>
             <div className="flex items-center gap-2">
               {overview.due_count > 0 && (
-                <span className="px-2.5 py-1 bg-red-500/20 text-red-400 text-xs font-medium rounded-full flex items-center gap-1.5">
+                <span className="px-2.5 py-1 bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400 text-xs font-medium rounded-full flex items-center gap-1.5">
                   <AlertTriangle className="w-3 h-3" />
                   {t('maintenance.overdueCount', { count: overview.due_count })}
                 </span>
               )}
               {overview.warning_count > 0 && (
-                <span className="px-2.5 py-1 bg-amber-500/20 text-amber-400 text-xs font-medium rounded-full flex items-center gap-1.5">
+                <span className="px-2.5 py-1 bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400 text-xs font-medium rounded-full flex items-center gap-1.5">
                   <Clock className="w-3 h-3" />
                   {t('maintenance.dueSoonCount', { count: overview.warning_count })}
                 </span>
@@ -417,14 +417,14 @@ function PrinterSection({
               }`}>
                 {(() => {
                   const Icon = getIcon(nextTask.maintenance_type_icon);
-                  return <Icon className={`w-4 h-4 ${nextTask.is_due ? 'text-red-400' : 'text-amber-400'}`} />;
+                  return <Icon className={`w-4 h-4 ${nextTask.is_due ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`} />;
                 })()}
               </div>
               <div>
-                <div className={`text-sm font-medium ${nextTask.is_due ? 'text-red-400' : 'text-amber-400'}`}>
+                <div className={`text-sm font-medium ${nextTask.is_due ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400'}`}>
                   {nextTask.maintenance_type_name}
                 </div>
-                <div className={`text-xs ${nextTask.is_due ? 'text-red-400/70' : 'text-amber-400/70'}`}>
+                <div className={`text-xs ${nextTask.is_due ? 'text-red-700/80 dark:text-red-400/70' : 'text-amber-700/80 dark:text-amber-400/70'}`}>
                   {nextTask.is_due ? t('common.overdue') : t('maintenance.dueSoon')}
                 </div>
               </div>
@@ -736,7 +736,7 @@ function SettingsSection({
                     ))}
                   </div>
                   {selectedPrinters.size === 0 && (
-                    <p className="text-xs text-orange-400 mt-1">{t('maintenance.selectAtLeastOnePrinter')}</p>
+                    <p className="text-xs text-orange-700 dark:text-orange-400 mt-1">{t('maintenance.selectAtLeastOnePrinter')}</p>
                   )}
                 </div>
                 <div className="mt-4 flex justify-end gap-2">
@@ -778,7 +778,7 @@ function SettingsSection({
                     }}
                     disabled={!hasPermission('maintenance:delete')}
                     title={!hasPermission('maintenance:delete') ? t('maintenance.noPermissionDeleteTypes') : undefined}
-                    className={`p-2 rounded-lg hover:bg-bambu-dark text-bambu-gray hover:text-red-400 transition-colors ${!hasPermission('maintenance:delete') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`p-2 rounded-lg hover:bg-bambu-dark text-bambu-gray hover:text-red-600 dark:hover:text-red-400 transition-colors ${!hasPermission('maintenance:delete') ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -887,7 +887,7 @@ function SettingsSection({
                     className={`px-2 py-1 rounded-lg border transition-colors flex items-center gap-1 ${
                       assignedPrinters.length > 0
                         ? 'border-bambu-green/50 bg-bambu-green/10 text-bambu-green hover:bg-bambu-green/20'
-                        : 'border-orange-400/50 bg-orange-400/10 text-orange-400 hover:bg-orange-400/20'
+                        : 'border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100 dark:border-orange-400/50 dark:bg-orange-400/10 dark:text-orange-400 dark:hover:bg-orange-400/20'
                     }`}
                     title={t('maintenance.printersAssignedClick', { count: assignedPrinters.length })}
                   >
@@ -911,7 +911,7 @@ function SettingsSection({
                     }}
                     disabled={!hasPermission('maintenance:delete')}
                     title={!hasPermission('maintenance:delete') ? t('maintenance.noPermissionDeleteTypes') : undefined}
-                    className={`p-2 rounded-lg hover:bg-bambu-dark text-bambu-gray hover:text-red-400 transition-colors ${!hasPermission('maintenance:delete') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`p-2 rounded-lg hover:bg-bambu-dark text-bambu-gray hover:text-red-600 dark:hover:text-red-400 transition-colors ${!hasPermission('maintenance:delete') ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -922,7 +922,7 @@ function SettingsSection({
                   <div className="mt-3 pt-3 border-t border-bambu-dark-tertiary">
                     <p className="text-xs text-bambu-gray mb-2">{t('maintenance.assignedToPrinters')}</p>
                     {assignedPrinters.length === 0 ? (
-                      <p className="text-xs text-orange-400">{t('maintenance.noPrintersAssigned')}</p>
+                      <p className="text-xs text-orange-700 dark:text-orange-400">{t('maintenance.noPrintersAssigned')}</p>
                     ) : (
                       <div className="flex flex-wrap gap-1 mb-2">
                         {assignedPrinters.map(p => (
@@ -935,7 +935,7 @@ function SettingsSection({
                               onClick={() => p.itemId && onRemoveItem(p.itemId)}
                               disabled={!hasPermission('maintenance:delete')}
                               title={!hasPermission('maintenance:delete') ? t('maintenance.noPermissionRemovePrinter') : t('maintenance.removeFromPrinter')}
-                              className={`ml-1 ${hasPermission('maintenance:delete') ? 'hover:text-red-400' : 'opacity-50 cursor-not-allowed'}`}
+                              className={`ml-1 ${hasPermission('maintenance:delete') ? 'hover:text-red-600 dark:hover:text-red-400' : 'opacity-50 cursor-not-allowed'}`}
                             >
                               ×
                             </button>
@@ -1238,9 +1238,9 @@ export function MaintenancePage() {
         <p className="text-bambu-gray mt-1">
           {activeTab === 'status' ? (
             <>
-              {totalDue > 0 && <span className="text-red-400">{t('maintenance.dueCount', { count: totalDue })}</span>}
+              {totalDue > 0 && <span className="text-red-700 dark:text-red-400">{t('maintenance.dueCount', { count: totalDue })}</span>}
               {totalDue > 0 && totalWarning > 0 && ' · '}
-              {totalWarning > 0 && <span className="text-amber-400">{t('maintenance.warningCount', { count: totalWarning })}</span>}
+              {totalWarning > 0 && <span className="text-amber-700 dark:text-amber-400">{t('maintenance.warningCount', { count: totalWarning })}</span>}
               {totalDue === 0 && totalWarning === 0 && <span className="text-bambu-green">{t('maintenance.allOk')}</span>}
             </>
           ) : (

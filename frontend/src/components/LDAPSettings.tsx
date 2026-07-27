@@ -205,14 +205,14 @@ export function LDAPSettings() {
         </CardHeader>
         <CardContent>
           {ldapEnabled ? (
-            <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+            <div className="bg-green-50 dark:bg-green-500/10 border border-green-300 dark:border-green-500/30 rounded-lg p-4">
               <div className="flex items-start gap-3">
-                <CheckCircle className="w-5 h-5 text-green-400 mt-0.5 flex-shrink-0" />
+                <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
                 <div className="space-y-2">
                   <p className="text-white font-medium">
                     {t('settings.ldap.enabledDesc') || 'LDAP authentication is enabled'}
                   </p>
-                  <ul className="text-sm text-green-300 space-y-1 list-disc list-inside">
+                  <ul className="text-sm text-green-700 dark:text-green-300 space-y-1 list-disc list-inside">
                     <li>{t('settings.ldap.feature1') || 'Users can login with LDAP credentials'}</li>
                     <li>{t('settings.ldap.feature2') || 'Local admin account remains as fallback'}</li>
                     <li>{t('settings.ldap.feature3') || 'LDAP groups are mapped to BamBuddy groups on login'}</li>
@@ -221,14 +221,14 @@ export function LDAPSettings() {
               </div>
             </div>
           ) : (
-            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+            <div className="bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-500/30 rounded-lg p-4">
               <div className="flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-yellow-400 mt-0.5 flex-shrink-0" />
+                <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="text-white font-medium">
                     {t('settings.ldap.disabledDesc') || 'LDAP authentication is disabled'}
                   </p>
-                  <p className="text-sm text-yellow-300 mt-1">
+                  <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
                     {t('settings.ldap.disabledHint') || 'Configure and save LDAP settings below, then enable.'}
                   </p>
                 </div>

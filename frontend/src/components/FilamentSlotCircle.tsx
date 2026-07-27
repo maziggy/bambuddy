@@ -13,7 +13,10 @@
  *                confirmed no spool (state 9/10), "reset" for slots where
  *                the user cleared the assignment but the firmware hasn't
  *                positively confirmed emptiness. Ignored when isEmpty is false.
- *   slotNumber - 1-based slot number to display inside the circle.
+ *   slotNumber - 1-based slot number to display inside the circle. Accepts
+ *                a string for non-numeric labels (e.g. "L" / "R" for the
+ *                dual-nozzle external trays, where carrying a separate
+ *                Ext-L/Ext-R caption underneath made the row taller).
  */
 
 interface FilamentSlotCircleProps {
@@ -21,7 +24,7 @@ interface FilamentSlotCircleProps {
   trayType?: string | null;
   isEmpty: boolean;
   emptyKind?: 'physical' | 'reset' | null;
-  slotNumber: number;
+  slotNumber: number | string;
 }
 
 function isLightFilamentColor(hex: string): boolean {

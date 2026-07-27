@@ -2,7 +2,7 @@
 // Source: https://github.com/greghesp/ha-bambulab
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, AlertTriangle, AlertCircle, Info, ExternalLink, Loader2, Trash2 } from 'lucide-react';
 import type { HMSError, Permission } from '../api/client';
 import { api } from '../api/client';
@@ -14,7 +14,24 @@ interface HMSErrorModalProps {
   onClose: () => void;
   printerId: number;
   hasPermission: (permission: Permission) => boolean;
+  // Runout guidance for a PAUSED print (#2587). When set, AMS-runout errors are
+  // re-described to name the physical slot the firmware now expects, instead of
+  // the generic "insert into the same slot" text (wrong under AMS Filament Backup).
+  // Slot labels are pre-formatted (e.g. "AMS-A · Slot 3"); null when the slot
+  // could not be resolved → an honest "check the printer" message is shown.
+  runoutGuidance?: {
+    expectedSlotLabel: string | null;
+    ranOutSlotLabel: string | null;
+  } | null;
 }
+
+// AMS per-slot filament-runout short codes (module 0x07). These pause the print
+// waiting for a specific slot — the ones #2587 re-describes. Printer-side /
+// external runout (0300_8004) has no AMS slot and is deliberately excluded.
+const AMS_RUNOUT_SHORT_CODES = new Set([
+  '0700_8011', '0701_8011', '0702_8011', '0703_8011', '0704_8011',
+  '0705_8011', '0706_8011', '0707_8011', '07FF_8011',
+]);
 
 // Comprehensive error code database (short format: XXXX_YYYY)
 // Auto-generated from ha-bambulab - 853 codes
@@ -879,12 +896,12 @@ function getSeverityInfo(severity: number): { label: string; color: string; bgCo
     case 1:
       return { label: 'Fatal', color: 'text-red-500', bgColor: 'bg-red-500/20', Icon: AlertTriangle };
     case 2:
-      return { label: 'Serious', color: 'text-red-400', bgColor: 'bg-red-500/15', Icon: AlertTriangle };
+      return { label: 'Serious', color: 'text-red-700 dark:text-red-400', bgColor: 'bg-red-100 dark:bg-red-500/15', Icon: AlertTriangle };
     case 3:
-      return { label: 'Warning', color: 'text-orange-400', bgColor: 'bg-orange-500/20', Icon: AlertCircle };
+      return { label: 'Warning', color: 'text-orange-700 dark:text-orange-400', bgColor: 'bg-orange-100 dark:bg-orange-500/20', Icon: AlertCircle };
     case 4:
     default:
-      return { label: 'Info', color: 'text-blue-400', bgColor: 'bg-blue-500/20', Icon: Info };
+      return { label: 'Info', color: 'text-blue-700 dark:text-blue-400', bgColor: 'bg-blue-100 dark:bg-blue-500/20', Icon: Info };
   }
 }
 
@@ -896,12 +913,20 @@ function getShortCode(attr: number, code: number): string {
   return `${module.toString(16).padStart(4, '0').toUpperCase()}_${codeNum.toString(16).padStart(4, '0').toUpperCase()}`;
 }
 
-// Helper to filter only known HMS errors (exported for use in badge counts)
+// Helper to filter HMS errors the UI should surface (exported for use in badge counts).
+// Keeps an error if EITHER:
+//   - it's in the bundled ERROR_DESCRIPTIONS catalog (known, has a description), OR
+//   - it carries firmware actions (uncataloged but user-actionable — e.g. H2C 0500_809C
+//     with IGNORE_RESUME/PROBLEM_SOLVED_RESUME — must surface so the button can render).
+// Drops uncataloged errors WITHOUT actions: those are transient junk like the post-cancel
+// 0C00_001B echo that re-introduces the FAILED-after-cancel "1 problem forever"
+// regression — see PrintersPageBucketing.test.ts.
 export function filterKnownHMSErrors(errors: HMSError[]): HMSError[] {
   return errors.filter((error) => {
     const codeNum = parseInt(error.code.replace('0x', ''), 16) || 0;
     const shortCode = getShortCode(error.attr, codeNum);
-    return ERROR_DESCRIPTIONS[shortCode] !== undefined;
+    if (ERROR_DESCRIPTIONS[shortCode] !== undefined) return true;
+    return (error.actions?.length ?? 0) > 0;
   });
 }
 
@@ -909,9 +934,10 @@ function getHMSHomeUrl(): string {
   return `https://wiki.bambulab.com/en/hms/home`;
 }
 
-export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPermission }: HMSErrorModalProps) {
+export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPermission, runoutGuidance }: HMSErrorModalProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
 
   const clearMutation = useMutation({
     mutationFn: () => api.clearHMSErrors(printerId),
@@ -924,12 +950,9 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
     },
   });
 
-  // Filter to only show errors we have descriptions for (skip unknown codes)
-  const knownErrors = errors.filter((error) => {
-    const codeNum = parseInt(error.code.replace('0x', ''), 16) || 0;
-    const shortCode = getShortCode(error.attr, codeNum);
-    return ERROR_DESCRIPTIONS[shortCode] !== undefined;
-  });
+  // Surface cataloged errors and uncataloged-but-actionable errors. Mirrors
+  // filterKnownHMSErrors so the modal and the badge counts agree.
+  const knownErrors = filterKnownHMSErrors(errors);
 
   // Close on Escape key
   useEffect(() => {
@@ -940,13 +963,40 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
+  // printerStatusMutation with optimistic update
+  const activateActionMutation = useMutation({
+    mutationFn: (data: {
+      action: string,
+      print_error: string,
+      job_id: string | null,
+    }) => api.executeHMSAction(printerId, {
+      action: data.action,
+      print_error: data.print_error,
+      job_id: data.job_id,
+    }),
+    onSuccess: () => {
+      // Scope the invalidation to THIS printer. The prefix form
+      // `['printerStatus']` would refresh every printer card on the page,
+      // which is wasteful when only one printer's state actually changed.
+      queryClient.invalidateQueries({ queryKey: ['printerStatus', printerId] });
+      showToast(t('hmsErrors.actionSuccess', 'Action sent to printer'), 'success');
+      onClose();
+    },
+    onError: (error: Error) => {
+      showToast(
+        `${t('hmsErrors.actionFailed', 'Failed to send action')}: ${error.message}`,
+        'error',
+      );
+    },
+  });
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-bambu-dark-secondary rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-orange-400" />
+            <AlertTriangle className="w-5 h-5 text-orange-600 dark:text-orange-400" />
             <h2 className="text-lg font-semibold text-white">{t('hmsErrors.title', { name: printerName })}</h2>
           </div>
           <button
@@ -970,7 +1020,24 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
                 const { label, color, bgColor, Icon } = getSeverityInfo(error.severity);
                 const codeNum = parseInt(error.code.replace('0x', ''), 16) || 0;
                 const shortCode = getShortCode(error.attr, codeNum);
-                const description = ERROR_DESCRIPTIONS[shortCode];
+                // Runout guidance (#2587): for an AMS per-slot runout on a paused
+                // print, name the slot the firmware now expects rather than the
+                // misleading generic "insert into the same slot" text.
+                let description = ERROR_DESCRIPTIONS[shortCode] ?? t('hmsErrors.unknownCode');
+                if (runoutGuidance && AMS_RUNOUT_SHORT_CODES.has(shortCode)) {
+                  if (runoutGuidance.expectedSlotLabel && runoutGuidance.ranOutSlotLabel) {
+                    description = t('hmsErrors.runoutExpectedSlot', {
+                      expected: runoutGuidance.expectedSlotLabel,
+                      ranOut: runoutGuidance.ranOutSlotLabel,
+                    });
+                  } else if (runoutGuidance.expectedSlotLabel) {
+                    description = t('hmsErrors.runoutExpectedSlotOnly', {
+                      expected: runoutGuidance.expectedSlotLabel,
+                    });
+                  } else {
+                    description = t('hmsErrors.runoutSlotUnknown');
+                  }
+                }
                 const hmsHomeUrl = getHMSHomeUrl();
                 const displayCode = shortCode.replace('_', '-');
 
@@ -989,6 +1056,46 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
                           </span>
                         </div>
                         <p className="text-sm text-bambu-gray mb-2">{description}</p>
+                        {error.actions && error.actions.length > 0 && (
+                          <div className="flex flex-wrap gap-2 my-2">
+                            {error.actions.map((action) => {
+                              const pendingVars = activateActionMutation.variables;
+                              const isThisPending =
+                                activateActionMutation.isPending
+                                && pendingVars?.action === action
+                                && pendingVars?.print_error === (error.full_code || shortCode.replace('_', ''));
+                              return (
+                                <button
+                                  key={action}
+                                  onClick={() => {
+                                    // full_code is the firmware-matching key (16
+                                    // chars for hms[]-array faults, 8 chars for
+                                    // print_error). Fall back to the 8-char
+                                    // shortCode for older backends that haven't
+                                    // populated it. See #1830.
+                                    activateActionMutation.mutate({
+                                      action,
+                                      print_error: error.full_code || shortCode.replace('_', ''),
+                                      job_id: error.job_id ?? null,
+                                    });
+                                  }}
+                                  // Static hover/active classes — Tailwind's JIT
+                                  // can't resolve `hover:${var}` template
+                                  // literals, so the previous severity-tinted
+                                  // hover never reached the compiled CSS and
+                                  // the action buttons read as inert badges.
+                                  // White-on-tint reads as a clear affordance
+                                  // against any severity-coloured container.
+                                  disabled={!hasPermission('printers:control') || activateActionMutation.isPending}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 text-white border border-white/20 hover:border-white/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                                >
+                                  {isThisPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                                  {t(`hmsErrors.actions.${action}`, action)}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                         <a
                           href={hmsHomeUrl}
                           target="_blank"
@@ -1016,7 +1123,7 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
             <button
               onClick={() => clearMutation.mutate()}
               disabled={!hasPermission('printers:control') || clearMutation.isPending}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
             >
               {clearMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

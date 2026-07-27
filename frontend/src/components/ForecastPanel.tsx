@@ -387,8 +387,8 @@ export function ForecastPanel({ spools }: { spools: InventorySpool[] }) {
             onClick={() => setAlertsOpen((o) => !o)}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
               alerts.some((f) => f.stockBreakAlert)
-                ? 'bg-red-500/15 border-red-500/30 text-red-300 hover:bg-red-500/25'
-                : 'bg-yellow-500/15 border-yellow-500/30 text-yellow-300 hover:bg-yellow-500/25'
+                ? 'bg-red-100 dark:bg-red-500/15 border-red-300 dark:border-red-500/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-500/25'
+                : 'bg-yellow-100 dark:bg-yellow-500/15 border-yellow-300 dark:border-yellow-500/30 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-200 dark:hover:bg-yellow-500/25'
             }`}
           >
             <AlertTriangle className="w-4 h-4" />
@@ -617,7 +617,7 @@ function AlertBanner({ forecast: f, onCart }: { forecast: SkuForecast; onCart: (
 
   return (
     <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border text-sm ${
-      isBreak ? 'bg-red-500/10 border-red-500/30 text-red-300' : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'
+      isBreak ? 'bg-red-50 dark:bg-red-500/10 border-red-300 dark:border-red-500/30 text-red-700 dark:text-red-300' : 'bg-yellow-50 dark:bg-yellow-500/10 border-yellow-300 dark:border-yellow-500/30 text-yellow-700 dark:text-yellow-300'
     }`}>
       <AlertTriangle className="w-4 h-4 flex-shrink-0" />
       <div className="flex-1 min-w-0">
@@ -876,10 +876,10 @@ function ForecastRow({
 
   const daysColor = snoozed ? 'text-bambu-gray'
     : f.daysRemaining === null ? 'text-bambu-gray'
-    : f.stockBreakAlert ? 'text-red-400'
-    : f.reorderAlert ? 'text-yellow-400'
-    : f.daysRemaining < 30 ? 'text-yellow-400'
-    : 'text-green-400';
+    : f.stockBreakAlert ? 'text-red-700 dark:text-red-400'
+    : f.reorderAlert ? 'text-yellow-700 dark:text-yellow-400'
+    : f.daysRemaining < 30 ? 'text-yellow-700 dark:text-yellow-400'
+    : 'text-green-700 dark:text-green-400';
 
   function upsert(lead: number, marginVal: number, marginUnitArg: 'days' | 'g', alertsSnoozed = snoozed) {
     upsertMutation.mutate({ material: f.group.material, subtype: f.group.subtype, brand: f.group.brand, color_name: f.group.colorName, lead_time_days: lead, safety_margin_value: marginVal, safety_margin_unit: marginUnitArg, alerts_snoozed: alertsSnoozed });
@@ -893,7 +893,7 @@ function ForecastRow({
   const tierBadge = f.rateTier === 'history'
     ? <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-bambu-green/15 text-bambu-green"><span className="w-1.5 h-1.5 rounded-full bg-bambu-green" />{t('forecast.trend')}</span>
     : f.rateTier === 'delta'
-    ? <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-blue-400/15 text-blue-400"><span className="w-1.5 h-1.5 rounded-full bg-blue-400" />{t('forecast.estimated')}</span>
+    ? <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-400/15 text-blue-700 dark:text-blue-400"><span className="w-1.5 h-1.5 rounded-full bg-blue-400" />{t('forecast.estimated')}</span>
     : <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-bambu-dark-tertiary text-bambu-gray/60"><span className="w-1.5 h-1.5 rounded-full bg-bambu-gray/40" />{t('forecast.noData')}</span>;
 
   const rowAlertBorder = snoozed ? '' : f.stockBreakAlert ? 'bg-red-500/5' : f.reorderAlert ? 'bg-yellow-500/5' : '';
@@ -959,7 +959,7 @@ function ForecastRow({
 
         {/* Reorder by */}
         <td className="px-4 py-3">
-          <span className={`text-sm ${!snoozed && f.reorderAlert ? 'text-yellow-400' : 'text-bambu-gray'}`}>
+          <span className={`text-sm ${!snoozed && f.reorderAlert ? 'text-yellow-700 dark:text-yellow-400' : 'text-bambu-gray'}`}>
             {f.reorderTriggerDate ? formatDate(f.reorderTriggerDate) : '—'}
           </span>
         </td>
@@ -977,16 +977,16 @@ function ForecastRow({
               </button>
             )}
             {!snoozed && (f.stockBreakAlert ? (
-              <AlertTriangle className="w-4 h-4 text-red-400" aria-label={t('forecast.stockBreakRisk')} />
+              <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400" aria-label={t('forecast.stockBreakRisk')} />
             ) : f.reorderAlert ? (
-              <AlertTriangle className="w-4 h-4 text-yellow-400" aria-label={t('forecast.reorderNow')} />
+              <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400" aria-label={t('forecast.reorderNow')} />
             ) : f.daysRemaining !== null ? (
               <Check className="w-4 h-4 text-bambu-green/50" />
             ) : null)}
             {canWrite && (
               <button
                 onClick={toggleSnooze}
-                className={`p-1 rounded transition-colors ${snoozed ? 'text-amber-400/80 hover:text-amber-300' : 'text-slate-400 hover:text-white'}`}
+                className={`p-1 rounded transition-colors ${snoozed ? 'text-amber-600/80 dark:text-amber-400/80 hover:text-amber-700 dark:hover:text-amber-300' : 'text-slate-400 hover:text-white'}`}
                 title={t(snoozed ? 'forecast.alertsEnabled' : 'forecast.alertsSnoozed')}
               >
                 <BellOff className="w-3.5 h-3.5" />
@@ -1390,7 +1390,7 @@ function ShoppingListPanel({
                 {t('forecast.downloadCsv')}
               </button>
               {canWrite && (
-                <button onClick={onClear} className="text-xs text-red-400 hover:text-red-300 transition-colors px-2 py-1 rounded border border-red-500/20 hover:bg-red-500/10">
+                <button onClick={onClear} className="text-xs text-red-700 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors px-2 py-1 rounded border border-red-200 dark:border-red-500/20 hover:bg-red-50 dark:hover:bg-red-500/10">
                   {t('forecast.clearAll')}
                 </button>
               )}
@@ -1444,7 +1444,7 @@ function ShoppingListPanel({
                       <div className="flex items-center gap-2">
                         <span className="text-sm text-white">{lbl}</span>
                         {hasBreak && !isPurchased && (
-                          <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" aria-label={t('forecast.stockBreakBefore')} />
+                          <AlertTriangle className="w-3.5 h-3.5 text-red-600 dark:text-red-400 flex-shrink-0" aria-label={t('forecast.stockBreakBefore')} />
                         )}
                       </div>
                     </td>
@@ -1468,7 +1468,7 @@ function ShoppingListPanel({
                     <td className="px-4 py-2.5">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                         isReceived ? 'bg-bambu-green/20 text-bambu-green' :
-                        isPurchased ? 'bg-blue-400/20 text-blue-400' :
+                        isPurchased ? 'bg-blue-100 dark:bg-blue-400/20 text-blue-700 dark:text-blue-400' :
                         'bg-bambu-dark-tertiary text-bambu-gray'
                       }`}>
                         {isReceived ? t('forecast.received') : isPurchased ? t('forecast.purchased') : t('forecast.pending')}
@@ -1490,8 +1490,8 @@ function ShoppingListPanel({
                               title={isPurchased ? t('forecast.resetToPending') : t('forecast.markPurchased')}
                               className={`p-1.5 rounded transition-colors disabled:opacity-30 ${
                                 isPurchased
-                                  ? 'text-blue-400 hover:text-blue-300'
-                                  : 'text-blue-400/50 hover:text-blue-400'
+                                  ? 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300'
+                                  : 'text-blue-600/50 dark:text-blue-400/50 hover:text-blue-600 dark:hover:text-blue-400'
                               }`}
                             >
                               {isPurchased ? <RotateCcw className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />}
@@ -1508,7 +1508,7 @@ function ShoppingListPanel({
                             {/* Delete */}
                             <button
                               onClick={() => onRemove(item.id)}
-                              className="p-1 text-bambu-gray hover:text-red-400 transition-colors"
+                              className="p-1 text-bambu-gray hover:text-red-600 dark:hover:text-red-400 transition-colors"
                               title={t('forecast.remove')}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1608,14 +1608,14 @@ function CartLogisticsRow({
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2 min-w-0">
           {hasBreak
-            ? <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
+            ? <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0" />
             : <Check className="w-4 h-4 text-bambu-green/60 flex-shrink-0" />
           }
           <span className="text-sm font-medium text-white truncate">{label}</span>
           <span className="text-xs text-bambu-gray flex-shrink-0">{t('forecast.spoolCount', { count: item.quantity_spools })} ordered</span>
         </div>
         {canWrite && (
-          <button onClick={onRemove} className="p-1 text-bambu-gray hover:text-red-400 transition-colors flex-shrink-0">
+          <button onClick={onRemove} className="p-1 text-bambu-gray hover:text-red-600 dark:hover:text-red-400 transition-colors flex-shrink-0">
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         )}
@@ -1623,7 +1623,7 @@ function CartLogisticsRow({
 
       {/* Break alert */}
       {hasBreak && (
-        <div className="mb-3 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-300">
+        <div className="mb-3 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 text-xs text-red-700 dark:text-red-300">
           <span className="font-medium">{t('forecast.stockBreakIn', { days: stockBreaksAt })}</span>
           {' '}{t('forecast.stockRunsOutBefore', { lt: f!.effectiveLeadTimeDays })}
           {f!.dailyRateG !== null && (
@@ -1657,9 +1657,9 @@ function CartLogisticsRow({
               <div className="text-xs text-bambu-gray mb-0.5">{t('forecast.safetyMarginLabel')}</div>
               <div className="text-sm font-semibold text-white">{Math.round(f.safetyStockG)}g</div>
             </div>
-            <div className={`rounded-lg px-2.5 py-2 text-center ${hasBreak ? 'bg-red-500/15' : 'bg-bambu-dark-tertiary/40'}`}>
+            <div className={`rounded-lg px-2.5 py-2 text-center ${hasBreak ? 'bg-red-100 dark:bg-red-500/15' : 'bg-bambu-dark-tertiary/40'}`}>
               <div className="text-xs text-bambu-gray mb-0.5">{t('forecast.daysLeft')}</div>
-              <div className={`text-sm font-semibold ${hasBreak ? 'text-red-400' : 'text-green-400'}`}>
+              <div className={`text-sm font-semibold ${hasBreak ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
                 {f.daysRemaining ?? '—'}d
               </div>
             </div>
@@ -1771,7 +1771,7 @@ function CartLogisticsRow({
             <span className="flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-yellow-400 border-dashed" /> {t('forecast.ropLabel')}</span>
             <span className="flex items-center gap-1"><span className="inline-block w-4 border-t border-bambu-gray border-dashed" /> {t('forecast.safetyStockLegend')}</span>
             <span className="flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-blue-400 border-dashed" /> {t('forecast.stockArrivalLegend')}</span>
-            {hasBreak && <span className="flex items-center gap-1 text-red-400"><span className="inline-block w-4 border-t-2 border-red-400" /> {t('forecast.stockoutLegend')}</span>}
+            {hasBreak && <span className="flex items-center gap-1 text-red-700 dark:text-red-400"><span className="inline-block w-4 border-t-2 border-red-400" /> {t('forecast.stockoutLegend')}</span>}
           </div>
         </>
       ) : null}
@@ -1870,7 +1870,7 @@ function AddToCartModal({
                   <span className="text-xs text-bambu-gray">at {f.dailyRateG.toFixed(1)}g/day</span>
                 </div>
               ) : (
-                <div className="text-xs text-yellow-400 px-1">{t('forecast.noUsageQty')}</div>
+                <div className="text-xs text-yellow-700 dark:text-yellow-400 px-1">{t('forecast.noUsageQty')}</div>
               )}
             </div>
           )}

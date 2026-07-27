@@ -147,6 +147,13 @@ services:
       # You also need to mount your certificates to the container (see volumes section above).
       # - USE_SYSTEM_TRUST_STORE=true
     restart: unless-stopped
+    # Docker's default is 10s, after which it SIGKILLs. Bambuddy shuts down in
+    # well under that (uvicorn caps its wait on in-flight requests at 5s, then
+    # the app checkpoints the SQLite WAL, disconnects MQTT and stops the virtual
+    # printers), but a Pi with several virtual printers and a slow SD card can be
+    # nearer the limit than is comfortable. The headroom costs nothing — the
+    # container exits as soon as it is done, not when the timer expires.
+    stop_grace_period: 30s
 
   # Optional: External PostgreSQL database
   # Uncomment to run Postgres alongside Bambuddy (or use an external Postgres host)

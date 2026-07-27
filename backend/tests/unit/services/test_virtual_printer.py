@@ -717,8 +717,9 @@ class TestVirtualPrinterInstance:
         # settings values must flow through to the queue item exactly as stored.
         settings_map = {
             "virtual_printer_archive_name_source": None,
-            "default_bed_levelling": "false",  # model default: True
-            "default_flow_cali": "true",  # model default: False
+            # Legacy boolean-string rows still coerce (false->off, true->on).
+            "default_bed_levelling": "false",  # tri-state default: auto
+            "default_flow_cali": "true",  # tri-state default: auto
             "default_vibration_cali": "false",  # model default: True
             "default_layer_inspect": "true",  # model default: False
             "default_timelapse": "true",  # model default: False
@@ -746,8 +747,8 @@ class TestVirtualPrinterInstance:
 
         assert len(added_items) == 1
         queue_item = added_items[0]
-        assert queue_item.bed_levelling is False, "default_bed_levelling=false must flow through"
-        assert queue_item.flow_cali is True, "default_flow_cali=true must flow through"
+        assert queue_item.bed_levelling == "off", "default_bed_levelling=false must flow through"
+        assert queue_item.flow_cali == "on", "default_flow_cali=true must flow through"
         assert queue_item.vibration_cali is False, "default_vibration_cali=false must flow through"
         assert queue_item.layer_inspect is True, "default_layer_inspect=true must flow through"
         assert queue_item.timelapse is True, "default_timelapse=true must flow through"
@@ -806,8 +807,8 @@ class TestVirtualPrinterInstance:
         assert len(added_items) == 1
         queue_item = added_items[0]
         # These must match the AppSettings (Pydantic) defaults in schemas/settings.py
-        assert queue_item.bed_levelling is True
-        assert queue_item.flow_cali is False
+        assert queue_item.bed_levelling == "auto"
+        assert queue_item.flow_cali == "auto"
         assert queue_item.vibration_cali is True
         assert queue_item.layer_inspect is False
         assert queue_item.timelapse is False
@@ -896,8 +897,8 @@ class TestVirtualPrinterInstance:
         assert len(added_items) == 1
         queue_item = added_items[0]
         assert queue_item.timelapse is True, "Slicer's timelapse=True must override settings.default_timelapse=False"
-        assert queue_item.bed_levelling is False, "Slicer's bed_leveling=False must override default_bed_levelling=True"
-        assert queue_item.flow_cali is True
+        assert queue_item.bed_levelling == "off", "Slicer's bed_leveling=False must override default_bed_levelling"
+        assert queue_item.flow_cali == "on"
         assert queue_item.vibration_cali is False
         assert queue_item.layer_inspect is True
         # Capture is consumed — no lingering state for the next print of the same name.
@@ -962,8 +963,75 @@ class TestVirtualPrinterInstance:
         assert len(added_items) == 1
         queue_item = added_items[0]
         assert queue_item.timelapse is True, "integer 1 must coerce to True"
-        assert queue_item.bed_levelling is False, "integer 0 must coerce to False"
-        assert queue_item.flow_cali is True
+        assert queue_item.bed_levelling == "off", "integer 0 must coerce to off"
+        assert queue_item.flow_cali == "on"
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_captures_slicer_auto_from_int_companion(self, tmp_path):
+        """The slicer's tri-state rides on the int companion (auto_bed_leveling /
+        extrude_cali_flag). When the slicer picks "Auto" it sends bed_leveling
+        false + auto_bed_leveling 2; the VP must record "auto", not "off".
+        """
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items = []
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=added_items.append)
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=26,
+            name="SlicerAuto",
+            mode="queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800026",
+            auto_dispatch=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "test.3mf"
+        file_path.write_bytes(b"fake3mf")
+
+        await inst.on_print_command(
+            file_path.name,
+            {
+                "command": "project_file",
+                "bed_leveling": False,
+                "auto_bed_leveling": 2,
+                "flow_cali": False,
+                "extrude_cali_flag": 2,
+            },
+        )
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "test"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        queue_item = added_items[0]
+        assert queue_item.bed_levelling == "auto", "auto_bed_leveling=2 must record 'auto'"
+        assert queue_item.flow_cali == "auto", "extrude_cali_flag=2 must record 'auto'"
 
     @pytest.mark.asyncio
     async def test_add_to_print_queue_populates_required_filament_types(self, tmp_path):
@@ -1101,11 +1169,76 @@ class TestVirtualPrinterInstance:
         assert queue_item.filament_overrides is not None
         overrides = json.loads(queue_item.filament_overrides)
         assert overrides == [
-            {"slot_id": 1, "type": "PLA", "color": "#FFFFFF", "force_color_match": True},
-            {"slot_id": 2, "type": "PLA", "color": "#FF00FF", "force_color_match": True},
+            {"slot_id": 1, "type": "PLA", "color": "#FFFFFF", "tray_info_idx": "", "force_color_match": True},
+            {"slot_id": 2, "type": "PLA", "color": "#FF00FF", "tray_info_idx": "", "force_color_match": True},
         ]
         # required_filament_types still populated alongside overrides.
         assert json.loads(queue_item.required_filament_types) == ["PLA"]
+
+    @pytest.mark.asyncio
+    async def test_add_to_print_queue_force_color_match_carries_tray_info_idx(self, tmp_path):
+        """#2650: the force override must carry the 3MF's ``tray_info_idx`` so the
+        scheduler can tell Bambu PLA variants apart (Basic GFA00 / Matte GFA01 /
+        Silk GFA06) — they all report ``tray_type == "PLA"`` with the same colour,
+        so type+colour alone dispatches onto the wrong variant."""
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        added_items = []
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock(side_effect=added_items.append)
+        mock_db.commit = AsyncMock()
+        mock_session_factory = MagicMock()
+        mock_session_ctx = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory.return_value = mock_session_ctx
+
+        inst = VirtualPrinterInstance(
+            vp_id=24,
+            name="Variant",
+            mode="queue",
+            model="C12",
+            access_code="12345678",
+            serial_suffix="391800024",
+            auto_dispatch=True,
+            queue_force_color_match=True,
+            base_dir=tmp_path,
+            session_factory=mock_session_factory,
+        )
+
+        file_path = tmp_path / "variant.3mf"
+        _write_3mf_with_filaments(
+            file_path,
+            [
+                # White PLA Matte — same colour as Basic/Silk, distinguished only by idx.
+                {"id": "1", "type": "PLA", "color": "#FFFFFF", "used_g": "10.0", "tray_info_idx": "GFA01"},
+            ],
+            plate_index=1,
+        )
+
+        mock_archive = MagicMock()
+        mock_archive.id = 1
+        mock_archive.print_name = "variant"
+
+        with (
+            patch(
+                "backend.app.api.routes.settings.get_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "backend.app.services.archive.ArchiveService.archive_print",
+                new_callable=AsyncMock,
+                return_value=mock_archive,
+            ),
+        ):
+            await inst._add_to_print_queue(file_path, "192.168.1.100")
+
+        assert len(added_items) == 1
+        overrides = json.loads(added_items[0].filament_overrides)
+        assert overrides == [
+            {"slot_id": 1, "type": "PLA", "color": "#FFFFFF", "tray_info_idx": "GFA01", "force_color_match": True},
+        ]
 
     @pytest.mark.asyncio
     async def test_add_to_print_queue_force_color_match_skips_when_3mf_unparseable(self, tmp_path):
@@ -1895,7 +2028,7 @@ class TestVirtualPrinterInstance:
         params = dict(compiled.params)
         assert _json.loads(params["nozzle_mapping"]) == [16, -1, -1, 1]
         assert params["timelapse"] is True
-        assert params["bed_levelling"] is False  # MQTT bed_leveling → column bed_levelling
+        assert params["bed_levelling"] == "off"  # MQTT bed_leveling → column bed_levelling (tri-state)
         # Recent-queue tracking dict is cleared after the patch.
         assert file_path.name not in inst._recent_queue_items
 
@@ -3173,6 +3306,146 @@ class TestVirtualPrinterManagerDirectories:
         assert (tmp_path / "uploads" / "42").exists()
         assert (tmp_path / "uploads" / "42" / "cache").exists()
         assert (tmp_path / "certs" / "42").exists()
+
+
+class TestVirtualPrinterCameraPassthrough:
+    """Tests for the non-proxy VP camera pass-through port selection (#1868).
+
+    The camera port must follow the TARGET printer's model, not the VP's
+    spoofed model: RTSP models (X1/X2/H2/P2S) use 322, chamber-image models
+    (A1/P1) use 6000. Before the fix, the manager hardcoded 322, so P1S /
+    A1 targets got a 322 listener with no upstream and BambuStudio /
+    OrcaSlicer Liveview failed with error `[2:-10061]` (the reporter's
+    symptom in #1868).
+    """
+
+    @staticmethod
+    def _patch_start_server(monkeypatch):
+        """Patch every non-camera constructor start_server touches so the
+        test only exercises the camera-port branch. Returns the list that
+        ``TCPProxy`` calls get captured into."""
+        from backend.app.services.virtual_printer import manager as vp_manager
+
+        tcp_calls: list[dict] = []
+
+        class FakeTCPProxy:
+            def __init__(self, **kwargs):
+                tcp_calls.append(kwargs)
+                self.kwargs = kwargs
+
+            async def start(self):
+                return None
+
+            async def stop(self):
+                return None
+
+        # Camera pass-through is the only TCPProxy start_server constructs.
+        monkeypatch.setattr(vp_manager, "TCPProxy", FakeTCPProxy)
+
+        # No-op every other service constructor + resolve_cert_and_advertise.
+        # start_server() awaits `.ready.wait()` on FTP/MQTT/Bind/SSDP after
+        # spawning them, so each fake instance must carry an already-set
+        # asyncio.Event as `.ready` — a plain MagicMock returns another
+        # MagicMock for `.wait()`, which `asyncio.gather` then rejects with
+        # `TypeError: An asyncio.Future, a coroutine or an awaitable is
+        # required`.
+        def _service_factory():
+            def make(*args, **kwargs):
+                inst = MagicMock()
+                inst.start = AsyncMock(return_value=None)
+                inst.stop = AsyncMock(return_value=None)
+                ready = asyncio.Event()
+                ready.set()
+                inst.ready = ready
+                return inst
+
+            return make
+
+        for name in (
+            "VirtualPrinterFTPServer",
+            "SimpleMQTTServer",
+            "MQTTBridge",
+            "BindServer",
+            "VirtualPrinterSSDPServer",
+            "SSDPProxy",
+        ):
+            monkeypatch.setattr(vp_manager, name, _service_factory())
+
+        return tcp_calls
+
+    async def _run_start_server(
+        self,
+        tmp_path,
+        monkeypatch,
+        *,
+        target_model: str,
+        target_ip: str = "192.168.1.100",
+    ) -> list[dict]:
+        from backend.app.services.virtual_printer.manager import VirtualPrinterInstance
+
+        tcp_calls = self._patch_start_server(monkeypatch)
+
+        instance = VirtualPrinterInstance(
+            vp_id=99,
+            name="CamTest",
+            mode="archive",
+            model="BL-P001",  # VP's spoofed identity — irrelevant here
+            access_code="12345678",
+            serial_suffix="391800099",
+            target_printer_id=7,
+            base_dir=tmp_path,
+        )
+
+        # printer_manager stub returns a client with the model + ip we want.
+        client = MagicMock()
+        client.ip_address = target_ip
+        client.model = target_model
+        printer_manager = MagicMock()
+        printer_manager.get_client.return_value = client
+        instance._printer_manager = printer_manager
+
+        # Cert / advertise resolution — start_server calls this early. Patch
+        # to a fixed tuple so no filesystem I/O is required.
+        monkeypatch.setattr(
+            instance,
+            "_resolve_cert_and_advertise",
+            lambda: (Path("/tmp/cert.pem"), Path("/tmp/key.pem"), "192.168.1.1"),  # nosec B108
+        )
+
+        try:
+            await instance.start_server()
+        finally:
+            for task in instance._tasks:
+                task.cancel()
+            await asyncio.gather(*instance._tasks, return_exceptions=True)
+
+        return tcp_calls
+
+    @pytest.mark.asyncio
+    async def test_rtsp_model_p2s_opens_port_322(self, tmp_path, monkeypatch):
+        calls = await self._run_start_server(tmp_path, monkeypatch, target_model="P2S")
+        assert any(c["listen_port"] == 322 and c["target_port"] == 322 for c in calls), (
+            f"Expected 322 pass-through for RTSP model P2S, got {calls}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_chamber_image_model_p1s_opens_port_6000(self, tmp_path, monkeypatch):
+        """#1868 regression guard: P1S target must expose 6000, not 322."""
+        calls = await self._run_start_server(tmp_path, monkeypatch, target_model="P1S")
+        assert any(c["listen_port"] == 6000 and c["target_port"] == 6000 for c in calls), (
+            f"Expected 6000 pass-through for chamber-image model P1S (#1868), got {calls}"
+        )
+        assert not any(c["listen_port"] == 322 for c in calls), f"P1S should NOT get a 322 listener, got {calls}"
+
+    @pytest.mark.asyncio
+    async def test_chamber_image_model_a1_opens_port_6000(self, tmp_path, monkeypatch):
+        calls = await self._run_start_server(tmp_path, monkeypatch, target_model="A1")
+        assert any(c["listen_port"] == 6000 and c["target_port"] == 6000 for c in calls)
+
+    @pytest.mark.asyncio
+    async def test_rtsp_model_x1c_opens_port_322(self, tmp_path, monkeypatch):
+        calls = await self._run_start_server(tmp_path, monkeypatch, target_model="X1C")
+        assert any(c["listen_port"] == 322 and c["target_port"] == 322 for c in calls)
 
 
 class TestVirtualPrinterInstanceProxyMode:

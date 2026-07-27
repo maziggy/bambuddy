@@ -119,6 +119,7 @@ function isAlwaysAllowedIdentical(value) {
   if (/^v?\d+(\.\d+)+/.test(value)) return true;        // version-like
   if (/^#[0-9a-fA-F]{3,8}$/.test(value)) return true;   // hex color
   if (/^\{\{[^}]+\}\}$/.test(value)) return true;       // pure placeholder
+  if (/^\{\{[^}]+\}\}([\s/\-–·,]+\{\{[^}]+\}\})+$/.test(value)) return true;  // placeholders joined by punctuation only ({{a}} / {{b}})
   if (/^[0-9a-fA-F]{6}$/.test(value)) return true;      // bare hex color
   if (/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(value)) return true;  // email
   if (/^https?:\/\//.test(value)) return true;          // URL
@@ -140,6 +141,8 @@ function isAlwaysAllowedIdentical(value) {
 // German loanwords / cognates from English are extensive. Most short technical
 // UI labels are identical in DE. List below curates the legitimate ones.
 const DE_COGNATES = [
+  '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the DE term too
+  'Auto',  // calibrationMode_auto — German UI uses the loanword (matches BambuStudio DE)
   'Name', 'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Modus',
   'Stop', 'Reset', 'Test', 'Code', 'Token', 'Server', 'Port', 'Bug', 'Job',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
@@ -147,6 +150,8 @@ const DE_COGNATES = [
 
   'Pause', 'Power', 'System', 'Problem', 'Designer', 'Extruder', 'Firmware',
   'Material', 'Original', 'Position', 'Webhook', 'Workflow', 'Slicer',
+  'Pipeline', 'Pipelines', 'Filament {{n}}',  // #1425 — Slicer Pipelines (DE)
+  'parallel',  // #1425 PR C polish — "parallel" is the same word in German
   'Region', 'Normal', 'Orange', 'Branch', 'Budget', 'Commit', 'Global',
   'Version', 'Slot', 'Live', 'Rate', 'Host', 'Trend', 'Min', 'Admin', 'Cloud',
   'Filament', 'Filaments', 'Software', 'Hardware', 'Avatar', 'Pin', 'Modal',
@@ -179,6 +184,9 @@ const FR_COGNATES = [
   'Filaments', 'Software', 'Hardware', 'Stop', 'Reset', 'Test', 'Code',
   'Token', 'Server', 'Port', 'Plate', 'Layer', 'Active', 'Total', 'Avatar',
   'Job', 'Modal', 'Pin', 'Pro', 'Mini', 'Studio', 'Excellent', 'Description',
+  'Pipeline', 'Pipelines', 'Filament {{n}}',  // #1425 — Slicer Pipelines (FR)
+  'Copies', '{{n}} copies', 'max {{n}}',  // #1425 PR C — French uses these forms verbatim
+  'round robin',  // borrowed English term used as-is in French tech contexts
   'Action', 'Actions', 'Date', 'Type', 'Cache', 'Service', 'Configuration',
   'Archives', 'Maintenance', 'Notifications', 'Notification', 'Position',
   'Pause', 'Solution', 'Source', 'Version', 'Format', 'Documentation',
@@ -207,15 +215,20 @@ const FR_COGNATES = [
   'Cancelling upload...', 'Backup in progress...', 'Searching directory...',
   'EC984C,#6CD4BC,A66EB9,D87694',
   'Proxy', 'Navigation', 'Budget', 'Commit', 'Designer',
+  'Compact',  // cam-wall status overlay mode — same word in French
   'ntfy, Pushover, Discord, etc.',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
 ];
 
 // Italian cognates.
 const IT_COGNATES = [
+  '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the IT term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
   'Email',  // common loanword in Italian, used verbatim in UI labels
+  'Pipeline', 'slicing',  // #1425 — Slicer Pipelines (cognate in IT)
+  'max {{n}}',  // #1425 PR C — same form in Italian (max + number)
+  'round robin',  // borrowed English term used as-is in Italian tech contexts
   'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Filament',
   'Filaments', 'Software', 'Hardware', 'Stop', 'Reset', 'Test', 'Code',
   'Token', 'Server', 'Port', 'Plate', 'Layer', 'Modal', 'Pin', 'Pro', 'Mini',
@@ -237,6 +250,7 @@ const IT_COGNATES = [
   'Hex: #{{hex}}',
   'EC984C,#6CD4BC,A66EB9,D87694',
   'Proxy', 'Designer',
+  'Off',  // cam-wall status overlay mode — common loanword in Italian UI
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
 ];
 
@@ -256,8 +270,11 @@ const JA_COGNATES = [
 
 // Portuguese (BR) cognates.
 const PT_BR_COGNATES = [
+  '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the PT-BR term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
+  'Pipeline', 'Pipelines',  // #1425 — Slicer Pipelines (PT-BR)
+  'round robin',  // borrowed English term used as-is in Portuguese tech contexts
   'Status', 'Tag', 'Tags', 'Online', 'Offline', 'Standard', 'Filament',
   'Software', 'Hardware', 'Stop', 'Reset', 'Test', 'Code', 'Token', 'Server',
   'Port', 'Plate', 'Layer', 'Modal', 'Pin', 'Pro', 'Mini', 'Studio', 'Cache',
@@ -328,8 +345,11 @@ const KO_COGNATES = [
 
 // Spanish cognates — words/phrases that are genuinely identical in Spanish.
 const ES_COGNATES = [
+  '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the ES term too
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
+  'Pipeline', 'Pipelines',  // #1425 — Slicer Pipelines (ES)
+  'round robin',  // borrowed English term used as-is in Spanish tech contexts
   'Error', 'Firmware', 'General', 'Control', 'Total', 'total', 'Material',
   'Material:', 'Color', 'Hex', 'Local', 'Global', 'China', 'Editable',
   'Normal', 'Metal', 'Multicolor', 'Proxy', 'Host', 'Factor', 'Original',
@@ -348,9 +368,11 @@ const ES_COGNATES = [
 // Turkish cognates — technical UI labels that Turkish speakers use verbatim
 // from English (loanwords + acronyms + format strings). Curated, not a shortcut.
 const TR_COGNATES = [
+  '{{ams}} · Slot {{slot}}',  // #2587 runout slot label — "Slot" is the TR term too
   'Filament', 'Firmware', 'Disk', 'Hex', 'Test', 'Port', 'Model', 'Metal',
   'Bambu Cloud', 'Orca Cloud',  // brand names — same in every locale
   'AMS Filament Backup',  // Bambu Lab product/firmware feature name
+  'Pipeline', 'Filament {{n}}',  // #1425 — Slicer Pipelines (TR)
   'Min', 'Normal', 'Platform', 'Net', 'Trend', 'Commit', 'Global', 'Proxy',
   'N/A', 'email',
   'STARTTLS (Port 587)', 'SSL/TLS (Port 465)',
@@ -359,6 +381,18 @@ const TR_COGNATES = [
   'Filament {{index}} ({{type}})',
   'EC984C,#6CD4BC,A66EB9,D87694',
   '{{filament}} @ {{temp}}°C',  // drying badge: filament code + universal °C
+];
+
+const RU_COGNATES = [
+  'MakerWorld: {{designer}}',
+  'email',
+  '{{printer}}: {{error}}',
+  'Bambu Cloud',
+  'Orca Cloud',
+  '{{name}} — {{stage}} ({{percent}}%) — {{elapsed}}',
+  'EC984C,#6CD4BC,A66EB9,D87694',
+  '({{count}}/8)',
+  '(25%, 50%, 75%)',
 ];
 
 const IDENTICAL_TO_EN_ALLOWED = {
@@ -372,6 +406,7 @@ const IDENTICAL_TO_EN_ALLOWED = {
   'zh-CN': new Set(ZH_CN_COGNATES),
   'zh-TW': new Set(ZH_TW_COGNATES),
   tr: new Set(TR_COGNATES),
+  ru: new Set(RU_COGNATES),
 };
 
 // Pure comparison logic, exported so tests can verify each failure mode

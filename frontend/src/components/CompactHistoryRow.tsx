@@ -18,9 +18,9 @@ import type { PrintQueueItem, Permission } from '../api/client';
 import { Button } from './Button';
 
 const STATUS_CONFIG = {
-  completed: { icon: CheckCircle, color: 'text-emerald-400', border: 'border-l-emerald-500' },
-  failed: { icon: XCircle, color: 'text-red-400', border: 'border-l-red-500' },
-  skipped: { icon: SkipForward, color: 'text-orange-400', border: 'border-l-gray-500' },
+  completed: { icon: CheckCircle, color: 'text-emerald-600 dark:text-emerald-400', border: 'border-l-emerald-500' },
+  failed: { icon: XCircle, color: 'text-red-600 dark:text-red-400', border: 'border-l-red-500' },
+  skipped: { icon: SkipForward, color: 'text-orange-600 dark:text-orange-400', border: 'border-l-gray-500' },
   cancelled: { icon: Ban, color: 'text-gray-400', border: 'border-l-gray-500' },
 } as const;
 
@@ -182,7 +182,7 @@ export function CompactHistoryRow({
 
       {/* Error message — only rendered on failed/skipped rows. */}
       {showErrorMessage && (
-        <div className="mt-1 ml-[3.25rem] flex items-start gap-1 text-xs text-red-400">
+        <div className="mt-1 ml-[3.25rem] flex items-start gap-1 text-xs text-red-700 dark:text-red-400">
           <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
           <span className="break-words">{item.error_message}</span>
         </div>

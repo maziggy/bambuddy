@@ -60,6 +60,9 @@ class LabelRequest(BaseModel):
         "avery_5160",
         "avery_l7160",
     ]
+    # Black-and-white thermal printers: drop the colour swatch (prints as a
+    # muddy grey block) and widen the text column instead (#1870).
+    monochrome: bool = False
 
 
 def _split_extra_colors(raw: str | None) -> list[str] | None:
@@ -170,7 +173,7 @@ async def render_local_inventory_labels(
     deeplink_base = await _resolve_deeplink_base(request, db)
     data_list = [_spool_to_label_data(s, deeplink_base) for s in ordered]
 
-    pdf = render_labels(body.template, data_list)
+    pdf = render_labels(body.template, data_list, monochrome=body.monochrome)
     filename = f"bambuddy-labels-{body.template}.pdf"
     return _stream_pdf(pdf, filename)
 
@@ -214,6 +217,6 @@ async def render_spoolman_labels(
     deeplink_base = await _resolve_deeplink_base(request, db)
     data_list = [_spoolman_dict_to_label_data(by_id[sid], deeplink_base) for sid in body.spool_ids]
 
-    pdf = render_labels(body.template, data_list)
+    pdf = render_labels(body.template, data_list, monochrome=body.monochrome)
     filename = f"bambuddy-labels-spoolman-{body.template}.pdf"
     return _stream_pdf(pdf, filename)

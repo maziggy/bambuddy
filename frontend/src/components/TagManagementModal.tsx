@@ -223,7 +223,7 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
                     ) : deleteConfirm === tag.name ? (
                       // Delete confirmation
                       <div className="flex-1 flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                        <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
                         <span className="text-sm text-bambu-gray-light flex-1">
                           Delete "{tag.name}" from {tag.count} archive{tag.count !== 1 ? 's' : ''}?
                         </span>
@@ -267,7 +267,7 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
                           </button>
                           <button
                             onClick={() => confirmDelete(tag.name)}
-                            className="p-1.5 rounded hover:bg-bambu-dark text-bambu-gray hover:text-red-400 transition-colors"
+                            className="p-1.5 rounded hover:bg-bambu-dark text-bambu-gray hover:text-red-700 dark:hover:text-red-400 transition-colors"
                             title="Delete tag"
                           >
                             <Trash2 className="w-4 h-4" />

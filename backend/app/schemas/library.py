@@ -205,6 +205,10 @@ class FileListResponse(BaseModel):
     created_by_id: int | None = None
     created_by_username: str | None = None
     created_at: datetime
+    # Real on-disk modification time (#2680). Populated for external files from
+    # their filesystem mtime; null for managed uploads. The file pane's date sort
+    # and the "Modified" column use ``fs_modified_at ?? created_at``.
+    fs_modified_at: datetime | None = None
 
     # Key metadata fields for display
     print_name: str | None = None

@@ -5,14 +5,20 @@
  * sponsors page with a Matomo-trackable `?from=app-toast-{milestone}` param.
  *
  * The 14-day cooldown + already-seen-milestone deduplication is owned by the
- * backend service — the hook just trusts the check endpoint's verdict.
+ * backend service. The hook trusts the check endpoint's verdict, and the moment
+ * it actually renders the toast it POSTs /dismiss to anchor the cooldown — being
+ * *shown* is what arms the 14-day gate, not the user clicking the CTA. (Clicking
+ * is optional; without this record-on-show, an ignored toast would never persist
+ * any state and would re-fire on every fresh browser session.)
  */
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { sponsorPromptApi, type SponsorPromptCheckResponse } from '../api/client';
+import { api, sponsorPromptApi, type SponsorPromptCheckResponse } from '../api/client';
 import { getCurrencySymbol } from '../utils/currency';
+import { fleetAudience, sponsorHref, type SponsorAudience } from '../utils/fleetAudience';
 
 const TOAST_ID = 'sponsor-prompt';
 const SESSION_SHOWN_KEY = 'sponsorPromptShown';
@@ -29,7 +35,15 @@ function buildMessage(
   t: ReturnType<typeof useTranslation>['t'],
   trigger: SponsorPromptCheckResponse,
   currencyCode: string,
+  audience: SponsorAudience,
+  printerCount: number,
 ): string | null {
+  // A business install has earned the same milestone, but the ask is different:
+  // support contract and invoicing, not a personal donation. One toast either
+  // way — the fleet only changes which one.
+  if (audience === 'business') {
+    return t('sponsors.toastBusiness', { count: printerCount });
+  }
   const family = trigger.family;
   const payload = trigger.payload ?? {};
   const threshold = trigger.threshold ?? 0;
@@ -58,8 +72,18 @@ export function useSponsorPrompt(currencyCode = 'EUR') {
   const { showPersistentToast } = useToast();
   const firedRef = useRef(false);
 
+  // Fleet size decides which ask the toast makes. The printers list is already
+  // cached app-wide, so this is normally a cache read; on a cold start we wait
+  // for it rather than pitch a print farm as if it were a hobbyist. An error
+  // (no permission, offline) settles the query too and falls back to personal.
+  const { data: printers, isPending: printersPending } = useQuery({
+    queryKey: ['printers'],
+    queryFn: api.getPrinters,
+    retry: false,
+  });
+
   useEffect(() => {
-    if (loading || firedRef.current) return;
+    if (loading || printersPending || firedRef.current) return;
     if (sessionStorage.getItem(SESSION_SHOWN_KEY)) {
       firedRef.current = true;
       return;
@@ -67,24 +91,30 @@ export function useSponsorPrompt(currencyCode = 'EUR') {
     firedRef.current = true;
     sessionStorage.setItem(SESSION_SHOWN_KEY, '1');
 
+    const printerCount = printers?.length ?? 0;
+    const audience = fleetAudience(printerCount);
+
     (async () => {
       try {
         const result = await sponsorPromptApi.check();
         if (!result.show || !result.milestone) return;
-        const message = buildMessage(t, result, currencyCode);
+        const message = buildMessage(t, result, currencyCode, audience, printerCount);
         if (!message) return;
         showPersistentToast(TOAST_ID, message, 'info', {
           action: {
-            label: t('sponsors.viewSupporters', 'View supporters'),
-            href: `https://bambuddy.cool/sponsors.html?from=app-toast-${result.milestone}`,
-            onClick: () => {
-              void sponsorPromptApi.dismiss(result.milestone!);
-            },
+            label:
+              audience === 'business'
+                ? t('sponsors.businessCta', 'Bambuddy for business')
+                : t('sponsors.viewSupporters', 'View supporters'),
+            href: sponsorHref(audience, `app-toast-${result.milestone}`),
           },
         });
+        // Anchor the 14-day cooldown as soon as the toast is on screen, so an
+        // ignored toast doesn't re-fire on the next browser session.
+        void sponsorPromptApi.dismiss(result.milestone);
       } catch {
         // Network / 401 — silently skip; next session retries.
       }
     })();
-  }, [loading, t, showPersistentToast, currencyCode]);
+  }, [loading, printersPending, printers, t, showPersistentToast, currencyCode]);
 }

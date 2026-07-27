@@ -47,7 +47,7 @@ async def _add_archives(db: AsyncSession, *, user_id: int | None, count: int) ->
         db.add(
             PrintArchive(
                 filename=f"archive-{i}.zip",
-                file_path=f"/tmp/archive-{i}.zip",
+                file_path=f"/tmp/archive-{i}.zip",  # nosec B108
                 file_size=1024,
                 created_by_id=user_id,
             )
@@ -156,14 +156,23 @@ class TestPrintMilestones:
         assert trigger.milestone == "prints-100"
 
     @pytest.mark.asyncio
+    async def test_fires_at_lowest_threshold(self, db_session: AsyncSession):
+        user = await _make_user(db_session)
+        await _add_completed_prints(db_session, user_id=user.id, count=10)
+        trigger = await service.evaluate(db_session, user.id)
+        assert trigger is not None
+        assert trigger.milestone == "prints-10"
+        assert trigger.threshold == 10
+
+    @pytest.mark.asyncio
     async def test_failed_prints_dont_count(self, db_session: AsyncSession):
         user = await _make_user(db_session)
-        await _add_completed_prints(db_session, user_id=user.id, count=50)
+        await _add_completed_prints(db_session, user_id=user.id, count=5)
         for _ in range(60):
             db_session.add(PrintLogEntry(status="failed", created_by_id=user.id))
         await db_session.flush()
         trigger = await service.evaluate(db_session, user.id)
-        # Only 50 completed → below 100 threshold → no print trigger.
+        # Only 5 completed → below 10 threshold → no print trigger.
         # Anniversary not reached either; no other counter populated.
         assert trigger is None
 
@@ -181,10 +190,10 @@ class TestArchiveMilestones:
 class TestCostMilestones:
     @pytest.mark.asyncio
     async def test_fires_when_cost_sum_crosses_100(self, db_session: AsyncSession):
-        # Prints with cost = ~3.5 each, 30 prints → 105.
+        # 5 prints, cost ~21 each → 105 total. Below the 10-print threshold so
+        # the prints family stays silent and cost gets a chance.
         user = await _make_user(db_session)
-        await _add_completed_prints(db_session, user_id=user.id, count=30, cost_each=3.5)
-        # 30 < 100 prints, so prints-100 not eligible. cost = 105 ≥ 100 → fires.
+        await _add_completed_prints(db_session, user_id=user.id, count=5, cost_each=21.0)
         trigger = await service.evaluate(db_session, user.id)
         assert trigger is not None
         assert trigger.family == "cost"

@@ -52,9 +52,13 @@ def _clean_state():
     """Don't leak event/cache dict entries across tests."""
     main_module._stage22_finish_in_flight.clear()
     main_module._stage22_finish_frames.clear()
+    main_module._inprint_frame_bank.clear()
+    main_module._inprint_frame_bank_ts.clear()
     yield
     main_module._stage22_finish_in_flight.clear()
     main_module._stage22_finish_frames.clear()
+    main_module._inprint_frame_bank.clear()
+    main_module._inprint_frame_bank_ts.clear()
 
 
 @pytest.fixture
@@ -206,3 +210,115 @@ async def test_consumer_wait_unblocked_when_producer_completes(patched_env, monk
 
     assert main_module._stage22_finish_frames[patched_env.id] == b"\xff\xd8frame"
     await producer
+
+
+async def test_finish_state_prefers_banked_frame(patched_env, monkeypatch):
+    """#1867: on the FINISH-state fallback (stage-22-less firmware, e.g. A1
+    Mini) a live grab captures the post-swap plate. When a banked in-print
+    frame exists it must be used instead, and the live grab must not run."""
+    main_module._inprint_frame_bank[patched_env.id] = b"\xff\xd8banked"
+
+    live_called = {"n": 0}
+
+    async def _live(**_kwargs):
+        live_called["n"] += 1
+        return b"\xff\xd8live-post-swap"
+
+    monkeypatch.setattr("backend.app.services.camera.capture_camera_frame_bytes", _live)
+
+    await on_finish_photo_moment(patched_env.id, {"trigger": "finish_state"})
+
+    assert main_module._stage22_finish_frames[patched_env.id] == b"\xff\xd8banked"
+    assert live_called["n"] == 0
+
+
+async def test_finish_state_falls_back_to_live_when_no_bank(patched_env, monkeypatch):
+    """No banked frame (feature just enabled, tiny print, capture failures) —
+    the FINISH-state path still live-grabs so we degrade to the old behaviour
+    rather than sending a text-only notification."""
+
+    async def _live(**_kwargs):
+        return b"\xff\xd8live"
+
+    monkeypatch.setattr("backend.app.services.camera.capture_camera_frame_bytes", _live)
+
+    await on_finish_photo_moment(patched_env.id, {"trigger": "finish_state"})
+
+    assert main_module._stage22_finish_frames[patched_env.id] == b"\xff\xd8live"
+
+
+async def test_last_layer_trigger_ignores_bank(patched_env, monkeypatch):
+    """The `last_layer` trigger fires before the swap and gives cleaner
+    (parked-toolhead) framing via a live grab — the bank is only for the
+    post-swap `finish_state` fallback, so it must be ignored here."""
+    main_module._inprint_frame_bank[patched_env.id] = b"\xff\xd8banked"
+
+    async def _live(**_kwargs):
+        return b"\xff\xd8live"
+
+    monkeypatch.setattr("backend.app.services.camera.capture_camera_frame_bytes", _live)
+
+    await on_finish_photo_moment(patched_env.id, {"trigger": "last_layer"})
+
+    assert main_module._stage22_finish_frames[patched_env.id] == b"\xff\xd8live"
+
+
+# --- #1867 banking helper (_maybe_bank_inprint_frame) --------------------
+
+
+def _bank_env(monkeypatch, *, state="RUNNING", sub_stage=0, total_layers=10, printer=object()):
+    """Wire printer_manager.get_client + the snapshot capture for the bank
+    helper. Capture returns a distinct frame per call so updates are visible."""
+    client = SimpleNamespace(
+        state=SimpleNamespace(state=state, mc_print_sub_stage=sub_stage, total_layers=total_layers)
+    )
+    monkeypatch.setattr(main_module.printer_manager, "get_client", lambda _pid: client)
+    monkeypatch.setattr(main_module, "async_session", lambda: _fake_session(printer))
+
+    counter = {"n": 0}
+
+    async def _capture(_pid, _printer, _logger):
+        counter["n"] += 1
+        return f"frame-{counter['n']}".encode()
+
+    monkeypatch.setattr(main_module, "_capture_snapshot_for_notification", _capture)
+    return counter
+
+
+async def test_bank_stores_frame_while_printing(monkeypatch):
+    _bank_env(monkeypatch)
+    await main_module._maybe_bank_inprint_frame(3, 5)
+    assert main_module._inprint_frame_bank[3] == b"frame-1"
+
+
+async def test_bank_throttles_within_interval(monkeypatch):
+    counter = _bank_env(monkeypatch)
+    await main_module._maybe_bank_inprint_frame(3, 5)  # banks frame-1
+    await main_module._maybe_bank_inprint_frame(3, 6)  # within 25s -> skipped
+    assert counter["n"] == 1
+    assert main_module._inprint_frame_bank[3] == b"frame-1"
+
+
+async def test_bank_always_refreshes_on_last_layer(monkeypatch):
+    counter = _bank_env(monkeypatch, total_layers=10)
+    await main_module._maybe_bank_inprint_frame(3, 5)  # banks frame-1
+    # Last layer bypasses the throttle for the best final framing.
+    await main_module._maybe_bank_inprint_frame(3, 10)
+    assert counter["n"] == 2
+    assert main_module._inprint_frame_bank[3] == b"frame-2"
+
+
+async def test_bank_skips_when_not_running(monkeypatch):
+    """End G-code (plate swap) runs after RUNNING ends — the bank must not
+    update then, which is what freezes it on the finished print."""
+    _bank_env(monkeypatch, state="FINISH")
+    await main_module._maybe_bank_inprint_frame(3, 10)
+    assert 3 not in main_module._inprint_frame_bank
+
+
+async def test_bank_skips_during_calibration_substage(monkeypatch):
+    """layer_num ticks during pre-print calibration (non-zero sub-stage) —
+    banking then would capture an empty bed."""
+    _bank_env(monkeypatch, sub_stage=14)
+    await main_module._maybe_bank_inprint_frame(3, 2)
+    assert 3 not in main_module._inprint_frame_bank

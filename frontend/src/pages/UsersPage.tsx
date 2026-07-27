@@ -268,7 +268,7 @@ export function UsersPage() {
       <div className="p-6">
         <Card>
           <CardContent className="py-6">
-            <div className="flex items-center gap-3 text-red-400">
+            <div className="flex items-center gap-3 text-red-700 dark:text-red-400">
               <Shield className="w-5 h-5" />
               <p className="text-white">{t('users.noPermission')}</p>
             </div>
@@ -343,7 +343,7 @@ export function UsersPage() {
                     <td className="px-6 py-4 text-sm">
                       <div className="flex flex-wrap gap-1">
                         {user.is_admin && (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300">
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300">
                             {t('users.admin')}
                           </span>
                         )}
@@ -352,11 +352,11 @@ export function UsersPage() {
                             key={group.id}
                             className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                               group.name === 'Administrators'
-                                ? 'bg-purple-500/20 text-purple-300'
+                                ? 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300'
                                 : group.name === 'Operators'
-                                ? 'bg-blue-500/20 text-blue-300'
+                                ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300'
                                 : group.name === 'Viewers'
-                                ? 'bg-green-500/20 text-green-300'
+                                ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300'
                                 : 'bg-gray-500/20 text-gray-300'
                             }`}
                           >
@@ -372,7 +372,7 @@ export function UsersPage() {
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${
                         user.is_active
                           ? 'bg-bambu-green/20 text-bambu-green'
-                          : 'bg-red-500/20 text-red-400'
+                          : 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400'
                       }`}>
                         {user.is_active ? t('users.active') : t('users.inactive')}
                       </span>
@@ -558,7 +558,7 @@ export function UsersPage() {
                     minLength={6}
                   />
                   {formData.confirmPassword && formData.password !== formData.confirmPassword && (
-                    <p className="text-red-400 text-xs mt-1">{t('users.toast.passwordsDoNotMatch')}</p>
+                    <p className="text-red-700 dark:text-red-400 text-xs mt-1">{t('users.toast.passwordsDoNotMatch')}</p>
                   )}
                 </div>
                 <div>
@@ -579,7 +579,7 @@ export function UsersPage() {
                         />
                         <span className="text-sm text-white">{group.name}</span>
                         {group.is_system && (
-                          <span className="text-xs text-yellow-400">({t('users.system')})</span>
+                          <span className="text-xs text-yellow-700 dark:text-yellow-400">({t('users.system')})</span>
                         )}
                       </label>
                     ))}
@@ -730,7 +730,7 @@ export function UsersPage() {
                       minLength={6}
                     />
                     {formData.confirmPassword && formData.password !== formData.confirmPassword && (
-                      <p className="text-red-400 text-xs mt-1">{t('users.toast.passwordsDoNotMatch')}</p>
+                      <p className="text-red-700 dark:text-red-400 text-xs mt-1">{t('users.toast.passwordsDoNotMatch')}</p>
                     )}
                   </div>
                 )}
@@ -752,7 +752,7 @@ export function UsersPage() {
                         />
                         <span className="text-sm text-white">{group.name}</span>
                         {group.is_system && (
-                          <span className="text-xs text-yellow-400">({t('users.system')})</span>
+                          <span className="text-xs text-yellow-700 dark:text-yellow-400">({t('users.system')})</span>
                         )}
                       </label>
                     ))}

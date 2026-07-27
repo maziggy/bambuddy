@@ -48,7 +48,7 @@ export function CompareArchivesModal({ archiveIds, onClose }: CompareArchivesMod
               <Loader2 className="w-8 h-8 text-bambu-green animate-spin" />
             </div>
           ) : error ? (
-            <div className="text-center py-12 text-red-400">
+            <div className="text-center py-12 text-red-700 dark:text-red-400">
               <AlertTriangle className="w-12 h-12 mx-auto mb-4 opacity-50" />
               <p>Failed to load comparison</p>
               <p className="text-sm text-bambu-gray mt-2">
@@ -109,9 +109,9 @@ function ComparisonContent({ comparison }: { comparison: ArchiveComparison }) {
                 <td className="py-2 pr-4 text-sm">
                   <div className="flex items-center gap-2">
                     {field.has_difference && (
-                      <AlertTriangle className="w-3 h-3 text-yellow-400 flex-shrink-0" />
+                      <AlertTriangle className="w-3 h-3 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
                     )}
-                    <span className={field.has_difference ? 'text-yellow-400' : 'text-bambu-gray'}>
+                    <span className={field.has_difference ? 'text-yellow-700 dark:text-yellow-400' : 'text-bambu-gray'}>
                       {field.label}
                     </span>
                   </div>
@@ -132,15 +132,15 @@ function ComparisonContent({ comparison }: { comparison: ArchiveComparison }) {
 
       {/* Differences Summary */}
       {comparison.differences.length > 0 && (
-        <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-          <h4 className="text-sm font-medium text-yellow-400 mb-2 flex items-center gap-2">
+        <div className="p-4 bg-yellow-50 border border-yellow-300 dark:bg-yellow-500/10 dark:border-yellow-500/30 rounded-lg">
+          <h4 className="text-sm font-medium text-yellow-700 dark:text-yellow-400 mb-2 flex items-center gap-2">
             <AlertTriangle className="w-4 h-4" />
             {comparison.differences.length} Difference{comparison.differences.length > 1 ? 's' : ''} Found
           </h4>
           <ul className="text-sm text-white/80 space-y-1">
             {comparison.differences.slice(0, 5).map((diff) => (
               <li key={diff.field}>
-                <span className="text-yellow-400">{diff.label}</span>: {diff.values.join(' vs ')} {diff.unit || ''}
+                <span className="text-yellow-700 dark:text-yellow-400">{diff.label}</span>: {diff.values.join(' vs ')} {diff.unit || ''}
               </li>
             ))}
             {comparison.differences.length > 5 && (
@@ -163,7 +163,7 @@ function ComparisonContent({ comparison }: { comparison: ArchiveComparison }) {
             <span className="text-bambu-green">
               {comparison.success_correlation.successful_count} successful
             </span>
-            <span className="text-red-400">
+            <span className="text-red-700 dark:text-red-400">
               {comparison.success_correlation.failed_count} failed
             </span>
           </div>

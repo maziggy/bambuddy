@@ -153,6 +153,15 @@ class HMSErrorResponse(BaseModel):
     attr: int = 0  # Attribute value for constructing wiki URL
     module: int
     severity: int  # 1=fatal, 2=serious, 3=common, 4=info
+    actions: list[str] = []  # List of user-facing action keys (e.g. "CHECK_FILAMENT")
+    job_id: str | None = None  # Optional job ID for actions that require it (e.g. "CHECK_ASSISTANT")
+    # Canonical hex identifier the firmware uses to match HMS-related commands.
+    # 16 chars for `hms[]`-array faults (full 64-bit attr+code), 8 chars for
+    # `print_error` faults. The frontend echoes this back as
+    # HmsActionBody.print_error so we send the firmware-recognised key, not the
+    # truncated short_code that historically caused silent command rejection
+    # (#1830, H2D wrong-plate verification).
+    full_code: str = ""
 
 
 class AMSTray(BaseModel):
@@ -172,6 +181,10 @@ class AMSTray(BaseModel):
     drying_temp: int | None = None  # RFID-recommended drying temp
     drying_time: int | None = None  # RFID-recommended drying time (hours)
     state: int | None = None  # AMS tray state: 9=empty, 10=spool present not loaded, 11=loaded
+    # Firmware's authoritative "spool physically present" bit (from tray_exist_bits).
+    # True for a non-RFID spool the firmware can't identify — the UI shows "?" rather
+    # than "Empty" (#2527). None when the bitmask was unavailable (→ state-based fallback).
+    exists: bool | None = None
 
 
 class AMSUnit(BaseModel):
@@ -214,6 +227,20 @@ class NozzleRackSlot(BaseModel):
 class AmsLabelBody(BaseModel):
     label: str = Field(..., min_length=1, max_length=100)
     ams_serial: str = Field(default="", max_length=50)
+
+
+class HmsActionBody(BaseModel):
+    # Canonical hex identifier (HMSErrorResponse.full_code): 8 chars for
+    # `print_error`-sourced faults, 16 chars for `hms[]`-array faults whose
+    # full 64-bit code is the firmware's matching key. Length-bounded to
+    # those two valid shapes to keep stray input from reaching the dispatcher.
+    print_error: str = Field(..., min_length=8, max_length=16, pattern=r"^[0-9A-Fa-f]{8}([0-9A-Fa-f]{8})?$")
+    # One of the HMSAction enum values. Length-capped to keep stray input from
+    # reaching the dispatcher's `match` statement.
+    action: str = Field(..., min_length=1, max_length=64)
+    # The `subtask_id` snapshot from the HMSError that surfaced this dialog.
+    # Bambu echoes it back in HMS-aware commands. Optional for idle errors.
+    job_id: str | None = Field(default=None, max_length=64)
 
 
 class FilaSwitchResponse(BaseModel):
@@ -305,6 +332,17 @@ class PrinterStatus(BaseModel):
     fila_switch: FilaSwitchResponse | None = None
     # Currently loaded tray (global ID): 254 = external spool, 255 = no filament
     tray_now: int = 255
+    # Runout / filament-replacement guidance (#2587). Populated only while the
+    # print is PAUSED. Both are globalised tray IDs (ams_id*4+slot, or 128-135 for
+    # AMS-HT, or 254 for external) so the frontend can highlight them with the same
+    # logic it uses for tray_now:
+    #   expected_tray = the slot the firmware now expects filament in (from tray_tar).
+    #                   None when idle, not paused, or the slot can't be resolved
+    #                   (multi-AMS ambiguity) — the UI then says "check the printer".
+    #   previous_tray = the slot loaded before the pause, i.e. the one that ran out
+    #                   (from tray_pre). None when unknown.
+    expected_tray: int | None = None
+    previous_tray: int | None = None
     # AMS status for filament change tracking
     # Main status: 0=idle, 1=filament_change, 2=rfid_identifying, 3=assist, 4=calibration
     ams_status_main: int = 0
@@ -338,6 +376,10 @@ class PrinterStatus(BaseModel):
     # AMS "Print While Drying" — drying mid-print. Verified per Bambu wiki release notes;
     # see _DRY_WHILE_PRINTING_MIN_FIRMWARE in printer_manager.py for the matrix.
     supports_drying_while_printing: bool = False
+    # The AMS can dry, but only from the printer's own screen (P1 series, #2533).
+    # supports_drying is False on these; the UI keeps the control visible but disabled
+    # and says why, rather than dropping it without explanation.
+    drying_screen_only: bool = False
     # Active chamber heater (responds to M141). True only for H2C/H2D/H2DPro/H2S/X2D.
     supports_chamber_heater: bool = False
     # Linked archive for the active print (resolved via subtask_id). Frontend uses

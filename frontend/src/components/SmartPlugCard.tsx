@@ -126,17 +126,17 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
             <div className="flex items-center gap-3 min-w-0 flex-1">
               <div className={`p-2 rounded-lg flex-shrink-0 ${
                 plug.plug_type === 'mqtt'
-                  ? (isReachable ? 'bg-teal-500/20' : 'bg-red-500/20')
-                  : (isReachable ? (isOn ? 'bg-bambu-green/20' : 'bg-bambu-dark') : 'bg-red-500/20')
+                  ? (isReachable ? 'bg-teal-100 dark:bg-teal-500/20' : 'bg-red-100 dark:bg-red-500/20')
+                  : (isReachable ? (isOn ? 'bg-bambu-green/20' : 'bg-bambu-dark') : 'bg-red-100 dark:bg-red-500/20')
               }`}>
                 {plug.plug_type === 'mqtt' ? (
-                  <Radio className={`w-5 h-5 ${isReachable ? 'text-teal-400' : 'text-red-400'}`} />
+                  <Radio className={`w-5 h-5 ${isReachable ? 'text-teal-600 dark:text-teal-400' : 'text-red-600 dark:text-red-400'}`} />
                 ) : plug.plug_type === 'homeassistant' ? (
-                  <Home className={`w-5 h-5 ${isReachable ? (isOn ? 'text-bambu-green' : 'text-bambu-gray') : 'text-red-400'}`} />
+                  <Home className={`w-5 h-5 ${isReachable ? (isOn ? 'text-bambu-green' : 'text-bambu-gray') : 'text-red-600 dark:text-red-400'}`} />
                 ) : plug.plug_type === 'rest' ? (
-                  <Globe className={`w-5 h-5 ${isReachable ? (isOn ? 'text-bambu-green' : 'text-bambu-gray') : 'text-red-400'}`} />
+                  <Globe className={`w-5 h-5 ${isReachable ? (isOn ? 'text-bambu-green' : 'text-bambu-gray') : 'text-red-600 dark:text-red-400'}`} />
                 ) : (
-                  <Plug className={`w-5 h-5 ${isReachable ? (isOn ? 'text-bambu-green' : 'text-bambu-gray') : 'text-red-400'}`} />
+                  <Plug className={`w-5 h-5 ${isReachable ? (isOn ? 'text-bambu-green' : 'text-bambu-gray') : 'text-red-600 dark:text-red-400'}`} />
                 )}
               </div>
               <div className="min-w-0">
@@ -157,19 +157,19 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
               ) : plug.plug_type === 'mqtt' ? (
                 /* MQTT plugs - show badge and checkmark when receiving data */
                 <div className="flex items-center gap-1.5 text-sm whitespace-nowrap">
-                  <span className="px-1.5 py-0.5 bg-teal-500/20 text-teal-400 text-[10px] font-medium rounded flex-shrink-0">MQTT</span>
+                  <span className="px-1.5 py-0.5 bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-400 text-[10px] font-medium rounded flex-shrink-0">MQTT</span>
                   {isReachable && <span className="text-status-ok">✓</span>}
                 </div>
               ) : plug.plug_type === 'homeassistant' ? (
                 <div className="flex items-center gap-1 text-sm">
-                  <span className="px-1 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-medium rounded">HA</span>
+                  <span className="px-1 py-0.5 bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[10px] font-medium rounded">HA</span>
                   <span className={isReachable ? (isOn ? 'text-status-ok' : 'text-bambu-gray') : 'text-status-error'}>
                     {isReachable ? (status?.state || '?') : t('smartPlugs.offline')}
                   </span>
                 </div>
               ) : plug.plug_type === 'rest' ? (
                 <div className="flex items-center gap-1 text-sm">
-                  <span className="px-1 py-0.5 bg-purple-500/20 text-purple-400 text-[10px] font-medium rounded">REST</span>
+                  <span className="px-1 py-0.5 bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400 text-[10px] font-medium rounded">REST</span>
                   <span className={isReachable ? (isOn ? 'text-status-ok' : 'text-bambu-gray') : 'text-status-error'}>
                     {isReachable ? (status?.state || '?') : t('smartPlugs.offline')}
                   </span>
@@ -214,19 +214,19 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
           {(plug.power_alert_enabled || plug.schedule_enabled || plug.plug_type === 'mqtt') && (
             <div className="flex flex-wrap gap-1.5 mb-3">
               {plug.plug_type === 'mqtt' && (
-                <span className="flex items-center gap-1 px-2 py-0.5 bg-teal-500/20 text-teal-400 text-xs rounded-full">
+                <span className="flex items-center gap-1 px-2 py-0.5 bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-400 text-xs rounded-full">
                   <Eye className="w-3 h-3" />
                   {t('smartPlugs.monitorOnly')}
                 </span>
               )}
               {plug.power_alert_enabled && (
-                <span className="flex items-center gap-1 px-2 py-0.5 bg-yellow-500/20 text-yellow-400 text-xs rounded-full">
+                <span className="flex items-center gap-1 px-2 py-0.5 bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 text-xs rounded-full">
                   <Bell className="w-3 h-3" />
                   {t('smartPlugs.alerts')}
                 </span>
               )}
               {plug.schedule_enabled && (
-                <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs rounded-full">
+                <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs rounded-full">
                   <Calendar className="w-3 h-3" />
                   {plug.schedule_on_time && plug.schedule_off_time
                     ? `${plug.schedule_on_time} - ${plug.schedule_off_time}`
@@ -316,6 +316,29 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                   <div className="w-9 h-5 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-bambu-green"></div>
                 </label>
               </div>
+
+              {/* Powers the printer (#2629) - only meaningful with a linked printer.
+                  When off, switching this plug off no longer marks the printer offline. */}
+              {plug.printer_id != null && (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Power className="w-4 h-4 text-bambu-green" />
+                    <div>
+                      <p className="text-sm text-white">{t('smartPlugs.controlsPrinterPower')}</p>
+                      <p className="text-xs text-bambu-gray">{t('smartPlugs.controlsPrinterPowerDescription')}</p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={plug.controls_printer_power}
+                      onChange={(e) => updateMutation.mutate({ controls_printer_power: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-bambu-green"></div>
+                  </label>
+                </div>
+              )}
 
               {/* Automation controls - only for controllable plugs (not MQTT) */}
               {plug.plug_type !== 'mqtt' && (
@@ -503,7 +526,7 @@ export function SmartPlugCard({ plug, onEdit }: SmartPlugCardProps) {
                   size="sm"
                   variant="secondary"
                   onClick={() => setShowDeleteConfirm(true)}
-                  className="text-red-400 hover:text-red-300"
+                  className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                 >
                   <Trash2 className="w-4 h-4" />
                 </Button>

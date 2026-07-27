@@ -13,6 +13,8 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { SliceModal } from '../../components/SliceModal';
+import { pickFilamentForSlot } from '../../utils/slicePresetPicker';
+import { buildCompatibilityIndex } from '../../utils/slicerPrinterMatch';
 import { SliceJobTrackerProvider } from '../../contexts/SliceJobTrackerContext';
 import { api, type UnifiedPresetsResponse } from '../../api/client';
 
@@ -28,6 +30,9 @@ vi.mock('../../api/client', () => ({
     getArchiveFilamentRequirements: vi.fn(),
     getSettings: vi.fn().mockResolvedValue({}),
     updateSettings: vi.fn().mockResolvedValue({}),
+    // Slicer Pipelines (#1425)
+    listSlicerPipelines: vi.fn(),
+    createSlicerPipeline: vi.fn(),
   },
 }));
 
@@ -40,6 +45,8 @@ const mockApi = api as unknown as {
   getArchivePlates: ReturnType<typeof vi.fn>;
   getLibraryFileFilamentRequirements: ReturnType<typeof vi.fn>;
   getArchiveFilamentRequirements: ReturnType<typeof vi.fn>;
+  listSlicerPipelines: ReturnType<typeof vi.fn>;
+  createSlicerPipeline: ReturnType<typeof vi.fn>;
 };
 
 function makeUnified(overrides: Partial<UnifiedPresetsResponse> = {}): UnifiedPresetsResponse {
@@ -77,6 +84,16 @@ function renderWithTracker(props: Parameters<typeof SliceModal>[0]) {
     <SliceJobTrackerProvider>
       <SliceModal {...props} />
     </SliceJobTrackerProvider>,
+  );
+}
+
+// SliceModal renders one extra combobox for the Slicer Pipelines (#1425)
+// "Apply pipeline" dropdown above the preset slots. Tests written before
+// pipelines landed assume selects[0] = printer; this helper drops the
+// pipeline combobox so those indices stay stable.
+function presetSelects(): HTMLSelectElement[] {
+  return (screen.getAllByRole('combobox') as HTMLSelectElement[]).filter(
+    (el) => el.getAttribute('aria-label') !== 'Apply pipeline',
   );
 }
 
@@ -121,6 +138,8 @@ describe('SliceModal', () => {
       plate_id: 1,
       filaments: [],
     });
+    // Default: no saved pipelines. Tests opt in by overriding this.
+    mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [] });
   });
 
   it('auto-selects the highest-priority tier per slot on first load', async () => {
@@ -137,7 +156,7 @@ describe('SliceModal', () => {
     // 4 selects: printer, process, bed-type (#1337), filament. bed-type sits
     // between process and filament — it overrides curr_bed_type on the
     // process preset so the related controls cluster — and defaults to "".
-    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
+    const selects = presetSelects();
     expect(selects).toHaveLength(4);
     expect(selects[0].value).toBe('local:1');
     expect(selects[1].value).toBe('local:2');
@@ -158,7 +177,7 @@ describe('SliceModal', () => {
 
     await waitFor(() => expect(screen.getByText('Imported X1C 0.4')).toBeDefined());
 
-    const printerSelect = screen.getAllByRole('combobox')[0];
+    const printerSelect = presetSelects()[0];
     const groups = printerSelect.querySelectorAll('optgroup');
     expect(Array.from(groups).map((g) => g.label)).toEqual([
       'Imported',
@@ -190,7 +209,7 @@ describe('SliceModal', () => {
     });
 
     await waitFor(() => expect(screen.getByText('Imported X1C 0.4')).toBeDefined());
-    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
+    const selects = presetSelects();
     expect(selects[0].value).toBe('local:1');
   });
 
@@ -204,7 +223,7 @@ describe('SliceModal', () => {
     });
 
     await waitFor(() => expect(screen.getByText('Bambu Lab X1 Carbon 0.4 nozzle')).toBeDefined());
-    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
+    const selects = presetSelects();
     expect(selects[0].value).toBe('standard:Bambu Lab X1 Carbon 0.4 nozzle');
   });
 
@@ -240,6 +259,79 @@ describe('SliceModal', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
+  it('offers "use the file\'s built-in settings" when the printer matches the design, and sends the flag (#2611)', async () => {
+    const onClose = vi.fn();
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+    // A project 3MF whose embedded printer matches a listed preset — the
+    // printer pre-pick lands on it, so selectedPrinterName === embedded and
+    // the "slice as designed" toggle is offered.
+    mockApi.getLibraryFilePlates.mockResolvedValue({
+      file_id: 100,
+      filename: 'Designed.3mf',
+      plates: [],
+      is_multi_plate: false,
+      embedded_printer: 'Bambu Lab X1 Carbon 0.4 nozzle',
+      embedded_process: '0.20mm Standard',
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose,
+    });
+
+    const user = userEvent.setup();
+    const toggle = (await screen.findByLabelText(
+      /Use the file's built-in settings/,
+    )) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+
+    // All preset dropdowns are live until the toggle is on, then bypassed —
+    // the printer included, so changing it can't silently drop the mode.
+    const printerSelect = presetSelects()[0];
+    const processSelect = presetSelects()[1];
+    expect(printerSelect.disabled).toBe(false);
+    expect(processSelect.disabled).toBe(false);
+    await user.click(toggle);
+    expect(printerSelect.disabled).toBe(true);
+    expect(processSelect.disabled).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+    await waitFor(() => {
+      expect(mockApi.sliceLibraryFile).toHaveBeenCalledWith(
+        100,
+        expect.objectContaining({ use_embedded_settings: true }),
+      );
+    });
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it('hides the embedded-settings toggle when the picked printer differs from the design (#2611)', async () => {
+    // Embedded target is a model with no matching preset in the listing, so
+    // the printer pre-pick falls back to the local default (Imported X1C),
+    // which does not match — honouring embedded settings would risk the
+    // wrong bed, so the toggle stays hidden.
+    mockApi.getLibraryFilePlates.mockResolvedValue({
+      file_id: 100,
+      filename: 'Designed.3mf',
+      plates: [],
+      is_multi_plate: false,
+      embedded_printer: 'Bambu Lab P1S 0.4 nozzle',
+      embedded_process: '0.20mm Standard',
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByText('Imported X1C 0.4')).toBeDefined());
+    expect(screen.queryByLabelText(/Use the file's built-in settings/)).toBeNull();
+  });
+
   it('includes bed_type in the request when the user picks a non-auto plate (#1337)', async () => {
     const onClose = vi.fn();
     mockApi.sliceLibraryFile.mockResolvedValue({
@@ -260,7 +352,7 @@ describe('SliceModal', () => {
     // printer (0), process (1), bed-type (2), filament (3+). Find the
     // bed-type select by name rather than positional index so this stays
     // green if the layout adds another control around it.
-    const bedSelect = screen.getAllByRole('combobox').find((el) =>
+    const bedSelect = presetSelects().find((el) =>
       (el as HTMLSelectElement).options[0]?.textContent?.toLowerCase().includes('auto'),
     ) as HTMLSelectElement;
     expect(bedSelect).toBeDefined();
@@ -315,7 +407,7 @@ describe('SliceModal', () => {
     await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
 
     const user = userEvent.setup();
-    const selects = screen.getAllByRole('combobox');
+    const selects = presetSelects();
     await user.selectOptions(selects[0], 'standard:Bambu Lab X1 Carbon 0.4 nozzle');
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
 
@@ -731,7 +823,7 @@ describe('SliceModal', () => {
 
     await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
     // 1 printer + 1 process + 2 filament + 1 bed-type (#1337) = 5 dropdowns.
-    expect(screen.getAllByRole('combobox')).toHaveLength(5);
+    expect(presetSelects()).toHaveLength(5);
   });
 
   it('pre-picks each filament slot by matching colour metadata', async () => {
@@ -812,7 +904,7 @@ describe('SliceModal', () => {
     await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
 
     const user = userEvent.setup();
-    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
+    const selects = presetSelects();
     // Order: 0 printer, 1 process, 2 bed-type, 3 filament-1, 4 filament-2
     // (#1337). Auto-picks land on printer/process/filaments; bed-type
     // defaults to "". Swap filament-1 (index 3) from the auto-picked black
@@ -937,7 +1029,7 @@ describe('SliceModal', () => {
     // Both filament rows render — 1 printer + 1 process + 1 bed-type +
     // 2 filament (#1337) = 5. bed-type sits at index 2, filament slots
     // follow at 3 and 4.
-    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
+    const selects = presetSelects();
     expect(selects).toHaveLength(5);
     // Slot 1 (used) is editable, slot 2 (not used) is disabled.
     expect(selects[3].disabled).toBe(false);
@@ -1018,4 +1110,321 @@ describe('SliceModal', () => {
     });
   });
 
+  // ------------------------------------------------------------------
+  // Slicer Pipelines (#1425) — Apply / Save integration in SliceModal
+  // ------------------------------------------------------------------
+
+  it('Apply pipeline dropdown is disabled and shows empty hint when no pipelines exist', async () => {
+    mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [] });
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      const select = screen.getByLabelText(/Apply pipeline/i) as HTMLSelectElement;
+      expect(select.disabled).toBe(true);
+      expect(select.querySelector('option')?.textContent).toMatch(/No saved pipelines/i);
+    });
+  });
+
+  it('applies a saved pipeline to printer, process, and bed_type slots on selection', async () => {
+    mockApi.listSlicerPipelines.mockResolvedValue({
+      pipelines: [
+        {
+          id: 7,
+          name: 'Production Batch',
+          description: null,
+          printer_preset: { source: 'local', id: '1' },
+          process_preset: { source: 'local', id: '2' },
+          filament_presets: [{ source: 'local', id: '3' }],
+          bed_type: 'Textured PEI Plate',
+          target_kind: 'printer_class',
+          target_printer_id: null,
+          target_model_class: null,
+          fanout_strategy: 'max_parallel',
+          created_by: null,
+          created_at: '2026-06-27T00:00:00Z',
+          updated_at: '2026-06-27T00:00:00Z',
+        },
+      ],
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+      onClose: vi.fn(),
+    });
+
+    // Wait for presets + pipelines listing to populate the modal.
+    await waitFor(() => {
+      const select = screen.getByLabelText(/Apply pipeline/i) as HTMLSelectElement;
+      expect(select.disabled).toBe(false);
+      expect(within(select).getByText('Production Batch')).toBeDefined();
+    });
+
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText(/Apply pipeline/i), '7');
+
+    // After applying, submitting the slice request should carry the
+    // pipeline's preset refs end-to-end.
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'queued',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+    await waitFor(() => {
+      expect(mockApi.sliceLibraryFile).toHaveBeenCalled();
+      const [, body] = mockApi.sliceLibraryFile.mock.calls[0];
+      expect(body.printer_preset).toEqual({ source: 'local', id: '1' });
+      expect(body.process_preset).toEqual({ source: 'local', id: '2' });
+      expect(body.filament_presets[0]).toEqual({ source: 'local', id: '3' });
+      expect(body.bed_type).toBe('Textured PEI Plate');
+    });
+  });
+
+  it('saves the current four-slot selection as a new pipeline when the user clicks Save as pipeline', async () => {
+    mockApi.listSlicerPipelines.mockResolvedValue({ pipelines: [] });
+    mockApi.createSlicerPipeline.mockResolvedValue({
+      id: 99,
+      name: 'My Default',
+      description: null,
+      printer_preset: { source: 'local', id: '1' },
+      process_preset: { source: 'local', id: '2' },
+      filament_presets: [{ source: 'local', id: '3' }],
+      bed_type: null,
+      target_kind: 'printer_class',
+      target_printer_id: null,
+      target_model_class: null,
+      fanout_strategy: 'max_parallel',
+      created_by: null,
+      created_at: '2026-06-27T00:00:00Z',
+      updated_at: '2026-06-27T00:00:00Z',
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+      onClose: vi.fn(),
+    });
+
+    // Wait for auto-pick to populate all four slots from the fullThreeTier
+    // listing — then Save as pipeline becomes enabled.
+    const user = userEvent.setup();
+    let saveBtn: HTMLButtonElement;
+    await waitFor(() => {
+      saveBtn = screen.getByRole('button', { name: /^Save as pipeline$/ }) as HTMLButtonElement;
+      expect(saveBtn.disabled).toBe(false);
+    });
+    await user.click(saveBtn!);
+
+    const nameInput = screen.getByLabelText(/New pipeline name/i);
+    await user.type(nameInput, 'My Default');
+    await user.click(screen.getByRole('button', { name: /^Save$/ }));
+
+    await waitFor(() => {
+      expect(mockApi.createSlicerPipeline).toHaveBeenCalledTimes(1);
+      const body = mockApi.createSlicerPipeline.mock.calls[0][0];
+      expect(body.name).toBe('My Default');
+      // The four slots come from the auto-picked unified-presets listing —
+      // local tier wins per SLICE_MODAL_TIER_ORDER.
+      expect(body.printer_preset.source).toBe('local');
+      expect(body.process_preset.source).toBe('local');
+      expect(body.filament_presets[0].source).toBe('local');
+    });
+  });
+
+});
+
+// Pure-function tests for the filament slot picker. Pinned as a separate
+// describe so the contract is visible without needing the modal mount.
+describe('pickFilamentForSlot — printer-compat contract (#1851)', () => {
+  // Index that recognises @BBL H2C / @BBL A1 tokens via the canonical
+  // PRINTER_MODEL_MAP. Real production data comes through
+  // ``api.getSlicerPrinterModels`` — the H2C / A1 fragments are the ones
+  // the production registry ships.
+  const index = buildCompatibilityIndex({
+    'Bambu Lab A1': 'A1',
+    'Bambu Lab H2C': 'H2C',
+  });
+
+  it('prefers a printer-compatible preset over a printer-mismatched one even with better colour match', () => {
+    // The OP scenario for #1851: a Bambu Lab A1 is selected; the unused-slot
+    // requirement carries the original H2C plate's PLA colour. With the
+    // legacy soft-penalty scoring an H2C-bound preset whose colour matches
+    // exactly could still rise above the A1-compatible PLA Basic whose
+    // colour doesn't, and then the unused-slot substitution propagated the
+    // H2C-bound preset across every unused slot — the CLI rejected with
+    // ``filament preset Generic PLA @BBL H2C (slot 1) is not compatible
+    // with printer Bambu Lab A1 0.4 nozzle``. The hard-skip contract makes
+    // sure a mismatched preset is never chosen while any compatible
+    // alternative exists, irrespective of metadata-score arithmetic.
+    const presets = makeUnified({
+      standard: {
+        printer: [],
+        process: [],
+        filament: [
+          {
+            id: 'Generic PLA @BBL H2C',
+            name: 'Generic PLA @BBL H2C',
+            source: 'standard',
+            filament_type: 'PLA',
+            filament_colour: '#FF0000',
+          },
+          {
+            id: 'Bambu PLA Basic @BBL A1',
+            name: 'Bambu PLA Basic @BBL A1',
+            source: 'standard',
+            filament_type: 'PLA',
+            filament_colour: '#FFFFFF',
+          },
+        ],
+      },
+    });
+    const pick = pickFilamentForSlot(
+      presets,
+      { type: 'PLA', color: '#FF0000' },
+      'Bambu Lab A1 0.4 nozzle',
+      index,
+    );
+    expect(pick).toEqual({ source: 'standard', id: 'Bambu PLA Basic @BBL A1' });
+  });
+
+  it('falls back to a mismatched preset when no compatible alternative exists', () => {
+    // Graceful degrade: when every available preset is printer-mismatched,
+    // returning ``null`` would block the slice entirely. The picker keeps
+    // its old behaviour of returning the best-scoring mismatch so the user
+    // sees a populated dropdown they can correct, not an empty one.
+    const presets = makeUnified({
+      standard: {
+        printer: [],
+        process: [],
+        filament: [
+          {
+            id: 'Generic PLA @BBL H2C',
+            name: 'Generic PLA @BBL H2C',
+            source: 'standard',
+            filament_type: 'PLA',
+            filament_colour: '#FF0000',
+          },
+        ],
+      },
+    });
+    const pick = pickFilamentForSlot(
+      presets,
+      { type: 'PLA', color: '#FF0000' },
+      'Bambu Lab A1 0.4 nozzle',
+      index,
+    );
+    expect(pick).toEqual({ source: 'standard', id: 'Generic PLA @BBL H2C' });
+  });
+
+  it('treats a no-printer-context call as no-mismatch (every preset eligible)', () => {
+    // ``printerName === null`` happens transiently on first render before the
+    // printer pre-pick effect has run. ``presetCompatibility`` returns
+    // ``unknown`` for every preset in that case, so the picker should just
+    // pick by metadata score with no compatibility filter active.
+    const presets = makeUnified({
+      standard: {
+        printer: [],
+        process: [],
+        filament: [
+          {
+            id: 'Generic PLA @BBL H2C',
+            name: 'Generic PLA @BBL H2C',
+            source: 'standard',
+            filament_type: 'PLA',
+            filament_colour: '#FF0000',
+          },
+        ],
+      },
+    });
+    const pick = pickFilamentForSlot(
+      presets,
+      { type: 'PLA', color: '#FF0000' },
+      null,
+      index,
+    );
+    expect(pick).toEqual({ source: 'standard', id: 'Generic PLA @BBL H2C' });
+  });
+});
+
+describe('pickFilamentForSlot — long-form printer tag (#2628)', () => {
+  const index = buildCompatibilityIndex({
+    'Bambu Lab A1': 'A1',
+    'Bambu Lab H2D': 'H2D',
+  });
+
+  it('never auto-picks a user-saved preset scoped to another printer', () => {
+    // michaelklos's registry: a cloud-tier user preset carrying the full
+    // "@Bambu Lab H2D 0.4 nozzle" tag outscores the A1 preset on tier bonus
+    // alone. Until the matcher learned the long form it classified 'unknown'
+    // — indistinguishable from compatible — so it won the slot, landed in a
+    // dropdown the modal disables (slot not used by the plate), and the CLI
+    // rejected the whole slice.
+    const presets = makeUnified({
+      cloud: {
+        printer: [],
+        process: [],
+        filament: [
+          {
+            id: 'sunlu-tpu-h2d',
+            name: 'SUNLU TPU 95A @Bambu Lab H2D 0.4 nozzle',
+            source: 'cloud',
+            filament_type: 'PLA',
+            filament_colour: '#FF0000',
+          },
+        ],
+      },
+      standard: {
+        printer: [],
+        process: [],
+        filament: [
+          {
+            id: 'Bambu PLA Basic @BBL A1',
+            name: 'Bambu PLA Basic @BBL A1',
+            source: 'standard',
+            filament_type: 'PLA',
+            filament_colour: '#FFFFFF',
+          },
+        ],
+      },
+    });
+
+    const pick = pickFilamentForSlot(
+      presets,
+      { type: 'PLA', color: '#FF0000' },
+      'Bambu Lab A1 0.4 nozzle',
+      index,
+    );
+
+    expect(pick).toEqual({ source: 'standard', id: 'Bambu PLA Basic @BBL A1' });
+  });
+
+  it('still picks a long-form preset for its own printer', () => {
+    const presets = makeUnified({
+      cloud: {
+        printer: [],
+        process: [],
+        filament: [
+          {
+            id: 'sunlu-tpu-h2d',
+            name: 'SUNLU TPU 95A @Bambu Lab H2D 0.4 nozzle',
+            source: 'cloud',
+            filament_type: 'TPU',
+            filament_colour: '#FF0000',
+          },
+        ],
+      },
+    });
+
+    const pick = pickFilamentForSlot(
+      presets,
+      { type: 'TPU', color: '#FF0000' },
+      'Bambu Lab H2D 0.4 nozzle',
+      index,
+    );
+
+    expect(pick).toEqual({ source: 'cloud', id: 'sunlu-tpu-h2d' });
+  });
 });

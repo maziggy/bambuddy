@@ -29,6 +29,7 @@ import type {
   GitHubBackupTriggerResponse,
   GitProviderType,
   LocalBackupFile,
+  LocalBackupPathCheck,
   LocalBackupStatus,
   ScheduleType,
   CloudAuthStatus,
@@ -56,10 +57,10 @@ function StatusBadge({ status }: StatusBadgeProps) {
   if (!status) return null;
 
   const styles: Record<string, string> = {
-    success: 'bg-green-500/20 text-green-400',
-    failed: 'bg-red-500/20 text-red-400',
-    skipped: 'bg-yellow-500/20 text-yellow-400',
-    running: 'bg-blue-500/20 text-blue-400',
+    success: 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400',
+    failed: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400',
+    skipped: 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400',
+    running: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400',
   };
 
   const icons: Record<string, React.ReactNode> = {
@@ -173,6 +174,18 @@ export function GitHubBackupSettings() {
     refetchInterval: 30000,
   });
 
+  // Probes the output directory with a real write (#2544). A directory the
+  // service cannot write to — a NAS share outside the systemd unit's
+  // ReadWritePaths, typically — otherwise only surfaces as a failed backup at
+  // 03:00, for however many nights it takes someone to notice. Refetched
+  // explicitly when the path changes or a backup runs, not polled: it writes.
+  const { data: localBackupPathCheck, refetch: refetchLocalPathCheck } = useQuery<LocalBackupPathCheck>({
+    queryKey: ['local-backup-path-check'],
+    queryFn: api.checkLocalBackupPath,
+    enabled: localBackupStatus?.enabled === true,
+    refetchOnWindowFocus: false,
+  });
+
   // Sync local path state from server
   useEffect(() => {
     if (localBackupStatus?.path !== undefined) {
@@ -190,6 +203,7 @@ export function GitHubBackupSettings() {
       }
       refetchLocalStatus();
       refetchLocalBackups();
+      refetchLocalPathCheck();
     },
     onError: () => showToast(t('backup.scheduledBackupFailed'), 'error'),
   });
@@ -658,7 +672,7 @@ export function GitHubBackupSettings() {
                 {/* Access Token */}
                 <div>
                   <label className="block text-sm text-bambu-gray mb-1">
-                    {t('backup.personalAccessToken')} {config?.has_token && <span className="text-green-400">{t('backup.tokenSaved')}</span>}
+                    {t('backup.personalAccessToken')} {config?.has_token && <span className="text-green-700 dark:text-green-400">{t('backup.tokenSaved')}</span>}
                   </label>
                   <input
                     type="password"
@@ -722,13 +736,13 @@ export function GitHubBackupSettings() {
                     <div className="flex items-center gap-2">
                       <span className={`text-sm ${noPrintersConnected ? 'text-bambu-gray' : 'text-white'}`}>{t('backup.kProfiles')}</span>
                       {noPrintersConnected && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-400">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400">
                           <AlertTriangle className="w-3 h-3" />
                           {t('backup.noPrintersConnected')}
                         </span>
                       )}
                       {somePrintersDisconnected && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-400">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400">
                           <AlertTriangle className="w-3 h-3" />
                           {t('backup.printersConnected', { connected: connectedPrinters, total: totalPrinters })}
                         </span>
@@ -749,7 +763,7 @@ export function GitHubBackupSettings() {
                     <div className="flex items-center gap-2">
                       <span className={`text-sm ${cloudStatus?.is_authenticated ? 'text-white' : 'text-bambu-gray'}`}>{t('backup.cloudProfiles')}</span>
                       {!cloudStatus?.is_authenticated && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-400">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400">
                           <AlertTriangle className="w-3 h-3" />
                           {t('backup.cloudLoginRequiredShort')}
                         </span>
@@ -825,7 +839,7 @@ export function GitHubBackupSettings() {
                   messages (e.g. the "repository is not private" guard)
                   readable instead of clipped to a toast. */}
               {saveError && (
-                <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded p-3 flex items-start gap-2">
+                <div className="text-sm text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30 rounded p-3 flex items-start gap-2">
                   <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
                   <div className="flex-1 leading-relaxed whitespace-pre-wrap break-words">{saveError}</div>
                   <button
@@ -842,18 +856,18 @@ export function GitHubBackupSettings() {
               {/* Test result */}
               {testResult && (
                 <div className="space-y-1.5">
-                  <div className={`text-sm flex items-center gap-1 ${testResult.success ? 'text-green-400' : 'text-red-400'}`}>
+                  <div className={`text-sm flex items-center gap-1 ${testResult.success ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
                     {testResult.success ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
                     {testResult.message}
                   </div>
                   {testResult.success && testResult.isPrivate === true && (
-                    <div className="text-xs flex items-center gap-1 text-green-400">
+                    <div className="text-xs flex items-center gap-1 text-green-700 dark:text-green-400">
                       <CheckCircle className="w-3.5 h-3.5" />
                       {t('backup.repoIsPrivate', 'Repository is private — safe to back up to.')}
                     </div>
                   )}
                   {testResult.success && testResult.isPrivate === false && (
-                    <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded p-2 flex items-start gap-1.5">
+                    <div className="text-xs text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30 rounded p-2 flex items-start gap-1.5">
                       <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
                       <span>
                         {t(
@@ -864,7 +878,7 @@ export function GitHubBackupSettings() {
                     </div>
                   )}
                   {testResult.success && testResult.isPrivate === null && (
-                    <div className="text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/30 rounded p-2 flex items-start gap-1.5">
+                    <div className="text-xs text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-500/30 rounded p-2 flex items-start gap-1.5">
                       <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
                       <span>
                         {t(
@@ -1087,14 +1101,14 @@ export function GitHubBackupSettings() {
 
             {/* Restore result message */}
             {restoreResult && (
-              <div className={`p-3 rounded-lg ${restoreResult.success ? 'bg-green-500/10 border border-green-500/30' : 'bg-red-500/10 border border-red-500/30'}`}>
+              <div className={`p-3 rounded-lg ${restoreResult.success ? 'bg-green-50 dark:bg-green-500/10 border border-green-300 dark:border-green-500/30' : 'bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30'}`}>
                 <div className="flex items-start gap-2 text-sm">
                   {restoreResult.success ? (
-                    <CheckCircle className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
+                    <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
                   ) : (
-                    <XCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+                    <XCircle className="w-4 h-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
                   )}
-                  <div className={restoreResult.success ? 'text-green-200' : 'text-red-200'}>
+                  <div className={restoreResult.success ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'}>
                     {restoreResult.message}
                     {restoreResult.success && (
                       <div className="mt-2">
@@ -1113,12 +1127,12 @@ export function GitHubBackupSettings() {
             )}
 
             {/* Warning */}
-            <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+            <div className="p-3 rounded-lg bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-500/30">
               <div className="flex items-start gap-2 text-sm">
-                <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
-                <div className="text-yellow-200">
+                <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+                <div className="text-yellow-800 dark:text-yellow-200">
                   <span className="font-medium">{t('backup.restoreReplacesAll')}</span>{' '}
-                  <span className="text-yellow-200/70">{t('backup.restoreReplacesAllDetail')}</span>
+                  <span className="text-yellow-800/80 dark:text-yellow-200/70">{t('backup.restoreReplacesAllDetail')}</span>
                 </div>
               </div>
             </div>
@@ -1239,6 +1253,7 @@ export function GitHubBackupSettings() {
                       }
                       refetchLocalStatus();
                       refetchLocalBackups();
+                      refetchLocalPathCheck();
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -1250,6 +1265,57 @@ export function GitHubBackupSettings() {
                       : <>{t('backup.defaultPathLabel')} <code className="text-bambu-gray">{localBackupStatus?.default_path || '...'}</code></>
                     }
                   </p>
+
+                  {/* The directory cannot be written to — say why, and how to fix it (#2544) */}
+                  {localBackupPathCheck && !localBackupPathCheck.writable && (
+                    <div className="mt-2 p-3 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30">
+                      <div className="flex items-start gap-2 text-sm">
+                        <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                        <div className="min-w-0 text-red-800 dark:text-red-200">
+                          <p className="font-medium">{t('backup.pathCheck.title')}</p>
+                          <p className="mt-1 text-red-800/80 dark:text-red-200/80">
+                            {t(`backup.pathCheck.${localBackupPathCheck.code}`, {
+                              path: localBackupPathCheck.path,
+                              defaultValue: localBackupPathCheck.message,
+                            })}
+                          </p>
+                          {localBackupPathCheck.remedy && (
+                            <>
+                              <p className="mt-2 font-medium">{t('backup.pathCheck.howToFix')}</p>
+                              <pre className="mt-1 p-2 rounded bg-black/10 dark:bg-black/40 text-xs whitespace-pre-wrap break-words">
+                                {localBackupPathCheck.remedy}
+                              </pre>
+                            </>
+                          )}
+                          {localBackupPathCheck.detail && (
+                            <p className="mt-2 text-xs text-red-800/60 dark:text-red-200/60 break-words">
+                              {localBackupPathCheck.detail}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Writable, but only inside the container — the backups die with it */}
+                  {localBackupPathCheck?.writable && localBackupPathCheck.warning === 'container_ephemeral' && (
+                    <div className="mt-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-500/30">
+                      <div className="flex items-start gap-2 text-sm">
+                        <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+                        <div className="min-w-0 text-yellow-800 dark:text-yellow-200">
+                          <p className="font-medium">{t('backup.pathCheck.ephemeralTitle')}</p>
+                          <p className="mt-1 text-yellow-800/80 dark:text-yellow-200/80">
+                            {t('backup.pathCheck.container_ephemeral', { path: localBackupPathCheck.path })}
+                          </p>
+                          {localBackupPathCheck.remedy && (
+                            <pre className="mt-1 p-2 rounded bg-black/10 dark:bg-black/40 text-xs whitespace-pre-wrap break-words">
+                              {localBackupPathCheck.remedy}
+                            </pre>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Status + Run Now */}
@@ -1318,14 +1384,14 @@ export function GitHubBackupSettings() {
                               <Download className="w-3.5 h-3.5" />
                             </button>
                             <button
-                              className="text-bambu-gray hover:text-yellow-400 p-1"
+                              className="text-bambu-gray hover:text-yellow-600 dark:hover:text-yellow-400 p-1"
                               title={t('backup.restore')}
                               onClick={() => setRestoreConfirmFile(file.filename)}
                             >
                               <RotateCcw className="w-3.5 h-3.5" />
                             </button>
                             <button
-                              className="text-bambu-gray hover:text-red-400 p-1"
+                              className="text-bambu-gray hover:text-red-600 dark:hover:text-red-400 p-1"
                               onClick={() => setDeleteConfirmFile(file.filename)}
                               title={t('backup.deleteBackup')}
                             >
@@ -1425,10 +1491,10 @@ export function GitHubBackupSettings() {
             <p className="text-bambu-gray mb-4">
               {operationStatus || (isExporting ? t('backup.preparing') : t('backup.processing'))}
             </p>
-            <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+            <div className="p-3 rounded-lg bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-300 dark:border-yellow-500/30">
               <div className="flex items-start gap-2 text-sm">
-                <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
-                <p className="text-yellow-200 text-left">
+                <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+                <p className="text-yellow-800 dark:text-yellow-200 text-left">
                   {t('backup.doNotClosePage')}
                 </p>
               </div>

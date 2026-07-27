@@ -7,8 +7,8 @@ const WIKI_TROUBLESHOOTING = 'https://wiki.bambuddy.cool/reference/troubleshooti
 
 const CATEGORY_META: Record<LogFindingCategory, { icon: ElementType; badgeClass: string }> = {
   layer8: { icon: Wrench, badgeClass: 'bg-bambu-green/15 text-bambu-green border-bambu-green/30' },
-  environment: { icon: ServerCog, badgeClass: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
-  bug: { icon: Bug, badgeClass: 'bg-red-500/15 text-red-300 border-red-500/30' },
+  environment: { icon: ServerCog, badgeClass: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-500/30' },
+  bug: { icon: Bug, badgeClass: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-300 dark:border-red-500/30' },
 };
 
 /**
@@ -25,7 +25,7 @@ function FindingCard({ finding }: { finding: LogFinding }) {
   const meta = CATEGORY_META[finding.category] ?? CATEGORY_META.bug;
   const CategoryIcon = meta.icon;
   const SeverityIcon = finding.severity === 'error' ? XCircle : AlertTriangle;
-  const severityColor = finding.severity === 'error' ? 'text-red-400' : 'text-amber-400';
+  const severityColor = finding.severity === 'error' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400';
 
   return (
     <div className="bg-bambu-dark rounded-lg border border-bambu-dark-tertiary p-4 space-y-2">
@@ -82,7 +82,7 @@ export function SystemHealthPanel({ result }: { result: SystemHealthResult }) {
 
   if (!result.log_available) {
     return (
-      <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-sm text-amber-300">
+      <div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
         {t('systemHealth.logUnavailable')}
       </div>
     );

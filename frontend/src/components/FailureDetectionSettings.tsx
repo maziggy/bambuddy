@@ -163,7 +163,7 @@ export function FailureDetectionSettings() {
               {testResult && (
                 <div
                   className={`flex items-start gap-2 mt-2 text-sm ${
-                    testResult.ok ? 'text-green-400' : 'text-red-400'
+                    testResult.ok ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
                   }`}
                 >
                   {testResult.ok ? <Check className="w-4 h-4 mt-0.5" /> : <X className="w-4 h-4 mt-0.5" />}
@@ -222,7 +222,7 @@ export function FailureDetectionSettings() {
             </div>
 
             {status && !status.external_url_configured && enabled && (
-              <div className="flex items-start gap-2 p-3 bg-amber-900/30 border border-amber-700 rounded text-sm text-amber-200">
+              <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded text-sm text-amber-800 dark:text-amber-200">
                 <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                 <div>
                   <div className="font-medium">{t('failureDetection.externalUrlMissing')}</div>
@@ -282,7 +282,7 @@ export function FailureDetectionSettings() {
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between">
                   <span className="text-bambu-gray">{t('failureDetection.serviceRunning')}</span>
-                  <span className={status.is_running ? 'text-green-400' : 'text-red-400'}>
+                  <span className={status.is_running ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}>
                     {status.is_running ? t('common.yes') : t('common.no')}
                   </span>
                 </div>
@@ -293,7 +293,7 @@ export function FailureDetectionSettings() {
                   </span>
                 </div>
                 {status.last_error && (
-                  <div className="flex items-start gap-2 text-red-400">
+                  <div className="flex items-start gap-2 text-red-700 dark:text-red-400">
                     <X className="w-4 h-4 mt-0.5 flex-shrink-0" />
                     <span className="break-words">{status.last_error}</span>
                   </div>
@@ -308,10 +308,10 @@ export function FailureDetectionSettings() {
                         const printer = printers?.find((p) => String(p.id) === pid);
                         const colorClass =
                           info.class === 'failure'
-                            ? 'text-red-400'
+                            ? 'text-red-700 dark:text-red-400'
                             : info.class === 'warning'
-                              ? 'text-amber-400'
-                              : 'text-green-400';
+                              ? 'text-amber-700 dark:text-amber-400'
+                              : 'text-green-700 dark:text-green-400';
                         return (
                           <div key={pid} className="flex justify-between">
                             <span className="text-white">{printer?.name ?? `Printer ${pid}`}</span>
@@ -350,9 +350,9 @@ export function FailureDetectionSettings() {
                   const printer = printers?.find((p) => p.id === ev.printer_id);
                   const colorClass =
                     ev.class === 'failure'
-                      ? 'text-red-400'
+                      ? 'text-red-700 dark:text-red-400'
                       : ev.class === 'warning'
-                        ? 'text-amber-400'
+                        ? 'text-amber-700 dark:text-amber-400'
                         : 'text-bambu-gray';
                   return (
                     <div key={idx} className="flex justify-between gap-2 py-1 border-b border-gray-800">

@@ -9,7 +9,12 @@ pytest-timeout>=2.4.0
 # run, and uses recorded durations on subsequent runs (.test_durations).
 pytest-split>=0.9.0
 httpx>=0.27.0
-ruff>=0.8.0
+# Exact pin, deliberately. A floor lets a contributor's older ruff enforce rules
+# the current one has retired (UP038 was removed — PEP 604 in isinstance() is
+# slower than the tuple form), and lets `format --check` disagree between
+# machines. CI's lint job installs this exact line, so local == CI. Bump on
+# purpose, not by resolution order.
+ruff==0.15.20
 pre-commit>=4.0
 
 # Required by pyftpdlib TLS_FTPHandler for mock FTP server tests

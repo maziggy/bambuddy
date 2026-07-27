@@ -63,14 +63,21 @@ class GiteaBackend(GitHubBackend):
             return tree_node.get("sha")
         return None
 
+    # Gitea/Forgejo can be hosted under a URL path prefix (ROOT_URL like
+    # https://host/gitea), so the repo lives at /<prefix...>/<owner>/<repo>
+    # rather than at the host root (#2642). Capture the scheme+host+prefix as
+    # one group and the final two path segments as owner/repo; the lazy prefix
+    # group is empty for a root-hosted instance. One shared pattern keeps
+    # parse_repo_url() and get_api_base() from drifting.
+    _HTTPS_REPO_RE = re.compile(
+        r"(https?://[\w.\-]+(?::\d+)?(?:/[\w.\-]+)*?)/([\w.\-]{1,100})/([\w.\-]{1,100})(?:\.git)?/?$"
+    )
+
     def parse_repo_url(self, url: str) -> tuple[str, str]:
         """Return (owner, repo) — accepts both https:// and http:// for self-hosted instances."""
         if not url or len(url) > 500:
             raise ValueError("Invalid Git URL: URL too long or empty")
-        match = re.match(
-            r"https?://[\w.\-]+(:\d+)?/([\w.\-]{1,100})/([\w.\-]{1,100})(?:\.git)?/?$",
-            url,
-        )
+        match = self._HTTPS_REPO_RE.match(url)
         if match:
             return match.group(2), match.group(3).removesuffix(".git")
         match = re.match(
@@ -82,8 +89,8 @@ class GiteaBackend(GitHubBackend):
         raise ValueError(f"Cannot parse repository URL: {url}")
 
     def get_api_base(self, repo_url: str) -> str:
-        """Derive API base from the repository URL's scheme and host."""
-        match = re.match(r"(https?://[\w.\-]+(:\d+)?)/", repo_url)
+        """Derive API base from the repository URL's scheme, host and any path prefix."""
+        match = self._HTTPS_REPO_RE.match(repo_url)
         if match:
             return f"{match.group(1)}/api/v1"
         raise ValueError(f"Cannot derive API base from URL: {repo_url}")

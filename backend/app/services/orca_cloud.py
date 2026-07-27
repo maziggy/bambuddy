@@ -1,33 +1,42 @@
 """
 Orca Cloud API Service
 
-Handles authentication and profile sync with the Orca Cloud (Supabase-backed).
+Handles pairing and profile sync with the Orca Cloud external-app surface.
 
-Auth shape: PKCE flow against ``auth.orcaslicer.com`` with the in-source public
-publishable key. Bambuddy generates the verifier/challenge/state, redirects the
-user's browser to Supabase's ``/auth/v1/authorize`` endpoint with
-``redirect_to=http://localhost:41172/callback``, and the user pastes the
-callback URL back into Bambuddy (the loopback URL is the only ``redirect_to``
-Orca's Supabase project actually honors as of v2.4.0-alpha — see
-OrcaSlicer/OrcaSlicer#14028 for the open feature request asking SoftFever to
-broaden this).
+Auth shape: OAuth 2.0 Device Authorization Grant (RFC 8628). Bambuddy is a
+public client (``client_id`` only, no secret) — there is no redirect URL, so
+the flow works from a LAN IP, ``localhost``, or behind a reverse proxy. The
+user approves a short ``user_code`` in their Orca Cloud settings; Bambuddy
+polls the token endpoint until a token pair is issued.
 
-Token shape: short-lived access JWT (1h) + rotating single-use refresh token.
-Every refresh issues a new pair and invalidates the old one — the route layer
-is responsible for atomically swapping the stored pair on each refresh, or a
-mid-refresh crash strands the user.
+    POST /oauth/device/code   -> {device_code, user_code, verification_uri,
+                                  verification_uri_complete, expires_in, interval}
+    POST /oauth/token         -> poll with grant_type=device_code, then later
+                                  refresh with grant_type=refresh_token
 
-Cloudflare protects ``api.orcaslicer.com`` with a User-Agent gate; sending an
-honest ``Bambuddy/<version>`` UA clears it. No TLS-fingerprint matching needed.
+Token shape: opaque ``oc_ext_`` access token (24h) + single-use rotating
+``oc_ext_rt_`` refresh token (90-day, renewed on each rotation). Reuse of a
+consumed refresh token beyond a ~60s server-side grace window revokes the
+whole pairing, so the route layer MUST persist the new pair atomically with
+consuming the old one. Within the grace window a lost refresh race is a no-op
+(each racer gets its own fresh pair), so single-flighting is hygiene, not a
+correctness requirement.
+
+API surface: ``oc_ext_`` tokens authorize ONLY the ``/api/v1/external/*``
+endpoints (introspection + ``/external/sync/*``). The first-party
+``/api/v1/sync/*`` surface used by the old Supabase flow is NOT reachable with
+these tokens.
+
+Cloudflare fronts ``api.orcaslicer.com`` and blocks unusual User-Agents
+(``python-urllib`` gets a ``403 "error code: 1010"``); an honest
+``Bambuddy/<version>`` UA clears it. No TLS-fingerprint matching needed.
 """
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import json
 import logging
-import secrets
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -35,45 +44,82 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# Auth + API endpoints — extracted verbatim from OrcaCloudServiceAgent.cpp
-# v2.4.0-alpha. The "publishable" key is documented in-source as a public
-# client identifier (Supabase anon-key pattern); embedding it in our client
-# is by-design and not a secret leak.
-ORCA_AUTH_BASE = "https://auth.orcaslicer.com"
-ORCA_API_BASE = "https://api.orcaslicer.com"
-ORCA_ANON_KEY = "sb_publishable_lvVe_whOi80SU9BPSxM1kA_tbt9AbR_"
+# ---------------------------------------------------------------------------
+# Endpoints + client identity (env-overridable so staging can be targeted
+# without a code change). Defaults point at production.
+# ---------------------------------------------------------------------------
 
-# Loopback redirect from OrcaCloudServiceAgent.cpp. Supabase's redirect_to
-# allowlist on Orca's project only honors localhost URIs — anything else
-# silently falls through to the project Site URL after the OAuth dance.
-ORCA_REDIRECT_URI = "http://localhost:41172/callback"
+_DEFAULT_API_BASE = "https://api.orcaslicer.com"
 
-# Honest client identity. Same posture as Bambu Cloud: identifies Bambuddy
-# without impersonating Orca's desktop client (which would be CWE-style
-# falsified-identity and was the exact thing called out in Bambu Lab's May 2026
-# blog post about cloud-access etiquette).
+# Base for both the OAuth endpoints (/oauth/*) and the external API
+# (/api/v1/external/*). Override with ORCA_CLOUD_API_BASE to point at
+# staging (https://staging-api.orcaslicer.com) during testing.
+ORCA_API_BASE = os.environ.get("ORCA_CLOUD_API_BASE", _DEFAULT_API_BASE).rstrip("/")
+
+# Public client id registered with the Orca Cloud team (see the External App
+# Pairing developer guide). Not a secret — it appears in browser-visible
+# requests — but it must accompany every /oauth/device/code and /oauth/token
+# call (incl. refreshes) or the server returns ``invalid_client``. Overridable
+# only for the (unlikely) case of a separate staging registration.
+ORCA_CLIENT_ID = os.environ.get("ORCA_CLOUD_CLIENT_ID", "oc_app_e873d49ce7dbcc7dca8ba386")
+
+# Scope requested at pairing time. Bambuddy currently only READS the user's
+# Orca Cloud profiles (list + view), so we request the minimum — read-only.
+# ``sync:read`` grants pull + versions; bump to ``sync:write`` here if/when a
+# push-to-cloud feature lands (which forces existing users to re-pair, since
+# the granted scope is baked into the issued token).
+ORCA_SCOPE = os.environ.get("ORCA_CLOUD_SCOPE", "sync:read")
+
+# Honest client identity. Same posture as the Bambu Cloud client: identifies
+# Bambuddy without impersonating Orca's desktop client. Also the thing that
+# clears Cloudflare's User-Agent gate in front of the API.
 _USER_AGENT = "Bambuddy/1.0 (+https://github.com/maziggy/bambuddy)"
 
-# Refresh access tokens when they have less than this much life left, on the
-# theory that a slow downstream API call shouldn't expire the token mid-flight.
+# Refresh the access token when it has less than this much life left, so a
+# slow downstream API call doesn't expire the token mid-flight.
 _REFRESH_LEEWAY = timedelta(minutes=5)
 
-# PKCE handshake state TTL. If the user clicks "Connect" then walks away,
-# the stored verifier+state is invalid after this window — they have to
-# restart. 10 minutes is the OAuth norm for desktop-app PKCE flows.
-PENDING_PKCE_TTL = timedelta(minutes=10)
+# How long a device-code pairing attempt stays valid before the user must
+# restart. The server also enforces this (``expires_in`` on the device-code
+# response is 600s); we mirror it client-side so we stop polling a dead code.
+DEVICE_CODE_TTL = timedelta(minutes=10)
+
+
+# ---------------------------------------------------------------------------
+# Device-poll outcomes
+# ---------------------------------------------------------------------------
+
+
+class DevicePoll:
+    """String outcomes of one :meth:`OrcaCloudService.poll_token` attempt.
+
+    ``PENDING`` / ``SLOW_DOWN`` are non-terminal (keep polling; on SLOW_DOWN
+    widen the interval). ``DENIED`` / ``EXPIRED`` are terminal — the pairing
+    attempt is dead and the user must restart. ``COMPLETE`` means tokens were
+    issued and applied to the service."""
+
+    PENDING = "authorization_pending"
+    SLOW_DOWN = "slow_down"
+    DENIED = "access_denied"
+    EXPIRED = "expired_token"
+    COMPLETE = "complete"
+
+    #: Non-terminal — the frontend should poll again.
+    ONGOING = frozenset({PENDING, SLOW_DOWN})
+    #: Terminal failure — the frontend should restart the flow.
+    TERMINAL = frozenset({DENIED, EXPIRED})
 
 
 class OrcaCloudError(Exception):
-    """Base exception for Orca Cloud errors."""
+    """Base exception for Orca Cloud errors (network / unexpected server)."""
 
     pass
 
 
 class OrcaCloudAuthError(OrcaCloudError):
-    """Authentication / token-related errors. Caller should typically prompt
-    the user to reconnect — neither a fresh access token nor a refresh will
-    recover without re-authentication."""
+    """Authentication / token-related errors. The caller should typically
+    prompt the user to reconnect — neither a fresh access token nor a refresh
+    will recover without re-pairing."""
 
     pass
 
@@ -90,88 +136,17 @@ def set_shared_http_client(client: httpx.AsyncClient | None) -> None:
 
 
 # ---------------------------------------------------------------------------
-# PKCE helpers (free functions — no service-instance state needed)
-# ---------------------------------------------------------------------------
-
-
-def _b64url(data: bytes) -> str:
-    """RFC 7636-style base64url encoding, no padding."""
-    return base64.urlsafe_b64encode(data).decode().rstrip("=")
-
-
-def generate_pkce() -> tuple[str, str, str]:
-    """Generate a fresh ``(verifier, challenge, state)`` triple for one PKCE
-    handshake. The verifier is the secret kept by Bambuddy until the code
-    exchange; the challenge is sent to Supabase as ``code_challenge``; the
-    state is the CSRF nonce we'll verify against the callback.
-
-    Verifier = 32 random bytes (43 base64url chars), within RFC 7636's
-    43-128 char range. Challenge = ``base64url(sha256(verifier))``.
-    """
-    verifier = _b64url(secrets.token_bytes(32))
-    challenge = _b64url(hashlib.sha256(verifier.encode()).digest())
-    state = _b64url(secrets.token_bytes(16))
-    return verifier, challenge, state
-
-
-def build_authorize_url(challenge: str, provider: str = "google") -> str:
-    """Construct the URL the user's browser should visit to start the OAuth
-    handshake.
-
-    Notably **does not** pass a ``state`` query parameter. Supabase's GoTrue
-    uses its own internal state encoding to remember which ``redirect_to``
-    belongs to which OAuth session; a client-passed ``state`` overwrites
-    that, GoTrue can no longer decode the redirect_to from Google's
-    callback, and silently falls back to the project Site URL — which is
-    exactly the bug that broke the live test against our deployed integration.
-
-    CSRF is still protected by the PKCE flow itself: the server-side
-    ``code_verifier`` is single-use and bound to the user's session, so an
-    attacker with a code-only URL can't complete the exchange.
-    """
-    from urllib.parse import urlencode
-
-    qs = urlencode(
-        {
-            "provider": provider,
-            "redirect_to": ORCA_REDIRECT_URI,
-            "code_challenge": challenge,
-            "code_challenge_method": "S256",
-        }
-    )
-    return f"{ORCA_AUTH_BASE}/auth/v1/authorize?{qs}"
-
-
-def parse_callback_url(callback_url: str) -> tuple[str | None, str | None]:
-    """Extract ``(code, state)`` from a pasted callback URL. Both query string
-    and fragment are checked — some Supabase configurations put PKCE codes in
-    the fragment rather than the query string. Returns ``(None, None)`` if
-    nothing parses out; the route layer surfaces the user-facing error."""
-    from urllib.parse import parse_qs, urlparse
-
-    parsed = urlparse(callback_url.strip())
-    qsd = parse_qs(parsed.query)
-    code = qsd.get("code", [""])[0] or None
-    state = qsd.get("state", [""])[0] or None
-    if not code:
-        frag = parse_qs(parsed.fragment)
-        code = frag.get("code", [""])[0] or None
-        state = state or (frag.get("state", [""])[0] or None)
-    return code, state
-
-
-# ---------------------------------------------------------------------------
 # Service class
 # ---------------------------------------------------------------------------
 
 
 class OrcaCloudService:
-    """Stateful per-request client for the Orca Cloud API.
+    """Stateful per-request client for the Orca Cloud external API.
 
     Instantiated by the route layer, populated with a stored token via
     :meth:`set_tokens`, then used to call the sync endpoints. Token rotation
-    on refresh is the route layer's responsibility (see
-    :meth:`refresh` — returns the new pair, doesn't persist).
+    on refresh is the route layer's responsibility (see :meth:`refresh` —
+    mutates ``self`` and returns the new pair, but does NOT persist).
     """
 
     def __init__(self, client: httpx.AsyncClient | None = None):
@@ -227,136 +202,124 @@ class OrcaCloudService:
         self.refresh_token = None
         self.token_expiry = None
 
-    def _auth_headers(self) -> dict[str, str]:
-        """Headers for calls to ``auth.orcaslicer.com``. Always includes the
-        apikey; the ``Authorization`` header is added only if we already have
-        an access token (used by ``/logout``, not by token exchange)."""
-        headers = {
-            "User-Agent": _USER_AGENT,
-            "apikey": ORCA_ANON_KEY,
-            "Content-Type": "application/json",
-        }
-        if self.access_token:
-            headers["Authorization"] = f"Bearer {self.access_token}"
-        return headers
-
     def _api_headers(self) -> dict[str, str]:
-        """Headers for calls to ``api.orcaslicer.com``. Requires a bearer
-        token — callers should ensure the service is authenticated first."""
+        """Headers for calls to the external API. Requires a bearer token —
+        callers should ensure the service is authenticated first."""
         if not self.access_token:
             raise OrcaCloudAuthError("Orca Cloud API requires an access token")
         return {
             "User-Agent": _USER_AGENT,
-            "apikey": ORCA_ANON_KEY,
             "Authorization": f"Bearer {self.access_token}",
             "Accept": "application/json",
         }
 
     # ------------------------------------------------------------------
-    # Token lifecycle
+    # Device authorization grant (RFC 8628)
     # ------------------------------------------------------------------
 
-    async def password_login(self, email: str, password: str) -> dict[str, Any]:
-        """Direct email+password login via ``/auth/v1/token?grant_type=password``.
+    async def request_device_code(
+        self,
+        scope: str = ORCA_SCOPE,
+        instance_url: str | None = None,
+        instance_label: str | None = None,
+    ) -> dict[str, Any]:
+        """Start a pairing attempt. Returns the raw device-code response
+        (``device_code``, ``user_code``, ``verification_uri``,
+        ``verification_uri_complete``, ``expires_in``, ``interval``).
 
-        Whether this works depends on the Supabase project's auth config —
-        Orca's web sign-in offers email/password as one option, but their
-        desktop client refuses ``{username, password}`` payloads with
-        ``"Username/password login is disabled. Use the Orca cloud PKCE
-        flow."`` (the SDK enforces PKCE regardless of what the backend
-        allows). The actual server behaviour is what matters for Bambuddy
-        — we POST the credentials and surface whatever response we get;
-        an ``OrcaCloudAuthError`` with the verbatim Supabase error message
-        is the right signal for callers to fall back to an OAuth provider.
-        """
-        url = f"{ORCA_AUTH_BASE}/auth/v1/token?grant_type=password"
-        payload = {"email": email, "password": password}
+        ``instance_url`` / ``instance_label`` are display-only fields shown on
+        the user's approval card (anti-phishing context). The ``device_code``
+        is a secret the caller must keep server-side; only ``user_code`` and
+        the verification URIs are safe to show the user."""
+        url = f"{ORCA_API_BASE}/oauth/device/code"
+        form: dict[str, str] = {"client_id": ORCA_CLIENT_ID, "scope": scope}
+        if instance_url:
+            form["instance_url"] = instance_url
+        if instance_label:
+            form["instance_label"] = instance_label
         try:
-            resp = await self._client.post(
-                url,
-                json=payload,
-                headers={
-                    "User-Agent": _USER_AGENT,
-                    "apikey": ORCA_ANON_KEY,
-                    "Content-Type": "application/json",
-                },
-            )
+            resp = await self._client.post(url, data=form, headers={"User-Agent": _USER_AGENT})
         except httpx.HTTPError as e:
-            raise OrcaCloudError(f"Network error during Orca Cloud password login: {e}") from e
+            raise OrcaCloudError(f"Network error requesting Orca Cloud device code: {e}") from e
 
         if resp.status_code >= 400:
             detail = _describe_token_error(resp)
-            if resp.status_code in (400, 401, 403, 422):
-                raise OrcaCloudAuthError(f"Orca Cloud password login rejected: {detail}")
-            raise OrcaCloudError(f"Orca Cloud password login failed ({resp.status_code}): {detail}")
-
-        data = resp.json()
-        self._apply_token_response(data)
-        return data
-
-    async def exchange_code(self, auth_code: str, code_verifier: str) -> dict[str, Any]:
-        """Exchange a PKCE auth code for tokens. Mutates ``self`` so the
-        service is ready for API calls. Returns the raw Supabase token
-        response so the route layer can persist the new credentials."""
-        url = f"{ORCA_AUTH_BASE}/auth/v1/token?grant_type=pkce"
-        payload = {"auth_code": auth_code, "code_verifier": code_verifier}
-        try:
-            resp = await self._client.post(
-                url,
-                json=payload,
-                headers={
-                    "User-Agent": _USER_AGENT,
-                    "apikey": ORCA_ANON_KEY,
-                    "Content-Type": "application/json",
-                },
-            )
-        except httpx.HTTPError as e:
-            raise OrcaCloudError(f"Network error during Orca Cloud token exchange: {e}") from e
-
-        if resp.status_code >= 400:
-            # Supabase returns ``{"error":"...", "error_description":"..."}``
-            # on most failures and ``{"msg":"..."}`` on a few. Surface
-            # whatever we can find.
-            detail = _describe_token_error(resp)
+            # invalid_client means our client_id is wrong / unregistered — an
+            # operator misconfiguration, not something the user can fix.
             if resp.status_code in (400, 401, 403):
-                raise OrcaCloudAuthError(f"Orca Cloud token exchange rejected: {detail}")
-            raise OrcaCloudError(f"Orca Cloud token exchange failed ({resp.status_code}): {detail}")
+                raise OrcaCloudAuthError(f"Orca Cloud rejected the device-code request: {detail}")
+            raise OrcaCloudError(f"Orca Cloud device-code request failed ({resp.status_code}): {detail}")
+        return resp.json()
 
-        data = resp.json()
-        self._apply_token_response(data)
-        return data
+    async def poll_token(self, device_code: str) -> tuple[str, dict[str, Any] | None]:
+        """Poll the token endpoint once for a pending device-code grant.
+
+        Returns ``(status, data)`` where ``status`` is a :class:`DevicePoll`
+        value. On :data:`DevicePoll.COMPLETE` the service is mutated with the
+        new tokens and ``data`` is the raw token response (so the caller can
+        persist it); otherwise ``data`` is ``None``.
+
+        Raises :class:`OrcaCloudError` only for genuinely unexpected responses
+        (5xx, network, or an unrecognized error code) — the four RFC error
+        codes are returned as statuses, not raised, because they're normal
+        control flow for a polling loop."""
+        url = f"{ORCA_API_BASE}/oauth/token"
+        form = {
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+            "device_code": device_code,
+            "client_id": ORCA_CLIENT_ID,
+        }
+        try:
+            resp = await self._client.post(url, data=form, headers={"User-Agent": _USER_AGENT})
+        except httpx.HTTPError as e:
+            raise OrcaCloudError(f"Network error polling Orca Cloud token endpoint: {e}") from e
+
+        if resp.status_code < 400:
+            data = resp.json()
+            self._apply_token_response(data)
+            return DevicePoll.COMPLETE, data
+
+        # RFC 8628 error bodies: {"error": "authorization_pending" | ...}.
+        error = _error_code(resp)
+        if error == "authorization_pending":
+            return DevicePoll.PENDING, None
+        if error == "slow_down":
+            return DevicePoll.SLOW_DOWN, None
+        if error == "access_denied":
+            return DevicePoll.DENIED, None
+        # expired_token and invalid_grant both mean "this device code is dead,
+        # start over" — collapse them to a single terminal EXPIRED status.
+        if error in ("expired_token", "invalid_grant"):
+            return DevicePoll.EXPIRED, None
+        raise OrcaCloudError(f"Orca Cloud token poll failed ({resp.status_code}): {_describe_token_error(resp)}")
 
     async def refresh(self) -> dict[str, Any]:
         """Use the stored refresh token to obtain a fresh access/refresh pair.
 
-        Supabase issues single-use refresh tokens — the old refresh token is
-        invalidated the moment this call succeeds. The caller MUST persist the
-        new pair atomically with consuming the old one; otherwise a crash
-        between this return and the DB write strands the user. Returns the
-        raw token-response dict so the caller has the full new pair.
-        """
+        Refresh tokens are single-use — the old one is consumed the moment
+        this succeeds. The caller MUST persist the new pair atomically; a
+        crash between this return and the DB write strands the user (though
+        Orca's ~60s grace window means a *replay* of the old token within that
+        window still yields a working pair rather than revoking). Returns the
+        raw token-response dict so the caller has the full new pair."""
         if not self.refresh_token:
             raise OrcaCloudAuthError("Cannot refresh: no refresh token stored")
 
-        url = f"{ORCA_AUTH_BASE}/auth/v1/token?grant_type=refresh_token"
-        payload = {"refresh_token": self.refresh_token}
+        url = f"{ORCA_API_BASE}/oauth/token"
+        form = {
+            "grant_type": "refresh_token",
+            "refresh_token": self.refresh_token,
+            "client_id": ORCA_CLIENT_ID,
+        }
         try:
-            resp = await self._client.post(
-                url,
-                json=payload,
-                headers={
-                    "User-Agent": _USER_AGENT,
-                    "apikey": ORCA_ANON_KEY,
-                    "Content-Type": "application/json",
-                },
-            )
+            resp = await self._client.post(url, data=form, headers={"User-Agent": _USER_AGENT})
         except httpx.HTTPError as e:
             raise OrcaCloudError(f"Network error during Orca Cloud refresh: {e}") from e
 
         if resp.status_code >= 400:
             detail = _describe_token_error(resp)
-            # 400/401 typically means "refresh token rotated or revoked" —
-            # the user has to reconnect. Don't try to recover here.
+            # 400 invalid_grant on refresh = expired / already-used / the user
+            # disconnected us. Unrecoverable — clear and force a re-pair.
             if resp.status_code in (400, 401, 403):
                 self.clear_tokens()
                 raise OrcaCloudAuthError(f"Orca Cloud refresh rejected: {detail}")
@@ -368,17 +331,17 @@ class OrcaCloudService:
 
     def _apply_token_response(self, data: dict[str, Any]) -> None:
         """Update ``self.access_token`` / ``self.refresh_token`` /
-        ``self.token_expiry`` from a Supabase token-response payload. Caller
-        is still responsible for persisting the values to the DB."""
+        ``self.token_expiry`` from a token-response payload. Caller is still
+        responsible for persisting the values to the DB."""
         access = data.get("access_token")
         refresh = data.get("refresh_token")
         expires_in = data.get("expires_in")
         if not access:
             raise OrcaCloudAuthError("Orca Cloud token response missing access_token")
         self.access_token = access
-        # Supabase always rotates refresh tokens on /token calls; if the
-        # response omits one we keep the previous value to avoid stranding
-        # the session, but that shouldn't happen in practice.
+        # The token endpoint always rotates the refresh token; if a response
+        # omits one we keep the previous value to avoid stranding the session,
+        # but that shouldn't happen in practice.
         if refresh:
             self.refresh_token = refresh
         if isinstance(expires_in, (int, float)) and expires_in > 0:
@@ -387,64 +350,46 @@ class OrcaCloudService:
             self.token_expiry = None
 
     # ------------------------------------------------------------------
-    # Sync API
+    # External API
     # ------------------------------------------------------------------
 
-    async def get_user_info(self) -> dict[str, Any]:
-        """Return Supabase's user record for the current token (id, email,
-        metadata, ...). Used after token exchange to record the user's email
-        for display in Bambuddy's UI."""
-        url = f"{ORCA_AUTH_BASE}/auth/v1/user"
+    async def introspect(self) -> dict[str, Any]:
+        """Return the pairing's introspection record (``user_id``,
+        ``client_id``, ``connection_id``, ``scope``, ``expires_at``). Used
+        after pairing to record the user's id for display in Bambuddy's UI."""
+        url = f"{ORCA_API_BASE}/api/v1/external-apps/me"
         try:
-            resp = await self._client.get(url, headers=self._auth_headers())
+            resp = await self._client.get(url, headers=self._api_headers())
         except httpx.HTTPError as e:
-            raise OrcaCloudError(f"Network error fetching Orca Cloud user info: {e}") from e
+            raise OrcaCloudError(f"Network error fetching Orca Cloud introspection: {e}") from e
         if resp.status_code == 401:
-            raise OrcaCloudAuthError("Orca Cloud user fetch unauthorized — token expired or revoked")
+            raise OrcaCloudAuthError("Orca Cloud introspection unauthorized — token expired or revoked")
         if resp.status_code >= 400:
-            raise OrcaCloudError(f"Orca Cloud user fetch failed ({resp.status_code}): {resp.text[:200]}")
+            raise OrcaCloudError(f"Orca Cloud introspection failed ({resp.status_code}): {resp.text[:200]}")
         return resp.json()
 
     async def list_profiles(self) -> list[dict[str, Any]]:
-        """Return the user's Orca Cloud profiles as a flat list of
-        ``ProfileUpsert`` entries (``{id, name, content, updated_time,
-        created_time}``) — forwarded verbatim; callers pick the fields they
-        need.
+        """Return the user's Orca Cloud profiles as a flat list of profile
+        entries (``{id, name, content, updated_time, created_time}``) —
+        forwarded verbatim; callers pick the fields they need.
 
-        Uses ``GET /api/v1/sync/pull`` with NO ``?cursor=`` parameter, which
-        is the same "first-sync bootstrap" path OrcaSlicer's own client
-        uses (``OrcaCloudServiceAgent.cpp::sync_pull``):
-
-            std::string path = ORCA_SYNC_PULL_PATH;
-            if (sync_state.last_sync_timestamp != 0) {
-                path += "?cursor=" + std::to_string(sync_state.last_sync_timestamp);
-            }
-            ...
-            // Handle 410 Gone — cursor too old, need full resync
-            if (http_code == 410) {
-                clear_sync_state();
-                path = ORCA_SYNC_PULL_PATH;  // retry without cursor
-                ...
-            }
-
-        Sending ``cursor=0`` explicitly trips ``410 cursor_too_old`` — the
-        server-side sync log doesn't reach back to the Unix epoch. Omitting
-        the parameter entirely is the documented "give me the full snapshot"
-        semantic. The previously-attempted ``/api/v1/sync/profiles`` is
-        declared as a constant in Orca's source but isn't deployed on the
-        production cloud (returns 404).
-
-        The pull response is a ``SyncPullResponse`` (``{next_cursor, upserts,
-        deletes}``); we extract ``upserts`` and ignore ``deletes`` (no prior
-        state on the client side to invalidate).
-        """
-        url = f"{ORCA_API_BASE}/api/v1/sync/pull"
+        Uses ``GET /api/v1/external/sync/pull`` with NO ``?cursor=`` parameter,
+        the documented "full snapshot" bootstrap. Sending ``cursor=0`` instead
+        trips ``410 cursor_too_old`` (the sync log doesn't reach back to the
+        Unix epoch). The pull response is ``{next_cursor, upserts, deletes}``;
+        we return ``upserts`` and ignore the rest (no prior client state to
+        invalidate on a read-only list)."""
+        url = f"{ORCA_API_BASE}/api/v1/external/sync/pull"
         try:
             resp = await self._client.get(url, headers=self._api_headers())
         except httpx.HTTPError as e:
             raise OrcaCloudError(f"Network error listing Orca Cloud profiles: {e}") from e
         if resp.status_code == 401:
             raise OrcaCloudAuthError("Orca Cloud profile list unauthorized — token expired or revoked")
+        if resp.status_code == 410:
+            # cursor_too_old on a no-cursor request would be surprising, but
+            # surface it clearly rather than as an opaque 502.
+            raise OrcaCloudError("Orca Cloud sync cursor too old — a full resync is required")
         if resp.status_code >= 400:
             raise OrcaCloudError(f"Orca Cloud profile list failed ({resp.status_code}): {resp.text[:200]}")
         data = resp.json()
@@ -452,24 +397,21 @@ class OrcaCloudService:
             upserts = data.get("upserts")
             if isinstance(upserts, list):
                 return upserts
-            # Tolerate the shape we'd see if Orca ever rolls out a flat-list
-            # endpoint at this path — forward whatever array is on the dict.
+            # Tolerate a flat-list shape if Orca ever rolls one out here.
             for key in ("profiles", "data"):
                 value = data.get(key)
                 if isinstance(value, list):
                     return value
         if isinstance(data, list):
             return data
-        logger.warning("Orca Cloud /sync/pull returned unexpected shape: %r", type(data).__name__)
+        logger.warning("Orca Cloud /external/sync/pull returned unexpected shape: %r", type(data).__name__)
         return []
 
     async def get_profile(self, profile_id: str) -> dict[str, Any]:
-        """Fetch a single profile's full content. Orca's sync API doesn't
-        expose a per-profile GET, so we list and filter. For small profile
-        counts (the realistic case) this is fine; if it becomes a hot path
-        we'll add client-side caching at the route layer rather than hammer
-        the list endpoint.
-        """
+        """Fetch a single profile's full content. The external sync API has no
+        per-profile GET, so we list and filter. For the realistic profile
+        counts this is fine; if it becomes a hot path we'll add caching at the
+        route layer rather than hammer the pull endpoint."""
         profiles = await self.list_profiles()
         for profile in profiles:
             if str(profile.get("id")) == str(profile_id):
@@ -487,10 +429,24 @@ class OrcaCloudService:
             await self._client.aclose()
 
 
+def _error_code(resp: httpx.Response) -> str | None:
+    """Extract the RFC-style ``error`` code from a token-endpoint error body,
+    or ``None`` if the body doesn't parse as ``{"error": "..."}``."""
+    try:
+        data = resp.json()
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if isinstance(data, dict):
+        err = data.get("error")
+        if isinstance(err, str) and err:
+            return err
+    return None
+
+
 def _describe_token_error(resp: httpx.Response) -> str:
-    """Best-effort extraction of a user-facing message from a Supabase token
-    endpoint error response. Tries JSON fields in order; falls back to the
-    raw body (truncated) if nothing parses."""
+    """Best-effort extraction of a user-facing message from a token-endpoint
+    error response. Tries JSON fields in order; falls back to the raw body
+    (truncated) if nothing parses."""
     try:
         data = resp.json()
     except (json.JSONDecodeError, ValueError):

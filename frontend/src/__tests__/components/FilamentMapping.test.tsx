@@ -297,4 +297,47 @@ describe('FilamentMapping — FTS routing', () => {
       expect(swatch).toBeInTheDocument();
     });
   });
+
+  it('pins the gram usage so a long name cannot clip it (#2669)', async () => {
+    // Long resolved name + gram usage. The name must be the truncating
+    // element; the "(25g)" must sit in its own non-truncating, shrink-0 span
+    // so it stays visible on narrow/mobile widths.
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json(createStatus({}))),
+      http.get('/api/v1/cloud/builtin-filaments', () =>
+        HttpResponse.json([{ filament_id: 'GFA01', name: 'Polymaker PLA Matte' }]),
+      ),
+      http.get('/api/v1/cloud/filament-id-map', () => HttpResponse.json({})),
+      http.get('/api/v1/inventory/colors/by-material', () => HttpResponse.json({ color_name: null })),
+    );
+
+    render(
+      <FilamentMapping
+        printerId={1}
+        filamentReqs={{
+          filaments: [
+            { slot_id: 1, type: 'PLA', color: '#000000', used_grams: 25, used_meters: 8.5, nozzle_id: 1, tray_info_idx: 'GFA01' },
+          ],
+        }}
+        manualMappings={{}}
+        onManualMappingChange={() => {}}
+        currencySymbol="$"
+        defaultCostPerKg={0}
+        defaultExpanded
+      />,
+    );
+
+    const grams = await screen.findByText('(25g)');
+    // The gram usage never truncates and never shrinks away.
+    expect(grams.className).toContain('shrink-0');
+    expect(grams.className).not.toContain('truncate');
+
+    // The name is the element that truncates instead.
+    const name = await screen.findByText('Polymaker PLA Matte');
+    expect(name.className).toContain('truncate');
+    // Name and grams are separate siblings, so the name shrinking can't take
+    // the grams with it.
+    expect(name).not.toBe(grams);
+    expect(grams.parentElement).toBe(name.parentElement);
+  });
 });

@@ -192,7 +192,7 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
               <div className="text-xs text-bambu-gray">Prints this month</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-green-400">
+              <div className="text-2xl font-bold text-green-700 dark:text-green-400">
                 {archives.filter(a => {
                   const d = parseUTCDate(a.completed_at || a.created_at) || new Date();
                   return d.getMonth() === currentMonth && d.getFullYear() === currentYear && a.status === 'completed';
@@ -201,7 +201,7 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
               <div className="text-xs text-bambu-gray">Successful</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-red-400">
+              <div className="text-2xl font-bold text-red-700 dark:text-red-400">
                 {archives.filter(a => {
                   const d = parseUTCDate(a.completed_at || a.created_at) || new Date();
                   return d.getMonth() === currentMonth && d.getFullYear() === currentYear && a.status === 'failed';
@@ -257,7 +257,7 @@ export function CalendarView({ archives, onArchiveClick, highlightedArchiveId }:
                         {archive.print_name || archive.filename}
                       </p>
                       <div className="flex items-center gap-2 text-xs">
-                        <span className={archive.status === 'failed' ? 'text-red-400' : 'text-green-400'}>
+                        <span className={archive.status === 'failed' ? 'text-red-700 dark:text-red-400' : 'text-green-700 dark:text-green-400'}>
                           {archive.status === 'failed' ? 'Failed' : 'Completed'}
                         </span>
                         {archive.filament_color && (

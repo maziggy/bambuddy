@@ -102,7 +102,7 @@ function PendingUploadItem({
               {isDiscarding ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <Trash2 className="w-4 h-4 text-red-400" />
+                <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
               )}
             </Button>
           </div>

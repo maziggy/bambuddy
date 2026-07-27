@@ -65,6 +65,14 @@ class PrintQueueItem(Base):
     # Auto-print G-code injection (#422)
     gcode_injection: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # How many times the start-watchdog has reverted this item from 'printing'
+    # back to 'pending' (#2555). A printer that accepts project_file but never
+    # starts (#1678) used to be retried forever: upload, wait out the watchdog,
+    # revert, upload again — burning a full 3MF transfer per cycle and, with
+    # the queue dispatching serially, dragging every other printer's start time
+    # out with it. The counter bounds that loop; see DISPATCH_MAX_ATTEMPTS.
+    dispatch_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
     # H2C dual-nozzle-rack slicer pick preservation (#1780). BambuStudio's
     # project_file MQTT command for rack-swap-capable models (O1C2 today)
     # carries per-filament physical nozzle position IDs in `nozzle_mapping`,
@@ -81,18 +89,39 @@ class PrintQueueItem(Base):
     # true, the scheduler deletes the source row/files after archiving a copy.
     cleanup_library_after_dispatch: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # Print options
-    bed_levelling: Mapped[bool] = mapped_column(Boolean, default=True)
-    flow_cali: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Print options. bed_levelling / flow_cali / nozzle_offset_cali are tri-state
+    # strings (off/on/auto) matching BambuStudio; "auto" = skip if recently done.
+    # The remaining three stay boolean (BambuStudio exposes no auto for them).
+    bed_levelling: Mapped[str] = mapped_column(String(8), default="auto")
+    flow_cali: Mapped[str] = mapped_column(String(8), default="auto")
     vibration_cali: Mapped[bool] = mapped_column(Boolean, default=True)
     layer_inspect: Mapped[bool] = mapped_column(Boolean, default=False)
     timelapse: Mapped[bool] = mapped_column(Boolean, default=False)
     use_ams: Mapped[bool] = mapped_column(Boolean, default=True)
     # Nozzle offset calibration — dual-nozzle printers only, MQTT-gated (#1682)
-    nozzle_offset_cali: Mapped[bool] = mapped_column(Boolean, default=True)
+    nozzle_offset_cali: Mapped[str] = mapped_column(String(8), default="auto")
+
+    # Preheat / heat-soak override (#1468). 'inherit' uses the global
+    # preheat_enabled setting; 'on' / 'off' force the per-item decision. The
+    # chamber target falls through: per-item override → max(filament-map[loaded
+    # tray type]) → 0 (skips chamber phase). 'inherit' + global off + override
+    # null = no preheat. Default 'inherit' so existing queue items behave
+    # exactly as before the migration.
+    preheat_override: Mapped[str] = mapped_column(String(10), default="inherit")
+    preheat_chamber_target_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Status: pending, printing, completed, failed, skipped, cancelled
     status: Mapped[str] = mapped_column(String(20), default="pending")
+
+    # Dispatch claim (#2615). Set atomically by the scheduler the moment it
+    # begins dispatching this row and cleared when dispatch ends. The row stays
+    # `status='pending'` throughout the (slow) FTP upload, which left a window
+    # where a concurrent PATCH could reassign printer_id mid-upload and split the
+    # queue row from the archive/expected-print/physical command. While this is
+    # set the edit routes reject changes (409) and the scheduler won't re-select
+    # the row. Startup reconciliation clears any left over by a crash mid-dispatch
+    # (no coroutine survives a restart), so a stale claim never wedges an item.
+    dispatching_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Cleared by the per-printer "Resume after failure" action (#1818) so the
     # scheduler's `_check_previous_success` lookback skips this row. Without

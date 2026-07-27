@@ -206,7 +206,7 @@ class TestSliceLibraryFile:
             captured["url"] = str(request.url)
             return httpx.Response(
                 status_code=200,
-                content=b"PK\x03\x04 fake-3mf",
+                content=_make_3mf_with_settings(),  # #2671: real zip; validation rejects non-3MF bodies
                 headers={
                     "x-print-time-seconds": "656",
                     "x-filament-used-g": "0.94",
@@ -249,7 +249,7 @@ class TestSliceLibraryFile:
             captured["body"] = bytes(request.content)
             return httpx.Response(
                 status_code=200,
-                content=b"PK\x03\x04 fake",
+                content=_make_3mf_with_settings(),  # #2671: real zip; validation rejects non-3MF bodies
                 headers={
                     "x-print-time-seconds": "10",
                     "x-filament-used-g": "0.1",
@@ -291,7 +291,7 @@ class TestSliceLibraryFile:
             captured["body"] = bytes(request.content)
             return httpx.Response(
                 status_code=200,
-                content=b"PK\x03\x04 fake",
+                content=_make_3mf_with_settings(),  # #2671: real zip; validation rejects non-3MF bodies
                 headers={
                     "x-print-time-seconds": "10",
                     "x-filament-used-g": "0.1",
@@ -416,7 +416,7 @@ class TestSliceLibraryFile:
             # Retry: no profile triplet → succeed with embedded settings
             return httpx.Response(
                 status_code=200,
-                content=b"PK\x03\x04 fake-3mf",
+                content=_make_3mf_with_settings(),  # #2671: real zip; validation rejects non-3MF bodies
                 headers={
                     "x-print-time-seconds": "100",
                     "x-filament-used-g": "1.0",
@@ -499,7 +499,7 @@ class TestSliceLibraryFile:
             captured["body"] = request.content
             return httpx.Response(
                 status_code=200,
-                content=b"PK\x03\x04 fake-3mf",
+                content=_make_3mf_with_settings(),  # #2671: real zip; validation rejects non-3MF bodies
                 headers={
                     "x-print-time-seconds": "1",
                     "x-filament-used-g": "0",
@@ -533,6 +533,103 @@ class TestSliceLibraryFile:
         assert "Metadata/slice_info.config" in names
         assert "Metadata/cut_information.xml" in names
         assert "3D/3dmodel.model" in names
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_use_embedded_settings_skips_profile_triplet(
+        self, async_client: AsyncClient, db_session, slice_test_setup
+    ):
+        # "Slice as designed" (#2611): with use_embedded_settings the 3MF is
+        # sliced on its own project_settings.config — no --load-settings — so
+        # the sidecar request carries ONLY the model file, never the
+        # printer/process/filament profile parts. Succeeds on the first call
+        # (no crash-fallback), and the result is flagged used_embedded_settings.
+        src_3mf_path = slice_test_setup["tmp_path"] / "library" / "files" / "designed.3mf"
+        src_3mf_path.write_bytes(_make_3mf_with_settings({"wall_loops": "5"}))
+        threemf = LibraryFile(
+            filename="designed.3mf",
+            file_path=str(src_3mf_path.relative_to(slice_test_setup["tmp_path"])),
+            file_type="3mf",
+            file_size=src_3mf_path.stat().st_size,
+        )
+        db_session.add(threemf)
+        await db_session.commit()
+        await db_session.refresh(threemf)
+
+        captured: dict = {}
+        call_count = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            call_count["n"] += 1
+            captured["body"] = request.content
+            return httpx.Response(
+                status_code=200,
+                content=_make_3mf_with_settings(),  # #2671: real zip; validation rejects non-3MF bodies
+                headers={
+                    "x-print-time-seconds": "100",
+                    "x-filament-used-g": "1.0",
+                    "x-filament-used-mm": "100",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+        response = await async_client.post(
+            f"/api/v1/library/files/{threemf.id}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+                "use_embedded_settings": True,
+            },
+        )
+        assert response.status_code == 202
+        final = await _wait_for_job(async_client, response.json()["job_id"])
+        assert final["status"] == "completed", final
+        assert final["result"]["used_embedded_settings"] is True
+        assert call_count["n"] == 1  # embedded path taken directly, no fallback retry
+
+        # The multipart body must NOT carry any profile part — that is the
+        # whole point of the mode. Their presence would mean --load-settings
+        # ran and overrode the designer's embedded settings.
+        body = captured["body"]
+        assert b"printerProfile" not in body
+        assert b"presetProfile" not in body
+        assert b"filamentProfile" not in body
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_use_embedded_settings_ignored_for_stl(self, async_client: AsyncClient, slice_test_setup):
+        # An STL has no embedded project settings to honour, so the flag is a
+        # no-op: the normal profile path runs and the triplet is forwarded.
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = request.content
+            return httpx.Response(
+                status_code=200,
+                content=_make_3mf_with_settings(),  # #2671: real zip; validation rejects non-3MF bodies
+                headers={
+                    "x-print-time-seconds": "1",
+                    "x-filament-used-g": "0",
+                    "x-filament-used-mm": "0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+        response = await async_client.post(
+            f"/api/v1/library/files/{slice_test_setup['src_file_id']}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+                "use_embedded_settings": True,
+            },
+        )
+        assert response.status_code == 202
+        final = await _wait_for_job(async_client, response.json()["job_id"])
+        assert final["status"] == "completed", final
+        assert final["result"]["used_embedded_settings"] is False
+        assert b"printerProfile" in captured["body"]  # profile path still ran
 
 
 # ---------------------------------------------------------------------------
@@ -1287,6 +1384,50 @@ class TestSlicerRejectionMessage:
     def test_empty_or_unrelated_text(self):
         assert _slicer_rejection_message("") is None
         assert _slicer_rejection_message("Slicer sidecar unreachable: connection reset") is None
+
+    def test_replaces_input_preset_invalid_placeholder_with_cli_error_line(self):
+        # #1851: the CLI emits its catch-all "input preset file is invalid"
+        # placeholder for every -5 exit, including real preset-vs-printer
+        # compatibility rejections. The actual diagnostic only appears in the
+        # stdout `[error] run NNNN:` line; the function must prefer that.
+        text = (
+            "Slicer CLI failed (500): Slicing failed with error from slicer: "
+            "The input preset file is invalid and can not be parsed.: "
+            "Slicer process failed (exit code 251)\n"
+            "stdout: [2026-06-29 04:12:11.952784] [trace] Initializing StaticPrintConfigs\n"
+            "[2026-06-29 04:12:12.175810] [error] run 3008: filament preset "
+            "Generic PLA @BBL H2C (slot 1) is not compatible with printer "
+            "Bambu Lab A1 0.4 nozzle.\n"
+            "run found error, return -5, exit..."
+        )
+        assert (
+            _slicer_rejection_message(text) == "filament preset Generic PLA @BBL H2C (slot 1) is not compatible with "
+            "printer Bambu Lab A1 0.4 nozzle."
+        )
+
+    def test_keeps_meaningful_reason_even_when_cli_error_line_present(self):
+        # When the headline error_string is already a useful reason (here:
+        # the bed-boundary rejection), don't override it with a generic
+        # `[error]` line that may just be the same message restated. Avoids
+        # double-text duplication in the user-facing detail.
+        text = (
+            "Slicer CLI failed (500): Slicing failed with error from slicer: "
+            "Some objects are located over the boundary of the heated bed.: "
+            "Slicer process failed (exit code 204)\n"
+            "stdout: [error] some unrelated stdout chatter"
+        )
+        assert _slicer_rejection_message(text) == "Some objects are located over the boundary of the heated bed."
+
+    def test_cli_error_line_without_run_prefix(self):
+        # The CLI sometimes logs `[error] <msg>` without the `run NNNN:`
+        # prefix (different code paths). The regex must still pick it up.
+        text = (
+            "Slicer CLI failed (500): Slicing failed with error from slicer: "
+            "The input preset file is invalid and can not be parsed.: "
+            "Slicer process failed (exit code 251)\n"
+            "stdout: [2026-06-29 12:00:00.000000] [error] Configuration parse failed: missing key 'printer_settings_id'"
+        )
+        assert _slicer_rejection_message(text) == "Configuration parse failed: missing key 'printer_settings_id'"
 
 
 class TestSliceSlicerRejection:

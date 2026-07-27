@@ -104,14 +104,15 @@ describe('SpoolBuddyLayout', () => {
 
   it('suppresses the global toast viewport while mounted', () => {
     const { unmount } = renderLayout();
-    // Visible viewport gets `hidden` class while the kiosk is up.
-    const viewport = document.querySelector('div.fixed.bottom-4.right-20');
+    // Visible viewport gets `hidden` class while the kiosk is up. Position is
+    // set via safe-area calc() (#2612) so match the stable data-testid.
+    const viewport = document.querySelector('[data-testid="toast-viewport"]');
     expect(viewport?.className).toContain('hidden');
 
     // Cleanup restores the viewport when the kiosk unmounts (e.g. user
     // navigates back to the main app).
     unmount();
-    const viewportAfter = document.querySelector('div.fixed.bottom-4.right-20');
+    const viewportAfter = document.querySelector('[data-testid="toast-viewport"]');
     // After unmount the toast container is gone with the provider; the
     // important guarantee is the suppression flag was untoggled, which the
     // ToastContext tests pin directly. Here we only assert no crash on

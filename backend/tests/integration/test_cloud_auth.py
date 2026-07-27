@@ -583,11 +583,22 @@ class TestCloudRouteRegionPlumbing:
     @pytest.mark.integration
     async def test_cloud_status_exposes_stored_region(self, async_client: AsyncClient):
         """GET /cloud/status returns the stored region so the UI can render
-        'Connected (China)' after a reload."""
+        'Connected (China)' after a reload.
+
+        ``validate_token`` is stubbed because the endpoint now asks Bambu whether
+        the stored token is still accepted rather than assuming it is — without
+        the stub this test would make a live call to api.bambulab.cn with a fake
+        token, get a 401, and correctly report the session as expired. Region
+        plumbing is what's under test here.
+        """
         from backend.app.api.routes.cloud import store_token
         from backend.app.core.database import async_session
+        from backend.app.services.bambu_cloud import BambuCloudService
 
-        with patch("backend.app.core.auth.is_auth_enabled", return_value=False):
+        with (
+            patch("backend.app.core.auth.is_auth_enabled", return_value=False),
+            patch.object(BambuCloudService, "validate_token", AsyncMock(return_value=True)),
+        ):
             async with async_session() as db:
                 await store_token(db, "cn-token", "token-auth", "china", user=None)
 

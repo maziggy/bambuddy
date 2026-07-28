@@ -9,6 +9,7 @@ import sys
 import time
 import uuid
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
@@ -46,6 +47,7 @@ from backend.app.services.camera_fanout import (
     shutdown_broadcaster,
 )
 from backend.app.services.camera_profiles import get_camera_profile
+from backend.app.services.qsv import clear_qsv_device_cache, find_qsv_render_device
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["camera"])
@@ -603,85 +605,113 @@ async def generate_rtsp_mjpeg_stream(
     #
     # Software processing remains the default for existing installations.
     use_intel_qsv = video_processing == "intel_qsv"
-
-    cmd = [ffmpeg]
+    qsv_device = None
 
     if use_intel_qsv:
-        cmd.extend(
+        qsv_device, _ = await find_qsv_render_device(ffmpeg)
+
+        if qsv_device is None:
+            logger.warning(
+                "Intel Quick Sync was requested for %s, but no compatible render device "
+                "was found; falling back to software processing",
+                ip_address,
+            )
+            use_intel_qsv = False
+        else:
+            logger.info(
+                "Using Intel Quick Sync render device %s for %s",
+                qsv_device,
+                ip_address,
+            )
+
+    def build_ffmpeg_command(
+        *,
+        intel_qsv: bool,
+        render_device: Path | None,
+    ) -> list[str]:
+        command = [ffmpeg]
+
+        if intel_qsv:
+            command.extend(
+                [
+                    "-init_hw_device",
+                    f"vaapi=va:{render_device}",
+                    "-init_hw_device",
+                    "qsv=qs@va",
+                    "-filter_hw_device",
+                    "qs",
+                    "-hwaccel",
+                    "qsv",
+                    "-hwaccel_device",
+                    "qs",
+                    "-hwaccel_output_format",
+                    "qsv",
+                ]
+            )
+
+        command.extend(
             [
-                "-init_hw_device",
-                "vaapi=va:/dev/dri/renderD128",
-                "-init_hw_device",
-                "qsv=qs@va",
-                "-filter_hw_device",
-                "qs",
-                "-hwaccel",
-                "qsv",
-                "-hwaccel_device",
-                "qs",
-                "-hwaccel_output_format",
-                "qsv",
+                "-rtsp_transport",
+                "tcp",
+                "-rtsp_flags",
+                "prefer_tcp",
+                f"-{rtsp_socket_timeout_flag()}",
+                "30000000",
+                "-buffer_size",
+                "1024000",
+                "-max_delay",
+                "500000",
+                "-probesize",
+                str(profile.probesize),
+                "-analyzeduration",
+                str(profile.analyzeduration),
+                "-fflags",
+                "nobuffer",
+                "-flags",
+                "low_delay",
+                *profile.extra_ffmpeg_input_args,
+                "-i",
+                camera_url,
             ]
         )
 
-    cmd.extend(
-        [
-            "-rtsp_transport",
-            "tcp",
-            "-rtsp_flags",
-            "prefer_tcp",
-            # Socket I/O timeout name varies by ffmpeg version (#1504); see
-            # rtsp_socket_timeout_flag(). The 30s value is microseconds for
-            # both names.
-            f"-{rtsp_socket_timeout_flag()}",
-            "30000000",
-            "-buffer_size",
-            "1024000",  # 1MB buffer
-            "-max_delay",
-            "500000",  # 0.5 seconds max delay
-            "-probesize",
-            str(profile.probesize),
-            "-analyzeduration",
-            str(profile.analyzeduration),
-            "-fflags",
-            "nobuffer",  # Reduce internal buffering
-            "-flags",
-            "low_delay",  # Minimize decode latency
-            *profile.extra_ffmpeg_input_args,
-            "-i",
-            camera_url,
-        ]
-    )
+        if intel_qsv:
+            command.extend(
+                [
+                    "-c:v",
+                    "mjpeg_qsv",
+                    "-global_quality",
+                    "80",
+                ]
+            )
+        else:
+            command.extend(
+                [
+                    "-c:v",
+                    "mjpeg",
+                    "-q:v",
+                    "5",
+                ]
+            )
 
-    if use_intel_qsv:
-        cmd.extend(
+        command.extend(
             [
-                "-c:v",
-                "mjpeg_qsv",
-                "-global_quality",
-                "80",
-            ]
-        )
-    else:
-        cmd.extend(
-            [
-                "-c:v",
+                "-r",
+                str(fps),
+                "-an",
+                "-f",
                 "mjpeg",
-                "-q:v",
-                "5",
+                "-",
             ]
         )
 
-    cmd.extend(
-        [
-            "-r",
-            str(fps),
-            "-an",  # No audio
-            "-f",
-            "mjpeg",
-            "-",  # Output to stdout
-        ]
+        return command
+
+    cmd = build_ffmpeg_command(
+        intel_qsv=use_intel_qsv,
+        render_device=qsv_device,
     )
+    qsv_fallback_used = False
 
     # Register disconnect event so stop endpoint can signal us
     if stream_id and disconnect_event:
@@ -707,6 +737,41 @@ async def generate_rtsp_mjpeg_stream(
     spawn_kwargs: dict = {}
     if sys.platform == "win32":
         spawn_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+    def is_qsv_failure(stderr_text: str | None) -> bool:
+        if not stderr_text:
+            return False
+
+        text_lower = stderr_text.lower()
+        qsv_markers = (
+            "qsv",
+            "mfx",
+            "vaapi",
+            "va display",
+            "hardware device",
+            "device creation failed",
+            "failed to initialise vaapi",
+            "failed to initialize vaapi",
+        )
+        return any(marker in text_lower for marker in qsv_markers)
+
+    def fall_back_to_software(reason: str) -> None:
+        nonlocal use_intel_qsv, cmd, qsv_fallback_used
+
+        clear_qsv_device_cache()
+        use_intel_qsv = False
+        qsv_fallback_used = True
+        cmd = build_ffmpeg_command(
+            intel_qsv=False,
+            render_device=None,
+        )
+
+        logger.warning(
+            "Intel Quick Sync failed for %s (stream_id=%s): %s; falling back to software video processing",
+            ip_address,
+            stream_id,
+            reason,
+        )
 
     jpeg_start = b"\xff\xd8"
     jpeg_end = b"\xff\xd9"
@@ -754,8 +819,13 @@ async def generate_rtsp_mjpeg_stream(
                 stderr_text = _summarize_ffmpeg_stderr(stderr.decode(errors="replace"))
                 logger.error("ffmpeg failed immediately (attempt %d): %s", reconnect_count + 1, stderr_text)
                 _spawned_ffmpeg_pids.pop(process.pid, None)
+
+                if use_intel_qsv and not qsv_fallback_used:
+                    fall_back_to_software(stderr_text or "FFmpeg exited during QSV startup")
+                    continue
+
                 if not got_any_frames and reconnect_count == 0:
-                    # First attempt failed immediately — camera is likely unreachable
+                    # First software attempt failed immediately — camera is likely unreachable
                     yield (
                         b"--frame\r\n"
                         b"Content-Type: text/plain\r\n\r\n"
@@ -777,6 +847,7 @@ async def generate_rtsp_mjpeg_stream(
             buffer = b""
             stream_ended = False
             client_gone = False
+            stream_error: str | None = None
 
             while True:
                 if disconnect_event and disconnect_event.is_set():
@@ -789,6 +860,7 @@ async def generate_rtsp_mjpeg_stream(
                     if not chunk:
                         # ffmpeg exited — log stderr and break to reconnect
                         stderr_text = await _read_ffmpeg_stderr(process)
+                        stream_error = stderr_text
                         if stderr_text:
                             logger.warning("ffmpeg stderr (stream_id=%s): %s", stream_id, stderr_text)
                         logger.warning("RTSP stream ended for %s (stream_id=%s), will reconnect", ip_address, stream_id)
@@ -830,6 +902,7 @@ async def generate_rtsp_mjpeg_stream(
 
                 except TimeoutError:
                     stderr_text = await _read_ffmpeg_stderr(process)
+                    stream_error = stderr_text
                     if stderr_text:
                         logger.warning("ffmpeg stderr on timeout: %s", stderr_text)
                     logger.warning("RTSP read timeout for %s (stream_id=%s)", ip_address, stream_id)
@@ -863,6 +936,15 @@ async def generate_rtsp_mjpeg_stream(
                 break
 
             if stream_ended:
+                should_fallback = (
+                    use_intel_qsv and not qsv_fallback_used and (not got_any_frames or is_qsv_failure(stream_error))
+                )
+
+                if should_fallback:
+                    fall_back_to_software(stream_error or "QSV stream ended before producing frames")
+                    reconnect_count = 0
+                    continue
+
                 reconnect_count += 1
                 continue
 

@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import shutil
 import time
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 
-_RENDER_DEVICE = Path("/dev/dri/renderD128")
 _COMMAND_TIMEOUT_SECONDS = 10.0
 
 
@@ -74,7 +71,9 @@ def _short_error(stderr: str, stdout: str = "") -> str | None:
 
 
 async def diagnose_qsv() -> QsvDiagnosticResult:
-    device = str(_RENDER_DEVICE)
+    from backend.app.services.qsv import find_qsv_render_device
+
+    device = ""
     stages: list[QsvDiagnosticStage] = []
 
     # Stage 1: FFmpeg executable
@@ -113,16 +112,21 @@ async def diagnose_qsv() -> QsvDiagnosticResult:
         )
     )
 
-    # Stage 2: render device and process permissions
+    # Stage 2: discover and probe available DRM render devices.
+    # A manual diagnostic always refreshes the process-local device cache.
     started = time.monotonic()
-    if not _RENDER_DEVICE.exists():
+    selected_device, probes = await find_qsv_render_device(
+        ffmpeg,
+        refresh=True,
+    )
+
+    if not probes:
         stages.append(
             QsvDiagnosticStage(
                 name="render_device",
                 status="failed",
                 duration_ms=int((time.monotonic() - started) * 1000),
                 code="render_device_missing",
-                detail=device,
             )
         )
         stages.extend(
@@ -134,19 +138,25 @@ async def diagnose_qsv() -> QsvDiagnosticResult:
         return QsvDiagnosticResult(
             available=False,
             overall_status="failed",
-            device=device,
+            device="",
             stages=stages,
             summary_code="render_device_missing",
         )
 
-    if not os.access(_RENDER_DEVICE, os.R_OK | os.W_OK):
+    if selected_device is None:
+        failed_probe = probes[-1]
+        detail_parts = [
+            f"{probe.device}: {probe.code or 'failed'}" + (f" ({probe.detail})" if probe.detail else "")
+            for probe in probes
+        ]
+
         stages.append(
             QsvDiagnosticStage(
                 name="render_device",
                 status="failed",
                 duration_ms=int((time.monotonic() - started) * 1000),
-                code="render_device_permission_denied",
-                detail=device,
+                code=failed_probe.code or "qsv_initialization_failed",
+                detail="; ".join(detail_parts),
             )
         )
         stages.extend(
@@ -158,17 +168,30 @@ async def diagnose_qsv() -> QsvDiagnosticResult:
         return QsvDiagnosticResult(
             available=False,
             overall_status="failed",
-            device=device,
+            device=str(failed_probe.device),
             stages=stages,
-            summary_code="render_device_permission_denied",
+            summary_code=failed_probe.code or "qsv_initialization_failed",
         )
+
+    device = str(selected_device)
+    successful_probe = next(probe for probe in probes if probe.available)
+
+    probe_detail = "; ".join(
+        f"{probe.device}: {'ok' if probe.available else probe.code or 'failed'}" for probe in probes
+    )
+
+    discovery_duration_ms = int((time.monotonic() - started) * 1000)
+    render_discovery_ms = max(
+        0,
+        discovery_duration_ms - sum(probe.duration_ms for probe in probes),
+    )
 
     stages.append(
         QsvDiagnosticStage(
             name="render_device",
             status="ok",
-            duration_ms=int((time.monotonic() - started) * 1000),
-            detail=device,
+            duration_ms=render_discovery_ms,
+            detail=probe_detail,
         )
     )
 
@@ -260,78 +283,14 @@ async def diagnose_qsv() -> QsvDiagnosticResult:
         )
     )
 
-    # Stage 4: initialize QSV through the same VAAPI-derived device chain
-    # used by the camera pipeline. This catches missing oneVPL/media-driver setups
-    # even when FFmpeg lists the codecs.
-    started = time.monotonic()
-    command = (
-        ffmpeg,
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-init_hw_device",
-        f"vaapi=va:{device}",
-        "-init_hw_device",
-        "qsv=qs@va",
-        "-filter_hw_device",
-        "qs",
-        "-f",
-        "lavfi",
-        "-i",
-        "color=size=64x64:rate=1:duration=1",
-        "-vf",
-        "format=nv12,hwupload=extra_hw_frames=16",
-        "-frames:v",
-        "1",
-        "-c:v",
-        "mjpeg_qsv",
-        "-f",
-        "null",
-        "-",
-    )
-
-    try:
-        return_code, stdout, stderr = await _run_command(*command)
-    except TimeoutError:
-        stages.append(
-            QsvDiagnosticStage(
-                name="qsv_initialization",
-                status="failed",
-                duration_ms=int((time.monotonic() - started) * 1000),
-                code="diagnostic_timeout",
-            )
-        )
-        return QsvDiagnosticResult(
-            available=False,
-            overall_status="failed",
-            device=device,
-            stages=stages,
-            summary_code="diagnostic_timeout",
-        )
-
-    if return_code != 0:
-        stages.append(
-            QsvDiagnosticStage(
-                name="qsv_initialization",
-                status="failed",
-                duration_ms=int((time.monotonic() - started) * 1000),
-                code="qsv_initialization_failed",
-                detail=_short_error(stderr, stdout),
-            )
-        )
-        return QsvDiagnosticResult(
-            available=False,
-            overall_status="failed",
-            device=device,
-            stages=stages,
-            summary_code="qsv_initialization_failed",
-        )
-
+    # Stage 4: device discovery already ran the exact VAAPI-derived
+    # QSV and MJPEG initialization command used by the camera pipeline.
     stages.append(
         QsvDiagnosticStage(
             name="qsv_initialization",
             status="ok",
-            duration_ms=int((time.monotonic() - started) * 1000),
+            duration_ms=successful_probe.duration_ms,
+            detail=device,
         )
     )
 

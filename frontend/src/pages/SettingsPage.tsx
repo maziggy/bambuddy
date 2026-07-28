@@ -2116,9 +2116,9 @@ export function SettingsPage() {
                       )}
                 </p>
 
-                <QsvDiagnosticPanel
-                  selected={(localSettings.camera_video_processing ?? 'software') === 'intel_qsv'}
-                />
+                {(localSettings.camera_video_processing ?? 'software') === 'intel_qsv' && (
+                  <QsvDiagnosticPanel selected />
+                )}
               </div>
 
               {/* External Cameras Section */}

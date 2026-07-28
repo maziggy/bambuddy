@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -107,12 +107,35 @@ export function QsvDiagnosticPanel({ selected }: { selected: boolean }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
-  const diagnostic = useQuery({
-    queryKey: ['settings', 'qsv-diagnostic'],
-    queryFn: () => api.diagnoseQsv(),
-    staleTime: 5 * 60 * 1000,
-    retry: false,
+  const diagnostic = useMutation({
+    mutationFn: () => api.diagnoseQsv(),
   });
+
+  if (diagnostic.isIdle) {
+    return (
+      <div className="mt-3 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark px-3 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xs text-bambu-gray">
+            {t(
+              'settings.qsvDiagnosticManualDescription',
+              'Run a compatibility check before using Intel Quick Sync.',
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => diagnostic.mutate()}
+            className="shrink-0 rounded-md border border-bambu-green/50 px-3 py-1.5 text-xs text-bambu-green hover:bg-bambu-green/10"
+          >
+            {t(
+              'settings.qsvDiagnosticRun',
+              'Run compatibility check',
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (diagnostic.isPending) {
     return (
@@ -149,7 +172,7 @@ export function QsvDiagnosticPanel({ selected }: { selected: boolean }) {
 
           <button
             type="button"
-            onClick={() => diagnostic.refetch()}
+            onClick={() => diagnostic.mutate()}
             className="text-bambu-gray hover:text-white"
             title={t('settings.qsvDiagnosticRetry', 'Check again')}
           >
@@ -220,14 +243,14 @@ export function QsvDiagnosticPanel({ selected }: { selected: boolean }) {
 
         <button
           type="button"
-          onClick={() => diagnostic.refetch()}
-          disabled={diagnostic.isFetching}
+          onClick={() => diagnostic.mutate()}
+          disabled={diagnostic.isPending}
           className="text-bambu-gray hover:text-white disabled:opacity-50"
           title={t('settings.qsvDiagnosticRetry', 'Check again')}
         >
           <RefreshCw
             className={`w-4 h-4 ${
-              diagnostic.isFetching ? 'animate-spin' : ''
+              diagnostic.isPending ? 'animate-spin' : ''
             }`}
           />
         </button>

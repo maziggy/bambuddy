@@ -260,8 +260,8 @@ async def diagnose_qsv() -> QsvDiagnosticResult:
         )
     )
 
-    # Stage 4: initialize the same QSV device and MJPEG encoder used by
-    # the camera pipeline. This catches missing oneVPL/media-driver setups
+    # Stage 4: initialize QSV through the same VAAPI-derived device chain
+    # used by the camera pipeline. This catches missing oneVPL/media-driver setups
     # even when FFmpeg lists the codecs.
     started = time.monotonic()
     command = (
@@ -270,9 +270,11 @@ async def diagnose_qsv() -> QsvDiagnosticResult:
         "-loglevel",
         "error",
         "-init_hw_device",
-        f"qsv=hw:{device}",
+        f"vaapi=va:{device}",
+        "-init_hw_device",
+        "qsv=qs@va",
         "-filter_hw_device",
-        "hw",
+        "qs",
         "-f",
         "lavfi",
         "-i",

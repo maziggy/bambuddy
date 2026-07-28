@@ -491,7 +491,7 @@ async def check_ffmpeg(
 
 @router.post("/camera/qsv-diagnostic")
 async def qsv_diagnostic(
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_READ),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Check whether Intel Quick Sync camera processing can run."""
     from backend.app.services.qsv_diagnostic import diagnose_qsv

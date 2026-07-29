@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import shutil
 import time
 from dataclasses import asdict, dataclass, field
 
@@ -71,14 +70,15 @@ def _short_error(stderr: str, stdout: str = "") -> str | None:
 
 
 async def diagnose_qsv() -> QsvDiagnosticResult:
+    from backend.app.services.camera import get_ffmpeg_path
     from backend.app.services.qsv import find_qsv_render_device
 
     device = ""
     stages: list[QsvDiagnosticStage] = []
 
-    # Stage 1: FFmpeg executable
+    # Stage 1: use the same FFmpeg resolver as the camera pipeline.
     started = time.monotonic()
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
         stages.append(
             QsvDiagnosticStage(
@@ -90,8 +90,8 @@ async def diagnose_qsv() -> QsvDiagnosticResult:
         )
         stages.extend(
             [
-                QsvDiagnosticStage(name="render_device", status="skipped"),
                 QsvDiagnosticStage(name="qsv_codecs", status="skipped"),
+                QsvDiagnosticStage(name="render_device", status="skipped"),
                 QsvDiagnosticStage(name="qsv_initialization", status="skipped"),
             ]
         )
@@ -112,90 +112,9 @@ async def diagnose_qsv() -> QsvDiagnosticResult:
         )
     )
 
-    # Stage 2: discover and probe available DRM render devices.
-    # A manual diagnostic always refreshes the process-local device cache.
-    started = time.monotonic()
-    selected_device, probes = await find_qsv_render_device(
-        ffmpeg,
-        refresh=True,
-    )
-
-    if not probes:
-        stages.append(
-            QsvDiagnosticStage(
-                name="render_device",
-                status="failed",
-                duration_ms=int((time.monotonic() - started) * 1000),
-                code="render_device_missing",
-            )
-        )
-        stages.extend(
-            [
-                QsvDiagnosticStage(name="qsv_codecs", status="skipped"),
-                QsvDiagnosticStage(name="qsv_initialization", status="skipped"),
-            ]
-        )
-        return QsvDiagnosticResult(
-            available=False,
-            overall_status="failed",
-            device="",
-            stages=stages,
-            summary_code="render_device_missing",
-        )
-
-    if selected_device is None:
-        failed_probe = probes[-1]
-        detail_parts = [
-            f"{probe.device}: {probe.code or 'failed'}" + (f" ({probe.detail})" if probe.detail else "")
-            for probe in probes
-        ]
-
-        stages.append(
-            QsvDiagnosticStage(
-                name="render_device",
-                status="failed",
-                duration_ms=int((time.monotonic() - started) * 1000),
-                code=failed_probe.code or "qsv_initialization_failed",
-                detail="; ".join(detail_parts),
-            )
-        )
-        stages.extend(
-            [
-                QsvDiagnosticStage(name="qsv_codecs", status="skipped"),
-                QsvDiagnosticStage(name="qsv_initialization", status="skipped"),
-            ]
-        )
-        return QsvDiagnosticResult(
-            available=False,
-            overall_status="failed",
-            device=str(failed_probe.device),
-            stages=stages,
-            summary_code=failed_probe.code or "qsv_initialization_failed",
-        )
-
-    device = str(selected_device)
-    successful_probe = next(probe for probe in probes if probe.available)
-
-    probe_detail = "; ".join(
-        f"{probe.device}: {'ok' if probe.available else probe.code or 'failed'}" for probe in probes
-    )
-
-    discovery_duration_ms = int((time.monotonic() - started) * 1000)
-    render_discovery_ms = max(
-        0,
-        discovery_duration_ms - sum(probe.duration_ms for probe in probes),
-    )
-
-    stages.append(
-        QsvDiagnosticStage(
-            name="render_device",
-            status="ok",
-            duration_ms=render_discovery_ms,
-            detail=probe_detail,
-        )
-    )
-
-    # Stage 3: required FFmpeg codecs
+    # Stage 2: check codec availability before probing devices. The probe itself
+    # uses mjpeg_qsv, so probing first would misreport a codec-less FFmpeg build
+    # as a media-driver or oneVPL initialization failure.
     started = time.monotonic()
     try:
         decoder_rc, decoder_out, decoder_err = await _run_command(
@@ -217,7 +136,12 @@ async def diagnose_qsv() -> QsvDiagnosticResult:
                 code="diagnostic_timeout",
             )
         )
-        stages.append(QsvDiagnosticStage(name="qsv_initialization", status="skipped"))
+        stages.extend(
+            [
+                QsvDiagnosticStage(name="render_device", status="skipped"),
+                QsvDiagnosticStage(name="qsv_initialization", status="skipped"),
+            ]
+        )
         return QsvDiagnosticResult(
             available=False,
             overall_status="failed",
@@ -236,7 +160,12 @@ async def diagnose_qsv() -> QsvDiagnosticResult:
                 detail=_short_error(decoder_err + encoder_err, decoder_out + encoder_out),
             )
         )
-        stages.append(QsvDiagnosticStage(name="qsv_initialization", status="skipped"))
+        stages.extend(
+            [
+                QsvDiagnosticStage(name="render_device", status="skipped"),
+                QsvDiagnosticStage(name="qsv_initialization", status="skipped"),
+            ]
+        )
         return QsvDiagnosticResult(
             available=False,
             overall_status="failed",
@@ -265,7 +194,12 @@ async def diagnose_qsv() -> QsvDiagnosticResult:
                 detail=", ".join(missing),
             )
         )
-        stages.append(QsvDiagnosticStage(name="qsv_initialization", status="skipped"))
+        stages.extend(
+            [
+                QsvDiagnosticStage(name="render_device", status="skipped"),
+                QsvDiagnosticStage(name="qsv_initialization", status="skipped"),
+            ]
+        )
         return QsvDiagnosticResult(
             available=False,
             overall_status="failed",
@@ -283,8 +217,78 @@ async def diagnose_qsv() -> QsvDiagnosticResult:
         )
     )
 
-    # Stage 4: device discovery already ran the exact VAAPI-derived
-    # QSV and MJPEG initialization command used by the camera pipeline.
+    # Stage 3: discover and probe available DRM render devices. A manual
+    # diagnostic always refreshes the process-local device cache.
+    started = time.monotonic()
+    selected_device, probes = await find_qsv_render_device(ffmpeg, refresh=True)
+
+    if not probes:
+        stages.append(
+            QsvDiagnosticStage(
+                name="render_device",
+                status="failed",
+                duration_ms=int((time.monotonic() - started) * 1000),
+                code="render_device_missing",
+            )
+        )
+        stages.append(QsvDiagnosticStage(name="qsv_initialization", status="skipped"))
+        return QsvDiagnosticResult(
+            available=False,
+            overall_status="failed",
+            device="",
+            stages=stages,
+            summary_code="render_device_missing",
+        )
+
+    if selected_device is None:
+        failed_probe = probes[-1]
+        detail_parts = [
+            f"{probe.device}: {probe.code or 'failed'}"
+            + (f" ({probe.detail})" if probe.detail else "")
+            for probe in probes
+        ]
+
+        stages.append(
+            QsvDiagnosticStage(
+                name="render_device",
+                status="failed",
+                duration_ms=int((time.monotonic() - started) * 1000),
+                code=failed_probe.code or "qsv_initialization_failed",
+                detail="; ".join(detail_parts),
+            )
+        )
+        stages.append(QsvDiagnosticStage(name="qsv_initialization", status="skipped"))
+        return QsvDiagnosticResult(
+            available=False,
+            overall_status="failed",
+            device=str(failed_probe.device),
+            stages=stages,
+            summary_code=failed_probe.code or "qsv_initialization_failed",
+        )
+
+    device = str(selected_device)
+    successful_probe = next(probe for probe in probes if probe.available)
+    probe_detail = "; ".join(
+        f"{probe.device}: {'ok' if probe.available else probe.code or 'failed'}"
+        for probe in probes
+    )
+    discovery_duration_ms = int((time.monotonic() - started) * 1000)
+    render_discovery_ms = max(
+        0,
+        discovery_duration_ms - sum(probe.duration_ms for probe in probes),
+    )
+
+    stages.append(
+        QsvDiagnosticStage(
+            name="render_device",
+            status="ok",
+            duration_ms=render_discovery_ms,
+            detail=probe_detail,
+        )
+    )
+
+    # Stage 4: device discovery already ran the exact VAAPI-derived QSV and
+    # MJPEG initialization command used by the camera pipeline.
     stages.append(
         QsvDiagnosticStage(
             name="qsv_initialization",

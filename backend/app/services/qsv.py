@@ -13,6 +13,7 @@ _RENDER_DEVICE_PATTERN = "renderD*"
 _QSV_PROBE_TIMEOUT_SECONDS = 10.0
 
 _qsv_device_cache: Path | None = None
+_qsv_probe_failure_cache: tuple[QsvDeviceProbe, ...] | None = None
 _qsv_device_lock = asyncio.Lock()
 
 
@@ -138,8 +139,9 @@ async def probe_qsv_device(ffmpeg: str, device: Path) -> QsvDeviceProbe:
 def clear_qsv_device_cache() -> None:
     """Forget the cached render device after a runtime QSV failure."""
 
-    global _qsv_device_cache
+    global _qsv_device_cache, _qsv_probe_failure_cache
     _qsv_device_cache = None
+    _qsv_probe_failure_cache = None
 
 
 async def find_qsv_render_device(
@@ -153,7 +155,10 @@ async def find_qsv_render_device(
     The returned probe list is empty when a cached device was reused.
     """
 
-    global _qsv_device_cache
+    global _qsv_device_cache, _qsv_probe_failure_cache
+
+    if not refresh and _qsv_probe_failure_cache is not None:
+        return None, list(_qsv_probe_failure_cache)
 
     if not refresh and _qsv_device_cache is not None:
         if os.access(_qsv_device_cache, os.R_OK | os.W_OK):
@@ -161,7 +166,10 @@ async def find_qsv_render_device(
         _qsv_device_cache = None
 
     async with _qsv_device_lock:
-        # Another coroutine may have populated the cache while we waited.
+        # Another coroutine may have populated either cache while we waited.
+        if not refresh and _qsv_probe_failure_cache is not None:
+            return None, list(_qsv_probe_failure_cache)
+
         if not refresh and _qsv_device_cache is not None:
             if os.access(_qsv_device_cache, os.R_OK | os.W_OK):
                 return _qsv_device_cache, []
@@ -175,7 +183,9 @@ async def find_qsv_render_device(
 
             if probe.available:
                 _qsv_device_cache = device
+                _qsv_probe_failure_cache = None
                 return device, probes
 
         _qsv_device_cache = None
+        _qsv_probe_failure_cache = tuple(probes)
         return None, probes

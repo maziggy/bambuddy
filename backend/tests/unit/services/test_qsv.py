@@ -101,6 +101,61 @@ async def test_find_qsv_render_device_returns_none_when_no_device_works(
 
 
 @pytest.mark.asyncio
+async def test_find_qsv_render_device_reuses_cached_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = Path("/dev/dri/renderD128")
+    probe = AsyncMock(
+        return_value=qsv.QsvDeviceProbe(
+            device=device,
+            available=False,
+            code="qsv_initialization_failed",
+        )
+    )
+    monkeypatch.setattr(qsv, "list_render_devices", lambda: [device])
+    monkeypatch.setattr(qsv, "probe_qsv_device", probe)
+
+    selected, probes = await qsv.find_qsv_render_device("/usr/bin/ffmpeg")
+    assert selected is None
+    assert len(probes) == 1
+
+    selected, probes = await qsv.find_qsv_render_device("/usr/bin/ffmpeg")
+    assert selected is None
+    assert len(probes) == 1
+    assert probe.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_find_qsv_render_device_refresh_retries_cached_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = Path("/dev/dri/renderD128")
+    probe = AsyncMock(
+        side_effect=[
+            qsv.QsvDeviceProbe(
+                device=device,
+                available=False,
+                code="qsv_initialization_failed",
+            ),
+            qsv.QsvDeviceProbe(device=device, available=True),
+        ]
+    )
+    monkeypatch.setattr(qsv, "list_render_devices", lambda: [device])
+    monkeypatch.setattr(qsv, "probe_qsv_device", probe)
+
+    selected, _ = await qsv.find_qsv_render_device("/usr/bin/ffmpeg")
+    assert selected is None
+
+    selected, probes = await qsv.find_qsv_render_device(
+        "/usr/bin/ffmpeg",
+        refresh=True,
+    )
+    assert selected == device
+    assert [result.device for result in probes] == [device]
+    assert probe.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_find_qsv_render_device_reuses_cached_device(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -166,6 +221,56 @@ def test_clear_qsv_device_cache() -> None:
     device = Path("/dev/dri/renderD128")
 
     qsv._qsv_device_cache = device
+    qsv._qsv_probe_failure_cache = (
+        qsv.QsvDeviceProbe(device=device, available=False),
+    )
     qsv.clear_qsv_device_cache()
 
     assert qsv._qsv_device_cache is None
+    assert qsv._qsv_probe_failure_cache is None
+
+
+@pytest.mark.asyncio
+async def test_probe_qsv_device_runs_real_pipeline_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = Path("/dev/dri/renderD129")
+    monkeypatch.setattr(Path, "exists", lambda self: self == device)
+    monkeypatch.setattr(qsv.os, "access", lambda path, mode: path == device)
+
+    process = AsyncMock()
+    process.returncode = 0
+    process.communicate.return_value = (b"", b"")
+    create_process = AsyncMock(return_value=process)
+    monkeypatch.setattr(qsv.asyncio, "create_subprocess_exec", create_process)
+
+    result = await qsv.probe_qsv_device("/custom/ffmpeg", device)
+
+    assert result.available is True
+    create_process.assert_awaited_once()
+    command = create_process.await_args.args
+    assert command == qsv.build_qsv_probe_command("/custom/ffmpeg", device)
+
+
+@pytest.mark.asyncio
+async def test_probe_qsv_device_reports_ffmpeg_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = Path("/dev/dri/renderD129")
+    monkeypatch.setattr(Path, "exists", lambda self: self == device)
+    monkeypatch.setattr(qsv.os, "access", lambda path, mode: path == device)
+
+    process = AsyncMock()
+    process.returncode = 1
+    process.communicate.return_value = (b"", b"MFX session failed")
+    monkeypatch.setattr(
+        qsv.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=process),
+    )
+
+    result = await qsv.probe_qsv_device("/custom/ffmpeg", device)
+
+    assert result.available is False
+    assert result.code == "qsv_initialization_failed"
+    assert result.detail == "MFX session failed"

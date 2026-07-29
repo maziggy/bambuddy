@@ -936,9 +936,13 @@ async def generate_rtsp_mjpeg_stream(
                 break
 
             if stream_ended:
-                should_fallback = (
-                    use_intel_qsv and not qsv_fallback_used and (not got_any_frames or is_qsv_failure(stream_error))
-                )
+                # A QSV initialization failure cannot produce frames. Once the
+                # stream has yielded a frame, an EOF is treated as a routine RTSP
+                # disconnect and reconnects with the same QSV command. FFmpeg's
+                # startup banner itself contains h264_qsv/mjpeg_qsv, so matching
+                # QSV markers after frames have been produced creates a false
+                # fallback on every normal reconnect.
+                should_fallback = use_intel_qsv and not qsv_fallback_used and not got_any_frames
 
                 if should_fallback:
                     fall_back_to_software(stream_error or "QSV stream ended before producing frames")

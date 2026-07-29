@@ -2108,7 +2108,7 @@ export function SettingsPage() {
                   {(localSettings.camera_video_processing ?? 'software') === 'intel_qsv'
                     ? t(
                         'settings.cameraVideoProcessingIntelQsvDescription',
-                        'Uses Intel Quick Sync for hardware H.264 decoding and MJPEG encoding. Requires Intel media runtime and access to /dev/dri/renderD128.',
+                        'Uses Intel Quick Sync for hardware H.264 decoding and MJPEG encoding. Requires Intel media runtime and access to a DRM render device.',
                       )
                     : t(
                         'settings.cameraVideoProcessingSoftwareDescription',

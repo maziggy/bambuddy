@@ -15,6 +15,14 @@ from backend.app.services.camera_profiles import CameraProfile
 pytestmark = pytest.mark.asyncio
 
 
+_FFMPEG_QSV_STARTUP_STDERR = b"""ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers
+  built with gcc 14
+  configuration: --enable-libvpl --enable-vaapi
+Stream mapping:
+  Stream #0:0 -> #0:0 (h264 (h264_qsv) -> mjpeg (mjpeg_qsv))
+"""
+
+
 class _FakeServer:
     def close(self) -> None:
         pass
@@ -211,6 +219,7 @@ async def test_network_disconnect_after_frame_keeps_qsv(monkeypatch):
 
     first_qsv = _StreamProcess(
         [b"\xff\xd8first-frame\xff\xd9"],
+        stderr=_FFMPEG_QSV_STARTUP_STDERR,
         pid=42021,
     )
     reconnected_qsv = _StreamProcess(

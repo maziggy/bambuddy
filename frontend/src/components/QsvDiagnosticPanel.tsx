@@ -56,13 +56,13 @@ function failureMessage(
     case 'render_device_missing':
       return t(
         'settings.qsvDiagnosticDeviceMissing',
-        '/dev/dri/renderD128 was not found. Pass the Intel GPU render device into the container.',
+        'No accessible GPU render device was found. Pass the Intel GPU render device into the container.',
       );
 
     case 'render_device_permission_denied':
       return t(
         'settings.qsvDiagnosticPermissionDenied',
-        'Bambuddy cannot access /dev/dri/renderD128. Check the render group and container device permissions.',
+        'Bambuddy cannot access the GPU render device. Check the render group and container device permissions.',
       );
 
     case 'h264_qsv_missing':

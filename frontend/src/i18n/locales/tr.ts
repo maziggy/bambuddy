@@ -2502,6 +2502,7 @@ export default {
     cameraVideoProcessingIntelQsv: 'Intel Quick Sync',
     cameraVideoProcessingSoftwareDescription: 'CPU üzerinde işleme',
     cameraVideoProcessingIntelQsvDescription: 'Intel GPU üzerinde işleme',
+    cameraVideoProcessingReconnectDescription: 'Değişiklikler, mevcut paylaşılan kamera akışı durup yeniden bağlandıktan sonra uygulanır.',
     qsvDiagnosticStageFfmpeg: 'FFmpeg',
     qsvDiagnosticStageDevice: 'Intel GPU aygıtı',
     qsvDiagnosticStageCodecs: 'Gerekli QSV codec bileşenleri',

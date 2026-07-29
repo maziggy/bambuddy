@@ -2364,6 +2364,7 @@ export default {
     cameraVideoProcessingIntelQsv: "Intel Quick Sync",
     cameraVideoProcessingSoftwareDescription: 'Обработка на CPU',
     cameraVideoProcessingIntelQsvDescription: 'Обработка на Intel GPU',
+    cameraVideoProcessingReconnectDescription: 'Изменение вступит в силу после остановки и повторного подключения текущего общего потока камеры.',
     qsvDiagnosticStageFfmpeg: 'FFmpeg',
     qsvDiagnosticStageDevice: 'Устройство Intel GPU',
     qsvDiagnosticStageCodecs: 'Необходимые кодеки QSV',

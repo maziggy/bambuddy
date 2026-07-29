@@ -2497,6 +2497,7 @@ export default {
     cameraVideoProcessingIntelQsv: 'Intel Quick Sync',
     cameraVideoProcessingSoftwareDescription: 'CPUで処理',
     cameraVideoProcessingIntelQsvDescription: 'Intel GPUで処理',
+    cameraVideoProcessingReconnectDescription: '変更は、現在の共有カメラストリームが停止して再接続された後に反映されます。',
     qsvDiagnosticStageFfmpeg: 'FFmpeg',
     qsvDiagnosticStageDevice: 'Intel GPU デバイス',
     qsvDiagnosticStageCodecs: '必要な QSV コーデック',

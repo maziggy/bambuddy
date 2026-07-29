@@ -2363,6 +2363,7 @@ export default {
     cameraVideoProcessingIntelQsv: 'Intel Quick Sync',
     cameraVideoProcessingSoftwareDescription: 'CPU에서 처리',
     cameraVideoProcessingIntelQsvDescription: 'Intel GPU에서 처리',
+    cameraVideoProcessingReconnectDescription: '변경 사항은 현재 공유 카메라 스트림이 중지되고 다시 연결된 후 적용됩니다.',
     qsvDiagnosticStageFfmpeg: 'FFmpeg',
     qsvDiagnosticStageDevice: 'Intel GPU 장치',
     qsvDiagnosticStageCodecs: '필수 QSV 코덱',

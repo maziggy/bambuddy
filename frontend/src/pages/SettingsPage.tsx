@@ -2115,6 +2115,12 @@ export function SettingsPage() {
                         'Uses the CPU for H.264 decoding and MJPEG encoding.',
                       )}
                 </p>
+                <p className="text-xs text-bambu-gray mt-1">
+                  {t(
+                    'settings.cameraVideoProcessingReconnectDescription',
+                    'Changes take effect after the current shared camera stream stops and reconnects.',
+                  )}
+                </p>
 
                 {(localSettings.camera_video_processing ?? 'software') === 'intel_qsv' && (
                   <QsvDiagnosticPanel selected />

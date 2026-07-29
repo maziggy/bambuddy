@@ -2492,6 +2492,7 @@ export default {
     cameraVideoProcessingIntelQsv: 'Intel Quick Sync',
     cameraVideoProcessingSoftwareDescription: '使用 CPU 处理',
     cameraVideoProcessingIntelQsvDescription: '使用 Intel GPU 处理',
+    cameraVideoProcessingReconnectDescription: '更改将在当前共享摄像头流停止并重新连接后生效。',
     qsvDiagnosticStageFfmpeg: 'FFmpeg',
     qsvDiagnosticStageDevice: 'Intel GPU 设备',
     qsvDiagnosticStageCodecs: '所需的 QSV 编解码器',

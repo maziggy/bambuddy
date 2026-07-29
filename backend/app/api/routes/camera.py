@@ -16,6 +16,7 @@ from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes.settings import get_setting
 from backend.app.core import database
 from backend.app.core.auth import (
     RequireCameraStreamTokenIfAuthEnabled,
@@ -26,7 +27,6 @@ from backend.app.core.database import get_db
 from backend.app.core.logging_filters import redact_url_credentials
 from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
-from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.services.camera import (
     capture_camera_frame,
@@ -632,6 +632,9 @@ async def generate_rtsp_mjpeg_stream(
         command = [ffmpeg]
 
         if intel_qsv:
+            # QSV global_quality uses a different scale from software MJPEG -q:v.
+            # 80 was tuned visually against the existing -q:v 5 output rather than
+            # treated as a numerically equivalent quality value.
             command.extend(
                 [
                     "-init_hw_device",
@@ -1047,8 +1050,7 @@ async def camera_stream(
     async with database.async_session() as db:
         printer = await get_printer_or_404(printer_id, db)
 
-        processing_result = await db.execute(select(Settings.value).where(Settings.key == "camera_video_processing"))
-        camera_video_processing = processing_result.scalar_one_or_none() or "software"
+        camera_video_processing = await get_setting(db, "camera_video_processing") or "software"
 
     # Check for external camera first
     if printer.external_camera_enabled and printer.external_camera_url:

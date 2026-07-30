@@ -376,6 +376,15 @@ class AppSettings(BaseModel):
         le=1800,
         description="Additional hold time at temperature after the chamber reaches the target (or after max_wait_seconds elapses). 0 = no soak.",
     )
+    queue_keep_bed_warm: bool = Field(
+        default=False,
+        description=(
+            "While a printer is in FINISH state awaiting plate-clear and the next queued item requires "
+            "chamber heating, maintain the bed at that item's bed_temperature so the chamber stays hot "
+            "during the bed-clearing window. Only fires for filaments with a non-zero chamber target "
+            "(ASA, ABS, PA, PC etc.); PLA/PETG prints are skipped automatically."
+        ),
+    )
 
     # User-configurable presets for the printer-card temperature / fan-speed
     # popovers. Each is a JSON array of exactly 3 ints (the "Off" button is
@@ -571,6 +580,7 @@ class AppSettingsUpdate(BaseModel):
     preheat_filament_targets: str | None = None
     preheat_max_wait_seconds: int | None = Field(default=None, ge=60, le=3600)
     preheat_soak_seconds: int | None = Field(default=None, ge=0, le=1800)
+    queue_keep_bed_warm: bool | None = None
     nozzle_temp_presets: str | None = None
     bed_temp_presets: str | None = None
     chamber_temp_presets: str | None = None

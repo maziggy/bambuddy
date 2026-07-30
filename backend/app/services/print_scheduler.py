@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import time
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -280,6 +281,11 @@ class PrintScheduler:
         # event-loop thread, so this dict needs no lock.
         # item_id -> (task, printer_id)
         self._inflight: dict[int, tuple[asyncio.Task, int | None]] = {}
+        # Chamber temperature history for smart soak-time reduction.
+        # printer_id -> deque of (monotonic_timestamp, celsius) sampled each scheduler tick.
+        # Entries older than _chamber_history_ttl are pruned on write.
+        self._chamber_history: dict[int, deque] = {}
+        self._chamber_history_ttl = 7200  # keep 2 hours of samples
 
     async def run(self):
         """Main loop - check queue every interval."""
@@ -289,6 +295,7 @@ class PrintScheduler:
         await self._clear_stale_dispatch_claims()
 
         while self._running:
+            self._sample_chamber_temps()
             dispatched = False
             try:
                 dispatched = await self.check_queue()
@@ -809,6 +816,65 @@ class PrintScheduler:
                         state_name,
                         awaiting,
                     )
+
+            # Keep bed warm between consecutive queue prints. When a printer just
+            # finished a job (FINISH state) and the next queued item needs chamber
+            # heating, maintain the bed at the item's own bed_temperature so the
+            # chamber stays hot during the bed-clearing window. Skips entirely for
+            # filaments that map to a 0°C chamber target (PLA, PETG, etc.) —
+            # there is no reason to delay bed cool-down for those.
+            # Printers being dispatched this cycle are excluded: _preheat_and_soak
+            # already handles their bed temperature.
+            keep_warm_enabled = await self._get_bool_setting(db, "queue_keep_bed_warm", default=False)
+            if keep_warm_enabled:
+                filament_targets = await self._get_preheat_filament_targets(db)
+                dispatched_printers = {it.printer_id for it in items if it.id in set(dispatch_ids) and it.printer_id}
+                pending_printer_ids = {it.printer_id for it in items if it.printer_id}
+                for pid in (pending_printer_ids & busy_printers) - dispatched_printers:
+                    state = printer_manager.get_status(pid)
+                    if state is None or state.state != "FINISH":
+                        continue
+                    client = printer_manager.get_client(pid)
+                    if client is None:
+                        continue
+                    # Find the first pending item for this printer (list is already ordered by position)
+                    next_item = next((it for it in items if it.printer_id == pid), None)
+                    if next_item is None:
+                        continue
+                    archive = next_item.archive
+                    bed_target = int(archive.bed_temperature) if archive and archive.bed_temperature else 0
+                    if bed_target <= 0:
+                        continue
+                    # Only keep warm when the next print needs chamber heating.
+                    # Mirror _derive_chamber_target: check per-item override first,
+                    # then derive from loaded AMS filament types.
+                    explicit = getattr(next_item, "preheat_chamber_target_override", None)
+                    if explicit is not None:
+                        chamber_needed = int(explicit) > 0
+                    else:
+                        ams_list = (state.raw_data or {}).get("ams") if state.raw_data else None
+                        if isinstance(ams_list, dict):
+                            ams_list = ams_list.get("ams") or []
+                        chamber_needed = False
+                        for ams in (ams_list if isinstance(ams_list, list) else []):
+                            for tray in (ams.get("tray") or []) if isinstance(ams, dict) else []:
+                                norm = self._normalize_filament_type(tray.get("tray_type") or "")
+                                if norm and filament_targets.get(norm, filament_targets.get("DEFAULT", 0)) > 0:
+                                    chamber_needed = True
+                                    break
+                            if chamber_needed:
+                                break
+                    if not chamber_needed:
+                        continue
+                    try:
+                        client.set_bed_temperature(bed_target)
+                        logger.info(
+                            "Queue: keeping bed warm at %d°C for printer %d (FINISH, next item needs chamber heat)",
+                            bed_target,
+                            pid,
+                        )
+                    except Exception as exc:
+                        logger.warning("Queue: keep-warm bed command failed for printer %d: %s", pid, exc)
 
             # Read the concurrency limit BEFORE the commit below, not inside
             # _dispatch_selected(). A SELECT on this session after the commit
@@ -2512,6 +2578,67 @@ class PrintScheduler:
                     best = target
         return best
 
+    def _sample_chamber_temps(self) -> None:
+        """Record a chamber temperature sample for every connected printer.
+
+        Called once per scheduler tick (every 3–30 s). Entries older than
+        _chamber_history_ttl are pruned on each write so the deques stay bounded.
+        """
+        now = time.monotonic()
+        cutoff = now - self._chamber_history_ttl
+        for pid, status in printer_manager.get_all_statuses().items():
+            if status is None:
+                continue
+            temps = status.temperatures or {}
+            chamber = temps.get("chamber")
+            if chamber is None:
+                continue
+            hist = self._chamber_history.setdefault(pid, deque())
+            hist.append((now, float(chamber)))
+            while hist and hist[0][0] < cutoff:
+                hist.popleft()
+
+    def _chamber_soak_remaining(
+        self,
+        printer_id: int,
+        chamber_target: float,
+        soak_seconds: int,
+        tolerance: float = 2.0,
+    ) -> int:
+        """Return how many seconds of soak time are still needed.
+
+        Scans the chamber temperature history backwards to find the most recent
+        sample where the chamber was below ``chamber_target - tolerance``. The
+        time elapsed since that sample is the time the chamber has continuously
+        been at temperature; subtract from ``soak_seconds`` to get remaining.
+
+        Returns ``soak_seconds`` when there is no history (conservative: assume
+        a full soak is needed). Returns 0 when the chamber has been above target
+        for at least ``soak_seconds`` with no interruption.
+        """
+        hist = self._chamber_history.get(printer_id)
+        if not hist:
+            return soak_seconds
+
+        now = time.monotonic()
+        threshold = chamber_target - tolerance
+
+        # Walk backwards through history to find the most recent dip below threshold.
+        last_below_ts: float | None = None
+        for ts, temp in reversed(hist):
+            if temp < threshold:
+                last_below_ts = ts
+                break
+
+        if last_below_ts is None:
+            # Chamber never dropped below threshold within the history window.
+            # If the window itself covers the full soak duration, we're done.
+            history_span = now - hist[0][0]
+            return 0 if history_span >= soak_seconds else soak_seconds
+        else:
+            time_above = now - last_below_ts
+            return max(0, soak_seconds - int(time_above))
+
     async def _preheat_and_soak(
         self,
         db: AsyncSession,
@@ -2597,6 +2724,29 @@ class PrintScheduler:
         has_sensor = supports_chamber_temp(model)
         do_chamber = chamber_target > 0 and (has_heater or has_sensor)
 
+        # Fast path: if the chamber has been continuously above target for at
+        # least soak_seconds and the bed is already at temperature, skip the
+        # entire preheat stage. Typical case: keep-warm held the bed between
+        # consecutive same-material prints and the chamber never dropped.
+        if do_chamber and has_sensor and soak_seconds > 0:
+            remaining = self._chamber_soak_remaining(printer.id, float(chamber_target), soak_seconds)
+            if remaining == 0:
+                cur = printer_manager.get_status(printer.id)
+                if cur:
+                    cur_temps = cur.temperatures or {}
+                    if (
+                        float(cur_temps.get("bed", 0) or 0) >= bed_target - 2.0
+                        and float(cur_temps.get("chamber", 0) or 0) >= chamber_target - 2.0
+                    ):
+                        logger.info(
+                            "Queue item %s: preheat skipped — chamber has been above %d°C for ≥%ds "
+                            "and bed is already at temperature (chamber history fast-path)",
+                            item.id,
+                            chamber_target,
+                            soak_seconds,
+                        )
+                        return
+
         logger.info(
             "Queue item %s: preheat starting — bed=%d°C chamber_target=%d°C (source=%s override=%s "
             "model=%s has_heater=%s has_sensor=%s) max_wait=%ds soak=%ds",
@@ -2620,6 +2770,17 @@ class PrintScheduler:
         except Exception as exc:
             logger.warning("Queue item %s: preheat bed M140 failed: %s", item.id, exc)
             return
+
+        # Auxiliary fan during preheat soak. Run at full speed when a chamber
+        # target is set so that a PandaBreath (or similar) circulates heat and
+        # passive bed radiation reaches the sensor faster. The print's own gcode
+        # takes over fan control once dispatched, so no cleanup is needed here.
+        if do_chamber:
+            try:
+                client.set_aux_fan(255)
+                logger.info("Queue item %s: preheat auxiliary fan started at full speed", item.id)
+            except Exception as exc:
+                logger.warning("Queue item %s: preheat aux fan failed: %s", item.id, exc)
 
         # Airduct mode (#1468 follow-up). Models with the cooling/heating flap
         # (H2C/H2D/H2D Pro/H2S/X2D/P2S) keep the flap whatever the user last
@@ -2716,8 +2877,27 @@ class PrintScheduler:
             await asyncio.sleep(POLL_INTERVAL)
 
         if soak_seconds > 0:
-            logger.info("Queue item %s: preheat soak — holding for %ds", item.id, soak_seconds)
-            await asyncio.sleep(soak_seconds)
+            if do_chamber and has_sensor:
+                remaining = self._chamber_soak_remaining(printer.id, float(chamber_target), soak_seconds)
+            else:
+                remaining = soak_seconds  # no sensor — can't verify history, run full soak
+            if remaining > 0:
+                logger.info(
+                    "Queue item %s: preheat soak — holding for %ds (of %ds configured; chamber "
+                    "has been above target for ~%ds already)",
+                    item.id,
+                    remaining,
+                    soak_seconds,
+                    soak_seconds - remaining,
+                )
+                await asyncio.sleep(remaining)
+            else:
+                logger.info(
+                    "Queue item %s: preheat soak skipped — chamber has been above %d°C for ≥%ds",
+                    item.id,
+                    chamber_target,
+                    soak_seconds,
+                )
 
         logger.info("Queue item %s: preheat complete — proceeding to upload", item.id)
 

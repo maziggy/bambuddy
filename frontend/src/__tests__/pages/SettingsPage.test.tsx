@@ -110,6 +110,66 @@ describe('SettingsPage', () => {
     });
   });
 
+  describe('finish photo plate restore (#2547)', () => {
+    const restoreLabel = 'Restore plate for finish photo';
+
+    it('offers the toggle while finish photos are enabled', async () => {
+      render(<SettingsPage />);
+
+      expect(await screen.findByText(restoreLabel)).toBeInTheDocument();
+    });
+
+    it('hides the toggle when finish photos are switched off', async () => {
+      // It only describes how the finish photo is framed, so it is meaningless
+      // when no finish photo is taken at all.
+      server.use(
+        http.get('/api/v1/settings/', () =>
+          HttpResponse.json({ ...mockSettings, capture_finish_photo: false })
+        )
+      );
+      render(<SettingsPage />);
+
+      await screen.findByRole('heading', { name: 'Settings' });
+      await waitFor(() => {
+        expect(screen.queryByText(restoreLabel)).not.toBeInTheDocument();
+      });
+    });
+
+    it('defaults to on when the backend has never stored the setting', async () => {
+      // Existing installs have no row for it; the UI must not read that as off.
+      render(<SettingsPage />);
+
+      const label = await screen.findByText(restoreLabel);
+      const row = label.closest('div')!.parentElement!;
+      expect(within(row).getByRole('checkbox')).toBeChecked();
+    });
+
+    it('sends the new value on save', async () => {
+      let saved: Record<string, unknown> | null = null;
+      server.use(
+        http.put('/api/v1/settings/', async ({ request }) => {
+          saved = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...mockSettings, ...saved });
+        })
+      );
+      render(<SettingsPage />);
+
+      const label = await screen.findByText(restoreLabel);
+      // The page suppresses auto-save for 100ms after the settings load, so a
+      // click landing inside that window is swallowed with no re-trigger.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const row = label.closest('div')!.parentElement!;
+      await userEvent.click(within(row).getByRole('checkbox'));
+
+      // The page auto-saves on a 500ms debounce, so the default 1s waitFor
+      // window is only just wide enough — give the request room to land.
+      await waitFor(() => {
+        expect(saved).not.toBeNull();
+      }, { timeout: 3000 });
+      expect(saved!.finish_photo_restore_plate).toBe(false);
+    });
+  });
+
   describe('general settings', () => {
     it('shows date format setting', async () => {
       render(<SettingsPage />);

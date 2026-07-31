@@ -203,8 +203,17 @@ async def async_client(test_engine, db_session) -> AsyncGenerator[AsyncClient, N
     test_async_session = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
     async def override_get_db():
+        # Mirror production get_db (core/database.py): commit on success,
+        # rollback on error. Endpoints that rely on the request-scoped
+        # implicit commit (e.g. create_project, which only flushes) would
+        # otherwise silently lose their writes in tests (#1897).
         async with test_async_session() as session:
-            yield session
+            try:
+                yield session
+                await session.commit()
+            except BaseException:
+                await session.rollback()
+                raise
 
     app.dependency_overrides[get_db] = override_get_db
 
@@ -217,6 +226,9 @@ async def async_client(test_engine, db_session) -> AsyncGenerator[AsyncClient, N
         patch("backend.app.core.database.async_session", test_async_session),
         patch("backend.app.core.auth.async_session", test_async_session),
         patch("backend.app.main.async_session", test_async_session),
+        # Obico endpoints load settings through the service's module-level binding;
+        # without this patch they'd read whatever DB the cwd resolves to (#1546).
+        patch("backend.app.services.obico_detection.async_session", test_async_session),
         patch("backend.app.main.init_printer_connections", mock_init_printer_connections),
     ):
         # Seed default groups for tests that need them

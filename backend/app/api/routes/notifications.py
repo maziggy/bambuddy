@@ -58,6 +58,7 @@ def _provider_to_dict(provider: NotificationProvider) -> dict:
         "on_ams_ht_temperature_high": provider.on_ams_ht_temperature_high,
         # Build plate detection
         "on_plate_not_empty": provider.on_plate_not_empty,
+        "on_plate_clear_required": provider.on_plate_clear_required,
         # Bed cooled
         "on_bed_cooled": provider.on_bed_cooled,
         # First layer complete
@@ -139,6 +140,7 @@ async def create_notification_provider(
         on_ams_ht_temperature_high=provider_data.on_ams_ht_temperature_high,
         # Build plate detection
         on_plate_not_empty=provider_data.on_plate_not_empty,
+        on_plate_clear_required=provider_data.on_plate_clear_required,
         # Bed cooled
         on_bed_cooled=provider_data.on_bed_cooled,
         # First layer complete

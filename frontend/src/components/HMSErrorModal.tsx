@@ -33,9 +33,20 @@ const AMS_RUNOUT_SHORT_CODES = new Set([
   '0705_8011', '0706_8011', '0707_8011', '07FF_8011',
 ]);
 
-// Comprehensive error code database (short format: XXXX_YYYY)
-// Auto-generated from ha-bambulab - 853 codes
+// "MQTT command verification failed" — the firmware's authorization check
+// refusing a control command. Keyed by its full 16-char code on purpose: this
+// error's meaning lives in attr's low half (0500) and code's high half (0001),
+// both of which getShortCode() discards, so the short form is a useless
+// "0500_0007". Before #2732 that meant filterKnownHMSErrors dropped it and the
+// user was never shown the one message that explained why nothing printed.
+export const HMS_MQTT_VERIFY_FAILED = '0500050000010007';
+
+// Comprehensive error code database, keyed by short code (XXXX_YYYY) or, where
+// the short code cannot express the error, by full code (16 hex chars).
+// Short-code entries auto-generated from ha-bambulab - 853 codes
 const ERROR_DESCRIPTIONS: Record<string, string> = {
+  [HMS_MQTT_VERIFY_FAILED]:
+    'The printer rejected a command because it could not verify it. Prints, temperature changes and filament loads sent from Bambuddy will be ignored until this is fixed.',
   '0300_4000': 'Z axis homing failed; the task has been stopped.',
   '0300_4001': 'The printer timed out waiting for the nozzle to cool down before homing.',
   '0300_4002': 'Auto Bed Leveling failed; the task has been stopped.',
@@ -913,6 +924,15 @@ function getShortCode(attr: number, code: number): string {
   return `${module.toString(16).padStart(4, '0').toUpperCase()}_${codeNum.toString(16).padStart(4, '0').toUpperCase()}`;
 }
 
+// Catalog lookup. full_code (16 hex chars for hms[]-sourced faults) is tried
+// first because it is lossless; shortCode is the fallback that the bulk of the
+// catalog is keyed by. Returns undefined for an uncataloged error so callers can
+// tell "no description" from "empty description".
+function lookupDescription(fullCode: string | undefined, shortCode: string): string | undefined {
+  if (fullCode && ERROR_DESCRIPTIONS[fullCode] !== undefined) return ERROR_DESCRIPTIONS[fullCode];
+  return ERROR_DESCRIPTIONS[shortCode];
+}
+
 // Helper to filter HMS errors the UI should surface (exported for use in badge counts).
 // Keeps an error if EITHER:
 //   - it's in the bundled ERROR_DESCRIPTIONS catalog (known, has a description), OR
@@ -925,7 +945,7 @@ export function filterKnownHMSErrors(errors: HMSError[]): HMSError[] {
   return errors.filter((error) => {
     const codeNum = parseInt(error.code.replace('0x', ''), 16) || 0;
     const shortCode = getShortCode(error.attr, codeNum);
-    if (ERROR_DESCRIPTIONS[shortCode] !== undefined) return true;
+    if (lookupDescription(error.full_code, shortCode) !== undefined) return true;
     return (error.actions?.length ?? 0) > 0;
   });
 }
@@ -1023,7 +1043,17 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
                 // Runout guidance (#2587): for an AMS per-slot runout on a paused
                 // print, name the slot the firmware now expects rather than the
                 // misleading generic "insert into the same slot" text.
-                let description = ERROR_DESCRIPTIONS[shortCode] ?? t('hmsErrors.unknownCode');
+                const matchedFullCode =
+                  !!error.full_code && ERROR_DESCRIPTIONS[error.full_code] !== undefined;
+                let description =
+                  lookupDescription(error.full_code, shortCode) ?? t('hmsErrors.unknownCode');
+                // The remedy is Bambuddy's, not Bambu's — their wiki says "update
+                // Studio or Handy", which is no help to someone printing from
+                // Bambuddy. Same override shape as the runout guidance below.
+                const remedy =
+                  error.full_code === HMS_MQTT_VERIFY_FAILED
+                    ? t('hmsErrors.mqttVerifyFailedRemedy')
+                    : null;
                 if (runoutGuidance && AMS_RUNOUT_SHORT_CODES.has(shortCode)) {
                   if (runoutGuidance.expectedSlotLabel && runoutGuidance.ranOutSlotLabel) {
                     description = t('hmsErrors.runoutExpectedSlot', {
@@ -1039,7 +1069,14 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
                   }
                 }
                 const hmsHomeUrl = getHMSHomeUrl();
-                const displayCode = shortCode.replace('_', '-');
+                // Show the printer's own four-group notation when the short code
+                // could not identify the error — for those, "0500-0007" matches
+                // nothing the user can look up, while "0500-0500-0001-0007" is
+                // exactly what the printer screen and the Bambu wiki show.
+                const displayCode =
+                  matchedFullCode && error.full_code!.length === 16
+                    ? error.full_code!.match(/.{4}/g)!.join('-')
+                    : shortCode.replace('_', '-');
 
                 return (
                   <div
@@ -1056,6 +1093,7 @@ export function HMSErrorModal({ printerName, errors, onClose, printerId, hasPerm
                           </span>
                         </div>
                         <p className="text-sm text-bambu-gray mb-2">{description}</p>
+                        {remedy && <p className="text-sm text-bambu-gray mb-2">{remedy}</p>}
                         {error.actions && error.actions.length > 0 && (
                           <div className="flex flex-wrap gap-2 my-2">
                             {error.actions.map((action) => {

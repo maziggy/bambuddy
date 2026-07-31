@@ -268,6 +268,29 @@ export function ProjectDetailPage() {
     return map;
   }, [allProjectFiles]);
 
+  // Per-file completed-run counts (#1897); a file absent from the response has 0
+  const { data: fileProgress } = useQuery({
+    queryKey: ['project-file-progress', projectId],
+    queryFn: () => api.getProjectFileProgress(projectId),
+    enabled: projectId > 0,
+  });
+
+  const progressByFileId = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const row of fileProgress ?? []) map.set(row.file_id, row.completed_count);
+    return map;
+  }, [fileProgress]);
+
+  // Complete sets (#1897): the number of finished assemblies — the minimum
+  // completed count across the project's printable files, capped at the target.
+  const completeSets = useMemo(() => {
+    const target = project?.target_sets;
+    if (!target || !allProjectFiles) return null;
+    const printable = allProjectFiles.filter((f) => isSlicedFilename(f.filename));
+    if (printable.length === 0) return null;
+    return Math.min(...printable.map((f) => Math.min(progressByFileId.get(f.id) ?? 0, target)));
+  }, [project?.target_sets, allProjectFiles, progressByFileId]);
+
   const currency = getCurrencySymbol(settings?.currency || 'USD');
   const timeFormat: TimeFormat = settings?.time_format || 'system';
 
@@ -536,7 +559,7 @@ export function ProjectDetailPage() {
       </div>
 
       {/* Progress bars (if targets set) */}
-      {(project.target_count || project.target_parts_count) && (
+      {(project.target_count || project.target_parts_count || project.target_sets) && (
         <Card>
           <CardContent className="p-4 space-y-4">
             {/* Plates progress */}
@@ -599,6 +622,27 @@ export function ProjectDetailPage() {
                 </div>
               </div>
             )}
+            {/* Complete sets progress (#1897): min per-file completed count */}
+            {project.target_sets ? (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-bambu-gray">{t('projectDetail.progress.setsProgress')}</span>
+                  <span className="text-sm font-medium text-white">
+                    {completeSets ?? 0} / {project.target_sets} {t('projectDetail.progress.sets')}
+                  </span>
+                </div>
+                <div className="h-3 bg-bambu-dark rounded-full overflow-hidden">
+                  <div
+                    className="h-full transition-all duration-500"
+                    style={{
+                      width: `${Math.min(((completeSets ?? 0) / project.target_sets) * 100, 100)}%`,
+                      backgroundColor: (completeSets ?? 0) >= project.target_sets ? '#22c55e' : project.color || '#6b7280',
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-bambu-gray/70 mt-1">{t('projectDetail.progress.setsHint')}</p>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       )}
@@ -952,6 +996,41 @@ export function ProjectDetailPage() {
                                   {file.file_type.toUpperCase()}
                                 </span>
                               </div>
+
+                              {/* Per-file print progress (#1897) */}
+                              {printable && (() => {
+                                const done = progressByFileId.get(file.id) ?? 0;
+                                const target = project.target_sets;
+                                if (!target) {
+                                  // No copies-per-file target — show a plain printed-count badge
+                                  return done > 0 ? (
+                                    <span
+                                      className="shrink-0 text-xs px-1.5 py-0.5 rounded-full bg-bambu-dark text-bambu-gray"
+                                      title={t('projectDetail.files.printedCount', { count: done })}
+                                    >
+                                      {done}×
+                                    </span>
+                                  ) : null;
+                                }
+                                const pct = Math.min((done / target) * 100, 100);
+                                const textColor =
+                                  done >= target ? 'text-status-ok' : done > 0 ? 'text-status-warning' : 'text-bambu-gray';
+                                const barColor =
+                                  done >= target ? 'bg-status-ok' : done > 0 ? 'bg-status-warning' : 'bg-bambu-gray';
+                                return (
+                                  <div
+                                    className="shrink-0 w-20"
+                                    title={t('projectDetail.files.progressTooltip', { done, target })}
+                                  >
+                                    <p className={`text-xs font-medium text-right ${textColor}`}>
+                                      {done} / {target}
+                                    </p>
+                                    <div className="h-1 bg-bambu-dark rounded-full overflow-hidden mt-1">
+                                      <div className={`h-full ${barColor}`} style={{ width: `${pct}%` }} />
+                                    </div>
+                                  </div>
+                                );
+                              })()}
 
                               {/* Print actions for sliced files */}
                               {printable && (

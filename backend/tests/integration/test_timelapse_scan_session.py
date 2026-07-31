@@ -100,14 +100,17 @@ async def test_scan_timelapse_attaches_and_persists_via_fresh_session(
 
     # base_name = Path("test_print.gcode.3mf").stem = "test_print.gcode", so this
     # video matches by name (strategy 1). .mp4 → no background conversion task.
+    video_bytes = b"fake-timelapse-video-bytes"
     matched = {
         "name": "test_print.gcode.mp4",
         "path": "/timelapse/test_print.gcode.mp4",
         "is_directory": False,
-        "size": 4096,
+        # Must equal len(video_bytes): the download is checked against the
+        # listing, and the file is re-listed afterwards to confirm the printer
+        # has stopped writing it (#2704).
+        "size": len(video_bytes),
         "mtime": None,
     }
-    video_bytes = b"fake-timelapse-video-bytes"
 
     with (
         patch("backend.app.services.bambu_ftp.list_files_async", AsyncMock(return_value=[matched])),
@@ -119,6 +122,9 @@ async def test_scan_timelapse_attaches_and_persists_via_fresh_session(
             "backend.app.services.bambu_ftp.download_file_bytes_async",
             AsyncMock(return_value=video_bytes),
         ) as mock_download,
+        # A successful attach now removes the printer's copy (#2704); without
+        # this the endpoint would open a real FTP connection to the fixture IP.
+        patch("backend.app.services.bambu_ftp.delete_archived_timelapse", AsyncMock()) as mock_delete,
     ):
         response = await async_client.post(f"/api/v1/archives/{archive.id}/timelapse/scan")
 
@@ -127,6 +133,7 @@ async def test_scan_timelapse_attaches_and_persists_via_fresh_session(
     assert data["status"] == "attached"
     assert data["filename"] == "test_print.gcode.mp4"
     mock_download.assert_awaited_once()
+    mock_delete.assert_awaited_once()
 
     # The write happened in the route's fresh session; confirm it was committed
     # by re-reading the row on the separate test session.

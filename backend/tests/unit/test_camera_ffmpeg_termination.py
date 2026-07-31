@@ -1,20 +1,33 @@
-"""Bounded post-kill ffmpeg cleanup (#2580, fix shape from PR #2581 by @ronaldheft).
+"""ffmpeg teardown: draining the pipes, and the bounded waits behind it.
 
-A SIGKILLed ffmpeg stuck in uninterruptible I/O on a dead RTSP socket can take
-arbitrarily long to be reaped. The cleanup paths used to ``await process.wait()``
-unbounded after ``kill()`` — on a P2S RTSP read timeout this parked the fan-out
-stream coroutine for 12 hours, leaving every viewer attached to a stalled
-broadcaster while snapshots/diagnostics (fresh connections) kept working.
+Originally #2580 (fix shape from PR #2581 by @ronaldheft): the cleanup paths
+``await process.wait()``-ed unbounded after ``kill()``, which on a P2S RTSP read
+timeout parked the fan-out stream coroutine for 12 hours, leaving every viewer
+attached to a stalled broadcaster while snapshots (fresh connections) kept
+working. Three places had it, all bounded now:
 
-The same unbounded wait existed in THREE places, all bounded now:
 1. ``_terminate_ffmpeg`` — the stream generator's cleanup (the reported hang).
 2. ``stop_camera`` — hung the very request a user makes to recover.
 3. ``cleanup_orphaned_streams`` — hung the janitor that is the safety net.
+
+That diagnosis — "a SIGKILLed ffmpeg stuck in uninterruptible I/O" — turned out
+to be wrong, and the bound was capping a deadlock of our own making. ffmpeg was
+blocked writing to a stdout pipe nobody was reading, which makes SIGTERM
+unactionable, and ``wait()`` cannot observe an exit while a pipe transport is
+still undrained. So the abandon path fired on every camera close, costing 4s of
+the printer's single camera connection each time. The pipes are drained now; the
+bounds remain as backstops, and the tests for them stay valid.
+
+The draining tests below drive a REAL subprocess, because the failure is in
+asyncio's pipe/transport bookkeeping — a fake process object cannot reproduce
+it and would happily pass against the broken code.
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
+import sys
 import time
 from contextlib import suppress
 
@@ -23,6 +36,46 @@ import pytest
 from backend.app.api.routes import camera
 
 pytestmark = pytest.mark.asyncio
+
+# Stands in for ffmpeg: floods stdout, and handles SIGTERM the way ffmpeg does
+# — a handler that sets a flag which only the main loop checks, so a process
+# blocked in write() never acts on it until something drains the pipe.
+_FFMPEG_LIKE = """
+import signal, sys
+stop = False
+def _handler(*_a):
+    global stop
+    stop = True
+signal.signal(signal.SIGTERM, _handler)
+sys.stderr.write("x" * 4096)
+sys.stderr.flush()
+while not stop:
+    sys.stdout.buffer.write(b"x" * 65536)
+    sys.stdout.buffer.flush()
+"""
+
+# Same, but SIGTERM is ignored outright — forces the SIGKILL branch.
+_SIGTERM_PROOF = """
+import signal, sys
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+while True:
+    sys.stdout.buffer.write(b"x" * 65536)
+    sys.stdout.buffer.flush()
+"""
+
+
+async def _spawn(program: str) -> asyncio.subprocess.Process:
+    """Start the stand-in and let it fill its stdout pipe, as the cancel path
+    leaves a real ffmpeg."""
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        program,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await asyncio.sleep(0.4)
+    return process
 
 
 class _FakeServer:
@@ -104,6 +157,64 @@ class _FrameProcess:
     async def wait(self) -> int:
         self.returncode = 0
         return self.returncode
+
+
+# ---------------------------------------------------------------------------
+# 0. _terminate_ffmpeg drains the pipes — against a real subprocess
+# ---------------------------------------------------------------------------
+
+
+async def test_terminate_drains_stdout_so_sigterm_works(caplog):
+    """A process blocked writing to a full pipe still shuts down on SIGTERM.
+
+    Undrained, this took the full grace period plus the SIGKILL bound (4s
+    measured) and ended in the abandon error. Drained, SIGTERM lands.
+    """
+    process = await _spawn(_FFMPEG_LIKE)
+    camera._spawned_ffmpeg_pids[process.pid] = time.time()
+
+    with caplog.at_level(logging.WARNING, logger=camera.logger.name):
+        started = time.monotonic()
+        await asyncio.wait_for(camera._terminate_ffmpeg(process, "test-drain"), timeout=5.0)
+        elapsed = time.monotonic() - started
+
+    assert process.returncode is not None, "wait() must observe the exit"
+    # Comfortably under the 2.0s grace period: proves SIGTERM was acted on
+    # rather than timing out into the kill branch.
+    assert elapsed < 1.5, f"teardown took {elapsed:.2f}s — pipes likely not drained"
+    assert "didn't terminate gracefully" not in caplog.text
+    assert "abandoning wait" not in caplog.text
+    assert process.pid not in camera._spawned_ffmpeg_pids
+
+
+async def test_terminate_observes_kill_of_a_sigterm_proof_process(monkeypatch, caplog):
+    """Even when SIGTERM is genuinely ignored, wait() must see the SIGKILL.
+
+    This is the case the abandon error was invented for. With the pipes drained
+    the exit is observable, so it must not fire.
+    """
+    monkeypatch.setattr(camera, "_FFMPEG_TERM_TIMEOUT", 0.3)
+    process = await _spawn(_SIGTERM_PROOF)
+    camera._spawned_ffmpeg_pids[process.pid] = time.time()
+
+    with caplog.at_level(logging.WARNING, logger=camera.logger.name):
+        await asyncio.wait_for(camera._terminate_ffmpeg(process, "test-kill"), timeout=5.0)
+
+    assert process.returncode == -9, "SIGKILLed exit must be observed, not abandoned"
+    assert "didn't terminate gracefully" in caplog.text  # SIGTERM really was ignored
+    assert "abandoning wait" not in caplog.text
+    assert process.pid not in camera._spawned_ffmpeg_pids
+
+
+async def test_terminate_is_a_noop_for_an_already_dead_process():
+    """The early return must still drop the pid from the tracking dict."""
+    process = await asyncio.create_subprocess_exec(sys.executable, "-c", "pass")
+    await process.wait()
+    camera._spawned_ffmpeg_pids[process.pid] = time.time()
+
+    await asyncio.wait_for(camera._terminate_ffmpeg(process, "test-dead"), timeout=2.0)
+
+    assert process.pid not in camera._spawned_ffmpeg_pids
 
 
 # ---------------------------------------------------------------------------

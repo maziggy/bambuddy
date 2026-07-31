@@ -123,6 +123,9 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
             {provider.on_print_complete && (
               <span className="px-2 py-0.5 bg-bambu-green/20 text-bambu-green text-xs rounded">{t('notifications.complete')}</span>
             )}
+            {provider.on_plate_clear_required && (
+              <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs rounded">{t('notifications.plateClear')}</span>
+            )}
             {provider.on_print_failed && (
               <span className="px-2 py-0.5 bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 text-xs rounded">{t('notifications.failed')}</span>
             )}
@@ -285,6 +288,17 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                   <Toggle
                     checked={provider.on_print_complete}
                     onChange={(checked) => updateMutation.mutate({ on_print_complete: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">{t('notifications.plateClearRequired')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.plateClearRequiredDescription')}</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_plate_clear_required ?? false}
+                    onChange={(checked) => updateMutation.mutate({ on_plate_clear_required: checked })}
                   />
                 </div>
 

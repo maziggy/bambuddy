@@ -431,6 +431,7 @@ async def _upsert_settings(db: AsyncSession, values: dict[str, str | None]) -> N
 async def _build_authenticated_service(
     db: AsyncSession,
     user: User | None,
+    clear_on_auth_failure: bool = True,
 ) -> OrcaCloudService:
     """Construct an :class:`OrcaCloudService` pre-populated with stored
     credentials. If the access token is within the refresh-leeway of expiry,
@@ -440,7 +441,24 @@ async def _build_authenticated_service(
     We don't lock around the refresh: Orca tolerates concurrent refreshes for
     ~60s (each racer gets its own valid pair on the same connection rather than
     a revoke), so a lost race here is harmless — last-write-wins on the stored
-    pair, and whichever pair we keep is valid."""
+    pair, and whichever pair we keep is valid.
+
+    ``clear_on_auth_failure`` controls what happens when the refresh is
+    rejected. Routes leave it on: the caller is a person looking at the UI, and
+    wiping the dead credentials flips the page to disconnected in front of them
+    so they can pair again. Background jobs pass ``False`` — see the caveat
+    below.
+
+    Why background callers must not clear: Orca reports every rejection with
+    one composite reason (``unknown, expired, revoked, or already used``), so
+    a genuine revocation is indistinguishable from a lost refresh-rotation
+    race. Acting destructively on a signal that can't be disambiguated is the
+    #2562 mistake in a different cloud. It also gains nothing — a route call
+    hits the same failure and clears then, at a moment the user can respond to.
+    A successful refresh is still persisted either way: by that point the old
+    refresh token is consumed, so dropping the new pair would break a working
+    pairing for real.
+    """
     creds = await _load_credentials(db, user)
     if not creds.token:
         raise HTTPException(status_code=401, detail="Orca Cloud is not connected — sign in first.")
@@ -457,8 +475,11 @@ async def _build_authenticated_service(
             await svc.refresh()
         except OrcaCloudAuthError as e:
             # Refresh token was revoked or rotated out from under us. Clear
-            # the stale credentials so the UI flips to disconnected.
-            await _clear_credentials(db, user)
+            # the stale credentials so the UI flips to disconnected — unless
+            # the caller is a background job, which must not change sign-in
+            # state on its own.
+            if clear_on_auth_failure:
+                await _clear_credentials(db, user)
             raise HTTPException(status_code=401, detail=f"Orca Cloud session refresh failed: {e}") from e
         except OrcaCloudError as e:
             raise HTTPException(status_code=502, detail=f"Orca Cloud unreachable: {e}") from e

@@ -61,6 +61,7 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
   const [color, setColor] = useState(project?.color || PROJECT_COLORS[0]);
   const [targetCount, setTargetCount] = useState(project?.target_count?.toString() || '');
   const [targetPartsCount, setTargetPartsCount] = useState(project?.target_parts_count?.toString() || '');
+  const [targetSets, setTargetSets] = useState(project?.target_sets?.toString() || '');
   const [status, setStatus] = useState(project?.status || 'active');
   const [tags, setTags] = useState(project?.tags || '');
   const [dueDate, setDueDate] = useState(project?.due_date?.split('T')[0] || '');
@@ -120,6 +121,8 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
       color,
       target_count: targetCount ? parseInt(targetCount, 10) : undefined,
       target_parts_count: targetPartsCount ? parseInt(targetPartsCount, 10) : undefined,
+      // Null clears the copies-per-file target on edit (#1897); undefined omits on create.
+      target_sets: project ? (targetSets ? parseInt(targetSets, 10) : null) : (targetSets ? parseInt(targetSets, 10) : undefined),
       // Null clears the stored value on edit; undefined omits the key on create.
       // Sending undefined on edit would make an emptied field un-clearable.
       tags: project ? (tags.trim() || null) : (tags.trim() || undefined),
@@ -297,6 +300,22 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
               />
               <p className="text-xs text-bambu-gray mt-1">{t('projects.targetPartsHelp')}</p>
             </div>
+          </div>
+
+          {/* Copies-per-file target (#1897) */}
+          <div>
+            <label className="block text-sm font-medium text-white mb-1">
+              {t('projects.targetSets')}
+            </label>
+            <input
+              type="number"
+              value={targetSets}
+              onChange={(e) => setTargetSets(e.target.value)}
+              className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
+              placeholder={t('projects.targetSetsPlaceholder')}
+              min="1"
+            />
+            <p className="text-xs text-bambu-gray mt-1">{t('projects.targetSetsHelp')}</p>
           </div>
 
           {/* Tags */}

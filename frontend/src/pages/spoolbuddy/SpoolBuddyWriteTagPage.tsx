@@ -27,8 +27,10 @@ import {
   fetchPrinterCalibrations,
   findPresetOption,
   loadRecentColors,
+  pairedOptions,
   parsePresetName,
   saveRecentColor,
+  withCurrentValue,
 } from '../../components/spool-form/utils';
 import { MATERIALS } from '../../components/spool-form/constants';
 
@@ -613,21 +615,28 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
     return map;
   }, [brandMaterialPairs]);
 
-  const availableBrands = useMemo(() => {
-    if (!formData.material) return baseAvailableBrands;
-    const materialKey = formData.material.toLowerCase();
-    const brandKeys = materialToBrands.get(materialKey);
-    if (!brandKeys || brandKeys.size === 0) return baseAvailableBrands;
-    return baseAvailableBrands.filter(brand => brandKeys.has(brand.toLowerCase()));
-  }, [baseAvailableBrands, formData.material, materialToBrands]);
+  // #1905: offer every known brand/material and rank the catalog-paired ones
+  // first, rather than filtering the others out — same behaviour as the
+  // Inventory spool form, which this page mirrors field for field.
+  const availableBrands = useMemo(
+    () => withCurrentValue(baseAvailableBrands, formData.brand),
+    [baseAvailableBrands, formData.brand],
+  );
 
-  const availableMaterials = useMemo(() => {
-    if (!formData.brand) return baseAvailableMaterials;
-    const brandKey = formData.brand.toLowerCase();
-    const materialKeys = brandToMaterials.get(brandKey);
-    if (!materialKeys || materialKeys.size === 0) return baseAvailableMaterials;
-    return baseAvailableMaterials.filter(material => materialKeys.has(material.toLowerCase()));
-  }, [baseAvailableMaterials, formData.brand, brandToMaterials]);
+  const availableMaterials = useMemo(
+    () => withCurrentValue(baseAvailableMaterials, formData.material),
+    [baseAvailableMaterials, formData.material],
+  );
+
+  const suggestedBrands = useMemo(
+    () => pairedOptions(availableBrands, formData.material, materialToBrands),
+    [availableBrands, formData.material, materialToBrands],
+  );
+
+  const suggestedMaterials = useMemo(
+    () => pairedOptions(availableMaterials, formData.brand, brandToMaterials),
+    [availableMaterials, formData.brand, brandToMaterials],
+  );
 
   const updateField = <K extends keyof SpoolFormData>(key: K, value: SpoolFormData[K]) => {
     setFormData(prev => ({ ...prev, [key]: value }));
@@ -913,7 +922,10 @@ function NewSpoolTouchForm({ currencySymbol, onCreated, selectedSpool, spoolmanM
               filamentOptions={filamentOptions}
               availableBrands={availableBrands}
               availableMaterials={availableMaterials}
+              suggestedBrands={suggestedBrands}
+              suggestedMaterials={suggestedMaterials}
               quickAdd={quickAdd}
+              detailsRequired={!quickAdd}
               quantity={quantity}
               onQuantityChange={setQuantity}
               errors={errors}

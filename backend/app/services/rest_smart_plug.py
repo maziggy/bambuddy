@@ -1,10 +1,8 @@
 """Service for controlling smart plugs via generic REST/HTTP API."""
 
-import ipaddress
 import json
 import logging
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
 
 import httpx
 
@@ -24,18 +22,39 @@ class RESTSmartPlugService:
         self.timeout = timeout
 
     @staticmethod
-    def _validate_url(url: str) -> bool:
-        """Block cloud metadata and link-local IPs."""
+    def _url_error(url: str) -> str | None:
+        """Return why *url* is rejected by the LAN-service policy, else None.
+
+        Split out from ``_validate_url`` so ``test_connection`` can tell the
+        user which rule the URL broke instead of a single fixed sentence.
+        """
+        from backend.app.api.routes._url_safety import assert_safe_lan_service_url
+
         try:
-            parsed = urlparse(url)
-            hostname = parsed.hostname
-            if not hostname:
-                return False
-            addr = ipaddress.ip_address(hostname)
-            return not addr.is_loopback and not addr.is_link_local
-        except ValueError:
-            # Hostname is not an IP (e.g., "openhab.local") — allow it
-            return True
+            assert_safe_lan_service_url(url, label="REST plug URL")
+        except ValueError as exc:
+            return str(exc)
+        return None
+
+    @staticmethod
+    def _validate_url(url: str) -> bool:
+        """Apply the shared LAN-service SSRF policy to a REST plug URL.
+
+        Delegates to ``_url_safety.assert_safe_lan_service_url`` — the same
+        guard Spoolman, the notification providers and the LAN-service
+        settings use — rather than reimplementing a narrower check. The
+        hand-rolled version this replaces got the policy wrong in both
+        directions: it rejected a literal ``127.0.0.1`` (so an openHAB or
+        Node-RED instance on the same host could only be reached by spelling
+        it ``localhost``), while allowing every target the shared policy
+        rejects unconditionally — Alibaba/AWS-IPv6 metadata endpoints,
+        numeric-encoded IPs, multicast and the unspecified address — because
+        anything that wasn't a bare IP literal fell through to ``True``.
+
+        Loopback and RFC-1918 stay permitted on purpose: a REST-controlled
+        plug bridge running next to Bambuddy is the normal topology.
+        """
+        return RESTSmartPlugService._url_error(url) is None
 
     def _parse_headers(self, headers_json: str | None) -> dict[str, str]:
         """Parse JSON string to dict of headers."""
@@ -273,8 +292,9 @@ class RESTSmartPlugService:
             - success: bool
             - error: error message if failed
         """
-        if not self._validate_url(url):
-            return {"success": False, "error": "Invalid URL (loopback/link-local addresses are blocked)"}
+        url_error = self._url_error(url)
+        if url_error:
+            return {"success": False, "error": url_error}
 
         parsed_headers = self._parse_headers(headers)
 

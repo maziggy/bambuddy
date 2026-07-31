@@ -64,6 +64,55 @@ def _looks_like_cloudflare_challenge(response: httpx.Response) -> bool:
     return "just a moment" in body or "cf-chl-bypass" in body or "cf-chl-opt" in body or "challenge-platform" in body
 
 
+def _assert_safe_provider_url(url: str, *, label: str) -> str | None:
+    """Validate a provider URL taken from user-supplied config.
+
+    Returns an error message on rejection, or None when the URL is
+    acceptable — the ``_send_*`` methods return ``tuple[bool, str]`` rather
+    than raising, so a message is more useful here than an exception.
+
+    Uses the LAN-service policy: self-hosting ntfy, Bark, Gotify or a webhook
+    receiver on the home LAN is normal and must keep working, so loopback and
+    RFC-1918 stay permitted. Cloud-metadata endpoints, numeric-encoded IPs and
+    non-HTTP schemes are rejected.
+    """
+    from backend.app.api.routes._url_safety import assert_safe_lan_service_url
+
+    try:
+        assert_safe_lan_service_url(url, label=label)
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
+def _opaque_http_failure(response: httpx.Response, *, label: str) -> str:
+    """Failure message for a provider whose destination host the user supplies.
+
+    The response body is deliberately **not** returned to the caller. Provider
+    URLs are configurable by anyone holding ``NOTIFICATIONS_CREATE`` — which
+    the default Operators group carries and which does not imply
+    ``SETTINGS_UPDATE`` — and ``POST /notifications/test-config`` accepts a URL
+    straight from the request body without persisting anything. Echoing the
+    response body there turned an intended "does my webhook work?" check into
+    an authenticated read primitive against any host the Bambuddy process can
+    reach, including services that are not exposed to the network at all.
+
+    Providers whose host Bambuddy hardcodes (Pushover, Telegram, CallMeBot)
+    keep returning the upstream body — there is no trust boundary to cross
+    when the destination cannot be influenced.
+
+    The body is logged at debug level, where it stays available to whoever
+    already administers the host without being handed back over the API.
+    """
+    logger.debug(
+        "%s delivery failed with HTTP %s; body: %s",
+        label,
+        response.status_code,
+        (response.text or "")[:200],
+    )
+    return f"HTTP {response.status_code} from the configured {label} (see server logs at debug level for details)"
+
+
 class NotificationService:
     """Service for sending notifications through various providers."""
 
@@ -225,6 +274,8 @@ class NotificationService:
                 return await self._send_webhook(config, title, message)
             elif provider_type == "homeassistant":
                 return await self._send_homeassistant(config, title, message, db=db)
+            elif provider_type == "bark":
+                return await self._send_bark(config, title, message)
             else:
                 return False, f"Unknown provider type: {provider_type}"
         except Exception as e:
@@ -251,6 +302,56 @@ class NotificationService:
         else:
             return False, f"HTTP {response.status_code}: {response.text[:200]}"
 
+    async def _send_bark(self, config: dict, title: str, message: str) -> tuple[bool, str]:
+        """Send notification via Bark, the self-hostable iOS push service (#1495).
+
+        POSTs JSON to {server}/push. Defaults to the official api.day.app
+        relay; a self-hosted bark-server works by overriding the server URL.
+        """
+        server = (config.get("server") or "https://api.day.app").strip().rstrip("/")
+        device_key = (config.get("device_key") or "").strip()
+
+        if not device_key:
+            return False, "Device key is required"
+
+        url_error = _assert_safe_provider_url(server, label="Bark server URL")
+        if url_error:
+            return False, url_error
+
+        payload: dict[str, Any] = {
+            "device_key": device_key,
+            "title": title,
+            "body": message,
+        }
+        group = (config.get("group") or "").strip()
+        if group:
+            payload["group"] = group
+        sound = (config.get("sound") or "").strip()
+        if sound:
+            payload["sound"] = sound
+        level = (config.get("level") or "").strip()
+        if level in ("active", "timeSensitive", "critical", "passive"):
+            payload["level"] = level
+
+        client = await self._get_client()
+        response = await client.post(f"{server}/push", json=payload)
+
+        if response.status_code == 200:
+            # bark-server can report failures inside an HTTP 200 body
+            # ({"code": 400, "message": ...}), so the status alone isn't proof.
+            try:
+                body = response.json()
+            except ValueError:
+                body = None
+            if isinstance(body, dict) and body.get("code") not in (200, None):
+                # Only the numeric code is echoed. A server chosen by the caller
+                # controls this body too, so the free-text message is a (narrow)
+                # read channel of the same kind _opaque_http_failure closes.
+                logger.debug("Bark reported error %s: %s", body.get("code"), str(body.get("message"))[:200])
+                return False, f"Bark error {body.get('code')} (see server logs at debug level for details)"
+            return True, "Message sent successfully"
+        return False, _opaque_http_failure(response, label="Bark server")
+
     async def _send_ntfy(
         self,
         config: dict,
@@ -266,6 +367,10 @@ class NotificationService:
 
         if not topic:
             return False, "Topic is required"
+
+        url_error = _assert_safe_provider_url(server, label="ntfy server URL")
+        if url_error:
+            return False, url_error
 
         url = f"{server}/{topic}"
         # ntfy reads Title/Message from HTTP headers. httpx enforces ASCII
@@ -319,7 +424,7 @@ class NotificationService:
                 "Fight Mode, or front the server with Cloudflare Access using a "
                 "service token. (#1534)"
             )
-        return False, f"HTTP {response.status_code}: {response.text[:200]}"
+        return False, _opaque_http_failure(response, label="ntfy server")
 
     async def _send_pushover(
         self, config: dict, title: str, message: str, image_data: bytes | None = None
@@ -394,6 +499,19 @@ class NotificationService:
         if not bot_token or not chat_id:
             return False, "Bot token and chat ID are required"
 
+        # Optional forum topic (#1518).  Telegram expects message_thread_id as an
+        # integer in the JSON sendMessage body — a string 400s there even though
+        # the multipart sendPhoto call below would happily accept one.  Coerce it
+        # once, up front, so both call sites agree and a bad value fails loudly
+        # instead of silently breaking only the text notifications.
+        thread_id_raw = str(config.get("message_thread_id") or "").strip()
+        message_thread_id: int | None = None
+        if thread_id_raw:
+            try:
+                message_thread_id = int(thread_id_raw)
+            except ValueError:
+                return False, f"Invalid message thread ID: {thread_id_raw!r} is not a number"
+
         # Escape underscores in the message body so Telegram Markdown
         # parsing doesn't break on job names like "A1_plate_8" or error
         # codes like "0300_0001".  The title is already wrapped in *bold*
@@ -408,18 +526,23 @@ class NotificationService:
         if image_data:
             # Use sendPhoto to attach the thumbnail with the caption
             url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+            form: dict[str, Any] = {"chat_id": chat_id, "caption": message, "parse_mode": "Markdown"}
+            if message_thread_id is not None:
+                form["message_thread_id"] = message_thread_id
             response = await client.post(
                 url,
-                data={"chat_id": chat_id, "caption": message, "parse_mode": "Markdown"},
+                data=form,
                 files={"photo": ("photo.jpg", image_data, "image/jpeg")},
             )
         else:
             url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-            data = {
+            data: dict[str, Any] = {
                 "chat_id": chat_id,
                 "text": message,
                 "parse_mode": "Markdown",
             }
+            if message_thread_id is not None:
+                data["message_thread_id"] = message_thread_id
             response = await client.post(url, json=data)
 
         if response.status_code == 200:
@@ -621,6 +744,10 @@ class NotificationService:
         if not webhook_url:
             return False, "Webhook URL is required"
 
+        url_error = _assert_safe_provider_url(webhook_url, label="Webhook URL")
+        if url_error:
+            return False, url_error
+
         # Build payload based on format
         if payload_format == "slack":
             # Slack/Mattermost format - just text field
@@ -666,7 +793,7 @@ class NotificationService:
             if response.status_code in (200, 201, 202, 204):
                 return True, "Webhook delivered successfully"
             else:
-                return False, f"HTTP {response.status_code}: {response.text[:200]}"
+                return False, _opaque_http_failure(response, label="webhook endpoint")
         except Exception as e:
             return False, f"Webhook error: {str(e)}"
 
@@ -741,6 +868,24 @@ class NotificationService:
             "message": message,
         }
 
+        # Optional custom service-data (#1441), forwarded as HA's nested "data"
+        # object so mobile-app push options (priority, ttl, channel, group, ...)
+        # reach the notify service. Only included when configured — the default
+        # persistent_notification.create schema rejects unknown keys.
+        raw_data = config.get("data")
+        if raw_data:
+            if isinstance(raw_data, str):
+                try:
+                    parsed_data = json.loads(raw_data)
+                except json.JSONDecodeError as e:
+                    return False, f"Invalid JSON in the Data field: {e}"
+            else:
+                parsed_data = raw_data
+            if not isinstance(parsed_data, dict):
+                return False, 'The Data field must be a JSON object, e.g. {"priority": "high", "ttl": 0}'
+            if parsed_data:
+                payload["data"] = parsed_data
+
         client = await self._get_client()
         response = await client.post(url, json=payload, headers=headers)
 
@@ -749,7 +894,11 @@ class NotificationService:
         elif response.status_code == 401:
             return False, "Home Assistant authentication failed - check your token"
         else:
-            return False, f"HTTP {response.status_code}: {response.text[:200]}"
+            # ha_url comes from global settings (SETTINGS_UPDATE, admin-only), so
+            # this is a narrower channel than the per-request provider URLs — but
+            # it lands in the same NOTIFICATIONS_CREATE-gated test response, so it
+            # gets the same treatment.
+            return False, _opaque_http_failure(response, label="Home Assistant endpoint")
 
     async def _send_to_provider(
         self,
@@ -794,6 +943,8 @@ class NotificationService:
                 )
             elif provider.provider_type == "homeassistant":
                 return await self._send_homeassistant(config, title, message, db=db)
+            elif provider.provider_type == "bark":
+                return await self._send_bark(config, title, message)
             else:
                 return False, f"Unknown provider type: {provider.provider_type}"
         except Exception as e:
@@ -1314,6 +1465,39 @@ class NotificationService:
             printer_id,
             printer_name,
             force_immediate=True,
+            variables=variables,
+        )
+
+    async def on_plate_clear_required(
+        self,
+        printer_id: int,
+        printer_name: str,
+        db: AsyncSession,
+    ):
+        """Handle plate-clear-required event — a print ended and the queue is gated (#2525).
+
+        Distinct from ``on_plate_not_empty``, which is the camera check *before* a
+        print starts. This one fires on the rising edge of the Bambuddy-side
+        awaiting-plate-clear flag, i.e. whenever a print reaches a terminal state
+        and the next queued job can't dispatch until someone confirms the bed is
+        free. Off by default on every provider: it lands at the same moment as the
+        print-complete notification, so opting in is a deliberate choice.
+        """
+        providers = await self._get_providers_for_event(db, "on_plate_clear_required", printer_id)
+        if not providers:
+            return
+
+        variables = {"printer": printer_name}
+
+        title, message = await self._build_message_from_template(db, "plate_clear_required", variables)
+        await self._send_to_providers(
+            providers,
+            title,
+            message,
+            db,
+            "plate_clear_required",
+            printer_id,
+            printer_name,
             variables=variables,
         )
 

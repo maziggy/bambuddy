@@ -304,6 +304,31 @@ export function findPresetOption(
   return option;
 }
 
+// Keep the value a spool already carries selectable in its own dropdown (#1905).
+// A brand or material entered as a custom value isn't part of the color catalog
+// or any slicer preset, so without this the edit form offered no way back to it
+// once the user opened the dropdown.
+export function withCurrentValue(options: string[], current: string): string[] {
+  const trimmed = current.trim();
+  if (!trimmed || options.some(o => o.toLowerCase() === trimmed.toLowerCase())) return options;
+  return [...options, trimmed].sort((a, b) => a.localeCompare(b));
+}
+
+// Brands/materials the catalog and slicer presets pair with the other field's
+// current value (#1905). Used to rank the dropdown, never to filter it — the
+// pairs are incomplete (Elegoo ships ASA even though the catalog only knows its
+// PLA), and hiding the rest made valid entries look impossible.
+export function pairedOptions(
+  options: string[],
+  counterpart: string,
+  pairMap: Map<string, Set<string>>,
+): string[] {
+  if (!counterpart) return [];
+  const keys = pairMap.get(counterpart.toLowerCase());
+  if (!keys || keys.size === 0) return [];
+  return options.filter(o => keys.has(o.toLowerCase()));
+}
+
 // Recent colors management
 export function loadRecentColors(): ColorPreset[] {
   try {
@@ -353,11 +378,48 @@ export function toFilamentId(id: string | null | undefined): string {
 }
 
 // "GFx99" identifiers (GFL99, GFG99, GFB99, ...) are Bambu's *generic* filament
-// IDs — shared across many different physical filaments. Matching K-profiles
-// by an exact generic ID would over-match, so the id-match path skips them and
-// the caller falls through to name-based matching.
+// IDs — one per material, shared across every physical filament the user hasn't
+// given a specific preset. They still identify a material unambiguously, so an
+// exact generic id match is only ambiguous about *brand*, never about material.
 export function isGenericFilamentId(id: string | null | undefined): boolean {
   return !!id && /^GF[A-Z]99$/i.test(id);
+}
+
+// The material each generic Bambu filament ID stands for. Used to sanity-check
+// a generic id-match against the material the caller already knows (#2710): a
+// PETG spool must never claim GFL99 (generic PLA) profiles just because both
+// sides happen to have stored the same generic id.
+const GENERIC_FILAMENT_MATERIALS: Record<string, string> = {
+  GFB99: 'ABS',
+  GFC99: 'PC',
+  GFG99: 'PETG',
+  GFL99: 'PLA',
+  GFN99: 'PA',
+  GFP99: 'PE',
+  GFR99: 'EVA',
+  GFS99: 'PVA',
+  GFU99: 'TPU',
+};
+
+// Material a generic filament ID stands for ("GFL99" → "PLA"), or '' when the
+// ID isn't a known generic one.
+export function materialForGenericFilamentId(id: string | null | undefined): string {
+  if (!id) return '';
+  return GENERIC_FILAMENT_MATERIALS[id.toUpperCase()] || '';
+}
+
+// Bambu labels nylon "PA"; users routinely type "Nylon". Compare materials
+// through this so the two spellings agree.
+function normaliseMaterial(material: string): string {
+  const upper = material.trim().toUpperCase();
+  return upper === 'NYLON' ? 'PA' : upper;
+}
+
+// True when a generic filament ID may stand in for the given material — i.e.
+// the ID is generic and describes that same material.
+export function genericFilamentIdMatchesMaterial(id: string, material: string): boolean {
+  const generic = materialForGenericFilamentId(id);
+  return !!generic && !!material && normaliseMaterial(generic) === normaliseMaterial(material);
 }
 
 // Check if a calibration matches based on brand, material, and variant
@@ -374,8 +436,23 @@ export function isMatchingCalibration(
   // "GFG98" without going anywhere near parsePresetName.
   const spoolFid = toFilamentId(formData.slicer_filament);
   const calFid = toFilamentId(cal.filament_id);
-  if (spoolFid && calFid && spoolFid === calFid && !isGenericFilamentId(calFid)) {
-    return true;
+  if (spoolFid && calFid && spoolFid === calFid) {
+    if (!isGenericFilamentId(calFid)) {
+      return true;
+    }
+    // Both sides carry the same *generic* id (#2710). That still pins the
+    // material, so the only thing left ambiguous is brand — a printer holds
+    // one flat calibration table per generic id and users routinely name
+    // those entries by colour ("Dark Brown", "Marble"), which no amount of
+    // name parsing can tie back to a material. Accept the match when the
+    // material agrees and the spool claims no brand of its own; a spool that
+    // does name a brand keeps the stricter name-based path below so its
+    // suggestions stay brand-specific.
+    const brand = formData.brand.trim();
+    const brandIsGeneric = !brand || brand.toUpperCase() === 'GENERIC';
+    if (brandIsGeneric && genericFilamentIdMatchesMaterial(calFid, formData.material)) {
+      return true;
+    }
   }
 
   const profileName = cal.name || '';

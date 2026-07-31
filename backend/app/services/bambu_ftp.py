@@ -353,17 +353,42 @@ class BambuFTPClient:
 
         return files
 
-    def download_file(self, remote_path: str) -> bytes | None:
-        """Download a file from the printer."""
+    def download_file(self, remote_path: str, expected_size: int | None = None) -> bytes | None:
+        """Download a file from the printer.
+
+        ``expected_size`` is the byte count the directory listing reported for
+        this file. Pass it whenever a short read must not be mistaken for a
+        successful download: an FTPS data connection that closes early does
+        not always raise, so ``retrbinary`` can hand back a partial buffer that
+        looks like a perfectly good file to everything downstream. That is
+        tolerable when the printer keeps its copy, and not tolerable when the
+        caller goes on to delete the source (#2704).
+
+        A zero-byte result is always treated as a failure, matching
+        :meth:`download_to_file` — no caller has a use for an empty file.
+        """
         if not self._ftp:
             return None
 
         try:
             buffer = BytesIO()
             self._ftp.retrbinary(f"RETR {remote_path}", buffer.write)
-            return buffer.getvalue()
+            data = buffer.getvalue()
         except (OSError, ftplib.Error):
             return None
+
+        if not data:
+            logger.warning("FTP download returned 0 bytes for %s", remote_path)
+            return None
+        if expected_size is not None and len(data) != expected_size:
+            logger.warning(
+                "FTP download of %s is short: got %s bytes, listing reported %s — treating as failed",
+                remote_path,
+                len(data),
+                expected_size,
+            )
+            return None
+        return data
 
     def download_to_file(self, remote_path: str, local_path: Path) -> bool:
         """Download a file from the printer to local filesystem."""
@@ -1301,6 +1326,7 @@ async def download_file_bytes_async(
     socket_timeout: float | None = None,
     printer_model: str | None = None,
     timeout: float = 300.0,
+    expected_size: int | None = None,
 ) -> bytes | None:
     """Async wrapper for downloading file as bytes.
 
@@ -1313,6 +1339,9 @@ async def download_file_bytes_async(
             video, gcode) which can legitimately take minutes over slow Wi-Fi —
             the cap only guards against a permanently-starved pool, not a
             slow-but-progressing transfer.
+        expected_size: size from the directory listing; a mismatch fails the
+            download instead of returning a truncated file. See
+            :meth:`BambuFTPClient.download_file`.
     """
     loop = asyncio.get_event_loop()
 
@@ -1320,7 +1349,7 @@ async def download_file_bytes_async(
         client = BambuFTPClient(ip_address, access_code, timeout=socket_timeout, printer_model=printer_model)
         if client.connect():
             try:
-                return client.download_file(remote_path)
+                return client.download_file(remote_path, expected_size=expected_size)
             finally:
                 client.disconnect()
         return None
@@ -1330,6 +1359,121 @@ async def download_file_bytes_async(
     except TimeoutError:
         logger.warning("FTP download_bytes exceeded its %ss cap for %s (#2572)", timeout, ip_address)
         return None
+
+
+async def remote_file_settled(
+    ip_address: str,
+    access_code: str,
+    remote_path: str,
+    downloaded_bytes: int,
+    *,
+    printer_model: str | None = None,
+) -> bool:
+    """Confirm the printer has finished writing the file we just downloaded.
+
+    Matching the download against the size from the directory listing proves we
+    received what the listing *said*, not that the file was *finished*. The
+    timelapse scan's first look happens seconds after the print ends, which is
+    exactly when the printer is writing the video — so a file still growing can
+    be listed at a partial size, served at that size, and pass the length check
+    as a complete video (#2704).
+
+    That was survivable while the printer kept its copy. It isn't now that a
+    successful attach deletes the source, so re-list afterwards: if the file has
+    grown, what we hold is a prefix and the caller should discard it and try
+    again on the next round.
+
+    Returns True when the remote file can no longer differ from what we hold —
+    the size still matches, or the file is gone from the listing entirely and
+    so cannot grow any further. Returns False when it has changed size, and on
+    a listing failure, because "we could not check" must not read as "safe to
+    delete".
+    """
+    directory, _, name = remote_path.rpartition("/")
+    files = await list_files_async(ip_address, access_code, directory or "/", printer_model=printer_model)
+    if not files:
+        logger.warning("[TIMELAPSE] Could not re-list %s to confirm %s is complete", directory or "/", name)
+        return False
+
+    for f in files:
+        if f.get("name") == name:
+            size = f.get("size")
+            if size == downloaded_bytes:
+                return True
+            logger.info(
+                "[TIMELAPSE] %s is still being written (%s bytes now, %s when downloaded) — will retry",
+                name,
+                size,
+                downloaded_bytes,
+            )
+            return False
+
+    # Vanished between the download and now. Nothing left that could grow, and
+    # nothing left to delete either.
+    logger.debug("[TIMELAPSE] %s is no longer on the printer after download", name)
+    return True
+
+
+async def delete_archived_timelapse(
+    ip_address: str,
+    access_code: str,
+    remote_path: str,
+    *,
+    verified: bool,
+    printer_model: str | None = None,
+    printer_name: str = "",
+) -> bool:
+    """Remove a timelapse from the printer once it is safely in the archive.
+
+    Call this only after the attach succeeded (#2704). Keeping ``/timelapse``
+    down to just the unclaimed videos is what makes the snapshot diff
+    unambiguous rather than merely usually-right, and it stops P1S cards
+    filling with AVIs.
+
+    ``verified`` must say whether the downloaded byte count was checked against
+    the size the directory listing reported. It is required rather than
+    defaulted because this is the one irreversible step in the flow: an FTPS
+    data connection that closes early does not always raise, so an unverified
+    transfer can be a partial file that looks complete, and deleting the source
+    would then destroy the only good copy. The check lives here rather than at
+    each call site so no future caller can omit it.
+
+    Best-effort otherwise: a printer that refuses the delete keeps its copy, the
+    diff still excludes that filename next time because it is attached to an
+    archive, and nothing else in the flow cares. Returns True only on an actual
+    delete or a 550 (already gone).
+    """
+    if not verified:
+        logger.warning(
+            "[TIMELAPSE] Not deleting %s from printer %s: the download was never size-checked",
+            remote_path,
+            printer_name,
+        )
+        return False
+
+    for attempt in range(1, 4):
+        try:
+            result = await delete_file_async(ip_address, access_code, remote_path, printer_model=printer_model)
+        except Exception as e:
+            result = DeleteResult.FAILED
+            logger.warning("[TIMELAPSE] Delete attempt %d/3 raised for %s: %s", attempt, remote_path, e)
+
+        if result == DeleteResult.DELETED:
+            logger.info("[TIMELAPSE] Deleted %s from printer %s after archiving", remote_path, printer_name)
+            return True
+        if result == DeleteResult.NOT_FOUND:
+            # 550 never recovers by waiting — the printer already cleaned up.
+            logger.debug("[TIMELAPSE] %s already gone from printer %s", remote_path, printer_name)
+            return True
+        if attempt < 3:
+            await asyncio.sleep(2)
+
+    logger.warning(
+        "[TIMELAPSE] Could not delete %s from printer %s (it stays on the card; the archive copy is unaffected)",
+        remote_path,
+        printer_name,
+    )
+    return False
 
 
 async def get_storage_info_async(

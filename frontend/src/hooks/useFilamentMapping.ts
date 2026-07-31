@@ -204,6 +204,27 @@ export function useLoadedFilaments(
 }
 
 /**
+ * Does the tray we picked actually carry the colour the slice asked for?
+ *
+ * Shared by the manual and auto branches below so the two can never disagree
+ * about the same tray again (#2687). Exact hex first, then the perceptual
+ * tolerance, so a spool the printer reports one shade off still reads as a
+ * match.
+ *
+ * A requirement with no colour at all is not a mismatch — the 3MF simply
+ * didn't ask for one (`filament_requirements.py` defaults it to `""`), so any
+ * loaded colour satisfies it. Loaded trays always have a colour: buildLoaded-
+ * Filaments falls back to grey when MQTT reports none.
+ */
+function coloursMatch(loadedColor: string | undefined, requiredColor: string | undefined): boolean {
+  const required = normalizeColorForCompare(requiredColor);
+  if (!required) return true;
+  return (
+    normalizeColorForCompare(loadedColor) === required || colorsAreSimilar(loadedColor, requiredColor)
+  );
+}
+
+/**
  * Compare required filaments with loaded filaments (non-hook version).
  *
  * Tray assignment is stateful across the list — a tray matched to one slot is
@@ -236,9 +257,7 @@ export function buildFilamentComparison(
 
       if (manualLoaded) {
         const typeMatch = manualLoaded.type?.toUpperCase() === req.type?.toUpperCase();
-        const colorMatch =
-          normalizeColorForCompare(manualLoaded.color) === normalizeColorForCompare(req.color) ||
-          colorsAreSimilar(manualLoaded.color, req.color);
+        const colorMatch = coloursMatch(manualLoaded.color, req.color);
 
         let status: FilamentStatus;
         if (typeMatch && colorMatch) {
@@ -358,17 +377,25 @@ export function buildFilamentComparison(
 
     const hasFilament = !!loaded;
     const typeMatch = hasFilament;
-    // idxMatch is always considered a color match (same spool = same color)
-    const colorMatch = !!idxMatch || !!exactMatch || !!similarMatch;
+    // #2687: judge the colour on the tray we actually picked, never on which
+    // branch found it. tray_info_idx identifies the filament *variant* — GFA00
+    // is PLA Basic, GFA01 PLA Matte, GFA17 PLA Translucent — not an individual
+    // spool, so one Matte spool idx-matches every Matte requirement whatever
+    // colour it is. The old rule ("same spool = same color") therefore reported
+    // red-required-on-green-loaded as a match, while manually picking that same
+    // tray reported the mismatch honestly. Variant still decides *selection*
+    // (#2650: Basic is not Matte) — it just no longer decides the verdict.
+    const colorMatch = hasFilament && coloursMatch(loaded.color, req.color);
 
-    // Status: match (tray_info_idx, type+color, or similar color), type_only (type ok, color very different), mismatch (type not found)
+    // No tray of the required type at all is a type mismatch; otherwise the
+    // colour decides between a full match and type-only.
     let status: FilamentStatus;
-    if (idxMatch || exactMatch || similarMatch) {
-      status = 'match';
-    } else if (typeOnlyMatch) {
-      status = 'type_only';
-    } else {
+    if (!hasFilament) {
       status = 'mismatch';
+    } else if (colorMatch) {
+      status = 'match';
+    } else {
+      status = 'type_only';
     }
 
     return {

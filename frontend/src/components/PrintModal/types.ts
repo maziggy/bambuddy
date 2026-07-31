@@ -224,6 +224,14 @@ export interface FilamentMappingProps {
    *  plate. Each plate prints its own subset of the file's slots and gets its
    *  own AMS mapping, so the panels have to be told apart. */
   plateLabel?: string;
+  /** The archive's own saved AMS-slot pick from the slicer
+   *  (`extra_data.slicer_ams_mapping`, written when the source virtual
+   *  printer has "Save AMS mapping" enabled) — position = slot_id-1, value =
+   *  global tray ID. When present, a "Mapping" toggle next to "Re-read" lets
+   *  the user select every slot from this array instead of the type/color
+   *  auto-match. Undefined/omitted when the archive has no saved mapping —
+   *  the toggle is hidden and behaviour is unchanged. */
+  archiveAmsMapping?: number[];
 }
 
 /**

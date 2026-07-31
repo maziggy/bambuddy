@@ -90,6 +90,8 @@ def _fake_state(**overrides):
         "firmware_version": None,
         "gcode_file": None,
         "heatbreak_fan_speed": None,
+        "left_aux_fan_speed": None,
+        "exhaust_fan_present": False,
         "layer_num": None,
         "remaining_time": None,
         "speed_level": None,
@@ -103,6 +105,18 @@ def _fake_state(**overrides):
     }
     base.update(overrides)
     return SimpleNamespace(**base)
+
+
+def _scheduled_names(mock) -> list[str]:
+    """Coroutine names passed to the patched ``_schedule_async``.
+
+    Asserting on names rather than a bare call count keeps this file pinned to
+    #1128's contract (persist + broadcast on every flag mutation) without
+    breaking every time another emission is hung off the same setter — #2525
+    added an edge-triggered MQTT/notification relay, which is covered by its
+    own test module.
+    """
+    return [call.args[0].__qualname__.rsplit(".", 1)[-1] for call in mock.call_args_list]
 
 
 class TestSchedulingFromSetAwaitingPlateClear:
@@ -119,8 +133,10 @@ class TestSchedulingFromSetAwaitingPlateClear:
         with patch.object(manager, "_schedule_async", side_effect=_close_unawaited) as scheduled:
             manager.set_awaiting_plate_clear(7, True)
 
-        # Two coroutines: persist + broadcast. Order doesn't matter.
-        assert scheduled.call_count == 2
+        # Persist + broadcast, in either order.
+        names = _scheduled_names(scheduled)
+        assert "_persist_awaiting_plate_clear" in names
+        assert "_broadcast_status_change" in names
 
     def test_does_not_schedule_when_no_loop_attached(self, manager):
         """Sync unit-test path (no loop attached): nothing must be
@@ -159,8 +175,10 @@ class TestSchedulingFromSetAwaitingPlateClear:
             scheduled.reset_mock()
             manager.set_awaiting_plate_clear(7, False)
 
-        # Each flip = persist + broadcast = 2 calls.
-        assert scheduled.call_count == 2
+        # The False flip persists and broadcasts just like the True flip did.
+        names = _scheduled_names(scheduled)
+        assert "_persist_awaiting_plate_clear" in names
+        assert "_broadcast_status_change" in names
 
 
 class TestBroadcastStatusChange:

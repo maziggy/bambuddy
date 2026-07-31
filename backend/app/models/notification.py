@@ -84,6 +84,8 @@ class NotificationProvider(Base):
 
     # Event triggers - Build plate detection
     on_plate_not_empty = Column(Boolean, default=True)  # Objects detected on plate before print
+    # Off by default: fires after every print, alongside the print-complete alert (#2525)
+    on_plate_clear_required = Column(Boolean, default=False)  # Print ended, queue gated until plate is confirmed clear
 
     # Event triggers - Bed cooled after print
     on_bed_cooled = Column(Boolean, default=False)  # Bed cooled below threshold after print

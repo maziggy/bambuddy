@@ -34,6 +34,7 @@ from backend.app.schemas.project import (
     BOMItemUpdate,
     ProjectChildPreview,
     ProjectCreate,
+    ProjectFileProgress,
     ProjectImport,
     ProjectListResponse,
     ProjectResponse,
@@ -50,6 +51,21 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 _FAILURE_STATUSES = ("failed", "aborted", "cancelled", "stopped")
+
+# Soft-deleted archives (#1343) keep their row — and therefore their
+# ``project_id`` — after their files have been removed from disk, so that global
+# Quick Stats can still count their filament / time / cost. Nothing in this
+# module filtered on that, which left deleted prints listed on the project with
+# thumbnails pointing at files that no longer exist, and no way to unassign them
+# (the only unassign UI lives on the Archives page, which correctly hides them)
+# — #2731.
+#
+# Every project-scoped query filters them out, counts included: a project that
+# lists 11 prints must not claim 12. That is a deliberate divergence from the
+# global Quick Stats behaviour, where the whole point of the soft delete is that
+# the contribution survives. A project is a piece of work with a definite
+# membership, not a lifetime total, so a print the user deleted has left it.
+_LIVE_ARCHIVE = PrintArchive.deleted_at.is_(None)
 
 
 async def compute_project_stats(
@@ -82,7 +98,7 @@ async def compute_project_stats(
             func.coalesce(func.sum(PrintLogEntry.energy_cost), 0).label("total_energy_cost"),
         )
         .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
-        .where(PrintArchive.project_id == project_id)
+        .where(PrintArchive.project_id == project_id, _LIVE_ARCHIVE)
     )
     log_stats = log_stats_result.first()
     total_archives = int(log_stats.total_runs or 0)
@@ -103,7 +119,7 @@ async def compute_project_stats(
             ).label("failed_runs"),
         )
         .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
-        .where(PrintArchive.project_id == project_id)
+        .where(PrintArchive.project_id == project_id, _LIVE_ARCHIVE)
     )
     items_split = items_split_result.first()
     total_items = int(items_split.total_items or 0)
@@ -211,7 +227,7 @@ async def list_projects(
                 ).label("failed_count"),
             )
             .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
-            .where(PrintArchive.project_id == project.id)
+            .where(PrintArchive.project_id == project.id, _LIVE_ARCHIVE)
         )
         log_quick = log_quick_result.first()
         archive_count = int(log_quick.archive_count or 0)
@@ -236,7 +252,7 @@ async def list_projects(
         # Get archive previews (up to 6 most recent)
         archives_result = await db.execute(
             select(PrintArchive)
-            .where(PrintArchive.project_id == project.id)
+            .where(PrintArchive.project_id == project.id, _LIVE_ARCHIVE)
             .order_by(PrintArchive.created_at.desc())
             .limit(6)
         )
@@ -262,6 +278,7 @@ async def list_projects(
                 status=project.status,
                 target_count=project.target_count,
                 target_parts_count=project.target_parts_count,
+                target_sets=project.target_sets,
                 budget=project.budget,
                 tags=project.tags,
                 due_date=project.due_date,
@@ -304,6 +321,7 @@ async def create_project(
         color=data.color,
         target_count=data.target_count,
         target_parts_count=data.target_parts_count,
+        target_sets=data.target_sets,
         notes=data.notes,
         tags=data.tags,
         due_date=data.due_date,
@@ -326,6 +344,7 @@ async def create_project(
         status=project.status,
         target_count=project.target_count,
         target_parts_count=project.target_parts_count,
+        target_sets=project.target_sets,
         notes=project.notes,
         attachments=project.attachments,
         url=project.url,
@@ -361,7 +380,7 @@ async def list_templates(
     for project in templates:
         # Get archive count
         archive_count_result = await db.execute(
-            select(func.count(PrintArchive.id)).where(PrintArchive.project_id == project.id)
+            select(func.count(PrintArchive.id)).where(PrintArchive.project_id == project.id, _LIVE_ARCHIVE)
         )
         archive_count = archive_count_result.scalar() or 0
 
@@ -374,6 +393,7 @@ async def list_templates(
                 status=project.status,
                 target_count=project.target_count,
                 target_parts_count=project.target_parts_count,
+                target_sets=project.target_sets,
                 budget=project.budget,
                 tags=project.tags,
                 due_date=project.due_date,
@@ -415,6 +435,7 @@ async def create_project_from_template(
         color=template.color,
         target_count=template.target_count,
         target_parts_count=template.target_parts_count,
+        target_sets=template.target_sets,
         notes=template.notes,
         tags=template.tags,
         priority=template.priority,
@@ -457,6 +478,7 @@ async def create_project_from_template(
         status=project.status,
         target_count=project.target_count,
         target_parts_count=project.target_parts_count,
+        target_sets=project.target_sets,
         notes=project.notes,
         attachments=project.attachments,
         url=project.url,
@@ -491,6 +513,7 @@ async def get_child_previews(db: AsyncSession, parent_id: int) -> list[ProjectCh
             select(func.coalesce(func.sum(PrintArchive.quantity), 0)).where(
                 PrintArchive.project_id == child.id,
                 PrintArchive.status == "completed",
+                _LIVE_ARCHIVE,
             )
         )
         completed_count = completed_result.scalar() or 0
@@ -542,6 +565,7 @@ async def get_project(
         status=project.status,
         target_count=project.target_count,
         target_parts_count=project.target_parts_count,
+        target_sets=project.target_sets,
         notes=project.notes,
         attachments=project.attachments,
         url=project.url,
@@ -590,6 +614,10 @@ async def update_project(
         project.target_count = data.target_count
     if data.target_parts_count is not None:
         project.target_parts_count = data.target_parts_count
+    # Sent-but-null clears the copies-per-file target (#1897); omitted leaves it
+    # alone (same #2536 semantics as tags/due_date below).
+    if "target_sets" in data.model_fields_set:
+        project.target_sets = data.target_sets
     if data.notes is not None:
         project.notes = data.notes
     # Sent-but-null clears the field; omitted leaves it alone. Guarding on
@@ -642,6 +670,7 @@ async def update_project(
         status=project.status,
         target_count=project.target_count,
         target_parts_count=project.target_parts_count,
+        target_sets=project.target_sets,
         notes=project.notes,
         attachments=project.attachments,
         url=project.url,
@@ -702,7 +731,7 @@ async def list_project_archives(
     query = (
         select(PrintArchive)
         .options(selectinload(PrintArchive.project), selectinload(PrintArchive.created_by))
-        .where(PrintArchive.project_id == project_id)
+        .where(PrintArchive.project_id == project_id, _LIVE_ARCHIVE)
         .order_by(PrintArchive.created_at.desc())
         .limit(limit)
         .offset(offset)
@@ -738,6 +767,76 @@ async def list_project_queue(
     items = result.scalars().all()
 
     return items
+
+
+@router.get("/{project_id}/file-progress", response_model=list[ProjectFileProgress])
+async def get_project_file_progress(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.PROJECTS_READ),
+):
+    """Completed-run counts per library file inside a project (#1897).
+
+    Counts completed ``PrintLogEntry`` rows (same source as the aggregate
+    project stats) of archives attributed to this project, and maps each run to
+    one of the project's library files — the files living in folders linked to
+    the project, the same set the project detail page renders.
+
+    A run is attributed to exactly one file, by the strongest available match:
+    1. ``archive.library_file_id`` (stamped at queue dispatch since #1897),
+    2. content hash (covers historical rows),
+    3. filename (covers hash drift, e.g. re-sliced uploads of the same name).
+    Files with no completed runs are omitted — the frontend treats absence as 0.
+    """
+    result = await db.execute(select(Project.id).where(Project.id == project_id))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    files_result = await db.execute(
+        select(LibraryFile.id, LibraryFile.file_hash, LibraryFile.filename)
+        .join(LibraryFolder, LibraryFile.folder_id == LibraryFolder.id)
+        .where(LibraryFolder.project_id == project_id, LibraryFile.deleted_at.is_(None))
+    )
+    file_rows = files_result.all()
+    if not file_rows:
+        return []
+
+    # First match wins within each tier, so iteration order (file id) is stable
+    # when duplicates share a hash or filename.
+    by_id = {fid for fid, _, _ in file_rows}
+    by_hash: dict[str, int] = {}
+    by_name: dict[str, int] = {}
+    for fid, fhash, fname in file_rows:
+        if fhash and fhash not in by_hash:
+            by_hash[fhash] = fid
+        if fname not in by_name:
+            by_name[fname] = fid
+
+    runs_result = await db.execute(
+        select(
+            PrintArchive.library_file_id,
+            PrintArchive.content_hash,
+            PrintArchive.filename,
+            func.count(PrintLogEntry.id),
+        )
+        .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
+        .where(PrintArchive.project_id == project_id, PrintLogEntry.status == "completed", _LIVE_ARCHIVE)
+        .group_by(PrintArchive.library_file_id, PrintArchive.content_hash, PrintArchive.filename)
+    )
+
+    counts: dict[int, int] = {}
+    for lib_file_id, content_hash, filename, run_count in runs_result.all():
+        if lib_file_id in by_id:
+            fid = lib_file_id
+        elif content_hash and content_hash in by_hash:
+            fid = by_hash[content_hash]
+        elif filename in by_name:
+            fid = by_name[filename]
+        else:
+            continue
+        counts[fid] = counts.get(fid, 0) + run_count
+
+    return [ProjectFileProgress(file_id=fid, completed_count=n) for fid, n in sorted(counts.items())]
 
 
 @router.post("/{project_id}/add-archives")
@@ -1402,6 +1501,7 @@ async def create_template_from_project(
         color=source.color,
         target_count=source.target_count,
         target_parts_count=source.target_parts_count,
+        target_sets=source.target_sets,
         notes=source.notes,
         tags=source.tags,
         priority=source.priority,
@@ -1444,6 +1544,7 @@ async def create_template_from_project(
         status=template.status,
         target_count=template.target_count,
         target_parts_count=template.target_parts_count,
+        target_sets=template.target_sets,
         notes=template.notes,
         attachments=template.attachments,
         url=template.url,
@@ -1495,7 +1596,7 @@ async def get_project_timeline(
     # Get archives and add events
     archives_result = await db.execute(
         select(PrintArchive)
-        .where(PrintArchive.project_id == project_id)
+        .where(PrintArchive.project_id == project_id, _LIVE_ARCHIVE)
         .order_by(PrintArchive.created_at.desc())
         .limit(limit)
     )
@@ -1653,6 +1754,7 @@ async def export_project(
         "status": project.status,
         "target_count": project.target_count,
         "target_parts_count": project.target_parts_count,
+        "target_sets": project.target_sets,
         "notes": project.notes,
         "tags": project.tags,
         "due_date": project.due_date.isoformat() if project.due_date else None,
@@ -1704,6 +1806,7 @@ async def import_project(
         status=data.status,
         target_count=data.target_count,
         target_parts_count=data.target_parts_count,
+        target_sets=data.target_sets,
         notes=data.notes,
         tags=data.tags,
         due_date=data.due_date,
@@ -1766,6 +1869,7 @@ async def import_project(
         status=project.status,
         target_count=project.target_count,
         target_parts_count=project.target_parts_count,
+        target_sets=project.target_sets,
         notes=project.notes,
         attachments=project.attachments,
         url=project.url,
@@ -1829,6 +1933,7 @@ async def import_project_file(
         status=data.get("status", "active"),
         target_count=data.get("target_count"),
         target_parts_count=data.get("target_parts_count"),
+        target_sets=data.get("target_sets"),
         notes=data.get("notes"),
         tags=data.get("tags"),
         due_date=datetime.fromisoformat(data["due_date"]) if data.get("due_date") else None,
@@ -1957,6 +2062,7 @@ async def import_project_file(
         status=project.status,
         target_count=project.target_count,
         target_parts_count=project.target_parts_count,
+        target_sets=project.target_sets,
         notes=project.notes,
         attachments=project.attachments,
         url=project.url,

@@ -64,10 +64,16 @@ from backend.app.schemas.library import (
 )
 from backend.app.schemas.slicer import SliceRequest, SliceResponse
 from backend.app.services.archive import ThreeMFParser
+from backend.app.services.design_settings import (
+    apply_design_overrides,
+    extract_design_process_overrides,
+    overrides_from_config,
+)
 from backend.app.services.plate_thumbnail import inject_plate_thumbnails_if_missing
 from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
 from backend.app.utils.filename import InvalidFilenameError, validate_print_filename
 from backend.app.utils.threemf_tools import (
+    expand_to_project_slots,
     extract_embedded_presets_from_3mf,
     extract_nozzle_mapping_from_3mf,
     extract_project_filaments_from_3mf,
@@ -76,6 +82,9 @@ from backend.app.utils.threemf_tools import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/library", tags=["library"])
+
+# Path of the embedded slicer config inside a BambuStudio/OrcaSlicer 3MF.
+_PROJECT_SETTINGS_PATH = "Metadata/project_settings.config"
 
 
 def _ensure_library_file_visible(
@@ -1245,22 +1254,60 @@ async def update_folder(
     )
 
 
+async def _restricted_folder_delete_blocker(db: AsyncSession, folder: LibraryFolder) -> str | None:
+    """Why a library:delete_own user may NOT delete this folder, or None if they may.
+
+    Folders have no ownership tracking, so users without library:delete_all may
+    only delete folders that are truly empty — an empty folder contains nobody's
+    data (#1781). "Empty" must include trashed files: LibraryFile.folder_id
+    cascades on folder delete, so a folder holding another user's trashed file
+    would silently break trash restore.
+    """
+    if folder.is_external:
+        return "External folders can only be deleted by users with library:delete_all"
+    if folder.project_id is not None or folder.archive_id is not None:
+        return "Folders linked to a project or archive can only be deleted by users with library:delete_all"
+
+    child_result = await db.execute(select(func.count(LibraryFolder.id)).where(LibraryFolder.parent_id == folder.id))
+    if (child_result.scalar() or 0) > 0:
+        return "Only empty folders can be deleted without library:delete_all"
+
+    # Includes trashed files (no deleted_at filter) — see docstring.
+    file_result = await db.execute(select(func.count(LibraryFile.id)).where(LibraryFile.folder_id == folder.id))
+    if (file_result.scalar() or 0) > 0:
+        return "Only empty folders can be deleted without library:delete_all (the folder may contain trashed files)"
+
+    return None
+
+
 @router.delete("/folders/{folder_id}")
 async def delete_folder(
     folder_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_DELETE_ALL)),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_DELETE_ALL,
+            Permission.LIBRARY_DELETE_OWN,
+        )
+    ),
 ):
     """Delete a folder and all its contents (cascade).
 
-    Note: Folders require library:delete_all permission since they don't have
-    ownership tracking.
+    Folders have no ownership tracking, so cascade deletion requires
+    library:delete_all. Users with only library:delete_own may delete empty,
+    non-external, non-linked folders (#1781).
     """
+    _, can_modify_all = auth_result
     result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
     folder = result.scalar_one_or_none()
 
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
+
+    if not can_modify_all:
+        blocker = await _restricted_folder_delete_blocker(db, folder)
+        if blocker:
+            raise HTTPException(status_code=403, detail=blocker)
 
     # External folders: only remove DB records, never delete files from external path
     is_ext = folder.is_external
@@ -2621,6 +2668,17 @@ async def add_files_to_queue(
     result = await db.execute(LibraryFile.active().where(LibraryFile.id.in_(request.file_ids)))
     files = {f.id: f for f in result.scalars().all()}
 
+    # Project attribution (#1897): a file queued from a project-linked folder
+    # inherits that project, so the resulting archive counts toward the
+    # project's progress. A file's own project link wins over its folder's.
+    folder_ids = {f.folder_id for f in files.values() if f.folder_id is not None}
+    folder_projects: dict[int, int | None] = {}
+    if folder_ids:
+        folder_result = await db.execute(
+            select(LibraryFolder.id, LibraryFolder.project_id).where(LibraryFolder.id.in_(folder_ids))
+        )
+        folder_projects = dict(folder_result.all())
+
     # Get max position for queue ordering
     pos_result = await db.execute(select(func.coalesce(func.max(PrintQueueItem.position), 0)))
     max_position = pos_result.scalar() or 0
@@ -2658,6 +2716,8 @@ async def add_files_to_queue(
             queue_item = PrintQueueItem(
                 printer_id=None,  # Unassigned
                 library_file_id=file_id,
+                project_id=lib_file.project_id
+                or (folder_projects.get(lib_file.folder_id) if lib_file.folder_id is not None else None),
                 position=max_position,
                 status="pending",
             )
@@ -2723,11 +2783,23 @@ async def get_library_file_plates(
     # SliceModal to default its dropdowns (#1325). Initialised here so the
     # final return never raises NameError when the file isn't a valid zip.
     embedded_presets: dict[str, str | None] = {"printer": None, "process": None}
+    # Process settings the designer changed away from the stock preset (#2622).
+    # Offered in the SliceModal so a cross-printer re-slice can carry them
+    # instead of silently losing them to the picked process profile.
+    design_overrides: list[dict] = []
 
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
             namelist = zf.namelist()
             embedded_presets = extract_embedded_presets_from_3mf(zf)
+            if _PROJECT_SETTINGS_PATH in namelist:
+                try:
+                    design_overrides = [
+                        o._asdict()
+                        for o in overrides_from_config(json.loads(zf.read(_PROJECT_SETTINGS_PATH).decode("utf-8")))
+                    ]
+                except (ValueError, OSError, KeyError):
+                    design_overrides = []
 
             # Find all plate gcode files to determine available plates
             gcode_files = [n for n in namelist if n.startswith("Metadata/plate_") and n.endswith(".gcode")]
@@ -2956,6 +3028,7 @@ async def get_library_file_plates(
         "is_multi_plate": len(plates) > 1,
         "embedded_printer": embedded_presets["printer"],
         "embedded_process": embedded_presets["process"],
+        "design_overrides": design_overrides,
     }
 
 
@@ -3009,6 +3082,7 @@ async def _try_preview_slice_filaments(
     """
     from backend.app.api.routes.settings import get_setting
     from backend.app.services.slice_preview import get_preview_filaments
+    from backend.app.services.slicer_api import get_stall_timeout_seconds
 
     preferred = (await get_setting(db, "preferred_slicer")) or "bambu_studio"
     if preferred == "orcaslicer":
@@ -3034,6 +3108,7 @@ async def _try_preview_slice_filaments(
         file_name=file_path.name,
         api_url=api_url,
         request_id=request_id,
+        timeout_seconds=await get_stall_timeout_seconds(db),
     )
 
 
@@ -3042,6 +3117,7 @@ async def get_library_file_filament_requirements(
     file_id: int,
     plate_id: int | None = None,
     request_id: str | None = None,
+    full_slots: bool = False,
     db: AsyncSession = Depends(get_db),
     auth_result: tuple[User | None, bool] = Depends(
         require_ownership_permission(
@@ -3058,6 +3134,10 @@ async def get_library_file_filament_requirements(
     Args:
         file_id: The library file ID
         plate_id: Optional plate index to get filaments for a specific plate
+        full_slots: Return one entry per *project* slot rather than only the
+            slots the plate consumes. See :func:`_expand_to_project_slots`.
+            Only the slice modal wants this; print-time AMS matching must keep
+            the used-only list.
     """
     import defusedxml.ElementTree as ET
 
@@ -3159,6 +3239,17 @@ async def get_library_file_filament_requirements(
                                     "used_in_plate": True,
                                 }
                             )
+
+            # Re-slicing a source that already carries slice_info (#2712).
+            # The block above answers "what does this plate consume", which is
+            # what print-time AMS matching needs. The slice modal needs "what
+            # slots exist", because its list is positional and the CLI binds
+            # entry N to slot N — so a source using only slot 4 handed the
+            # user's single pick to slot 1 and sliced slot 4 with the source's
+            # embedded default. Widen here rather than in the modal so the
+            # print path keeps the narrow list it depends on.
+            if full_slots and filaments:
+                filaments = expand_to_project_slots(zf, filaments)
 
             # Unsliced project files: slice_info had no per-plate data.
             # Return the FULL project_settings.config AMS slot list so
@@ -3518,6 +3609,8 @@ async def _run_slicer_with_fallback(
         SlicerApiService,
         SlicerApiUnavailableError,
         SlicerInputError,
+        SlicerTimeoutError,
+        get_stall_timeout_seconds,
     )
 
     user: User | None = None
@@ -3606,6 +3699,21 @@ async def _run_slicer_with_fallback(
         # with a PVA slot loaded but never used.
         presets["process"] = _patch_process_support_settings(presets["process"], primary_bytes)
 
+        # #2622: carry the designer's own process tweaks onto the picked preset.
+        # BambuStudio records exactly which keys deviate from the system preset
+        # in `different_settings_to_system`, so a MakerWorld author's 5 walls /
+        # 100% infill / 0.1mm first layer survive a re-slice for another printer
+        # instead of being flattened by --load-settings. Opt-in per key: only the
+        # keys the caller names are applied, and only if the source really lists
+        # them as changed. Runs after the #1881 support patch so an explicit
+        # design pick wins over the blanket support carry-over.
+        if request.design_overrides:
+            presets["process"] = apply_design_overrides(
+                presets["process"],
+                extract_design_process_overrides(primary_bytes),
+                request.design_overrides,
+            )
+
     used_embedded_settings = False
     # "Slice as designed" (#2611): honour the file's embedded
     # project_settings.config instead of the picked profile triplet. Only
@@ -3613,7 +3721,9 @@ async def _run_slicer_with_fallback(
     # gates the toggle on the picked printer matching the design's target,
     # so this path never re-targets across printer models.
     embedded_mode = bool(request.use_embedded_settings and is_3mf)
-    service = SlicerApiService(api_url)
+    # Bounds silence rather than total slicing time (#2730), so a heavy model
+    # that keeps reporting progress runs to completion however long it takes.
+    service = SlicerApiService(api_url, timeout_seconds=await get_stall_timeout_seconds(db))
 
     # #1493: cross-nozzle-class re-slice (single <-> dual). Without
     # intervention the slicer rejects with either "G-code in unprintable
@@ -3674,10 +3784,26 @@ async def _run_slicer_with_fallback(
     # with printer …" (#2628). Replace unused-slot entries with the
     # plate's lowest used slot before the real slice so the loaded set is
     # materially homogeneous and printer-correct.
-    if is_3mf and request.plate is not None:
+    #
+    # ``plate`` is absent for single-plate and STL sources — the SliceModal
+    # skips the picker and omits the field — and absent means plate 1, the
+    # same reading as ``plate_num`` further down and as the schema's own
+    # description. Treating it as "unknown plate" instead is what left every
+    # single-plate 3MF unsubstituted (#2711): a MakerWorld project defining
+    # four filaments but painting only one reached the CLI with the other
+    # three still holding presets baked into the source for a different
+    # printer, and the slice died on the first of them.
+    #
+    # ``plate=0`` is the slice-all sentinel, not a plate: every slot is used
+    # by some plate, so there is nothing to substitute. It has to be excluded
+    # explicitly because the support-filament slots unioned in below are
+    # read from the project config and are not plate-scoped — they would
+    # survive the (empty) geometry lookup for plate 0 and become the anchor,
+    # collapsing every colour of a slice-all onto the support filament.
+    if is_3mf and request.plate != 0:
         from backend.app.services.slicer_3mf_convert import substitute_unused_plate_filaments
 
-        filament_jsons = substitute_unused_plate_filaments(primary_bytes, request.plate, filament_jsons)
+        filament_jsons = substitute_unused_plate_filaments(primary_bytes, request.plate or 1, filament_jsons)
 
     # Cross-class slice-all loop (#1493): when the user asks for
     # ``plate=0`` (all plates) AND the source's nozzle class differs from
@@ -3840,6 +3966,12 @@ async def _run_slicer_with_fallback(
             used_embedded_settings = True
     except SlicerInputError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SlicerTimeoutError as exc:
+        # 504, not 502: the sidecar answered for the whole run, we stopped
+        # waiting. Reported separately so the user is told the slice ran out of
+        # time and where to change that, rather than that the sidecar is
+        # unreachable — which is what a read timeout used to look like (#2730).
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
     except SlicerApiServerError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except SlicerApiUnavailableError as exc:
@@ -4889,16 +5021,15 @@ async def bulk_delete(
             file.deleted_at = now
         deleted_files += 1
 
-    # Delete folders (cascade will handle contents)
-    # Note: Folders don't have ownership tracking currently, require *_all permission
+    # Delete folders (cascade will handle contents). Folders have no ownership
+    # tracking, so users without *_all permission may only delete empty,
+    # non-external, non-linked folders (#1781) — same rule as DELETE /folders/{id}.
     for folder_id in data.folder_ids:
-        if not can_modify_all:
-            # Users without *_all permission cannot delete folders
-            continue
-
         result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
         folder = result.scalar_one_or_none()
         if folder:
+            if not can_modify_all and await _restricted_folder_delete_blocker(db, folder):
+                continue
             # Count files that will be deleted
             file_count_result = await db.execute(
                 select(func.count(LibraryFile.id)).where(

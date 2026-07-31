@@ -60,6 +60,7 @@ def test_starts_timelapse_when_external_camera_enabled():
         "http://camera.local:5000/snapshot.jpg",
         "snapshot",
         snapshot_url="http://camera.local:5000/snapshot.jpg",
+        rotation=0,
     )
 
 

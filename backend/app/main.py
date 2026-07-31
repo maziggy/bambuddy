@@ -81,6 +81,7 @@ from backend.app.core.database import async_session, engine, init_db
 from backend.app.core.tasks import spawn_background_task
 from backend.app.core.websocket import ws_manager
 from backend.app.models.smart_plug import SmartPlug
+from backend.app.services import print_dispatch_context
 from backend.app.services.archive import ArchiveService, peek_plate_index_in_3mf, swap_plate_suffix
 from backend.app.services.archive_purge import archive_purge_service
 from backend.app.services.bambu_ftp import (
@@ -347,6 +348,12 @@ _active_prints: dict[tuple[int, str], int] = {}
 # captures the better-framed pre-bed-drop moment without us having to force
 # timelapse on at dispatch (the #1397 mechanism that caused #1721's per-layer
 # nozzle parking on slicer profiles with Timelapse Type = Smooth).
+#
+# #2708: the bytes in here are ALWAYS already rotated by the printer's
+# camera_rotation. `on_finish_photo_moment` owns that, because one of its
+# sources (the #1867 in-print bank) is rotated before it ever reaches the
+# bank and the others are not — so the consumer can't tell them apart and
+# must not rotate again.
 _stage22_finish_frames: dict[int, bytes] = {}
 
 # #1790: per-printer producer-done event. Set by `on_finish_photo_moment` in its
@@ -359,14 +366,17 @@ _stage22_finish_frames: dict[int, bytes] = {}
 _stage22_finish_in_flight: dict[int, asyncio.Event] = {}
 
 # #1867: rolling "last in-print camera frame" per printer. Refreshed on
-# layer-change while the model is still printing, then consumed by the
-# FINISH-state finish-photo path. Firmware that never emits `stg_cur=22`
-# (A1 Mini, confirmed) only reaches `on_finish_photo_moment` at the
-# gcode_state=FINISH transition — which Bambu reports AFTER the user End
-# G-code (e.g. SwapMod plate-swap) has run, so a live grab there captures the
-# swapped/empty plate. Banking is layer-driven, so it naturally freezes at the
-# final object layer: the End G-code emits no further layer_num increases, so
-# the last banked frame is always the finished print before the swap.
+# layer-change and on print-progress advances (#2547) while the model is still
+# printing, then consumed by the FINISH-state finish-photo path when the
+# dispatcher recorded that it injected End G-code into this print. Bambu
+# reports gcode_state=FINISH AFTER the user End G-code (e.g. SwapMod
+# plate-swap) has run, so a live grab there would capture the swapped/empty
+# plate.
+#
+# The load-bearing property: both drivers are print telemetry that stops before
+# the End G-code executes — no further layer_num increases, and mc_percent
+# freezes — so the last banked frame is always the finished print before the
+# swap. Anything added as a third driver must hold that same property.
 _inprint_frame_bank: dict[int, bytes] = {}
 # Monotonic timestamp of the last banked frame per printer — throttles banking
 # so tall prints don't add a camera grab on every layer.
@@ -740,6 +750,51 @@ def register_expected_print(
     )
 
 
+def unregister_expected_print(printer_id: int, filename: str, archive_id: int) -> None:
+    """Undo :func:`register_expected_print` when the print never went out.
+
+    Registration has to happen *before* the MQTT print command, because the
+    printer can report the print before the line after the send executes. So
+    every path that registers and then fails to send — a cancel winning the
+    #1853 CAS race, a ``start_print()`` that returns False, or any exception in
+    between — leaves an expectation for a print that will never arrive.
+
+    The TTL sweep evicts those after two hours, which is far longer than it
+    takes a user to react to a failed dispatch by pressing print again: that
+    reprint would be folded into the *old* archive and take the stale
+    ``ams_mapping`` / ``plate_id`` with it. Hence the explicit inverse.
+
+    Mirrors the sweep's rules, including the one that is easy to get wrong:
+    ``_print_ams_mappings`` / ``_print_plate_ids`` are keyed by archive, not by
+    file, so they may only be dropped once no live key still points at that
+    archive.
+    """
+    keys = [(printer_id, filename)]
+    if filename.endswith(".3mf"):
+        base = filename[:-4]
+        keys.append((printer_id, base))
+        keys.append((printer_id, f"{base}.gcode"))
+
+    removed = False
+    for key in keys:
+        if _expected_prints.pop(key, None) is not None:
+            removed = True
+        _expected_print_creators.pop(key, None)
+        _expected_print_registered_at.pop(key, None)
+
+    if archive_id not in set(_expected_prints.values()):
+        _print_ams_mappings.pop(archive_id, None)
+        _print_plate_ids.pop(archive_id, None)
+
+    if removed:
+        logging.getLogger(__name__).info(
+            "Unregistered expected print: printer=%s, file=%s, archive=%s (print was never sent)",
+            printer_id,
+            filename,
+            archive_id,
+        )
+
+
 def _compute_run_filament_grams(
     status: str,
     archive_filament_used_grams: float | None,
@@ -1007,6 +1062,7 @@ def _maybe_start_layer_timelapse(printer, printer_id: int, archive_id: int) -> b
         printer.external_camera_url,
         printer.external_camera_type or "mjpeg",
         snapshot_url=printer.external_camera_snapshot_url,
+        rotation=getattr(printer, "camera_rotation", 0),
     )
     logging.getLogger(__name__).info("Started layer timelapse for printer %s, archive %s", printer_id, archive_id)
     return True
@@ -1242,7 +1298,13 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     try:
         printer_info = printer_manager.get_printer(printer_id)
         if printer_info:
-            await mqtt_relay.on_printer_status(printer_id, state, printer_info.name, printer_info.serial_number)
+            await mqtt_relay.on_printer_status(
+                printer_id,
+                state,
+                printer_info.name,
+                printer_info.serial_number,
+                printer_manager.is_awaiting_plate_clear(printer_id),
+            )
     except Exception:
         pass  # Don't fail status callback if MQTT fails
 
@@ -2166,13 +2228,21 @@ async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -
         # Try external camera first
         if printer.external_camera_enabled and printer.external_camera_url:
             logger.info("[SNAPSHOT] Capturing from external camera for printer %s", printer_id)
+            from backend.app.api.routes.camera import live_frame_for_capture
             from backend.app.services.external_camera import capture_frame
 
-            frame_data = await capture_frame(
-                printer.external_camera_url,
-                printer.external_camera_type or "mjpeg",
-                snapshot_url=printer.external_camera_snapshot_url,
-            )
+            # An external camera allows one reader, so capturing while a viewer
+            # is attached fails (#2707). A None here falls through to the paths
+            # below exactly as a failed capture did.
+            defer, buffered = live_frame_for_capture(printer_id)
+            if defer:
+                frame_data = buffered
+            else:
+                frame_data = await capture_frame(
+                    printer.external_camera_url,
+                    printer.external_camera_type or "mjpeg",
+                    snapshot_url=printer.external_camera_snapshot_url,
+                )
             if frame_data and len(frame_data) <= 2_500_000:
                 logger.info("[SNAPSHOT] External camera frame: %s bytes", len(frame_data))
                 return _apply_camera_rotation(frame_data, printer, logger)
@@ -2209,13 +2279,21 @@ async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -
 async def _maybe_bank_inprint_frame(printer_id: int, layer_num: int) -> None:
     """#1867: bank a recent in-print camera frame for the finish photo.
 
-    Called on every layer change. Grabs one frame (throttled) into
-    ``_inprint_frame_bank`` so the FINISH-state finish-photo path has a
-    pre-swap image on firmware that never emits ``stg_cur=22``. Because it is
-    driven by layer_num increases, banking stops the instant printing ends and
-    the End G-code (e.g. SwapMod plate swap) runs — no further layer changes
-    arrive — so the last banked frame is the finished print, not the swapped
-    plate. Best-effort: any failure just leaves the previous banked frame.
+    Called on every layer change and (#2547) on every print-progress advance.
+    Grabs one frame (throttled) into ``_inprint_frame_bank`` so the finish-photo
+    path has a pre-End-G-code image for prints that end with a plate swap.
+
+    Both drivers are print telemetry that stops the instant printing ends: no
+    further layers, and progress freezes before the End G-code (e.g. SwapMod
+    plate swap) executes. So the last banked frame is always the finished print,
+    never the swapped plate — that property is what the #1867 path relies on and
+    it must survive any change to the throttle below.
+
+    Layer changes alone were not enough: they stop when the *final* layer
+    begins, which on a three-minute last layer left the bank stale by the whole
+    length of that layer (#2547). Progress keeps ticking through it.
+
+    Best-effort: any failure just leaves the previous banked frame.
     """
     logger = logging.getLogger(__name__)
     client = printer_manager.get_client(printer_id)
@@ -2227,12 +2305,16 @@ async def _maybe_bank_inprint_frame(printer_id: int, layer_num: int) -> None:
     if state.mc_print_sub_stage not in (None, 0):
         return
 
-    total = state.total_layers or 0
-    is_last_layer = total > 0 and layer_num >= total
+    # #2547: throttled uniformly, with no last-layer exemption. The old code
+    # bypassed the throttle on the final layer to guarantee a fresh frame there;
+    # now that progress advances also drive banking, that exemption would fire a
+    # camera grab on every percent tick of the last layer. Bambu printers accept
+    # one RTSP client at a time, so each grab contends with the live view.
     now = time.monotonic()
     last = _inprint_frame_bank_ts.get(printer_id, 0.0)
-    if not is_last_layer and (now - last) < _INPRINT_BANK_MIN_INTERVAL:
+    if (now - last) < _INPRINT_BANK_MIN_INTERVAL:
         return
+    total = state.total_layers or 0
 
     try:
         async with async_session() as db:
@@ -2262,26 +2344,9 @@ async def _maybe_bank_inprint_frame(printer_id: int, layer_num: int) -> None:
 
 def _apply_camera_rotation(image_data: bytes, printer, logger) -> bytes:
     """Apply camera rotation to snapshot image if configured."""
-    rotation = getattr(printer, "camera_rotation", 0)
-    if not rotation or rotation == 0:
-        return image_data
+    from backend.app.services.camera import apply_camera_rotation
 
-    try:
-        from io import BytesIO
-
-        from PIL import Image
-
-        img = Image.open(BytesIO(image_data))
-        # PIL rotate is counter-clockwise, so negate for clockwise rotation
-        img = img.rotate(-rotation, expand=True)
-        buf = BytesIO()
-        img.save(buf, format="JPEG", quality=90)
-        rotated = buf.getvalue()
-        logger.info("[SNAPSHOT] Applied %d° rotation: %s → %s bytes", rotation, len(image_data), len(rotated))
-        return rotated
-    except Exception as e:
-        logger.warning("[SNAPSHOT] Failed to apply rotation: %s", e)
-        return image_data
+    return apply_camera_rotation(image_data, getattr(printer, "camera_rotation", 0), logger)
 
 
 async def _send_print_start_notification(
@@ -2406,6 +2471,10 @@ async def on_print_start(printer_id: int, data: dict):
     # the previous job's banked frame.
     _inprint_frame_bank.pop(printer_id, None)
     _inprint_frame_bank_ts.pop(printer_id, None)
+    # #2547: bind (or clear) the "this print ends with injected End G-code" flag.
+    # Unconditional, so a print Bambuddy didn't dispatch drops the previous
+    # print's flag instead of inheriting it.
+    print_dispatch_context.adopt(printer_id)
 
     # Cancel any active bed cooldown waiter for this printer
     if _bed_cool_waiters.pop(printer_id, None):
@@ -2694,6 +2763,11 @@ async def on_print_start(printer_id: int, data: dict):
                 # scanner runs fresh; also unlink the old video file so reprints
                 # don't accumulate orphans in the archive directory. Photos list
                 # is left alone — accumulating one finish photo per run is fine.
+                # The print-start baseline (#2704) is stale for the same reason:
+                # it describes the printer before the previous run. The capture
+                # below overwrites it, but clear it here too so an early failure
+                # can't leave the scan diffing against the wrong snapshot.
+                archive.timelapse_baseline = None
                 stale_timelapse_relpath = archive.timelapse_path
                 if stale_timelapse_relpath:
                     archive.timelapse_path = None
@@ -2832,7 +2906,7 @@ async def on_print_start(printer_id: int, data: dict):
                 # falls into its "take baseline now" fallback, which snapshots
                 # AFTER the new MP4 already exists and never matches a diff
                 # (#1403 follow-up — see pwostran's 2026-05-18 support bundle).
-                await _capture_timelapse_baseline_at_start(printer, printer_id, logger)
+                await _capture_timelapse_baseline_at_start(printer, printer_id, logger, archive_id=archive.id)
 
             return  # Skip creating a new archive
 
@@ -3482,7 +3556,7 @@ async def on_print_start(printer_id: int, data: dict):
                     logger.warning("[SPOOLMAN] Failed to store tracking data: %s", e)
 
                 # Capture timelapse file baseline for snapshot-diff on completion
-                await _capture_timelapse_baseline_at_start(printer, printer_id, logger)
+                await _capture_timelapse_baseline_at_start(printer, printer_id, logger, archive_id=archive.id)
         finally:
             # Keep temp_path around until print completes so the cover endpoint
             # can reuse it (#972). Cache eviction in on_print_complete deletes
@@ -3494,6 +3568,62 @@ async def on_print_start(printer_id: int, data: dict):
 
 
 _TIMELAPSE_VIDEO_EXTENSIONS = (".mp4", ".avi")
+
+# Poll schedule for the post-print timelapse scan (#2704). Module-level so
+# tests can shrink them without waiting out real delays.
+#
+# This replaced a fixed [5, 10, 20, 30] retry ladder, i.e. roughly 65 s of
+# looking. Across 247 support bundles the attempt that found the video was #1
+# 272 times, then 17 / 13 / 13 — a flat tail against the cutoff rather than a
+# decaying one, which is the signature of a budget that expires while files are
+# still arriving. 457 scans were scheduled and only 262 ever attached. Big
+# prints make big videos and the printer writes them after the print ends, so
+# the poll now runs for minutes and costs one FTP LIST per round.
+_TIMELAPSE_SCAN_FIRST_DELAY_SECONDS: float = 5.0
+_TIMELAPSE_SCAN_POLL_INTERVAL_SECONDS: float = 30.0
+_TIMELAPSE_SCAN_TIMEOUT_SECONDS: float = 900.0
+
+
+def _timelapse_scan_max_attempts() -> int:
+    """Round cap for the poll, derived from the wall-clock budget.
+
+    The deadline alone is not a sufficient bound: it assumes each round really
+    waits, which stops being true the moment ``asyncio.sleep`` is patched out,
+    and an FTP list that fails immediately would otherwise spin against the
+    printer at full speed for the whole window. Whichever bound is reached
+    first ends the poll.
+    """
+    if _TIMELAPSE_SCAN_POLL_INTERVAL_SECONDS <= 0:
+        # A zero interval makes the wall-clock budget meaningless; fall back to
+        # the round count the production interval would have given.
+        return 32
+    return max(1, int(_TIMELAPSE_SCAN_TIMEOUT_SECONDS // _TIMELAPSE_SCAN_POLL_INTERVAL_SECONDS) + 1)
+
+
+async def _claimed_timelapse_names(db, printer_id: int, exclude_archive_id: int) -> set[str]:
+    """Video filenames already attached to some other archive of this printer.
+
+    Used to disambiguate when more than one file is new since the baseline —
+    which happens when a previous print's video landed after this print's
+    baseline was taken. Ordering the candidates would be the obvious fix and is
+    the wrong one: it can only be done on mtime or on the filename timestamp,
+    both of which come from the printer's own clock, and a LAN-only printer
+    can't reach Bambu's NTP server. Exclusion needs no clock at all.
+
+    ``attach_timelapse`` saves the video into the archive directory under the
+    printer's original filename, and the later MP4 conversion keeps the stem,
+    so the stem of ``timelapse_path`` recovers what was claimed.
+    """
+    from backend.app.models.archive import PrintArchive
+
+    rows = await db.execute(
+        select(PrintArchive.timelapse_path).where(
+            PrintArchive.printer_id == printer_id,
+            PrintArchive.id != exclude_archive_id,
+            PrintArchive.timelapse_path.is_not(None),
+        )
+    )
+    return {Path(p).stem for p in rows.scalars().all() if p}
 
 
 async def _list_timelapse_videos(printer) -> tuple[list[dict], str | None]:
@@ -3527,7 +3657,9 @@ async def _list_timelapse_videos(printer) -> tuple[list[dict], str | None]:
     return [], None
 
 
-async def _capture_timelapse_baseline_at_start(printer, printer_id: int, logger: logging.Logger) -> None:
+async def _capture_timelapse_baseline_at_start(
+    printer, printer_id: int, logger: logging.Logger, archive_id: int | None = None
+) -> None:
     """Snapshot the printer's timelapse directory at print start so the
     completion-time scan can pick the new file by set-difference.
 
@@ -3540,39 +3672,69 @@ async def _capture_timelapse_baseline_at_start(printer, printer_id: int, logger:
 
     Bambu printers in LAN-only mode don't sync NTP, so mtime ordering is
     unreliable — the snapshot-diff approach sidesteps that entirely.
+
+    When ``archive_id`` is known the baseline is also written to the archive
+    row, so it survives a restart and the manual "Scan for Timelapse" button
+    can run the same diff instead of falling back to clock-based matching
+    (#2704). Only baselines taken at print start are persisted — one taken at
+    completion already contains the new video and would poison a later scan.
     """
+    names: set[str] | None = None
     try:
         baseline_files, _ = await _list_timelapse_videos(printer)
-        _timelapse_baselines[printer_id] = {f.get("name", "") for f in baseline_files}
+        names = {f.get("name", "") for f in baseline_files}
+        _timelapse_baselines[printer_id] = names
         logger.info(
             "[TIMELAPSE] Baseline at print start: %s video files for printer %s",
-            len(_timelapse_baselines[printer_id]),
+            len(names),
             printer_id,
         )
     except Exception as e:
         logger.warning("[TIMELAPSE] Failed to capture baseline at print start: %s", e)
 
+    if archive_id is None:
+        return
+    try:
+        async with async_session() as db:
+            from backend.app.models.archive import PrintArchive
+
+            archive = await db.get(PrintArchive, archive_id)
+            if archive is not None:
+                # Written even when the listing failed, and then as NULL. A
+                # reprint reuses the archive row, so leaving the previous run's
+                # baseline in place would have the scan diff this print against
+                # the state of the printer before the *last* one — and a stale
+                # baseline reads as authoritative, where NULL correctly falls
+                # back to a fresh snapshot.
+                archive.timelapse_baseline = sorted(names) if names is not None else None
+                await db.commit()
+    except Exception as e:
+        # In-memory baseline still covers the normal completion path.
+        logger.warning("[TIMELAPSE] Failed to persist baseline for archive %s: %s", archive_id, e)
+
 
 async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[str] | None = None):
+    """Poll the printer for this print's timelapse and attach it.
+
+    Snapshot diff, not timestamp matching: a printer in LAN-only mode cannot
+    reach Bambu's NTP server, so the clock behind both the filename and the FTP
+    mtime is arbitrarily wrong — one reporter's P1S was six and a half days out
+    (#2704). Comparing the current listing against the set of filenames that
+    existed when the print started needs no clock at all, because the printer
+    writes the video only once the print has ended.
+
+    Baseline precedence: the caller's in-memory set, then the one persisted on
+    the archive at print start, then a snapshot taken now. The last of those is
+    a poor substitute — by completion the new video may already be on the card,
+    in which case it lands in the "baseline" and no diff can ever match — but it
+    is all that is available for a print that began before Bambuddy started.
+
+    On success the video is deleted from the printer, which keeps ``/timelapse``
+    down to the unclaimed files and makes the next diff unambiguous.
     """
-    Scan for timelapse with retries using a snapshot-diff approach.
-
-    Instead of picking the "most recent by mtime" (unreliable when the printer
-    clock is wrong in LAN-only mode), we snapshot existing MP4 filenames BEFORE
-    waiting, then look for any NEW filename that appears after each delay.
-
-    If baseline_names is provided (captured at print start), it is used directly.
-    Otherwise falls back to taking a baseline at completion time (best-effort
-    for prints started before app restart).
-
-    Falls back to name-matching (print name contained in MP4 filename) if no
-    new file appears after all retries.
-    """
-    from pathlib import Path
-
     logger = logging.getLogger(__name__)
 
-    # --- Phase 1: Take baseline snapshot of existing timelapse files ---
+    # --- Phase 1: establish the baseline -------------------------------------
     try:
         async with async_session() as db:
             from backend.app.models.printer import Printer
@@ -3591,14 +3753,20 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
                 return
 
             if baseline_names is not None:
-                # Use pre-captured baseline from print start (no race condition)
                 logger.info(
                     "[TIMELAPSE] Using print-start baseline: %s existing video files for archive %s",
                     len(baseline_names),
                     archive_id,
                 )
+            elif archive.timelapse_baseline is not None:
+                # Persisted at print start — survives a restart mid-print.
+                baseline_names = set(archive.timelapse_baseline)
+                logger.info(
+                    "[TIMELAPSE] Using stored baseline: %s existing video files for archive %s",
+                    len(baseline_names),
+                    archive_id,
+                )
             else:
-                # Fallback: take baseline now (e.g. app restarted mid-print)
                 result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
                 printer = result.scalar_one_or_none()
                 if not printer:
@@ -3613,144 +3781,208 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
                     archive_id,
                 )
 
-            # Derive base_name for name-matching fallback
-            base_name = Path(archive.filename).stem if archive.filename else ""
-            if base_name.endswith(".gcode"):
-                base_name = base_name[:-6]
-
     except Exception as e:
         logger.warning("[TIMELAPSE] Failed to take baseline snapshot for archive %s: %s", archive_id, e)
         return
 
-    # --- Phase 2: Retry loop — look for NEW files that weren't in baseline ---
-    retry_delays = [5, 10, 20, 30]
+    # --- Phase 2: poll for a file that was not there when the print began -----
+    deadline = time.monotonic() + _TIMELAPSE_SCAN_TIMEOUT_SECONDS
+    max_attempts = _timelapse_scan_max_attempts()
+    seen_names: set[str] = set()
+    delay = _TIMELAPSE_SCAN_FIRST_DELAY_SECONDS
+    attempt = 0
 
-    for attempt, delay in enumerate(retry_delays, 1):
-        logger.info(
-            "[TIMELAPSE] Attempt %s/%s: waiting %ss before scanning for archive %s",
-            attempt,
-            len(retry_delays),
-            delay,
-            archive_id,
-        )
+    while True:
         await asyncio.sleep(delay)
+        delay = _TIMELAPSE_SCAN_POLL_INTERVAL_SECONDS
+        attempt += 1
 
         try:
             from backend.app.models.printer import Printer
-            from backend.app.services.bambu_ftp import download_file_bytes_async
 
             # Read phase: fetch archive + printer in a short session and release
             # the pooled connection BEFORE the FTP list/download below. Holding it
             # across the FTP round-trips left one connection idle-in-transaction per
-            # in-flight scan — ×4 retries, per completed print (issue #2572).
+            # in-flight scan (issue #2572).
             async with async_session() as db:
                 service = ArchiveService(db)
                 archive = await service.get_archive(archive_id)
 
                 if not archive:
-                    logger.warning("[TIMELAPSE] Archive %s not found, stopping retries", archive_id)
+                    logger.warning("[TIMELAPSE] Archive %s not found, stopping poll", archive_id)
                     return
                 if archive.timelapse_path:
-                    logger.info("[TIMELAPSE] Archive %s already has timelapse attached, stopping retries", archive_id)
+                    logger.info("[TIMELAPSE] Archive %s already has timelapse attached, stopping poll", archive_id)
                     return
 
                 result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
                 printer = result.scalar_one_or_none()
                 if not printer:
-                    logger.warning("[TIMELAPSE] Printer not found for archive %s, stopping retries", archive_id)
+                    logger.warning("[TIMELAPSE] Printer not found for archive %s, stopping poll", archive_id)
                     return
+
+                claimed = await _claimed_timelapse_names(db, archive.printer_id, archive_id)
 
             # I/O phase (no DB connection held): FTP list + download.
             video_files, found_path = await _list_timelapse_videos(printer)
 
-            if not video_files:
-                logger.info("[TIMELAPSE] Attempt %s: No video files found, will retry", attempt)
-                continue
+            # The poll can run for dozens of rounds, so only narrate a round
+            # that saw something change. Repeating the whole listing every 30 s
+            # would bury the one interesting line in the support bundle.
+            names_now = {f.get("name", "") for f in video_files}
+            changed = attempt == 1 or names_now != seen_names
+            seen_names = names_now
+            speak = logger.info if changed else logger.debug
 
-            logger.info("[TIMELAPSE] Attempt %s: Found %s video files in %s", attempt, len(video_files), found_path)
-            for f in video_files[:5]:
-                logger.info("[TIMELAPSE]   - %s", f.get("name"))
+            if video_files:
+                speak("[TIMELAPSE] Attempt %s: Found %s video files in %s", attempt, len(video_files), found_path)
+                if changed:
+                    for f in video_files[:5]:
+                        logger.info("[TIMELAPSE]   - %s", f.get("name"))
 
-            # Find files that are NEW (not in baseline snapshot)
-            new_files = [f for f in video_files if f.get("name", "") not in baseline_names]
-
-            if new_files:
-                # Pick the first new file (there should typically be exactly one)
-                target = new_files[0]
-                file_name = target.get("name")
-                remote_path = target.get("path") or f"/timelapse/{file_name}"
-                logger.info(
-                    "[TIMELAPSE] Attempt %s: New file detected: %s (downloading for archive %s)",
-                    attempt,
-                    file_name,
-                    archive_id,
+                attached = await _attach_first_unclaimed_timelapse(
+                    archive_id, printer, video_files, baseline_names, claimed, attempt, logger, quiet=not changed
                 )
-
-                timelapse_data = await download_file_bytes_async(
-                    printer.ip_address, printer.access_code, remote_path, printer_model=printer.model
-                )
-                if timelapse_data:
-                    # Write phase: attach in a fresh short-lived session.
-                    async with async_session() as db:
-                        success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, file_name)
-                    if success:
-                        logger.info("[TIMELAPSE] Successfully attached timelapse to archive %s", archive_id)
-                        await ws_manager.send_archive_updated({"id": archive_id, "timelapse_attached": True})
-                        return
-                    else:
-                        logger.warning("[TIMELAPSE] Failed to attach timelapse to archive %s", archive_id)
-                else:
-                    logger.warning("[TIMELAPSE] Attempt %s: Failed to download new file, will retry", attempt)
+                if attached:
+                    return
             else:
-                logger.info("[TIMELAPSE] Attempt %s: No new files since baseline, will retry", attempt)
+                speak("[TIMELAPSE] Attempt %s: No video files found, will retry", attempt)
 
         except Exception as e:
             logger.warning("[TIMELAPSE] Attempt %s failed with error: %s", attempt, e)
 
-    # --- Phase 3: Fallback — try name matching against all files ---
-    if base_name:
-        logger.info("[TIMELAPSE] Retries exhausted, trying name-match fallback for '%s'", base_name)
-        try:
-            from backend.app.models.printer import Printer
-            from backend.app.services.bambu_ftp import download_file_bytes_async
+        if attempt >= max_attempts or time.monotonic() >= deadline:
+            break
 
-            # Read phase: short session, released before the FTP work (issue #2572).
-            async with async_session() as db:
-                service = ArchiveService(db)
-                archive = await service.get_archive(archive_id)
-                if not archive or archive.timelapse_path:
-                    return
+    # No name-match fallback: it compared the print name against the filename,
+    # and Bambu firmware only ever writes "video_<timestamp>". Across 247 support
+    # bundles it fired 159 times and matched zero times, so all it added was a
+    # misleading log line before giving up.
+    logger.warning(
+        "[TIMELAPSE] No new video appeared for archive %s within %ss, giving up",
+        archive_id,
+        int(_TIMELAPSE_SCAN_TIMEOUT_SECONDS),
+    )
 
-                result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
-                printer = result.scalar_one_or_none()
-                if not printer:
-                    return
 
-            # I/O phase (no DB connection held): FTP list + download.
-            video_files, found_path = await _list_timelapse_videos(printer)
-            for f in video_files:
-                fname = f.get("name", "")
-                if base_name.lower() in fname.lower():
-                    remote_path = f.get("path") or f"/timelapse/{fname}"
-                    logger.info("[TIMELAPSE] Name-match fallback: '%s' matches '%s'", base_name, fname)
+async def _attach_first_unclaimed_timelapse(
+    archive_id: int,
+    printer,
+    video_files: list[dict],
+    baseline_names: set[str],
+    claimed: set[str],
+    attempt: int,
+    logger: logging.Logger,
+    *,
+    quiet: bool = False,
+) -> bool:
+    """Download and attach the one video that belongs to this print.
 
-                    timelapse_data = await download_file_bytes_async(
-                        printer.ip_address, printer.access_code, remote_path, printer_model=printer.model
-                    )
-                    if timelapse_data:
-                        # Write phase: attach in a fresh short-lived session.
-                        async with async_session() as db:
-                            success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, fname)
-                        if success:
-                            logger.info("[TIMELAPSE] Name-match fallback attached timelapse to archive %s", archive_id)
-                            await ws_manager.send_archive_updated({"id": archive_id, "timelapse_attached": True})
-                            return
-                    break  # Only try the first name match
+    A candidate is any file absent from the print-start baseline. More than one
+    can qualify when a previous print's video landed late, after this print's
+    baseline was taken — those are filtered out by name, because they are
+    already attached to another archive. Sorting the candidates instead would
+    mean sorting on mtime or on the filename timestamp, both of which come from
+    the printer's unsynced clock.
 
-        except Exception as e:
-            logger.warning("[TIMELAPSE] Name-match fallback failed: %s", e)
+    Returns True once a video is attached. The printer's copy is deleted only
+    after the attach succeeds on bytes whose length matched the listing.
 
-    logger.warning("[TIMELAPSE] All attempts exhausted for archive %s, giving up", archive_id)
+    ``quiet`` downgrades the "nothing yet" lines to DEBUG when the caller has
+    already seen this exact listing — the poll runs for many rounds and only the
+    rounds where something changed are worth an INFO line.
+    """
+    from backend.app.services.bambu_ftp import (
+        delete_archived_timelapse,
+        download_file_bytes_async,
+        remote_file_settled,
+    )
+
+    speak = logger.debug if quiet else logger.info
+
+    new_files = [f for f in video_files if f.get("name", "") not in baseline_names]
+    if not new_files:
+        speak("[TIMELAPSE] Attempt %s: No new files since baseline, will retry", attempt)
+        return False
+
+    candidates = [f for f in new_files if Path(f.get("name", "")).stem not in claimed]
+    if not candidates:
+        speak(
+            "[TIMELAPSE] Attempt %s: %s new file(s), all already attached to other archives, will retry",
+            attempt,
+            len(new_files),
+        )
+        return False
+    if len(candidates) > 1:
+        logger.warning(
+            "[TIMELAPSE] Attempt %s: %s unclaimed new files (%s) — taking the first; "
+            "the rest stay on the printer for manual selection",
+            attempt,
+            len(candidates),
+            ", ".join(str(f.get("name")) for f in candidates),
+        )
+
+    target = candidates[0]
+    file_name = target.get("name")
+    remote_path = target.get("path") or f"/timelapse/{file_name}"
+    logger.info(
+        "[TIMELAPSE] Attempt %s: New file detected: %s (downloading for archive %s)",
+        attempt,
+        file_name,
+        archive_id,
+    )
+
+    # The listing always carries a size (`list_files` skips entries it can't
+    # parse), but read it explicitly: the delete below is destructive and must
+    # depend on a size we actually had, not on one we hoped was there.
+    expected_size = target.get("size")
+
+    timelapse_data = await download_file_bytes_async(
+        printer.ip_address,
+        printer.access_code,
+        remote_path,
+        printer_model=printer.model,
+        expected_size=expected_size,
+    )
+    if not timelapse_data:
+        # Short or failed transfer. The printer keeps its copy, so the next
+        # round can try again — which is exactly why the delete below is
+        # gated on a verified download.
+        logger.warning("[TIMELAPSE] Attempt %s: Failed to download new file, will retry", attempt)
+        return False
+
+    # The length check above proves we got what the listing said, not that the
+    # printer had finished writing. A video still being written can be listed
+    # short, served short, and pass — so confirm it has stopped growing before
+    # committing to it and deleting the original (#2704).
+    if not await remote_file_settled(
+        printer.ip_address,
+        printer.access_code,
+        remote_path,
+        len(timelapse_data),
+        printer_model=printer.model,
+    ):
+        return False
+
+    # Write phase: attach in a fresh short-lived session.
+    async with async_session() as db:
+        success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, file_name)
+    if not success:
+        logger.warning("[TIMELAPSE] Failed to attach timelapse to archive %s", archive_id)
+        return False
+
+    logger.info("[TIMELAPSE] Successfully attached timelapse to archive %s", archive_id)
+    await ws_manager.send_archive_updated({"id": archive_id, "timelapse_attached": True})
+
+    await delete_archived_timelapse(
+        printer.ip_address,
+        printer.access_code,
+        remote_path,
+        verified=expected_size is not None,
+        printer_model=printer.model,
+        printer_name=printer.name,
+    )
+    return True
 
 
 # Defaults for the finish-photo-from-timelapse polling loop (#1397). These are
@@ -3758,11 +3990,26 @@ async def _scan_for_timelapse_with_retries(archive_id: int, baseline_names: set[
 _FINISH_PHOTO_TIMELAPSE_POLL_INTERVAL_SECONDS: float = 3.0
 _FINISH_PHOTO_TIMELAPSE_POLL_TIMEOUT_SECONDS: float = 60.0
 
+# How long the *background* upgrade keeps waiting after the notification has
+# already gone out (#2704 follow-up). The short bound above exists so a slow
+# printer can't hold up the print-complete notification; this one exists so the
+# archive still ends up with the better frame afterwards.
+#
+# Measured across 261 attaches in the support bundles, the video lands a median
+# 13s after the print ends — but the P1 series writes MJPEG AVI rather than
+# H.264 MP4 and serves it slowly, so its p90 is 167s and the worst observed case
+# was 546s. Every other model was inside 26s. The long budget is therefore
+# almost entirely for P1-series users; on everything else the short wait already
+# wins and this task never runs.
+_FINISH_PHOTO_UPGRADE_TIMEOUT_SECONDS: float = 900.0
+
 
 async def _capture_finish_photo_from_timelapse(
     archive_id: int,
     archive_dir: Path,
-) -> str | None:
+    timeout: float | None = None,
+    rotation: int = 0,
+) -> tuple[str | None, bool]:
     """Wait for the per-print timelapse to land on the archive and extract its
     last frame as the finish photo (#1397).
 
@@ -3773,19 +4020,29 @@ async def _capture_finish_photo_from_timelapse(
 
     ``_scan_for_timelapse_with_retries`` runs in parallel and writes
     ``archive.timelapse_path`` when the file lands. This function polls for
-    that field. Returns the saved photo filename on success, or None if the
-    timelapse never arrives within the timeout / extraction fails / no
-    timelapse path was set — in which case the caller falls back to the
-    existing live-camera capture chain.
+    that field.
+
+    Returns ``(filename, still_pending)``. ``still_pending`` is True only when
+    the wait ran out with no video on the archive yet — i.e. the video may
+    still be coming and a later attempt could succeed. It is False when the
+    video landed (whether or not extraction worked), because in that case
+    waiting longer changes nothing. The caller uses that to decide between
+    falling back permanently and scheduling a background upgrade.
+
+    ``rotation`` is the printer's camera_rotation, applied to the extracted
+    still (#2708) so this source agrees with every other finish-photo source.
+    The archived video itself is the printer's own file and is left alone —
+    rotating it would mean re-encoding it.
     """
     import uuid
 
     from backend.app.models.archive import PrintArchive
-    from backend.app.services.camera import extract_video_last_frame
+    from backend.app.services.camera import apply_camera_rotation_to_file, extract_video_last_frame
 
     logger = logging.getLogger(__name__)
 
-    deadline = asyncio.get_event_loop().time() + _FINISH_PHOTO_TIMELAPSE_POLL_TIMEOUT_SECONDS
+    budget = _FINISH_PHOTO_TIMELAPSE_POLL_TIMEOUT_SECONDS if timeout is None else timeout
+    deadline = asyncio.get_event_loop().time() + budget
     poll_interval = _FINISH_PHOTO_TIMELAPSE_POLL_INTERVAL_SECONDS
 
     while True:
@@ -3803,28 +4060,75 @@ async def _capture_finish_photo_from_timelapse(
                 filename = f"finish_{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
                 output_path = photos_dir / filename
                 if await extract_video_last_frame(video_path, output_path):
+                    await apply_camera_rotation_to_file(output_path, rotation, logger)
                     logger.info(
                         "[PHOTO-BG] Extracted finish photo from timelapse %s for archive %s",
                         video_path.name,
                         archive_id,
                     )
-                    return filename
+                    return filename, False
                 logger.warning(
                     "[PHOTO-BG] Timelapse %s landed but last-frame extraction failed for archive %s; falling back",
                     video_path.name,
                     archive_id,
                 )
-                return None
+                return None, False
 
         if asyncio.get_event_loop().time() >= deadline:
             logger.info(
                 "[PHOTO-BG] Timelapse for archive %s didn't land within %.0fs; falling back to live camera",
                 archive_id,
-                _FINISH_PHOTO_TIMELAPSE_POLL_TIMEOUT_SECONDS,
+                budget,
             )
-            return None
+            return None, True
 
         await asyncio.sleep(poll_interval)
+
+
+async def _upgrade_finish_photo_from_timelapse(archive_id: int, archive_dir: Path, rotation: int = 0) -> None:
+    """Add the timelapse's last frame to an archive after the fact (#2704).
+
+    The print-complete notification waits only ~60s for the video, because
+    holding a notification for minutes is worse than sending it with a live
+    camera grab. On a P1-series printer the video often lands well after that,
+    so the archive used to be stuck with the live grab — which is taken at
+    ``gcode_state=FINISH``, after the end G-code has dropped the bed, and is
+    the worse photo of the two.
+
+    This keeps waiting in the background and, when the video arrives, extracts
+    the frame and puts it *first* in the archive's photo list, so opening the
+    gallery shows it. The live grab is deliberately kept: the notification that
+    already went out links to that exact file, and deleting it would leave a
+    broken image in Discord or Telegram.
+    """
+    logger = logging.getLogger(__name__)
+
+    filename, _ = await _capture_finish_photo_from_timelapse(
+        archive_id, archive_dir, timeout=_FINISH_PHOTO_UPGRADE_TIMEOUT_SECONDS, rotation=rotation
+    )
+    if not filename:
+        logger.info("[PHOTO-UPGRADE] No timelapse frame for archive %s; keeping the live grab", archive_id)
+        return
+
+    try:
+        async with async_session() as db:
+            from backend.app.models.archive import PrintArchive
+
+            archive = await db.get(PrintArchive, archive_id)
+            if archive is None:
+                return
+            photos = list(archive.photos or [])
+            if filename in photos:
+                return
+            # Front of the list: PhotoGalleryModal opens at index 0.
+            archive.photos = [filename, *photos]
+            await db.commit()
+    except Exception as e:
+        logger.warning("[PHOTO-UPGRADE] Failed to attach upgraded photo to archive %s: %s", archive_id, e)
+        return
+
+    logger.info("[PHOTO-UPGRADE] Archive %s now leads with the timelapse frame %s", archive_id, filename)
+    await ws_manager.send_archive_updated({"id": archive_id, "photo_added": filename})
 
 
 async def on_print_running_observed(printer_id: int, data: dict):
@@ -4020,6 +4324,207 @@ async def reconcile_stale_active_prints(printer_id: int) -> int:
     return reconciled
 
 
+# #2547: clearance left between the nozzle and the top of the print when the
+# plate is commanded back into camera framing. The nozzle is parked away from
+# the part by then, so this is belt-and-braces against a max_z_height that
+# under-reports (e.g. a slicer that excludes a final Z hop).
+_PLATE_RESTORE_CLEARANCE_MM = 10.0
+# How far below the restored position to drop the plate again afterwards, so
+# the print is as reachable as Bambu's own end G-code leaves it. Matches the
+# stock `G1 Z{max_layer_z + 100}`; the firmware clamps it to the travel limit
+# on machines with less headroom.
+_PLATE_PARK_DROP_MM = 100.0
+# Feedrate for both moves. F600 is exactly what Bambu's own end G-code uses on
+# this axis, so it is a proven-safe speed for the full travel.
+_PLATE_RESTORE_FEEDRATE = 600
+# Time allowed for the plate to reach the restored position before the camera
+# grab. Sized for the ~100 mm the stock end G-code drops at F600 (10 mm/s).
+_PLATE_RESTORE_SETTLE_SECONDS = 12.0
+# How long `_background_finish_photo` waits for this producer. Must cover the
+# settle window plus a worst-case RTSP grab (15s), and stay below the
+# notification path's own photo wait so a slow producer degrades to a
+# photo-less notification rather than a missed one.
+_FINISH_PHOTO_PRODUCER_WAIT_SECONDS = _PLATE_RESTORE_SETTLE_SECONDS + 23.0
+
+
+async def _max_z_for_current_print(printer_id: int, data: dict, logger) -> float | None:
+    """Height of the print that just finished on ``printer_id``, or None (#2547).
+
+    This number becomes the target of a real Z move, so every step here refuses
+    rather than guesses. A height belonging to some *other* print is the one
+    failure that could drive the nozzle into the model: 20 mm carried onto a
+    200 mm print would command the plate up through the part.
+
+    Two independent things therefore have to agree before a height is returned:
+
+    1. **Identity.** The archive is matched by the finished print's own
+       ``subtask_name``, by equality rather than a ``LIKE``, so "Cube" can never
+       resolve to "Cube v2". Matching on "most recent archive for this printer"
+       is not good enough — ``on_print_complete`` pops the ``_active_prints``
+       binding concurrently with us, and a print Bambuddy failed to archive
+       would silently resolve to its predecessor.
+    2. **Corroboration.** The archive's layer count (parsed from the 3MF) has to
+       match the layer count the printer itself reported over MQTT for the print
+       that just ended. These come from genuinely different sources, so a
+       mismatch means the row is not this print, whatever its name says.
+
+    ``completed`` is accepted alongside ``printing`` only because
+    ``on_print_complete`` may already have flipped the status by the time we
+    run; the identity check above is what actually selects the row.
+    """
+    subtask_name = (data.get("subtask_name") or "").strip()
+    if not subtask_name:
+        # Nothing to identify the print by — refuse rather than fall back to
+        # "whatever ran last on this printer".
+        logger.info("[PLATE-RESTORE] printer %s: print has no name to match on — skipping", printer_id)
+        return None
+
+    try:
+        from backend.app.models.archive import PrintArchive
+        from backend.app.utils.threemf_tools import extract_max_z_height_from_3mf
+
+        async with async_session() as db:
+            result = await db.execute(
+                select(PrintArchive)
+                .where(
+                    PrintArchive.printer_id == printer_id,
+                    PrintArchive.status.in_(("printing", "completed")),
+                    PrintArchive.deleted_at.is_(None),
+                    or_(
+                        PrintArchive.print_name == subtask_name,
+                        PrintArchive.filename == subtask_name,
+                        PrintArchive.filename == f"{subtask_name}.3mf",
+                        PrintArchive.filename == f"{subtask_name}.gcode.3mf",
+                    ),
+                )
+                .order_by(PrintArchive.id.desc())
+                .limit(1)
+            )
+            archive = result.scalar_one_or_none()
+        if archive is None or not archive.file_path:
+            logger.info("[PLATE-RESTORE] printer %s: no archive matches %r — skipping", printer_id, subtask_name)
+            return None
+
+        client = printer_manager.get_client(printer_id)
+        reported_layers = getattr(getattr(client, "state", None), "total_layers", None)
+        if reported_layers and archive.total_layers and reported_layers != archive.total_layers:
+            logger.warning(
+                "[PLATE-RESTORE] printer %s: archive %s says %s layers but the printer reported %s "
+                "— refusing to move the plate on a height that may not be this print's",
+                printer_id,
+                archive.id,
+                archive.total_layers,
+                reported_layers,
+            )
+            return None
+
+        path = Path(archive.file_path)
+        if not path.is_absolute():
+            path = Path(app_settings.data_dir) / path
+        return await asyncio.to_thread(extract_max_z_height_from_3mf, path, archive.plate_id or 1)
+    except Exception as e:
+        logger.debug("[PLATE-RESTORE] printer %s: no usable print height: %s", printer_id, e)
+        return None
+
+
+async def _restore_plate_for_finish_photo(printer_id: int, max_z_height: float, logger) -> bool:
+    """Raise the plate back into camera framing before the finish photo (#2547).
+
+    Bambu's end G-code drops the plate ~100 mm as the last thing it does, so by
+    the time ``gcode_state`` reaches FINISH the finished print sits far below
+    the camera's natural framing — the complaint behind #1145, #1397 and #1565.
+    This commands an absolute ``G1 Z`` back to just above the last printed
+    layer.
+
+    Absolute, not relative, is the whole safety argument. ``max_z_height +
+    clearance`` is a height the toolhead was physically at seconds earlier, so
+    it is inside the travel limits by construction and leaves the nozzle above
+    the part. It is also unambiguous across model families: Z is the
+    nozzle-to-bed gap whether the bed moves (X1/P1/H2) or the toolhead does
+    (A1), so unlike the relative bed-jog path (#1334) there is no sign to get
+    wrong. ``M211`` is never touched — see the bed-jog docstring for why
+    (#2579).
+
+    Returns True if the move was sent and waited out, False if it was skipped.
+    """
+    client = printer_manager.get_client(printer_id)
+    if client is None:
+        return False
+
+    # Re-read state immediately before commanding motion. If the queue has
+    # already started the next print, the printer is no longer ours to move.
+    state = getattr(client, "state", None)
+    if state is None or state.state != "FINISH":
+        logger.info(
+            "[PLATE-RESTORE] printer %s is in state %s, not FINISH — skipping",
+            printer_id,
+            getattr(state, "state", "unknown"),
+        )
+        return False
+
+    target_z = max_z_height + _PLATE_RESTORE_CLEARANCE_MM
+    if not client.send_gcode(f"G90\nG1 Z{target_z:.2f} F{_PLATE_RESTORE_FEEDRATE}"):
+        logger.warning("[PLATE-RESTORE] printer %s: send failed — capturing where it is", printer_id)
+        return False
+
+    logger.info(
+        "[PLATE-RESTORE] printer %s: plate to Z%.2f (print top %.2f + %.1f clearance), settling %.0fs",
+        printer_id,
+        target_z,
+        max_z_height,
+        _PLATE_RESTORE_CLEARANCE_MM,
+        _PLATE_RESTORE_SETTLE_SECONDS,
+    )
+    await asyncio.sleep(_PLATE_RESTORE_SETTLE_SECONDS)
+    return True
+
+
+def _park_plate_after_finish_photo(printer_id: int, max_z_height: float, logger) -> None:
+    """Drop the plate again after the finish photo (#2547).
+
+    Without this the user walks up to a finished print sitting just under the
+    nozzle, which is exactly the position Bambu's end G-code goes out of its way
+    to avoid — awkward to lift the plate out, and easy to knock the toolhead.
+    Fire-and-forget: if it doesn't land, the plate is merely high, and the next
+    print homes anyway.
+    """
+    client = printer_manager.get_client(printer_id)
+    state = getattr(client, "state", None) if client else None
+    if client is None or state is None or state.state != "FINISH":
+        return
+    client.send_gcode(f"G90\nG1 Z{max_z_height + _PLATE_PARK_DROP_MM:.2f} F{_PLATE_RESTORE_FEEDRATE}")
+    logger.debug("[PLATE-RESTORE] printer %s: plate returned to unload height", printer_id)
+
+
+async def _plate_restore_is_blocked_by_queue(printer_id: int) -> bool:
+    """True if a queue item is about to take this printer (#2547).
+
+    The scheduler dispatches the next job the moment a print completes, and a
+    plate move interleaved with a print start is not a race worth having. The
+    state re-check in ``_restore_plate_for_finish_photo`` closes the tail of
+    this window; this closes the head of it.
+    """
+    try:
+        from backend.app.models.print_queue import PrintQueueItem
+
+        async with async_session() as db:
+            result = await db.execute(
+                select(PrintQueueItem.id)
+                .where(
+                    PrintQueueItem.printer_id == printer_id,
+                    PrintQueueItem.status.in_(("pending", "printing")),
+                )
+                .limit(1)
+            )
+            return result.scalar_one_or_none() is not None
+    except Exception as e:
+        # Fail closed: if we can't tell, don't move the plate.
+        logging.getLogger(__name__).debug(
+            "[PLATE-RESTORE] queue check failed for printer %s: %s — skipping restore", printer_id, e
+        )
+        return True
+
+
 async def on_finish_photo_moment(printer_id: int, data: dict):
     """Pre-capture a finish photo when the printer enters stage 22 / FINISH (#1721).
 
@@ -4065,6 +4570,11 @@ async def on_finish_photo_moment(printer_id: int, data: dict):
     producer_done = asyncio.Event()
     _stage22_finish_in_flight[printer_id] = producer_done
 
+    # #2547: set once the plate has actually been raised, and read by the
+    # `finally` below. Declared out here so a failure anywhere after the move —
+    # a camera timeout, a DB error — still lowers the plate again.
+    restore_max_z: float | None = None
+
     try:
         async with async_session() as db:
             from backend.app.api.routes.settings import get_setting
@@ -4074,6 +4584,9 @@ async def on_finish_photo_moment(printer_id: int, data: dict):
             if capture_setting is not None and capture_setting.lower() != "true":
                 logger.info("[FINISH-PHOTO-MOMENT] capture_finish_photo disabled — skipping pre-capture")
                 return
+
+            restore_setting = await get_setting(db, "finish_photo_restore_plate")
+            restore_plate_enabled = restore_setting is None or restore_setting.lower() == "true"
 
             result = await db.execute(select(Printer).where(Printer.id == printer_id))
             printer = result.scalar_one_or_none()
@@ -4085,31 +4598,87 @@ async def on_finish_photo_moment(printer_id: int, data: dict):
                 return
 
         frame_bytes: bytes | None = None
+        # #2708: the banked frame arrives already rotated — it comes from
+        # `_capture_snapshot_for_notification`, which rotates before returning.
+        # Every other source below is a raw grab. Tracking which lets us store
+        # exactly one rotation in `_stage22_finish_frames` either way.
+        frame_already_rotated = False
 
-        # #1867: on the FINISH-state fallback the End G-code (e.g. SwapMod
-        # plate-swap) has already run, so a live grab now captures the swapped
-        # or empty plate. Prefer the banked in-print frame — the finished
-        # print from the last object layer, before the swap. Only for
-        # `finish_state`: the `stage_22` and `last_layer` triggers fire before
-        # the swap and give cleaner (parked-toolhead) framing via a live grab.
-        if trigger == "finish_state":
+        # On the FINISH-state path the End G-code has already run, and two very
+        # different situations arrive here needing opposite answers.
+        #
+        # #1867: if Bambuddy injected End G-code into this print, a SwapMod
+        # snippet may have ejected the plate — the scene in front of the camera
+        # is no longer the finished print, and no amount of moving the plate
+        # brings it back. Use the banked in-print frame instead.
+        #
+        # #2547: otherwise the print is still sitting there, just ~100 mm lower
+        # than the camera frames well, and the toolhead is parked out of the
+        # way. That is the *best* moment available on firmware that never emits
+        # stage 22 (H2C, A1 Mini) — so capture live, after putting the plate
+        # back. Preferring the bank here unconditionally, as this code used to,
+        # is what shipped a mid-print photo with the toolhead over the part.
+        if trigger == "finish_state" and print_dispatch_context.end_gcode_injected(printer_id):
             banked = _inprint_frame_bank.get(printer_id)
             if banked:
                 frame_bytes = banked
+                frame_already_rotated = True
                 logger.info(
-                    "[FINISH-PHOTO-MOMENT] using banked in-print frame (%d bytes) — "
-                    "avoids post-swap live grab on stage-22-less firmware",
+                    "[FINISH-PHOTO-MOMENT] End G-code was injected — using banked in-print "
+                    "frame (%d bytes) instead of a post-swap live grab",
                     len(banked),
                 )
+            else:
+                logger.warning(
+                    "[FINISH-PHOTO-MOMENT] End G-code was injected for printer %s but the "
+                    "in-print bank is empty — falling back to a live grab, which may show a "
+                    "swapped or empty plate",
+                    printer_id,
+                )
+
+        # `restore_max_z` is set only once the plate is actually up, because the
+        # `finally` reads it to decide whether it owes a move back down.
+        #
+        # Never on a print whose End G-code Bambuddy injected, even when the bank
+        # came up empty above: that machine may have just ejected its plate, and
+        # driving Z into whatever a swap mechanism is doing is not a risk worth
+        # taking for a photo of a bed we already know may be bare.
+        if (
+            frame_bytes is None
+            and trigger == "finish_state"
+            and restore_plate_enabled
+            and not print_dispatch_context.end_gcode_injected(printer_id)
+        ):
+            wants_restore = await _max_z_for_current_print(printer_id, data, logger)
+            if wants_restore is None:
+                logger.info(
+                    "[PLATE-RESTORE] printer %s: print height unknown — capturing without restore",
+                    printer_id,
+                )
+            elif await _plate_restore_is_blocked_by_queue(printer_id):
+                logger.info(
+                    "[PLATE-RESTORE] printer %s has queued work — skipping plate restore",
+                    printer_id,
+                )
+            elif await _restore_plate_for_finish_photo(printer_id, wants_restore, logger):
+                restore_max_z = wants_restore
 
         if frame_bytes is None and printer.external_camera_enabled and printer.external_camera_url:
+            from backend.app.api.routes.camera import live_frame_for_capture
             from backend.app.services.external_camera import capture_frame
 
-            frame_bytes = await capture_frame(
-                printer.external_camera_url,
-                printer.external_camera_type or "mjpeg",
-                snapshot_url=printer.external_camera_snapshot_url,
-            )
+            # #2707: this used to collide with the live view and fail, which is
+            # how finish-photo notifications went out with no image attached.
+            # Leaving frame_bytes None keeps the rest of the fallback chain.
+            defer, buffered = live_frame_for_capture(printer_id)
+            if defer:
+                frame_bytes = buffered
+            else:
+                frame_bytes = await capture_frame(
+                    printer.external_camera_url,
+                    printer.external_camera_type or "mjpeg",
+                    snapshot_url=printer.external_camera_snapshot_url,
+                )
             if frame_bytes:
                 logger.info(
                     "[FINISH-PHOTO-MOMENT] captured external-camera frame (%d bytes)",
@@ -4141,12 +4710,15 @@ async def on_finish_photo_moment(printer_id: int, data: dict):
                     )
 
         if frame_bytes:
+            if not frame_already_rotated:
+                frame_bytes = _apply_camera_rotation(frame_bytes, printer, logger)
             _stage22_finish_frames[printer_id] = frame_bytes
         else:
             logger.warning(
                 "[FINISH-PHOTO-MOMENT] no frame captured for printer %s — post-completion fallback will retry",
                 printer_id,
             )
+
     except Exception as e:
         logger.warning(
             "[FINISH-PHOTO-MOMENT] pre-capture failed for printer %s: %s",
@@ -4154,6 +4726,13 @@ async def on_finish_photo_moment(printer_id: int, data: dict):
             e,
         )
     finally:
+        # #2547: we raised the plate, so we own lowering it — including when the
+        # capture above failed or threw partway through.
+        if restore_max_z is not None:
+            try:
+                _park_plate_after_finish_photo(printer_id, restore_max_z, logger)
+            except Exception as e:
+                logger.warning("[PLATE-RESTORE] printer %s: could not lower plate: %s", printer_id, e)
         # #1790: always unblock the consumer's bounded wait — whether we stored
         # a frame, gave up, or hit an exception. Local ref means cleanup of the
         # dict entry by the consumer doesn't affect signalling.
@@ -4970,6 +5549,11 @@ async def on_print_complete(printer_id: int, data: dict):
 
     async def _background_finish_photo() -> str | None:
         """Capture finish photo in background. Returns photo filename if captured."""
+        # #2547: set once this function has raised the plate itself (the
+        # timelapse path, where the moment producer returned without doing it).
+        # Declared out here so the `finally` can lower it again no matter where
+        # the capture below fails.
+        plate_restored_z: float | None = None
         try:
             logger.info("[PHOTO-BG] Starting finish photo capture for archive %s", archive_id)
 
@@ -5023,10 +5607,12 @@ async def on_print_complete(printer_id: int, data: dict):
                 printer.external_camera_enabled and printer.external_camera_url
             )
 
+            timelapse_still_pending = False
             if prefer_timelapse_source:
-                photo_filename = await _capture_finish_photo_from_timelapse(
+                photo_filename, timelapse_still_pending = await _capture_finish_photo_from_timelapse(
                     archive_id=archive_id,
                     archive_dir=archive_dir,
+                    rotation=getattr(printer, "camera_rotation", 0),
                 )
 
             # #1721: replacement framing path — on_finish_photo_moment
@@ -5043,10 +5629,16 @@ async def on_print_complete(printer_id: int, data: dict):
                 # producer's still-in-flight grab (single-client RTSP
                 # on Bambu printers). Wait for the producer to finish
                 # or give up before touching the cache.
+                #
+                # #2547: 20s was enough when the producer only ever grabbed a
+                # frame. It now also raises the plate first, which costs the
+                # settle window before the grab even starts — so the budget has
+                # to cover settle + a worst-case 15s RTSP timeout, and still sit
+                # under the notification's own photo wait below.
                 in_flight = _stage22_finish_in_flight.pop(printer_id, None)
                 if in_flight is not None:
                     try:
-                        await asyncio.wait_for(in_flight.wait(), timeout=20.0)
+                        await asyncio.wait_for(in_flight.wait(), timeout=_FINISH_PHOTO_PRODUCER_WAIT_SECONDS)
                     except asyncio.TimeoutError:
                         logger.warning(
                             "[PHOTO-BG] timed out waiting for stage-22 producer for printer %s — proceeding to fallback",
@@ -5054,6 +5646,9 @@ async def on_print_complete(printer_id: int, data: dict):
                         )
                 cached_frame = _stage22_finish_frames.pop(printer_id, None)
                 if cached_frame:
+                    # Already rotated by the producer (#2708) — rotating again
+                    # here would undo the fix on the banked-frame path, whose
+                    # bytes reach the cache having been rotated once already.
                     photos_dir = archive_dir / "photos"
                     photos_dir.mkdir(parents=True, exist_ok=True)
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -5066,20 +5661,60 @@ async def on_print_complete(printer_id: int, data: dict):
                         len(cached_frame),
                     )
 
+            # #2547: the timelapse path reaches the live grab below whenever the
+            # video hasn't landed in time — the documented usual outcome on
+            # P1-series, where transfers are slowest. `on_finish_photo_moment`
+            # returned early for those prints without raising the plate, so
+            # without this the photo that actually ships in the notification is
+            # of an already-dropped plate: exactly the framing #1145/#1397/#1565
+            # asked us to fix. The archive still gets the better video frame
+            # later; this is about the image the user is sent.
+            #
+            # Gated on `timelapse_was_active` precisely because that is the
+            # condition under which the producer skipped. On every other path it
+            # has already raised and lowered the plate, and repeating that here
+            # would be a second pointless round trip.
+            if (
+                not photo_filename
+                and data.get("timelapse_was_active")
+                and not print_dispatch_context.end_gcode_injected(printer_id)
+            ):
+                try:
+                    async with async_session() as db:
+                        from backend.app.api.routes.settings import get_setting
+
+                        restore_setting = await get_setting(db, "finish_photo_restore_plate")
+                    if restore_setting is None or restore_setting.lower() == "true":
+                        max_z = await _max_z_for_current_print(printer_id, data, logger)
+                        if max_z is not None and not await _plate_restore_is_blocked_by_queue(printer_id):
+                            if await _restore_plate_for_finish_photo(printer_id, max_z, logger):
+                                plate_restored_z = max_z
+                except Exception as e:
+                    logger.warning("[PLATE-RESTORE] printer %s: restore failed: %s", printer_id, e)
+
             # Fallback chain: external camera → buffered live frame →
             # fresh RTSP capture. Only runs if the timelapse path above
             # didn't already produce a photo.
             if not photo_filename:
                 if printer.external_camera_enabled and printer.external_camera_url:
                     logger.info("[PHOTO-BG] Using external camera")
+                    from backend.app.api.routes.camera import live_frame_for_capture
                     from backend.app.services.external_camera import capture_frame
 
-                    frame_data = await capture_frame(
-                        printer.external_camera_url,
-                        printer.external_camera_type or "mjpeg",
-                        snapshot_url=printer.external_camera_snapshot_url,
-                    )
+                    # #2707: the second half of the finish-photo failure — the
+                    # pre-capture and this fallback both collided with the live
+                    # view. None here continues down the fallback chain.
+                    defer, buffered = live_frame_for_capture(printer_id)
+                    if defer:
+                        frame_data = buffered
+                    else:
+                        frame_data = await capture_frame(
+                            printer.external_camera_url,
+                            printer.external_camera_type or "mjpeg",
+                            snapshot_url=printer.external_camera_snapshot_url,
+                        )
                     if frame_data:
+                        frame_data = _apply_camera_rotation(frame_data, printer, logger)
                         photos_dir = archive_dir / "photos"
                         photos_dir.mkdir(parents=True, exist_ok=True)
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -5097,6 +5732,7 @@ async def on_print_complete(printer_id: int, data: dict):
                     if (active_for_printer or active_chamber_for_printer) and buffered_frame:
                         # Use frame from active stream
                         logger.info("[PHOTO-BG] Using buffered frame from active stream")
+                        buffered_frame = _apply_camera_rotation(buffered_frame, printer, logger)
                         photos_dir = archive_dir / "photos"
                         photos_dir.mkdir(parents=True, exist_ok=True)
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -5114,6 +5750,7 @@ async def on_print_complete(printer_id: int, data: dict):
                             access_code=printer.access_code,
                             model=printer.model,
                             archive_dir=archive_dir,
+                            rotation=getattr(printer, "camera_rotation", 0),
                         )
 
             # Write phase: attach the photo in a fresh short-lived session.
@@ -5128,11 +5765,42 @@ async def on_print_complete(printer_id: int, data: dict):
                         arch.photos = photos
                         await db.commit()
                 logger.info("[PHOTO-BG] Saved: %s", photo_filename)
-                return photo_filename
-            return None
+
+            # The short wait above is bounded so a slow printer can't hold up
+            # the print-complete notification, which is what the caller is
+            # blocking on. When it ran out with the video still on its way,
+            # keep waiting off to the side and add the better frame to the
+            # archive once it arrives (#2704 follow-up) — otherwise P1-series
+            # users, whose videos routinely take minutes to transfer, never get
+            # the pre-bed-drop framing this path exists to provide.
+            #
+            # Spawned here rather than at the point the wait gave up: both this
+            # function and the upgrade do a read-modify-write on `photos`, and
+            # the live-camera fallback above can take tens of seconds. Starting
+            # the upgrade before that write means the two can interleave and one
+            # silently drops the other's entry, leaving a JPEG on disk that the
+            # gallery never lists.
+            if timelapse_still_pending:
+                spawn_background_task(
+                    _upgrade_finish_photo_from_timelapse(
+                        archive_id, archive_dir, rotation=getattr(printer, "camera_rotation", 0)
+                    ),
+                    name=f"finish-photo-upgrade-{archive_id}",
+                )
+
+            return photo_filename
         except Exception as e:
             logger.warning("[PHOTO-BG] Failed: %s", e)
             return None
+        finally:
+            # #2547: we raised the plate, so we owe the move back down — even if
+            # the capture in between threw. Otherwise the user finds the print
+            # pinned under the nozzle.
+            if plate_restored_z is not None:
+                try:
+                    _park_plate_after_finish_photo(printer_id, plate_restored_z, logger)
+                except Exception as e:
+                    logger.warning("[PLATE-RESTORE] printer %s: could not lower plate: %s", printer_id, e)
 
     spawn_background_task(_background_energy_calculation(), name="background-energy-calc")
     # Photo capture task - result will be used by notifications
@@ -5335,7 +6003,22 @@ async def on_print_complete(printer_id: int, data: dict):
     # timelapse for up to 60s (#1397) — extend the budget so the notification
     # carries the correct bed-up photo instead of falling through to the
     # live-cam grab. Adds ~30s of notification latency at worst on slow links.
-    photo_wait_timeout = 75 if data.get("timelapse_was_active") else 45
+    #
+    # #2547: both budgets now have to cover a plate restore as well.
+    #
+    # Without timelapse, the wait is on the moment producer, which raises the
+    # plate before its grab — so this has to outlast that producer's own budget.
+    #
+    # With timelapse, the capture polls up to
+    # `_FINISH_PHOTO_TIMELAPSE_POLL_TIMEOUT_SECONDS` for the video and only then
+    # falls back to a live grab, which is the case that raises the plate. At the
+    # old flat 75s that fallback was guaranteed to be cut off mid-settle, so the
+    # restore would have moved the plate for a photo nobody waited for.
+    photo_wait_timeout = (
+        _FINISH_PHOTO_TIMELAPSE_POLL_TIMEOUT_SECONDS + _FINISH_PHOTO_PRODUCER_WAIT_SECONDS
+        if data.get("timelapse_was_active")
+        else _FINISH_PHOTO_PRODUCER_WAIT_SECONDS + 15
+    )
 
     async def _photo_then_notify():
         """Wait for photo capture, then send notification with photo URL."""
@@ -5978,6 +6661,130 @@ def stop_spoolbuddy_watchdog():
         logging.getLogger(__name__).info("SpoolBuddy watchdog stopped")
 
 
+# Dead-MQTT-session recovery
+#
+# check_staleness() covers the "connected but silent" half-broken session. It
+# does nothing once ``state.connected`` is False, and paho's own auto-reconnect
+# is the only thing left watching at that point. When paho stops making
+# progress there is no backstop at all: the #2732 bundle has a P1S drop on a
+# keep-alive timeout at 02:19 and not reconnect until 11:24 — nine hours
+# offline with the UI open the whole time, recovered only when something
+# happened to nudge it.
+#
+# This loop is that backstop. It only touches printers that had a working
+# session and lost it, and only when the MQTT port still answers — a printer
+# that is simply switched off is left to paho, since rebuilding a client
+# against an unreachable host achieves nothing and would fill the log every
+# night.
+_connection_watchdog_task: asyncio.Task | None = None
+CONNECTION_WATCHDOG_INTERVAL = 60
+# How long a printer must have been silent before we stop trusting paho.
+# Comfortably above STALE_TIMEOUT (60 s) and the max reconnect backoff (30 s),
+# so a session that is recovering on its own is never interrupted.
+CONNECTION_WATCHDOG_OFFLINE_GRACE = 300
+# Per-printer floor between rebuild attempts.
+CONNECTION_WATCHDOG_RETRY_INTERVAL = 300
+_connection_watchdog_last_attempt: dict[int, float] = {}
+
+
+async def _recover_dead_printer_sessions() -> int:
+    """Rebuild MQTT clients that have been offline too long to still be trying.
+
+    Returns the number of printers a rebuild was attempted for (for tests and
+    for the caller's logging). Never raises: one unreachable printer must not
+    stop the sweep for the rest of the farm.
+    """
+    logger = logging.getLogger(__name__)
+    from backend.app.services.printer_diagnostic import PORT_MQTT, check_port
+
+    now = time.monotonic()
+    recovered = 0
+
+    for printer_id, client in list(printer_manager._clients.items()):
+        try:
+            if client.state.connected:
+                _connection_watchdog_last_attempt.pop(printer_id, None)
+                continue
+
+            # Time since the last inbound message is the age of the last known
+            # good session — no extra bookkeeping needed, and it is the same
+            # clock is_stale() reads. 0 means this client has never had one:
+            # that is the initial-connect path, where paho retrying is the
+            # correct and only behaviour, so leave it be.
+            last_msg = client._last_message_time
+            if not last_msg:
+                continue
+            offline_for = time.time() - last_msg
+            if offline_for < CONNECTION_WATCHDOG_OFFLINE_GRACE:
+                continue
+
+            last_attempt = _connection_watchdog_last_attempt.get(printer_id)
+            if last_attempt is not None and now - last_attempt < CONNECTION_WATCHDOG_RETRY_INTERVAL:
+                continue
+
+            if not await check_port(client.ip_address, PORT_MQTT):
+                # Switched off, unplugged, or off the network. Paho's retry is
+                # the right handler; say so at debug level and move on.
+                logger.debug(
+                    "[#2732] Printer %s offline for %.0fs and its MQTT port is not answering "
+                    "— leaving the reconnect to paho",
+                    printer_id,
+                    offline_for,
+                )
+                _connection_watchdog_last_attempt[printer_id] = now
+                continue
+
+            _connection_watchdog_last_attempt[printer_id] = now
+            recovered += 1
+            logger.warning(
+                "[#2732] Printer %s has been offline for %.0fs but answers on MQTT port %d — "
+                "rebuilding the client with a fresh session (last connect error: %s)",
+                printer_id,
+                offline_for,
+                PORT_MQTT,
+                client.last_connect_error or "none recorded",
+            )
+            # Async context, so this takes the hard-reset path: fresh client_id,
+            # paho's QoS 1 queue dropped. That matters — a project_file left
+            # unacked on the dead session would otherwise replay into the new
+            # one and trip 0500_4003 on the printer (#1136).
+            client.force_reconnect_stale_session(f"offline for {offline_for:.0f}s, port still answering")
+        except Exception as e:
+            logger.warning("[#2732] Connection watchdog failed for printer %s: %s", printer_id, e)
+
+    return recovered
+
+
+async def _connection_watchdog_loop():
+    logger = logging.getLogger(__name__)
+    # Let the initial connects settle before judging anyone offline.
+    await asyncio.sleep(CONNECTION_WATCHDOG_OFFLINE_GRACE)
+    while True:
+        try:
+            await _recover_dead_printer_sessions()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.warning("Connection watchdog sweep failed: %s", e)
+        await asyncio.sleep(CONNECTION_WATCHDOG_INTERVAL)
+
+
+def start_connection_watchdog():
+    global _connection_watchdog_task
+    if _connection_watchdog_task is None:
+        _connection_watchdog_task = asyncio.create_task(_connection_watchdog_loop())
+        logging.getLogger(__name__).info("Printer connection watchdog started")
+
+
+def stop_connection_watchdog():
+    global _connection_watchdog_task
+    if _connection_watchdog_task:
+        _connection_watchdog_task.cancel()
+        _connection_watchdog_task = None
+        _connection_watchdog_last_attempt.clear()
+        logging.getLogger(__name__).info("Printer connection watchdog stopped")
+
+
 # Camera stream orphan cleanup
 _camera_cleanup_task: asyncio.Task | None = None
 CAMERA_CLEANUP_INTERVAL = 60
@@ -6252,10 +7059,10 @@ async def lifespan(app: FastAPI):
 
         await tl_layer_change(printer_id, layer_num)
 
-        # #1867: bank a recent in-print frame so the FINISH-state finish-photo
-        # path (firmware that never emits stg_cur=22, e.g. A1 Mini) has a
-        # pre-swap image to fall back on instead of a live grab of the swapped
-        # plate. Layer-driven, so it freezes at the final object layer.
+        # #1867: bank a recent in-print frame so the finish-photo path has a
+        # pre-End-G-code image to use instead of a live grab of a swapped plate.
+        # #2547 added `on_print_progress` as a second driver — this one alone
+        # stops firing once the final layer begins.
         await _maybe_bank_inprint_frame(printer_id, layer_num)
 
         # First layer complete notification (layer_num >= 2 means layer 1 is done).
@@ -6298,6 +7105,21 @@ async def lifespan(app: FastAPI):
                 logging.getLogger(__name__).warning("First layer notification failed: %s", e)
 
     printer_manager.set_layer_change_callback(on_layer_change)
+
+    async def on_print_progress(printer_id: int, percent: int):
+        """#2547: keep the in-print frame bank fresh through the final layer.
+
+        `on_layer_change` stops the moment the last layer starts, which on the
+        H2C capture that closed #2547 left the bank stale for the three minutes
+        that layer took. Progress is the only field that keeps advancing there,
+        and it freezes before the End G-code runs — so banking on it stays
+        inside the print and never sees a swapped plate.
+        """
+        client = printer_manager.get_client(printer_id)
+        state = client.state if client else None
+        await _maybe_bank_inprint_frame(printer_id, state.layer_num if state else 0)
+
+    printer_manager.set_print_progress_callback(on_print_progress)
 
     # Event-driven bed cooldown: fires whenever bed_temper arrives via MQTT
     async def on_bed_temp_update(printer_id: int, bed_temp: float):
@@ -6520,6 +7342,21 @@ async def lifespan(app: FastAPI):
     # Start camera stream orphan cleanup
     start_camera_cleanup()
 
+    # Start the backstop for MQTT sessions paho has stopped recovering (#2732)
+    start_connection_watchdog()
+
+    # One-shot sweep for timelapse session directories orphaned by a crash
+    # or restart that happened mid-print (in-memory session tracking can't
+    # survive that, and nothing else reaps the leftover frames/output file)
+    try:
+        from backend.app.services.layer_timelapse import cleanup_orphaned_timelapse_sessions
+
+        removed = cleanup_orphaned_timelapse_sessions()
+        if removed:
+            logging.getLogger(__name__).info("Removed %d orphaned timelapse session artifact(s)", removed)
+    except Exception as e:
+        logging.getLogger(__name__).warning("Orphaned timelapse session cleanup failed: %s", e)
+
     # Start expected-print TTL eviction (prevents memory leak when prints are
     # registered but on_print_start never fires)
     start_expected_prints_cleanup()
@@ -6560,6 +7397,7 @@ async def lifespan(app: FastAPI):
     stop_runtime_tracking()
     stop_spoolbuddy_watchdog()
     stop_camera_cleanup()
+    stop_connection_watchdog()
     from backend.app.services.loop_watchdog import stop_loop_watchdog
 
     stop_loop_watchdog()

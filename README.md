@@ -57,6 +57,7 @@
   <a href="https://hackaday.com/2026/06/13/bambuddy-says-bye-to-bambu-lab-cloud-services/"><img src="https://img.shields.io/badge/Hackaday-Read-F2A724?style=flat-square&labelColor=000000" alt="Hackaday"></a>
   <a href="https://www.xda-developers.com/finally-have-full-control-bambu-lab-printer-ditched-bambu-cloud/"><img src="https://img.shields.io/badge/XDA--Developers-Read-C8102E?style=flat-square" alt="XDA-Developers"></a>
   <a href="https://www.howtogeek.com/free-your-bambu-lab-3d-printer-from-the-cloud/"><img src="https://img.shields.io/badge/How--To%20Geek-Read-33A6CA?style=flat-square" alt="How-To Geek"></a>
+  <a href="https://www.makeuseof.com/free-browser-tool-beats-bambu-lab-at-own-game/"><img src="https://img.shields.io/badge/MakeUseOf-Read-E02D2D?style=flat-square" alt="MakeUseOf"></a>
   <a href="https://www.fabbaloo.com/news/bambuddy-launches-as-open-source-alternative-to-bambu-labs-cloud"><img src="https://img.shields.io/badge/Fabbaloo-Read-F77B0F?style=flat-square" alt="Fabbaloo"></a>
   <a href="https://itsfoss.com/news/bambuddy-self-hosted-bambu-lab-alternative/"><img src="https://img.shields.io/badge/It's%20FOSS-Read-00B5AD?style=flat-square" alt="It's FOSS"></a>
   <a href="https://www.igorslab.de/en/bambuddy-the-silent-alternative-to-the-bamboo-cloud/"><img src="https://img.shields.io/badge/Igor's%20Lab-Read-E10000?style=flat-square" alt="Igor's Lab"></a>
@@ -155,6 +156,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 
 ### 📊 Monitoring & Control
 - Real-time printer status via WebSocket
+- **Print progress in the browser tab** — optional (off by default, toggle under Settings → Appearance): shows the soonest-finishing print's percentage in the tab title and a progress-ring favicon in your theme accent colour
 - Live camera streaming (MJPEG) & snapshots with multi-viewer support — most Bambu printers only allow one upstream connection, so Bambuddy fans out a single shared stream to all browser tabs / cards / overlays
 - **Cam Wall view** — Toggle the Printers page from cards into a responsive grid of camera tiles for at-a-glance monitoring across the whole farm. On-screen tiles stream live up to a configurable cap (default 4) so RPi installs stay sustainable; the rest fall back to periodic snapshot polling, and off-screen tiles pause entirely. Per-user settings (live cap, snapshot interval); click any tile to open the floating viewer or the dedicated camera window depending on your existing camera-view preference
 - **Long-lived camera tokens** for Home Assistant / Frigate / kiosks — mint a token from Settings → API Keys, paste it once, capped at 365 days, revocable at any time (no infinite tokens — leaked permanent tokens are unsafe by design)
@@ -182,7 +184,7 @@ Optional but recommended — drop the [`slicer-api/` Compose stack](slicer-api/R
 - Configurable drying presets per filament type (temperature & duration for AMS 2 Pro and AMS-HT)
 - **Per-filament humidity threshold** — Set a different humidity trigger per filament type (e.g. Nylon at 20%, PLA at 60%, ASA at 30%) instead of one global value. Mixed-material AMS units use the most-restrictive threshold across the loaded spools so a single PLA + Nylon unit triggers at Nylon's level. Drives both the auto-drying scheduler and the hourly humidity alarm so the two can never disagree on whether a unit is "too humid"
 - Dual external spool support for H2D (Ext-L / Ext-R)
-- **HMS error monitoring with one-click actions** — Live HMS error log with history and the same Resume / Stop / Continue / Retry / Check Assistant / Don't Remind Me action buttons BambuStudio shows. Click and the matching MQTT command goes back to the printer — no more walking to the device just to dismiss a paused-print dialog. Catalog covers every Bambu model (X1 / P1 / A1 / H2 series); buttons are translated in all 11 supported locales
+- **HMS error monitoring with one-click actions** — Live HMS error log with history and the same Resume / Stop / Continue / Retry / Check Assistant / Don't Remind Me action buttons BambuStudio shows. Click and the matching MQTT command goes back to the printer — no more walking to the device just to dismiss a paused-print dialog. Catalog covers every Bambu model (X1 / P1 / A1 / H2 series); buttons are translated in all 13 supported locales
 - **Heater history charts** — Bambuddy logs nozzle, bed, and chamber readings every minute and surfaces them via a tiny chart icon on each heater tile in the printer card. Click for a per-heater modal with current / average / min / max stats, target overlay, and a 6h / 24h / 48h / 7d time range — works on read-only chamber sensors (X1C / P2S) too. AMS humidity and temperature get the same treatment (already shipped).
 - Print success rates & trends
 - Filament usage tracking

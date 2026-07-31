@@ -878,6 +878,113 @@ class TestHomeAssistantProvider:
             assert payload["message"] == "Test Message"
 
     @pytest.mark.asyncio
+    async def test_send_homeassistant_custom_data_merged(self, service):
+        """Custom service-data (#1441) is forwarded as HA's nested "data" object
+        so mobile-app push options (priority, ttl, channel, ...) reach the
+        notify service."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        mock_db = AsyncMock()
+
+        with (
+            patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client,
+            patch(
+                "backend.app.api.routes.settings.get_homeassistant_settings",
+                new_callable=AsyncMock,
+            ) as mock_ha_settings,
+        ):
+            mock_get_client.return_value = mock_client
+            mock_ha_settings.return_value = {
+                "ha_url": "http://ha.local:8123",
+                "ha_token": "test-token-123",
+                "ha_enabled": True,
+            }
+
+            config = {
+                "service": "notify.mobile_app_myphone",
+                "data": '{"priority": "high", "ttl": 0, "channel": "3D Printing"}',
+            }
+            success, _ = await service._send_homeassistant(config, "Title", "Body", db=mock_db)
+
+            assert success is True
+            call_args = mock_client.post.call_args
+            assert call_args[0][0] == "http://ha.local:8123/api/services/notify/mobile_app_myphone"
+            payload = call_args.kwargs.get("json") or call_args[1].get("json")
+            assert payload["data"] == {"priority": "high", "ttl": 0, "channel": "3D Printing"}
+            # ttl must survive as a number, not a string — that's why the
+            # field is JSON rather than key=value lines.
+            assert payload["data"]["ttl"] == 0
+
+    @pytest.mark.asyncio
+    async def test_send_homeassistant_without_data_omits_key(self, service):
+        """Without configured data the payload carries no "data" key — the
+        default persistent_notification.create schema rejects unknown keys."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        mock_db = AsyncMock()
+
+        with (
+            patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client,
+            patch(
+                "backend.app.api.routes.settings.get_homeassistant_settings",
+                new_callable=AsyncMock,
+            ) as mock_ha_settings,
+        ):
+            mock_get_client.return_value = mock_client
+            mock_ha_settings.return_value = {
+                "ha_url": "http://ha.local:8123",
+                "ha_token": "test-token-123",
+                "ha_enabled": True,
+            }
+
+            success, _ = await service._send_homeassistant({}, "Title", "Body", db=mock_db)
+
+            assert success is True
+            payload = mock_client.post.call_args.kwargs.get("json") or mock_client.post.call_args[1].get("json")
+            assert "data" not in payload
+
+    @pytest.mark.asyncio
+    async def test_send_homeassistant_invalid_data_rejected(self, service):
+        """Malformed JSON and non-object JSON in the data field fail loudly
+        instead of sending a half-built payload."""
+        mock_db = AsyncMock()
+
+        with (
+            patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client,
+            patch(
+                "backend.app.api.routes.settings.get_homeassistant_settings",
+                new_callable=AsyncMock,
+            ) as mock_ha_settings,
+        ):
+            mock_client = AsyncMock()
+            mock_get_client.return_value = mock_client
+            mock_ha_settings.return_value = {
+                "ha_url": "http://ha.local:8123",
+                "ha_token": "test-token-123",
+                "ha_enabled": True,
+            }
+
+            success, message = await service._send_homeassistant(
+                {"data": "{priority: high}"}, "Title", "Body", db=mock_db
+            )
+            assert success is False
+            assert "Invalid JSON" in message
+
+            success, message = await service._send_homeassistant({"data": '["a", "b"]'}, "Title", "Body", db=mock_db)
+            assert success is False
+            assert "JSON object" in message
+
+            mock_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_send_homeassistant_no_db_no_env(self, service):
         """Verify HA provider fails gracefully without DB or env vars."""
         with patch.dict("os.environ", {}, clear=True):
@@ -977,6 +1084,129 @@ class TestHomeAssistantProvider:
         with patch.object(service, "_send_homeassistant", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = (True, "OK")
 
+            success, _ = await service._send_to_provider(provider, "Title", "Message", db=AsyncMock())
+
+        assert success is True
+        mock_send.assert_called_once()
+
+
+class TestBarkProvider:
+    """Bark (iOS push) provider (#1495)."""
+
+    @pytest.fixture
+    def service(self):
+        return NotificationService()
+
+    def _client_returning(self, status_code: int, json_body=None, text: str = ""):
+        mock_response = MagicMock()
+        mock_response.status_code = status_code
+        mock_response.text = text
+        if json_body is not None:
+            mock_response.json = MagicMock(return_value=json_body)
+        else:
+            mock_response.json = MagicMock(side_effect=ValueError("not json"))
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        return mock_client
+
+    @pytest.mark.asyncio
+    async def test_send_bark_success_default_server(self, service):
+        """Minimal config posts to the official relay with device_key/title/body."""
+        mock_client = self._client_returning(200, {"code": 200, "message": "success"})
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            success, _ = await service._send_bark({"device_key": "abc123"}, "Title", "Body")
+
+        assert success is True
+        call_args = mock_client.post.call_args
+        assert call_args[0][0] == "https://api.day.app/push"
+        payload = call_args.kwargs.get("json")
+        assert payload == {"device_key": "abc123", "title": "Title", "body": "Body"}
+
+    @pytest.mark.asyncio
+    async def test_send_bark_options_and_custom_server(self, service):
+        """group/sound/level are forwarded; an unknown level is dropped rather
+        than sent; a self-hosted server URL (with trailing slash) is used."""
+        mock_client = self._client_returning(200, {"code": 200})
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            config = {
+                "device_key": "abc123",
+                "server": "https://bark.example.com/",
+                "group": "Bambuddy",
+                "sound": "minuet",
+                "level": "timeSensitive",
+            }
+            success, _ = await service._send_bark(config, "Title", "Body")
+
+        assert success is True
+        call_args = mock_client.post.call_args
+        assert call_args[0][0] == "https://bark.example.com/push"
+        payload = call_args.kwargs.get("json")
+        assert payload["group"] == "Bambuddy"
+        assert payload["sound"] == "minuet"
+        assert payload["level"] == "timeSensitive"
+
+        mock_client.post.reset_mock()
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            await service._send_bark({"device_key": "abc123", "level": "shouty"}, "Title", "Body")
+        assert "level" not in mock_client.post.call_args.kwargs.get("json")
+
+    @pytest.mark.asyncio
+    async def test_send_bark_missing_device_key(self, service):
+        mock_client = self._client_returning(200, {"code": 200})
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            success, message = await service._send_bark({}, "Title", "Body")
+
+        assert success is False
+        assert "Device key" in message
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_send_bark_error_in_200_body(self, service, caplog):
+        """bark-server can wrap a failure in HTTP 200; the body code must win.
+
+        Only the numeric code is returned — the server is caller-supplied
+        (bark is self-hostable), so its free-text message is the same read
+        channel the HTTP-failure path closes. The text goes to the debug log.
+        """
+        mock_client = self._client_returning(200, {"code": 400, "message": "device token invalid"})
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            with caplog.at_level("DEBUG", logger="backend.app.services.notification_service"):
+                success, message = await service._send_bark({"device_key": "bad"}, "Title", "Body")
+
+        assert success is False
+        assert "Bark error 400" in message
+        assert "device token invalid" not in message
+        assert "device token invalid" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_send_bark_http_error(self, service):
+        mock_client = self._client_returning(400, None, text="failed to get device token")
+
+        with patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client:
+            mock_get_client.return_value = mock_client
+            success, message = await service._send_bark({"device_key": "bad"}, "Title", "Body")
+
+        assert success is False
+        assert "HTTP 400" in message
+
+    @pytest.mark.asyncio
+    async def test_send_to_provider_dispatches_bark(self, service):
+        provider = MagicMock()
+        provider.provider_type = "bark"
+        provider.config = json.dumps({"device_key": "abc123"})
+        provider.quiet_hours_enabled = False
+
+        with patch.object(service, "_send_bark", new_callable=AsyncMock) as mock_send:
+            mock_send.return_value = (True, "OK")
             success, _ = await service._send_to_provider(provider, "Title", "Message", db=AsyncMock())
 
         assert success is True
@@ -2254,10 +2484,15 @@ class TestNtfyOutbound:
         assert "<!DOCTYPE" not in detail
 
     @pytest.mark.asyncio
-    async def test_ntfy_normal_403_still_surfaces_body(self, service):
-        """A non-Cloudflare 403 (e.g. ntfy auth fail) must keep showing
-        the original body so the user can debug the real error — we
-        only intercept the Cloudflare-challenge shape."""
+    async def test_ntfy_normal_403_is_not_misread_as_a_cloudflare_challenge(self, service, caplog):
+        """A non-Cloudflare 403 (e.g. ntfy auth fail) must report the real
+        status rather than the Cloudflare-challenge advice — we only intercept
+        the challenge shape.
+
+        The origin's body is no longer returned to the API caller: the ntfy
+        server URL is caller-supplied, so echoing it made this an SSRF read
+        primitive. It goes to the debug log instead.
+        """
         import httpx
 
         mock_response = httpx.Response(
@@ -2269,7 +2504,10 @@ class TestNtfyOutbound:
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value=mock_response)
 
-        with patch.object(service, "_get_client", AsyncMock(return_value=mock_client)):
+        with (
+            patch.object(service, "_get_client", AsyncMock(return_value=mock_client)),
+            caplog.at_level("DEBUG", logger="backend.app.services.notification_service"),
+        ):
             ok, detail = await service._send_ntfy(
                 {"server": "https://ntfy.sh", "topic": "alerts", "auth_token": "bad"},
                 title="t",
@@ -2278,16 +2516,19 @@ class TestNtfyOutbound:
 
         assert ok is False
         assert "Cloudflare" not in detail
-        assert "invalid auth token" in detail
-        assert detail.startswith("HTTP 403:")
+        assert detail.startswith("HTTP 403")
+        assert "invalid auth token" not in detail
+        assert "invalid auth token" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_ntfy_origin_error_through_cloudflare_is_not_misclassified(self, service):
+    async def test_ntfy_origin_error_through_cloudflare_is_not_misclassified(self, service, caplog):
         """Cloudflare adds Server: cloudflare to EVERY proxied response,
         including legitimate origin errors. A real 401 "wrong token"
         from an ntfy server that happens to sit behind Cloudflare must
-        still surface the origin's actual error body — we must not flip
+        still be reported as the origin's status — we must not flip
         every CF-fronted 4xx into a "your Cloudflare is blocking" message.
+
+        As above, the origin body reaches the debug log rather than the caller.
         """
         import httpx
 
@@ -2305,7 +2546,10 @@ class TestNtfyOutbound:
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value=mock_response)
 
-        with patch.object(service, "_get_client", AsyncMock(return_value=mock_client)):
+        with (
+            patch.object(service, "_get_client", AsyncMock(return_value=mock_client)),
+            caplog.at_level("DEBUG", logger="backend.app.services.notification_service"),
+        ):
             ok, detail = await service._send_ntfy(
                 {"server": "https://ntfy.example", "topic": "alerts", "auth_token": "wrong"},
                 title="t",
@@ -2314,8 +2558,9 @@ class TestNtfyOutbound:
 
         assert ok is False
         assert "Cloudflare" not in detail
-        assert "unauthorized" in detail
-        assert detail.startswith("HTTP 401:")
+        assert detail.startswith("HTTP 401")
+        assert "unauthorized" not in detail
+        assert "unauthorized" in caplog.text
 
     @pytest.mark.asyncio
     async def test_ntfy_cloudflare_cf_mitigated_header_alone_triggers(self, service):

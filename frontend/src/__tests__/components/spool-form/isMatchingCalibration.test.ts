@@ -12,6 +12,8 @@ import {
   isMatchingCalibration,
   toFilamentId,
   isGenericFilamentId,
+  materialForGenericFilamentId,
+  genericFilamentIdMatchesMaterial,
 } from '../../../components/spool-form/utils';
 
 describe('toFilamentId', () => {
@@ -70,6 +72,37 @@ describe('isGenericFilamentId', () => {
   });
 });
 
+describe('materialForGenericFilamentId (#2710)', () => {
+  it('resolves the material each generic id stands for', () => {
+    expect(materialForGenericFilamentId('GFL99')).toBe('PLA');
+    expect(materialForGenericFilamentId('GFG99')).toBe('PETG');
+    expect(materialForGenericFilamentId('gfu99')).toBe('TPU');
+  });
+
+  it('returns empty for specific ids and for nothing', () => {
+    expect(materialForGenericFilamentId('GFL05')).toBe('');
+    expect(materialForGenericFilamentId(null)).toBe('');
+    expect(materialForGenericFilamentId('')).toBe('');
+  });
+});
+
+describe('genericFilamentIdMatchesMaterial (#2710)', () => {
+  it('agrees when the generic id describes that material', () => {
+    expect(genericFilamentIdMatchesMaterial('GFL99', 'PLA')).toBe(true);
+    expect(genericFilamentIdMatchesMaterial('GFL99', 'pla')).toBe(true);
+  });
+
+  it('treats Nylon and PA as the same material', () => {
+    expect(genericFilamentIdMatchesMaterial('GFN99', 'Nylon')).toBe(true);
+  });
+
+  it('rejects a mismatched material, a specific id, or a missing material', () => {
+    expect(genericFilamentIdMatchesMaterial('GFL99', 'PETG')).toBe(false);
+    expect(genericFilamentIdMatchesMaterial('GFL05', 'PLA')).toBe(false);
+    expect(genericFilamentIdMatchesMaterial('GFL99', '')).toBe(false);
+  });
+});
+
 describe('isMatchingCalibration (#1688)', () => {
   const formData = {
     material: 'PETG',
@@ -98,14 +131,56 @@ describe('isMatchingCalibration (#1688)', () => {
     ).toBe(true);
   });
 
-  it('skips id-match for generic GFx99 ids and falls through to name match', () => {
-    // GFL99 = generic PLA, shared across many real filaments. Even if the
-    // spool stored GFL99, name parsing must drive the decision.
+  it('skips id-match when a generic id contradicts the spool material', () => {
+    // GFL99 is generic *PLA* but the spool says PETG — the ids agreeing is not
+    // enough, the material has to agree too. Name parsing then drives the
+    // decision and rejects it.
     const result = isMatchingCalibration(
       { name: 'Random thing with no PETG in it', filament_id: 'GFL99' },
       { ...formData, slicer_filament: 'GFL99' },
     );
     expect(result).toBe(false);
+  });
+
+  it('matches a generic id when the material agrees and the spool claims no brand (#2710)', () => {
+    // Reporter's printer: every K-profile calibrated under Generic PLA and
+    // named after the colour. No name parsing can tie "Dark Brown" to PLA, so
+    // the shared GFL99 is the only signal there is.
+    expect(
+      isMatchingCalibration(
+        { name: 'Dark Brown', filament_id: 'GFL99' },
+        { material: 'PLA', brand: '', subtype: '', slicer_filament: 'GFL99' },
+      ),
+    ).toBe(true);
+  });
+
+  it('treats "Generic" as no brand on the generic id path', () => {
+    expect(
+      isMatchingCalibration(
+        { name: 'Marble', filament_id: 'GFL99' },
+        { material: 'PLA', brand: 'Generic', subtype: '', slicer_filament: 'GFL99' },
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps generic id matches brand-specific when the spool names a brand', () => {
+    // A spool that says "Sunlu" should still get Sunlu-specific suggestions
+    // rather than the printer's whole generic-PLA table.
+    expect(
+      isMatchingCalibration(
+        { name: 'Dark Brown', filament_id: 'GFL99' },
+        { material: 'PLA', brand: 'Sunlu', subtype: '', slicer_filament: 'GFL99' },
+      ),
+    ).toBe(false);
+  });
+
+  it('accepts Nylon/PA as the same material on the generic id path', () => {
+    expect(
+      isMatchingCalibration(
+        { name: 'spool-of-doom', filament_id: 'GFN99' },
+        { material: 'Nylon', brand: '', subtype: '', slicer_filament: 'GFN99' },
+      ),
+    ).toBe(true);
   });
 
   it('falls through to name match when spool has no slicer_filament', () => {

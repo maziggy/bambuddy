@@ -10,9 +10,11 @@ import math
 import zipfile
 
 from backend.app.utils.threemf_tools import (
+    expand_to_project_slots,
     extract_bed_type_from_3mf,
     extract_embedded_presets_from_3mf,
     extract_filament_usage_from_3mf,
+    extract_max_z_height_from_3mf,
     extract_plate_extruder_set_from_3mf,
     extract_print_time_from_3mf,
     extract_project_filaments_from_3mf,
@@ -478,6 +480,111 @@ class TestExtractProjectFilamentsFrom3mf:
         proj = {"filament_type": [], "filament_colour": []}
         with _make_3mf_with({"Metadata/project_settings.config": json.dumps(proj)}) as zf:
             assert extract_project_filaments_from_3mf(zf) == []
+
+
+# ---------------------------------------------------------------------------
+# Tests for expand_to_project_slots — #2712
+# ---------------------------------------------------------------------------
+
+
+class TestExpandToProjectSlots:
+    """The slice modal's filament list is positional: index 0 is slot 1, all
+    the way through to the ``filament_N.json`` parts handed to the slicer.
+
+    A MakerWorld source that carries slice_info but paints with slot 4 alone
+    used to yield a one-row list, so the user's single pick was bound to slot
+    1 and slot 4 — the slot that actually prints — kept the source's embedded
+    default. Picking PETG produced a PLA print.
+    """
+
+    PROJECT = json.dumps(
+        {
+            "filament_type": ["PLA", "PLA", "PLA", "PLA"],
+            "filament_colour": ["#38CC0A", "#161616", "#898989", "#898989"],
+        }
+    )
+
+    def test_a_single_used_slot_still_produces_a_full_positional_list(self):
+        """The reported file: four project slots, only slot 4 printed."""
+        used = [
+            {
+                "slot_id": 4,
+                "type": "PLA",
+                "color": "#898989",
+                "used_grams": 105.9,
+                "used_meters": 35.51,
+                "tray_info_idx": "GFL99",
+                "used_in_plate": True,
+            }
+        ]
+        with _make_3mf_with({"Metadata/project_settings.config": self.PROJECT}) as zf:
+            out = expand_to_project_slots(zf, used)
+
+        assert [f["slot_id"] for f in out] == [1, 2, 3, 4]
+        assert [f["used_in_plate"] for f in out] == [False, False, False, True]
+
+    def test_the_used_row_keeps_its_usage_figures(self):
+        """The modal shows the real weight and colour, and the print path
+        downstream reads ``tray_info_idx`` — none of it may be flattened into
+        a zeroed project row."""
+        used = [
+            {
+                "slot_id": 4,
+                "type": "PETG",
+                "color": "#FF0000",
+                "used_grams": 105.9,
+                "used_meters": 35.51,
+                "tray_info_idx": "GFL99",
+                "used_in_plate": True,
+            }
+        ]
+        with _make_3mf_with({"Metadata/project_settings.config": self.PROJECT}) as zf:
+            out = expand_to_project_slots(zf, used)
+
+        slot4 = out[3]
+        assert slot4["used_grams"] == 105.9
+        assert slot4["tray_info_idx"] == "GFL99"
+        # Resolved from the slice, not the project's stale PLA/#898989.
+        assert (slot4["type"], slot4["color"]) == ("PETG", "#FF0000")
+
+    def test_padding_rows_carry_the_project_type_and_colour(self):
+        """They drive the modal's pre-pick for the disabled rows."""
+        used = [{"slot_id": 4, "type": "PLA", "color": "#898989", "used_grams": 1.0, "used_meters": 1.0}]
+        with _make_3mf_with({"Metadata/project_settings.config": self.PROJECT}) as zf:
+            out = expand_to_project_slots(zf, used)
+
+        assert (out[0]["type"], out[0]["color"]) == ("PLA", "#38CC0A")
+        assert out[0]["used_grams"] == 0
+
+    def test_every_slot_used_is_a_shape_change_only(self):
+        used = [
+            {"slot_id": i, "type": "PLA", "color": "", "used_grams": 5.0, "used_meters": 1.0, "used_in_plate": True}
+            for i in (1, 2, 3, 4)
+        ]
+        with _make_3mf_with({"Metadata/project_settings.config": self.PROJECT}) as zf:
+            out = expand_to_project_slots(zf, used)
+
+        assert len(out) == 4
+        assert all(f["used_in_plate"] for f in out)
+        assert all(f["used_grams"] == 5.0 for f in out)
+
+    def test_a_used_slot_beyond_the_project_list_is_kept(self):
+        """Dropping it would recreate the original bug on a file whose
+        project settings and slice_info disagree — the one slot that prints
+        would vanish from the list entirely."""
+        used = [{"slot_id": 9, "type": "PLA", "color": "", "used_grams": 5.0, "used_meters": 1.0}]
+        with _make_3mf_with({"Metadata/project_settings.config": self.PROJECT}) as zf:
+            out = expand_to_project_slots(zf, used)
+
+        assert [f["slot_id"] for f in out] == [1, 2, 3, 4, 9]
+        assert out[-1]["used_in_plate"] is True
+
+    def test_returns_the_input_unchanged_without_project_settings(self):
+        """Nothing to widen against — a narrow list still prints correctly,
+        an invented one might not."""
+        used = [{"slot_id": 4, "type": "PLA", "color": "", "used_grams": 5.0, "used_meters": 1.0}]
+        with _make_3mf_with({"placeholder.txt": "hi"}) as zf:
+            assert expand_to_project_slots(zf, used) == used
 
 
 # ---------------------------------------------------------------------------
@@ -1198,3 +1305,90 @@ class TestExtractPlateMetadataFrom3mf:
         assert meta.filament_usage == []
         # Missing file must not create a sticky cache entry (it may appear later).
         assert spy.call_count == 2
+
+
+def _make_plate_3mf(tmp_path, gcode_by_name: dict[str, str], name: str = "print.3mf"):
+    """Write a 3MF containing the given plate G-code members."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        for member, content in gcode_by_name.items():
+            zf.writestr(member, content)
+    buffer.seek(0)
+    path = tmp_path / name
+    path.write_bytes(buffer.read())
+    return path
+
+
+def _header(**values: str) -> str:
+    lines = ["; HEADER_BLOCK_START"]
+    lines += [f"; {key.replace('_', ' ')}: {value}" for key, value in values.items()]
+    lines.append("; HEADER_BLOCK_END")
+    lines.append("G1 X0 Y0")
+    return "\n".join(lines)
+
+
+class TestExtractMaxZHeightFrom3mf:
+    """#2547: the print's top Z, used to command the plate back into camera
+    framing before the finish photo.
+
+    This value becomes the target of a real Z move, so "don't know" has to be
+    reported as None rather than defaulted — a wrong height would drive the
+    nozzle into the part.
+    """
+
+    def test_reads_max_z_height_from_the_plate_header(self, tmp_path):
+        path = _make_plate_3mf(
+            tmp_path,
+            {"Metadata/plate_1.gcode": _header(max_z_height="16.00", total_layer_number="80")},
+        )
+        assert extract_max_z_height_from_3mf(path, 1) == 16.0
+
+    def test_picks_the_requested_plate(self, tmp_path):
+        path = _make_plate_3mf(
+            tmp_path,
+            {
+                "Metadata/plate_1.gcode": _header(max_z_height="16.00"),
+                "Metadata/plate_2.gcode": _header(max_z_height="42.50"),
+            },
+        )
+        assert extract_max_z_height_from_3mf(path, 2) == 42.5
+
+    def test_falls_back_to_the_only_gcode_when_the_plate_name_does_not_match(self, tmp_path):
+        """Files from slicers that don't use Bambu's plate naming still resolve."""
+        path = _make_plate_3mf(tmp_path, {"whatever.gcode": _header(max_z_height="7.25")})
+        assert extract_max_z_height_from_3mf(path, 3) == 7.25
+
+    def test_missing_header_key_returns_none(self, tmp_path):
+        path = _make_plate_3mf(tmp_path, {"Metadata/plate_1.gcode": _header(total_layer_number="80")})
+        assert extract_max_z_height_from_3mf(path, 1) is None
+
+    def test_non_numeric_value_returns_none(self, tmp_path):
+        path = _make_plate_3mf(tmp_path, {"Metadata/plate_1.gcode": _header(max_z_height="tall")})
+        assert extract_max_z_height_from_3mf(path, 1) is None
+
+    def test_zero_and_negative_are_treated_as_unknown(self, tmp_path):
+        """Passed through, either would become a Z move toward the bed."""
+        zero = _make_plate_3mf(tmp_path, {"Metadata/plate_1.gcode": _header(max_z_height="0")}, "z.3mf")
+        negative = _make_plate_3mf(tmp_path, {"Metadata/plate_1.gcode": _header(max_z_height="-3")}, "n.3mf")
+        assert extract_max_z_height_from_3mf(zero, 1) is None
+        assert extract_max_z_height_from_3mf(negative, 1) is None
+
+    def test_no_gcode_member_returns_none(self, tmp_path):
+        path = _make_plate_3mf(tmp_path, {"Metadata/slice_info.config": "<config/>"})
+        assert extract_max_z_height_from_3mf(path, 1) is None
+
+    def test_unreadable_file_returns_none(self, tmp_path):
+        path = tmp_path / "broken.3mf"
+        path.write_text("not a zip")
+        assert extract_max_z_height_from_3mf(path, 1) is None
+
+    def test_missing_file_returns_none(self, tmp_path):
+        assert extract_max_z_height_from_3mf(tmp_path / "nope.3mf", 1) is None
+
+    def test_only_the_header_is_inflated(self, tmp_path):
+        """A sliced plate is routinely tens of MB; reading it whole to reach ~40
+        header lines would stall the finish-photo path. The header is read from
+        a bounded prefix, so a huge body must not change the answer."""
+        gcode = _header(max_z_height="99.9") + "\n" + ("G1 X1 Y1 E0.1\n" * 400_000)
+        path = _make_plate_3mf(tmp_path, {"Metadata/plate_1.gcode": gcode})
+        assert extract_max_z_height_from_3mf(path, 1) == 99.9

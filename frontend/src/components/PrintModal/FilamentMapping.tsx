@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Circle, Check, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Palette } from 'lucide-react';
@@ -24,11 +24,62 @@ export function FilamentMapping({
   forceColorMatch,
   onForceColorMatchChange,
   plateLabel,
+  archiveAmsMapping,
 }: FilamentMappingProps & { defaultExpanded?: boolean }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  // "Mapping" toggle (only shown when the archive has a saved slicer pick):
+  // ON selects every slot straight from `archiveAmsMapping`, bypassing the
+  // type/color auto-match entirely — same mechanism as a manual per-slot
+  // pick (`manualMappings`), just applied to every required slot at once.
+  // OFF removes exactly those overrides so the panel falls back to its
+  // normal auto-match, without touching any *other* manual picks the user
+  // made by hand.
+  const [usingArchiveMapping, setUsingArchiveMapping] = useState(false);
+  // Which slot IDs the ON branch below actually wrote into manualMappings —
+  // so OFF can undo exactly those and leave any *other* manual pick the user
+  // made by hand (before or after pressing the button) untouched.
+  const appliedSlotIdsRef = useRef<number[]>([]);
+
+  // Reset the toggle whenever the saved mapping it would apply changes — a
+  // different printer, plate selection, or archive entirely. Without this
+  // the button can read ON (green) from a previous printer/archive/plate
+  // even though it was never pressed against the mapping currently in scope.
+  useEffect(() => {
+    setUsingArchiveMapping(false);
+    appliedSlotIdsRef.current = [];
+  }, [archiveAmsMapping, plateLabel, printerId]);
+
+  const toggleArchiveMapping = () => {
+    if (!archiveAmsMapping || !filamentReqs?.filaments) return;
+    if (usingArchiveMapping) {
+      const next = { ...manualMappings };
+      for (const slotId of appliedSlotIdsRef.current) {
+        delete next[slotId];
+      }
+      onManualMappingChange(next);
+      appliedSlotIdsRef.current = [];
+      setUsingArchiveMapping(false);
+      return;
+    }
+    const next = { ...manualMappings };
+    const appliedSlotIds: number[] = [];
+    for (const req of filamentReqs.filaments) {
+      const idx = req.slot_id - 1;
+      // A negative value (e.g. the external spool sentinel) means the
+      // slicer didn't resolve this filament to an AMS tray — leave that
+      // slot's existing auto-match/manual pick alone rather than clearing it.
+      if (req.slot_id > 0 && idx >= 0 && idx < archiveAmsMapping.length && archiveAmsMapping[idx] >= 0) {
+        next[req.slot_id] = archiveAmsMapping[idx];
+        appliedSlotIds.push(req.slot_id);
+      }
+    }
+    onManualMappingChange(next);
+    appliedSlotIdsRef.current = appliedSlotIds;
+    setUsingArchiveMapping(true);
+  };
 
   // Fetch printer status
   const { data: printerStatus } = useQuery({
@@ -211,16 +262,33 @@ export function FilamentMapping({
       {isExpanded && (
         <div className="mt-2 bg-bambu-dark rounded-lg p-3 space-y-2">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-bambu-gray">Click to change slot assignment</span>
-            <button
-              type="button"
-              onClick={handleRefresh}
-              className="flex items-center gap-1 px-2 py-0.5 text-xs rounded border border-bambu-gray/30 hover:border-bambu-gray hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray hover:text-white"
-              disabled={isRefreshing}
-            >
-              <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-              <span>Re-read</span>
-            </button>
+            <span className="text-xs text-bambu-gray">{t('printModal.clickToChangeSlot')}</span>
+            <div className="flex items-center gap-1.5">
+              {archiveAmsMapping && (
+                <button
+                  type="button"
+                  onClick={toggleArchiveMapping}
+                  title={t('printModal.useArchiveMappingTooltip')}
+                  className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded border transition-colors ${
+                    usingArchiveMapping
+                      ? 'border-bambu-green bg-bambu-green/10 text-bambu-green'
+                      : 'border-bambu-gray/30 hover:border-bambu-gray hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white'
+                  }`}
+                >
+                  <Check className="w-3 h-3" />
+                  <span>{t('printModal.useArchiveMapping')}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleRefresh}
+                className="flex items-center gap-1 px-2 py-0.5 text-xs rounded border border-bambu-gray/30 hover:border-bambu-gray hover:bg-bambu-dark-tertiary transition-colors text-bambu-gray hover:text-white"
+                disabled={isRefreshing}
+              >
+                <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span>{t('printModal.reRead')}</span>
+              </button>
+            </div>
           </div>
           {filamentComparison.map((item, idx) => {
             // #1717: surface the same per-slot force-color-match checkbox here

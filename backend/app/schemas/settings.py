@@ -1,8 +1,22 @@
 import json
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from backend.app.schemas.print_queue import TriState
+
+# Outbound service URLs validated on save, so a bad value is rejected at
+# configuration time with a clear message rather than failing opaquely at
+# request time. Every one of these services is commonly self-hosted on the same
+# host or LAN as Bambuddy, so the LAN-service policy applies: loopback and
+# RFC-1918 stay permitted, while cloud-metadata endpoints, numeric-encoded IPs,
+# IPv4-mapped IPv6 and non-HTTP schemes are rejected. See
+# ``_url_safety.assert_safe_lan_service_url``.
+#
+# Module-level rather than a class attribute so the CI backstop in
+# tests/unit/test_outbound_url_ssrf_guards.py can import the real list and
+# cannot drift from it. Any new outbound-URL setting belongs here (or, if it
+# must be reachable on the public internet, on the stricter OIDC guard).
+LAN_SERVICE_URL_SETTINGS = ("ha_url", "obico_ml_url", "orcaslicer_api_url", "bambu_studio_api_url")
 
 
 class AppSettings(BaseModel):
@@ -17,6 +31,16 @@ class AppSettings(BaseModel):
             "brief timelapse during the print so the photo can be sourced from the moment "
             "before the bed drops; the timelapse file is kept if you enabled timelapse for "
             "this print, otherwise it is deleted automatically after the photo is captured."
+        ),
+    )
+    finish_photo_restore_plate: bool = Field(
+        default=True,
+        description=(
+            "Raise the build plate back into camera framing before taking the finish photo. "
+            "Bambu's end G-code drops the plate ~100mm as the last thing it does, leaving the "
+            "finished print far below the camera's natural framing. Bambuddy moves it back to "
+            "just above the last printed layer, takes the photo, then lowers it again. Skipped "
+            "when the print height is unknown or another job is queued for the printer."
         ),
     )
     default_filament_cost: float = Field(default=25.0, description="Default filament cost per kg")
@@ -261,6 +285,21 @@ class AppSettings(BaseModel):
         default="",
         description="BambuStudio sidecar URL (e.g. http://localhost:3001). Empty falls back to the BAMBU_STUDIO_API_URL env var.",
     )
+    # How long to keep waiting on a slice that isn't finishing. Measured against
+    # the sidecar's progress channel, not total elapsed time — a heavy model can
+    # legitimately slice for half an hour, and a wall-clock ceiling cannot tell
+    # that apart from a stalled one (#2730). Sidecars too old to report progress
+    # fall back to using this as a total-elapsed ceiling, which is the pre-#2730
+    # behaviour with a configurable number.
+    slicer_stall_timeout_minutes: int = Field(
+        default=15,
+        ge=1,
+        le=240,
+        description=(
+            "Give up on a slice after this many minutes with no progress from the sidecar. "
+            "On sidecars that do not report progress, applies to total slicing time instead."
+        ),
+    )
 
     # Prometheus metrics endpoint
     prometheus_enabled: bool = Field(default=False, description="Enable Prometheus metrics endpoint at /metrics")
@@ -443,6 +482,13 @@ class AppSettings(BaseModel):
         default="",
         description="Self-hosted Obico ML API base URL (e.g., http://192.168.1.10:3333)",
     )
+    obico_ml_token: str = Field(
+        default="",
+        description=(
+            "Bearer token for the Obico ML API, matching the server's ML_API_TOKEN "
+            "environment variable. Empty when the server runs without one."
+        ),
+    )
     obico_sensitivity: str = Field(
         default="medium",
         description="Detection sensitivity: 'low', 'medium', or 'high' (adjusts LOW/HIGH thresholds)",
@@ -482,6 +528,7 @@ class AppSettingsUpdate(BaseModel):
     auto_archive: bool | None = None
     save_thumbnails: bool | None = None
     capture_finish_photo: bool | None = None
+    finish_photo_restore_plate: bool | None = None
     default_filament_cost: float | None = None
     currency: str | None = None
     energy_cost_per_kwh: float | None = None
@@ -551,6 +598,7 @@ class AppSettingsUpdate(BaseModel):
     use_slicer_api: bool | None = None
     orcaslicer_api_url: str | None = None
     bambu_studio_api_url: str | None = None
+    slicer_stall_timeout_minutes: int | None = Field(default=None, ge=1, le=240)
     prometheus_enabled: bool | None = None
     prometheus_token: str | None = None
     low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)
@@ -593,12 +641,54 @@ class AppSettingsUpdate(BaseModel):
     ldap_default_group: str | None = None
     obico_enabled: bool | None = None
     obico_ml_url: str | None = None
+    obico_ml_token: str | None = None
     obico_sensitivity: str | None = None
     obico_action: str | None = None
     obico_poll_interval: int | None = Field(default=None, ge=5, le=120)
     obico_enabled_printers: str | None = None
     default_sidebar_order: str | None = None
     forecast_global_lead_time_days: int | None = Field(default=None, ge=0)
+
+    @field_validator(*LAN_SERVICE_URL_SETTINGS)
+    @classmethod
+    def validate_lan_service_url(cls, v: str | None, info: ValidationInfo) -> str | None:
+        """Reject SSRF-unsafe outbound service URLs on save.
+
+        Empty (and whitespace-only) is the documented "not configured / fall
+        back to the env var" value for all four fields and must keep passing.
+
+        Values that are not absolute URLs at all ("192.168.1.10:3333",
+        "localhost:3333") are left alone rather than rejected. Two reasons:
+
+        - They are inert. Every consumer of these four settings goes through
+          httpx, which raises UnsupportedProtocol for a URL with no scheme, so
+          no request is ever issued and there is nothing to guard against.
+        - They were storable before this validator existed, and the settings
+          UI is a plain text input with no scheme enforcement. Newly rejecting
+          them would break saves that have nothing to do with the URL: the
+          Obico panel, for one, sends obico_ml_url with every change and
+          auto-saves, so one legacy value would block toggling detection on or
+          off. A pre-existing misconfiguration should keep failing where it
+          already failed (at request time), not spread to unrelated fields.
+
+        ``urlparse`` is no help in telling the two apart — it reads
+        "localhost:3333" as scheme "localhost" — so the test is the literal
+        "://" that makes a string an absolute URL.
+        """
+        if v is None or not v.strip():
+            return v
+        candidate = v.strip()
+        if "://" not in candidate:
+            return v
+        # Lazy-imported: schemas avoid top-level imports from api/routes,
+        # matching the existing pattern in auth.py's _validate_icon_url.
+        from backend.app.api.routes._url_safety import assert_safe_lan_service_url
+
+        try:
+            assert_safe_lan_service_url(candidate, label=info.field_name or "URL")
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        return v
 
     @field_validator("gcode_snippets")
     @classmethod

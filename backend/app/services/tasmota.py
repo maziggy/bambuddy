@@ -26,12 +26,32 @@ class TasmotaService:
 
     @staticmethod
     def _validate_ip(ip: str) -> bool:
-        """Block cloud metadata and link-local IPs."""
+        """Block cloud metadata, loopback and link-local destinations.
+
+        Deliberately stricter than the shared LAN-service guard, and kept that
+        way: a Tasmota plug is always a separate device on the LAN, so a bare
+        IP literal is the only sensible value. Anything that is not one —
+        including a symbolic hostname — still fails closed here, which is why
+        this does not simply delegate to ``assert_safe_lan_service_url``.
+
+        What it borrows from the shared guard is the destination set that is
+        dangerous under any topology: cloud-metadata endpoints beyond the AWS
+        IPv4 address (Alibaba's 100.100.100.200, AWS's fd00:ec2::254),
+        multicast and unspecified addresses, and IPv4-mapped IPv6 encodings
+        used to smuggle any of the above past the per-class checks.
+        """
+        from backend.app.api.routes._url_safety import CLOUD_METADATA_IPS, unwrap_ipv4_mapped
+
         try:
             addr = ipaddress.ip_address(ip)
         except ValueError:
             return False  # Not a valid IP
-        return not addr.is_loopback and not addr.is_link_local
+        effective = unwrap_ipv4_mapped(addr)
+        if effective in CLOUD_METADATA_IPS:
+            return False
+        if effective.is_multicast or effective.is_unspecified:
+            return False
+        return not effective.is_loopback and not effective.is_link_local
 
     async def _send_command(
         self,

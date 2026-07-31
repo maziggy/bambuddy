@@ -731,6 +731,19 @@ function SortableQueueItem({
             </p>
           )}
 
+          {/* Archive carries the slicer's own live-resolved AMS-slot pick
+              (extra_data.slicer_ams_mapping) — reprints of this archive reuse
+              the exact physical spool instead of re-deriving one. */}
+          {item.archive_has_slicer_ams_mapping && (
+            <p
+              className="text-[10px] sm:text-xs text-green-700 dark:text-green-400 mt-1.5 sm:mt-2 flex items-start gap-1"
+              title={t('queue.slicerAmsMapping.rowTooltip')}
+            >
+              <Check className="w-3 h-3 mt-0.5 flex-shrink-0" />
+              <span>{t('queue.slicerAmsMapping.rowBadge')}</span>
+            </p>
+          )}
+
           {/* Error message */}
           {item.error_message && (
             <p className="text-[10px] sm:text-xs text-red-700 dark:text-red-400 mt-1.5 sm:mt-2 flex items-center gap-1">

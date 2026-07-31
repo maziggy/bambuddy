@@ -12,6 +12,12 @@ class PrintArchive(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id"), nullable=True)
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
+    # Which library file this run was dispatched from (#1897). Set by the queue
+    # scheduler when it archives a library-file print; older rows are matched by
+    # content_hash/filename instead. SET NULL so deleting a file keeps history.
+    library_file_id: Mapped[int | None] = mapped_column(
+        ForeignKey("library_files.id", ondelete="SET NULL"), nullable=True
+    )
 
     # File info
     filename: Mapped[str] = mapped_column(String(255))
@@ -26,6 +32,16 @@ class PrintArchive(Base):
     # both locally and on the printer's SD after extraction — the user
     # didn't opt in to a timelapse recording.
     bambuddy_forced_timelapse: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # Video filenames present in the printer's /timelapse directory when this
+    # print started (#2704). The printer writes its video only at print end, so
+    # anything not in this list belongs to this print — a comparison that needs
+    # no clock, which matters because a LAN-only printer can't reach Bambu's NTP
+    # server and its filename timestamps are arbitrarily wrong. Persisted (not
+    # just held in memory) so the diff survives a restart and so the manual
+    # "Scan for Timelapse" button can use it instead of guessing from
+    # timestamps. NULL for archives predating this, and for baselines taken at
+    # completion time, which are useless by construction.
+    timelapse_baseline: Mapped[list | None] = mapped_column(JSON, nullable=True)
     source_3mf_path: Mapped[str | None] = mapped_column(String(500))  # Original project 3MF from slicer
     f3d_path: Mapped[str | None] = mapped_column(String(500))  # Fusion 360 design file
 

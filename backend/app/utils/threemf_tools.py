@@ -702,6 +702,68 @@ def _parse_3mf_gcode_header(content: str) -> dict[str, str]:
     return header
 
 
+def _select_plate_gcode_name(names: list[str], plate_id: int | None) -> str | None:
+    """Pick a plate's ``.gcode`` member out of a 3MF namelist.
+
+    Prefers ``plate_<id>.gcode``, then falls back to the first ``.gcode``
+    member so single-plate files — and files from slicers that don't use the
+    plate naming convention — still resolve.
+    """
+    gcodes = [n for n in names if n.endswith(".gcode")]
+    if not gcodes:
+        return None
+    if plate_id is not None:
+        suffix = f"plate_{plate_id}.gcode"
+        for name in gcodes:
+            if name.endswith(suffix):
+                return name
+    return gcodes[0]
+
+
+# The header block sits at the very top of the plate G-code. Read only that
+# much: a sliced plate is routinely tens of megabytes and `ZipFile.read()`
+# would inflate all of it to reach ~40 lines.
+_HEADER_READ_LIMIT_BYTES = 64 * 1024
+
+
+def extract_max_z_height_from_3mf(file_path: Path, plate_id: int | None = None) -> float | None:
+    """Return the plate's ``max_z_height`` in mm, or None if not knowable.
+
+    This is the Z the toolhead sat at for the final layer — the same value
+    Bambu's own end G-code adds its bed-drop offset to (``G1 Z{max_layer_z +
+    100}``). #2547 uses it to put the plate back into camera framing before the
+    finish photo, which is only safe because it is a height the printer was
+    physically at seconds earlier.
+
+    None means "don't know" and callers must treat it as such rather than
+    substituting a default: the file may be unreadable, carry no plate G-code,
+    or come from a slicer that writes no ``max_z_height`` header. Guessing a
+    height here would command a Z move to somewhere the nozzle has never been.
+    """
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            target = _select_plate_gcode_name(zf.namelist(), plate_id)
+            if target is None:
+                return None
+            with zf.open(target, "r") as fh:
+                head = fh.read(_HEADER_READ_LIMIT_BYTES)
+    except (OSError, zipfile.BadZipFile, KeyError) as e:
+        logger.debug("max_z_height: cannot read %s: %s", file_path, e)
+        return None
+
+    raw = _parse_3mf_gcode_header(head.decode("utf-8", errors="ignore")).get("max_z_height")
+    if raw is None:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.debug("max_z_height: unusable value %r in %s", raw, file_path)
+        return None
+    # Zero or negative means the header key is present but meaningless. Passed
+    # on as a height it would become a move *toward* the bed, so drop it.
+    return value if value > 0 else None
+
+
 def _substitute_placeholders(snippet: str, header: dict[str, str]) -> str:
     """Replace `{var}` placeholders with header values, leaving unknowns intact."""
 
@@ -802,21 +864,10 @@ def inject_gcode_into_3mf(
     try:
         # Find the target gcode file inside the 3MF
         with zipfile.ZipFile(source_path, "r") as zf:
-            all_gcode = [f for f in zf.namelist() if f.endswith(".gcode")]
-            if not all_gcode:
-                return None
-
-            # Try plate-specific gcode file first
-            target_gcode = None
-            plate_pattern = f"plate_{plate_id}.gcode"
-            for f in all_gcode:
-                if f.endswith(plate_pattern):
-                    target_gcode = f
-                    break
-
-            # Fall back to first gcode file
+            # Plate-specific gcode first, else the first one in the file.
+            target_gcode = _select_plate_gcode_name(zf.namelist(), plate_id)
             if target_gcode is None:
-                target_gcode = all_gcode[0]
+                return None
 
             # Read and modify gcode content
             gcode_content = zf.read(target_gcode).decode("utf-8", errors="ignore")
@@ -904,6 +955,51 @@ def extract_project_filaments_from_3mf(zf: zipfile.ZipFile) -> list[dict]:
                 "used_meters": 0,
             }
         )
+    return out
+
+
+def expand_to_project_slots(zf: zipfile.ZipFile, used: list[dict]) -> list[dict]:
+    """Widen a used-only filament list to one entry per project slot.
+
+    ``used`` is the slice_info-derived list: only the slots whose G-code
+    actually consumed filament, each carrying real usage figures. That is the
+    right answer for print-time AMS matching, and the wrong one for the slice
+    modal, because the list the modal builds is **positional** — index 0 is
+    slot 1 all the way down to the ``filament_N.json`` parts handed to the CLI.
+    A source whose only used slot is 4 therefore produced a single dropdown
+    whose pick the CLI bound to slot 1, leaving slot 4 — the one the model
+    prints with — on whatever the source had baked in (#2712).
+
+    Returns the project's slots in slot order, each flagged ``used_in_plate``.
+    Rows present in ``used`` are kept whole, so their usage figures, resolved
+    type/colour and ``tray_info_idx`` survive; the rest come from the project
+    configuration with zero usage. A used slot beyond the project's slot count
+    is appended rather than dropped — the caller asked for a superset, and
+    silently losing the one slot that prints would be the original bug again.
+
+    ``used`` is returned unchanged when the file carries no project settings
+    to widen against: a narrower-than-ideal list still prints correctly, an
+    invented one might not.
+    """
+    project = extract_project_filaments_from_3mf(zf)
+    if not project:
+        return used
+
+    by_slot = {f["slot_id"]: f for f in used}
+    out: list[dict] = []
+    for slot in project:
+        known = by_slot.pop(slot["slot_id"], None)
+        if known is not None:
+            known["used_in_plate"] = True
+            out.append(known)
+        else:
+            slot["used_in_plate"] = False
+            out.append(slot)
+    # Anything slice_info reported that the project doesn't declare.
+    for leftover in by_slot.values():
+        leftover["used_in_plate"] = True
+        out.append(leftover)
+    out.sort(key=lambda f: f["slot_id"])
     return out
 
 

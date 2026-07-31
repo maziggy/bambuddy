@@ -111,7 +111,15 @@ async def _dispatch_library_item(ctx, *, archive_failure=False, unlink_side_effe
     scheduler = PrintScheduler()
 
     async def archive_print(
-        self, *, printer_id, source_file, original_filename, created_by_id=None, project_id=None, plate_id=None
+        self,
+        *,
+        printer_id,
+        source_file,
+        original_filename,
+        created_by_id=None,
+        project_id=None,
+        plate_id=None,
+        library_file_id=None,
     ):
         if archive_failure:
             raise RuntimeError("archive copy failed")
@@ -132,6 +140,7 @@ async def _dispatch_library_item(ctx, *, archive_failure=False, unlink_side_effe
             print_time_seconds=120,
             status="completed",
             project_id=project_id,
+            library_file_id=library_file_id,
             created_by_id=created_by_id,
         )
         self.db.add(archive)

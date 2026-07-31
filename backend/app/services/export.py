@@ -99,9 +99,15 @@ class ExportService:
         Returns:
             Tuple of (file_bytes, filename, content_type)
         """
-        # Build query
+        # Build query. Soft-deleted archives (#1343) are excluded: this export
+        # is the list the user is looking at, saved to a file, and that list
+        # hides them — an export that silently contains rows the UI says are
+        # gone is worse than useless for reconciling anything (#2731).
         query = (
-            select(PrintArchive).options(selectinload(PrintArchive.project)).order_by(PrintArchive.created_at.desc())
+            select(PrintArchive)
+            .options(selectinload(PrintArchive.project))
+            .where(PrintArchive.deleted_at.is_(None))
+            .order_by(PrintArchive.created_at.desc())
         )
 
         # Apply filters

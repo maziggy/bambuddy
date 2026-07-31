@@ -2,7 +2,7 @@
  * Tests for the FileManagerPage component.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
@@ -21,6 +21,9 @@ const mockFolders = [
     archive_id: null,
     project_name: null,
     archive_name: null,
+    // #2680: distinctive year so the folder-pane display test can assert on it
+    // without colliding with the file mtimes below.
+    latest_activity_at: '2031-04-05T10:00:00Z',
     children: [
       {
         id: 2,
@@ -31,6 +34,7 @@ const mockFolders = [
         archive_id: null,
         project_name: null,
         archive_name: null,
+        latest_activity_at: '2032-06-07T10:00:00Z',
         children: [],
       },
     ],
@@ -44,6 +48,9 @@ const mockFolders = [
     archive_id: null,
     project_name: 'My Art Project',
     archive_name: null,
+    // No activity timestamp — must render no date line rather than an
+    // "Invalid Date" placeholder.
+    latest_activity_at: null,
     children: [],
   },
 ];
@@ -880,6 +887,13 @@ describe('FileManagerPage', () => {
       setItemMock.mockReset();
     });
 
+    // The mock is module-global, so an implementation left behind here would
+    // silently change every later describe (e.g. collapsing the folder tree).
+    afterEach(() => {
+      getItemMock.mockReset();
+      setItemMock.mockReset();
+    });
+
     it('defaults to expanded (nested folders visible) when library-collapse-folders is unset', async () => {
       getItemMock.mockReturnValue(null);
       render(<FileManagerPage />);
@@ -1109,6 +1123,35 @@ describe('FileManagerPage', () => {
       await user.click(screen.getByTitle('Hide modified dates'));
       await waitFor(() => {
         expect(screen.queryByText(/2030/)).not.toBeInTheDocument();
+      });
+    });
+
+    it('the same toggle reveals latest activity on folder rows, including nested ones', async () => {
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Functional Parts')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText(/2031/)).not.toBeInTheDocument();
+
+      await user.click(screen.getByTitle('Show modified dates'));
+
+      await waitFor(() => {
+        expect(screen.getByText(/2031/)).toBeInTheDocument();
+      });
+      // Nested folders get it too — the prop must survive the recursion.
+      expect(screen.getByText(/2032/)).toBeInTheDocument();
+
+      // A folder with no activity timestamp renders nothing rather than an
+      // "Invalid Date" string.
+      const artRow = screen.getByText('Art Projects').closest('div.group')!;
+      expect(artRow.textContent).not.toMatch(/Invalid/);
+
+      await user.click(screen.getByTitle('Hide modified dates'));
+      await waitFor(() => {
+        expect(screen.queryByText(/2031/)).not.toBeInTheDocument();
       });
     });
   });

@@ -19,6 +19,9 @@ interface ThemeContextType {
   lightStyle: ThemeStyle;
   lightBackground: LightBackground;
   lightAccent: ThemeAccent;
+  // Show live print progress (% + accent-coloured ring favicon) in the browser tab
+  progressInTitle: boolean;
+  setProgressInTitle: (v: boolean) => void;
   // Actions
   toggleMode: () => void;
   setMode: (mode: ThemeMode) => void;
@@ -86,6 +89,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [lightAccent, setLightAccentState] = useState<ThemeAccent>(() => {
     return (localStorage.getItem('light-accent') as ThemeAccent) || 'green';
   });
+
+  // Client-only pref (localStorage), no api.updateSettings sync — the tab
+  // title/favicon is per-browser behaviour. Move to server settings if it
+  // ever needs to follow the user across devices. Default off.
+  const [progressInTitle, setProgressInTitleState] = useState<boolean>(() => {
+    return localStorage.getItem('progress-in-title') === 'true';
+  });
+  const setProgressInTitle = (v: boolean) => {
+    setProgressInTitleState(v);
+    localStorage.setItem('progress-in-title', String(v));
+  };
 
   // Sync from API once auth state is known. Same gate shape as
   // useStreamTokenSync / ColorCatalogProvider: wait for AuthContext to
@@ -202,6 +216,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       resolvedMode,
       darkStyle, darkBackground, darkAccent,
       lightStyle, lightBackground, lightAccent,
+      progressInTitle, setProgressInTitle,
       toggleMode, setMode,
       setDarkStyle, setDarkBackground, setDarkAccent,
       setLightStyle, setLightBackground, setLightAccent,

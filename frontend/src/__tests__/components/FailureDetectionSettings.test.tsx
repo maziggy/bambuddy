@@ -23,6 +23,7 @@ const baseSettings = {
   include_beta_updates: false,
   obico_enabled: false,
   obico_ml_url: '',
+  obico_ml_token: '',
   obico_sensitivity: 'medium',
   obico_action: 'notify',
   obico_poll_interval: 10,
@@ -81,6 +82,102 @@ describe('FailureDetectionSettings', () => {
       expect(called).toBe(true);
     });
     expect(await screen.findByText(/ML API reachable/i)).toBeInTheDocument();
+  });
+
+  describe('ML API token (#2733)', () => {
+    const enabledWithToken = {
+      ...baseSettings,
+      obico_enabled: true,
+      obico_ml_url: 'http://obico:3333',
+      obico_ml_token: 's3cret',
+    };
+
+    it('renders the token as a masked field populated from settings', async () => {
+      server.use(http.get('/api/v1/settings/', () => HttpResponse.json(enabledWithToken)));
+      render(<FailureDetectionSettings />);
+
+      const input = await screen.findByDisplayValue('s3cret');
+      expect(input).toHaveAttribute('type', 'password');
+      expect(screen.getByText(/ML API Token/i)).toBeInTheDocument();
+    });
+
+    it('sends the token with the test-connection request', async () => {
+      let sent: { url: string; token?: string } | null = null;
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json(enabledWithToken)),
+        http.post('/api/v1/obico/test-connection', async ({ request }) => {
+          sent = (await request.json()) as { url: string; token?: string };
+          return HttpResponse.json({
+            ok: true,
+            status_code: 200,
+            body: 'ok',
+            error: null,
+            auth_ok: true,
+          });
+        }),
+      );
+      render(<FailureDetectionSettings />);
+      await screen.findByDisplayValue('http://obico:3333');
+      await userEvent.click(screen.getByRole('button', { name: /test/i }));
+
+      await waitFor(() => expect(sent).not.toBeNull());
+      // The value in the box, not the saved one — so a token can be checked
+      // before it is committed.
+      expect(sent!.token).toBe('s3cret');
+    });
+
+    it('reports a rejected token instead of a bare success', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json(enabledWithToken)),
+        http.post('/api/v1/obico/test-connection', () =>
+          HttpResponse.json({
+            ok: false,
+            status_code: 401,
+            body: 'ok',
+            error: 'The ML API is reachable but rejected the token.',
+            auth_ok: false,
+          }),
+        ),
+      );
+      render(<FailureDetectionSettings />);
+      await screen.findByDisplayValue('http://obico:3333');
+      await userEvent.click(screen.getByRole('button', { name: /test/i }));
+
+      expect(await screen.findByText(/rejected the token/i)).toBeInTheDocument();
+    });
+
+    it('does not claim the token works when it could not be checked', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json(enabledWithToken)),
+        http.post('/api/v1/obico/test-connection', () =>
+          HttpResponse.json({ ok: true, status_code: 200, body: 'ok', error: null, auth_ok: null }),
+        ),
+      );
+      render(<FailureDetectionSettings />);
+      await screen.findByDisplayValue('http://obico:3333');
+      await userEvent.click(screen.getByRole('button', { name: /test/i }));
+
+      expect(await screen.findByText(/token could not be checked/i)).toBeInTheDocument();
+    });
+
+    it('auto-saves the token', async () => {
+      let saved: Record<string, unknown> | null = null;
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json({ ...enabledWithToken, obico_ml_token: '' })),
+        http.put('/api/v1/settings/', async ({ request }) => {
+          saved = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...enabledWithToken, obico_ml_token: 'typed' });
+        }),
+      );
+      render(<FailureDetectionSettings />);
+      const input = await screen.findByPlaceholderText(/ML_API_TOKEN/i);
+      // Every field stays disabled until the settings query lands.
+      await waitFor(() => expect(input).not.toBeDisabled());
+      await userEvent.type(input, 'typed');
+
+      await waitFor(() => expect(saved).not.toBeNull(), { timeout: 3000 });
+      expect(saved!.obico_ml_token).toBe('typed');
+    });
   });
 
   it('shows failure class history entries with red styling', async () => {

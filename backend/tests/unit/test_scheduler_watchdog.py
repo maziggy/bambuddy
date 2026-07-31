@@ -607,3 +607,118 @@ class TestWatchdogRetryBudget:
             item = await db.get(PrintQueueItem, 1)
             assert item.status == "printing"
             assert item.dispatch_attempts == 0
+
+
+class TestWatchdogCommandRejected:
+    """A printer reporting HMS 0500_0500_0001_0007 refused the command outright.
+
+    It is not wedged and it is not slow: its authorization check rejected a
+    command it could not verify, and it will reject the next two identically.
+    Spending the full 270 s and two more full 3MF uploads on that is 15 minutes
+    of a farm's upload capacity buying nothing, and it ends with a message about
+    SD cards (#2732).
+    """
+
+    @staticmethod
+    def _rejected_status(state: str = "IDLE", subtask_id: str | None = "NEW_SUBTASK"):
+        from backend.app.services.bambu_mqtt import HMS_MQTT_VERIFY_FAILED
+
+        return SimpleNamespace(
+            state=state,
+            subtask_id=subtask_id,
+            gcode_file="/new.3mf",
+            hms_errors=[SimpleNamespace(full_code=HMS_MQTT_VERIFY_FAILED)],
+        )
+
+    @staticmethod
+    async def _run(db_session, status):
+        get_status = MagicMock(return_value=status)
+        get_client = MagicMock(return_value=MagicMock())
+        with (
+            patch("backend.app.services.print_scheduler.printer_manager.get_status", get_status),
+            patch("backend.app.services.print_scheduler.printer_manager.get_client", get_client),
+            patch("backend.app.services.print_scheduler.async_session", db_session),
+            patch("backend.app.core.database.async_session", db_session),
+            patch(
+                "backend.app.services.notification_service.notification_service.on_queue_job_failed",
+                AsyncMock(),
+            ) as notify,
+        ):
+            await PrintScheduler._watchdog_print_start(
+                queue_item_id=1,
+                printer_id=42,
+                pre_state="IDLE",
+                pre_subtask_id="OLD_SUBTASK",
+                pre_gcode_file="/old.3mf",
+                timeout=0.2,
+                phase_b_timeout=0.2,
+                poll_interval=0.05,
+            )
+        return get_client, notify
+
+    @pytest.mark.asyncio
+    async def test_fails_on_the_first_attempt(self, db_session):
+        await self._run(db_session, self._rejected_status())
+
+        async with db_session() as db:
+            item = await db.get(PrintQueueItem, 1)
+            assert item.status == "failed", "a refused command must not be retried"
+            assert item.dispatch_attempts == 1, "it must not burn the whole budget"
+            assert item.completed_at is not None
+
+    @pytest.mark.asyncio
+    async def test_error_message_names_the_fix(self, db_session):
+        """The old wording sent this user to check their SD card."""
+        await self._run(db_session, self._rejected_status())
+
+        async with db_session() as db:
+            item = await db.get(PrintQueueItem, 1)
+            assert "0500-0500-0001-0007" in item.error_message
+            assert "Developer Mode" in item.error_message
+            assert "SD card" not in item.error_message
+
+    @pytest.mark.asyncio
+    async def test_detected_in_phase_a_before_any_subtask_advance(self, db_session):
+        """The printer can refuse without ever echoing a subtask_id."""
+        await self._run(db_session, self._rejected_status(subtask_id="OLD_SUBTASK"))
+
+        async with db_session() as db:
+            item = await db.get(PrintQueueItem, 1)
+            assert item.status == "failed"
+            assert item.dispatch_attempts == 1
+
+    @pytest.mark.asyncio
+    async def test_skips_the_forced_reconnect(self, db_session):
+        """The MQTT session is fine — reconnecting would only add 0500_4003 (#1150)."""
+        get_client, _ = await self._run(db_session, self._rejected_status(subtask_id="OLD_SUBTASK"))
+        get_client.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_notifies_with_the_rejection_reason(self, db_session):
+        _, notify = await self._run(db_session, self._rejected_status())
+
+        notify.assert_awaited_once()
+        assert "rejected" in notify.await_args.kwargs["reason"]
+
+    @pytest.mark.asyncio
+    async def test_unrelated_hms_still_takes_the_retry_path(self, db_session):
+        """Only this code short-circuits; every other fault keeps its retries."""
+        status = self._rejected_status()
+        status.hms_errors = [SimpleNamespace(full_code="0300020000018012")]
+
+        await self._run(db_session, status)
+
+        async with db_session() as db:
+            item = await db.get(PrintQueueItem, 1)
+            assert item.status == "pending"
+            assert item.dispatch_attempts == 1
+
+    @pytest.mark.asyncio
+    async def test_a_printer_that_actually_starts_is_unaffected(self, db_session):
+        """A stale HMS from a previous job must not kill a print that is running."""
+        await self._run(db_session, self._rejected_status(state="RUNNING"))
+
+        async with db_session() as db:
+            item = await db.get(PrintQueueItem, 1)
+            assert item.status == "printing"
+            assert item.dispatch_attempts == 0

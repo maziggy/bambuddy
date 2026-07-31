@@ -5,6 +5,30 @@ import type { FilamentSectionProps, FilamentOption } from './types';
 import { KNOWN_VARIANTS } from './constants';
 import { parsePresetName } from './utils';
 
+// The identity fields a slicer preset can auto-fill.
+type PresetFilledField = 'material' | 'brand' | 'subtype';
+
+// Split a dropdown's options into the ones the catalog/presets pair with the
+// other field's current value and everything else (#1905). Suggestions are only
+// a sort order — nothing is ever hidden, so an unusual-but-real combination
+// (Elegoo ASA) stays one click away.
+function splitSuggested(options: string[], suggested: string[]): { top: string[]; rest: string[] } {
+  if (suggested.length === 0) return { top: [], rest: options };
+  const keys = new Set(suggested.map(s => s.toLowerCase()));
+  return {
+    top: options.filter(o => keys.has(o.toLowerCase())),
+    rest: options.filter(o => !keys.has(o.toLowerCase())),
+  };
+}
+
+function GroupHeading({ label }: { label: string }) {
+  return (
+    <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-bambu-gray/70 bg-bambu-dark-tertiary/40">
+      {label}
+    </div>
+  );
+}
+
 export function FilamentSection({
   formData,
   updateField,
@@ -16,7 +40,10 @@ export function FilamentSection({
   filamentOptions,
   availableBrands,
   availableMaterials,
+  suggestedBrands,
+  suggestedMaterials,
   quickAdd,
+  detailsRequired,
   quantity,
   onQuantityChange,
   errors,
@@ -31,6 +58,10 @@ export function FilamentSection({
   const [materialSearch, setMaterialSearch] = useState('');
   const [labelInput, setLabelInput] = useState(String(formData.label_weight));
   const [isLabelFocused, setIsLabelFocused] = useState(false);
+  // Which identity fields the currently selected preset filled in (#1905).
+  // Anything outside this set was set by the user (or loaded from the spool
+  // being edited) and must survive picking a preset.
+  const [presetFilled, setPresetFilled] = useState<Set<PresetFilledField>>(new Set());
   const presetRef = useRef<HTMLDivElement>(null);
   const brandRef = useRef<HTMLDivElement>(null);
   const subtypeRef = useRef<HTMLDivElement>(null);
@@ -101,6 +132,16 @@ export function FilamentSection({
     });
   }, [materialSearch, availableMaterials]);
 
+  const brandGroups = useMemo(
+    () => splitSuggested(filteredBrands, suggestedBrands),
+    [filteredBrands, suggestedBrands],
+  );
+
+  const materialGroups = useMemo(
+    () => splitSuggested(filteredMaterials, suggestedMaterials),
+    [filteredMaterials, suggestedMaterials],
+  );
+
   useEffect(() => {
     if (!isLabelFocused) {
       setLabelInput(String(formData.label_weight));
@@ -113,12 +154,73 @@ export function FilamentSection({
     setPresetInputValue(option.displayName);
     setPresetDropdownOpen(false);
 
-    // Auto-fill material, brand, subtype from preset name
+    // Auto-fill material, brand and subtype from the preset name — but only
+    // where the value is still empty or was itself put there by the previously
+    // selected preset (#1905). Overwriting unconditionally silently rewrote the
+    // spool's own manufacturer ("Elegoo" → "Generic") whenever the user was
+    // forced to assign a preset, so the spool vanished from where they filed it.
+    // Switching between presets still replaces what the earlier one filled in.
     const parsed = parsePresetName(option.name);
-    if (parsed.material) updateField('material', parsed.material);
-    if (parsed.brand) updateField('brand', parsed.brand);
-    if (parsed.variant) updateField('subtype', parsed.variant);
+    const filled = new Set<PresetFilledField>();
+    const entries: [PresetFilledField, string][] = [
+      ['material', parsed.material],
+      ['brand', parsed.brand],
+      ['subtype', parsed.variant],
+    ];
+    for (const [field, value] of entries) {
+      if (!value) continue;
+      if (formData[field] && !presetFilled.has(field)) continue;
+      updateField(field, value);
+      filled.add(field);
+    }
+    setPresetFilled(filled);
   };
+
+  // A manual edit to an identity field takes it back out of the preset's hands.
+  const updateIdentityField = (field: PresetFilledField, value: string) => {
+    if (presetFilled.has(field)) {
+      setPresetFilled(prev => {
+        const next = new Set(prev);
+        next.delete(field);
+        return next;
+      });
+    }
+    updateField(field, value);
+  };
+
+  const renderBrandOption = (brand: string) => (
+    <button
+      key={brand}
+      type="button"
+      className={`w-full px-3 py-2 text-left text-sm hover:bg-bambu-dark-tertiary ${
+        formData.brand === brand ? 'bg-bambu-green/10 text-bambu-green' : 'text-white'
+      }`}
+      onClick={() => {
+        updateIdentityField('brand', brand);
+        setBrandDropdownOpen(false);
+        setBrandSearch('');
+      }}
+    >
+      {brand}
+    </button>
+  );
+
+  const renderMaterialOption = (material: string) => (
+    <button
+      key={material}
+      type="button"
+      className={`w-full px-3 py-2 text-left text-sm hover:bg-bambu-dark-tertiary ${
+        formData.material === material ? 'bg-bambu-green/10 text-bambu-green' : 'text-white'
+      }`}
+      onClick={() => {
+        updateIdentityField('material', material);
+        setMaterialDropdownOpen(false);
+        setMaterialSearch('');
+      }}
+    >
+      {material}
+    </button>
+  );
 
   return (
     <div className="space-y-4">
@@ -139,7 +241,7 @@ export function FilamentSection({
       {!quickAdd && (
         <div>
           <label className="block text-sm font-medium text-bambu-gray mb-1">
-            {t('inventory.slicerPreset')} *
+            {t('inventory.slicerPreset')}{detailsRequired && ' *'}
           </label>
           <div className="relative" ref={presetRef}>
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray/50 pointer-events-none" />
@@ -215,22 +317,20 @@ export function FilamentSection({
               {filteredMaterials.length === 0 ? (
                 <div className="px-3 py-2 text-sm text-bambu-gray">{t('inventory.noResults')}</div>
               ) : (
-                filteredMaterials.map((material) => (
-                  <button
-                    key={material}
-                    type="button"
-                    className={`w-full px-3 py-2 text-left text-sm hover:bg-bambu-dark-tertiary ${
-                      formData.material === material ? 'bg-bambu-green/10 text-bambu-green' : 'text-white'
-                    }`}
-                    onClick={() => {
-                      updateField('material', material);
-                      setMaterialDropdownOpen(false);
-                      setMaterialSearch('');
-                    }}
-                  >
-                    {material}
-                  </button>
-                ))
+                <>
+                  {materialGroups.top.length > 0 && (
+                    <>
+                      <GroupHeading label={t('inventory.suggestedOptions')} />
+                      {materialGroups.top.map(renderMaterialOption)}
+                    </>
+                  )}
+                  {materialGroups.rest.length > 0 && (
+                    <>
+                      {materialGroups.top.length > 0 && <GroupHeading label={t('inventory.allOptions')} />}
+                      {materialGroups.rest.map(renderMaterialOption)}
+                    </>
+                  )}
+                </>
               )}
               {/* Allow custom material */}
               {materialSearch && !filteredMaterials.includes(materialSearch) && (
@@ -238,7 +338,7 @@ export function FilamentSection({
                   type="button"
                   className="w-full px-3 py-2 text-left text-sm hover:bg-bambu-dark-tertiary text-bambu-green border-t border-bambu-dark-tertiary"
                   onClick={() => {
-                    updateField('material', materialSearch);
+                    updateIdentityField('material', materialSearch);
                     setMaterialDropdownOpen(false);
                     setMaterialSearch('');
                   }}
@@ -257,7 +357,7 @@ export function FilamentSection({
       {/* Brand (dropdown with search) */}
       <div>
         <label className="block text-sm font-medium text-bambu-gray mb-1">
-          {t('inventory.brand')}{!quickAdd && ' *'}
+          {t('inventory.brand')}{detailsRequired && ' *'}
         </label>
           <div className="relative" ref={brandRef}>
             <input
@@ -280,22 +380,20 @@ export function FilamentSection({
                 {filteredBrands.length === 0 ? (
                   <div className="px-3 py-2 text-sm text-bambu-gray">{t('inventory.noResults')}</div>
                 ) : (
-                  filteredBrands.map(brand => (
-                    <button
-                      key={brand}
-                      type="button"
-                      className={`w-full px-3 py-2 text-left text-sm hover:bg-bambu-dark-tertiary ${
-                        formData.brand === brand ? 'bg-bambu-green/10 text-bambu-green' : 'text-white'
-                      }`}
-                      onClick={() => {
-                        updateField('brand', brand);
-                        setBrandDropdownOpen(false);
-                        setBrandSearch('');
-                      }}
-                    >
-                      {brand}
-                    </button>
-                  ))
+                  <>
+                    {brandGroups.top.length > 0 && (
+                      <>
+                        <GroupHeading label={t('inventory.suggestedOptions')} />
+                        {brandGroups.top.map(renderBrandOption)}
+                      </>
+                    )}
+                    {brandGroups.rest.length > 0 && (
+                      <>
+                        {brandGroups.top.length > 0 && <GroupHeading label={t('inventory.allOptions')} />}
+                        {brandGroups.rest.map(renderBrandOption)}
+                      </>
+                    )}
+                  </>
                 )}
                 {/* Allow custom brand */}
                 {brandSearch && !filteredBrands.includes(brandSearch) && (
@@ -303,7 +401,7 @@ export function FilamentSection({
                     type="button"
                     className="w-full px-3 py-2 text-left text-sm hover:bg-bambu-dark-tertiary text-bambu-green border-t border-bambu-dark-tertiary"
                     onClick={() => {
-                      updateField('brand', brandSearch);
+                      updateIdentityField('brand', brandSearch);
                       setBrandDropdownOpen(false);
                       setBrandSearch('');
                     }}
@@ -322,7 +420,7 @@ export function FilamentSection({
       {/* Variant / Subtype */}
       <div>
         <label className="block text-sm font-medium text-bambu-gray mb-1">
-          {t('inventory.subtype')}{!quickAdd && ' *'}
+          {t('inventory.subtype')}{detailsRequired && ' *'}
         </label>
           <div className="relative" ref={subtypeRef}>
             <input
@@ -353,7 +451,7 @@ export function FilamentSection({
                         formData.subtype === variant ? 'bg-bambu-green/10 text-bambu-green' : 'text-white'
                       }`}
                       onClick={() => {
-                        updateField('subtype', variant);
+                        updateIdentityField('subtype', variant);
                         setSubtypeDropdownOpen(false);
                         setSubtypeSearch('');
                       }}
@@ -367,7 +465,7 @@ export function FilamentSection({
                     type="button"
                     className="w-full px-3 py-2 text-left text-sm hover:bg-bambu-dark-tertiary text-bambu-green border-t border-bambu-dark-tertiary"
                     onClick={() => {
-                      updateField('subtype', subtypeSearch);
+                      updateIdentityField('subtype', subtypeSearch);
                       setSubtypeDropdownOpen(false);
                       setSubtypeSearch('');
                     }}

@@ -63,6 +63,7 @@ async def get_preview_filaments(
     file_name: str,
     api_url: str,
     request_id: str | None = None,
+    timeout_seconds: float | None = None,
 ) -> list[dict] | None:
     """Run a preview slice for ``plate_id``, parse the resulting slice_info,
     and return the per-plate filament list.
@@ -92,7 +93,11 @@ async def get_preview_filaments(
             return cached
 
         try:
-            async with SlicerApiService(base_url=api_url) as svc:
+            # Preview slices are bounded the same way as real ones (#2730):
+            # a heavy plate can take a long time and must not be cut off
+            # while the slicer is visibly working.
+            svc_kwargs = {} if timeout_seconds is None else {"timeout_seconds": timeout_seconds}
+            async with SlicerApiService(base_url=api_url, **svc_kwargs) as svc:
                 result = await svc.slice_without_profiles(
                     model_bytes=file_bytes,
                     model_filename=file_name,

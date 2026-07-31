@@ -882,7 +882,9 @@ function RecordsWidget({ archives, currency }: { archives: ArchiveSlim[]; curren
       });
     }
 
-    const costliest = findMax(a => a.cost);
+    // Filament + measured energy (#1432); prints without a smart plug have
+    // energy_cost null and compete on filament cost alone.
+    const costliest = findMax(a => (a.cost ?? 0) + (a.energy_cost ?? 0));
     if (costliest.archive) {
       result.push({
         icon: DollarSign, iconColor: 'text-green-600 dark:text-green-400', label: t('stats.mostExpensivePrint'),

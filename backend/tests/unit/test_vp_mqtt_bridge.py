@@ -784,6 +784,77 @@ class TestPushStatusCache:
         await bridge.stop()
 
     @pytest.mark.asyncio
+    async def test_a2l_ams_lite_slots_survive_in_slicer_cache(self):
+        """#2697 (reported by @qoatzelcoat): every A2L slot rendered as "?" in
+        BambuStudio through the VP, while Bambuddy's own AMS card was correct.
+
+        The A2L reports its AMS Lite as physical unit id 16 but packs the
+        presence bits at base 24. Bambuddy's internal path normalises 16 -> 6
+        before the cleanup runs, so it read the right bits; the bridge parses
+        the raw printer payload itself and still held 16, so the cleanup read
+        bits 64-67 — never set — and wiped all four slots in the cache the
+        slicer reads. A slicer-side filament pick reverted on the next 1 Hz
+        push for the same reason.
+
+        The cached units must keep the physical id 16: BambuStudio addresses
+        the Lite as 16 (it sends `ams_get_rfid {ams_id: 16}` through the VP).
+        """
+        server = _make_server()
+        bridge = _make_bridge(server)
+        await bridge.start()
+
+        # Reporter's capture: tray_exist_bits 0x7000000 = bits 24/25/26 →
+        # slots 0, 1, 2 loaded, slot 3 empty.
+        bridge._on_printer_raw(
+            f"device/{H2D_SERIAL}/report",
+            json.dumps(
+                {
+                    "print": {
+                        "command": "push_status",
+                        "ams": {
+                            "ams": [
+                                {
+                                    "id": "16",
+                                    "tray": [
+                                        {
+                                            "id": "0",
+                                            "state": 3,
+                                            "tray_type": "PLA",
+                                            "tray_sub_brands": "PLA Basic",
+                                            "tray_color": "C12E1FFF",
+                                            "tray_info_idx": "GFA00",
+                                            "remain": 100,
+                                        },
+                                        {"id": "1", "state": 3, "tray_type": "PETG", "tray_info_idx": "GFG00"},
+                                        {"id": "2", "state": 3, "tray_type": "ABS", "tray_info_idx": "GFB00"},
+                                        {"id": "3", "state": 3, "tray_type": "TPU", "tray_info_idx": "GFU00"},
+                                    ],
+                                }
+                            ],
+                            "tray_exist_bits": "7000000",
+                        },
+                    }
+                }
+            ).encode(),
+        )
+        await asyncio.sleep(0.01)
+
+        cached = bridge.get_latest_print_state()
+        unit = cached["ams"]["ams"][0]
+        # The slicer-facing cache keeps the PHYSICAL id — BambuStudio speaks 16.
+        assert unit["id"] == "16"
+        trays = unit["tray"]
+        assert trays[0]["tray_type"] == "PLA", "loaded slot wrongly cleared (bit base 64 regression)"
+        assert trays[1]["tray_type"] == "PETG"
+        assert trays[2]["tray_type"] == "ABS"
+        assert trays[0]["tray_info_idx"] == "GFA00"
+        # Slot 3 is genuinely empty and still gets the normal cleanup.
+        assert trays[3]["state"] == 9
+        assert trays[3]["tray_type"] == ""
+
+        await bridge.stop()
+
+    @pytest.mark.asyncio
     async def test_tray_exist_bits_shutdown_guard_preserves_cache(self):
         """#765 shutdown guard mirrored at the bridge: when the printer
         powers off it sends all-zero `tray_exist_bits` paired with

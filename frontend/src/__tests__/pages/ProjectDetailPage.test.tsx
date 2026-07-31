@@ -222,4 +222,86 @@ describe('ProjectDetailPage', () => {
       });
     });
   });
+  describe('per-file print progress (#1897)', () => {
+    it('shows X / N badges and the Complete Sets bar when target_sets is set', async () => {
+      server.use(
+        http.get('/api/v1/projects/:id', () => {
+          return HttpResponse.json({ ...mockProject, target_sets: 10 });
+        }),
+        http.get('/api/v1/library/files', () => {
+          return HttpResponse.json([
+            makeFile({ id: 5, filename: 'plate_1.gcode.3mf', file_type: '3mf' }),
+            makeFile({ id: 6, filename: 'plate_2.gcode.3mf', file_type: '3mf' }),
+          ]);
+        }),
+        http.get('/api/v1/projects/:id/file-progress', () => {
+          return HttpResponse.json([{ file_id: 5, completed_count: 3 }]);
+        }),
+      );
+
+      render(<ProjectDetailPage />);
+
+      // Per-file badges: 3 / 10 for plate_1, 0 / 10 for the never-printed plate_2
+      await waitFor(() => {
+        expect(screen.getByTitle('3 of 10 completed prints')).toBeInTheDocument();
+      });
+      expect(screen.getByTitle('0 of 10 completed prints')).toBeInTheDocument();
+
+      // Complete sets = min across printable files = 0
+      expect(screen.getByText('Complete Sets')).toBeInTheDocument();
+      expect(
+        screen.getByText((_, element) => element?.tagName === 'SPAN' && element.textContent === '0 / 10 sets')
+      ).toBeInTheDocument();
+    });
+
+    it('counts a complete set once every printable file reached the target', async () => {
+      server.use(
+        http.get('/api/v1/projects/:id', () => {
+          return HttpResponse.json({ ...mockProject, target_sets: 2 });
+        }),
+        http.get('/api/v1/library/files', () => {
+          return HttpResponse.json([
+            makeFile({ id: 5, filename: 'plate_1.gcode.3mf', file_type: '3mf' }),
+            // STL is not printable and must not drag the set count to 0
+            makeFile({ id: 8, filename: 'source.stl', file_type: 'stl' }),
+            makeFile({ id: 6, filename: 'plate_2.gcode.3mf', file_type: '3mf' }),
+          ]);
+        }),
+        http.get('/api/v1/projects/:id/file-progress', () => {
+          // plate_1 overshot the target; capped at 2 for the set count
+          return HttpResponse.json([
+            { file_id: 5, completed_count: 3 },
+            { file_id: 6, completed_count: 2 },
+          ]);
+        }),
+      );
+
+      render(<ProjectDetailPage />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText((_, element) => element?.tagName === 'SPAN' && element.textContent === '2 / 2 sets')
+        ).toBeInTheDocument();
+      });
+    });
+
+    it('shows a plain printed-count badge when no target_sets is set', async () => {
+      server.use(
+        http.get('/api/v1/library/files', () => {
+          return HttpResponse.json([makeFile({ id: 5, filename: 'plate_1.gcode.3mf', file_type: '3mf' })]);
+        }),
+        http.get('/api/v1/projects/:id/file-progress', () => {
+          return HttpResponse.json([{ file_id: 5, completed_count: 4 }]);
+        }),
+      );
+
+      render(<ProjectDetailPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('4\u00d7')).toBeInTheDocument();
+      });
+      // No sets bar without a target
+      expect(screen.queryByText('Complete Sets')).not.toBeInTheDocument();
+    });
+  });
 });

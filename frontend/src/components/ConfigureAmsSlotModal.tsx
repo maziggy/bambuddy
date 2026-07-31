@@ -5,7 +5,7 @@ import { X, Loader2, Settings2, ChevronDown, CheckCircle2, RotateCcw } from 'luc
 import { api } from '../api/client';
 import type { KProfile } from '../api/client';
 import { matchesPrinterModelSuffix, presetCompatibility, buildCompatibilityIndex } from '../utils/slicerPrinterMatch';
-import { toFilamentId, isGenericFilamentId } from './spool-form/utils';
+import { toFilamentId } from './spool-form/utils';
 import { Button } from './Button';
 import { getAmsLabel } from '../utils/amsHelpers';
 
@@ -97,6 +97,13 @@ function parsePresetName(name: string): { material: string; brand: string; varia
   }
 
   return { material: withoutSuffix, brand: '', variant: '' };
+}
+
+// Identity of a K-profile inside the picker. Both profile lists are
+// deduplicated on name+k_value, so this is unique across the whole option set
+// — unlike the bare name, which two profiles can share (#2710).
+function kProfileOptionValue(profile: KProfile): string {
+  return `${profile.name}|${profile.k_value}`;
 }
 
 // Check if a preset is a user preset (not built-in)
@@ -870,7 +877,12 @@ export function ConfigureAmsSlotModal({
     const { fullName, material, brand, filamentId } = selectedPresetInfo;
     const upperFullName = fullName.toUpperCase();
     const upperMaterial = material.toUpperCase();
-    const upperBrand = brand.toUpperCase();
+    // "Generic" leads every built-in Bambu preset name ("Generic PLA",
+    // "Generic PETG") but is not a manufacturer (#2710). Treating it as one
+    // put the filter into brand-gated mode and demanded "GENERIC" in the
+    // K-profile name, which no real profile has — so selecting a built-in
+    // generic preset matched nothing at all.
+    const upperBrand = brand.toUpperCase() === 'GENERIC' ? '' : brand.toUpperCase();
     const presetFid = filamentId; // already normalised via toFilamentId
 
     // Material must be at least 2 chars to avoid false positives
@@ -880,11 +892,18 @@ export function ConfigureAmsSlotModal({
     const filtered = kprofilesData.profiles.filter(p => {
       // Preferred: exact filament_id match (#1688). A user's custom K-profile
       // whose name doesn't agree with the slicer preset still surfaces when
-      // both sides agree on filament_id. Generic GFx99 IDs are excluded —
-      // they're shared across many filaments and over-match if id-compared.
+      // both sides agree on filament_id.
+      //
+      // Generic GFx99 ids count here too (#2710). The equality test already
+      // means both sides carry the *same* id, so the old "generic ids
+      // over-match" exclusion could only ever fire when the selected preset
+      // was itself the generic one — precisely the case where the match is
+      // right. The printer keeps one calibration table per filament_id, so a
+      // slot on "Generic PLA" should offer every profile calibrated under
+      // Generic PLA, whatever the user named them.
       if (presetFid) {
         const calFid = toFilamentId(p.filament_id);
-        if (calFid && calFid === presetFid && !isGenericFilamentId(calFid)) {
+        if (calFid && calFid === presetFid) {
           return true;
         }
       }
@@ -965,6 +984,46 @@ export function ConfigureAmsSlotModal({
 
     return result;
   }, [kprofilesData?.profiles, selectedPresetInfo, slotInfo.extruderId, slotInfo.caliIdx]);
+
+  // Every remaining K-profile the printer holds, offered under a separate group
+  // after the matching ones (#2710). The matcher works off preset names and
+  // filament ids, neither of which the user controls when they name a profile
+  // after its colour — so there is always a residual chance it filters out a
+  // profile the user wants. This makes that recoverable in the UI instead of
+  // sending them to the slicer: the printer's own calibration table is the
+  // authority on what can be selected, and the backend realigns the slot's
+  // filament context to whichever profile is picked.
+  const otherKProfiles = useMemo(() => {
+    if (!kprofilesData?.profiles) return [];
+    const matched = new Set(matchingKProfiles.map(p => kProfileOptionValue(p)));
+    // Same name+k_value dedup as the matching list, so a multi-nozzle printer's
+    // duplicate rows don't show up twice here either.
+    const seen = new Map<string, KProfile>();
+    for (const profile of kprofilesData.profiles) {
+      const key = kProfileOptionValue(profile);
+      if (matched.has(key)) continue;
+      const existing = seen.get(key);
+      if (!existing) {
+        seen.set(key, profile);
+      } else if (slotInfo.extruderId !== undefined && profile.extruder_id === slotInfo.extruderId && existing.extruder_id !== slotInfo.extruderId) {
+        seen.set(key, profile);
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [kprofilesData?.profiles, matchingKProfiles, slotInfo.extruderId]);
+
+  const hasAnyKProfile = matchingKProfiles.length > 0 || otherKProfiles.length > 0;
+
+  const selectKProfileByValue = useCallback((value: string) => {
+    if (!value) {
+      setSelectedKProfile(null);
+      return;
+    }
+    const profile = matchingKProfiles.find(p => kProfileOptionValue(p) === value)
+      || otherKProfiles.find(p => kProfileOptionValue(p) === value)
+      || null;
+    setSelectedKProfile(profile);
+  }, [matchingKProfiles, otherKProfiles]);
 
   // Pre-select current profile when modal opens, reset when closes
   useEffect(() => {
@@ -1234,22 +1293,28 @@ export function ConfigureAmsSlotModal({
                       </span>
                     )}
                   </label>
-                  {matchingKProfiles.length > 0 ? (
+                  {hasAnyKProfile ? (
                     <div className="relative">
                       <select
-                        value={selectedKProfile?.name || ''}
-                        onChange={(e) => {
-                          const profile = matchingKProfiles.find(p => p.name === e.target.value);
-                          setSelectedKProfile(profile || null);
-                        }}
+                        value={selectedKProfile ? kProfileOptionValue(selectedKProfile) : ''}
+                        onChange={(e) => selectKProfileByValue(e.target.value)}
                         className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none pr-10"
                       >
                         <option value="">{t('configureAmsSlot.noKProfile')}</option>
                         {matchingKProfiles.map((profile) => (
-                          <option key={`${profile.name}-${profile.extruder_id}`} value={profile.name}>
+                          <option key={kProfileOptionValue(profile)} value={kProfileOptionValue(profile)}>
                             {profile.name} (K={profile.k_value})
                           </option>
                         ))}
+                        {otherKProfiles.length > 0 && (
+                          <optgroup label={t('configureAmsSlot.otherKProfiles')}>
+                            {otherKProfiles.map((profile) => (
+                              <option key={kProfileOptionValue(profile)} value={kProfileOptionValue(profile)}>
+                                {profile.name} (K={profile.k_value})
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
                       </select>
                       <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                     </div>
@@ -1473,22 +1538,28 @@ export function ConfigureAmsSlotModal({
                     </span>
                   )}
                 </label>
-                {matchingKProfiles.length > 0 ? (
+                {hasAnyKProfile ? (
                   <div className="relative">
                     <select
-                      value={selectedKProfile?.name || ''}
-                      onChange={(e) => {
-                        const profile = matchingKProfiles.find(p => p.name === e.target.value);
-                        setSelectedKProfile(profile || null);
-                      }}
+                      value={selectedKProfile ? kProfileOptionValue(selectedKProfile) : ''}
+                      onChange={(e) => selectKProfileByValue(e.target.value)}
                       className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none appearance-none pr-10"
                     >
                       <option value="">{t('configureAmsSlot.noKProfile')}</option>
                       {matchingKProfiles.map((profile) => (
-                        <option key={`${profile.name}-${profile.extruder_id}`} value={profile.name}>
+                        <option key={kProfileOptionValue(profile)} value={kProfileOptionValue(profile)}>
                           {profile.name} (K={profile.k_value})
                         </option>
                       ))}
+                      {otherKProfiles.length > 0 && (
+                        <optgroup label={t('configureAmsSlot.otherKProfiles')}>
+                          {otherKProfiles.map((profile) => (
+                            <option key={kProfileOptionValue(profile)} value={kProfileOptionValue(profile)}>
+                              {profile.name} (K={profile.k_value})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" />
                   </div>

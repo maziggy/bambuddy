@@ -6,6 +6,7 @@ import { api } from '../api/client';
 import type { Archive } from '../api/client';
 import { Button } from './Button';
 import { PrintLogTable } from './PrintLogTable';
+import { invalidateArchiveAndProjectViews } from '../utils/projectQueries';
 
 // Keys for failure reasons - translated at render time.
 // Exported so the Print Log per-row classification editor (#1687 part 4)
@@ -147,8 +148,9 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
     mutationFn: (data: Parameters<typeof api.updateArchive>[1]) =>
       api.updateArchive(archive.id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      // This form can change the archive's project, so the project detail
+      // views need refreshing too — not just the overview cards (#2731).
+      invalidateArchiveAndProjectViews(queryClient);
       onClose();
     },
   });

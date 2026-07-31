@@ -212,6 +212,36 @@ DUAL_NOZZLE_MODELS = frozenset(
 )
 
 
+# Models where Bambu's own firmware/UI names the enclosure fan (big_fan2 /
+# airduct part id 3) "Exhaust" rather than "Chamber". On these the printer's
+# touchscreen and Bambu Studio both call it the exhaust fan, and on the P2S it
+# is an add-on kit rather than built-in hardware. Other enclosed models
+# (X1 / P1S / H2 series) keep the "Chamber" naming.
+EXHAUST_FAN_LABEL_MODELS = frozenset(
+    [
+        # Display names (uppercase, no spaces)
+        "P2S",
+        "X2D",
+        # Internal codes
+        "N7",  # P2S
+        "N6",  # X2D
+    ]
+)
+
+
+def uses_exhaust_fan_label(model: str | None) -> bool:
+    """Return True if this model calls the big_fan2 enclosure fan "Exhaust".
+
+    P2S/X2D name that fan "Exhaust" in Bambu's firmware/UI; everything else
+    enclosed calls it the chamber fan. Used so the UI badge and the API
+    response message agree on what the user sees.
+    """
+    if not model:
+        return False
+    normalized = model.strip().upper().replace(" ", "").replace("-", "")
+    return normalized in EXHAUST_FAN_LABEL_MODELS
+
+
 def has_ethernet(model: str | None) -> bool:
     """Return True if the printer model has an ethernet port."""
     if not model:

@@ -35,6 +35,13 @@ out broadcaster to prevent). When ``is_stream_active`` reports True
 AND a buffered frame is fresh (last 10 s), we short-circuit the test
 with ``live_stream_active`` and report success — the user is
 literally watching the camera right now, no test needed.
+
+The related case is another one-shot capture (Obico polling, the cam
+wall) being in flight when the user hits Diagnose. There the capture
+layer coalesces for us (#2705) and no competing socket is opened, but
+the frame we get back was someone else's — so ``first_frame`` still
+passes and carries a ``coalesced_capture`` code, because a diagnostic
+that reports a connection it didn't open is worse than a slow one.
 """
 
 from __future__ import annotations
@@ -46,6 +53,7 @@ from dataclasses import dataclass, field
 
 from backend.app.services.camera import (
     capture_camera_frame_bytes,
+    capture_in_flight,
     get_camera_port,
     is_chamber_image_model,
 )
@@ -69,8 +77,10 @@ class CameraDiagnoseStage:
     name: str  # "tcp_reachable" | "first_frame" | "live_stream_active"
     status: str  # "ok" | "failed" | "skipped"
     duration_ms: int = 0
-    # Optional machine-readable code for failures so the frontend can
-    # render a stage-specific hint without parsing free-text errors.
+    # Optional machine-readable code so the frontend can render a stage-
+    # specific hint without parsing free-text errors. Usually a failure
+    # reason; "coalesced_capture" qualifies a PASS whose frame came from a
+    # capture already in flight, so duration_ms isn't a connection time.
     code: str | None = None
 
 
@@ -166,6 +176,15 @@ async def _check_first_frame(
     """Stage 2 — capture one frame end-to-end. Combines auth + protocol
     handshake + first keyframe; either it works or it doesn't."""
     started = time.monotonic()
+    # A capture already running for this printer (an Obico poll, the cam wall)
+    # means capture_camera_frame_bytes will hand us THAT capture's frame rather
+    # than opening its own connection (#2705). Good for the printer, but this
+    # stage exists to report what it measured: the frame would be real evidence
+    # the camera works, while duration_ms would be mostly time spent queueing,
+    # and a pass would be claimed for a connection we never opened. So the
+    # stage says so, the same way the live-stream shortcut above declares
+    # itself instead of quietly passing.
+    coalesced = capture_in_flight(ip_address)
     try:
         jpeg = await capture_camera_frame_bytes(
             ip_address=ip_address,
@@ -190,7 +209,11 @@ async def _check_first_frame(
             name="first_frame",
             status="ok",
             duration_ms=int((time.monotonic() - started) * 1000),
+            code="coalesced_capture" if coalesced else None,
         )
+    # No annotation on the failure path: a follower whose leader fails goes on
+    # to capture on its own, so a None here means this stage did get its own
+    # attempt (or watched two consecutive captures fail — same verdict).
     return CameraDiagnoseStage(
         name="first_frame",
         status="failed",

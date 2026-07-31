@@ -33,6 +33,10 @@ class _CleanProc:
     def __init__(self, pid: int) -> None:
         self.pid = pid
         self.returncode = None
+        # Real Process objects always expose these (None when not piped), and
+        # _terminate_ffmpeg drains them so a full pipe can't wedge the exit.
+        self.stdout = None
+        self.stderr = None
 
     def terminate(self) -> None:
         self.returncode = 0

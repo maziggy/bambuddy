@@ -20,6 +20,7 @@ from backend.app.services.bambu_mqtt import (
     A2L_LITE_PHYSICAL_AMS_ID,
     BambuMQTTClient,
     a2l_lite_wire_ids,
+    apply_tray_exist_bits,
     normalize_am_unit_id,
 )
 
@@ -140,6 +141,71 @@ class TestTrayNowGlobalisation:
         client = _client()
         client._handle_ams_data(_capture_frame())
         assert client.state.last_loaded_tray == 26
+
+
+class TestTrayExistBitsBitBase:
+    """#2697: ``apply_tray_exist_bits`` is reached with BOTH ids.
+
+    ``_handle_ams_data`` normalises 16 -> 6 before calling it, but the VP
+    bridge parses the raw printer payload itself and still holds the physical
+    16. Reading 16 as ``16 * 4`` lands on bits 64-67, where nothing is ever
+    set, so every A2L slot was wiped in the slicer-facing cache. Both ids must
+    resolve to bit base 24.
+    """
+
+    # Reporter's capture: bits 24, 25, 26 set -> slots 0/1/2 loaded, slot 3 empty.
+    BITS = "7000000"
+
+    def _units(self, ams_id):
+        return [
+            {
+                "id": ams_id,
+                "tray": [
+                    {
+                        "id": str(i),
+                        "state": 3,
+                        "tray_type": "PLA",
+                        "tray_color": "C12E1FFF",
+                        "tray_info_idx": "GFA00",
+                        "remain": 100,
+                    }
+                    for i in range(4)
+                ],
+            }
+        ]
+
+    def test_physical_id_16_uses_bit_base_24(self):
+        units = self._units(A2L_LITE_PHYSICAL_AMS_ID)
+        cleared = apply_tray_exist_bits(units, self.BITS)
+        trays = units[0]["tray"]
+        # Slots 0-2 are loaded and must survive untouched.
+        for slot in range(3):
+            assert trays[slot]["tray_type"] == "PLA", f"slot {slot} wrongly cleared"
+            assert trays[slot]["state"] == 3
+        # Only the genuinely empty slot 3 is cleared.
+        assert cleared == 1
+        assert trays[3]["state"] == 9
+        assert trays[3]["tray_type"] == ""
+
+    def test_normalised_id_6_matches_physical_id_16(self):
+        physical = self._units(A2L_LITE_PHYSICAL_AMS_ID)
+        normalised = self._units(A2L_LITE_NORMALIZED_AMS_ID)
+        apply_tray_exist_bits(physical, self.BITS)
+        apply_tray_exist_bits(normalised, self.BITS)
+        assert physical[0]["tray"] == normalised[0]["tray"]
+
+    def test_exists_annotation_matches_physical_slots(self):
+        units = self._units(A2L_LITE_PHYSICAL_AMS_ID)
+        apply_tray_exist_bits(units, self.BITS, annotate_exists=True)
+        assert [t["exists"] for t in units[0]["tray"]] == [True, True, True, False]
+
+    def test_regular_ams_unchanged(self):
+        # id 0 still reads bits 0-3 — the fold must not touch any other unit.
+        units = self._units(0)
+        apply_tray_exist_bits(units, "e")  # bits 1,2,3
+        trays = units[0]["tray"]
+        assert trays[0]["state"] == 9
+        assert [t["tray_type"] for t in trays] == ["", "PLA", "PLA", "PLA"]
 
 
 class TestOutboundTranslation:

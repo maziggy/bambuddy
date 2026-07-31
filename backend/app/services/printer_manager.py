@@ -325,6 +325,7 @@ class PrinterManager:
         self._on_status_change: Callable[[int, PrinterState], None] | None = None
         self._on_ams_change: Callable[[int, list], None] | None = None
         self._on_layer_change: Callable[[int, int], None] | None = None
+        self._on_print_progress: Callable[[int, int], None] | None = None
         self._on_bed_temp_update: Callable[[int, float], None] | None = None
         self._on_drying_complete: Callable[[int, int], None] | None = None
         self._on_assignment_verified: Callable[[int, int, int, bool, dict], None] | None = None
@@ -377,6 +378,13 @@ class PrinterManager:
         UI without it. Centralised here so every current AND future caller is
         covered without each one having to remember to broadcast.
         """
+        # Callers re-assert the current value routinely (the queue clears the gate
+        # on every dispatch, whether or not it was up), so the outward-facing
+        # emissions below are edge-triggered — an MQTT subscriber or a phone
+        # notification must not see a "plate cleared" for a plate that was never
+        # dirty. Persistence and the WebSocket broadcast stay unconditional: they
+        # are idempotent and predate this (#961/#1128).
+        changed = awaiting != (printer_id in self._awaiting_plate_clear)
         if awaiting:
             self._awaiting_plate_clear.add(printer_id)
         else:
@@ -386,6 +394,45 @@ class PrinterManager:
         if self._loop and self._loop.is_running():
             self._schedule_async(self._persist_awaiting_plate_clear(printer_id, awaiting))
             self._schedule_async(self._broadcast_status_change(printer_id))
+            if changed:
+                self._schedule_async(self._emit_plate_clear_change(printer_id, awaiting))
+
+    async def _emit_plate_clear_change(self, printer_id: int, awaiting: bool) -> None:
+        """Relay a plate-clear gate transition to MQTT and notifications (#2525).
+
+        The flag is Bambuddy-side, so nothing about it reaches an external
+        automation on its own — the printer's own MQTT push knows only
+        RUNNING/PAUSE/FAILED/FINISH/IDLE. Emitted from here rather than from the
+        three call sites so every current and future caller is covered, the same
+        reasoning as the WebSocket broadcast above.
+
+        Imports are local: ``mqtt_relay`` and ``notification_service`` both sit
+        above this module in the dependency order.
+        """
+        printer = self.get_printer(printer_id)
+        if not printer:
+            return
+
+        try:
+            from backend.app.services.mqtt_relay import mqtt_relay
+
+            await mqtt_relay.on_plate_clear_state(printer_id, printer.name, printer.serial_number, awaiting)
+        except Exception as e:
+            logger.warning("Failed to publish plate-clear state for printer %d: %s", printer_id, e)
+
+        # Only the rising edge is worth a notification — "the bed is now free"
+        # is not an action item, and the queue clears the gate by itself.
+        if not awaiting:
+            return
+
+        try:
+            from backend.app.core.database import async_session
+            from backend.app.services.notification_service import notification_service
+
+            async with async_session() as db:
+                await notification_service.on_plate_clear_required(printer_id, printer.name, db)
+        except Exception as e:
+            logger.warning("Failed to send plate-clear notification for printer %d: %s", printer_id, e)
 
     async def _broadcast_status_change(self, printer_id: int) -> None:
         """Emit a ``printer_status`` WebSocket update for this printer (#1128).
@@ -502,6 +549,15 @@ class PrinterManager:
         """Set callback for layer change events. Receives (printer_id, layer_num)."""
         self._on_layer_change = callback
 
+    def set_print_progress_callback(self, callback: Callable[[int, int], None]):
+        """Set callback for print-progress advances (#2547).
+
+        Receives (printer_id, percent) each time `mc_percent` increases during a
+        running print — including the final layer, where layer-change events
+        have already stopped.
+        """
+        self._on_print_progress = callback
+
     def set_bed_temp_update_callback(self, callback: Callable[[int, float], None]):
         """Set callback for bed temperature updates. Receives (printer_id, bed_temp)."""
         self._on_bed_temp_update = callback
@@ -578,6 +634,10 @@ class PrinterManager:
             if self._on_layer_change:
                 self._schedule_async(self._on_layer_change(printer_id, layer_num))
 
+        def on_print_progress(percent: int):
+            if self._on_print_progress:
+                self._schedule_async(self._on_print_progress(printer_id, percent))
+
         def on_bed_temp_update(bed_temp: float):
             if self._on_bed_temp_update:
                 self._schedule_async(self._on_bed_temp_update(printer_id, bed_temp))
@@ -600,6 +660,7 @@ class PrinterManager:
             on_print_complete=on_print_complete,
             on_ams_change=on_ams_change,
             on_layer_change=on_layer_change,
+            on_print_progress=on_print_progress,
             on_bed_temp_update=on_bed_temp_update,
             on_drying_complete=on_drying_complete,
             on_print_running_observed=on_print_running_observed,
@@ -905,6 +966,11 @@ class PrinterManager:
                 "success": client.state.connected,
                 "state": client.state.state if client.state.connected else None,
                 "model": client.state.raw_data.get("device_model"),
+                # Why the probe failed, when the printer told us: one of the
+                # CONNECT_ERROR_* slugs, else None. Lets the add-printer flow
+                # and the connection diagnostic say "the printer rejected the
+                # access code" instead of an unqualified failure (#2698).
+                "reason": None if client.state.connected else client.last_connect_error,
             }
         finally:
             # Off-loop teardown — see docstring. paho's loop_stop() joins the
@@ -1367,6 +1433,8 @@ def printer_state_to_dict(
         "big_fan1_speed": state.big_fan1_speed,
         "big_fan2_speed": state.big_fan2_speed,
         "heatbreak_fan_speed": state.heatbreak_fan_speed,
+        "left_aux_fan_speed": state.left_aux_fan_speed,
+        "exhaust_fan_present": state.exhaust_fan_present,
         # Chamber light state
         "chamber_light": state.chamber_light,
         # Active extruder for dual-nozzle printers (0=right, 1=left)

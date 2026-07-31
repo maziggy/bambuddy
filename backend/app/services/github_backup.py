@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import desc, select
+from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import async_session
@@ -18,10 +18,60 @@ from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.spool import Spool
 from backend.app.models.spool_usage_history import SpoolUsageHistory
+from backend.app.models.user import User
 from backend.app.services.git_providers.factory import get_provider_backend
 from backend.app.services.printer_manager import printer_manager
 
 logger = logging.getLogger(__name__)
+
+# Bambu's listing endpoint is keyed by preset type and calls process presets
+# "print". Same mapping as `routes/cloud.py` — kept in step with it, since a
+# divergence here silently drops a whole preset type from every backup.
+_BAMBU_PRESET_TYPES = {
+    "filament": "filament",
+    "printer": "printer",
+    "print": "process",
+}
+
+
+def _bambu_preset_record(setting_id, our_type: str, entry: dict, detail: dict) -> dict:
+    """One Bambu preset as stored in the backup: metadata plus the payload.
+
+    ``base_id`` and ``setting`` are the two fields ``BambuCloudService.
+    create_setting`` needs, so a restore can rebuild the preset rather than
+    just list it.
+
+    ``user_id`` from the listing is deliberately dropped. It identifies the
+    account and adds nothing to a rebuild, and backup repositories can be
+    public.
+    """
+    return {
+        "setting_id": str(setting_id),
+        "name": detail.get("name") or entry.get("name") or "Unknown",
+        "type": our_type,
+        "version": detail.get("version") or entry.get("version"),
+        "updated_time": entry.get("updated_time"),
+        "base_id": detail.get("base_id"),
+        "filament_id": detail.get("filament_id"),
+        "setting": detail.get("setting") or {},
+    }
+
+
+def _orca_profile_record(entry: dict) -> dict:
+    """One Orca profile as stored in the backup.
+
+    ``content`` is kept whole rather than picked apart: it is the profile, the
+    sync API hands it over inline, and Orca owns its shape. Narrowing it here
+    would mean guessing which keys a future restore needs.
+    """
+    return {
+        "id": str(entry.get("id")) if entry.get("id") is not None else None,
+        "name": entry.get("name"),
+        "updated_time": entry.get("updated_time"),
+        "created_time": entry.get("created_time"),
+        "content": entry.get("content"),
+    }
+
 
 # Schedule intervals in seconds
 SCHEDULE_INTERVALS = {
@@ -279,11 +329,13 @@ class GitHubBackupService:
         {
             "backup_metadata.json": {...},
             "kprofiles/{serial}/{nozzle}.json": {...},
-            "cloud_profiles/filament.json": [...],
-            "cloud_profiles/printer.json": [...],
-            "cloud_profiles/process.json": [...],
+            "cloud_profiles/bambu/{account}/{filament,printer,process}.json": {...},
+            "cloud_profiles/orca/{account}/{filament,printer,process}.json": {...},
             "settings/app_settings.json": {...},
         }
+
+        ``{account}`` is ``global`` when auth is disabled, otherwise
+        ``user-{id}`` — one directory per connected cloud account (#2717).
         """
         files: dict[str, dict | list] = {}
 
@@ -306,10 +358,20 @@ class GitHubBackupService:
             self._backup_progress = "Collecting K-profiles from printers..."
             await self._collect_kprofiles(db, files)
 
-        # Collect cloud profiles
+        # Collect cloud profiles. `contents.cloud_profiles` is corrected below
+        # from what was configured to what was actually written — it claimed
+        # `true` on every backup, including the ones that collected nothing
+        # (#2717), which is exactly the signal a restore needs to be able to
+        # trust.
         if config.backup_cloud_profiles:
-            self._backup_progress = "Collecting cloud profiles from Bambu Cloud..."
-            await self._collect_cloud_profiles(db, files)
+            self._backup_progress = "Collecting cloud profiles from Bambu Cloud and Orca Cloud..."
+            cloud_summary = await self._collect_cloud_profiles(db, files)
+            collected = bool(cloud_summary.get("bambu") or cloud_summary.get("orca"))
+            metadata["contents"]["cloud_profiles"] = collected
+            if collected:
+                # Per-cloud, per-account counts, so a restore can tell an empty
+                # account from one that failed to collect.
+                metadata["cloud_profiles"] = cloud_summary
 
         # Collect app settings
         if config.backup_settings:
@@ -374,68 +436,283 @@ class GitHubBackupService:
             if printer_profiles:
                 logger.info("Collected K-profiles for %s: %s", serial, printer_profiles)
 
-    async def _collect_cloud_profiles(self, db: AsyncSession, files: dict):
-        """Collect Bambu Cloud profiles if authenticated."""
-        # Backup runs without a user context, so fall back to the auth-disabled
-        # Settings storage. ``build_authenticated_cloud`` honours the stored
-        # region so China-region tokens are validated against api.bambulab.cn.
+    async def _collect_cloud_profiles(self, db: AsyncSession, files: dict) -> dict:
+        """Collect slicer presets from every connected cloud account.
+
+        Two clouds, and on an auth-enabled install any number of accounts in
+        each: Bambu Cloud tokens live on ``User.cloud_token`` and Orca Cloud
+        tokens on ``User.orca_cloud_token``, falling back to the global
+        ``Settings`` table only when auth is disabled. The previous version
+        asked for the auth-disabled store unconditionally, so it collected
+        nothing at all on any install with auth on (#2717).
+
+        Layout is one directory per cloud per account, both clouds grouped the
+        same way so a restore reads them identically::
+
+            cloud_profiles/bambu/user-3/{filament,printer,process}.json
+            cloud_profiles/orca/user-3/{filament,printer,process}.json
+
+        Accounts are keyed by Bambuddy user id (``global`` when auth is off),
+        never by email — a backup repository can be public.
+
+        Returns a per-cloud summary for ``backup_metadata.json`` so the
+        metadata records what was actually collected rather than what was
+        merely enabled.
+        """
+        summary: dict = {"bambu": {}, "orca": {}}
+
+        bambu_accounts, orca_accounts = await self.cloud_accounts(db)
+        if not bambu_accounts and not orca_accounts:
+            # Enabled but nothing to collect. Deliberately a warning: the INFO
+            # line this replaces read as a successful collection of nothing,
+            # which is how #2717 went unnoticed through every backup.
+            logger.warning(
+                "Cloud profiles are enabled for backup, but no Bambu Cloud or Orca Cloud "
+                "account is connected — nothing to collect."
+            )
+            return summary
+
+        for account_key, user in bambu_accounts:
+            try:
+                counts = await self._collect_bambu_profiles(db, files, account_key, user)
+            except Exception:
+                logger.warning("Failed to collect Bambu Cloud profiles for %s", account_key, exc_info=True)
+                continue
+            if counts:
+                summary["bambu"][account_key] = counts
+
+        for account_key, user in orca_accounts:
+            try:
+                counts = await self._collect_orca_profiles(db, files, account_key, user)
+            except Exception:
+                logger.warning("Failed to collect Orca Cloud profiles for %s", account_key, exc_info=True)
+                continue
+            if counts:
+                summary["orca"][account_key] = counts
+
+        if not summary["bambu"] and not summary["orca"]:
+            logger.warning(
+                "Cloud profiles are enabled and %d Bambu / %d Orca account(s) are connected, "
+                "but no presets were collected — see the per-account warnings above.",
+                len(bambu_accounts),
+                len(orca_accounts),
+            )
+        else:
+            logger.info("Collected cloud profiles: %s", summary)
+        return summary
+
+    async def cloud_accounts(self, db: AsyncSession) -> tuple[list, list]:
+        """Enumerate connected accounts as ``(account_key, user_or_None)`` per cloud.
+
+        With auth enabled every user holds their own credentials, so a backup
+        that only looked at the global store saw none of them. With auth
+        disabled there is a single global row and no ``User`` at all, which is
+        what ``user=None`` means to both clouds' credential loaders.
+
+        Both stores are read regardless: a ``Settings`` row survives enabling
+        auth later, and dropping it silently would lose that account's presets.
+        """
+        from backend.app.api.routes.cloud import get_stored_token
+        from backend.app.api.routes.orca_cloud import _load_credentials
+
+        bambu: list = []
+        orca: list = []
+
+        global_token, _email, _region = await get_stored_token(db, None)
+        if global_token:
+            bambu.append(("global", None))
+        global_orca = await _load_credentials(db, None)
+        if global_orca.token:
+            orca.append(("global", None))
+
+        result = await db.execute(
+            select(User).where(or_(User.cloud_token.isnot(None), User.orca_cloud_token.isnot(None)))
+        )
+        for user in result.scalars().all():
+            if user.cloud_token:
+                bambu.append((f"user-{user.id}", user))
+            if user.orca_cloud_token:
+                orca.append((f"user-{user.id}", user))
+
+        return bambu, orca
+
+    async def _collect_bambu_profiles(self, db: AsyncSession, files: dict, account_key: str, user) -> dict:
+        """Collect one Bambu Cloud account's custom presets, with their payloads.
+
+        The listing endpoint is keyed by preset type, each holding ``private``
+        and ``public`` lists — there is no flat ``setting`` array, and the
+        entries carry no ``type`` of their own, which is why the type comes
+        from the outer key here exactly as it does in ``routes/cloud.py``.
+        Bambu calls process presets ``print``.
+
+        ``public`` is skipped: those are Bambu's own bundled catalogue, the
+        same hundreds of entries for every user, re-downloadable at any time
+        and not recreatable under your account anyway. Backing them up would
+        churn the repository on every run for nothing.
+
+        Each private preset then costs one ``get_setting_detail`` call, because
+        the listing carries only metadata. Without ``base_id`` and ``setting``
+        the backup is a list of names, not something a restore can rebuild
+        from. Bounded by the number of *custom* presets, and the backup already
+        makes a round-trip per printer for K-profiles.
+        """
         from backend.app.api.routes.cloud import build_authenticated_cloud
 
-        cloud = await build_authenticated_cloud(db, user=None)
+        cloud = await build_authenticated_cloud(db, user=user)
         if cloud is None or not cloud.is_authenticated:
-            if cloud is not None:
-                await cloud.close()
-            logger.info("Cloud not authenticated, skipping cloud profiles")
-            return
+            logger.info("Bambu Cloud not authenticated for %s, skipping", account_key)
+            return {}
 
+        counts: dict = {}
         try:
             settings = await cloud.get_slicer_settings()
-            if not settings:
-                return
+            if not isinstance(settings, dict) or not settings:
+                logger.warning("Bambu Cloud returned no slicer settings for %s", account_key)
+                return {}
 
-            # Separate by type
-            filament_settings = []
-            printer_settings = []
-            process_settings = []
+            failed = 0
+            for api_key, our_type in _BAMBU_PRESET_TYPES.items():
+                type_data = settings.get(api_key)
+                if not isinstance(type_data, dict):
+                    continue
+                private = type_data.get("private")
+                if not isinstance(private, list) or not private:
+                    continue
 
-            for setting in settings.get("setting", []) if isinstance(settings.get("setting"), list) else []:
-                setting_type = setting.get("type", "")
-                if setting_type == "filament":
-                    filament_settings.append(setting)
-                elif setting_type == "printer":
-                    printer_settings.append(setting)
-                elif setting_type == "process":
-                    process_settings.append(setting)
+                profiles = []
+                for entry in private:
+                    setting_id = entry.get("setting_id") or entry.get("id")
+                    if not setting_id:
+                        continue
+                    try:
+                        detail = await cloud.get_setting_detail(str(setting_id))
+                    except Exception as e:
+                        # One unreadable preset must not cost the rest of the
+                        # account, but it must not vanish quietly either.
+                        failed += 1
+                        logger.warning(
+                            "Failed to fetch Bambu Cloud preset %s (%s) for %s: %s",
+                            setting_id,
+                            entry.get("name", "unnamed"),
+                            account_key,
+                            e,
+                        )
+                        continue
+                    profiles.append(_bambu_preset_record(setting_id, our_type, entry, detail))
 
-            if filament_settings:
-                files["cloud_profiles/filament.json"] = {
-                    "version": "1.0",
-                    "profiles": filament_settings,
-                }
+                if profiles:
+                    files[f"cloud_profiles/bambu/{account_key}/{our_type}.json"] = {
+                        "version": "2.0",
+                        "cloud": "bambu",
+                        "type": our_type,
+                        "profiles": profiles,
+                    }
+                    counts[our_type] = len(profiles)
 
-            if printer_settings:
-                files["cloud_profiles/printer.json"] = {
-                    "version": "1.0",
-                    "profiles": printer_settings,
-                }
-
-            if process_settings:
-                files["cloud_profiles/process.json"] = {
-                    "version": "1.0",
-                    "profiles": process_settings,
-                }
-
-            logger.info(
-                "Collected cloud profiles: %d filament, %d printer, %d process",
-                len(filament_settings),
-                len(printer_settings),
-                len(process_settings),
-            )
-
-        except Exception:
-            logger.warning("Failed to collect cloud profiles", exc_info=True)
+            if failed:
+                counts["failed"] = failed
+            return counts
         finally:
             await cloud.close()
+
+    async def _collect_orca_profiles(self, db: AsyncSession, files: dict, account_key: str, user) -> dict:
+        """Collect one Orca Cloud account's profiles, grouped the same three ways.
+
+        Cheaper than Bambu: the sync-pull listing already carries each
+        profile's full ``content``, so there is no per-profile fetch.
+
+        The type lives at ``content.type`` and is mapped through the same
+        ``_ORCA_TYPE_TO_BAMBU`` table the Orca tab uses, so the backup groups
+        exactly as the UI does. Where that route *drops* a profile whose type
+        it can't map, this writes it to ``other.json`` instead — a backup that
+        silently omits a profile because Orca added a type is the same class of
+        bug as #2717 itself.
+
+        Uses the route layer's ``_build_authenticated_service`` rather than
+        re-implementing the refresh: the Orca refresh token is single-use and
+        rotating, and that helper already persists the new pair atomically
+        before returning.
+
+        Passes ``clear_on_auth_failure=False``, so a rejected refresh skips the
+        account instead of disconnecting it. A backup is an observer; it should
+        not change anyone's sign-in state on a schedule, least of all on a
+        rejection reason Orca does not disambiguate. The next time the user
+        opens the Orca Profiles page that route clears the dead pairing anyway,
+        with the user present to pair again.
+        """
+        from fastapi import HTTPException
+
+        from backend.app.api.routes.orca_cloud import (
+            _ORCA_TYPE_TO_BAMBU,
+            _build_authenticated_service,
+        )
+
+        try:
+            svc = await _build_authenticated_service(db, user, clear_on_auth_failure=False)
+        except HTTPException as e:
+            # Either way the stored credentials are untouched and this account
+            # is skipped, not disconnected — but the two need different advice.
+            # A rejected refresh will not fix itself and needs the user to pair
+            # again; an unreachable Orca is very likely gone by the next run.
+            if e.status_code == 401:
+                logger.warning(
+                    "Orca Cloud rejected the stored session for %s, so its profiles are not in this "
+                    "backup. Later runs will skip it too until the account is paired again under "
+                    "Profiles > Orca Cloud Profiles — which is also where the dead credentials get "
+                    "cleared. Cause: %s",
+                    account_key,
+                    e.detail,
+                )
+            else:
+                logger.warning(
+                    "Orca Cloud unreachable for %s, skipping its profiles this run: %s",
+                    account_key,
+                    e.detail,
+                )
+            return {}
+        except Exception as e:
+            logger.warning("Orca Cloud not usable for %s: %s", account_key, e, exc_info=True)
+            return {}
+
+        counts: dict = {}
+        try:
+            raw_profiles = await svc.list_profiles()
+            grouped: dict[str, list] = {}
+            unknown_types: dict[str, int] = {}
+
+            for entry in raw_profiles:
+                if not isinstance(entry, dict):
+                    continue
+                content = entry.get("content")
+                raw_type = content.get("type") if isinstance(content, dict) else None
+                our_type = _ORCA_TYPE_TO_BAMBU.get(str(raw_type)) if raw_type is not None else None
+                if our_type is None:
+                    unknown_types[str(raw_type) if raw_type is not None else "<missing>"] = (
+                        unknown_types.get(str(raw_type) if raw_type is not None else "<missing>", 0) + 1
+                    )
+                    our_type = "other"
+                grouped.setdefault(our_type, []).append(_orca_profile_record(entry))
+
+            for our_type, profiles in grouped.items():
+                files[f"cloud_profiles/orca/{account_key}/{our_type}.json"] = {
+                    "version": "2.0",
+                    "cloud": "orca",
+                    "type": our_type,
+                    "profiles": profiles,
+                }
+                counts[our_type] = len(profiles)
+
+            if unknown_types:
+                logger.warning(
+                    "Orca Cloud sent %d profile(s) for %s with unmapped content.type values %s — "
+                    "backed up to other.json rather than dropped.",
+                    sum(unknown_types.values()),
+                    account_key,
+                    unknown_types,
+                )
+            return counts
+        finally:
+            await svc.close()
 
     async def _collect_settings(self, db: AsyncSession, files: dict):
         """Collect app settings."""

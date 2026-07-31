@@ -32,6 +32,7 @@ import type {
   LocalBackupPathCheck,
   LocalBackupStatus,
   ScheduleType,
+  CloudAccountCounts,
   CloudAuthStatus,
   Printer,
 } from '../api/client';
@@ -323,6 +324,24 @@ export function GitHubBackupSettings() {
     queryKey: ['cloud-status'],
     queryFn: api.getCloudStatus,
   });
+
+  // How many cloud accounts the backup would actually collect from, across
+  // both Bambu Cloud and Orca Cloud. Not the same question as `cloudStatus`,
+  // which is only *this viewer's* Bambu sign-in: with auth enabled every user
+  // holds their own credentials and the backup collects from all of them, so
+  // an admin who never signed in to Bambu Cloud personally would otherwise see
+  // the category disabled while there is plenty to back up (#2717).
+  const { data: cloudAccounts } = useQuery<CloudAccountCounts>({
+    queryKey: ['github-backup-cloud-accounts'],
+    queryFn: api.getGitHubBackupCloudAccounts,
+    staleTime: 60_000,
+  });
+  const connectedCloudAccounts = (cloudAccounts?.bambu ?? 0) + (cloudAccounts?.orca ?? 0);
+  // Until the count arrives, fall back to the viewer's own Bambu status rather
+  // than rendering the toggle as unavailable and making it flicker enabled.
+  const anyCloudConnected = cloudAccounts
+    ? connectedCloudAccounts > 0
+    : !!cloudStatus?.is_authenticated;
 
   // Fetch printers and their statuses for K-profile availability
   const { data: printers } = useQuery<Printer[]>({
@@ -751,18 +770,18 @@ export function GitHubBackupSettings() {
                     <p className="text-xs text-bambu-gray">{t('backup.kProfilesDescription')}</p>
                   </div>
                 </label>
-                <label className={`flex items-start gap-2 ${!cloudStatus?.is_authenticated ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+                <label className={`flex items-start gap-2 ${!anyCloudConnected ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
                   <input
                     type="checkbox"
                     checked={backupCloudProfiles}
                     onChange={(e) => setBackupCloudProfiles(e.target.checked)}
                     className="w-4 h-4 mt-0.5 rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
-                    disabled={!cloudStatus?.is_authenticated}
+                    disabled={!anyCloudConnected}
                   />
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className={`text-sm ${cloudStatus?.is_authenticated ? 'text-white' : 'text-bambu-gray'}`}>{t('backup.cloudProfiles')}</span>
-                      {!cloudStatus?.is_authenticated && (
+                      <span className={`text-sm ${anyCloudConnected ? 'text-white' : 'text-bambu-gray'}`}>{t('backup.cloudProfiles')}</span>
+                      {!anyCloudConnected && (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400">
                           <AlertTriangle className="w-3 h-3" />
                           {t('backup.cloudLoginRequiredShort')}
@@ -770,6 +789,18 @@ export function GitHubBackupSettings() {
                       )}
                     </div>
                     <p className="text-xs text-bambu-gray">{t('backup.cloudProfilesDescription')}</p>
+                    {/* Say how many accounts are in scope. On a multi-user
+                        install the presets being backed up are other people's,
+                        and the count is the only honest way to show that
+                        without naming them. */}
+                    {connectedCloudAccounts > 0 && (
+                      <p className="text-xs text-bambu-gray mt-0.5">
+                        {t('backup.cloudProfilesAccounts', {
+                          bambu: cloudAccounts?.bambu ?? 0,
+                          orca: cloudAccounts?.orca ?? 0,
+                        })}
+                      </p>
+                    )}
                   </div>
                 </label>
                 <label className="flex items-start gap-2 cursor-pointer">

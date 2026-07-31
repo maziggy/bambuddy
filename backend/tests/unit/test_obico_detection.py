@@ -132,6 +132,205 @@ class TestTestConnection:
         assert result["body"] == "something else"
 
 
+class TestMlApiToken:
+    """Obico's ML API gates /p/ behind ML_API_TOKEN (#2733)."""
+
+    def test_auth_headers_only_when_configured(self):
+        from backend.app.services.obico_detection import auth_headers
+
+        assert auth_headers("s3cret") == {"Authorization": "Bearer s3cret"}
+        # Unconfigured must stay byte-identical to the pre-setting request.
+        assert auth_headers("") == {}
+        assert auth_headers(None) == {}
+        assert auth_headers("   ") == {}
+        # Whitespace around a real token is a paste artefact, not part of it.
+        assert auth_headers("  s3cret  ") == {"Authorization": "Bearer s3cret"}
+
+    def test_settings_schema_accepts_a_token(self):
+        assert AppSettingsUpdate(obico_ml_token="s3cret").obico_ml_token == "s3cret"
+        assert AppSettingsUpdate(obico_ml_token="").obico_ml_token == ""
+        assert AppSettingsUpdate().obico_ml_token is None
+
+    @staticmethod
+    def _settings(**overrides):
+        base = {
+            "enabled": True,
+            "ml_url": "http://obico:3333",
+            "ml_token": "",
+            "sensitivity": "medium",
+            "action": "notify",
+            "poll_interval": 10,
+            "enabled_printers": None,
+            "external_url": "http://bambuddy:8000",
+        }
+        base.update(overrides)
+        return base
+
+    @staticmethod
+    def _client(response):
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        return mock_client
+
+    @pytest.mark.asyncio
+    async def test_detection_call_carries_the_bearer_header(self):
+        svc = ObicoDetectionService()
+        response = MagicMock(status_code=200)
+        response.json.return_value = {"detections": []}
+        response.raise_for_status = MagicMock()
+        mock_client = self._client(response)
+        status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
+
+        with (
+            patch("backend.app.services.obico_detection.httpx.AsyncClient", return_value=mock_client),
+            patch.object(svc, "_capture_frame", new=AsyncMock(return_value=FAKE_JPEG)),
+        ):
+            await svc._check_printer(1, status, self._settings(ml_token="s3cret"))
+
+        assert mock_client.get.await_args.kwargs["headers"] == {"Authorization": "Bearer s3cret"}
+
+    @pytest.mark.asyncio
+    async def test_detection_call_sends_no_header_without_a_token(self):
+        svc = ObicoDetectionService()
+        response = MagicMock(status_code=200)
+        response.json.return_value = {"detections": []}
+        response.raise_for_status = MagicMock()
+        mock_client = self._client(response)
+        status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
+
+        with (
+            patch("backend.app.services.obico_detection.httpx.AsyncClient", return_value=mock_client),
+            patch.object(svc, "_capture_frame", new=AsyncMock(return_value=FAKE_JPEG)),
+        ):
+            await svc._check_printer(1, status, self._settings())
+
+        assert mock_client.get.await_args.kwargs["headers"] == {}
+
+    @pytest.mark.asyncio
+    async def test_401_reports_the_token_rather_than_a_bare_http_error(self):
+        svc = ObicoDetectionService()
+        response = MagicMock(status_code=401)
+        # raise_for_status would also raise here; the status check must come first
+        # so the user gets an actionable message instead of "401 Unauthorized".
+        response.raise_for_status = MagicMock(side_effect=AssertionError("must not reach raise_for_status"))
+        mock_client = self._client(response)
+        status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
+
+        with (
+            patch("backend.app.services.obico_detection.httpx.AsyncClient", return_value=mock_client),
+            patch.object(svc, "_capture_frame", new=AsyncMock(return_value=FAKE_JPEG)),
+        ):
+            await svc._check_printer(1, status, self._settings(ml_token="wrong"))
+
+        assert "401" in svc._last_error
+        assert "ML_API_TOKEN" in svc._last_error
+        # A rejected call must not be scored as a clean frame.
+        assert 1 not in svc._states or svc._states[1].frame_count == 0
+
+    @pytest.mark.asyncio
+    async def test_401_message_does_not_leak_the_token(self):
+        svc = ObicoDetectionService()
+        response = MagicMock(status_code=401)
+        response.raise_for_status = MagicMock()
+        mock_client = self._client(response)
+        status = MagicMock(state="RUNNING", task_name="job", subtask_name="")
+
+        with (
+            patch("backend.app.services.obico_detection.httpx.AsyncClient", return_value=mock_client),
+            patch.object(svc, "_capture_frame", new=AsyncMock(return_value=FAKE_JPEG)),
+        ):
+            await svc._check_printer(1, status, self._settings(ml_token="sup3rs3cret"))
+
+        assert "sup3rs3cret" not in svc._last_error
+
+
+class TestTestConnectionTokenProbe:
+    """/hc/ is ungated, so health alone cannot validate the token (#2733)."""
+
+    @staticmethod
+    def _client(responses):
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(side_effect=responses)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        return mock_client
+
+    @pytest.mark.asyncio
+    async def test_healthy_but_rejected_token_is_not_ok(self):
+        svc = ObicoDetectionService()
+        mock_client = self._client([MagicMock(status_code=200, text="ok"), MagicMock(status_code=401)])
+
+        with patch("backend.app.services.obico_detection.httpx.AsyncClient", return_value=mock_client):
+            result = await svc.test_connection("http://obico:3333", "wrong")
+
+        assert result["ok"] is False
+        assert result["auth_ok"] is False
+        assert result["status_code"] == 401
+        assert "ML_API_TOKEN" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_accepted_token_is_ok(self):
+        svc = ObicoDetectionService()
+        # 422 = "Invalid request params": auth passed, then the handler rejected
+        # the img-less probe. That is the success signal.
+        mock_client = self._client([MagicMock(status_code=200, text="ok"), MagicMock(status_code=422)])
+
+        with patch("backend.app.services.obico_detection.httpx.AsyncClient", return_value=mock_client):
+            result = await svc.test_connection("http://obico:3333", "right")
+
+        assert result["ok"] is True
+        assert result["auth_ok"] is True
+        assert result["error"] is None
+
+    @pytest.mark.asyncio
+    async def test_probe_failure_leaves_the_token_unknown_but_keeps_the_test_ok(self):
+        svc = ObicoDetectionService()
+        mock_client = self._client([MagicMock(status_code=200, text="ok"), RuntimeError("read timeout")])
+
+        with patch("backend.app.services.obico_detection.httpx.AsyncClient", return_value=mock_client):
+            result = await svc.test_connection("http://obico:3333", "maybe")
+
+        assert result["ok"] is True
+        assert result["auth_ok"] is None
+
+    @pytest.mark.asyncio
+    async def test_unhealthy_server_is_not_probed(self):
+        svc = ObicoDetectionService()
+        mock_client = self._client([MagicMock(status_code=200, text="error")])
+
+        with patch("backend.app.services.obico_detection.httpx.AsyncClient", return_value=mock_client):
+            result = await svc.test_connection("http://obico:3333", "any")
+
+        assert result["ok"] is False
+        assert result["auth_ok"] is None
+        assert mock_client.get.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_both_requests_carry_the_header(self):
+        svc = ObicoDetectionService()
+        mock_client = self._client([MagicMock(status_code=200, text="ok"), MagicMock(status_code=422)])
+
+        with patch("backend.app.services.obico_detection.httpx.AsyncClient", return_value=mock_client):
+            await svc.test_connection("http://obico:3333", "s3cret")
+
+        assert [call.args[0] for call in mock_client.get.await_args_list] == [
+            "http://obico:3333/hc/",
+            "http://obico:3333/p/",
+        ]
+        for call in mock_client.get.await_args_list:
+            assert call.kwargs["headers"] == {"Authorization": "Bearer s3cret"}
+
+    @pytest.mark.asyncio
+    async def test_url_policy_still_applies_before_any_request(self):
+        svc = ObicoDetectionService()
+        result = await svc.test_connection("http://169.254.169.254/latest/meta-data/", "s3cret")
+        assert result["ok"] is False
+        assert result["auth_ok"] is None
+        assert result["error"]
+
+
 class TestPollOneStateLifecycle:
     """Confirms per-printer state is reset when a new print starts."""
 

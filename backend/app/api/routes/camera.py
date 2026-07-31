@@ -1,10 +1,13 @@
 """Camera streaming API endpoints for Bambu Lab printers."""
 
 import asyncio
+import contextlib
 import logging
 import os
 import subprocess
 import sys
+import time
+import uuid
 from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -19,6 +22,7 @@ from backend.app.core.auth import (
     create_camera_stream_token,
 )
 from backend.app.core.database import get_db
+from backend.app.core.logging_filters import redact_url_credentials
 from backend.app.core.permissions import Permission
 from backend.app.models.printer import Printer
 from backend.app.models.user import User
@@ -45,12 +49,25 @@ from backend.app.services.camera_profiles import get_camera_profile
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["camera"])
 
-# Upper bound on waiting for a SIGKILLed ffmpeg to be reaped (#2580). A killed
-# ffmpeg stuck in uninterruptible I/O on a dead RTSP socket can take arbitrarily
-# long to exit — an unbounded post-kill wait() parked the fan-out stream
-# coroutine for 12 hours on a P2S, leaving every viewer attached to a stalled
-# broadcaster. Abandoning the wait is safe: cleanup_orphaned_streams' /proc scan
-# reaps any Bambu ffmpeg not attached to an active stream on its next pass.
+# Grace period for a SIGTERMed ffmpeg to shut down before we SIGKILL it. Only
+# reachable when ffmpeg genuinely ignores SIGTERM: _terminate_ffmpeg drains the
+# pipes first, and a drained ffmpeg exits in ~0.15s.
+_FFMPEG_TERM_TIMEOUT = 2.0
+
+# Upper bound on waiting for a SIGKILLed ffmpeg to be reaped (#2580).
+#
+# The original diagnosis — "a killed ffmpeg stuck in uninterruptible I/O on a
+# dead RTSP socket" — was wrong, and this bound was capping a deadlock of our
+# own making rather than waiting out a stuck process. A process that survives
+# SIGKILL would have to be in uninterruptible sleep (state D); the ffmpeg seen
+# doing this was in state S, and its returncode was already set to -9 while
+# wait() was still blocked. The real cause was undrained pipes (see
+# _terminate_ffmpeg), which made this timeout fire on *every* camera close.
+#
+# Kept as a backstop now that the cause is fixed: it should no longer be
+# reachable, and if it ever is, abandoning the wait is still safe because
+# cleanup_orphaned_streams' /proc scan reaps any Bambu ffmpeg not attached to
+# an active stream on its next pass.
 _FFMPEG_KILL_TIMEOUT = 2.0
 
 # Track active ffmpeg processes for cleanup
@@ -81,6 +98,14 @@ _disconnect_events: dict[str, asyncio.Event] = {}
 
 # Track last frame time per stream_id (not just per printer_id) for stale detection
 _stream_last_frame_times: dict[str, float] = {}
+
+# How much of a streaming ffmpeg's stderr to retain: enough for the input
+# analysis plus a burst of errors, capped so a long-running stream can't grow it.
+_FFMPEG_STDERR_TAIL_BYTES = 16384
+
+# Live stderr collectors by pid — see _FfmpegStderrTail. Present means "this
+# process's stderr already has a reader; do not open a second one".
+_stderr_tails: dict[int, "_FfmpegStderrTail"] = {}
 
 
 def get_buffered_frame(printer_id: int) -> bytes | None:
@@ -193,8 +218,6 @@ async def generate_chamber_mjpeg_stream(
 
             # Save frame to buffer for photo capture and track timestamp
             if printer_id is not None:
-                import time
-
                 _last_frames[printer_id] = frame
                 _last_frame_times[printer_id] = time.time()
 
@@ -226,10 +249,7 @@ async def generate_chamber_mjpeg_stream(
             _stream_last_frame_times.pop(stream_id, None)
 
         # Clean up frame buffer and timestamps
-        if printer_id is not None:
-            _last_frames.pop(printer_id, None)
-            _last_frame_times.pop(printer_id, None)
-            _stream_start_times.pop(printer_id, None)
+        _release_printer_frame_state(printer_id)
 
         # Close the connection
         try:
@@ -240,14 +260,127 @@ async def generate_chamber_mjpeg_stream(
         logger.info("Chamber image stream stopped for %s (stream_id=%s)", ip_address, stream_id)
 
 
+def _new_fanout_stream_id(printer_id: int) -> str:
+    """Registry key for one fan-out stream INSTANCE, not for the printer.
+
+    A plain ``f"{printer_id}-fanout"`` meant every successive stream for a
+    printer shared one key, so a departing generator's cleanup removed the entry
+    its successor had just registered. The external-camera path already carries a
+    per-instance suffix for exactly this reason (#2675); this gives the fan-out
+    path the same property.
+
+    The ``f"{printer_id}-"`` prefix is load-bearing — ``is_stream_active``,
+    ``stop_camera_stream`` and ``/camera/status`` all find a printer's streams by
+    scanning for it — so the suffix goes on the end.
+    """
+    return f"{printer_id}-fanout-{uuid.uuid4().hex[:8]}"
+
+
+def live_frame_for_capture(printer_id: int) -> tuple[bool, bytes | None]:
+    """Should a one-shot capture stand down for the live view, and to what frame?
+
+    Returns ``(defer, frame)``. ``defer`` True means DO NOT open a capture of
+    your own: use ``frame`` when it isn't None, and otherwise skip this attempt
+    rather than competing.
+
+    Both camera kinds allow exactly one reader — Bambu firmware permits one
+    connection, and a USB camera permits one V4L2 handle — so a capture that
+    races the live view doesn't degrade, it fails outright. #2707 measured 0 of
+    87 and 0 of 105 layer-timelapse captures on prints watched throughout, and
+    finish photos going out with no image attached.
+
+    Skipping when the buffer is momentarily empty (stream starting, mid-
+    reconnect) rather than falling through to a capture is the #1348 rule:
+    opening a competing handle kicks the viewer off, which is a worse outcome
+    than missing one frame.
+    """
+    if not is_stream_active(printer_id):
+        return False, None
+    return True, _last_frames.get(printer_id)
+
+
+def _release_printer_frame_state(printer_id: int | None) -> None:
+    """Drop a printer's buffered frame and timings — unless a stream still owns them.
+
+    These three dicts are keyed by printer, not by stream, so a departing
+    generator must not clear them while a newer stream for the same printer is
+    running. That used to happen routinely: stream ids were per-printer, so a
+    predecessor's cleanup wiped its successor's state, leaving
+    ``is_stream_active()`` False with a viewer attached (which is exactly what
+    the #1348 / #1271 guards read before deciding whether it is safe to open a
+    second camera connection), the janitor free to reap the live ffmpeg as an
+    orphan, and snapshots without a frame to reuse.
+
+    Call this AFTER removing the departing stream's own key, so the check
+    reports on other streams rather than on the caller.
+    """
+    if printer_id is None or is_stream_active(printer_id):
+        return
+    _last_frames.pop(printer_id, None)
+    _last_frame_times.pop(printer_id, None)
+    _stream_start_times.pop(printer_id, None)
+
+
+async def _drain_pipe(reader) -> None:
+    """Read a subprocess pipe to EOF and discard, so it can never block.
+
+    Best-effort by design: any read failure means we cannot drain further, and
+    the caller is tearing the process down regardless.
+    """
+    if reader is None:
+        return
+    try:
+        while await reader.read(65536):
+            pass
+    except asyncio.CancelledError:
+        raise
+    except Exception:  # noqa: BLE001 — teardown must not fail on a dying pipe
+        return
+
+
 async def _terminate_ffmpeg(process: asyncio.subprocess.Process, stream_id: str | None = None) -> None:
-    """Terminate an ffmpeg process gracefully, then kill if needed."""
+    """Terminate an ffmpeg process gracefully, then kill if needed.
+
+    Drains stdout/stderr throughout, which is load-bearing rather than hygiene.
+    ffmpeg is spawned with both as pipes, and every caller of this has already
+    stopped reading stdout — so by the time we get here ffmpeg is typically
+    blocked in write() on a full 64 KiB pipe. Two things then go wrong:
+
+    * SIGTERM cannot be acted on. ffmpeg's handler only sets a flag that its
+      main loop polls, and a loop blocked in write() never reaches the check,
+      so the whole grace period is dead time.
+    * SIGKILL does kill it, but wait() cannot observe that. asyncio resolves
+      Process.wait()'s waiter through BaseSubprocessTransport._try_finish(),
+      which requires every pipe transport to report disconnected; paused,
+      unread pipes never reach EOF, so wait() blocks with returncode already
+      set. That is what made the "did not exit within Ns of SIGKILL" error
+      fire on every single camera close, and unbounded it was the 12-hour
+      hang in #2580.
+
+    Draining fixes both: SIGTERM becomes actionable and the exit observable.
+    Measured on an H2D: 4.0s of dead time per close before, ~0.15s after —
+    which matters because the printer allows exactly one camera connection,
+    so every one of those seconds was a connection nobody could use.
+
+    Discarding what we drain is deliberate. The stream loop already reads
+    stderr on its error paths (_read_ffmpeg_stderr), and it does so before
+    calling this, so nothing diagnostic is lost.
+    """
     if process.returncode is not None:
+        _spawned_ffmpeg_pids.pop(process.pid, None)
         return  # Already dead
+
+    drainers = [asyncio.create_task(_drain_pipe(process.stdout))]
+    # A streaming ffmpeg's stderr already has a reader (_FfmpegStderrTail), and
+    # it keeps draining right through teardown, which is all we need here. Adding
+    # a second reader would race it — asyncio rejects concurrent reads on one
+    # StreamReader — so only drain stderr when nobody else owns it.
+    if process.pid not in _stderr_tails:
+        drainers.append(asyncio.create_task(_drain_pipe(process.stderr)))
     try:
         process.terminate()
         try:
-            await asyncio.wait_for(process.wait(), timeout=2.0)
+            await asyncio.wait_for(process.wait(), timeout=_FFMPEG_TERM_TIMEOUT)
         except TimeoutError:
             logger.warning("ffmpeg didn't terminate gracefully, killing (stream_id=%s)", stream_id)
             process.kill()
@@ -256,7 +389,8 @@ async def _terminate_ffmpeg(process: asyncio.subprocess.Process, stream_id: str 
             except TimeoutError:
                 # Do NOT keep waiting (#2580): the caller is the stream
                 # generator, and blocking here pins the fan-out pump forever.
-                # The orphan janitor reaps the process later.
+                # The orphan janitor reaps the process later. With the pipes
+                # drained this should be unreachable — see _FFMPEG_KILL_TIMEOUT.
                 logger.error(
                     "ffmpeg did not exit within %.1fs of SIGKILL; abandoning wait (stream_id=%s)",
                     _FFMPEG_KILL_TIMEOUT,
@@ -266,7 +400,11 @@ async def _terminate_ffmpeg(process: asyncio.subprocess.Process, stream_id: str 
         pass  # Already dead
     except OSError as e:
         logger.warning("Error terminating ffmpeg: %s", e)
-    _spawned_ffmpeg_pids.pop(process.pid, None)
+    finally:
+        for drainer in drainers:
+            drainer.cancel()
+        await asyncio.gather(*drainers, return_exceptions=True)
+        _spawned_ffmpeg_pids.pop(process.pid, None)
 
 
 def _summarize_ffmpeg_stderr(text: str | None) -> str:
@@ -276,9 +414,15 @@ def _summarize_ffmpeg_stderr(text: str | None) -> str:
     any actual error message. Logging the full banner on every retry floods
     the log (hundreds of lines per failed stream). This filter drops the
     banner and caps output at the last 10 meaningful lines.
+
+    Credentials are masked here rather than at each ``logger`` call because
+    this is the one funnel every stderr log in this module passes through.
+    ffmpeg echoes the RTSP input URL back in its ``Input #0`` line, which
+    carries the printer access code.
     """
     if not text:
         return ""
+    text = redact_url_credentials(text) or ""
     banner_prefixes = (
         "ffmpeg version ",
         "  built with ",
@@ -296,6 +440,82 @@ def _summarize_ffmpeg_stderr(text: str | None) -> str:
     return "\n".join(meaningful[-10:])
 
 
+class _FfmpegStderrTail:
+    """Owns a long-lived ffmpeg's stderr: drains it continuously, keeps the tail.
+
+    Reading stderr only when something has already gone wrong leaves a pipe
+    nobody reads for the whole life of the stream. ffmpeg writes its banner, the
+    input analysis and then a progress line at a steady rate, so a 64 KiB pipe
+    fills eventually and ffmpeg blocks writing to it — at which point it stops
+    producing frames, the stream's own read timeout fires, and the log says
+    "RTSP read timeout" with no hint that we starved it ourselves.
+
+    How long that takes is unmeasured and may be a long time: one H2D upstream
+    ran 21m36s continuously without stalling, so this is a bounded resource
+    being treated as unbounded rather than an observed failure. Draining removes
+    the ceiling either way, and the tail is *better* diagnostic material than
+    the old on-demand read: it holds ffmpeg's most recent output at the moment
+    things went wrong, where reading the buffered pipe returned whatever was
+    printed first (usually the startup banner, which the summariser then strips).
+
+    Registers itself in ``_stderr_tails`` so the two other readers of this pipe
+    can defer to it — asyncio raises if two coroutines read one StreamReader
+    concurrently. See ``_read_ffmpeg_stderr`` and ``_terminate_ffmpeg``.
+    """
+
+    def __init__(self, process: asyncio.subprocess.Process) -> None:
+        self._process = process
+        self._buffer = bytearray()
+        self._task: asyncio.Task | None = None
+        if process.stderr is None:
+            return
+        self._task = asyncio.create_task(self._pump())
+        _stderr_tails[process.pid] = self
+
+    async def _pump(self) -> None:
+        reader = self._process.stderr
+        try:
+            while True:
+                chunk = await reader.read(8192)
+                if not chunk:
+                    return  # EOF — ffmpeg has exited
+                self._buffer.extend(chunk)
+                excess = len(self._buffer) - _FFMPEG_STDERR_TAIL_BYTES
+                if excess > 0:
+                    del self._buffer[:excess]
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 — a broken pipe just ends the tail
+            return
+
+    def text(self) -> str | None:
+        """The retained tail, summarised. None when nothing was captured.
+
+        Goes through _summarize_ffmpeg_stderr like every other stderr log in
+        this module: ffmpeg echoes its input URL, which carries the access code.
+        """
+        if not self._buffer:
+            return None
+        return _summarize_ffmpeg_stderr(self._buffer.decode(errors="replace")) or None
+
+    async def aclose(self) -> None:
+        """Stop draining and release ownership of the pipe. Idempotent.
+
+        Awaits the cancelled pump rather than firing and forgetting, so the task
+        is finished before the caller moves on — an abandoned pending task
+        becomes an "unraisable exception" warning at an arbitrary later point,
+        usually during interpreter or loop teardown.
+        """
+        task, self._task = self._task, None
+        if _stderr_tails.get(self._process.pid) is self:
+            del _stderr_tails[self._process.pid]
+        if task is None:
+            return
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
 async def _read_ffmpeg_stderr(process: asyncio.subprocess.Process) -> str | None:
     """Read whatever ffmpeg has written to stderr so far (best-effort).
 
@@ -306,8 +526,18 @@ async def _read_ffmpeg_stderr(process: asyncio.subprocess.Process) -> str | None
     banner + stream-analysis lines ffmpeg already printed. Reading in bounded
     chunks returns the buffered output promptly whether or not ffmpeg has
     exited. Returns the content with ffmpeg's boilerplate banner stripped.
+
+    When a _FfmpegStderrTail owns this process's stderr — every streaming
+    ffmpeg — its retained tail is returned instead. Reading the pipe here as
+    well would race that collector, and asyncio refuses two concurrent readers
+    on one StreamReader outright.
     """
-    if not process or not process.stderr:
+    if not process:
+        return None
+    tail = _stderr_tails.get(getattr(process, "pid", None))
+    if tail is not None:
+        return tail.text()
+    if not process.stderr:
         return None
     chunks: list[bytes] = []
     total = 0
@@ -428,6 +658,7 @@ async def generate_rtsp_mjpeg_stream(
     jpeg_end = b"\xff\xd9"
     reconnect_count = 0
     process = None
+    stderr_tail: _FfmpegStderrTail | None = None
     got_any_frames = False
 
     try:
@@ -480,6 +711,14 @@ async def generate_rtsp_mjpeg_stream(
                 reconnect_count += 1
                 continue
 
+            # Take ownership of stderr for the life of this process. Started
+            # only after the immediate-failure check above, which reads the pipe
+            # directly (correct there: the process is already dead, so
+            # read-to-EOF returns at once and cannot be raced by a collector).
+            # Nothing is lost by starting late — the banner ffmpeg printed in the
+            # meantime is still sitting in the pipe.
+            stderr_tail = _FfmpegStderrTail(process)
+
             # Read JPEG frames from ffmpeg stdout
             buffer = b""
             stream_ended = False
@@ -523,8 +762,6 @@ async def generate_rtsp_mjpeg_stream(
                         got_any_frames = True
 
                         if printer_id is not None:
-                            import time
-
                             _last_frames[printer_id] = frame
                             _last_frame_times[printer_id] = time.time()
                             if stream_id:
@@ -555,6 +792,12 @@ async def generate_rtsp_mjpeg_stream(
 
             # Clean up this ffmpeg process before reconnecting or exiting
             await _terminate_ffmpeg(process, stream_id)
+            # Released after teardown, not before: _terminate_ffmpeg deliberately
+            # leaves stderr to this collector, which has to keep draining while
+            # the process is stopped or wait() can't observe the exit.
+            if stderr_tail is not None:
+                await stderr_tail.aclose()
+                stderr_tail = None
             process = None
 
             if client_gone:
@@ -597,14 +840,15 @@ async def generate_rtsp_mjpeg_stream(
             _stream_last_frame_times.pop(stream_id, None)
 
         # Clean up frame buffer and timestamps
-        if printer_id is not None:
-            _last_frames.pop(printer_id, None)
-            _last_frame_times.pop(printer_id, None)
-            _stream_start_times.pop(printer_id, None)
+        _release_printer_frame_state(printer_id)
 
         if process:
             await _terminate_ffmpeg(process, stream_id)
             logger.info("Camera stream stopped for %s (stream_id=%s)", ip_address, stream_id)
+
+        # Same order as in the loop: terminate first, then release stderr.
+        if stderr_tail is not None:
+            await stderr_tail.aclose()
 
         # Shut down the TLS proxy
         proxy_server.close()
@@ -665,9 +909,11 @@ async def camera_stream(
 
     # Check for external camera first
     if printer.external_camera_enabled and printer.external_camera_url:
-        import time
-        import uuid
-
+        # NB: no `import time` / `import uuid` here, and don't reintroduce them.
+        # A local import anywhere in this function makes the name function-local
+        # for the WHOLE function, so the RTSP/chamber path below — which never
+        # executes this branch — would raise UnboundLocalError on any printer
+        # without an external camera. Both are imported at module level.
         from backend.app.services.external_camera import generate_mjpeg_stream
 
         # Limit external camera FPS to reduce browser load
@@ -703,6 +949,18 @@ async def camera_stream(
             _spawned_ffmpeg_pids[proc.pid] = time.time()
             _stream_last_frame_times[stream_id] = time.time()
 
+        def _publish_external_frame(frame: bytes) -> None:
+            """Make the live frame reusable by one-shot consumers (#2707).
+
+            Only the built-in camera paths populated _last_frames, so every
+            external-camera consumer — layer timelapse, finish photo, Obico,
+            plate check — found an empty buffer and opened its own handle on a
+            device that allows exactly one reader, which simply failed while a
+            viewer was attached. Raw frame, not the multipart-wrapped chunk the
+            generator yields, because that is what those consumers expect.
+            """
+            _last_frames[printer_id] = frame
+
         async def external_stream_wrapper():
             """Wrap external stream to track start/stop and update frame times."""
             try:
@@ -711,6 +969,7 @@ async def camera_stream(
                     printer.external_camera_type,
                     fps,
                     on_process=_register_external_process,
+                    on_frame=_publish_external_frame,
                     stop_event=stop_event,
                 ):
                     # generate_mjpeg_stream already handles rate limiting;
@@ -731,6 +990,11 @@ async def camera_stream(
                 _disconnect_events.pop(stream_id, None)
                 _stream_last_frame_times.pop(stream_id, None)
                 _active_external_streams.discard(printer_id)
+                # Now that this path publishes a buffered frame, it has to
+                # retract it too — ownership-checked, so a concurrent viewer of
+                # the same printer keeps its own. Also clears the per-printer
+                # timings this path used to leave behind.
+                _release_printer_frame_state(printer_id)
                 logger.info("External camera stream ended for printer %s", printer_id)
 
         return StreamingResponse(
@@ -762,8 +1026,6 @@ async def camera_stream(
     # attached — otherwise /camera/status would report stream_uptime jumping
     # backward whenever a second viewer joins. The upstream generator's
     # finally clears this entry when the upstream actually ends.
-    import time
-
     _stream_start_times.setdefault(printer_id, time.time())
 
     # Fan-out broadcaster (#1089): one upstream connection per printer, shared
@@ -776,7 +1038,7 @@ async def camera_stream(
     # broadcaster. Concurrent viewers share that rate; new viewers after
     # teardown create a fresh broadcaster at their requested fps.
     fanout_key = f"printer-{printer_id}"
-    upstream_stream_id = f"{printer_id}-fanout"
+    upstream_stream_id = _new_fanout_stream_id(printer_id)
 
     def _factory(disconnect_event: asyncio.Event):
         # Re-bind locals into the closure so the async generator below sees

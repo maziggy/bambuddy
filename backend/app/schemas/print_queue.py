@@ -194,6 +194,12 @@ class PrintQueueItemResponse(BaseModel):
     # 3MFs: when `plate_id` is set, the value is the matching plate's
     # `curr_bed_type` rather than the archive-level first-plate default.
     bed_type: str | None = None
+    # True when the source archive carries the slicer's own live-resolved
+    # AMS-slot pick (extra_data.slicer_ams_mapping) *and* it was resolved
+    # against this row's own printer — the only case where dispatch actually
+    # reuses that exact physical spool instead of the scheduler re-deriving one
+    # from the file's static type/color.
+    archive_has_slicer_ams_mapping: bool = False
 
     # User tracking (Issue #206)
     created_by_id: int | None = None

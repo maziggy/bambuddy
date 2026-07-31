@@ -17,6 +17,7 @@ export function FailureDetectionSettings() {
 
   const [enabled, setEnabled] = useState(false);
   const [mlUrl, setMlUrl] = useState('');
+  const [mlToken, setMlToken] = useState('');
   const [sensitivity, setSensitivity] = useState<'low' | 'medium' | 'high'>('medium');
   const [action, setAction] = useState<'notify' | 'pause' | 'pause_and_off'>('notify');
   const [pollInterval, setPollInterval] = useState(10);
@@ -44,6 +45,7 @@ export function FailureDetectionSettings() {
     if (!settings) return;
     setEnabled(settings.obico_enabled ?? false);
     setMlUrl(settings.obico_ml_url ?? '');
+    setMlToken(settings.obico_ml_token ?? '');
     setSensitivity(settings.obico_sensitivity ?? 'medium');
     setAction(settings.obico_action ?? 'notify');
     setPollInterval(settings.obico_poll_interval ?? 10);
@@ -63,6 +65,7 @@ export function FailureDetectionSettings() {
       api.updateSettings({
         obico_enabled: enabled,
         obico_ml_url: mlUrl,
+        obico_ml_token: mlToken,
         obico_sensitivity: sensitivity,
         obico_action: action,
         obico_poll_interval: pollInterval,
@@ -71,6 +74,9 @@ export function FailureDetectionSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       queryClient.invalidateQueries({ queryKey: ['obico-status'] });
+      // Printer-card AI badges (#1546) — refresh immediately on toggle instead
+      // of waiting for the cards' 10s poll.
+      queryClient.invalidateQueries({ queryKey: ['obico-printer-status'] });
       showToast(t('settings.toast.settingsSaved'));
     },
   });
@@ -81,6 +87,7 @@ export function FailureDetectionSettings() {
     const changed =
       settings.obico_enabled !== enabled ||
       settings.obico_ml_url !== mlUrl ||
+      (settings.obico_ml_token ?? '') !== mlToken ||
       settings.obico_sensitivity !== sensitivity ||
       settings.obico_action !== action ||
       settings.obico_poll_interval !== pollInterval ||
@@ -89,14 +96,23 @@ export function FailureDetectionSettings() {
     const id = setTimeout(() => saveMutation.mutate(), 500);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, mlUrl, sensitivity, action, pollInterval, enabledPrinters, initialized]);
+  }, [enabled, mlUrl, mlToken, sensitivity, action, pollInterval, enabledPrinters, initialized]);
 
   const handleTest = async () => {
     setTestResult(null);
     try {
-      const res = await api.testObicoConnection(mlUrl);
+      const res = await api.testObicoConnection(mlUrl, mlToken);
       if (res.ok) {
-        setTestResult({ ok: true, message: t('failureDetection.testSuccess') });
+        // auth_ok is null when the token could not be checked — don't claim it
+        // works. It is true both for an accepted token and for a server that
+        // requires none, which is the same outcome for the user.
+        setTestResult({
+          ok: true,
+          message:
+            res.auth_ok === null
+              ? t('failureDetection.testSuccessTokenUnknown')
+              : t('failureDetection.testSuccess'),
+        });
       } else {
         setTestResult({
           ok: false,
@@ -160,6 +176,19 @@ export function FailureDetectionSettings() {
                 </Button>
               </div>
               <p className="text-xs text-bambu-gray mt-1">{t('failureDetection.mlUrlHint')}</p>
+              <label className="block text-sm text-bambu-gray mb-1 mt-3">
+                {t('failureDetection.mlToken')}
+              </label>
+              <input
+                type="password"
+                value={mlToken}
+                onChange={(e) => setMlToken(e.target.value)}
+                autoComplete="off"
+                placeholder={t('failureDetection.mlTokenPlaceholder')}
+                className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+                disabled={!enabled}
+              />
+              <p className="text-xs text-bambu-gray mt-1">{t('failureDetection.mlTokenHint')}</p>
               {testResult && (
                 <div
                   className={`flex items-start gap-2 mt-2 text-sm ${

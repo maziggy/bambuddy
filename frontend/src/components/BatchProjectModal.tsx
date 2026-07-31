@@ -6,6 +6,7 @@ import { api } from '../api/client';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
+import { invalidateArchiveAndProjectViews } from '../utils/projectQueries';
 
 interface BatchProjectModalProps {
   selectedIds: number[];
@@ -43,14 +44,9 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  // Helper to invalidate all project-related queries
-  const invalidateProjectQueries = () => {
-    queryClient.invalidateQueries({ queryKey: ['archives'] });
-    queryClient.invalidateQueries({ queryKey: ['projects'] });
-    // Invalidate project detail pages (partial match catches all project IDs)
-    queryClient.invalidateQueries({ queryKey: ['project'] });
-    queryClient.invalidateQueries({ queryKey: ['project-archives'] });
-  };
+  // Helper to invalidate all project-related queries. The shared version also
+  // covers the timeline and file-progress views, which this list was missing.
+  const invalidateProjectQueries = () => invalidateArchiveAndProjectViews(queryClient);
 
   // Assign to project mutation (uses bulk API)
   const assignMutation = useMutation({

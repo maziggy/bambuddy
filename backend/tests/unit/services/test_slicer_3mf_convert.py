@@ -443,3 +443,53 @@ class TestSubstituteUnusedPlateFilaments:
         result = substitute_unused_plate_filaments(zip_bytes, plate_id=2, items=items)
 
         assert result == ["pla.json", "pla.json", "pva.json"]
+
+    # ---- #2711: plate 0 is the slice-all sentinel, not a plate ----------
+
+    def test_no_op_for_the_slice_all_sentinel(self):
+        """``plate=0`` means every plate, so every slot is used by something."""
+        zip_bytes = _make_3mf({"Metadata/model_settings.config": self._model_settings_xml([(1, [1]), (2, [2])])})
+        items = ["pla_white.json", "pla_red.json"]
+
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=0, items=items)
+
+        assert result == items
+
+    def test_slice_all_is_not_collapsed_onto_the_support_filament(self):
+        """The guard that makes the plate-0 no-op load-bearing.
+
+        Geometry lookup for plate 0 matches nothing (plates are 1-indexed),
+        but the support-filament union reads project settings and has no
+        plate scope — so it survives as the *only* member of the used set.
+        Anchored on it, a slice-all would rewrite every colour in the
+        project to the support material and print the whole thing in PVA.
+        """
+        model_settings = self._model_settings_xml([(1, [1]), (2, [2]), (3, [3])])
+        project_settings = json.dumps(
+            {
+                "enable_support": "1",
+                "support_filament": "4",
+                "support_interface_filament": "4",
+                "filament_type": ["PLA", "PLA", "PLA", "PVA"],
+            }
+        ).encode()
+        zip_bytes = _make_3mf(
+            {
+                "Metadata/model_settings.config": model_settings,
+                "Metadata/project_settings.config": project_settings,
+            }
+        )
+        items = ["white.json", "red.json", "blue.json", "pva.json"]
+
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=0, items=items)
+
+        assert result == items, "slice-all collapsed the project onto the support filament"
+
+    def test_negative_plate_id_is_a_no_op(self):
+        """Not reachable through the schema (``ge=0``), but the function is the
+        thing that must not guess — a caller resolving a plate wrongly should
+        get the user's picks back, not a rewrite anchored on nothing."""
+        zip_bytes = _make_3mf({"Metadata/model_settings.config": self._model_settings_xml([(1, [1])])})
+        items = ["a.json", "b.json"]
+
+        assert substitute_unused_plate_filaments(zip_bytes, plate_id=-1, items=items) == items

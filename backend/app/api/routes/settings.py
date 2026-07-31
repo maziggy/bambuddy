@@ -42,6 +42,88 @@ async def get_setting(db: AsyncSession, key: str) -> str | None:
     return setting.value if setting else None
 
 
+# Accepted spellings for a boolean settings value. Settings live in a VARCHAR
+# column and every reader compares them as strings, so these are normalised to
+# "true"/"false" on the way in. The sets are deliberately generous: these
+# endpoints are part of the documented REST surface, reached by scripts and by
+# Home Assistant rest_command, where "True", "1" and "on" are all natural.
+_TRUTHY_SETTING_VALUES = frozenset({"true", "1", "yes", "on"})
+_FALSY_SETTING_VALUES = frozenset({"false", "0", "no", "off"})
+
+
+def setting_is_true(value: object) -> bool:
+    """Return True if a *stored* settings value means "on".
+
+    Deliberately narrower than the spellings ``normalize_bool_setting`` accepts:
+    it matches only what every other reader in the codebase treats as on
+    (``value.lower() == "true"``). Submitted values are canonicalised on write,
+    so a stored value is always "true"/"false"/""; accepting "1" or "on" here
+    would make this function disagree with the rest of the app about any legacy
+    row containing them.
+
+    A bool is tolerated for the case of a row written before values were
+    normalised, where SQLite coerced a raw bool into the VARCHAR column.
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() == "true"
+
+
+def normalize_bool_setting(key: str, value: object) -> str:
+    """Coerce a boolean-ish settings value to the canonical "true"/"false".
+
+    Raises HTTPException(400) for values with no sensible interpretation, so an
+    API client gets a message naming the field instead of a 500.
+
+    A JSON boolean is the natural thing for an API client to send, and before
+    this normalisation it caused two distinct failures on
+    ``PUT /settings/spoolman``: ``bool.lower()`` raised AttributeError, and the
+    raw bool was written into a VARCHAR column, which SQLite silently coerces
+    to 1/0 while asyncpg rejects outright. Both surfaced as an opaque 500.
+    """
+    if isinstance(value, bool):  # must precede the int branch — bool is an int
+        return "true" if value else "false"
+    if isinstance(value, int):
+        if value in (0, 1):
+            return "true" if value else "false"
+        raise HTTPException(400, f"{key} must be a boolean; got the number {value}")
+    if isinstance(value, str):
+        candidate = value.strip().lower()
+        if not candidate:
+            # Empty is stored verbatim rather than normalised to "false".
+            # get_spoolman_settings reads these with ``or "<default>"``, so an
+            # empty stored value means "use the default" — and two of them
+            # (spoolman_report_partial_usage, auto_add_unknown_rfid) default to
+            # ON. Rewriting "" to "false" would silently switch them off for any
+            # client that submits a blank value.
+            return ""
+        if candidate in _TRUTHY_SETTING_VALUES:
+            return "true"
+        if candidate in _FALSY_SETTING_VALUES:
+            return "false"
+        raise HTTPException(400, f"{key} must be a boolean; got {value!r}")
+    raise HTTPException(400, f"{key} must be a boolean; got {type(value).__name__}")
+
+
+def normalize_str_setting(key: str, value: object) -> str:
+    """Return a string settings value, rejecting types that would store garbage.
+
+    ``str()`` on a dict or list would persist its repr, so those are refused
+    rather than silently written. Numbers are accepted and stringified: a port
+    or a bare host submitted unquoted is a plausible client mistake, not a
+    reason to fail the request.
+    """
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    if isinstance(value, bool | int | float):
+        return str(value)
+    raise HTTPException(400, f"{key} must be a string; got {type(value).__name__}")
+
+
 async def get_external_login_url(db: AsyncSession) -> str:
     """Get the external URL for the login page.
 
@@ -82,6 +164,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "auto_archive",
             "save_thumbnails",
             "capture_finish_photo",
+            "finish_photo_restore_plate",
             "spoolman_enabled",
             "spoolman_disable_weight_sync",
             "spoolman_report_partial_usage",
@@ -435,14 +518,20 @@ async def update_spoolman_settings(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
-    """Update Spoolman integration settings."""
+    """Update Spoolman integration settings.
+
+    The body is a free-form dict rather than a schema, so each value is
+    normalised before it is persisted — see ``normalize_bool_setting`` for why
+    a JSON boolean used to produce a 500 here.
+    """
     if "spoolman_enabled" in settings:
-        old_val = await get_setting(db, "spoolman_enabled") or "false"
-        new_val = settings["spoolman_enabled"]
+        was_enabled = setting_is_true(await get_setting(db, "spoolman_enabled"))
+        new_val = normalize_bool_setting("spoolman_enabled", settings["spoolman_enabled"])
+        now_enabled = new_val == "true"
         await set_setting(db, "spoolman_enabled", new_val)
 
         # Switching to Spoolman: clear built-in inventory slot assignments
-        if old_val.lower() != "true" and new_val.lower() == "true":
+        if not was_enabled and now_enabled:
             from backend.app.models.spool_assignment import SpoolAssignment
 
             result = await db.execute(delete(SpoolAssignment))
@@ -452,21 +541,20 @@ async def update_spoolman_settings(
         # spoolman_slot_assignments rows linger and would wrongly count as
         # "assigned" in any mode-agnostic check (e.g. the missing-spool-
         # assignment notification, which unions both tables — #1473).
-        elif old_val.lower() == "true" and new_val.lower() != "true":
+        elif was_enabled and not now_enabled:
             from backend.app.models.spoolman_slot_assignment import SpoolmanSlotAssignment
 
             result = await db.execute(delete(SpoolmanSlotAssignment))
             logger.info("Cleared %d Spoolman slot assignments on switch to internal mode", result.rowcount)
     if "spoolman_url" in settings:
-        await set_setting(db, "spoolman_url", settings["spoolman_url"])
+        await set_setting(db, "spoolman_url", normalize_str_setting("spoolman_url", settings["spoolman_url"]))
     if "spoolman_sync_mode" in settings:
-        await set_setting(db, "spoolman_sync_mode", settings["spoolman_sync_mode"])
-    if "spoolman_disable_weight_sync" in settings:
-        await set_setting(db, "spoolman_disable_weight_sync", settings["spoolman_disable_weight_sync"])
-    if "spoolman_report_partial_usage" in settings:
-        await set_setting(db, "spoolman_report_partial_usage", settings["spoolman_report_partial_usage"])
-    if "auto_add_unknown_rfid" in settings:
-        await set_setting(db, "auto_add_unknown_rfid", settings["auto_add_unknown_rfid"])
+        await set_setting(
+            db, "spoolman_sync_mode", normalize_str_setting("spoolman_sync_mode", settings["spoolman_sync_mode"])
+        )
+    for bool_key in ("spoolman_disable_weight_sync", "spoolman_report_partial_usage", "auto_add_unknown_rfid"):
+        if bool_key in settings:
+            await set_setting(db, bool_key, normalize_bool_setting(bool_key, settings[bool_key]))
 
     spoolman_changed = "spoolman_enabled" in settings or "spoolman_url" in settings
 

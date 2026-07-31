@@ -16,7 +16,7 @@ import {
 import { useSliceJobTracker } from '../contexts/SliceJobTrackerContext';
 import { useToast } from '../contexts/ToastContext';
 import { PlatePickerModal } from './PlatePickerModal';
-import type { PlateFilament } from '../types/plates';
+import type { DesignOverride, PlateFilament } from '../types/plates';
 import {
   presetCompatibility,
   buildCompatibilityIndex,
@@ -186,6 +186,16 @@ function formatElapsed(seconds: number): string {
   return `${h}h ${remM}m`;
 }
 
+// Render a slicer parameter value for the design-settings list. Bambu's process
+// schema stores everything as strings or arrays of strings, so this only has to
+// flatten arrays and keep scalars readable — no unit or type interpretation,
+// which would rot against every slicer release.
+function formatDesignValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map((v) => String(v)).join(', ');
+  if (value == null) return '';
+  return String(value);
+}
+
 export function SliceModal({ source, onClose }: SliceModalProps) {
   const { t } = useTranslation();
   const { trackJob } = useSliceJobTracker();
@@ -226,6 +236,15 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   // offered when the picked printer matches the design's target model —
   // see canUseEmbedded below.
   const [useEmbedded, setUseEmbedded] = useState(false);
+
+  // #2622: process settings the designer changed away from the stock preset,
+  // carried onto the picked process profile so a cross-printer re-slice keeps
+  // the model's intended wall count / infill / first layer instead of losing
+  // them to --load-settings. Keys the file flags as machine-coupled (speeds,
+  // accelerations, prime-tower geometry) are listed but start unticked — those
+  // were tuned for the designer's printer and can be plain wrong on another.
+  const [designKeys, setDesignKeys] = useState<Set<string>>(new Set());
+  const [designExpanded, setDesignExpanded] = useState(false);
 
   // Slicer Pipelines (#1425) — apply a saved preset bundle to all four slots
   // with one pick, or save the current selection as a new pipeline.
@@ -297,10 +316,16 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   const filamentReqsQuery = useQuery({
     queryKey: ['sliceFilamentReqs', source.kind, source.id, effectivePlateId],
     queryFn: async () => {
+      // `fullSlots`: one row per project slot, not only the ones this plate
+      // prints with. The list below is positional all the way to the CLI's
+      // filament_N.json parts, so a source whose only used slot is 4 has to
+      // present four rows — otherwise the single pick binds to slot 1 and
+      // slot 4 slices with whatever the source had baked in (#2712). The
+      // unused rows stay disabled exactly as before.
       if (source.kind === 'libraryFile') {
-        return api.getLibraryFileFilamentRequirements(source.id, effectivePlateId, previewRequestId);
+        return api.getLibraryFileFilamentRequirements(source.id, effectivePlateId, previewRequestId, true);
       }
-      return api.getArchiveFilamentRequirements(source.id, effectivePlateId, previewRequestId);
+      return api.getArchiveFilamentRequirements(source.id, effectivePlateId, previewRequestId, true);
     },
     enabled: !needsPlatePicker,
     staleTime: 60_000,
@@ -385,6 +410,10 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   // plates query resolves before the presets query (the latter is gated on
   // it), so these are known by the time the pre-pick effects run.
   const embeddedPrinter = platesQuery.data?.embedded_printer ?? null;
+  const designOverrides = useMemo<DesignOverride[]>(
+    () => platesQuery.data?.design_overrides ?? [],
+    [platesQuery.data],
+  );
   const embeddedProcess = platesQuery.data?.embedded_process ?? null;
 
   // "Slice as designed" is offered only when the source carries embedded
@@ -404,6 +433,12 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   useEffect(() => {
     if (!canUseEmbedded) setUseEmbedded(false);
   }, [canUseEmbedded]);
+
+  // Pre-tick the printer-independent design settings once the source's list
+  // arrives. Machine-coupled keys stay off until the user opts in explicitly.
+  useEffect(() => {
+    setDesignKeys(new Set(designOverrides.filter((o) => !o.printer_coupled).map((o) => o.key)));
+  }, [designOverrides]);
 
   // Printer pre-pick: defaults to the printer the 3MF was prepared for when
   // that preset is available, else the first listed printer. Runs once when
@@ -505,6 +540,10 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
       // them) but go unused when this flag is set — the slicer falls back on
       // the file's embedded project_settings.config instead.
       ...(useEmbedded && canUseEmbedded ? { use_embedded_settings: true } : {}),
+      // Carried design settings are patched onto the resolved process JSON,
+      // which the embedded-settings path never sends — so they are mutually
+      // exclusive by construction (#2622).
+      ...(!useEmbedded && designKeys.size > 0 ? { design_overrides: [...designKeys] } : {}),
     };
   }
 
@@ -775,6 +814,68 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                 selectedPrinterName={selectedPrinterName}
                 compatIndex={compatIndex}
               />
+              {/* Designer's process tweaks (#2622). BambuStudio records which
+                  keys deviate from the stock preset in the 3MF itself, so a
+                  re-slice for another printer can carry them instead of
+                  flattening them under --load-settings. Hidden entirely when
+                  the source lists none, and disabled in embedded mode where
+                  the process JSON these patch is never sent. */}
+              {designOverrides.length > 0 && (
+                <div className="rounded-lg border border-bambu-dark-tertiary bg-bambu-dark/40 p-3">
+                  <button
+                    type="button"
+                    onClick={() => setDesignExpanded((v) => !v)}
+                    className="flex w-full items-center justify-between gap-2 text-left"
+                  >
+                    <span className="text-sm text-white">
+                      {t('slice.designSettings')}
+                      <span className="block text-xs text-bambu-gray/70">
+                        {t('slice.designSettingsHint', { count: designOverrides.length })}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-xs text-bambu-gray">
+                      {t('slice.designSettingsSelected', { selected: designKeys.size, total: designOverrides.length })}
+                    </span>
+                  </button>
+                  {designExpanded && (
+                    <div className="mt-3 space-y-1.5 border-t border-bambu-dark-tertiary pt-3">
+                      {designOverrides.map((o) => (
+                        <label
+                          key={o.key}
+                          className={`flex items-start gap-2 text-xs ${useEmbedded ? 'opacity-50' : 'cursor-pointer'}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={designKeys.has(o.key)}
+                            disabled={isEnqueuing || useEmbedded}
+                            onChange={(e) => {
+                              setDesignKeys((prev) => {
+                                const next = new Set(prev);
+                                if (e.target.checked) next.add(o.key);
+                                else next.delete(o.key);
+                                return next;
+                              });
+                            }}
+                            className="mt-0.5 shrink-0 cursor-pointer"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="font-mono text-bambu-gray">{o.key}</span>
+                            <span className="ml-1.5 break-all text-white">{formatDesignValue(o.value)}</span>
+                            {o.printer_coupled && (
+                              <span
+                                className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 text-[10px] text-amber-700 dark:bg-amber-500/20 dark:text-amber-400"
+                                title={t('slice.designSettingsPrinterCoupledHint')}
+                              >
+                                {t('slice.designSettingsPrinterCoupled')}
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               {/* Bed-type override (#1337). Always visible, always enabled.
                   The backend patches curr_bed_type on the resolved process
                   JSON before forwarding to the sidecar. */}

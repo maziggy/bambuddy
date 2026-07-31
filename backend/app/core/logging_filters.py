@@ -1,4 +1,4 @@
-"""Logging filters for the Bambuddy log pipeline.
+"""Logging filters and redaction helpers for the Bambuddy log pipeline.
 
 Holds two filters: ``WriteRequestsOnlyFilter`` keeps the file-side
 uvicorn access log focused on state-changing HTTP methods, and
@@ -6,12 +6,45 @@ uvicorn access log focused on state-changing HTTP methods, and
 caused by Starlette's ``BaseHTTPMiddleware`` cancellation propagation
 (see the filter's docstring for details). Both live here so tests can
 import them without pulling in ``backend.app.main``'s startup graph.
+
+Also holds :data:`URL_CREDENTIALS_PATTERN` and
+:func:`redact_url_credentials`, the single place where the shape of a
+credentialed URL is defined for the whole backend.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
+
+# ``scheme://user:secret@host`` — the only URL shape that carries a secret.
+# Both userinfo parts exclude ``/`` so the match can never run past the
+# authority into the path, and exclude whitespace so a wrapped log line can't
+# glue two URLs together. ``secret`` is otherwise unrestricted and greedy so
+# it reaches the *last* ``@`` before the path, which is where RFC 3986 ends
+# the userinfo — that keeps an unescaped ``@`` inside a password (legal in an
+# external camera URL) from leaving its tail in the log. Named groups let
+# callers choose how much to mask: the log pipeline keeps the username, the
+# support-bundle sanitizer drops it (see ``log_reader.sanitize_log_content``).
+URL_CREDENTIALS_PATTERN = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]*://)(?P<user>[^/:@\s]+):(?P<secret>[^/\s]+)@")
+
+
+def redact_url_credentials(text: str | None) -> str | None:
+    """Mask the password in every ``scheme://user:secret@host`` URL in *text*.
+
+    Subprocesses echo their input URL back at us — ffmpeg prints the RTSP
+    input in its ``Input #0`` line, so logging its stderr verbatim publishes
+    the printer access code (or an external camera's password) into
+    ``bambuddy.log``, which users routinely attach to public issues.
+
+    The username, host, port and path survive so the line stays useful for
+    diagnosis; only the secret is replaced. Returns *text* unchanged when
+    there is nothing to mask, including ``None``/``""``.
+    """
+    if not text or "://" not in text or "@" not in text:
+        return text
+    return URL_CREDENTIALS_PATTERN.sub(r"\g<scheme>\g<user>:[REDACTED]@", text)
 
 
 class WriteRequestsOnlyFilter(logging.Filter):

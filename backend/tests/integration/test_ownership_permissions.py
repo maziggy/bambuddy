@@ -827,19 +827,172 @@ class TestLibraryOwnershipPermissions(TestOwnershipPermissionsSetup):
 
         assert response.status_code == 403
 
+    # ========================================================================
+    # Folder deletion (#1781): folders have no ownership tracking, so users
+    # with only library:delete_own may delete empty, non-external, non-linked
+    # folders. Everything else still requires library:delete_all.
+    # ========================================================================
+
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_folders_require_all_permission(self, async_client: AsyncClient, auth_setup, library_folder_factory):
-        """Folders require *_all permission (no ownership tracking on folders)."""
-        folder = await library_folder_factory(name="TestFolder")
+    async def test_operator_can_delete_empty_folder(
+        self, async_client: AsyncClient, auth_setup, library_folder_factory
+    ):
+        """A user with library:delete_own can delete an empty folder (#1781)."""
+        folder = await library_folder_factory(name="EmptyFolder")
 
-        # Operator cannot delete folder (needs *_all)
+        response = await async_client.delete(
+            f"/api/v1/library/folders/{folder.id}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_viewer_cannot_delete_empty_folder(
+        self, async_client: AsyncClient, auth_setup, library_folder_factory
+    ):
+        """No delete permission at all still means no folder deletion."""
+        folder = await library_folder_factory(name="EmptyFolder")
+
+        response = await async_client.delete(
+            f"/api/v1/library/folders/{folder.id}",
+            headers={"Authorization": f"Bearer {auth_setup['viewer_token']}"},
+        )
+
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_delete_folder_with_files(
+        self, async_client: AsyncClient, auth_setup, library_folder_factory, library_file_factory
+    ):
+        """Non-empty folders still require library:delete_all."""
+        folder = await library_folder_factory(name="FullFolder")
+        await library_file_factory(folder_id=folder.id, created_by_id=auth_setup["operator_user"]["id"])
+
         response = await async_client.delete(
             f"/api/v1/library/folders/{folder.id}",
             headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
         )
 
         assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_delete_folder_with_trashed_file(
+        self, async_client: AsyncClient, auth_setup, library_folder_factory, library_file_factory
+    ):
+        """Trashed files count as content: cascade would hard-drop them and
+        silently break trash restore for their owner."""
+        from datetime import datetime, timezone
+
+        folder = await library_folder_factory(name="TrashedContentFolder")
+        await library_file_factory(
+            folder_id=folder.id,
+            created_by_id=auth_setup["operator2_user"]["id"],
+            deleted_at=datetime.now(timezone.utc),
+        )
+
+        response = await async_client.delete(
+            f"/api/v1/library/folders/{folder.id}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_delete_folder_with_subfolder(
+        self, async_client: AsyncClient, auth_setup, library_folder_factory
+    ):
+        """A folder containing subfolders (even empty ones) is not empty."""
+        parent = await library_folder_factory(name="ParentFolder")
+        await library_folder_factory(name="ChildFolder", parent_id=parent.id)
+
+        response = await async_client.delete(
+            f"/api/v1/library/folders/{parent.id}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_delete_external_folder(
+        self, async_client: AsyncClient, auth_setup, library_folder_factory
+    ):
+        """Deleting an external folder unmounts an operator-configured mount
+        for everyone — stays behind library:delete_all even when empty."""
+        folder = await library_folder_factory(name="ExternalFolder", is_external=True, external_path="/mnt/models")
+
+        response = await async_client.delete(
+            f"/api/v1/library/folders/{folder.id}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_operator_cannot_delete_linked_folder(
+        self, async_client: AsyncClient, auth_setup, library_folder_factory, db_session
+    ):
+        """Project/archive links are created via update_all, so unlinking by
+        deletion stays admin-only even for empty folders."""
+        from backend.app.models.project import Project
+
+        project = Project(name="LinkTestProject")
+        db_session.add(project)
+        await db_session.commit()
+        await db_session.refresh(project)
+
+        folder = await library_folder_factory(name="LinkedFolder", project_id=project.id)
+
+        response = await async_client.delete(
+            f"/api/v1/library/folders/{folder.id}",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+        )
+
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_admin_can_delete_folder_with_contents(
+        self, async_client: AsyncClient, auth_setup, library_folder_factory, library_file_factory
+    ):
+        """library:delete_all keeps full cascade deletion."""
+        folder = await library_folder_factory(name="AdminFolder")
+        await library_file_factory(folder_id=folder.id, created_by_id=auth_setup["operator_user"]["id"])
+
+        response = await async_client.delete(
+            f"/api/v1/library/folders/{folder.id}",
+            headers={"Authorization": f"Bearer {auth_setup['admin_token']}"},
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_bulk_delete_operator_folders_empty_only(
+        self, async_client: AsyncClient, auth_setup, library_folder_factory, library_file_factory
+    ):
+        """Bulk delete applies the same rule: empty folders go, non-empty are skipped."""
+        empty_folder = await library_folder_factory(name="BulkEmpty")
+        full_folder = await library_folder_factory(name="BulkFull")
+        await library_file_factory(folder_id=full_folder.id, created_by_id=auth_setup["operator2_user"]["id"])
+
+        response = await async_client.post(
+            "/api/v1/library/bulk-delete",
+            headers={"Authorization": f"Bearer {auth_setup['operator_token']}"},
+            json={"file_ids": [], "folder_ids": [empty_folder.id, full_folder.id]},
+        )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["deleted_folders"] == 1
+        assert result["deleted_files"] == 0
 
     @pytest.mark.asyncio
     @pytest.mark.integration

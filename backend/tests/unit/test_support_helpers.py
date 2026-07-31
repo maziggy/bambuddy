@@ -701,19 +701,33 @@ class TestCollectSupportInfo:
 
 
 class TestParseObicoEnabledPrinters:
-    """Tests for the per-printer obico flag parser used by the bundle."""
+    """Tests for the per-printer obico flag parser used by the bundle.
 
-    def test_empty_string_returns_empty_set(self):
+    The setting is written by the settings UI as a JSON array and read by
+    ObicoDetectionService._load_settings as one; the bundle used to split it on
+    commas and call empty "no printers", so a default Obico setup was reported
+    as monitoring nothing while it was in fact monitoring everything (#2733).
+    """
+
+    def test_empty_means_all_printers(self):
         from backend.app.api.routes.support import _parse_obico_enabled_printers
 
-        assert _parse_obico_enabled_printers("") == set()
-        assert _parse_obico_enabled_printers("   ") == set()
+        # None (not "no printers") — the same convention _load_settings uses.
+        assert _parse_obico_enabled_printers("") is None
+        assert _parse_obico_enabled_printers("   ") is None
+        assert _parse_obico_enabled_printers(None) is None
 
-    def test_comma_separated_ids(self):
+    def test_json_array_is_the_stored_shape(self):
+        from backend.app.api.routes.support import _parse_obico_enabled_printers
+
+        assert _parse_obico_enabled_printers("[1, 2, 3]") == {1, 2, 3}
+        assert _parse_obico_enabled_printers("[]") == set()
+
+    def test_comma_separated_ids_still_parse(self):
+        # Legacy fallback for any install that stored the old shape.
         from backend.app.api.routes.support import _parse_obico_enabled_printers
 
         assert _parse_obico_enabled_printers("1,2,3") == {1, 2, 3}
-        # Whitespace around tokens is forgiven (matches obico_detection's parser).
         assert _parse_obico_enabled_printers("1, 2 ,3") == {1, 2, 3}
 
     def test_non_integer_tokens_are_skipped(self):
@@ -722,6 +736,13 @@ class TestParseObicoEnabledPrinters:
 
         assert _parse_obico_enabled_printers("1,abc,2") == {1, 2}
         assert _parse_obico_enabled_printers(",,1,") == {1}
+        assert _parse_obico_enabled_printers('[1, "two", 3]') == {1, 3}
+
+    def test_json_object_is_not_a_printer_list(self):
+        from backend.app.api.routes.support import _parse_obico_enabled_printers
+
+        # Falls through to the comma parser, which finds no integers.
+        assert _parse_obico_enabled_printers('{"1": true}') == set()
 
 
 class TestCheckUrlReachable:
@@ -1285,3 +1306,270 @@ class TestRedactRawPushStatus:
         assert _redact_raw_push_status(None) == {}  # type: ignore[arg-type]
         assert _redact_raw_push_status([]) == {}  # type: ignore[arg-type]
         assert _redact_raw_push_status("") == {}  # type: ignore[arg-type]
+
+
+class TestSanitizePushStatusValues:
+    """The bundled push_status snapshot must stay parseable JSON.
+
+    Sanitization used to run over the *serialised* snapshot. The generic
+    Bambu-serial regex in ``log_reader`` (``0[0-3][A-Z0-9][A-Z0-9]{9,13}``)
+    matches the decimal expansion of a float as readily as a serial, so an AMS
+    ``k`` flow factor came out as ``0.[SERIAL]`` and the whole file stopped
+    parsing — found in a real bundle while diagnosing #2702, which is exactly
+    the case the snapshot was added to serve.
+    """
+
+    def test_float_that_matches_the_serial_regex_survives(self):
+        """The observed reproducer, verbatim."""
+        import json
+
+        from backend.app.api.routes.support import _sanitize_push_status_values
+
+        raw = {"ams": [{"tray": [{"k": 0.0199999995529652}]}]}
+
+        out = _sanitize_push_status_values(raw, {})
+
+        assert json.loads(json.dumps(out)) == raw
+
+    def test_output_always_parses(self):
+        """Whatever it does to values, the result must be valid JSON."""
+        import json
+
+        from backend.app.api.routes.support import _sanitize_push_status_values
+
+        raw = {
+            "k_values": [0.0199999995529652, 0.019999999552965164, 0.02],
+            "home_flag": 7554487,
+            "sdcard": True,
+            "resolution": "",
+            "nozzle": None,
+        }
+
+        json.loads(json.dumps(_sanitize_push_status_values(raw, {})))
+
+    def test_still_redacts_strings(self):
+        """The point of the pass is not lost — string values are sanitized."""
+        from backend.app.api.routes.support import _sanitize_push_status_values
+
+        raw = {"tag_uid": "0123456789ABCDEF", "name": "Martin's P1S", "ip": "192.168.1.50"}
+
+        out = _sanitize_push_status_values(raw, {"Martin's P1S": "[PRINTER]"})
+
+        assert out["tag_uid"] == "[SERIAL]"
+        assert out["name"] == "[PRINTER]"
+        assert out["ip"] == "[IP]"
+
+    def test_walks_nested_containers(self):
+        from backend.app.api.routes.support import _sanitize_push_status_values
+
+        raw = {"ams": [{"tray": [{"tray_uuid": "0123456789ABCDEF"}]}]}
+
+        out = _sanitize_push_status_values(raw, {})
+
+        assert out["ams"][0]["tray"][0]["tray_uuid"] == "[SERIAL]"
+
+    def test_keys_are_left_alone(self):
+        """Keys are structural — renaming one would break the schema."""
+        from backend.app.api.routes.support import _sanitize_push_status_values
+
+        raw = {"0123456789ABCDEF": 1}
+
+        assert list(_sanitize_push_status_values(raw, {})) == ["0123456789ABCDEF"]
+
+    def test_non_json_scalars_are_sanitized_not_smuggled(self):
+        """``json.dumps(default=str)`` runs after this pass, so do it here."""
+        from datetime import datetime, timezone
+
+        from backend.app.api.routes.support import _sanitize_push_status_values
+
+        raw = {"seen_at": datetime(2026, 7, 29, 23, 12, 40, tzinfo=timezone.utc), "who": object()}
+
+        out = _sanitize_push_status_values(raw, {"2026-07-29": "[WHEN]"})
+
+        assert out["seen_at"].startswith("[WHEN]")
+        assert isinstance(out["who"], str)
+
+    def test_bools_stay_bools(self):
+        """`isinstance(True, int)` — a bool must not fall through to str()."""
+        from backend.app.api.routes.support import _sanitize_push_status_values
+
+        out = _sanitize_push_status_values({"sdcard": True, "force_upgrade": False}, {})
+
+        assert out["sdcard"] is True
+        assert out["force_upgrade"] is False
+
+    def test_the_full_bundle_chain_on_a_real_p1s_payload(self):
+        """The route's transform, end to end, on the shape from the #2702 bundle.
+
+        `_redact_raw_push_status` then `_sanitize_push_status_values` then
+        `json.dumps(default=str)` — the composition the bundle writer applies.
+        The bundle that exposed this had five `k` values corrupted, so the
+        snapshot could not be read at all; the field the report was about
+        (`total_layer_num`) was sitting in it, intact and unreachable.
+        """
+        import json
+
+        from backend.app.api.routes.support import (
+            _redact_raw_push_status,
+            _sanitize_push_status_values,
+        )
+
+        raw = {
+            "gcode_file": "AMS_Filament_Clip_3MF.3mf",
+            "layer_num": 2,
+            "total_layer_num": 33,
+            "home_flag": 7554487,
+            "sdcard": True,
+            "net": {"info": [{"ip": "192.168.1.50", "mask": 0}]},
+            "ams": {
+                "ams": [
+                    {
+                        "id": "0",
+                        "humidity": "5",
+                        "tray": [
+                            {"id": "0", "k": 0.0199999995529652, "tag_uid": "0123456789ABCDEF"},
+                            {"id": "1", "k": 0.0209999997168779, "tag_uid": "44F782D000000100"},
+                        ],
+                    }
+                ]
+            },
+        }
+
+        snapshot = {
+            "model": "P1S",
+            "firmware_version": "01.10.00.00",
+            "raw_data": _redact_raw_push_status(raw),
+        }
+        text = json.dumps(_sanitize_push_status_values(snapshot, {}), indent=2, default=str)
+
+        parsed = json.loads(text)  # used to raise "Expecting ',' delimiter"
+        trays = parsed["raw_data"]["ams"]["ams"][0]["tray"]
+        assert [t["k"] for t in trays] == [0.0199999995529652, 0.0209999997168779]
+        assert parsed["raw_data"]["total_layer_num"] == 33
+        # Redaction still did its job on both fronts.
+        assert "gcode_file" not in parsed["raw_data"]
+        assert trays[0]["tag_uid"] == "[SERIAL]"
+        # The structural pass replaces the printer's LAN address with the
+        # sentinel 0.0.0.0, which is itself an IPv4 literal, so the value pass
+        # then masks it to [IP]. Harmless — the real address is already gone —
+        # and matches what shipped in the bundle behind #2702.
+        assert parsed["raw_data"]["net"]["info"][0]["ip"] == "[IP]"
+
+    def test_does_not_mutate_the_live_snapshot(self):
+        """`state.raw_data` is read by the dispatcher on every tick.
+
+        The bundle writer passes a redacted copy, but a walker that mutated in
+        place would still be one refactor away from redacting the live state.
+        """
+        import copy
+
+        from backend.app.api.routes.support import _sanitize_push_status_values
+
+        raw = {"tag_uid": "0123456789ABCDEF", "ams": [{"tray": [{"k": 0.02, "n": "0123456789ABCDEF"}]}]}
+        before = copy.deepcopy(raw)
+
+        out = _sanitize_push_status_values(raw, {})
+
+        assert raw == before, "input was mutated"
+        assert out["tag_uid"] == "[SERIAL]"  # and the copy really was redacted
+
+
+class TestProcessInfo:
+    """Bambuddy's own footprint in the bundle (#2734).
+
+    Bundles carried nothing about the process itself, so "memory climbs over
+    days until the OOM killer fires" could not be triaged from a bundle — the
+    reporter had to run shell commands by hand, and the numbers that would have
+    named the mechanism were unrecoverable afterwards.
+    """
+
+    def test_reports_the_figures_that_separate_the_mechanisms(self):
+        """RSS vs VMS, threads and children distinguish a heap that is growing
+        from address space, a thread leak, and a child-process leak."""
+        from backend.app.api.routes.support import _collect_process_info
+
+        info = _collect_process_info()
+
+        assert info["available"] is True
+        for key in ("rss_bytes", "vms_bytes", "num_threads", "children_total"):
+            assert isinstance(info[key], int), key
+
+    def test_children_are_named_but_never_quoted(self):
+        """An ffmpeg argv carries the camera URL, and with it its password. The
+        count per executable is what identifies a leak; the arguments are not
+        needed and must not travel."""
+        from backend.app.api.routes.support import _collect_process_info
+
+        info = _collect_process_info()
+
+        for name in info.get("children_by_name", {}):
+            assert " " not in name, f"looks like a command line, not a name: {name!r}"
+            assert "://" not in name
+
+    def test_heap_census_is_skipped_on_a_large_process(self):
+        """gc.get_objects() materialises every tracked object, so the census
+        costs most on the process that can least afford it. A bundle generated
+        to diagnose runaway memory must not be the allocation that tips the
+        host over."""
+        from unittest.mock import MagicMock, patch
+
+        import backend.app.api.routes.support as support_module
+
+        fake = MagicMock()
+        fake.memory_info.return_value = MagicMock(rss=8 * 1024**3, vms=12 * 1024**3)
+        fake.num_threads.return_value = 40
+        fake.create_time.return_value = 0.0
+        fake.open_files.return_value = []
+        fake.net_connections.return_value = []
+        fake.children.return_value = []
+
+        with patch("psutil.Process", return_value=fake):
+            info = support_module._collect_process_info()
+
+        assert "gc_top_types" not in info
+        assert "skipped" in info["gc_census"]
+        # The discriminating numbers still come through — those are the point.
+        assert info["rss_bytes"] == 8 * 1024**3
+        assert info["num_threads"] == 40
+
+    def test_heap_census_runs_on_a_normal_process(self):
+        from backend.app.api.routes.support import _collect_process_info
+
+        info = _collect_process_info()
+
+        assert info["gc_tracked_objects"] > 0
+        assert len(info["gc_top_types"]) <= 15
+
+    def test_survives_a_hostile_psutil(self):
+        """psutil raises on hardened kernels and in restricted containers. A
+        support bundle must still be produced when it does — the bundle is how
+        someone reports the problem in the first place."""
+        from unittest.mock import patch
+
+        import backend.app.api.routes.support as support_module
+
+        with patch("psutil.Process", side_effect=RuntimeError("no /proc for you")):
+            info = support_module._collect_process_info()
+
+        assert info == {"available": False}
+
+    def test_partial_failures_do_not_lose_the_rest(self):
+        """One inaccessible metric must not cost the others."""
+        from unittest.mock import MagicMock, patch
+
+        import backend.app.api.routes.support as support_module
+
+        fake = MagicMock()
+        fake.memory_info.return_value = MagicMock(rss=100, vms=200)
+        fake.num_threads.side_effect = PermissionError("denied")
+        fake.create_time.return_value = 0.0
+        fake.open_files.side_effect = PermissionError("denied")
+        fake.net_connections.side_effect = PermissionError("denied")
+        fake.children.return_value = []
+
+        with patch("psutil.Process", return_value=fake):
+            info = support_module._collect_process_info()
+
+        assert info["rss_bytes"] == 100
+        assert "num_threads" not in info
+        assert info["children_total"] == 0

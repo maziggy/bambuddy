@@ -19,6 +19,7 @@ class ProviderType(StrEnum):
     DISCORD = "discord"
     WEBHOOK = "webhook"
     HOMEASSISTANT = "homeassistant"
+    BARK = "bark"
 
 
 class NotificationProviderBase(BaseModel):
@@ -62,6 +63,9 @@ class NotificationProviderBase(BaseModel):
 
     # Event triggers - Build plate detection
     on_plate_not_empty: bool = Field(default=True, description="Notify when objects detected on plate before print")
+    on_plate_clear_required: bool = Field(
+        default=False, description="Notify when a finished print is waiting for plate-clear confirmation"
+    )
 
     # Event triggers - Bed cooled
     on_bed_cooled: bool = Field(default=False, description="Notify when bed cools after print")
@@ -146,6 +150,7 @@ class NotificationProviderUpdate(BaseModel):
 
     # Event triggers - Build plate detection
     on_plate_not_empty: bool | None = None
+    on_plate_clear_required: bool | None = None
 
     # Event triggers - Bed cooled
     on_bed_cooled: bool | None = None

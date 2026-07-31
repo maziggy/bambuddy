@@ -6,6 +6,7 @@ Supports two camera protocols:
 """
 
 import asyncio
+import functools
 import logging
 import os
 import shutil
@@ -15,6 +16,8 @@ import subprocess
 import uuid
 from datetime import datetime
 from pathlib import Path
+
+from backend.app.core.logging_filters import redact_url_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,26 @@ _rtsp_socket_timeout_flag: str | None = None
 # Track PIDs of ffmpeg processes spawned for one-shot frame capture (snapshot).
 # The cleanup task in routes/camera.py checks this set to avoid killing active captures.
 _active_capture_pids: set[int] = set()
+
+# In-flight one-shot captures, keyed by printer IP (#2705).
+#
+# Bambu firmware allows exactly one camera connection, and the existing guards
+# (is_stream_active / try_get_active_buffered_frame, #1271 + #1348) only stop a
+# capturer from competing with the fan-out BROADCASTER. They do nothing for
+# capturer-vs-capturer with no viewer attached, where every consumer correctly
+# concludes it isn't competing with a viewer and then collides with the others.
+# Eight paths reach capture_camera_frame_bytes() independently — Obico polling,
+# /camera/snapshot, the finish-photo moment and its disk-writing sibling, plate
+# detection, the camera test and the diagnose tool — so the single-flight lives
+# at the bottom of the stack and needs no call-site changes.
+#
+# Keyed by IP rather than printer_id because IP is what the firmware's one-
+# connection limit applies to: two printer rows pointing at the same address
+# still share one camera. (This function never sees a printer_id anyway.) The
+# key deliberately excludes the timeout, or callers that disagree about it —
+# and they all do, from 10s to 30s — would never coalesce, which is exactly
+# the Obico-vs-snapshot pair from the report.
+_inflight_captures: dict[str, asyncio.Task[bytes | None]] = {}
 
 
 def get_ffmpeg_path() -> str | None:
@@ -527,6 +550,38 @@ async def capture_camera_frame(
     return False
 
 
+def capture_in_flight(ip_address: str) -> bool:
+    """Return True iff a one-shot capture for this IP is running right now.
+
+    For callers that need to know whether they will JOIN someone else's
+    capture rather than perform their own — currently only the diagnose tool,
+    which reports on what it measured and so must not present a coalesced
+    frame as proof that it opened its own connection (see camera_diagnose).
+
+    Ordinary consumers should ignore this: they want "a recent frame", and
+    capture_camera_frame_bytes() already does the right thing for them.
+    """
+    task = _inflight_captures.get(ip_address)
+    return task is not None and not task.done()
+
+
+def _discard_inflight_capture(ip_address: str, task: asyncio.Task) -> None:
+    """Done-callback: drop the finished task from the in-flight registry.
+
+    Guarded on identity so a slow task that finishes after a newer capture
+    has registered can't evict its successor.
+
+    Also retrieves the exception, if any. The leader normally awaits the task
+    and would surface it, but a leader whose own caller was cancelled leaves
+    nobody to collect it — and an unretrieved task exception is logged by
+    asyncio as a warning with a traceback at an arbitrary later point.
+    """
+    if _inflight_captures.get(ip_address) is task:
+        del _inflight_captures[ip_address]
+    if not task.cancelled() and task.exception() is not None:
+        logger.debug("In-flight camera capture for %s ended in an exception", ip_address)
+
+
 async def capture_camera_frame_bytes(
     ip_address: str,
     access_code: str,
@@ -535,17 +590,94 @@ async def capture_camera_frame_bytes(
 ) -> bytes | None:
     """Capture a single frame and return as JPEG bytes (no disk write).
 
-    Uses the same protocol selection as capture_camera_frame but returns
-    bytes directly instead of writing to disk.
+    Concurrent callers for the same printer share one capture (#2705): the
+    first opens the connection, everyone arriving while it is in flight awaits
+    the same result. Every consumer here wants "a recent frame" rather than
+    "a frame captured at exactly my timestamp", so handing identical bytes to
+    simultaneous callers is correct — and it is the only way to honour the
+    firmware's one-connection limit without serialising captures behind a lock
+    (which would just turn a collision into a queue).
+
+    This coalesces; it does not cache. A call that arrives after the previous
+    capture finished always captures fresh. Two consumers of these frames —
+    plate detection and the finish-photo path — decide things about a running
+    print from them, and a stale frame there is worse than a slow one: the
+    whole of #1397 was a finish photo taken seconds late showing the bed
+    already lowered.
 
     Args:
         ip_address: Printer IP address
         access_code: Printer access code
         model: Printer model (X1, H2D, P1, A1, etc.)
-        timeout: Timeout in seconds for the capture operation
+        timeout: Timeout in seconds for the capture operation. Applies to this
+            caller's own wait, including when it joins another caller's
+            capture — the call sites disagree about the value (10s for plate
+            detection, 20s for Obico), and a follower must not silently
+            inherit the leader's deadline in either direction.
 
     Returns:
         JPEG bytes if capture was successful, None otherwise
+    """
+    # A follower whose leader fails takes a turn of its own rather than
+    # inheriting a failure it never had a chance to avoid — by then the leader
+    # has finished, so there is no socket left to compete with. Bounded at two
+    # rounds: if the capture we joined AND its replacement both failed, a third
+    # connection won't help, and this caller has already spent its patience.
+    for _ in range(2):
+        leader = _inflight_captures.get(ip_address)
+        if leader is None or leader.done():
+            break
+        try:
+            frame = await asyncio.wait_for(asyncio.shield(leader), timeout=timeout)
+        except TimeoutError:
+            # shield() keeps the capture running for whoever else is still
+            # waiting on it — giving up is this caller's decision alone.
+            logger.warning(
+                "Gave up waiting %ss on the in-flight camera capture for %s",
+                timeout,
+                ip_address,
+            )
+            return None
+        except asyncio.CancelledError:
+            # Distinguish "the capture I joined was cancelled" from "I was
+            # cancelled". Only the former is ours to recover from.
+            if not leader.cancelled():
+                raise
+            logger.info("In-flight camera capture for %s was cancelled; capturing our own", ip_address)
+            continue
+        if frame is not None:
+            logger.info(
+                "Reusing in-flight camera capture for %s: %s bytes (no second connection opened)",
+                ip_address,
+                len(frame),
+            )
+            return frame
+        logger.info("In-flight camera capture for %s failed; capturing our own", ip_address)
+    else:
+        return None
+
+    task = asyncio.create_task(_capture_camera_frame_bytes_uncoalesced(ip_address, access_code, model, timeout))
+    _inflight_captures[ip_address] = task
+    task.add_done_callback(functools.partial(_discard_inflight_capture, ip_address))
+    # No wait_for here: this caller IS the capture, and the implementation
+    # already enforces `timeout` internally where it can also kill the ffmpeg
+    # process. A second deadline on top would abandon the subprocess instead.
+    # shield() so that a cancelled leader (a client navigating away mid-
+    # snapshot is routine) doesn't take the capture down with it — the
+    # followers already waiting on it still get their frame.
+    return await asyncio.shield(task)
+
+
+async def _capture_camera_frame_bytes_uncoalesced(
+    ip_address: str,
+    access_code: str,
+    model: str | None,
+    timeout: int = 15,
+) -> bytes | None:
+    """Open a connection and capture one frame. See capture_camera_frame_bytes.
+
+    Callers want that wrapper, not this: it opens a socket unconditionally,
+    which is the collision #2705 is about.
     """
     # Chamber image models: A1/P1 - returns bytes directly
     if is_chamber_image_model(model):
@@ -608,7 +740,8 @@ async def capture_camera_frame_bytes(
             logger.info("Successfully captured camera frame bytes: %s bytes", len(stdout))
             return stdout
         else:
-            stderr_text = stderr.decode() if stderr else "Unknown error"
+            # ffmpeg echoes the RTSP input URL, which carries the access code.
+            stderr_text = redact_url_credentials(stderr.decode()) if stderr else "Unknown error"
             logger.error("ffmpeg frame bytes capture failed (code %s): %s", process.returncode, stderr_text[:200])
             return None
 
@@ -703,12 +836,72 @@ async def extract_video_last_frame(video_path: Path, output_path: Path) -> bool:
         return False
 
 
+def apply_camera_rotation(image_data: bytes, rotation: int, logger: logging.Logger) -> bytes:
+    """Apply a camera_rotation value (degrees clockwise) to a captured JPEG.
+
+    Shared by every capture path that saves a still image (notification
+    snapshots, finish photos, layer-timelapse frames) - previously only
+    wired into the notification-snapshot path, which left finish photos
+    and timelapse videos upside-down whenever camera_rotation was set.
+
+    Returns *image_data* itself (identity, not a copy) when there is nothing
+    to do or the rotate fails; callers that write to disk use that to skip a
+    pointless rewrite.
+    """
+    if not rotation:
+        return image_data
+
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        img = Image.open(BytesIO(image_data))
+        # PIL rotate is counter-clockwise, so negate for clockwise rotation
+        img = img.rotate(-rotation, expand=True)
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=90)
+        rotated = buf.getvalue()
+        # Debug, not info: layer-timelapse calls this once per layer, so a tall
+        # print would otherwise put hundreds of lines in the log for something
+        # the surrounding capture already reports at debug level.
+        logger.debug("Applied %d° camera rotation: %s → %s bytes", rotation, len(image_data), len(rotated))
+        return rotated
+    except Exception as e:
+        logger.warning("Failed to apply camera rotation: %s", e)
+        return image_data
+
+
+async def apply_camera_rotation_to_file(path: Path, rotation: int, logger: logging.Logger) -> None:
+    """Rotate a JPEG that has already been written to disk, in place.
+
+    Two finish-photo sources never hold the frame as bytes - ``ffmpeg`` writes
+    the file for them, and they return only a filename - so they can't use
+    ``apply_camera_rotation`` directly. Best-effort: any failure leaves the
+    unrotated file in place, which is what the caller had before.
+    """
+    if not rotation:
+        return
+
+    try:
+        data = await asyncio.to_thread(path.read_bytes)
+        rotated = await asyncio.to_thread(apply_camera_rotation, data, rotation, logger)
+        if rotated is data:
+            # Nothing was done (the rotate failed and returned its input) -
+            # rewriting the same bytes would only risk truncating a good file.
+            return
+        await asyncio.to_thread(path.write_bytes, rotated)
+    except Exception as e:
+        logger.warning("Failed to rotate %s in place: %s", path.name, e)
+
+
 async def capture_finish_photo(
     printer_id: int,
     ip_address: str,
     access_code: str,
     model: str | None,
     archive_dir: Path,
+    rotation: int = 0,
 ) -> str | None:
     """Capture a finish photo and save it to the archive's photos folder.
 
@@ -718,6 +911,9 @@ async def capture_finish_photo(
         access_code: Printer access code
         model: Printer model
         archive_dir: Directory of the archive (where the 3MF is stored)
+        rotation: Printer's configured camera_rotation (degrees clockwise).
+            ffmpeg writes the file directly here, so the rotation is applied
+            to it afterwards rather than to bytes in hand.
 
     Returns:
         Filename of the captured photo, or None if capture failed
@@ -742,6 +938,7 @@ async def capture_finish_photo(
     )
 
     if success:
+        await apply_camera_rotation_to_file(output_path, rotation, logger)
         logger.info("Finish photo saved: %s", filename)
         return filename
     else:

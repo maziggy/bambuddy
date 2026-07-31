@@ -11,6 +11,7 @@ under the hood, response body is raw G-code or 3MF with metadata in the
 import asyncio
 import io
 import logging
+import time
 import zipfile
 from collections.abc import Callable
 from typing import NamedTuple
@@ -40,6 +41,18 @@ class SlicerInputError(SlicerApiError):
     """Sidecar rejected the input as invalid (4xx)."""
 
 
+class SlicerTimeoutError(SlicerApiError):
+    """We gave up waiting on a slice that never finished.
+
+    Kept apart from ``SlicerApiUnavailableError`` because they call for
+    opposite reactions and used to be reported as the same thing: an
+    ``httpx.ReadTimeout`` is a subclass of ``RequestError``, so a slice that
+    simply took a long time surfaced as "Slicer sidecar unreachable" — sending
+    the reporter of #2730 off to check a sidecar that was reachable throughout
+    and still slicing when we hung up on it.
+    """
+
+
 class SliceResult(NamedTuple):
     """Result of a slice operation."""
 
@@ -50,6 +63,36 @@ class SliceResult(NamedTuple):
 
 
 _shared_http_client: httpx.AsyncClient | None = None
+
+# Fallback for callers that don't pass one (tests, and any path that runs
+# without a DB session to read the setting from). The user-facing value is
+# ``slicer_stall_timeout_minutes`` under Settings -> Workflow -> Slicer.
+DEFAULT_SLICE_STALL_TIMEOUT_SECONDS = 15 * 60.0
+
+# How often the progress poller ticks. Also the granularity of the stall check,
+# since a missed tick is what the stall clock is counting.
+_PROGRESS_POLL_INTERVAL = 1.0
+
+
+async def get_stall_timeout_seconds(db) -> float:
+    """Read ``slicer_stall_timeout_minutes`` (Settings -> Workflow -> Slicer).
+
+    Falls back to the default on anything unparseable rather than failing the
+    slice — a bad settings row must not be the reason a print doesn't happen.
+    """
+    from backend.app.api.routes.settings import get_setting
+
+    try:
+        raw = await get_setting(db, "slicer_stall_timeout_minutes")
+    except Exception:
+        return DEFAULT_SLICE_STALL_TIMEOUT_SECONDS
+    try:
+        minutes = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return DEFAULT_SLICE_STALL_TIMEOUT_SECONDS
+    if minutes < 1:
+        return DEFAULT_SLICE_STALL_TIMEOUT_SECONDS
+    return float(minutes) * 60.0
 
 
 def _format_sidecar_error(response: httpx.Response) -> str:
@@ -149,6 +192,65 @@ def _guess_model_content_type(filename: str) -> str:
     return "application/octet-stream"
 
 
+class _Liveness:
+    """Tracks when the slicer last showed a sign of life.
+
+    ``deadline`` is what the slice waits against, and it moves forward on every
+    genuine progress update. A slice therefore fails only after the configured
+    window of *silence*, however long the whole thing has been running (#2730).
+
+    ``progress_supported`` stays False for sidecars that never answer the
+    progress endpoint. Those give us nothing to judge liveness by, so the caller
+    treats the same window as a total-elapsed ceiling rather than pretending a
+    stall can be detected.
+    """
+
+    def __init__(self, window_seconds: float, poll_interval: float = _PROGRESS_POLL_INTERVAL) -> None:
+        # Liveness can only be observed as often as the poller ticks, so a
+        # window shorter than a few ticks would expire in the gap between two
+        # polls and fail every slice instantly, however healthy. The settings
+        # schema already floors the user-facing value at a minute; this guards
+        # the constructor, which tests and any future caller can pass anything.
+        self.window_seconds = max(window_seconds, poll_interval * 3)
+        self.progress_supported = False
+        self.started_at = time.monotonic()
+        self._last_alive = self.started_at
+
+    def saw_progress_endpoint(self) -> None:
+        self.progress_supported = True
+
+    def mark_alive(self) -> None:
+        self._last_alive = time.monotonic()
+
+    @property
+    def deadline(self) -> float:
+        """Monotonic time at which we stop waiting."""
+        base = self._last_alive if self.progress_supported else self.started_at
+        return base + self.window_seconds
+
+    def silent_for(self) -> float:
+        return time.monotonic() - self._last_alive
+
+    def elapsed(self) -> float:
+        return time.monotonic() - self.started_at
+
+    def timeout_message(self) -> str:
+        minutes = self.window_seconds / 60
+        if self.progress_supported:
+            return (
+                f"The slicer stopped reporting progress for {minutes:.0f} minutes "
+                f"(slicing had been running for {self.elapsed() / 60:.0f} minutes). "
+                "Raise 'Slicer stall timeout' under Settings -> Workflow -> Slicer if this model "
+                "legitimately needs longer between progress updates."
+            )
+        return (
+            f"Slicing did not finish within {minutes:.0f} minutes, and this sidecar does not "
+            "report progress, so there was no way to tell a slow model from a stalled one. "
+            "Raise 'Slicer stall timeout' under Settings -> Workflow -> Slicer, or update the "
+            "sidecar to a version that reports progress."
+        )
+
+
 class SlicerApiService:
     """Talks to an OrcaSlicer / BambuStudio API sidecar."""
 
@@ -157,10 +259,25 @@ class SlicerApiService:
         base_url: str,
         *,
         client: httpx.AsyncClient | None = None,
-        timeout_seconds: float = 300.0,
+        timeout_seconds: float = DEFAULT_SLICE_STALL_TIMEOUT_SECONDS,
     ) -> None:
+        """``timeout_seconds`` bounds *silence*, not total slicing time (#2730).
+
+        While a slice is running Bambuddy polls the sidecar's progress channel
+        once a second, so it can tell a model that is merely slow from one that
+        has stopped: the clock is reset by every progress update, and only runs
+        out when the slicer has said nothing for this long. A heavy model that
+        keeps reporting will run to completion however long it takes.
+
+        Sidecars too old to report progress have no liveness signal to offer, so
+        for those the same number bounds total elapsed time — the pre-#2730
+        behaviour, but configurable and no longer five minutes flat.
+        """
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        # Instance-level so tests can compress the timing; production always
+        # uses the module default.
+        self.progress_poll_interval = _PROGRESS_POLL_INTERVAL
         if client is not None:
             self._client = client
             self._owns_client = False
@@ -217,6 +334,8 @@ class SlicerApiService:
         self,
         request_id: str,
         on_progress: Callable[[dict], None],
+        *,
+        liveness: "_Liveness | None" = None,
     ) -> None:
         """Poll the sidecar's progress endpoint at ~1Hz and forward each
         snapshot to ``on_progress``. Runs until cancelled.
@@ -232,14 +351,27 @@ class SlicerApiService:
         slice grace expiry) just costs a few wasted GETs that the cancel
         will stop. Network errors and non-JSON 5xx are swallowed; the
         next tick retries.
+
+        When ``liveness`` is supplied this doubles as the stall watchdog: every
+        200 carrying a *changed* payload marks the slicer alive, which is what
+        keeps the slice's deadline moving (#2730). An unchanged payload
+        deliberately does not count — the sidecar re-serves its last snapshot on
+        every poll, so treating a repeat as progress would leave the watchdog
+        unable to detect a stall at all.
         """
         url = f"{self.base_url}/slice/progress/{request_id}"
+        last_payload: dict | None = None
         while True:
             try:
                 response = await self._client.get(url, timeout=5.0)
                 if response.status_code == 200:
                     payload = response.json()
                     if isinstance(payload, dict):
+                        if liveness is not None:
+                            liveness.saw_progress_endpoint()
+                            if payload != last_payload:
+                                liveness.mark_alive()
+                        last_payload = payload
                         on_progress(payload)
                 # 404 / other 4xx = no progress available (yet, or ever
                 # for older sidecars). Keep polling — the outer slice
@@ -249,9 +381,84 @@ class SlicerApiService:
                 # returns a non-JSON 5xx. Don't crash the poller.
                 pass
             try:
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(self.progress_poll_interval)
             except asyncio.CancelledError:
                 return
+
+    async def _post_slice(
+        self,
+        *,
+        files: list | dict,
+        data: dict,
+        request_id: str | None,
+        on_progress: Callable[[dict], None] | None,
+    ) -> httpx.Response:
+        """POST /slice, supervised by the progress channel rather than a clock.
+
+        Before #2730 this was a plain ``httpx`` call with a flat 300 s timeout on
+        every phase. A genuinely heavy model — the reporter's was a MakerWorld
+        model that Bambu Studio also took a long time over — hit the ceiling
+        while it was still slicing perfectly happily, and because
+        ``httpx.ReadTimeout`` is a ``RequestError`` it was reported as "Slicer
+        sidecar unreachable". Meanwhile Bambuddy was polling the sidecar's
+        progress endpoint once a second and could see the thing working.
+
+        So the read timeout comes off the HTTP call and the poller supervises
+        instead: the deadline is pushed forward by every progress update, and
+        only a genuine silence ends the wait. Connect and pool keep short
+        timeouts — a sidecar that won't accept the connection at all is
+        unreachable, and should still say so quickly.
+        """
+        liveness = _Liveness(self.timeout_seconds, self.progress_poll_interval)
+
+        # Poll whenever we have a request_id, even if the caller wants no
+        # progress callbacks: the poll is what makes stall detection possible,
+        # and one GET per second is cheaper than a wrongly-cancelled slice.
+        progress_task: asyncio.Task | None = None
+        if request_id is not None:
+            progress_task = asyncio.create_task(
+                self._poll_progress(request_id, on_progress or (lambda _payload: None), liveness=liveness),
+                name=f"slicer-progress-{request_id}",
+            )
+
+        post_task = asyncio.create_task(
+            self._client.post(
+                f"{self.base_url}/slice",
+                files=files,
+                data=data,
+                timeout=httpx.Timeout(connect=30.0, read=None, write=None, pool=30.0),
+            ),
+            name="slicer-slice-post",
+        )
+
+        try:
+            while True:
+                remaining = liveness.deadline - time.monotonic()
+                if remaining <= 0:
+                    post_task.cancel()
+                    logger.warning(
+                        "Slice abandoned after %.0fs (silent for %.0fs, progress channel %s)",
+                        liveness.elapsed(),
+                        liveness.silent_for(),
+                        "available" if liveness.progress_supported else "unavailable",
+                    )
+                    raise SlicerTimeoutError(liveness.timeout_message())
+                # Re-check at poll granularity so a progress update that lands
+                # mid-wait extends the deadline promptly.
+                done, _pending = await asyncio.wait({post_task}, timeout=min(remaining, self.progress_poll_interval))
+                if post_task in done:
+                    break
+        finally:
+            if progress_task is not None:
+                progress_task.cancel()
+            # Await both so neither is left pending — a cancelled POST still
+            # needs its connection released back to the pool.
+            await asyncio.gather(post_task, progress_task or asyncio.sleep(0), return_exceptions=True)
+
+        try:
+            return post_task.result()
+        except httpx.RequestError as exc:
+            raise SlicerApiUnavailableError(f"Slicer sidecar unreachable: {exc}") from exc
 
     async def slice_with_profiles(
         self,
@@ -328,30 +535,7 @@ class SlicerApiService:
         # and surfaces structured updates via on_progress. Uses a
         # short-tick poll (1s) since the slicer emits stage changes
         # several times per minute on complex models.
-        progress_task: asyncio.Task | None = None
-        if request_id is not None and on_progress is not None:
-            progress_task = asyncio.create_task(
-                self._poll_progress(request_id, on_progress),
-                name=f"slicer-progress-{request_id}",
-            )
-
-        try:
-            response = await self._client.post(
-                f"{self.base_url}/slice",
-                files=files,
-                data=data,
-                timeout=self.timeout_seconds,
-            )
-        except httpx.RequestError as exc:
-            raise SlicerApiUnavailableError(f"Slicer sidecar unreachable: {exc}") from exc
-        finally:
-            if progress_task is not None:
-                progress_task.cancel()
-                try:
-                    await progress_task
-                except (asyncio.CancelledError, Exception):
-                    pass  # Polling errors must not fail the slice.
-
+        response = await self._post_slice(files=files, data=data, request_id=request_id, on_progress=on_progress)
         return _handle_slice_response(response, export_3mf=export_3mf)
 
     async def slice_without_profiles(
@@ -396,30 +580,7 @@ class SlicerApiService:
         # embedded-settings fallback path triggered by an Orca/Bambu CLI
         # segfault on complex H2D models — both want to keep updating
         # the user's toast through the slow operation.
-        progress_task: asyncio.Task | None = None
-        if request_id is not None and on_progress is not None:
-            progress_task = asyncio.create_task(
-                self._poll_progress(request_id, on_progress),
-                name=f"slicer-progress-{request_id}",
-            )
-
-        try:
-            response = await self._client.post(
-                f"{self.base_url}/slice",
-                files=files,
-                data=data,
-                timeout=self.timeout_seconds,
-            )
-        except httpx.RequestError as exc:
-            raise SlicerApiUnavailableError(f"Slicer sidecar unreachable: {exc}") from exc
-        finally:
-            if progress_task is not None:
-                progress_task.cancel()
-                try:
-                    await progress_task
-                except (asyncio.CancelledError, Exception):
-                    pass
-
+        response = await self._post_slice(files=files, data=data, request_id=request_id, on_progress=on_progress)
         return _handle_slice_response(response, export_3mf=export_3mf)
 
 

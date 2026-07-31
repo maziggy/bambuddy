@@ -243,8 +243,7 @@ async def diagnose_qsv() -> QsvDiagnosticResult:
     if selected_device is None:
         failed_probe = probes[-1]
         detail_parts = [
-            f"{probe.device}: {probe.code or 'failed'}"
-            + (f" ({probe.detail})" if probe.detail else "")
+            f"{probe.device}: {probe.code or 'failed'}" + (f" ({probe.detail})" if probe.detail else "")
             for probe in probes
         ]
 
@@ -269,8 +268,7 @@ async def diagnose_qsv() -> QsvDiagnosticResult:
     device = str(selected_device)
     successful_probe = next(probe for probe in probes if probe.available)
     probe_detail = "; ".join(
-        f"{probe.device}: {'ok' if probe.available else probe.code or 'failed'}"
-        for probe in probes
+        f"{probe.device}: {'ok' if probe.available else probe.code or 'failed'}" for probe in probes
     )
     discovery_duration_ms = int((time.monotonic() - started) * 1000)
     render_discovery_ms = max(

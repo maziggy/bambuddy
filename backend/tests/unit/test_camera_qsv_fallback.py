@@ -168,6 +168,48 @@ async def test_immediate_qsv_failure_retries_with_software(monkeypatch):
             await stream.aclose()
 
 
+async def test_immediate_connection_failure_does_not_blame_qsv(monkeypatch):
+    _configure_common_mocks(monkeypatch)
+
+    failed_connection = _ImmediateFailureProcess(
+        b"[tcp @ 0x55d3] Connection to tcp://127.0.0.1:48521 failed: Connection refused",
+        pid=42005,
+    )
+    commands: list[tuple[object, ...]] = []
+    cache_clears = 0
+
+    async def fake_create_subprocess_exec(*args, **_kwargs):
+        commands.append(args)
+        return failed_connection
+
+    def fake_clear_cache() -> None:
+        nonlocal cache_clears
+        cache_clears += 1
+
+    monkeypatch.setattr(
+        camera.asyncio,
+        "create_subprocess_exec",
+        fake_create_subprocess_exec,
+    )
+    monkeypatch.setattr(camera, "clear_qsv_device_cache", fake_clear_cache)
+
+    stream = _make_stream("qsv-camera-unreachable")
+
+    try:
+        chunk = await asyncio.wait_for(anext(stream), timeout=2)
+
+        assert b"Camera connection failed" in chunk
+        assert len(commands) == 1
+        assert "mjpeg_qsv" in commands[0]
+        assert cache_clears == 0
+
+        with pytest.raises(StopAsyncIteration):
+            await anext(stream)
+    finally:
+        with suppress(Exception):
+            await stream.aclose()
+
+
 async def test_qsv_eof_before_first_frame_falls_back_once(monkeypatch):
     _configure_common_mocks(monkeypatch)
 

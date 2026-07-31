@@ -24,9 +24,7 @@ async def test_diagnose_qsv_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     device = Path("/dev/dri/renderD129")
     monkeypatch.setattr(camera, "get_ffmpeg_path", lambda: "/custom/ffmpeg")
     monkeypatch.setattr(qsv_diagnostic, "_run_command", AsyncMock(side_effect=_codec_query))
-    find_device = AsyncMock(
-        return_value=(device, [qsv.QsvDeviceProbe(device=device, available=True, duration_ms=7)])
-    )
+    find_device = AsyncMock(return_value=(device, [qsv.QsvDeviceProbe(device=device, available=True, duration_ms=7)]))
     monkeypatch.setattr(qsv, "find_qsv_render_device", find_device)
 
     result = await qsv_diagnostic.diagnose_qsv()

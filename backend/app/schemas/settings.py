@@ -702,9 +702,7 @@ class AppSettingsUpdate(BaseModel):
         if v is None:
             return v
         if v not in ("software", "intel_qsv"):
-            raise ValueError(
-                "camera_video_processing must be 'software' or 'intel_qsv'"
-            )
+            raise ValueError("camera_video_processing must be 'software' or 'intel_qsv'")
         return v
 
     @field_validator("gcode_snippets")

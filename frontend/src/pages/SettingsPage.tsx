@@ -2098,7 +2098,7 @@ export function SettingsPage() {
                   className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 >
                   <option value="software">
-                    {t('settings.cameraVideoProcessingSoftware', 'Software processing')}
+                    {t('settings.cameraVideoProcessingSoftware')}
                   </option>
                   <option value="intel_qsv">
                     {t('settings.cameraVideoProcessingIntelQsv', 'Intel Quick Sync')}
@@ -2106,14 +2106,8 @@ export function SettingsPage() {
                 </select>
                 <p className="text-xs text-bambu-gray mt-1">
                   {(localSettings.camera_video_processing ?? 'software') === 'intel_qsv'
-                    ? t(
-                        'settings.cameraVideoProcessingIntelQsvDescription',
-                        'Uses Intel Quick Sync for hardware H.264 decoding and MJPEG encoding. Requires Intel media runtime and access to a DRM render device.',
-                      )
-                    : t(
-                        'settings.cameraVideoProcessingSoftwareDescription',
-                        'Uses the CPU for H.264 decoding and MJPEG encoding.',
-                      )}
+                    ? t('settings.cameraVideoProcessingIntelQsvDescription')
+                    : t('settings.cameraVideoProcessingSoftwareDescription')}
                 </p>
                 <p className="text-xs text-bambu-gray mt-1">
                   {t(
@@ -2122,9 +2116,12 @@ export function SettingsPage() {
                   )}
                 </p>
 
-                {(localSettings.camera_video_processing ?? 'software') === 'intel_qsv' && (
-                  <QsvDiagnosticPanel selected />
-                )}
+                <QsvDiagnosticPanel
+                  selected={
+                    (localSettings.camera_video_processing ?? 'software') ===
+                    'intel_qsv'
+                  }
+                />
               </div>
 
               {/* External Cameras Section */}

@@ -823,7 +823,7 @@ async def generate_rtsp_mjpeg_stream(
                 logger.error("ffmpeg failed immediately (attempt %d): %s", reconnect_count + 1, stderr_text)
                 _spawned_ffmpeg_pids.pop(process.pid, None)
 
-                if use_intel_qsv and not qsv_fallback_used:
+                if use_intel_qsv and not qsv_fallback_used and is_qsv_failure(stderr_text):
                     fall_back_to_software(stderr_text or "FFmpeg exited during QSV startup")
                     continue
 

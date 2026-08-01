@@ -76,6 +76,20 @@ def _short_error(stderr: bytes, stdout: bytes = b"") -> str | None:
     return lines[-1][:500] if lines else None
 
 
+def _classify_qsv_failure(stderr: bytes, stdout: bytes = b"") -> str:
+    """Map known FFmpeg/QSV failures to actionable diagnostic codes."""
+
+    text = (stderr + b"\n" + stdout).decode(errors="replace").lower()
+
+    # oneVPL dispatcher is present, but no Intel GPU implementation can create
+    # an MFX session. On current Debian/Ubuntu this commonly means that the
+    # libmfx-gen1.2 runtime package is missing.
+    if "mfx session" in text and "-9" in text:
+        return "qsv_runtime_missing"
+
+    return "qsv_initialization_failed"
+
+
 async def probe_qsv_device(ffmpeg: str, device: Path) -> QsvDeviceProbe:
     """Test one render device using the real camera hardware-device chain."""
 
@@ -125,7 +139,7 @@ async def probe_qsv_device(ffmpeg: str, device: Path) -> QsvDeviceProbe:
             device=device,
             available=False,
             duration_ms=int((time.monotonic() - started) * 1000),
-            code="qsv_initialization_failed",
+            code=_classify_qsv_failure(stderr, stdout),
             detail=_short_error(stderr, stdout),
         )
 

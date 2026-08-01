@@ -83,6 +83,12 @@ function failureMessage(
         'This FFmpeg build does not provide the required QSV codecs.',
       );
 
+    case 'qsv_runtime_missing':
+      return t(
+        'settings.qsvDiagnosticRuntimeMissing',
+        'The Intel GPU was found, but the Quick Sync runtime is unavailable. On Debian or Ubuntu, install libmfx-gen1.2.',
+      );
+
     case 'qsv_initialization_failed':
       return t(
         'settings.qsvDiagnosticInitializationFailed',

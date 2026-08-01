@@ -148,6 +148,32 @@ describe('QsvDiagnosticPanel', () => {
     ).toBeInTheDocument();
   });
 
+  it('reports a missing Intel QSV runtime', async () => {
+    vi.mocked(api.diagnoseQsv).mockResolvedValue(
+      makeResult({
+        available: false,
+        overall_status: 'failed',
+        summary_code: 'qsv_runtime_missing',
+        stages: [
+          {
+            name: 'render_device',
+            status: 'failed',
+            duration_ms: 10,
+            code: 'qsv_runtime_missing',
+            detail: 'Error creating a MFX session: -9.',
+          },
+        ],
+      }),
+    );
+
+    render(<QsvDiagnosticPanel selected={false} />);
+    await runDiagnostic();
+
+    expect(
+      await screen.findByText(/install libmfx-gen1\.2/i),
+    ).toBeInTheDocument();
+  });
+
   it('uses warning styling when unavailable QSV is selected', async () => {
     vi.mocked(api.diagnoseQsv).mockResolvedValue(
       makeResult({

@@ -2504,6 +2504,7 @@ export default {
     qsvDiagnosticEncoderMissing: '此 FFmpeg 組建不包含 mjpeg_qsv 編碼器。',
     qsvDiagnosticCodecsMissing: '此 FFmpeg 組建不包含所需的 QSV 編解碼器。',
     qsvDiagnosticInitializationFailed: '已找到 Intel GPU，但無法初始化 Quick Sync。請檢查 Intel Media 驅動程式及 oneVPL 執行階段。',
+    qsvDiagnosticRuntimeMissing: 'The Intel GPU was found, but the Quick Sync runtime is unavailable. On Debian or Ubuntu, install libmfx-gen1.2.',
     qsvDiagnosticTimeout: 'Quick Sync 診斷逾時。',
     qsvDiagnosticUnknownFailure: 'Quick Sync 無法使用。請開啟下方詳細資訊查看診斷內容。',
     qsvDiagnosticManualDescription: '使用 Intel Quick Sync 前請執行相容性檢查。',

@@ -317,3 +317,42 @@ async def test_probe_qsv_device_reports_render_device_permission_denied(
     assert result.code == "render_device_permission_denied"
     assert result.detail == str(device)
     create_process.assert_not_awaited()
+
+
+def test_classify_qsv_failure_reports_missing_runtime() -> None:
+    stderr = b"Error creating a MFX session: -9."
+
+    assert qsv._classify_qsv_failure(stderr) == "qsv_runtime_missing"
+
+
+def test_classify_qsv_failure_keeps_generic_initialization_error() -> None:
+    stderr = b"MFX session failed"
+
+    assert qsv._classify_qsv_failure(stderr) == "qsv_initialization_failed"
+
+
+@pytest.mark.asyncio
+async def test_probe_qsv_device_reports_missing_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = Path("/dev/dri/renderD128")
+    monkeypatch.setattr(Path, "exists", lambda self: self == device)
+    monkeypatch.setattr(qsv.os, "access", lambda path, mode: path == device)
+
+    process = AsyncMock()
+    process.returncode = 1
+    process.communicate.return_value = (
+        b"",
+        b"Error creating a MFX session: -9.",
+    )
+    monkeypatch.setattr(
+        qsv.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=process),
+    )
+
+    result = await qsv.probe_qsv_device("/custom/ffmpeg", device)
+
+    assert result.available is False
+    assert result.code == "qsv_runtime_missing"
+    assert result.detail == "Error creating a MFX session: -9."

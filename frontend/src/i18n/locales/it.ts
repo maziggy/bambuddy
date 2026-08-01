@@ -2459,6 +2459,7 @@ export default {
     qsvDiagnosticEncoderMissing: "Questa versione di FFmpeg non include l'encoder mjpeg_qsv.",
     qsvDiagnosticCodecsMissing: 'Questa versione di FFmpeg non include i codec QSV richiesti.',
     qsvDiagnosticInitializationFailed: 'La GPU Intel è stata rilevata, ma non è stato possibile inizializzare Quick Sync. Controlla il driver Intel Media e il runtime oneVPL.',
+    qsvDiagnosticRuntimeMissing: 'The Intel GPU was found, but the Quick Sync runtime is unavailable. On Debian or Ubuntu, install libmfx-gen1.2.',
     qsvDiagnosticTimeout: 'Il controllo Quick Sync ha superato il tempo massimo.',
     qsvDiagnosticUnknownFailure: 'Quick Sync non è disponibile. Apri i dettagli qui sotto per le informazioni diagnostiche.',
     qsvDiagnosticManualDescription: 'Esegui un controllo di compatibilità prima di utilizzare Intel Quick Sync.',

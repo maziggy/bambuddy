@@ -16,7 +16,6 @@ from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.routes.settings import get_setting
 from backend.app.core import database
 from backend.app.core.auth import (
     RequireCameraStreamTokenIfAuthEnabled,
@@ -1049,6 +1048,8 @@ async def camera_stream(
     # backend.app.core.database.async_session take effect here.
     async with database.async_session() as db:
         printer = await get_printer_or_404(printer_id, db)
+
+        from backend.app.api.routes.settings import get_setting
 
         camera_video_processing = await get_setting(db, "camera_video_processing") or "software"
 

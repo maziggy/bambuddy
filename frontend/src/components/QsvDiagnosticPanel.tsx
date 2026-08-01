@@ -39,7 +39,7 @@ function stageLabel(
     ),
   };
 
-  return labels[stage.name];
+  return labels[stage.name] ?? stage.name;
 }
 
 function failureMessage(

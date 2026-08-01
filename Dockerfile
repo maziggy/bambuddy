@@ -29,6 +29,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcap2-bin \
     openssh-client \
     ca-certificates \
+    && if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+         apt-get install -y --no-install-recommends intel-media-va-driver; \
+       fi \
     && rm -rf /var/lib/apt/lists/*
 
 # Install the Tailscale CLI only (no tailscaled — the daemon runs on the host).

@@ -5270,6 +5270,8 @@ export default {
   // Model Viewer
   modelViewer: {
     openInSlicer: 'Abrir en el laminador',
+    openInSlicerWith: 'Abrir en {{slicer}}',
+    moreSlicerOptions: 'Más opciones de laminador',
     tabs: {
       model: 'Modelo 3D',
       gcode: 'Vista previa de G-code',

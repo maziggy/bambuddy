@@ -5250,6 +5250,8 @@ export default {
   // Model Viewer
   modelViewer: {
     openInSlicer: 'Abrir no Slicer',
+    openInSlicerWith: 'Abrir em {{slicer}}',
+    moreSlicerOptions: 'Mais opções de fatiador',
     tabs: {
       model: 'Modelo 3D',
       gcode: 'Pré-visualização G-code',

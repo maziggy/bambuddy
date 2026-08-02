@@ -4997,6 +4997,8 @@ export default {
   },
   modelViewer: {
     openInSlicer: '슬라이서에서 열기',
+    openInSlicerWith: '{{slicer}}에서 열기',
+    moreSlicerOptions: '슬라이서 옵션 더 보기',
     tabs: {
       model: '3D 모델',
       gcode: 'G-code 미리보기'

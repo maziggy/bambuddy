@@ -5250,6 +5250,8 @@ export default {
   // Model Viewer
   modelViewer: {
     openInSlicer: '在切片軟體中開啟',
+    openInSlicerWith: '用{{slicer}}開啟',
+    moreSlicerOptions: '更多切片軟體選項',
     tabs: {
       model: '3D 模型',
       gcode: 'G-code 預覽',

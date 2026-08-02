@@ -5226,6 +5226,8 @@ export default {
   // Model Görüntüleyici
   modelViewer: {
     openInSlicer: 'Dilimleyicide Aç',
+    openInSlicerWith: '{{slicer}} ile aç',
+    moreSlicerOptions: 'Diğer dilimleyici seçenekleri',
     tabs: {
       model: '3B Model',
       gcode: 'G-kod Önizleme',

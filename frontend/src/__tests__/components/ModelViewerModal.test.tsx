@@ -8,6 +8,7 @@ import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { render } from '../utils';
 import { ModelViewerModal } from '../../components/ModelViewerModal';
 import { setStreamToken } from '../../api/client';
+import { openInSlicer } from '../../utils/slicer';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 
@@ -26,6 +27,10 @@ vi.mock('../../components/GcodeViewer', () => ({
       G-code Viewer Mock
     </div>
   ),
+}));
+
+vi.mock('../../utils/slicer', () => ({
+  openInSlicer: vi.fn(),
 }));
 
 const mockCapabilities = {
@@ -526,6 +531,163 @@ describe('ModelViewerModal', () => {
         const slicerButton = screen.getByText('Open in Slicer').closest('button');
         expect(slicerButton).toBeDisabled();
       });
+    });
+  });
+
+  describe('slicer split button (#2725)', () => {
+    it('shows both slicers in the dropdown when Bambuddy is the default slicer', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => {
+          return HttpResponse.json({ use_slicer_api: true });
+        }),
+        http.get('/api/v1/library/files/:id/plates', () => {
+          return HttpResponse.json(mockSinglePlateResponse);
+        })
+      );
+
+      render(
+        <ModelViewerModal
+          libraryFileId={1}
+          title="Model.3mf"
+          fileType="3mf"
+          onClose={mockOnClose}
+          onSliceWithBambuddy={vi.fn()}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Slice' })).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'More slicer options' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Open in Bambu Studio')).toBeInTheDocument();
+        expect(screen.getByText('Open in OrcaSlicer')).toBeInTheDocument();
+      });
+    });
+
+    it('opens the selected local slicer from the Bambuddy dropdown', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => {
+          return HttpResponse.json({ use_slicer_api: true });
+        }),
+        http.get('/api/v1/library/files/:id/plates', () => {
+          return HttpResponse.json(mockSinglePlateResponse);
+        })
+      );
+
+      render(
+        <ModelViewerModal
+          libraryFileId={1}
+          title="Model.3mf"
+          fileType="3mf"
+          onClose={mockOnClose}
+          onSliceWithBambuddy={vi.fn()}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Slice' })).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'More slicer options' }));
+
+      const orcaItem = await screen.findByText('Open in OrcaSlicer');
+      fireEvent.click(orcaItem);
+
+      await waitFor(() => {
+        expect(openInSlicer).toHaveBeenCalledWith(expect.any(String), 'orcaslicer');
+      });
+    });
+
+    it('shows only the non-preferred slicer in the dropdown for a desktop handoff', async () => {
+      render(
+        <ModelViewerModal
+          archiveId={1}
+          title="Test Model"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Open in Slicer' })).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'More slicer options' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Open in OrcaSlicer')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Open in Bambu Studio')).not.toBeInTheDocument();
+    });
+
+    it('offers Bambu Studio when the preferred desktop slicer is OrcaSlicer', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => {
+          return HttpResponse.json({ preferred_slicer: 'orcaslicer' });
+        })
+      );
+
+      render(
+        <ModelViewerModal
+          archiveId={1}
+          title="Test Model"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Open in Slicer' })).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'More slicer options' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Open in Bambu Studio')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Open in OrcaSlicer')).not.toBeInTheDocument();
+    });
+
+    it('does not render a split chevron when the file cannot open in a slicer', async () => {
+      render(
+        <ModelViewerModal
+          libraryFileId={1}
+          title="Model.stl"
+          fileType="stl"
+          onClose={mockOnClose}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Open in Slicer' })).toBeDisabled();
+      });
+
+      expect(screen.queryByRole('button', { name: 'More slicer options' })).not.toBeInTheDocument();
+    });
+
+    it('renders a plain Slice button without a split chevron for non-handoff files', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => {
+          return HttpResponse.json({ use_slicer_api: true });
+        })
+      );
+
+      render(
+        <ModelViewerModal
+          libraryFileId={1}
+          title="Model.stl"
+          fileType="stl"
+          onClose={mockOnClose}
+          onSliceWithBambuddy={vi.fn()}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Slice' })).toBeInTheDocument();
+      });
+
+      expect(screen.queryByRole('button', { name: 'More slicer options' })).not.toBeInTheDocument();
     });
   });
 });

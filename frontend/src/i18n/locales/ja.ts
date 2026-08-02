@@ -5262,6 +5262,8 @@ export default {
   // Model Viewer
   modelViewer: {
     openInSlicer: 'スライサーで開く',
+    openInSlicerWith: '{{slicer}}で開く',
+    moreSlicerOptions: 'その他のスライサーオプション',
     tabs: {
       model: '3Dモデル',
       gcode: 'G-codeプレビュー',

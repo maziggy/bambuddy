@@ -1308,6 +1308,7 @@ export default {
     },
     // Time
     time: {
+      etaIfStartedNow: "Час завершення, якщо запустити це завдання зараз",
       asap: "Якнайшвидше",
       overdue: "Прострочено",
       now: "Зараз",

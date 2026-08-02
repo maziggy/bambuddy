@@ -1223,6 +1223,7 @@ export default {
       description: '아카이브 페이지의 컨텍스트 메뉴에서 "예약" 옵션을 사용하거나 파일을 드래그 앤 드롭하여 시작하세요.'
     },
     time: {
+      etaIfStartedNow: '이 작업을 지금 시작할 경우의 완료 예정 시각',
       asap: '즉시',
       overdue: '기한 초과',
       now: '지금',

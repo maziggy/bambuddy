@@ -319,14 +319,20 @@ export function formatTimeOnly(
  * @param remainingMinutes - Minutes until completion
  * @param timeFormat - Time format setting ('system', '12h', '24h')
  * @param t - Optional i18n translation function
+ * @param baseTime - Instant to count from, in epoch ms. Defaults to the current
+ *   clock. Callers that render an ETA for something not yet started must pass a
+ *   value that changes over time, or the string freezes at first render: it is
+ *   only recomputed when the component re-renders, which does not happen while
+ *   the underlying data is unchanged (#2740).
  * @returns Formatted ETA string (e.g., "3:45 PM", "Tomorrow 9:30 AM", "Wed 2:00 PM")
  */
 export function formatETA(
   remainingMinutes: number,
   timeFormat: TimeFormat = 'system',
-  t?: (key: string) => string
+  t?: (key: string) => string,
+  baseTime?: number
 ): string {
-  const now = new Date();
+  const now = baseTime != null ? new Date(baseTime) : new Date();
   const eta = new Date(now.getTime() + remainingMinutes * 60 * 1000);
 
   const today = new Date(now);

@@ -1293,6 +1293,7 @@ export default {
     },
     // Time
     time: {
+      etaIfStartedNow: 'Horário de conclusão se este trabalho começasse agora',
       asap: 'ASAP',
       overdue: 'Atrasado',
       now: 'Agora',

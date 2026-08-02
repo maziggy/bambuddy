@@ -1308,6 +1308,7 @@ export default {
     },
     // Time
     time: {
+      etaIfStartedNow: 'Completion time if this job started now',
       asap: 'ASAP',
       overdue: 'Overdue',
       now: 'Now',

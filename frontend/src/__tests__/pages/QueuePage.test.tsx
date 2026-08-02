@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { QueuePage } from '../../pages/QueuePage';
@@ -195,6 +195,293 @@ describe('QueuePage', () => {
         expect(screen.getByText('Active Print')).toBeInTheDocument();
         expect(screen.getByText('Currently Printing')).toBeInTheDocument();
       });
+    });
+
+    it('shows one if-started-now ETA for an eligible pending item', async () => {
+      // Printer 1 is free: nothing is printing on it and nothing is queued ahead.
+      server.use(
+        http.get('/api/v1/queue/', () => {
+          return HttpResponse.json([mockQueueItems[0]]);
+        }),
+      );
+
+      render(<QueuePage />);
+
+      const name = await screen.findByText('Test Print 1');
+      const row = name.closest('.group');
+
+      expect(row).not.toBeNull();
+      const etaEl = within(row as HTMLElement).getAllByTestId('queue-item-eta');
+      expect(etaEl).toHaveLength(1);
+      // The tooltip must say what the number actually means, not reuse the
+      // printers-page "Estimated completion time" wording (which this is not).
+      expect(etaEl[0]).toHaveAttribute(
+        'title',
+        'Completion time if this job started now',
+      );
+    });
+
+    // The scheduler only writes waiting_reason on the model-based assignment
+    // path, so an item pinned to a specific printer carries no marker at all
+    // while it sits behind a running job. Without the printer-busy check every
+    // one of these quoted the same wrong "starts now" time.
+    it('does not show an ETA for an item pinned behind a running print', async () => {
+      render(<QueuePage />);
+
+      // mockQueueItems[1] ("Active Print") is printing on printer 1, and
+      // "Test Print 1" is pending on the same printer with waiting_reason null.
+      const name = await screen.findByText('Test Print 1');
+      const row = name.closest('.group');
+
+      expect(row).not.toBeNull();
+      expect(
+        within(row as HTMLElement).queryByTestId('queue-item-eta'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('shows the ETA only on the next item up when several share an idle printer', async () => {
+      server.use(
+        http.get('/api/v1/queue/', () => {
+          return HttpResponse.json([
+            { ...mockQueueItems[0], id: 10, position: 1, archive_name: 'First up' },
+            { ...mockQueueItems[0], id: 11, position: 2, archive_name: 'Second up' },
+            { ...mockQueueItems[0], id: 12, position: 3, archive_name: 'Third up' },
+          ]);
+        }),
+      );
+
+      render(<QueuePage />);
+
+      await screen.findByText('Third up');
+
+      const etaRowNames = screen
+        .queryAllByTestId('queue-item-eta')
+        .map((el) => el.closest('.group')?.textContent);
+
+      expect(etaRowNames).toHaveLength(1);
+      expect(etaRowNames[0]).toContain('First up');
+    });
+
+    it('shows an ETA for a staged item queued behind others on an idle printer', async () => {
+      // The scheduler skips manual-start items without claiming the printer, so
+      // a staged job is startable whenever its printer is free — queue order
+      // does not gate it.
+      server.use(
+        http.get('/api/v1/queue/', () => {
+          return HttpResponse.json([
+            { ...mockQueueItems[0], id: 20, position: 1, archive_name: 'Auto first' },
+            {
+              ...mockQueueItems[0],
+              id: 21,
+              position: 2,
+              archive_name: 'Staged second',
+              manual_start: true,
+            },
+          ]);
+        }),
+      );
+
+      render(<QueuePage />);
+
+      const name = await screen.findByText('Staged second');
+      const row = name.closest('.group');
+
+      expect(row).not.toBeNull();
+      expect(
+        within(row as HTMLElement).getAllByTestId('queue-item-eta'),
+      ).toHaveLength(1);
+    });
+
+    it('does not show an ETA for an item conditional on a previous print', async () => {
+      server.use(
+        http.get('/api/v1/queue/', () => {
+          return HttpResponse.json([
+            {
+              ...mockQueueItems[0],
+              archive_name: 'Conditional Print',
+              require_previous_success: true,
+            },
+          ]);
+        }),
+      );
+
+      render(<QueuePage />);
+
+      const name = await screen.findByText('Conditional Print');
+      const row = name.closest('.group');
+
+      expect(row).not.toBeNull();
+      expect(
+        within(row as HTMLElement).queryByTestId('queue-item-eta'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('advances the ETA as time passes', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.setSystemTime(new Date('2026-08-02T10:00:00Z'));
+
+      try {
+        server.use(
+          http.get('/api/v1/queue/', () => {
+            return HttpResponse.json([mockQueueItems[0]]);
+          }),
+        );
+
+        render(<QueuePage />);
+
+        const name = await screen.findByText('Test Print 1');
+        const row = name.closest('.group') as HTMLElement;
+        const before = within(row).getByTestId('queue-item-eta').textContent;
+
+        // The queue payload never changes, so react-query hands back the same
+        // object and nothing here re-renders on its own. Only the page's own
+        // clock can move this value.
+        await vi.advanceTimersByTimeAsync(45 * 60 * 1000);
+
+        await waitFor(() => {
+          expect(
+            within(row).getByTestId('queue-item-eta').textContent,
+          ).not.toBe(before);
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('shows one if-started-now ETA for a staged item', async () => {
+      server.use(
+        http.get('/api/v1/queue/', () => {
+          return HttpResponse.json([
+            {
+              ...mockQueueItems[0],
+              archive_name: 'Staged Print',
+              manual_start: true,
+            },
+          ]);
+        }),
+      );
+
+      render(<QueuePage />);
+
+      const name = await screen.findByText('Staged Print');
+      const row = name.closest('.group');
+
+      expect(row).not.toBeNull();
+      expect(
+        within(row as HTMLElement).getAllByTestId('queue-item-eta'),
+      ).toHaveLength(1);
+    });
+
+    it('shows exactly one live ETA for a printing item', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/status', ({ params }) => {
+          return HttpResponse.json({
+            id: Number(params.id),
+            name: 'Test Printer',
+            connected: true,
+            state: 'RUNNING',
+            progress: 50,
+            remaining_time: 60,
+            layer_num: 50,
+            total_layers: 100,
+            filename: 'active.3mf',
+          });
+        }),
+      );
+
+      render(<QueuePage />);
+
+      const name = await screen.findByText('Active Print');
+      const row = name.closest('.group');
+
+      expect(row).not.toBeNull();
+
+      await waitFor(() => {
+        expect(
+          within(row as HTMLElement).getAllByText(/^ETA\s/),
+        ).toHaveLength(1);
+      });
+
+      expect(
+        within(row as HTMLElement).queryByTestId('queue-item-eta'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('does not show an ETA for a waiting item', async () => {
+      server.use(
+        http.get('/api/v1/queue/', () => {
+          return HttpResponse.json([
+            {
+              ...mockQueueItems[0],
+              archive_name: 'Waiting Print',
+              waiting_reason: 'Waiting for matching printer',
+            },
+          ]);
+        }),
+      );
+
+      render(<QueuePage />);
+
+      const name = await screen.findByText('Waiting Print');
+      const row = name.closest('.group');
+
+      expect(row).not.toBeNull();
+      expect(
+        within(row as HTMLElement).queryByTestId('queue-item-eta'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('does not show an if-started-now ETA for a scheduled item', async () => {
+      server.use(
+        http.get('/api/v1/queue/', () => {
+          return HttpResponse.json([
+            {
+              ...mockQueueItems[0],
+              archive_name: 'Scheduled Print',
+              scheduled_time: new Date(
+                Date.now() + 5 * 60 * 60 * 1000,
+              ).toISOString(),
+            },
+          ]);
+        }),
+      );
+
+      render(<QueuePage />);
+
+      const name = await screen.findByText('Scheduled Print');
+      const row = name.closest('.group');
+
+      expect(row).not.toBeNull();
+      expect(
+        within(row as HTMLElement).queryByTestId('queue-item-eta'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('does not render a dangling ETA for an invalid duration', async () => {
+      server.use(
+        http.get('/api/v1/queue/', () => {
+          return HttpResponse.json([
+            {
+              ...mockQueueItems[0],
+              archive_name: 'Invalid Duration Print',
+              print_time_seconds: -60,
+            },
+          ]);
+        }),
+      );
+
+      render(<QueuePage />);
+
+      const name = await screen.findByText('Invalid Duration Print');
+      const row = name.closest('.group');
+
+      expect(row).not.toBeNull();
+      expect(
+        within(row as HTMLElement).queryByTestId('queue-item-eta'),
+      ).not.toBeInTheDocument();
+      expect(
+        within(row as HTMLElement).queryByText(/^ETA(?:\s|$)/),
+      ).not.toBeInTheDocument();
     });
 
     it('shows completed items in history', async () => {

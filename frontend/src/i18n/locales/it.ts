@@ -1293,6 +1293,7 @@ export default {
     },
     // Time
     time: {
+      etaIfStartedNow: 'Orario di completamento se questo lavoro iniziasse ora',
       asap: 'ASAP',
       overdue: 'Scaduto',
       now: 'Ora',

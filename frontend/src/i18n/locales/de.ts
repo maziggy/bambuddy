@@ -1293,6 +1293,7 @@ export default {
     },
     // Time
     time: {
+      etaIfStartedNow: 'Fertigstellungszeit, wenn dieser Auftrag jetzt starten würde',
       asap: 'Sofort',
       overdue: 'Überfällig',
       now: 'Jetzt',

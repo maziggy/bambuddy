@@ -1293,6 +1293,7 @@ export default {
     },
     // Time
     time: {
+      etaIfStartedNow: '若此任务现在开始的预计完成时间',
       asap: '尽快',
       overdue: '已逾期',
       now: '现在',

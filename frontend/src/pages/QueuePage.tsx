@@ -356,6 +356,8 @@ function SortableQueueItem({
   hasPermission,
   canModify,
   printerState,
+  showEta = false,
+  etaNow,
   t,
 }: {
   item: PrintQueueItem;
@@ -377,6 +379,11 @@ function SortableQueueItem({
   hasPermission: (permission: Permission) => boolean;
   canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
   printerState?: string | null;
+  // Whether this item qualifies for an "if started now" ETA (#2740), and the
+  // instant to measure it from. Both are decided by the page so every row on
+  // screen quotes the same clock.
+  showEta?: boolean;
+  etaNow?: number;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   // Fetch printer status every 30 seconds while printing to monitor progress
@@ -427,6 +434,16 @@ function SortableQueueItem({
   const isPrinting = item.status === 'printing';
   const isPending = item.status === 'pending';
   const isHistory = ['completed', 'failed', 'skipped', 'cancelled'].includes(item.status);
+
+  // This is an "if started now" estimate, not a cumulative queue forecast, so
+  // it is only shown for items the page determined could actually start now
+  // (see etaEligibleIds). etaNow is the caller's ticking clock — deriving the
+  // ETA from it rather than from Date.now() keeps this render deterministic and
+  // stops the value freezing at first paint.
+  const queueItemEta =
+    isPending && showEta && item.print_time_seconds != null && item.print_time_seconds > 0
+      ? formatETA(item.print_time_seconds / 60, timeFormat, t, etaNow)
+      : null;
 
   const isMobileSelectable = isPending && onToggleSelect;
 
@@ -601,6 +618,15 @@ function SortableQueueItem({
               <span className="flex items-center gap-1 sm:gap-1.5">
                 <Timer className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 {formatDuration(item.print_time_seconds)}
+              </span>
+            )}
+            {queueItemEta && (
+              <span
+                data-testid="queue-item-eta"
+                className="text-bambu-green font-medium"
+                title={t('queue.time.etaIfStartedNow')}
+              >
+                ETA {queueItemEta}
               </span>
             )}
             {item.filament_used_grams && (
@@ -857,6 +883,10 @@ interface QueueRowRenderProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   canModify: (resource: any, action: any, createdById?: number | null) => boolean;
   t: (key: string, options?: Record<string, unknown>) => string;
+  // Items that qualify for an "if started now" ETA, and the shared clock it is
+  // measured from (#2740).
+  etaEligibleIds: Set<number>;
+  etaNow: number;
   aggregateForRows: (rows: QueueRow[]) => { count: number; time: number; weight: number };
   // Mobile tap-to-reorder (#2667). onMoveUp/onMoveDown move this whole row
   // (single item or batch) one step among its siblings; onMoveBlock is the
@@ -882,6 +912,8 @@ function QueueRowRender(props: QueueRowRenderProps) {
     hasPermission,
     canModify,
     t,
+    etaEligibleIds,
+    etaNow,
     onMoveUp,
     onMoveDown,
   } = props;
@@ -903,6 +935,8 @@ function QueueRowRender(props: QueueRowRenderProps) {
         onToggleSelect={() => handleToggleSelect(row.item.id)}
         hasPermission={hasPermission}
         canModify={canModify}
+        showEta={etaEligibleIds.has(row.item.id)}
+        etaNow={etaNow}
         t={t}
       />
     );
@@ -928,6 +962,8 @@ function SortableBatchRow({
   hasPermission,
   canModify,
   t,
+  etaEligibleIds,
+  etaNow,
   aggregateForRows,
   onMoveUp,
   onMoveDown,
@@ -1119,6 +1155,8 @@ function SortableBatchRow({
               onToggleSelect={() => handleToggleSelect(child.id)}
               hasPermission={hasPermission}
               canModify={canModify}
+              showEta={etaEligibleIds.has(child.id)}
+              etaNow={etaNow}
               t={t}
             />
           ))}
@@ -1758,6 +1796,106 @@ export function QueuePage() {
     }
     return items;
   }, [queue, filterLocation, matchesLocationFilter]);
+
+  // Queue items eligible for an "if started now" ETA (#2740).
+  //
+  // The ETA answers "when would this finish if it began right now", so it may
+  // only appear on items that really could begin right now. Deriving that from
+  // waiting_reason alone is not enough: the scheduler only writes that field on
+  // the model-based assignment path (print_scheduler.py), so an item pinned to a
+  // specific printer sits behind a running job with waiting_reason still NULL.
+  //
+  // Computed from the unfiltered queue on purpose — hiding a printer behind the
+  // location filter must not make its printer look free.
+  const etaEligibleIds = useMemo(() => {
+    const eligible = new Set<number>();
+    if (!queue) return eligible;
+
+    const busyPrinters = new Set<number>();
+    queue.forEach(item => {
+      if (item.status === 'printing' && item.printer_id) busyPrinters.add(item.printer_id);
+    });
+
+    const isFutureScheduled = (item: PrintQueueItem): boolean => {
+      if (!item.scheduled_time) return false;
+      return (parseUTCDate(item.scheduled_time)?.getTime() ?? 0) > Date.now();
+    };
+
+    // Mirrors the scheduler's own ordering so "next up" here means the item the
+    // scheduler would actually dispatch next, not whatever the user sorted by.
+    const schedulerOrder = (a: PrintQueueItem, b: PrintQueueItem): number => {
+      if (settings?.queue_shortest_first) {
+        const aJumped = a.been_jumped ? 1 : 0;
+        const bJumped = b.been_jumped ? 1 : 0;
+        if (aJumped !== bJumped) return bJumped - aJumped;
+        const aTime = a.print_time_seconds ?? Infinity;
+        const bTime = b.print_time_seconds ?? Infinity;
+        if (aTime !== bTime) return aTime - bTime;
+      }
+      return a.position - b.position;
+    };
+
+    // Claimants for each printer, in the order the scheduler would take them.
+    // Staged and future-scheduled items are excluded: the scheduler skips both
+    // without marking the printer busy, so neither holds up the item behind it.
+    const contenders = new Map<number, PrintQueueItem[]>();
+    queue
+      .filter(
+        item =>
+          item.status === 'pending' &&
+          item.printer_id != null &&
+          !item.manual_start &&
+          !isFutureScheduled(item)
+      )
+      .sort(schedulerOrder)
+      .forEach(item => {
+        const list = contenders.get(item.printer_id!) ?? [];
+        list.push(item);
+        contenders.set(item.printer_id!, list);
+      });
+
+    queue.forEach(item => {
+      if (item.status !== 'pending') return;
+      // Blocked, scheduled for later, or no usable duration to add.
+      if (item.waiting_reason) return;
+      if (isFutureScheduled(item)) return;
+      if (item.print_time_seconds == null || item.print_time_seconds <= 0) return;
+      // Conditional on an earlier print's outcome, which the UI cannot see: the
+      // scheduler may skip it outright rather than ever running it.
+      if (item.require_previous_success) return;
+
+      // Model-based items have no printer yet; an empty waiting_reason is the
+      // scheduler saying it found one, so trust that.
+      if (item.printer_id == null) {
+        eligible.add(item.id);
+        return;
+      }
+
+      if (busyPrinters.has(item.printer_id)) return;
+      // Staged items wait on the user, not on the queue, so they are startable
+      // whenever their printer is free regardless of what is queued ahead.
+      if (item.manual_start) {
+        eligible.add(item.id);
+        return;
+      }
+      if (contenders.get(item.printer_id)?.[0]?.id === item.id) eligible.add(item.id);
+    });
+
+    return eligible;
+  }, [queue, settings?.queue_shortest_first]);
+
+  // The ETA is "now + duration", so it goes stale on its own. Nothing else
+  // re-renders these rows while the queue payload is unchanged (react-query's
+  // structural sharing keeps the reference stable), so drive it from a clock of
+  // our own. Only runs while an ETA is actually on screen.
+  const [etaNow, setEtaNow] = useState(() => Date.now());
+  const hasEtas = etaEligibleIds.size > 0;
+  useEffect(() => {
+    if (!hasEtas) return;
+    setEtaNow(Date.now());
+    const id = setInterval(() => setEtaNow(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, [hasEtas]);
 
   // Get unique printer IDs from active items to fetch their statuses
   const activePrinterIds = useMemo(() => {
@@ -2547,6 +2685,8 @@ export function QueuePage() {
                           hasPermission={hasPermission}
                           canModify={canModify}
                           t={t}
+                          etaEligibleIds={etaEligibleIds}
+                          etaNow={etaNow}
                           aggregateForRows={aggregateForRows}
                           {...rowMovers(groupedRows, idx)}
                           onMoveBlock={canReorderManually ? moveBlockRelativeTo : undefined}
@@ -2585,6 +2725,8 @@ export function QueuePage() {
                                   hasPermission={hasPermission}
                                   canModify={canModify}
                                   t={t}
+                                  etaEligibleIds={etaEligibleIds}
+                                  etaNow={etaNow}
                                   aggregateForRows={aggregateForRows}
                                   {...rowMovers(bucket.rows, idx)}
                                   onMoveBlock={canReorderManually ? moveBlockRelativeTo : undefined}

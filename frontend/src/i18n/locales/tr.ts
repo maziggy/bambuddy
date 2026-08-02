@@ -1293,6 +1293,7 @@ export default {
     },
     // Zaman
     time: {
+      etaIfStartedNow: 'Bu iş şimdi başlatılırsa tamamlanma saati',
       asap: 'ASAP',
       overdue: 'Gecikmiş',
       now: 'Şimdi',

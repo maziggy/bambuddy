@@ -36,6 +36,23 @@ def _spawn_patch():
     return discarding_spawn_patch(MAIN_TARGET)
 
 
+def _spawn_patch():
+    """Patch `spawn_background_task` so the coroutine handed to it is closed.
+
+    `on_printer_status_change` builds `reconcile_stale_active_prints(...)` as
+    a call argument, so the coroutine object is constructed whether or not the
+    replacement schedules it. A bare `MagicMock` keeps it alive in `call_args`
+    and it finalises unawaited during some *later* test's GC, surfacing as a
+    `PytestUnraisableExceptionWarning` attributed to an unrelated file.
+    Closing it here mirrors the real helper taking ownership of the coroutine,
+    while still keeping reconciliation from actually running.
+    """
+    return patch(
+        "backend.app.main.spawn_background_task",
+        side_effect=lambda coro, **kwargs: coro.close(),
+    )
+
+
 def _state(connected: bool, state: str = "IDLE") -> SimpleNamespace:
     """Minimal PrinterState stub.
 

@@ -9,6 +9,7 @@ import {
   Upload,
   Trash2,
   Download,
+  ExternalLink,
   MoreVertical,
   ChevronRight,
   FolderPlus,
@@ -72,6 +73,7 @@ import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDuration, parseUTCDate, formatDate } from '../utils/date';
 import { formatFileSize } from '../utils/file';
+import { openInSlicer, type SlicerType } from '../utils/slicer';
 
 type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
 type SortDirection = 'asc' | 'desc';
@@ -758,6 +760,7 @@ interface FileCardProps {
   onDownload: (id: number) => void;
   onPrint?: (file: LibraryFileListItem) => void;
   onSlice?: (file: LibraryFileListItem) => void;
+  onOpenInSlicer?: (file: LibraryFileListItem) => void;
   onRunPipeline?: (file: LibraryFileListItem) => void;
   useSlicerApi?: boolean;
   onPreview3d?: (file: LibraryFileListItem) => void;
@@ -772,8 +775,10 @@ interface FileCardProps {
   t: TFunction;
 }
 
-function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onPrint, onSlice, onRunPipeline, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, onTagClick, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
+function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onPrint, onSlice, onOpenInSlicer, onRunPipeline, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, onTagClick, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
   const [showActions, setShowActions] = useState(false);
+
+  const sliceDisabled = useSlicerApi ? !hasPermission('library:upload') : !hasPermission('library:read');
 
   return (
     <div
@@ -890,16 +895,21 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
                   {t('common.print')}
                 </button>
               )}
-              {onSlice && useSlicerApi && isSliceableFilename(file.filename) && (
+              {isSliceableFilename(file.filename) && (onSlice || onOpenInSlicer) && (
                 <button
                   className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
-                    hasPermission('library:upload') ? 'text-white hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
+                    !sliceDisabled ? 'text-white hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
                   }`}
-                  onClick={() => { if (hasPermission('library:upload')) { onSlice(file); setShowActions(false); } }}
-                  disabled={!hasPermission('library:upload')}
-                  title={!hasPermission('library:upload') ? t('fileManager.noPermissionSlice') : undefined}
+                  onClick={() => {
+                    if (sliceDisabled) return;
+                    if (useSlicerApi) onSlice?.(file);
+                    else onOpenInSlicer?.(file);
+                    setShowActions(false);
+                  }}
+                  disabled={sliceDisabled}
+                  title={sliceDisabled ? (useSlicerApi ? t('fileManager.noPermissionSlice') : t('fileManager.noPermissionDownload')) : undefined}
                 >
-                  <Cog className="w-3.5 h-3.5" />
+                  {useSlicerApi ? <Cog className="w-3.5 h-3.5" /> : <ExternalLink className="w-3.5 h-3.5" />}
                   {t('slice.action')}
                 </button>
               )}
@@ -1136,6 +1146,27 @@ export function FileManagerPage() {
     queryKey: ['settings'],
     queryFn: () => api.getSettings() as Promise<AppSettings>,
   });
+
+  const preferredSlicer: SlicerType = settings?.open_in_slicer || settings?.preferred_slicer || 'bambu_studio';
+
+  const handleOpenInSlicer = useCallback(async (file: LibraryFileListItem) => {
+    try {
+      const { token } = await api.createLibrarySlicerToken(file.id);
+      const path = api.getLibrarySlicerDownloadUrl(file.id, token, file.filename);
+      openInSlicer(`${window.location.origin}${path}`, preferredSlicer);
+    } catch {
+      const path = api.getLibraryFileDownloadUrl(file.id);
+      openInSlicer(`${window.location.origin}${path}`, preferredSlicer);
+    }
+  }, [preferredSlicer]);
+
+  // Slice permission: API mode needs upload rights, desktop handoff is a download.
+  const canSlice = useCallback(() => {
+    if (settings?.use_slicer_api) {
+      return hasPermission('library:upload');
+    }
+    return hasPermission('library:read');
+  }, [settings?.use_slicer_api, hasPermission]);
   const { data: folders, isLoading: foldersLoading } = useQuery({
     queryKey: ['library-folders'],
     queryFn: () => api.getLibraryFolders(),
@@ -2344,6 +2375,7 @@ export function FileManagerPage() {
                     onDownload={handleDownload}
                     onPrint={setPrintFile}
                     onSlice={setSliceFile}
+                    onOpenInSlicer={handleOpenInSlicer}
                     onRunPipeline={setRunPipelineFile}
                     useSlicerApi={settings?.use_slicer_api ?? false}
                     onPreview3d={(f) => {
@@ -2521,18 +2553,21 @@ export function FileManagerPage() {
                           </button>
                         </>
                       )}
-                      {(settings?.use_slicer_api ?? false) && isSliceableFilename(file.filename) && (
+                      {isSliceableFilename(file.filename) && (
                         <button
-                          onClick={() => hasPermission('library:upload') && setSliceFile(file)}
+                          onClick={() => {
+                            if (!canSlice()) return;
+                            (settings?.use_slicer_api ? setSliceFile : handleOpenInSlicer)(file);
+                          }}
                           className={`p-1.5 rounded transition-colors ${
-                            hasPermission('library:upload')
+                            canSlice()
                               ? 'hover:bg-bambu-dark text-bambu-gray hover:text-bambu-green'
                               : 'text-bambu-gray/50 cursor-not-allowed'
                           }`}
-                          title={hasPermission('library:upload') ? t('slice.action') : t('fileManager.noPermissionSlice')}
-                          disabled={!hasPermission('library:upload')}
+                          title={canSlice() ? t('slice.action') : (settings?.use_slicer_api ? t('fileManager.noPermissionSlice') : t('fileManager.noPermissionDownload'))}
+                          disabled={!canSlice()}
                         >
-                          <Cog className="w-4 h-4" />
+                          {settings?.use_slicer_api ? <Cog className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />}
                         </button>
                       )}
                       {(settings?.use_slicer_api ?? false) && isSliceableFilename(file.filename) && (

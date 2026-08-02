@@ -3,12 +3,23 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { FileManagerPage } from '../../pages/FileManagerPage';
+import { openInSlicer } from '../../utils/slicer';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+
+vi.mock('../../utils/slicer', () => ({
+  openInSlicer: vi.fn(),
+}));
+
+vi.mock('../../components/SliceModal', () => ({
+  SliceModal: ({ source }: { source: { filename: string } }) => (
+    <div data-testid="slice-modal">{source.filename}</div>
+  ),
+}));
 
 // Mock data
 const mockFolders = [
@@ -1153,6 +1164,64 @@ describe('FileManagerPage', () => {
       await waitFor(() => {
         expect(screen.queryByText(/2031/)).not.toBeInTheDocument();
       });
+    });
+  });
+
+  describe('slice action', () => {
+    beforeEach(() => {
+      vi.mocked(openInSlicer).mockClear();
+      server.use(
+        http.post('/api/v1/library/files/:id/slicer-token', () => HttpResponse.json({ token: 'test-token' })),
+      );
+    });
+
+    const openMenu = async (user: ReturnType<typeof userEvent.setup>, filename: string) => {
+      const card = screen.getByText(filename).closest('.group') as HTMLElement;
+      await user.click(card.querySelector('button')!);
+      return card;
+    };
+
+    it('opens the desktop slicer when the slicer API is disabled', async () => {
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => expect(screen.getByText('bracket.stl')).toBeInTheDocument());
+
+      const card = await openMenu(user, 'bracket.stl');
+      await user.click(within(card).getByText('Slice'));
+
+      await waitFor(() => {
+        expect(openInSlicer).toHaveBeenCalledWith(
+          expect.stringContaining('/library/files/2/dl/test-token/'),
+          'bambu_studio',
+        );
+      });
+    });
+
+    it('opens the in-app SliceModal when the slicer API is enabled', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json({ use_slicer_api: true })),
+      );
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => expect(screen.getByText('bracket.stl')).toBeInTheDocument());
+
+      const card = await openMenu(user, 'bracket.stl');
+      await user.click(within(card).getByText('Slice'));
+
+      expect(await screen.findByTestId('slice-modal')).toBeInTheDocument();
+      expect(openInSlicer).not.toHaveBeenCalled();
+    });
+
+    it('hides the slice item for already-sliced files', async () => {
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => expect(screen.getByText('Benchy')).toBeInTheDocument());
+
+      const card = await openMenu(user, 'Benchy');
+      expect(within(card).queryByText('Slice')).not.toBeInTheDocument();
     });
   });
 });

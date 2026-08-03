@@ -4454,7 +4454,7 @@ export default {
       selectSlot: 'Steckplatz auswählen',
       noSlots: 'Keine AMS-Steckplätze für diesen Drucker gefunden',
       storageLabel: 'Lagerort',
-      storagePlaceholder: 'z. B. Regal A, Schublade 1',
+      storagePick: 'Lagerort auswählen',
       startScan: 'Ziel festlegen & scannen',
       scanTitle: 'Spulen-QR scannen',
       scanInstruction: 'Richte die Kamera auf den Spulen-QR oder mach ein Foto, wenn er nicht scannt.',

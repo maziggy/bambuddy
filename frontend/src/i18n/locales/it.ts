@@ -4441,7 +4441,7 @@ export default {
       selectSlot: 'Seleziona uno slot',
       noSlots: 'Nessuno slot AMS trovato per questa stampante',
       storageLabel: 'Posizione di conservazione',
-      storagePlaceholder: 'es. Scaffale A, Cassetto 1',
+      storagePick: 'Seleziona una posizione',
       startScan: 'Imposta destinazione e scansiona',
       scanTitle: 'Scansiona il QR di una bobina',
       scanInstruction: 'Inquadra il QR della bobina, oppure scatta una foto se non viene letto.',

@@ -4453,7 +4453,7 @@ export default {
       selectSlot: 'スロットを選択',
       noSlots: 'このプリンターのAMSスロットが見つかりません',
       storageLabel: '保管場所',
-      storagePlaceholder: '例: 棚A、引き出し1',
+      storagePick: '保管場所を選択',
       startScan: '割り当て先を設定してスキャン',
       scanTitle: 'スプールのQRをスキャン',
       scanInstruction: 'スプールのQRにカメラを向けてください。読み取れない場合は写真を撮ってください。',

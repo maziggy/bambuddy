@@ -7,7 +7,7 @@ import { api } from '../../api/client';
 import type { InventorySpool } from '../../api/client';
 import { resolveSpoolColorName, getSwatchStyle, spoolColorString } from '../../utils/colors';
 import { formatSlotLabel } from '../../utils/amsHelpers';
-import { distinctStorageLocations, filterSpoolsByQuery } from '../../utils/inventorySearch';
+import { filterSpoolsByQuery } from '../../utils/inventorySearch';
 import { InventorySpoolInfoCard } from '../../components/spoolbuddy/InventorySpoolInfoCard';
 import { AssignToAmsModal } from '../../components/spoolbuddy/AssignToAmsModal';
 import { QrAssignTargetModal } from '../../components/QrAssignTargetModal';
@@ -158,8 +158,6 @@ export function SpoolBuddyInventoryPage() {
     });
   }, [activeSpools, filterMode, searchQuery, assignedSpoolIds]);
 
-  const storageSuggestions = useMemo(() => distinctStorageLocations(spools), [spools]);
-
   return (
     <div className="h-full flex flex-col">
       {/* Search + filter pills */}
@@ -289,7 +287,6 @@ export function SpoolBuddyInventoryPage() {
           isOpen={qrTargetModalOpen}
           onClose={() => setQrTargetModalOpen(false)}
           spoolmanMode={spoolmanMode}
-          storageSuggestions={storageSuggestions}
         />
       )}
     </div>

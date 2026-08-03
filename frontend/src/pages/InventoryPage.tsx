@@ -29,7 +29,7 @@ import { colorSortKey, resolveSpoolColorName } from '../utils/colors';
 import { getCurrencySymbol } from '../utils/currency';
 import { formatDateInput, parseUTCDate, type DateFormat } from '../utils/date';
 import { formatSlotLabel } from '../utils/amsHelpers';
-import { filterSpoolsByQuery, distinctStorageLocations } from '../utils/inventorySearch';
+import { filterSpoolsByQuery } from '../utils/inventorySearch';
 import {
   inventoryLocationsQueryKey,
   invalidateSpoolAndLocationQueries,
@@ -576,13 +576,6 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
       spoolmanMode ? api.getSpoolmanInventorySpools(true) : api.getSpools(true),
     refetchInterval: 30000,
   });
-
-  // Distinct, sorted storage_location free-text values for the QR-assign
-  // autocomplete (#1574). Memoized so re-renders don't re-walk the spool
-  // list or hand the modal a fresh array reference each time. This is the
-  // legacy free-form field; the structured `location_id` filter below is
-  // surfaced as the Locations dropdown.
-  const storageSuggestions = useMemo(() => distinctStorageLocations(spools), [spools]);
 
   // CSV export (#1576) — downloads the active inventory as a CSV file.
   const handleExportCsv = useCallback(async () => {
@@ -1387,7 +1380,6 @@ function InventoryPage({ spoolmanMode = false, spoolmanModeReady = true }: { spo
           isOpen={qrTargetModalOpen}
           onClose={() => setQrTargetModalOpen(false)}
           spoolmanMode={spoolmanMode}
-          storageSuggestions={storageSuggestions}
         />
       )}
 

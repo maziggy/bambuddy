@@ -4447,7 +4447,7 @@ export default {
       selectSlot: '選擇一個插槽',
       noSlots: '找不到此印表機的 AMS 插槽',
       storageLabel: '儲存位置',
-      storagePlaceholder: '例如：A 架，1 號抽屜',
+      storagePick: '選擇一個儲存位置',
       startScan: '設定目標並掃描',
       scanTitle: '掃描耗材 QR 碼',
       scanInstruction: '將相機對準耗材 QR 碼；若無法掃描，請拍照。',

@@ -4240,7 +4240,7 @@ export default {
       selectSlot: '슬롯 선택',
       noSlots: '이 프린터의 AMS 슬롯을 찾을 수 없음',
       storageLabel: '보관 위치',
-      storagePlaceholder: '예: 선반 A, 서랍 1',
+      storagePick: '보관 위치 선택',
       startScan: '대상 설정 후 스캔',
       scanTitle: '스풀 QR 스캔',
       scanInstruction: '카메라를 스풀 QR에 맞추세요. 스캔되지 않으면 사진을 찍으세요.',

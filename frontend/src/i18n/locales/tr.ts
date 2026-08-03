@@ -4442,7 +4442,7 @@ export default {
       selectSlot: 'Bir yuva seç',
       noSlots: 'Bu yazıcı için AMS yuvası bulunamadı',
       storageLabel: 'Depo konumu',
-      storagePlaceholder: 'örn. Raf A, Çekmece 1',
+      storagePick: 'Bir konum seç',
       startScan: 'Hedefi ayarla ve tara',
       scanTitle: 'Makara QR kodunu tara',
       scanInstruction: 'Kamerayı makara QR koduna tut; okumazsa fotoğraf çek.',

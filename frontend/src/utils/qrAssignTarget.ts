@@ -20,7 +20,10 @@ export type AssignTarget =
     }
   | {
       kind: 'storage';
-      storageLocation: string;
+      /** Structured Location id — the canonical storage model (`location_id`). */
+      locationId: number;
+      /** Location name, for the target chip and the success toast. */
+      locationName: string;
     };
 
 /**

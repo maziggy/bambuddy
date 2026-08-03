@@ -4441,7 +4441,7 @@ export default {
       selectSlot: 'Selecione um slot',
       noSlots: 'Nenhum slot AMS encontrado para esta impressora',
       storageLabel: 'Local de armazenamento',
-      storagePlaceholder: 'ex. Prateleira A, Gaveta 1',
+      storagePick: 'Selecione um local',
       startScan: 'Definir destino e escanear',
       scanTitle: 'Escanear QR do carretel',
       scanInstruction: 'Aponte a câmera para o QR do carretel, ou tire uma foto se não escanear.',

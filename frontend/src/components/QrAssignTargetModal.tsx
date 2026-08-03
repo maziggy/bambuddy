@@ -7,14 +7,13 @@ import { api } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 import { formatSlotLabel } from '../utils/amsHelpers';
+import { inventoryLocationsQueryKey, invalidateInventoryLocations } from '../utils/inventoryQueries';
 import { parseSpoolIdFromQr, type AssignTarget } from '../utils/qrAssignTarget';
 
 interface QrAssignTargetModalProps {
   isOpen: boolean;
   onClose: () => void;
   spoolmanMode?: boolean;
-  /** Existing storage_location values, offered as autocomplete suggestions. */
-  storageSuggestions?: string[];
 }
 
 type SlotOption = {
@@ -45,7 +44,7 @@ function targetLocationLabel(target: AssignTarget): string {
     ? target.printerName
       ? `${target.printerName} · ${target.label}`
       : target.label
-    : target.storageLocation;
+    : target.locationName;
 }
 
 /**
@@ -215,7 +214,7 @@ function externalLabel(t: (k: string) => string, vtCount: number, trayId: number
   return t('printers.external');
 }
 
-export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, storageSuggestions = [] }: QrAssignTargetModalProps) {
+export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false }: QrAssignTargetModalProps) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -224,7 +223,11 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, sto
   const [tab, setTab] = useState<'ams' | 'storage'>('ams');
   const [pickedPrinterId, setPickedPrinterId] = useState<number | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<SlotOption | null>(null);
-  const [storage, setStorage] = useState('');
+  // Name is kept next to the id so the target survives a locations refetch that
+  // hasn't landed yet (notably right after creating one inline).
+  const [pickedLocation, setPickedLocation] = useState<{ id: number; name: string } | null>(null);
+  const [newLocationName, setNewLocationName] = useState('');
+  const [creatingLocation, setCreatingLocation] = useState(false);
   const [target, setTarget] = useState<AssignTarget | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [decoding, setDecoding] = useState(false);
@@ -237,7 +240,9 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, sto
     if (isOpen) {
       setStep('target');
       setSelectedSlot(null);
-      setStorage('');
+      setPickedLocation(null);
+      setNewLocationName('');
+      setCreatingLocation(false);
       setTarget(null);
       setError(null);
       setDecoding(false);
@@ -250,6 +255,15 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, sto
     queryKey: ['printers'],
     queryFn: () => api.getPrinters(),
     enabled: isOpen,
+  });
+
+  // Structured Locations are the canonical storage model, so the storage tab is
+  // a picker over the same list the inventory Locations filter and LocationsModal
+  // use — a QR assignment lands in `location_id`, not the legacy free-text field.
+  const { data: locations = [], isLoading: locationsLoading } = useQuery({
+    queryKey: inventoryLocationsQueryKey,
+    queryFn: api.getLocations,
+    enabled: isOpen && step === 'target',
   });
 
   const effectivePrinterId = pickedPrinterId ?? printers?.[0]?.id ?? null;
@@ -307,9 +321,9 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, sto
           );
         }
       } else if (spoolmanMode) {
-        await api.updateSpoolmanInventorySpool(spoolId, { storage_location: tg.storageLocation });
+        await api.updateSpoolmanInventorySpool(spoolId, { location_id: tg.locationId });
       } else {
-        await api.updateSpool(spoolId, { storage_location: tg.storageLocation });
+        await api.updateSpool(spoolId, { location_id: tg.locationId });
       }
     },
     onSuccess: (_data, { tg }) => {
@@ -329,6 +343,9 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, sto
         // stale tray state until the next poll. Best-effort.
         api.refreshPrinterStatus(tg.printerId).catch(() => {});
         queryClient.invalidateQueries({ queryKey: ['printerStatus', tg.printerId] });
+      } else {
+        // The move changes per-location spool_count, which the Locations UI shows.
+        invalidateInventoryLocations(queryClient);
       }
       onClose();
     },
@@ -341,8 +358,33 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, sto
   if (!isOpen) return null;
 
   const printerName = printers?.find((p) => p.id === effectivePrinterId)?.name ?? '';
-  const canStart = tab === 'ams' ? selectedSlot !== null && effectivePrinterId !== null : storage.trim().length > 0;
+  const canStart = tab === 'ams' ? selectedSlot !== null && effectivePrinterId !== null : pickedLocation !== null;
   const isBusy = decoding || assignMutation.isPending;
+
+  // A freshly created location may not be in the fetched list yet, so make sure
+  // the current pick is always offered.
+  const locationOptions =
+    pickedLocation && !locations.some((l) => l.id === pickedLocation.id)
+      ? [...locations, pickedLocation]
+      : locations;
+
+  // Create-and-pick, so the user doesn't have to leave the scan flow to add a
+  // shelf. Mirrors the spool form's inline location creation.
+  const handleCreateLocation = async () => {
+    const name = newLocationName.trim();
+    if (!name || creatingLocation) return;
+    setCreatingLocation(true);
+    try {
+      const created = await api.createLocation({ name });
+      invalidateInventoryLocations(queryClient);
+      setPickedLocation({ id: created.id, name: created.name });
+      setNewLocationName('');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t('locations.saveFailed'), 'error');
+    } finally {
+      setCreatingLocation(false);
+    }
+  };
 
   const handleStart = () => {
     let tg: AssignTarget;
@@ -358,9 +400,8 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, sto
         label: selectedSlot.label,
       };
     } else {
-      const loc = storage.trim();
-      if (!loc) return;
-      tg = { kind: 'storage', storageLocation: loc };
+      if (!pickedLocation) return;
+      tg = { kind: 'storage', locationId: pickedLocation.id, locationName: pickedLocation.name };
     }
     setTarget(tg);
     setError(null);
@@ -499,24 +540,55 @@ export function QrAssignTargetModal({ isOpen, onClose, spoolmanMode = false, sto
                 </div>
               ) : (
                 <div>
-                  <label htmlFor="qr-storage-input" className="block text-xs font-medium text-bambu-gray uppercase tracking-wide mb-1">
+                  <label htmlFor="qr-storage-select" className="block text-xs font-medium text-bambu-gray uppercase tracking-wide mb-1">
                     {t('inventory.qrAssign.storageLabel')}
                   </label>
-                  <input
-                    id="qr-storage-input"
-                    type="text"
-                    list="qr-storage-suggestions"
-                    maxLength={255}
-                    value={storage}
-                    onChange={(e) => setStorage(e.target.value)}
-                    placeholder={t('inventory.qrAssign.storagePlaceholder')}
-                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
-                  />
-                  <datalist id="qr-storage-suggestions">
-                    {storageSuggestions.map((s) => (
-                      <option key={s} value={s} />
-                    ))}
-                  </datalist>
+                  {locationsLoading ? (
+                    <div className="flex justify-center py-6">
+                      <Loader2 className="w-6 h-6 text-bambu-green animate-spin" />
+                    </div>
+                  ) : (
+                    <select
+                      id="qr-storage-select"
+                      value={pickedLocation?.id ?? ''}
+                      onChange={(e) => {
+                        const id = e.target.value ? Number(e.target.value) : null;
+                        const match = id === null ? null : locationOptions.find((l) => l.id === id);
+                        setPickedLocation(match ? { id: match.id, name: match.name } : null);
+                      }}
+                      className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green"
+                    >
+                      <option value="">{t('inventory.qrAssign.storagePick')}</option>
+                      {locationOptions.map((loc) => (
+                        <option key={loc.id} value={loc.id}>
+                          {loc.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {!locationsLoading && locationOptions.length === 0 && (
+                    <p className="mt-2 text-xs text-bambu-gray">{t('locations.empty')}</p>
+                  )}
+
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      type="text"
+                      maxLength={255}
+                      value={newLocationName}
+                      onChange={(e) => setNewLocationName(e.target.value)}
+                      placeholder={t('locations.createPlaceholder')}
+                      className="flex-1 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCreateLocation}
+                      disabled={!newLocationName.trim() || creatingLocation}
+                      className="px-3 py-2 text-sm rounded-lg bg-bambu-dark-tertiary text-white hover:bg-bambu-gray-dark disabled:opacity-50"
+                    >
+                      {creatingLocation ? <Loader2 className="w-4 h-4 animate-spin" /> : t('locations.addShort')}
+                    </button>
+                  </div>
                 </div>
               )}
             </>

@@ -4442,7 +4442,7 @@ export default {
       selectSlot: 'Sélectionnez un emplacement',
       noSlots: 'Aucun emplacement AMS trouvé pour cette imprimante',
       storageLabel: 'Emplacement de stockage',
-      storagePlaceholder: 'ex. Étagère A, Tiroir 1',
+      storagePick: 'Sélectionnez un emplacement de stockage',
       startScan: 'Définir la cible et scanner',
       scanTitle: 'Scanner le QR d’une bobine',
       scanInstruction: 'Pointez la caméra vers le QR de la bobine, ou prenez une photo s’il ne se scanne pas.',

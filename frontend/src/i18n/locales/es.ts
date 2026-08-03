@@ -4458,7 +4458,7 @@ export default {
       selectSlot: 'Selecciona una ranura',
       noSlots: 'No se encontraron ranuras AMS para esta impresora',
       storageLabel: 'Ubicación de almacenamiento',
-      storagePlaceholder: 'p. ej. Estante A, Cajón 1',
+      storagePick: 'Selecciona una ubicación',
       startScan: 'Fijar destino y escanear',
       scanTitle: 'Escanear QR de bobina',
       scanInstruction: 'Apunta la cámara al QR de la bobina, o haz una foto si no se escanea.',

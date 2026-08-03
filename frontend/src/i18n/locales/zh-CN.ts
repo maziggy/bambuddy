@@ -4447,7 +4447,7 @@ export default {
       selectSlot: '选择一个槽位',
       noSlots: '未找到该打印机的 AMS 槽位',
       storageLabel: '存储位置',
-      storagePlaceholder: '例如：A 架，1 号抽屉',
+      storagePick: '选择一个存储位置',
       startScan: '设置目标并扫描',
       scanTitle: '扫描耗材二维码',
       scanInstruction: '将相机对准耗材二维码；若无法扫描，请拍照。',

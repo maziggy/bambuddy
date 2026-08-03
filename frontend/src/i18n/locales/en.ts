@@ -4493,7 +4493,7 @@ export default {
       selectSlot: 'Select a slot',
       noSlots: 'No AMS slots found for this printer',
       storageLabel: 'Storage location',
-      storagePlaceholder: 'e.g. Shelf A, Drawer 1',
+      storagePick: 'Select a location',
       startScan: 'Set target & scan',
       scanTitle: 'Scan a spool QR',
       scanInstruction: 'Point the camera at the spool QR, or take a photo if it does not scan.',

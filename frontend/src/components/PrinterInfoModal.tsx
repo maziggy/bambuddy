@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Copy, Check, Signal, Cable } from 'lucide-react';
+import { X, Signal, Cable } from 'lucide-react';
 import { Card, CardContent } from './Card';
+import { CopyButton } from './CopyButton';
 import { formatDateOnly } from '../utils/date';
 import { getPrinterImage, getWifiStrength } from '../utils/printer';
 import type { Printer, PrinterStatus } from '../api/client';
@@ -11,53 +12,6 @@ interface PrinterInfoModalProps {
   status?: PrinterStatus;
   totalPrintHours?: number;
   onClose: () => void;
-}
-
-function CopyButton({ value }: { value: string }) {
-  const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    // navigator.clipboard is gated by the secure-context requirement, so on
-    // plain-HTTP LAN deployments (#1174) the API is undefined and the previous
-    // code silently swallowed the failure — the icon never flipped to the tick
-    // and nothing landed on the user's clipboard. Fall back to the legacy
-    // execCommand path via an off-screen textarea, matching the pattern used
-    // by CameraTokensPage's plaintext-token modal.
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(value);
-      } else {
-        const ta = document.createElement('textarea');
-        ta.value = value;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        try {
-          ta.select();
-          const ok = document.execCommand('copy');
-          if (!ok) return;
-        } finally {
-          document.body.removeChild(ta);
-        }
-      }
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Both paths failed (no clipboard API, no execCommand). Leave the icon
-      // unchanged so the user knows nothing was copied.
-    }
-  };
-
-  return (
-    <button
-      onClick={handleCopy}
-      className="ml-2 p-1 rounded hover:bg-bambu-dark-tertiary text-bambu-gray hover:text-white transition-colors"
-      title={copied ? t('printers.copied') : t('printers.copyToClipboard')}
-    >
-      {copied ? <Check className="w-3.5 h-3.5 text-bambu-green" /> : <Copy className="w-3.5 h-3.5" />}
-    </button>
-  );
 }
 
 export function PrinterInfoModal({ printer, status, totalPrintHours, onClose }: PrinterInfoModalProps) {
@@ -86,7 +40,7 @@ export function PrinterInfoModal({ printer, status, totalPrintHours, onClose }: 
       <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${
         status?.connected
           ? 'bg-bambu-green/20 text-bambu-green'
-          : 'bg-red-500/20 text-red-400'
+          : 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400'
       }`}>
         <span className={`w-1.5 h-1.5 rounded-full ${status?.connected ? 'bg-bambu-green' : 'bg-red-400'}`} />
         {status?.connected ? t('printers.status.available') : t('printers.status.offline')}

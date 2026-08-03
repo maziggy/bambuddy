@@ -14,6 +14,8 @@ import ptBR from './locales/pt-BR';
 import zhCN from './locales/zh-CN';
 import zhTW from './locales/zh-TW';
 import tr from './locales/tr';
+import ru from './locales/ru';
+import uk from './locales/uk';
 
 const resources = {
   en: { translation: en },
@@ -27,9 +29,11 @@ const resources = {
   'zh-CN': { translation: zhCN },
   'zh-TW': { translation: zhTW },
   tr: { translation: tr },
+  ru: { translation: ru },
+  uk: { translation: uk },
 };
 
-const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'pt-BR', 'tr', 'zh-CN', 'zh-TW'];
+const SUPPORTED_LNGS = ['en', 'de', 'es', 'fr', 'ja', 'it', 'ko', 'pt-BR', 'ru', 'tr', 'uk', 'zh-CN', 'zh-TW'];
 const APPLIANCE_CONSUMED_KEY = 'bambuddy_appliance_locale_consumed';
 
 i18n
@@ -107,4 +111,6 @@ export const availableLanguages = [
   { code: 'zh-CN', name: 'Chinese (Simplified)', nativeName: '简体中文' },
   { code: 'zh-TW', name: 'Chinese (Traditional)', nativeName: '繁體中文' },
   { code: 'tr', name: 'Turkish', nativeName: 'Türkçe' },
+  { code: 'ru', name: 'Russian', nativeName: 'Русский' },
+  { code: 'uk', name: 'Ukrainian', nativeName: 'Українська' },
 ];

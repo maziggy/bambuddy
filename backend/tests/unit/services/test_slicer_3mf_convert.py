@@ -253,10 +253,10 @@ def p1_project(zip_bytes: bytes) -> bytes:
 
 
 class TestSubstituteUnusedPlateFilaments:
-    """Slot 1 carries the used filament; unused-slot entries are
-    overwritten with slot 1 so BambuStudio's filament-temp validator
-    doesn't trip on heterogeneous loaded filaments that the plate's
-    G-code never actually touches."""
+    """Unused-slot entries are overwritten with the plate's lowest *used*
+    slot so BambuStudio's validators don't trip on loaded filaments the
+    plate's G-code never actually touches — neither the filament-temp
+    spread nor the preset-vs-printer compatibility check."""
 
     @staticmethod
     def _model_settings_xml(per_plate_extruders: list[tuple[int, list[int]]]) -> bytes:
@@ -326,3 +326,170 @@ class TestSubstituteUnusedPlateFilaments:
         items = ["a.json", "b.json", "c.json"]
         result = substitute_unused_plate_filaments(zip_bytes, plate_id=1, items=items)
         assert result == items
+
+    def test_support_material_slot_preserved(self):
+        # #1881 regression: object geometry references only slot 1 (PLA),
+        # but slot 2 (PVA) is configured as the support material in
+        # project_settings.config. Without the support-slot union, slot 2's
+        # user-picked PVA profile would be overwritten with slot 1's PLA
+        # and the print would come out single-material with PLA supports.
+        model_settings = self._model_settings_xml([(1, [1])])
+        project_settings = json.dumps(
+            {
+                "enable_support": "1",
+                "support_filament": "2",
+                "support_interface_filament": "2",
+                "filament_type": ["PLA", "PVA"],
+            }
+        ).encode()
+        zip_bytes = _make_3mf(
+            {
+                "Metadata/model_settings.config": model_settings,
+                "Metadata/project_settings.config": project_settings,
+            }
+        )
+        items = ["pla.json", "pva_support.json"]
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=1, items=items)
+        assert result == ["pla.json", "pva_support.json"]
+
+    def test_support_disabled_still_substitutes_unused(self):
+        # When supports are off, slot 2 is genuinely unused — the temp-spread
+        # validator still needs the substitution to succeed.
+        model_settings = self._model_settings_xml([(1, [1])])
+        project_settings = json.dumps(
+            {
+                "enable_support": "0",
+                "support_filament": "2",
+            }
+        ).encode()
+        zip_bytes = _make_3mf(
+            {
+                "Metadata/model_settings.config": model_settings,
+                "Metadata/project_settings.config": project_settings,
+            }
+        )
+        items = ["pla.json", "abs_never_used.json"]
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=1, items=items)
+        assert result == ["pla.json", "pla.json"]
+
+    # ---- #2628: the anchor is the lowest USED slot, not slot 1 ----------
+
+    def test_substitutes_from_first_used_slot_when_slot_1_is_unused(self):
+        """michaelklos's report: plate 2 of a multi-plate project uses only
+        slot 2, while slot 1 carries an ``@Bambu Lab H2D`` preset baked into
+        the source 3MF. Anchoring on slot 1 made the substitution a no-op for
+        the one slot that needed it, and the CLI rejected the A1 slice with
+        "filament preset (slot 1) is not compatible with printer
+        Bambu Lab A1 0.4 nozzle"."""
+        zip_bytes = _make_3mf({"Metadata/model_settings.config": self._model_settings_xml([(1, [1]), (2, [2])])})
+        items = ["tpu_at_h2d.json", "pla_at_a1.json"]
+
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=2, items=items)
+
+        assert result == ["pla_at_a1.json", "pla_at_a1.json"]
+
+    def test_unused_slot_1_does_not_poison_the_other_unused_slots(self):
+        """With more than one unused slot, the old anchor propagated slot 1's
+        own (foreign-printer) preset into every other unused slot — the exact
+        poisoning #1851 removed from the picker."""
+        zip_bytes = _make_3mf({"Metadata/model_settings.config": self._model_settings_xml([(1, [1]), (2, [3])])})
+        items = ["tpu_at_h2d.json", "abs.json", "pla_at_a1.json"]
+
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=2, items=items)
+
+        assert result == ["pla_at_a1.json", "pla_at_a1.json", "pla_at_a1.json"]
+
+    def test_anchor_is_the_lowest_used_slot_not_merely_a_used_one(self):
+        """Deterministic pick so the same project always slices identically."""
+        zip_bytes = _make_3mf({"Metadata/model_settings.config": self._model_settings_xml([(1, [1]), (2, [2, 4])])})
+        items = ["slot1.json", "slot2.json", "slot3.json", "slot4.json"]
+
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=2, items=items)
+
+        assert result == ["slot2.json", "slot2.json", "slot2.json", "slot4.json"]
+
+    def test_no_op_when_every_used_slot_is_outside_the_submitted_list(self):
+        """A plate referencing only slots beyond the picked list leaves nothing
+        trustworthy to copy from — keep the user's picks rather than invent a
+        substitution from a slot the plate doesn't use."""
+        zip_bytes = _make_3mf({"Metadata/model_settings.config": self._model_settings_xml([(1, [1]), (2, [5])])})
+        items = ["a.json", "b.json"]
+
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=2, items=items)
+
+        assert result == ["a.json", "b.json"]
+
+    def test_support_slot_can_be_the_anchor(self):
+        """The support-filament union (#1881) feeds the same used-slot set, so
+        a plate whose only geometry slot is 2 with PVA supports in 3 anchors on
+        2 — never on the unused slot 1."""
+        model_settings = self._model_settings_xml([(1, [1]), (2, [2])])
+        project_settings = json.dumps(
+            {
+                "enable_support": "1",
+                "support_filament": "3",
+                "support_interface_filament": "3",
+                "filament_type": ["PLA", "PLA", "PVA"],
+            }
+        ).encode()
+        zip_bytes = _make_3mf(
+            {
+                "Metadata/model_settings.config": model_settings,
+                "Metadata/project_settings.config": project_settings,
+            }
+        )
+        items = ["tpu_at_h2d.json", "pla.json", "pva.json"]
+
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=2, items=items)
+
+        assert result == ["pla.json", "pla.json", "pva.json"]
+
+    # ---- #2711: plate 0 is the slice-all sentinel, not a plate ----------
+
+    def test_no_op_for_the_slice_all_sentinel(self):
+        """``plate=0`` means every plate, so every slot is used by something."""
+        zip_bytes = _make_3mf({"Metadata/model_settings.config": self._model_settings_xml([(1, [1]), (2, [2])])})
+        items = ["pla_white.json", "pla_red.json"]
+
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=0, items=items)
+
+        assert result == items
+
+    def test_slice_all_is_not_collapsed_onto_the_support_filament(self):
+        """The guard that makes the plate-0 no-op load-bearing.
+
+        Geometry lookup for plate 0 matches nothing (plates are 1-indexed),
+        but the support-filament union reads project settings and has no
+        plate scope — so it survives as the *only* member of the used set.
+        Anchored on it, a slice-all would rewrite every colour in the
+        project to the support material and print the whole thing in PVA.
+        """
+        model_settings = self._model_settings_xml([(1, [1]), (2, [2]), (3, [3])])
+        project_settings = json.dumps(
+            {
+                "enable_support": "1",
+                "support_filament": "4",
+                "support_interface_filament": "4",
+                "filament_type": ["PLA", "PLA", "PLA", "PVA"],
+            }
+        ).encode()
+        zip_bytes = _make_3mf(
+            {
+                "Metadata/model_settings.config": model_settings,
+                "Metadata/project_settings.config": project_settings,
+            }
+        )
+        items = ["white.json", "red.json", "blue.json", "pva.json"]
+
+        result = substitute_unused_plate_filaments(zip_bytes, plate_id=0, items=items)
+
+        assert result == items, "slice-all collapsed the project onto the support filament"
+
+    def test_negative_plate_id_is_a_no_op(self):
+        """Not reachable through the schema (``ge=0``), but the function is the
+        thing that must not guess — a caller resolving a plate wrongly should
+        get the user's picks back, not a rewrite anchored on nothing."""
+        zip_bytes = _make_3mf({"Metadata/model_settings.config": self._model_settings_xml([(1, [1])])})
+        items = ["a.json", "b.json"]
+
+        assert substitute_unused_plate_filaments(zip_bytes, plate_id=-1, items=items) == items

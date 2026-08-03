@@ -3,7 +3,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, nullslast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.auth import (
@@ -22,6 +22,30 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/print-log", tags=["print-log"])
 
+# Sortable columns, keyed by the id the Print Log table uses for its columns
+# (#2636). An explicit map rather than getattr on a caller-supplied string:
+# the client picks the key, so anything else would let a request order by any
+# attribute it can name.
+#
+# ``date`` coalesces because the column renders ``started_at or created_at`` —
+# sorting on started_at alone would scatter the rows that have no start time
+# (queue-skipped entries) instead of interleaving them where the user sees
+# them.
+_SORTABLE_COLUMNS = {
+    "date": func.coalesce(PrintLogEntry.started_at, PrintLogEntry.created_at),
+    "print_name": PrintLogEntry.print_name,
+    "printer": PrintLogEntry.printer_name,
+    "user": PrintLogEntry.created_by_username,
+    "status": PrintLogEntry.status,
+    "duration": PrintLogEntry.duration_seconds,
+    "completed_at": PrintLogEntry.completed_at,
+    "filament": PrintLogEntry.filament_type,
+    "filament_used": PrintLogEntry.filament_used_grams,
+    "cost": PrintLogEntry.cost,
+    "energy": PrintLogEntry.energy_kwh,
+    "energy_cost": PrintLogEntry.energy_cost,
+}
+
 
 @router.get("/", response_model=PrintLogResponse)
 async def get_print_log(
@@ -33,6 +57,8 @@ async def get_print_log(
     date_to: datetime | None = None,
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    sort_by: str = Query(default="date"),
+    sort_dir: str = Query(default="desc", pattern="^(asc|desc)$"),
     db: AsyncSession = Depends(get_db),
     auth_result: tuple[User | None, bool] = Depends(
         require_ownership_permission(
@@ -72,37 +98,36 @@ async def get_print_log(
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
-    # Get paginated results
-    query = query.order_by(PrintLogEntry.created_at.desc()).offset(offset).limit(limit)
+    # Sorting happens here rather than in the browser because the table is
+    # paginated server-side: ordering the 25 rows the client happens to hold
+    # would answer "the most expensive print on this page", which is not what
+    # clicking a column header means.
+    sort_column = _SORTABLE_COLUMNS.get(sort_by)
+    if sort_column is None:
+        raise HTTPException(400, f"Cannot sort by {sort_by!r}")
+    ordering = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
+    # NULLs last in both directions, so a column that is empty for half the
+    # rows (cost before a spool is priced, energy without a smart plug) never
+    # buries the rows that do have values. Left to the database this differs
+    # per backend — Postgres sorts NULLs high, SQLite sorts them low — so the
+    # same click would give two different first pages depending on deployment.
+    query = query.order_by(nullslast(ordering), PrintLogEntry.id.desc())
+    # id.desc() above is the tiebreaker: without it, rows sharing a value
+    # (every "completed" when sorting by status) come back in whatever order
+    # the planner picks, which can differ between pages and duplicate or drop
+    # a row as the user pages through.
+    query = query.offset(offset).limit(limit)
     result = await db.execute(query)
     entries = result.scalars().all()
 
+    # Validate straight off the ORM rows rather than naming each field: the
+    # hand-written version dropped whatever it forgot to mention, and a
+    # forgotten field is indistinguishable from a NULL column on the wire.
+    # It lost failure_reason that way (#1687 part 4), then cost / energy_kwh /
+    # energy_cost, which were written to the table but never sent — so the
+    # Print Log's cost and energy columns read empty for every run (#2636).
     return PrintLogResponse(
-        items=[
-            PrintLogEntrySchema(
-                id=e.id,
-                archive_id=e.archive_id,
-                print_name=e.print_name,
-                printer_name=e.printer_name,
-                printer_id=e.printer_id,
-                status=e.status,
-                started_at=e.started_at,
-                completed_at=e.completed_at,
-                duration_seconds=e.duration_seconds,
-                filament_type=e.filament_type,
-                filament_color=e.filament_color,
-                filament_used_grams=e.filament_used_grams,
-                # failure_reason was silently dropped by the GET serialiser
-                # before #1687 part 4 — without it the Print Log table couldn't
-                # surface what the Failure Analysis widget already groups by.
-                failure_reason=e.failure_reason,
-                thumbnail_path=e.thumbnail_path,
-                created_by_id=e.created_by_id,
-                created_by_username=e.created_by_username,
-                created_at=e.created_at,
-            )
-            for e in entries
-        ],
+        items=[PrintLogEntrySchema.model_validate(e) for e in entries],
         total=total,
     )
 
@@ -285,22 +310,7 @@ async def update_print_log_entry(
         entry.status,
     )
 
-    return PrintLogEntrySchema(
-        id=entry.id,
-        archive_id=entry.archive_id,
-        print_name=entry.print_name,
-        printer_name=entry.printer_name,
-        printer_id=entry.printer_id,
-        status=entry.status,
-        started_at=entry.started_at,
-        completed_at=entry.completed_at,
-        duration_seconds=entry.duration_seconds,
-        filament_type=entry.filament_type,
-        filament_color=entry.filament_color,
-        filament_used_grams=entry.filament_used_grams,
-        failure_reason=entry.failure_reason,
-        thumbnail_path=entry.thumbnail_path,
-        created_by_id=entry.created_by_id,
-        created_by_username=entry.created_by_username,
-        created_at=entry.created_at,
-    )
+    # Same field-by-field trap as the list route: this one also omitted cost
+    # and the energy pair, so the row the client merged back after an edit
+    # blanked whichever columns it was showing for them.
+    return PrintLogEntrySchema.model_validate(entry)

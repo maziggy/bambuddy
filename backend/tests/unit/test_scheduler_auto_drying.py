@@ -238,19 +238,24 @@ class TestStopDrying:
 
 
 class TestMinimumDryingTime:
-    """Regression: drying should not stop/restart rapidly when humidity oscillates near threshold."""
+    """Regression #1892: a running drying cycle must never be stopped by a humidity re-check.
+
+    Relative humidity reads low in heated air (the AMS sensor sees ~15-20% within
+    minutes of the dryer starting even while the filament is still saturated), so a
+    humidity-based auto-stop would truncate every cycle — manual or Bambuddy-started —
+    to the old minimum-time floor. Drying is now left to run to its configured
+    duration; the firmware stops it when the duration elapses.
+    """
 
     @pytest.fixture
     def scheduler(self):
-        s = PrintScheduler()
-        s._min_drying_seconds = 1800  # 30 minutes
-        return s
+        return PrintScheduler()
 
     @pytest.mark.asyncio
     @patch("backend.app.services.print_scheduler.printer_manager")
     @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
     async def test_no_stop_before_minimum_time(self, mock_sd, mock_pm, scheduler):
-        """Drying should NOT stop when humidity drops below threshold before 30 min."""
+        """Drying should NOT stop when humidity drops below threshold shortly after start."""
         # Simulate: drying started 5 minutes ago
         scheduler._drying_in_progress = {1: time.monotonic() - 300}
 
@@ -305,9 +310,9 @@ class TestMinimumDryingTime:
     @pytest.mark.asyncio
     @patch("backend.app.services.print_scheduler.printer_manager")
     @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
-    async def test_stops_after_minimum_time(self, mock_sd, mock_pm, scheduler):
-        """Drying SHOULD stop when humidity below threshold AND 30 min elapsed."""
-        # Simulate: drying started 35 minutes ago
+    async def test_no_stop_after_long_elapsed_time(self, mock_sd, mock_pm, scheduler):
+        """#1892: drying must NOT stop even long after start with low humidity — let it run."""
+        # Simulate: drying started 35 minutes ago, humidity reads low (heated air)
         scheduler._drying_in_progress = {1: time.monotonic() - 2100}
 
         state = MagicMock()
@@ -346,8 +351,11 @@ class TestMinimumDryingTime:
 
         await scheduler._check_auto_drying(db, [item], set())
 
-        # Should have sent stop command (humidity-based stop after minimum time)
-        mock_pm.send_drying_command.assert_any_call(1, 0, temp=0, duration=0, mode=0)
+        # Must NOT send a humidity-based stop — drying is left to run to its duration
+        for call in mock_pm.send_drying_command.call_args_list:
+            assert call != ((1, 0), {"temp": 0, "duration": 0, "mode": 0}), (
+                "Humidity re-check must never stop a running drying cycle (#1892)"
+            )
 
     @staticmethod
     def _make_setting(value):
@@ -783,19 +791,17 @@ class TestAmbientDrying(_DryingTestBase):
 
 
 class TestBlockForDryingBugFix(_DryingTestBase):
-    """Regression: block mode should not skip humidity auto-stop for already-drying printers."""
+    """Regression: block mode gates NEW drying starts but must leave running dries alone (#1892)."""
 
     @pytest.fixture
     def scheduler(self):
-        s = PrintScheduler()
-        s._min_drying_seconds = 1800
-        return s
+        return PrintScheduler()
 
     @pytest.mark.asyncio
     @patch("backend.app.services.print_scheduler.printer_manager")
     @patch("backend.app.services.print_scheduler.supports_drying", return_value=True)
-    async def test_block_mode_allows_humidity_stop_for_active_drying(self, mock_sd, mock_pm, scheduler):
-        """Bug fix: printer already drying in block mode should still check humidity to auto-stop."""
+    async def test_block_mode_leaves_active_drying_running(self, mock_sd, mock_pm, scheduler):
+        """#1892: a printer already drying in block mode must not be stopped by a humidity re-check."""
         # Drying started 35 minutes ago
         scheduler._drying_in_progress = {1: time.monotonic() - 2100}
 
@@ -837,8 +843,11 @@ class TestBlockForDryingBugFix(_DryingTestBase):
 
         await scheduler._check_auto_drying(db, [item], set())
 
-        # Should have sent stop command — humidity dropped below threshold after 30+ min
-        mock_pm.send_drying_command.assert_any_call(1, 0, temp=0, duration=0, mode=0)
+        # Must NOT stop the running dry — block mode gates new starts, not active cycles
+        for call in mock_pm.send_drying_command.call_args_list:
+            assert call != ((1, 0), {"temp": 0, "duration": 0, "mode": 0}), (
+                "Block mode must not stop an already-running drying cycle (#1892)"
+            )
 
     @pytest.mark.asyncio
     @patch("backend.app.services.print_scheduler.printer_manager")

@@ -14,6 +14,7 @@ import pytest
 from backend.app.services.usage_tracker import (
     PrintSession,
     _active_sessions,
+    _archive_types_from_spools,
     _decode_mqtt_mapping,
     _find_3mf_by_filename,
     _match_slots_by_color,
@@ -2471,3 +2472,58 @@ class TestTrackFrom3mfPlateId:
             )
 
         assert extract_mock.call_args.args[1] is None
+
+
+class TestArchiveTypesFromSpools:
+    """Tests for _archive_types_from_spools() — adopting the mapped inventory
+    spool's material as the archive/print-log/stats filament type (#2563)."""
+
+    @staticmethod
+    def _usage(slots):
+        """slots: list of (slot_id, used_g)."""
+        return [{"slot_id": sid, "used_g": g} for sid, g in slots]
+
+    @staticmethod
+    def _results(entries):
+        """entries: list of (slot_id, material)."""
+        return [{"slot_id": sid, "material": m} for sid, m in entries]
+
+    def test_mapped_material_overrides_sliced_type(self):
+        """The reporter's case: PLA-sliced slot mapped to a PETG spool → PETG."""
+        usage = self._usage([(1, 2.9)])
+        results = self._results([(1, "PETG")])
+        assert _archive_types_from_spools(usage, results) == ["PETG"]
+
+    def test_multi_slot_slot_ordered_and_deduped(self):
+        """Distinct materials keep slot order; a repeated material collapses."""
+        usage = self._usage([(1, 5.0), (2, 3.0), (3, 4.0)])
+        results = self._results([(2, "PETG"), (1, "PLA"), (3, "PLA")])
+        assert _archive_types_from_spools(usage, results) == ["PLA", "PETG"]
+
+    def test_partial_match_returns_none(self):
+        """All-or-nothing: an unmatched used slot means no rewrite at all."""
+        usage = self._usage([(1, 5.0), (2, 3.0)])
+        results = self._results([(1, "PETG")])  # slot 2 never resolved
+        assert _archive_types_from_spools(usage, results) is None
+
+    def test_zero_usage_slot_ignored(self):
+        """A slot that consumed nothing doesn't need a spool material."""
+        usage = self._usage([(1, 5.0), (2, 0.0)])
+        results = self._results([(1, "PETG")])
+        assert _archive_types_from_spools(usage, results) == ["PETG"]
+
+    def test_no_used_slots_returns_none(self):
+        assert _archive_types_from_spools([], []) is None
+        assert _archive_types_from_spools(self._usage([(1, 0.0)]), []) is None
+
+    def test_fallback_results_without_slot_id_ignored(self):
+        """AMS remain%-delta results carry slot_id=None and must not count."""
+        usage = self._usage([(1, 5.0)])
+        results = [{"slot_id": None, "material": "PETG"}]
+        assert _archive_types_from_spools(usage, results) is None
+
+    def test_blank_material_is_not_a_match(self):
+        """An empty/whitespace material doesn't satisfy the all-or-nothing gate."""
+        usage = self._usage([(1, 5.0)])
+        assert _archive_types_from_spools(usage, self._results([(1, "  ")])) is None
+        assert _archive_types_from_spools(usage, self._results([(1, " PETG ")])) == ["PETG"]

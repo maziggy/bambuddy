@@ -6,9 +6,9 @@ import { api, ApiError } from '../api/client';
 import type { InventorySpool, SlicerSetting, SpoolCatalogEntry, LocalPreset, BuiltinFilament, SpoolmanBulkCreateResult, SpoolKProfileInput, SpoolmanFilamentEntry } from '../api/client';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
-import type { SpoolFormData, PrinterWithCalibrations, ColorPreset } from './spool-form/types';
+import type { SpoolFormData, PrinterWithCalibrations, ColorPreset, SpoolFormMode } from './spool-form/types';
 import { defaultFormData, validateForm, SPOOLMAN_LINKED_FIELDS } from './spool-form/types';
-import { buildFilamentOptions, extractBrandsFromPresets, findPresetOption, loadRecentColors, parsePresetName, saveRecentColor } from './spool-form/utils';
+import { buildFilamentOptions, extractBrandsFromPresets, fetchPrinterCalibrations, findPresetOption, loadRecentColors, pairedOptions, parsePresetName, saveRecentColor, withCurrentValue } from './spool-form/utils';
 import { MATERIALS } from './spool-form/constants';
 import { FilamentSection } from './spool-form/FilamentSection';
 import { ColorSection } from './spool-form/ColorSection';
@@ -25,7 +25,7 @@ type TabId = 'filament' | 'pa-profile';
 
 const CLEAR_TAG_PAYLOAD = { tag_uid: null, tray_uuid: null, tag_type: null, data_origin: null };
 
-export type SpoolFormMode = 'create' | 'edit' | 'copy';
+export type { SpoolFormMode };
 
 interface SpoolFormModalProps {
   isOpen: boolean;
@@ -201,21 +201,9 @@ export function SpoolFormModal({
               const connected = status?.connected ?? false;
               let calibrations: PrinterWithCalibrations['calibrations'] = [];
               if (connected) {
-                try {
-                  const kRes = await api.getKProfiles(printer.id);
-                  calibrations = kRes.profiles.map(p => ({
-                    cali_idx: p.slot_id,
-                    filament_id: p.filament_id,
-                    setting_id: p.setting_id || '',
-                    name: p.name,
-                    k_value: parseFloat(p.k_value) || 0,
-                    n_coef: parseFloat(p.n_coef) || 0,
-                    extruder_id: p.extruder_id,
-                    nozzle_diameter: p.nozzle_diameter,
-                  }));
-                } catch {
-                  // Printer may not support K-profiles
-                }
+                // Fetch across every installed nozzle so dual-nozzle printers
+                // surface both the 0.4mm and 0.6mm K-profiles, not just 0.4 (#2618).
+                calibrations = await fetchPrinterCalibrations(printer.id, status);
               }
               results.push({ printer: { ...printer, connected }, calibrations });
             }
@@ -312,21 +300,33 @@ export function SpoolFormModal({
     return map;
   }, [brandMaterialPairs]);
 
-  const availableBrands = useMemo(() => {
-    if (!formData.material) return baseAvailableBrands;
-    const materialKey = formData.material.toLowerCase();
-    const brandKeys = materialToBrands.get(materialKey);
-    if (!brandKeys || brandKeys.size === 0) return baseAvailableBrands;
-    return baseAvailableBrands.filter(brand => brandKeys.has(brand.toLowerCase()));
-  }, [baseAvailableBrands, formData.material, materialToBrands]);
+  // #1905: the brand and material dropdowns used to be filtered down to the
+  // pairs seen in the color catalog / slicer presets, which hid perfectly valid
+  // combinations — "Elegoo" exists (as a PLA brand) but vanished from the list
+  // once ASA was selected, making the entry look impossible. Both lists now
+  // always offer everything we know about, plus whatever the spool already has
+  // stored (a custom brand saved earlier was missing from its own dropdown).
+  // The pairing knowledge survives as `suggestedBrands`/`suggestedMaterials`,
+  // which the dropdowns sort to the top instead of filtering by.
+  const availableBrands = useMemo(
+    () => withCurrentValue(baseAvailableBrands, formData.brand),
+    [baseAvailableBrands, formData.brand],
+  );
 
-  const availableMaterials = useMemo(() => {
-    if (!formData.brand) return baseAvailableMaterials;
-    const brandKey = formData.brand.toLowerCase();
-    const materialKeys = brandToMaterials.get(brandKey);
-    if (!materialKeys || materialKeys.size === 0) return baseAvailableMaterials;
-    return baseAvailableMaterials.filter(material => materialKeys.has(material.toLowerCase()));
-  }, [baseAvailableMaterials, formData.brand, brandToMaterials]);
+  const availableMaterials = useMemo(
+    () => withCurrentValue(baseAvailableMaterials, formData.material),
+    [baseAvailableMaterials, formData.material],
+  );
+
+  const suggestedBrands = useMemo(
+    () => pairedOptions(availableBrands, formData.material, materialToBrands),
+    [availableBrands, formData.material, materialToBrands],
+  );
+
+  const suggestedMaterials = useMemo(
+    () => pairedOptions(availableMaterials, formData.brand, brandToMaterials),
+    [availableMaterials, formData.brand, brandToMaterials],
+  );
 
   // Find selected preset option
   const selectedPresetOption = useMemo(
@@ -390,9 +390,14 @@ export function SpoolFormModal({
         setFormData(defaultFormData);
         setPresetInputValue('');
         setSelectedProfiles(new Set());
-        setQuickAdd(false);
-        setQuantity(1);
       }
+      // Reset on every open, not just the create path (#1905). The modal keeps
+      // its state while closed, and the Quick Add toggle only renders in create
+      // mode — so quick-adding a spool and then opening Edit left the edit form
+      // stuck in quick-add layout (no preset field, no PA-profile tab) with no
+      // control to switch back.
+      setQuickAdd(false);
+      setQuantity(1);
       setErrors({});
       setActiveTab('filament');
       setWeightTouched(false);
@@ -729,7 +734,7 @@ export function SpoolFormModal({
   if (!isOpen) return null;
 
   const handleSubmit = () => {
-    const validation = validateForm(formData, quickAdd, spoolmanMode);
+    const validation = validateForm(formData, quickAdd, spoolmanMode, mode);
     if (!validation.isValid) {
       setErrors(validation.errors);
       if (validation.errors.slicer_filament || validation.errors.material || validation.errors.brand || validation.errors.subtype) {
@@ -817,7 +822,7 @@ export function SpoolFormModal({
         {mode === 'create' && (
           <div className="flex items-center justify-between px-4 py-2 border-b border-bambu-dark-tertiary flex-shrink-0">
             <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-amber-400" />
+              <Zap className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               <span className="text-sm text-white">{t('inventory.quickAdd')}</span>
             </div>
             <button
@@ -880,7 +885,7 @@ export function SpoolFormModal({
               {spoolmanMode && !isEditing && (
                 <div>
                   {filamentsError ? (
-                    <p className="text-sm text-red-400 px-1">{t('inventory.spoolmanCatalogLoadFailed')}</p>
+                    <p className="text-sm text-red-700 dark:text-red-400 px-1">{t('inventory.spoolmanCatalogLoadFailed')}</p>
                   ) : (
                     <SpoolmanFilamentPicker
                       filaments={spoolmanFilaments}
@@ -908,7 +913,10 @@ export function SpoolFormModal({
                   filamentOptions={filamentOptions}
                   availableBrands={availableBrands}
                   availableMaterials={availableMaterials}
+                  suggestedBrands={suggestedBrands}
+                  suggestedMaterials={suggestedMaterials}
                   quickAdd={quickAdd}
+                  detailsRequired={!quickAdd && !spoolmanMode && mode === 'create'}
                   quantity={quantity}
                   onQuantityChange={setQuantity}
                   errors={errors}

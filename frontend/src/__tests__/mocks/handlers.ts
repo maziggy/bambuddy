@@ -535,6 +535,11 @@ export const handlers = [
       external_url_configured: false,
     })
   ),
+  http.get('/api/v1/obico/printer-status', () =>
+    HttpResponse.json({ enabled: false, monitored_printers: null, per_printer: {}, last_error: null })
+  ),
+  // Per-file project print progress (#1897) — empty means "no completed runs"
+  http.get('/api/v1/projects/:id/file-progress', () => HttpResponse.json([])),
   http.get('/api/v1/printers/:id/current-print-user', () => HttpResponse.json(null)),
   http.get('/api/v1/settings/check-ffmpeg', () =>
     HttpResponse.json({ available: false, version: null })

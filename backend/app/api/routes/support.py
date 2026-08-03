@@ -9,6 +9,7 @@ import logging
 import os
 import platform
 import re
+import time
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -298,6 +299,115 @@ def _get_container_memory_limit() -> int | None:
         except Exception:
             pass
     return None
+
+
+# Above this RSS the heap census is skipped — see _collect_process_info.
+_GC_CENSUS_RSS_LIMIT = 2 * 1024**3
+
+
+def _collect_process_info() -> dict:
+    """Snapshot this process's resource usage, for reports about it growing.
+
+    Bundles used to carry nothing about Bambuddy's own footprint, which made
+    "memory climbs over days until the OOM killer fires" impossible to triage
+    from a bundle alone — the reporter of #2734 had to be asked to run commands
+    by hand, and the numbers that would have identified the mechanism could not
+    be recovered after the fact.
+
+    The four figures below separate the mechanisms that look identical from
+    outside:
+
+    * ``rss_bytes`` vs ``vms_bytes`` — a large virtual size against a modest
+      resident one is address space, not live data: thread stacks or allocator
+      arenas rather than a heap that keeps growing.
+    * ``num_threads`` — every leaked MQTT client reconnect would leave a paho
+      network thread behind, each reserving its stack.
+    * ``children`` — the ffmpeg-per-camera-stream leak class (#776).
+    * ``open_files`` / ``connections`` — descriptors held by streams or sockets
+      that were never closed.
+
+    Everything is best-effort: psutil raises on hardened kernels and inside
+    restricted containers, and a support bundle must still be produced when it
+    does. Child command lines are reduced to the executable name — a full
+    ffmpeg argv carries the camera URL, and with it the camera's password.
+    """
+    import psutil
+
+    out: dict = {}
+    try:
+        proc = psutil.Process()
+    except Exception:
+        return {"available": False}
+
+    out["available"] = True
+    try:
+        mem = proc.memory_info()
+        out["rss_bytes"] = mem.rss
+        out["rss_formatted"] = _format_bytes(mem.rss)
+        out["vms_bytes"] = mem.vms
+        out["vms_formatted"] = _format_bytes(mem.vms)
+    except Exception:
+        pass
+    try:
+        out["num_threads"] = proc.num_threads()
+    except Exception:
+        pass
+    try:
+        out["uptime_seconds"] = int(time.time() - proc.create_time())
+    except Exception:
+        pass
+    try:
+        out["open_files"] = len(proc.open_files())
+    except Exception:
+        pass
+    try:
+        out["connections"] = len(proc.net_connections(kind="inet"))
+    except Exception:
+        pass
+
+    # Children by executable name only. The count per name is what identifies a
+    # leak; the arguments would leak credentials.
+    try:
+        names: dict[str, int] = {}
+        for child in proc.children(recursive=True):
+            try:
+                names[child.name()] = names.get(child.name(), 0) + 1
+            except Exception:
+                names["<unknown>"] = names.get("<unknown>", 0) + 1
+        out["children_total"] = sum(names.values())
+        out["children_by_name"] = dict(sorted(names.items(), key=lambda kv: -kv[1]))
+    except Exception:
+        pass
+
+    # Live object counts by type, top 15. Identifies a heap that is growing and
+    # what it is growing with — the one thing RSS alone cannot say.
+    #
+    # Skipped above _GC_CENSUS_RSS_LIMIT. gc.get_objects() materialises a list
+    # of every tracked object, so the census costs most on exactly the process
+    # that can least afford it: a bundle generated to diagnose runaway memory
+    # must not be the allocation that tips the host over. The numbers that
+    # actually separate the mechanisms — RSS vs VMS, threads, children — are
+    # collected above and unaffected.
+    rss = out.get("rss_bytes")
+    if rss is not None and rss > _GC_CENSUS_RSS_LIMIT:
+        out["gc_census"] = (
+            f"skipped: process is using {_format_bytes(rss)}, above the "
+            f"{_format_bytes(_GC_CENSUS_RSS_LIMIT)} limit for walking the heap"
+        )
+        return out
+    try:
+        import gc
+
+        counts: dict[str, int] = {}
+        for obj in gc.get_objects():
+            name = type(obj).__name__
+            counts[name] = counts.get(name, 0) + 1
+        out["gc_tracked_objects"] = sum(counts.values())
+        out["gc_top_types"] = dict(sorted(counts.items(), key=lambda kv: -kv[1])[:15])
+    except Exception:
+        pass
+
+    return out
 
 
 def _format_bytes(size_bytes: int) -> str:
@@ -647,20 +757,29 @@ async def _collect_slicer_api_info() -> dict:
     return info
 
 
-def _parse_obico_enabled_printers(raw: str) -> set[int]:
-    """Parse the comma-separated `obico_enabled_printers` setting. Same shape as
-    obico_detection.py uses but tolerant of legacy formats."""
+def _parse_obico_enabled_printers(raw: str | None) -> set[int] | None:
+    """Parse the `obico_enabled_printers` setting the way the detection service does.
+
+    The setting is a JSON array of printer IDs and an empty value means *all*
+    printers — see ``ObicoDetectionService._load_settings``. This used to split
+    on commas and treat empty as *none*, so a bundle from a default Obico setup
+    reported every printer as unmonitored while the service was in fact polling
+    all of them. Returns ``None`` for "all printers"; a comma-separated fallback
+    is kept in case an install ever stored the legacy shape.
+    """
     if not raw or not raw.strip():
-        return set()
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        parsed = None
+    if isinstance(parsed, list):
+        return {int(item) for item in parsed if isinstance(item, (int, str)) and str(item).strip().isdigit()}
     result: set[int] = set()
     for token in raw.split(","):
         token = token.strip()
-        if not token:
-            continue
-        try:
+        if token.isdigit():
             result.add(int(token))
-        except ValueError:
-            continue
     return result
 
 
@@ -690,6 +809,12 @@ async def _collect_support_info() -> dict:
         "database": {},
         "printers": [],
         "settings": {},
+        # Bambuddy's own footprint. Cheap to collect and the only thing that
+        # makes a "memory grows over days" report triageable from the bundle
+        # rather than a round trip of shell commands (#2734). Off the event
+        # loop: the heap census walks every tracked object, and a bundle
+        # request must not stall status ingest while it does.
+        "process": await asyncio.to_thread(_collect_process_info),
     }
 
     # Docker-specific info
@@ -729,18 +854,27 @@ async def _collect_support_info() -> dict:
         printers = result.scalars().all()
         statuses = printer_manager.get_all_statuses()
 
-        # Pre-load the obico per-printer enabled-list. Settings are loaded later
-        # in this function (and would overwrite this key in info["settings"]),
-        # so do a targeted query here for the per-printer flag below.
-        obico_enabled_set: set[int] = set()
+        # Pre-load the obico settings that decide which printers are monitored.
+        # Settings are loaded later in this function (and would overwrite these
+        # keys in info["settings"]), so do a targeted query here for the
+        # per-printer flag below. ``None`` means every printer is monitored.
+        obico_enabled_set: set[int] | None = None
+        obico_globally_enabled = False
         try:
-            obico_row = (
-                await db.execute(select(Settings).where(Settings.key == "obico_enabled_printers"))
-            ).scalar_one_or_none()
-            if obico_row is not None:
-                obico_enabled_set = _parse_obico_enabled_printers(obico_row.value)
+            obico_rows = {
+                row.key: row.value
+                for row in (
+                    await db.execute(
+                        select(Settings).where(Settings.key.in_(["obico_enabled_printers", "obico_enabled"]))
+                    )
+                )
+                .scalars()
+                .all()
+            }
+            obico_enabled_set = _parse_obico_enabled_printers(obico_rows.get("obico_enabled_printers"))
+            obico_globally_enabled = (obico_rows.get("obico_enabled") or "false").lower() == "true"
         except Exception:
-            logger.debug("Failed to load obico_enabled_printers", exc_info=True)
+            logger.debug("Failed to load obico settings", exc_info=True)
 
         # Check reachability in parallel
         reachability_tasks = [_check_port(p.ip_address, 8883) for p in printers]
@@ -784,7 +918,8 @@ async def _collect_support_info() -> dict:
                     "has_vt_tray": has_vt_tray,
                     "external_camera_configured": bool(printer.external_camera_url),
                     "plate_detection_enabled": printer.plate_detection_enabled,
-                    "obico_enabled": printer.id in obico_enabled_set,
+                    "obico_enabled": obico_globally_enabled
+                    and (obico_enabled_set is None or printer.id in obico_enabled_set),
                     "hms_error_count": len(state.hms_errors) if state else 0,
                     "developer_mode": state.developer_mode if state else None,
                     "nozzle_rack_count": len(state.nozzle_rack) if state else 0,
@@ -1119,21 +1254,51 @@ async def _collect_support_info() -> dict:
 
 
 def _get_log_content(max_bytes: int = 10 * 1024 * 1024, sensitive_strings: dict[str, str] | None = None) -> bytes:
-    """Get log file content, limited to max_bytes from the end."""
+    """Get recent log content, limited to max_bytes from the end.
+
+    Spans the rotated files as well as the live one. ``bambuddy.log`` is capped
+    at 5 MB by the RotatingFileHandler, and the bundle used to ship only that
+    file — so on a large fleet with debug logging on, the window we ask a
+    reporter for was far shorter than anyone realised. The 19-printer farm in
+    #2555 emits ~100 lines/s of MQTT frame dumps, which fills 5 MB in under five
+    minutes: the bundle we received to diagnose a *queue* problem barely
+    contained one upload. The three rotated backups were sitting on disk unread.
+
+    Reads oldest -> newest so the result is chronological, then takes the last
+    ``max_bytes``, which is where the budget was all along.
+    """
     log_file = settings.log_dir / "bambuddy.log"
     if not log_file.exists():
         return b"Log file not found"
 
-    file_size = log_file.stat().st_size
-    if file_size <= max_bytes:
-        content = log_file.read_text(encoding="utf-8", errors="replace")
-    else:
-        # Read last max_bytes
-        with open(log_file, "rb") as f:
-            f.seek(file_size - max_bytes)
-            # Skip partial line at start
-            f.readline()
-            content = f.read().decode("utf-8", errors="replace")
+    # RotatingFileHandler names its backups .log.1 (newest) .. .log.N (oldest).
+    # Walk them in reverse so the concatenation reads forwards in time.
+    candidates: list[Path] = []
+    for index in range(settings.log_backup_count, 0, -1):
+        rotated = log_file.with_name(f"{log_file.name}.{index}")
+        if rotated.exists():
+            candidates.append(rotated)
+    candidates.append(log_file)
+
+    chunks: list[str] = []
+    remaining = max_bytes
+    # Fill from the newest backwards so the byte budget is spent on recent
+    # history, then flip back to chronological order for the reader.
+    for path in reversed(candidates):
+        if remaining <= 0:
+            break
+        try:
+            size = path.stat().st_size
+            with open(path, "rb") as f:
+                if size > remaining:
+                    f.seek(size - remaining)
+                    f.readline()  # discard the partial line the seek landed in
+                chunks.append(f.read().decode("utf-8", errors="replace"))
+            remaining -= min(size, remaining)
+        except OSError:
+            logger.debug("Failed to read log file %s for support bundle", path, exc_info=True)
+
+    content = "".join(reversed(chunks))
 
     # Sanitize sensitive data
     content = sanitize_log_content(content, sensitive_strings)
@@ -1195,6 +1360,35 @@ def _redact_raw_push_status(raw: dict) -> dict:
             ]
 
     return out
+
+
+def _sanitize_push_status_values(node, sensitive_strings: dict[str, str]):
+    """Sanitize a push_status snapshot's string *values*, never its JSON text.
+
+    This used to run :func:`sanitize_log_content` over the serialised snapshot.
+    That pass includes a generic Bambu-serial regex
+    (``0[0-3][A-Z0-9][A-Z0-9]{9,13}`` in ``log_reader``) which matches the
+    decimal expansion of a float just as happily as a serial: an AMS ``k`` flow
+    factor of ``0.0199999995529652`` came out as ``0.[SERIAL]``, and the bundle
+    shipped invalid JSON — unusable for exactly the ground-truth purpose the
+    snapshot exists for (found while diagnosing #2702).
+
+    Walking the structure instead leaves numbers, bools and None untouched, so
+    the output always parses. Keys are structural and never rewritten.
+    """
+    if isinstance(node, str):
+        return sanitize_log_content(node, sensitive_strings)
+    if isinstance(node, dict):
+        return {k: _sanitize_push_status_values(v, sensitive_strings) for k, v in node.items()}
+    if isinstance(node, list | tuple):
+        # Tuples too: `json.dumps` renders them as arrays, so stringifying one
+        # here would change the file's shape rather than just its content.
+        return [_sanitize_push_status_values(v, sensitive_strings) for v in node]
+    if node is None or isinstance(node, bool | int | float):
+        return node
+    # Anything else (datetime, Decimal, …) would be stringified by json.dumps'
+    # ``default=str`` *after* this pass and so escape sanitisation entirely.
+    return sanitize_log_content(str(node), sensitive_strings)
 
 
 async def _get_recent_sanitized_logs(max_lines: int = 200) -> str:
@@ -1270,15 +1464,21 @@ async def generate_support_bundle(
                 "captured_at": datetime.now(timezone.utc).isoformat(),
                 "raw_data": redacted,
             }
-            # Belt-and-suspenders: pass the JSON text through the string-based
-            # sanitizer so any user-named string (printer name, serial baked
-            # into a tray uuid) the structural pass missed still gets caught.
-            snapshot_json = json.dumps(snapshot, indent=2, default=str)
-            snapshot_json = sanitize_log_content(snapshot_json, sensitive_strings)
-            zf.writestr(f"push-status/printer-{i + 1}.json", snapshot_json)
+            # Belt-and-suspenders: pass every string value through the
+            # string-based sanitizer so any user-named string (printer name,
+            # serial baked into a tray uuid) the structural pass missed still
+            # gets caught. Values only — sanitizing the serialised JSON text
+            # corrupted numeric literals (see _sanitize_push_status_values).
+            snapshot = _sanitize_push_status_values(snapshot, sensitive_strings)
+            zf.writestr(f"push-status/printer-{i + 1}.json", json.dumps(snapshot, indent=2, default=str))
 
         # Add log file
-        log_content = _get_log_content(sensitive_strings=sensitive_strings)
+        # Off the event loop: this reads up to 10 MB and then runs one full regex
+        # pass per sensitive string over it. Now that the bundle spans the rotated
+        # files it can genuinely reach that ceiling, and the blocking cost scales
+        # with the number of printers (4 redaction patterns each) — i.e. it is
+        # worst on exactly the fleet size this change was written for.
+        log_content = await asyncio.to_thread(_get_log_content, sensitive_strings=sensitive_strings)
         zf.writestr("bambuddy.log", log_content)
 
     zip_buffer.seek(0)

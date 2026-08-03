@@ -115,7 +115,7 @@ export function LdapUserPicker({ onSuccess }: LdapUserPickerProps) {
         )}
 
         {searchQuery.isError && (
-          <div className="px-3 py-4 text-sm text-red-400">
+          <div className="px-3 py-4 text-sm text-red-700 dark:text-red-400">
             {searchQuery.error instanceof Error ? searchQuery.error.message : t('users.modal.ldapSearchError')}
           </div>
         )}
@@ -159,8 +159,8 @@ export function LdapUserPicker({ onSuccess }: LdapUserPickerProps) {
 
       {/* Error from the provision mutation */}
       {errorMessage && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-          <p className="text-sm text-red-400">{errorMessage}</p>
+        <div className="bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30 rounded-lg p-3">
+          <p className="text-sm text-red-700 dark:text-red-400">{errorMessage}</p>
         </div>
       )}
 

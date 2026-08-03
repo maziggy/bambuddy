@@ -659,6 +659,12 @@ class MQTTBridge:
             # paints those empty slots as phantom loaded filaments (#1726).
             # Runs whether or not a prev cache existed — fresh pushalls also
             # carry tray_exist_bits and benefit from the cleanup.
+            # These units carry the RAW firmware ids — this cache is what the
+            # slicer sees, and BambuStudio addresses the A2L's AMS-Lite as the
+            # physical id 16 (it sends `ams_get_rfid {ams_id: 16}` through the
+            # VP), so we must not normalise them to 6 the way Bambuddy's
+            # internal state does. `apply_tray_exist_bits` folds 16 onto the
+            # same bit base internally instead (#2697).
             merged_ams_dict = new_state.get("ams")
             if isinstance(merged_ams_dict, dict):
                 units = merged_ams_dict.get("ams")

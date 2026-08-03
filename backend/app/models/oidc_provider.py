@@ -128,6 +128,10 @@ class OIDCProvider(Base):
     # authorize-URL fetch fails or times out, and ``/login?fallback=local``
     # plus ``BAMBUDDY_LOCAL_LOGIN=true`` provide a documented recovery path.
     is_autologin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # Marks the single provider defined by BAMBUDDY_OIDC_* env vars. Upserted on
+    # startup; UI/API writes to it are rejected. Never delete-recreated (user_oidc_links
+    # FK is ON DELETE CASCADE).
+    is_env_managed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
     @property
     def has_icon(self) -> bool:

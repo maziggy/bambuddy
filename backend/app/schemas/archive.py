@@ -55,6 +55,7 @@ class ArchiveResponse(BaseModel):
     object_count: int | None = None
 
     print_name: str | None
+    plate_id: int | None = None  # Selected plate of a multi-plate 3MF (#2603)
     print_time_seconds: int | None  # Estimated time from slicer
     actual_time_seconds: int | None = None  # Computed from started_at/completed_at
     # Percentage: 100 = perfect, >100 = faster than estimated
@@ -136,6 +137,8 @@ class ArchiveSlim(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     cost: float | None
+    energy_kwh: float | None = None
+    energy_cost: float | None = None
     quantity: int = 1
     created_at: datetime | None
 

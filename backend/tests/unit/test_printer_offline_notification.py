@@ -23,11 +23,34 @@ import pytest
 from backend.app import main as main_module
 
 
+def _spawn_patch():
+    """Patch `spawn_background_task` so the coroutine handed to it is closed.
+
+    `on_printer_status_change` builds `reconcile_stale_active_prints(...)` as
+    a call argument, so the coroutine object is constructed whether or not the
+    replacement schedules it. A bare `MagicMock` keeps it alive in `call_args`
+    and it finalises unawaited during some *later* test's GC, surfacing as a
+    `PytestUnraisableExceptionWarning` attributed to an unrelated file.
+    Closing it here mirrors the real helper taking ownership of the coroutine,
+    while still keeping reconciliation from actually running.
+    """
+    return patch(
+        "backend.app.main.spawn_background_task",
+        side_effect=lambda coro, **kwargs: coro.close(),
+    )
+
+
 def _state(connected: bool, state: str = "IDLE") -> SimpleNamespace:
-    """Minimal PrinterState stub. `state="IDLE"` keeps the reconcile-edge
-    branch quiescent (it only fires on `connected=True` with a non-unknown
-    state-string, which we exercise separately) but otherwise lets the
-    handler thread through without doing extra DB / WS work."""
+    """Minimal PrinterState stub.
+
+    `state="IDLE"` is a *known* state, so on `connected=True` this does trip
+    the reconcile-edge branch in `on_printer_status_change` — that is why
+    every handler test patches the spawn helper via `_spawn_patch()`. These
+    tests assert on the offline-notification edge only; reconciliation
+    behaviour is pinned separately in
+    `test_reconcile_stale_active_prints.py`. The remaining fields just let
+    the handler thread through without extra DB / WS work.
+    """
     return SimpleNamespace(
         connected=connected,
         state=state,
@@ -170,7 +193,7 @@ class TestOfflineEdgeDetection:
             patch("backend.app.main.ws_manager", ws_mgr),
             patch("backend.app.main.mqtt_relay", relay),
             patch("backend.app.main.printer_manager", pm),
-            patch("backend.app.main.spawn_background_task"),
+            _spawn_patch(),
             patch("backend.app.main.printer_state_to_dict", return_value={}),
         ):
             await main_module.on_printer_status_change(1, _state(connected=True))
@@ -186,7 +209,7 @@ class TestOfflineEdgeDetection:
             patch("backend.app.main.ws_manager", ws_mgr),
             patch("backend.app.main.mqtt_relay", relay),
             patch("backend.app.main.printer_manager", pm),
-            patch("backend.app.main.spawn_background_task"),
+            _spawn_patch(),
             patch("backend.app.main.printer_state_to_dict", return_value={}),
         ):
             await main_module.on_printer_status_change(1, _state(connected=False))
@@ -200,7 +223,7 @@ class TestOfflineEdgeDetection:
             patch("backend.app.main.ws_manager", ws_mgr),
             patch("backend.app.main.mqtt_relay", relay),
             patch("backend.app.main.printer_manager", pm),
-            patch("backend.app.main.spawn_background_task"),
+            _spawn_patch(),
             patch("backend.app.main._maybe_notify_printer_offline", new=AsyncMock()),
             patch("backend.app.main.printer_state_to_dict", return_value={}),
         ):
@@ -218,7 +241,7 @@ class TestOfflineEdgeDetection:
             patch("backend.app.main.ws_manager", ws_mgr),
             patch("backend.app.main.mqtt_relay", relay),
             patch("backend.app.main.printer_manager", pm),
-            patch("backend.app.main.spawn_background_task"),
+            _spawn_patch(),
             patch("backend.app.main._maybe_notify_printer_offline", new=AsyncMock()),
             patch("backend.app.main.printer_state_to_dict", return_value={}),
         ):
@@ -243,7 +266,7 @@ class TestOfflineEdgeDetection:
             patch("backend.app.main.ws_manager", ws_mgr),
             patch("backend.app.main.mqtt_relay", relay),
             patch("backend.app.main.printer_manager", pm),
-            patch("backend.app.main.spawn_background_task"),
+            _spawn_patch(),
             patch("backend.app.main._maybe_notify_printer_offline", new=AsyncMock()),
             patch("backend.app.main.printer_state_to_dict", return_value={}),
         ):
@@ -256,3 +279,81 @@ class TestOfflineEdgeDetection:
         assert first_task is second_task
         if first_task is not None:
             first_task.cancel()
+
+
+class TestProgressMilestoneSessionHygiene:
+    """The progress-milestone notification path must capture the camera
+    snapshot WITHOUT holding a DB session (issue #2572): a ~15s RTSP grab
+    across an open session pinned a pooled connection per milestone, per
+    printer. The read (printer name) and the send (provider lookups) each get
+    their own short session; the snapshot happens in between with none held."""
+
+    @staticmethod
+    def _printing_state(progress: int):
+        st = _state(connected=True, state="RUNNING")
+        st.progress = progress
+        st.remaining_time = 30
+        st.gcode_file = "benchy.gcode"
+        return st
+
+    @pytest.mark.asyncio
+    async def test_milestone_captures_snapshot_outside_session_and_notifies(self):
+        main_module._last_progress_milestone.clear()
+
+        printer = SimpleNamespace(id=1, name="Workshop")
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=printer)))
+
+        # Stateful session that tracks how many sessions are currently open.
+        open_sessions = {"count": 0}
+
+        class _SessionCM:
+            async def __aenter__(self):
+                open_sessions["count"] += 1
+                return db
+
+            async def __aexit__(self, *exc):
+                open_sessions["count"] -= 1
+                return False
+
+        snap_calls = []
+
+        async def _snap(printer_id, prn, _logger):
+            # The whole point of the fix (#2572): the ~15s camera grab must NOT
+            # run while a DB session is held. On the old code the snapshot sat
+            # inside the milestone session, so this would be 1.
+            assert open_sessions["count"] == 0, "camera snapshot ran while a DB session was held"
+            snap_calls.append((printer_id, prn))
+            return b"jpeg-bytes"
+
+        ws_mgr = MagicMock()
+        ws_mgr.send_printer_status = AsyncMock()
+        relay = MagicMock()
+        relay.on_printer_status = AsyncMock()
+        pm = MagicMock()
+        pm.get_printer.return_value = None
+        pm.get_model.return_value = ""
+
+        with (
+            patch("backend.app.main.ws_manager", ws_mgr),
+            patch("backend.app.main.mqtt_relay", relay),
+            patch("backend.app.main.printer_manager", pm),
+            _spawn_patch(),
+            patch("backend.app.main.printer_state_to_dict", return_value={}),
+            patch("backend.app.main.async_session", side_effect=lambda: _SessionCM()),
+            patch("backend.app.main._capture_snapshot_for_notification", new=_snap),
+            patch("backend.app.main.notification_service") as mock_notif,
+        ):
+            mock_notif.on_print_progress = AsyncMock()
+
+            await main_module.on_printer_status_change(1, self._printing_state(25))
+
+            # Snapshot ran (with the detached printer) and outside any session.
+            assert snap_calls == [(1, printer)]
+            # The notification fired carrying that image (send legitimately holds a session).
+            mock_notif.on_print_progress.assert_awaited_once()
+            assert mock_notif.on_print_progress.await_args.kwargs["image_data"] == b"jpeg-bytes"
+            # Every session opened was also closed — none leaked past the handler.
+            assert open_sessions["count"] == 0
+
+        main_module._last_progress_milestone.clear()

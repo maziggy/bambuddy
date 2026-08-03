@@ -221,6 +221,79 @@ class TestFirstFrameStage:
         assert result.overall_status == "ok"
         assert result.summary_code == "all_ok"
         assert all(s.status == "ok" for s in result.stages)
+        assert result.stages[1].code is None  # we opened our own connection
+
+    @pytest.mark.asyncio
+    async def test_pass_riding_on_an_inflight_capture_says_so(self):
+        """#2705: a capture already running means we get its frame, not our own.
+
+        The frame is real evidence the camera works, so the stage still passes —
+        but duration_ms is then mostly time spent queueing behind someone
+        else's capture, and claiming a connection we never opened is exactly
+        what a diagnostic must not do."""
+
+        async def _tcp_ok(*_a, **_kw):
+            writer = AsyncMock()
+            return AsyncMock(), writer
+
+        with (
+            patch(
+                "backend.app.services.camera_diagnose.asyncio.open_connection",
+                new=_tcp_ok,
+            ),
+            patch(
+                "backend.app.services.camera_diagnose.capture_in_flight",
+                return_value=True,
+            ),
+            patch(
+                "backend.app.services.camera_diagnose.capture_camera_frame_bytes",
+                new_callable=AsyncMock,
+                return_value=b"\xff\xd8\xff\xd9",
+            ),
+        ):
+            result = await diagnose_camera(
+                ip_address="192.0.2.1",
+                access_code="x",
+                model="P2S",
+                printer_id=1,
+            )
+        assert result.overall_status == "ok"
+        assert result.summary_code == "all_ok"
+        assert result.stages[1].status == "ok"
+        assert result.stages[1].code == "coalesced_capture"
+
+    @pytest.mark.asyncio
+    async def test_failure_is_not_annotated_as_coalesced(self):
+        """A follower whose leader fails goes on to capture on its own, so a
+        failure here was this stage's own attempt — no qualifier needed."""
+
+        async def _tcp_ok(*_a, **_kw):
+            writer = AsyncMock()
+            return AsyncMock(), writer
+
+        with (
+            patch(
+                "backend.app.services.camera_diagnose.asyncio.open_connection",
+                new=_tcp_ok,
+            ),
+            patch(
+                "backend.app.services.camera_diagnose.capture_in_flight",
+                return_value=True,
+            ),
+            patch(
+                "backend.app.services.camera_diagnose.capture_camera_frame_bytes",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+        ):
+            result = await diagnose_camera(
+                ip_address="192.0.2.1",
+                access_code="x",
+                model="P2S",
+                printer_id=1,
+            )
+        assert result.summary_code == "no_frame"
+        assert result.stages[1].code == "no_frame"
 
 
 class TestResultMetadata:

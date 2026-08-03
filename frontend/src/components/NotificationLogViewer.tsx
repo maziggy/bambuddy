@@ -9,15 +9,15 @@ import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
 
 const EVENT_COLORS: Record<string, string> = {
-  print_start: 'text-blue-400',
+  print_start: 'text-blue-700 dark:text-blue-400',
   print_complete: 'text-bambu-green',
-  print_failed: 'text-red-400',
-  print_stopped: 'text-orange-400',
-  print_progress: 'text-yellow-400',
+  print_failed: 'text-red-700 dark:text-red-400',
+  print_stopped: 'text-orange-700 dark:text-orange-400',
+  print_progress: 'text-yellow-700 dark:text-yellow-400',
   printer_offline: 'text-gray-400',
-  printer_error: 'text-rose-400',
-  filament_low: 'text-cyan-400',
-  maintenance_due: 'text-purple-400',
+  printer_error: 'text-rose-700 dark:text-rose-400',
+  filament_low: 'text-cyan-700 dark:text-cyan-400',
+  maintenance_due: 'text-purple-700 dark:text-purple-400',
   test: 'text-bambu-gray',
 };
 
@@ -108,7 +108,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
                 {t('notifications.statsSent', { count: stats.success_count })}
               </span>
               {stats.failure_count > 0 && (
-                <span className="flex items-center gap-1 text-red-400">
+                <span className="flex items-center gap-1 text-red-700 dark:text-red-400">
                   <XCircle className="w-4 h-4" />
                   {t('notifications.statsFailed', { count: stats.failure_count })}
                 </span>
@@ -161,7 +161,7 @@ export function NotificationLogViewer({ onClose }: NotificationLogViewerProps) {
             variant="secondary"
             onClick={() => clearMutation.mutate()}
             disabled={clearMutation.isPending}
-            className="text-red-400 hover:text-red-300"
+            className="text-red-700 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
           >
             {clearMutation.isPending ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -234,7 +234,7 @@ function LogEntry({
         {log.success ? (
           <CheckCircle className="w-4 h-4 text-bambu-green shrink-0" />
         ) : (
-          <XCircle className="w-4 h-4 text-red-400 shrink-0" />
+          <XCircle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
         )}
 
         <span className={`text-xs font-medium ${EVENT_COLORS[log.event_type] || 'text-bambu-gray'}`}>
@@ -274,8 +274,8 @@ function LogEntry({
           </div>
           {!log.success && log.error_message && (
             <div>
-              <p className="text-xs text-red-400 mb-1">{t('notifications.logError')}</p>
-              <p className="text-sm text-red-300">{log.error_message}</p>
+              <p className="text-xs text-red-700 dark:text-red-400 mb-1">{t('notifications.logError')}</p>
+              <p className="text-sm text-red-700 dark:text-red-300">{log.error_message}</p>
             </div>
           )}
           <div className="flex gap-4 text-xs text-bambu-gray pt-1">

@@ -10,7 +10,7 @@ git add .
 git commit -m "Updated Wiki"
 git push
 
-cd /opt/claude/projects/bambuddy-sponsors-portal
-git add .
-git commit -m "Updated portal"
-git push
+#cd /opt/claude/projects/bambuddy-sponsors-portal
+#git add .
+#git commit -m "Updated portal"
+#git push

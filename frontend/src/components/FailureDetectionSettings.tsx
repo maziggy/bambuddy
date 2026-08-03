@@ -17,6 +17,7 @@ export function FailureDetectionSettings() {
 
   const [enabled, setEnabled] = useState(false);
   const [mlUrl, setMlUrl] = useState('');
+  const [mlToken, setMlToken] = useState('');
   const [sensitivity, setSensitivity] = useState<'low' | 'medium' | 'high'>('medium');
   const [action, setAction] = useState<'notify' | 'pause' | 'pause_and_off'>('notify');
   const [pollInterval, setPollInterval] = useState(10);
@@ -44,6 +45,7 @@ export function FailureDetectionSettings() {
     if (!settings) return;
     setEnabled(settings.obico_enabled ?? false);
     setMlUrl(settings.obico_ml_url ?? '');
+    setMlToken(settings.obico_ml_token ?? '');
     setSensitivity(settings.obico_sensitivity ?? 'medium');
     setAction(settings.obico_action ?? 'notify');
     setPollInterval(settings.obico_poll_interval ?? 10);
@@ -63,6 +65,7 @@ export function FailureDetectionSettings() {
       api.updateSettings({
         obico_enabled: enabled,
         obico_ml_url: mlUrl,
+        obico_ml_token: mlToken,
         obico_sensitivity: sensitivity,
         obico_action: action,
         obico_poll_interval: pollInterval,
@@ -71,6 +74,9 @@ export function FailureDetectionSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       queryClient.invalidateQueries({ queryKey: ['obico-status'] });
+      // Printer-card AI badges (#1546) — refresh immediately on toggle instead
+      // of waiting for the cards' 10s poll.
+      queryClient.invalidateQueries({ queryKey: ['obico-printer-status'] });
       showToast(t('settings.toast.settingsSaved'));
     },
   });
@@ -81,6 +87,7 @@ export function FailureDetectionSettings() {
     const changed =
       settings.obico_enabled !== enabled ||
       settings.obico_ml_url !== mlUrl ||
+      (settings.obico_ml_token ?? '') !== mlToken ||
       settings.obico_sensitivity !== sensitivity ||
       settings.obico_action !== action ||
       settings.obico_poll_interval !== pollInterval ||
@@ -89,14 +96,23 @@ export function FailureDetectionSettings() {
     const id = setTimeout(() => saveMutation.mutate(), 500);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, mlUrl, sensitivity, action, pollInterval, enabledPrinters, initialized]);
+  }, [enabled, mlUrl, mlToken, sensitivity, action, pollInterval, enabledPrinters, initialized]);
 
   const handleTest = async () => {
     setTestResult(null);
     try {
-      const res = await api.testObicoConnection(mlUrl);
+      const res = await api.testObicoConnection(mlUrl, mlToken);
       if (res.ok) {
-        setTestResult({ ok: true, message: t('failureDetection.testSuccess') });
+        // auth_ok is null when the token could not be checked — don't claim it
+        // works. It is true both for an accepted token and for a server that
+        // requires none, which is the same outcome for the user.
+        setTestResult({
+          ok: true,
+          message:
+            res.auth_ok === null
+              ? t('failureDetection.testSuccessTokenUnknown')
+              : t('failureDetection.testSuccess'),
+        });
       } else {
         setTestResult({
           ok: false,
@@ -160,10 +176,23 @@ export function FailureDetectionSettings() {
                 </Button>
               </div>
               <p className="text-xs text-bambu-gray mt-1">{t('failureDetection.mlUrlHint')}</p>
+              <label className="block text-sm text-bambu-gray mb-1 mt-3">
+                {t('failureDetection.mlToken')}
+              </label>
+              <input
+                type="password"
+                value={mlToken}
+                onChange={(e) => setMlToken(e.target.value)}
+                autoComplete="off"
+                placeholder={t('failureDetection.mlTokenPlaceholder')}
+                className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+                disabled={!enabled}
+              />
+              <p className="text-xs text-bambu-gray mt-1">{t('failureDetection.mlTokenHint')}</p>
               {testResult && (
                 <div
                   className={`flex items-start gap-2 mt-2 text-sm ${
-                    testResult.ok ? 'text-green-400' : 'text-red-400'
+                    testResult.ok ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
                   }`}
                 >
                   {testResult.ok ? <Check className="w-4 h-4 mt-0.5" /> : <X className="w-4 h-4 mt-0.5" />}
@@ -222,7 +251,7 @@ export function FailureDetectionSettings() {
             </div>
 
             {status && !status.external_url_configured && enabled && (
-              <div className="flex items-start gap-2 p-3 bg-amber-900/30 border border-amber-700 rounded text-sm text-amber-200">
+              <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded text-sm text-amber-800 dark:text-amber-200">
                 <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                 <div>
                   <div className="font-medium">{t('failureDetection.externalUrlMissing')}</div>
@@ -282,7 +311,7 @@ export function FailureDetectionSettings() {
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between">
                   <span className="text-bambu-gray">{t('failureDetection.serviceRunning')}</span>
-                  <span className={status.is_running ? 'text-green-400' : 'text-red-400'}>
+                  <span className={status.is_running ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}>
                     {status.is_running ? t('common.yes') : t('common.no')}
                   </span>
                 </div>
@@ -293,7 +322,7 @@ export function FailureDetectionSettings() {
                   </span>
                 </div>
                 {status.last_error && (
-                  <div className="flex items-start gap-2 text-red-400">
+                  <div className="flex items-start gap-2 text-red-700 dark:text-red-400">
                     <X className="w-4 h-4 mt-0.5 flex-shrink-0" />
                     <span className="break-words">{status.last_error}</span>
                   </div>
@@ -308,10 +337,10 @@ export function FailureDetectionSettings() {
                         const printer = printers?.find((p) => String(p.id) === pid);
                         const colorClass =
                           info.class === 'failure'
-                            ? 'text-red-400'
+                            ? 'text-red-700 dark:text-red-400'
                             : info.class === 'warning'
-                              ? 'text-amber-400'
-                              : 'text-green-400';
+                              ? 'text-amber-700 dark:text-amber-400'
+                              : 'text-green-700 dark:text-green-400';
                         return (
                           <div key={pid} className="flex justify-between">
                             <span className="text-white">{printer?.name ?? `Printer ${pid}`}</span>
@@ -350,9 +379,9 @@ export function FailureDetectionSettings() {
                   const printer = printers?.find((p) => p.id === ev.printer_id);
                   const colorClass =
                     ev.class === 'failure'
-                      ? 'text-red-400'
+                      ? 'text-red-700 dark:text-red-400'
                       : ev.class === 'warning'
-                        ? 'text-amber-400'
+                        ? 'text-amber-700 dark:text-amber-400'
                         : 'text-bambu-gray';
                   return (
                     <div key={idx} className="flex justify-between gap-2 py-1 border-b border-gray-800">

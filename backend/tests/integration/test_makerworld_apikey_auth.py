@@ -119,7 +119,7 @@ class TestStatusEndpoint:
             headers={"X-API-Key": key},
         )
         assert resp.status_code == 200, resp.text
-        assert resp.json() == {"has_cloud_token": True, "can_download": True}
+        assert resp.json() == {"has_cloud_token": True, "can_download": True, "sign_in_expired": False}
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -143,7 +143,7 @@ class TestStatusEndpoint:
             headers={"X-API-Key": key},
         )
         assert resp.status_code == 200
-        assert resp.json() == {"has_cloud_token": False, "can_download": False}
+        assert resp.json() == {"has_cloud_token": False, "can_download": False, "sign_in_expired": False}
 
 
 class TestResolveEndpoint:
@@ -299,4 +299,4 @@ class TestJwtPathUnchanged:
             headers={"Authorization": f"Bearer {admin_token}"},
         )
         assert resp.status_code == 200
-        assert resp.json() == {"has_cloud_token": True, "can_download": True}
+        assert resp.json() == {"has_cloud_token": True, "can_download": True, "sign_in_expired": False}

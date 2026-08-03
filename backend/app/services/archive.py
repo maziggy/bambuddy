@@ -69,13 +69,37 @@ def resolve_display_stem(filename: str) -> str:
     return Path(name).stem
 
 
+def _read_plate_index(plate) -> int | None:
+    """Return the 1-based index of a ``slice_info.config`` ``<plate>`` element, or None.
+
+    Bambu Studio and OrcaSlicer record it as a ``<metadata key="index"
+    value="N"/>`` child — there is no ``plate_idx`` attribute on ``<plate>``
+    itself, so an XPath predicate on one never matches (#2522).
+    """
+    for meta in plate.findall("metadata"):
+        if meta.get("key") == "index":
+            value = meta.get("value")
+            if not value:
+                return None
+            try:
+                return int(value)
+            except ValueError:
+                return None
+    return None
+
+
 def peek_plate_index_in_3mf(file_path: Path) -> int | None:
-    """Return the plate index recorded inside a Bambu 3MF, or None.
+    """Return the plate index a single-plate Bambu 3MF represents, or None.
 
     Reads only ``Metadata/slice_info.config`` to keep this cheap — used by
     the print-start callback to verify that the 3MF we just downloaded over
     FTP actually matches the plate the printer is running (#1204). The full
     ThreeMFParser does much more work and runs later inside ArchiveService.
+
+    An all-plates export carries every plate, so "which plate is this file"
+    has no answer; returning None there keeps the #1204 guard from reading
+    plate 1 out of such a file, declaring a mismatch against the plate that
+    is really running, and discarding a perfectly good 3MF (#2522).
     """
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
@@ -83,20 +107,12 @@ def peek_plate_index_in_3mf(file_path: Path) -> int | None:
                 return None
             content = zf.read("Metadata/slice_info.config").decode()
             root = ET.fromstring(content)
-            plate = root.find(".//plate")
-            if plate is None:
+            plates = root.findall(".//plate")
+            if len(plates) != 1:
                 return None
-            for meta in plate.findall("metadata"):
-                if meta.get("key") == "index":
-                    value = meta.get("value")
-                    if value:
-                        try:
-                            return int(value)
-                        except ValueError:
-                            return None
+            return _read_plate_index(plates[0])
     except Exception:
         return None
-    return None
 
 
 _PLATE_SUFFIX_RE = re.compile(r"^(.*?)(\s*-\s*Plate\s+|_plate_)(\d+)$", re.IGNORECASE)
@@ -375,42 +391,39 @@ class ThreeMFParser:
             pass  # G-code header parsing is best-effort; metadata may come from other sources
 
     def _extract_filament_info(self, data: dict):
-        """Extract filament info, preferring non-support filaments."""
+        """Extract filament info from project settings — includes support
+        materials so a PLA-model / PVA-support project shows both on the
+        archive card badge (#1881).
+
+        Earlier code filtered by ``filament_is_support``; that hid PVA
+        (and any other soluble/breakaway support material) from the card
+        even when the user had explicitly configured it, and made source
+        3MFs look single-material until the print completed. slice_info
+        (parsed separately) is still preferred when present — it lists
+        only filaments the print actually consumes, this fallback only
+        runs on unsliced source 3MFs.
+        """
         try:
             filament_types = data.get("filament_type", [])
             filament_colors = data.get("filament_colour", [])
-            filament_is_support = data.get("filament_is_support", [])
 
             if not filament_types:
                 return
 
-            # Collect all non-support filaments
-            non_support_types = []
-            non_support_colors = []
+            unique_types: list[str] = []
+            for ftype in filament_types:
+                if ftype and ftype not in unique_types:
+                    unique_types.append(ftype)
 
-            for i, ftype in enumerate(filament_types):
-                is_support = filament_is_support[i] if i < len(filament_is_support) else "0"
-                if is_support == "0":
-                    if ftype and ftype not in non_support_types:
-                        non_support_types.append(ftype)
-                    if i < len(filament_colors) and filament_colors[i]:
-                        color = filament_colors[i]
-                        if color not in non_support_colors:
-                            non_support_colors.append(color)
+            unique_colors: list[str] = []
+            for color in filament_colors:
+                if color and color not in unique_colors:
+                    unique_colors.append(color)
 
-            # Fallback to first filament if all are support
-            if not non_support_types and filament_types:
-                non_support_types = [filament_types[0]]
-            if not non_support_colors and filament_colors:
-                non_support_colors = [filament_colors[0]]
-
-            # Store filament type(s)
-            if non_support_types:
-                self.metadata["filament_type"] = ", ".join(non_support_types)
-
-            # Store all colors as comma-separated (for multi-color display)
-            if non_support_colors:
-                self.metadata["filament_color"] = ",".join(non_support_colors)
+            if unique_types:
+                self.metadata["filament_type"] = ", ".join(unique_types)
+            if unique_colors:
+                self.metadata["filament_color"] = ",".join(unique_colors)
 
         except Exception:
             pass  # Filament info is optional; fall back to slice_info values
@@ -618,26 +631,26 @@ def extract_printable_objects_from_3mf(
             content = zf.read("Metadata/slice_info.config").decode()
             root = ET.fromstring(content)
 
-            # Find the correct plate
-            if plate_number:
-                plate = root.find(f".//plate[@plate_idx='{plate_number}']")
-                if plate is None:
-                    plate = root.find(".//plate")
-            else:
-                plate = root.find(".//plate")
-
-            if plate is None:
+            plates = root.findall(".//plate")
+            if not plates:
                 return printable_objects
 
-            # Get actual plate index from metadata (sliced files only have one plate)
-            plate_idx = plate_number or 1
-            for meta in plate.findall("metadata"):
-                if meta.get("key") == "index":
-                    try:
-                        plate_idx = int(meta.get("value", "1"))
-                    except ValueError:
-                        pass  # Use default plate_idx if value is non-numeric
-                    break
+            # Pick the plate that is actually printing. An all-plates export
+            # lists every plate, so without this we offered the objects (and
+            # the marker positions) of plate 1 whatever the printer was
+            # running (#2522). Falling back to the first plate keeps the
+            # single-plate export — the common case — working when the caller
+            # has no plate to give us.
+            plate = None
+            if plate_number is not None:
+                plate = next((p for p in plates if _read_plate_index(p) == plate_number), None)
+            if plate is None:
+                plate = plates[0]
+
+            # Derive plate_idx from the plate we settled on, never from the
+            # requested one: on a fallback they differ, and plate_idx also
+            # selects the plate_N.json the positions come from.
+            plate_idx = _read_plate_index(plate) or 1
 
             # Load position data from plate_N.json if we need positions
             # Build a lookup by name - use list to handle duplicate names
@@ -1129,6 +1142,10 @@ class ArchiveService:
         project_id: int | None = None,
         subtask_id: str | None = None,
         prefer_filename_for_name: bool = False,
+        plate_id: int | None = None,
+        library_file_id: int | None = None,
+        slicer_ams_mapping: list[int] | None = None,
+        slicer_ams_mapping_printer_id: int | None = None,
     ) -> PrintArchive | None:
         """Archive a 3MF file with metadata.
 
@@ -1141,6 +1158,8 @@ class ArchiveService:
                 stored with UUID names)
             project_id: Project to associate this archive with (optional, set when triggered
                 from the project view)
+            library_file_id: Library file this run was dispatched from (optional,
+                set by the queue scheduler — powers per-file project progress, #1897)
             subtask_id: MQTT-provided task identifier (optional). Used to match an
                 existing archive across a backend restart mid-print so the
                 original row can be resumed instead of cancelled (#972).
@@ -1149,6 +1168,21 @@ class ArchiveService:
                 metadata. Used by virtual-printer flows so users who rename a job in
                 BambuStudio's "send to printer" dialog see that name instead of the
                 creator-baked title (#1152).
+            slicer_ams_mapping: The slicer's own live-resolved AMS-slot pick, to persist
+                onto `extra_data.slicer_ams_mapping` for a later reprint to reuse. Deliberately
+                a distinct parameter, not read off `print_data["ams_mapping"]` — that key is
+                populated on every MQTT print-start callback regardless of source (bambu_mqtt's
+                request-topic interception captures it for slicer-direct LAN prints too), so
+                promoting it unconditionally would stamp every archive on installs with no
+                virtual printer at all. Callers that gate this behind an opt-in (the VP-queue
+                "Save AMS mapping" toggle) pass it explicitly; everyone else leaves it unset.
+            slicer_ams_mapping_printer_id: The printer `slicer_ams_mapping`'s tray IDs were
+                resolved against. Required alongside `slicer_ams_mapping` — a global tray ID
+                only means something relative to one printer's specific AMS layout, so a
+                mapping saved without knowing which printer it came from can't be safely
+                reused later on any printer, including the same one (there'd be no way to
+                tell). A model-based VP with no fixed target printer has no valid value to
+                pass here and must leave both params unset.
         """
         # Verify printer exists if specified
         if printer_id is not None:
@@ -1237,6 +1271,25 @@ class ArchiveService:
         if print_data:
             metadata["_print_data"] = print_data
 
+        # Promote the slicer's own live-resolved AMS-slot pick, when the caller
+        # explicitly opted in (see the `slicer_ams_mapping` param docstring for
+        # why this is NOT read off `print_data["ams_mapping"]`), to a stable
+        # top-level extra_data key. Lets a later reprint reuse the exact tray
+        # the user picked/BambuStudio auto-matched at slice time instead of the
+        # scheduler re-deriving one from just the file's static type/color,
+        # which can land on the wrong physical spool when that match isn't
+        # unique. Top-level (not nested under the `_print_data` diagnostic bag)
+        # so API consumers have a single stable path:
+        # `archive.extra_data.slicer_ams_mapping`. Stored together with the
+        # printer it was resolved against — see `slicer_ams_mapping_printer_id`
+        # param docstring — so a later reprint can tell whether it's even
+        # applicable before trying to reuse it.
+        if slicer_ams_mapping and slicer_ams_mapping_printer_id is not None:
+            metadata["slicer_ams_mapping"] = {
+                "mapping": slicer_ams_mapping,
+                "printer_id": slicer_ams_mapping_printer_id,
+            }
+
         # Determine status and timestamps
         status = print_data.get("status", "completed") if print_data else "archived"
         started_at = datetime.now(timezone.utc) if status == "printing" else None
@@ -1300,7 +1353,9 @@ class ArchiveService:
             extra_data=metadata,
             created_by_id=created_by_id,
             project_id=project_id,
+            library_file_id=library_file_id,
             subtask_id=subtask_id,
+            plate_id=plate_id,
         )
 
         self.db.add(archive)

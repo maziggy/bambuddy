@@ -78,7 +78,7 @@ async def queue_item(db_session):
     archive = PrintArchive(
         filename="Plate_1.gcode.3mf",
         print_name="Plate 1",
-        file_path="/tmp/queue1670_plate.3mf",
+        file_path="/tmp/queue1670_plate.3mf",  # nosec B108
         file_size=1024,
         content_hash="queue1670hash",
         status="completed",

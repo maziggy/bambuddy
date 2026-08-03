@@ -360,28 +360,37 @@ def _validate_icon_url(v: str | None) -> str | None:
 
 
 def _validate_issuer_url(v: str | None) -> str | None:
-    """Nit4: Reject non-HTTPS issuer URLs and private/loopback/link-local hosts.
+    """Reject non-HTTPS issuer URLs and SSRF-unsafe hosts.
 
-    HTTP is no longer accepted — OIDC providers must be reachable over TLS.
-    Private-network and loopback addresses are rejected to prevent SSRF attacks
-    where an admin-supplied URL could reach internal services.
+    An OIDC provider must be reachable over TLS on the public internet, so
+    this uses the public-internet policy: private, loopback and link-local
+    addresses are all rejected.
+
+    Delegates to the runtime guard ``assert_safe_public_https_url`` for the
+    same reason ``_validate_icon_url`` does — no policy drift between the
+    schema layer and the fetcher. The hand-rolled version this replaced
+    checked only ``is_private | is_loopback | is_link_local``, which left
+    numeric-encoded IPs (``https://2130706433/``), IPv4-mapped IPv6
+    (``https://[::ffff:127.0.0.1]/``), multicast and unspecified addresses
+    able to express a target the policy meant to forbid. The guard's
+    docstring already claimed the two were consistent; now they are.
+
+    Lazy-imported because ``_oidc_helpers`` lives under ``api/routes/`` and
+    schemas avoid top-level imports from that layer.
     """
-    import ipaddress
-    from urllib.parse import urlparse
-
     if v is None:
         return v
     if not v.startswith("https://"):
         raise ValueError("issuer_url must start with https://")
-    host = urlparse(v).hostname or ""
+    from backend.app.api.routes._oidc_helpers import assert_safe_public_https_url
+
     try:
-        addr = ipaddress.ip_address(host)
-        if addr.is_private or addr.is_loopback or addr.is_link_local:
-            raise ValueError("issuer_url must not point to a private, loopback, or link-local address")
+        assert_safe_public_https_url(v)
     except ValueError as exc:
-        if "issuer_url" in str(exc):
-            raise
-        # hostname is a domain name, not a bare IP — that's fine
+        # The guard's messages say "icon URL" — rewrite for this field so the
+        # user sees the setting they actually submitted.
+        detail = str(exc).replace("icon URL", "issuer_url")
+        raise ValueError(detail) from exc
     return v
 
 
@@ -518,6 +527,9 @@ class OIDCProviderResponse(BaseModel):
     icon_url: str | None = None
     default_group_id: int | None = None
     is_autologin: bool = False  # #1589
+    # #2593 — the UI renders this provider read-only; without the flag it would
+    # offer editable fields whose writes the API then refuses with 409.
+    is_env_managed: bool = False
     # Set explicitly in the route handler from `icon_content_type is not None`
     # rather than `@computed_field` (project policy) or `icon_data is not None`
     # (would trigger an async lazy-load on the deferred BLOB column).

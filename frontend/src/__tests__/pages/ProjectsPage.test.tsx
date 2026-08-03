@@ -2,7 +2,7 @@
  * Tests for the ProjectsPage component.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
@@ -377,6 +377,93 @@ describe('ProjectsPage', () => {
       // (including the action footer) off-screen.
       const card = document.querySelector('.max-h-\\[calc\\(100vh-2rem\\)\\]');
       expect(card).not.toBeNull();
+    });
+  });
+
+  describe('edit dialog seeds itself from the list payload (#2536)', () => {
+    /**
+     * The same ProjectModal is opened from the projects list and from the
+     * project detail page. The detail page hands it a full project; the list
+     * hands it a list item. Reporter saw an empty tags field when editing from
+     * the list, because the list payload didn't carry tags — and, unreported,
+     * the dialog then submitted its default priority over the stored one.
+     */
+    const listItem = {
+      id: 7,
+      name: 'Spool holder',
+      description: null,
+      color: '#00ae42',
+      status: 'active',
+      target_count: null,
+      target_parts_count: null,
+      budget: null,
+      tags: 'prototype,client-work',
+      due_date: '2026-08-01T12:00:00Z',
+      priority: 'high',
+      created_at: '2024-01-01T00:00:00Z',
+      archive_count: 0,
+      total_items: 0,
+      completed_count: 0,
+      failed_count: 0,
+      queue_count: 0,
+      progress_percent: null,
+      archives: [],
+      url: null,
+      cover_image_filename: null,
+    };
+
+    const renderModal = (onSave: (data: unknown) => void) =>
+      render(
+        <ProjectModal
+          project={listItem}
+          onClose={() => {}}
+          onSave={onSave as never}
+          isLoading={false}
+          currencySymbol="€"
+          t={((k: string) => k) as never}
+        />,
+      );
+
+    const tagsInput = () => screen.getByPlaceholderText('projects.tagsPlaceholder') as HTMLInputElement;
+    const dueDateInput = () => document.querySelector('input[type="date"]') as HTMLInputElement;
+    const prioritySelect = () =>
+      Array.from(document.querySelectorAll('select')).find((s) =>
+        s.querySelector('option[value="urgent"]'),
+      ) as HTMLSelectElement;
+
+    it('prefills tags, due date and priority from a list item', () => {
+      renderModal(() => {});
+
+      expect(tagsInput().value).toBe('prototype,client-work');
+      expect(dueDateInput().value).toBe('2026-08-01');
+      expect(prioritySelect().value).toBe('high');
+    });
+
+    it('does not downgrade a stored priority when saving an untouched field', async () => {
+      const user = userEvent.setup();
+      const onSave = vi.fn();
+      renderModal(onSave);
+
+      await user.click(screen.getByRole('button', { name: 'common.save' }));
+
+      // Before the fix the dialog fell back to its 'normal' default and sent
+      // that, silently demoting a high/urgent project edited from the list.
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({ priority: 'high', tags: 'prototype,client-work' }),
+      );
+    });
+
+    it('sends null when an existing tag list is cleared', async () => {
+      const user = userEvent.setup();
+      const onSave = vi.fn();
+      renderModal(onSave);
+
+      await user.clear(tagsInput());
+      await user.click(screen.getByRole('button', { name: 'common.save' }));
+
+      // undefined would drop the key from the PATCH body and the backend would
+      // keep the old tags — the field has to be cleared explicitly.
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ tags: null }));
     });
   });
 });

@@ -353,9 +353,9 @@ export function QueueTimelineView({
                   <div className="w-32 sm:w-40 shrink-0 px-3 py-3 border-r border-bambu-dark-tertiary flex items-center gap-2">
                     <PrinterIcon className={`w-3.5 h-3.5 shrink-0 ${
                       lane.printerId == null && lane.targetModel == null
-                        ? 'text-orange-400'
+                        ? 'text-orange-600 dark:text-orange-400'
                         : lane.targetModel
-                          ? 'text-blue-400'
+                          ? 'text-blue-600 dark:text-blue-400'
                           : 'text-bambu-green'
                     }`} />
                     <span className="text-sm text-white truncate">{lane.label}</span>

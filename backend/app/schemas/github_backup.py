@@ -157,6 +157,19 @@ class GitHubBackupLogResponse(BaseModel):
         from_attributes = True
 
 
+class CloudAccountCounts(BaseModel):
+    """How many connected cloud accounts a backup would collect presets from.
+
+    Counts only, never identities: with auth enabled these are other users'
+    accounts, and whoever administers the backup has no business learning who
+    signed in to what. The number is enough to answer the only question the UI
+    asks — is the Cloud Profiles category worth offering at all (#2717).
+    """
+
+    bambu: int = Field(default=0, description="Connected Bambu Cloud accounts")
+    orca: int = Field(default=0, description="Connected Orca Cloud accounts")
+
+
 class GitHubBackupStatus(BaseModel):
     """Schema for current backup status."""
 

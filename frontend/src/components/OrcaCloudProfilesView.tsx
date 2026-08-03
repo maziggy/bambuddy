@@ -257,21 +257,21 @@ export function OrcaCloudProfilesView({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <PresetColumn
-            icon={<Droplet className="w-4 h-4 text-amber-400" />}
+            icon={<Droplet className="w-4 h-4 text-amber-600 dark:text-amber-400" />}
             title={t('profiles.cloudView.columns.filament')}
             presets={presetsByType('filament')}
             emptyText={t('profiles.cloudView.noFilamentPresets')}
             onSelect={setSelectedSetting}
           />
           <PresetColumn
-            icon={<Settings2 className="w-4 h-4 text-blue-400" />}
+            icon={<Settings2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />}
             title={t('profiles.cloudView.columns.process')}
             presets={presetsByType('process')}
             emptyText={t('profiles.cloudView.noProcessPresets')}
             onSelect={setSelectedSetting}
           />
           <PresetColumn
-            icon={<PrinterIcon className="w-4 h-4 text-purple-400" />}
+            icon={<PrinterIcon className="w-4 h-4 text-purple-600 dark:text-purple-400" />}
             title={t('profiles.cloudView.columns.printer')}
             presets={presetsByType('printer')}
             emptyText={t('profiles.cloudView.noPrinterPresets')}

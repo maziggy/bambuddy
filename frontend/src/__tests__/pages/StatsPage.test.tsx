@@ -488,6 +488,46 @@ describe('StatsPage', () => {
       });
     });
 
+    it('Most Expensive includes per-print energy cost (#1432)', async () => {
+      // Cheap filament + expensive heated-chamber print must outrank a
+      // pricier-filament print once measured energy cost is added in.
+      server.use(
+        http.get('/api/v1/archives/slim', () =>
+          HttpResponse.json([
+            {
+              id: 20, created_at: '2024-03-01T10:00:00Z',
+              started_at: '2024-03-01T10:00:00Z',
+              completed_at: '2024-03-01T14:00:00Z',
+              print_name: 'PLA Filament Heavy', status: 'completed',
+              printer_id: 1, filament_type: 'PLA', filament_color: '#00FF00',
+              filament_used_grams: 200, actual_time_seconds: 14400,
+              print_time_seconds: 14000, cost: 5.00,
+              energy_kwh: null, energy_cost: null, quantity: 1,
+            },
+            {
+              id: 21, created_at: '2024-03-02T10:00:00Z',
+              started_at: '2024-03-02T10:00:00Z',
+              completed_at: '2024-03-02T20:00:00Z',
+              print_name: 'ABS Energy Hog', status: 'completed',
+              printer_id: 1, filament_type: 'ABS', filament_color: '#FF0000',
+              filament_used_grams: 100, actual_time_seconds: 36000,
+              print_time_seconds: 35000, cost: 4.00,
+              energy_kwh: 8.5, energy_cost: 2.55, quantity: 1,
+            },
+          ]),
+        ),
+      );
+
+      render(<StatsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Most Expensive')).toBeInTheDocument();
+      });
+      // 4.00 + 2.55 = 6.55 beats 5.00 flat
+      expect(screen.getByText('$6.55')).toBeInTheDocument();
+      expect(screen.getAllByText('ABS Energy Hog').length).toBeGreaterThan(0);
+    });
+
     it('shows success streak record', async () => {
       render(<StatsPage />);
 

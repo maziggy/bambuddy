@@ -34,10 +34,8 @@ class FTPProfile:
 
     # Pin the SSL context's ``maximum_version`` to TLS 1.2.
     #
-    # Python 3.13's default ``ssl.create_default_context()`` negotiates
-    # TLS 1.3 when both peers support it. The Bambuddy Docker image is
-    # ``python:3.13-slim-trixie``, so every Docker user gets 1.3 by
-    # default. Some Bambu printer firmwares (P2S 01.02.00.00 confirmed
+    # ``ssl.create_default_context()`` negotiates TLS 1.3 when both peers
+    # support it. Some Bambu printer firmwares (P2S 01.02.00.00 confirmed
     # by @iitazz, #1401) implement session reuse on the FTPS data
     # channel against an old vsFTPd build that doesn't tolerate TLS
     # 1.3's asynchronous session-ticket model: the data channel gets
@@ -47,12 +45,18 @@ class FTPProfile:
     # the printer). Capping to TLS 1.2 makes session resumption
     # synchronous and the upload completes normally.
     #
+    # Note this cap only bites on models that *offer* 1.3 in the first
+    # place. Probed directly on :990, an X1C and an H2D both refuse
+    # TLS 1.0, 1.1 and 1.3 with a handshake_failure alert and complete
+    # only on 1.2 — so for those models the cap is a no-op and the
+    # negotiated version was never 1.3. The P2S evidently does offer
+    # 1.3, which is why it alone surfaced the session-reuse bug.
+    # (P1S untested; no claim made either way.)
+    #
     # **Defaults to False** — only applied to printer models where a
-    # reporter has confirmed the symptom. Existing P1S / X1C / H2D
-    # installs that work fine today stay on the negotiated TLS 1.3.
-    # This is deliberately conservative; flipping a printer to the
-    # capped path is a config edit when a new model surfaces the
-    # same bug.
+    # reporter has confirmed the symptom. This is deliberately
+    # conservative; flipping a printer to the capped path is a config
+    # edit when a new model surfaces the same bug.
     cap_tls_v1_2: bool = False
 
 
@@ -87,6 +91,19 @@ _PROFILES: dict[str, FTPProfile] = {
     "X2D": FTPProfile(
         cap_tls_v1_2=True,
     ),
+    # H2C firmware 01.02.00.00 (#2582, reporter @gyrene2083) — same H2
+    # generation and same firmware line as P2S, and with no profile it
+    # ran on the Python-default TLS 1.3. Reported symptom is exactly the
+    # one the X2D comment describes: the sliced 3MF intermittently fails
+    # to come off the printer over FTPS, so the print drops to the no-3MF
+    # fallback archive with no slice data — which is why the Print Log
+    # shows no filament and nothing is deducted. Cap to TLS 1.2 by analogy
+    # with P2S (intermittent "sometimes works" points at the session-reuse
+    # variant, not X2D's deterministic handshake failure); if a debug
+    # capture shows a different FTPS variant the entry stays the tuning slot.
+    "H2C": FTPProfile(
+        cap_tls_v1_2=True,
+    ),
 }
 
 # SSDP internal codes that should resolve to a display-name profile.
@@ -94,6 +111,8 @@ _PROFILES: dict[str, FTPProfile] = {
 _MODEL_ALIASES: dict[str, str] = {
     "N7": "P2S",  # P2S internal SSDP code
     "N6": "X2D",  # X2D internal SSDP code
+    "O1C": "H2C",  # H2C internal SSDP code
+    "O1C2": "H2C",  # H2C dual-nozzle variant SSDP code
 }
 
 

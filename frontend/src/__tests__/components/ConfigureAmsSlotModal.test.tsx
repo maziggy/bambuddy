@@ -536,6 +536,198 @@ describe('ConfigureAmsSlotModal', () => {
     });
   });
 
+  describe('Generic presets and the K-profile picker (#2710)', () => {
+    // Reporter's printer: nine Flow-Dynamics entries, every one of them
+    // calibrated against Generic PLA (filament_id GFL99) and named after the
+    // spool's colour rather than its material. Bambu Studio lists all nine for
+    // a Generic PLA slot; Bambuddy showed only the one already bound to the
+    // slot via cali_idx.
+    const genericPlaProfiles = [
+      'Black PLA+', 'Dark Brown', 'Glow', 'Gray', 'Lt Brown',
+      'Marble', 'Orange PLA', 'Sunlu White PLA+', 'White PLA+ Duramic',
+    ].map((name, i) => ({
+      slot_id: i + 1,
+      extruder_id: 0,
+      nozzle_id: 'HH00-0.4',
+      nozzle_diameter: '0.4',
+      filament_id: 'GFL99',
+      name,
+      k_value: `0.0${30 + i}`,
+      n_coef: '0',
+      ams_id: 0,
+      tray_id: 0,
+      setting_id: '',
+    }));
+
+    const genericPlaSlot = {
+      ...defaultProps.slotInfo,
+      savedPresetId: 'builtin_GFL99',
+      extruderId: 0,
+    };
+
+    beforeEach(() => {
+      (api.getBuiltinFilaments as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { filament_id: 'GFL99', name: 'Generic PLA', filament_type: 'PLA' },
+      ]);
+      (api.getKProfiles as ReturnType<typeof vi.fn>).mockResolvedValue({
+        profiles: genericPlaProfiles,
+      });
+    });
+
+    it('offers every Generic PLA profile when the slot preset is Generic PLA', async () => {
+      render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={genericPlaSlot} />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: /Dark Brown/ })).toBeInTheDocument();
+      });
+      // All nine, not just the one bound via cali_idx — matching the printer's
+      // own calibration table for GFL99.
+      for (const profile of genericPlaProfiles) {
+        expect(
+          screen.getByRole('option', { name: `${profile.name} (K=${profile.k_value})` }),
+        ).toBeInTheDocument();
+      }
+    });
+
+    it('offers them on a freshly reset slot with no active cali_idx', async () => {
+      // "When I reset the AMS slot, the generic PLA shows no k-values at all."
+      // With no cali_idx the #1689 safety net has nothing to surface, so the
+      // list came back empty; the id match has to stand on its own.
+      render(
+        <ConfigureAmsSlotModal
+          {...defaultProps}
+          slotInfo={{ ...genericPlaSlot, caliIdx: 0 }}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: /Marble/ })).toBeInTheDocument();
+      });
+      expect(screen.getByRole('option', { name: /Glow/ })).toBeInTheDocument();
+    });
+
+    it('matches on name when the profile carries no filament_id at all', async () => {
+      // Not every firmware fills filament_id in extrusion_cali_get. "Generic"
+      // is not a brand, so the name path must fall back to the material
+      // instead of demanding "GENERIC" in the profile name.
+      (api.getKProfiles as ReturnType<typeof vi.fn>).mockResolvedValue({
+        profiles: [
+          { ...genericPlaProfiles[0], filament_id: '', name: 'Orange PLA' },
+          { ...genericPlaProfiles[1], filament_id: '', name: 'Dark Brown' },
+        ],
+      });
+      render(<ConfigureAmsSlotModal {...defaultProps} slotInfo={genericPlaSlot} />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: /Orange PLA/ })).toBeInTheDocument();
+      });
+    });
+
+    it('does not sweep generic profiles into a brand preset', async () => {
+      // Guard against the id path widening: "Bambu PLA Basic" is GFL05, so
+      // GFL99 profiles must still be filtered out of the matching group and
+      // only reachable through the explicit "other profiles" group.
+      render(
+        <ConfigureAmsSlotModal
+          {...defaultProps}
+          slotInfo={{ ...defaultProps.slotInfo, savedPresetId: 'GFSL05_09', extruderId: 0 }}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Bambu PLA Basic @BBL X1C')).toBeInTheDocument();
+      });
+      // Every GFL99 profile is demoted to the other group: the brand gate on
+      // "Bambu" still applies, and none of these names carry it.
+      for (const profile of genericPlaProfiles) {
+        const option = screen.getByRole('option', { name: `${profile.name} (K=${profile.k_value})` });
+        expect(option.closest('optgroup')).toHaveAttribute(
+          'label',
+          'Other K profiles on this printer',
+        );
+      }
+    });
+
+    it("offers the printer's other profiles even when nothing matches the preset", async () => {
+      // The escape hatch: a PETG preset matches none of the PLA profiles, but
+      // the user can still reach every profile the printer holds instead of
+      // being sent to the slicer.
+      (api.getBuiltinFilaments as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { filament_id: 'GFG99', name: 'Generic PETG', filament_type: 'PETG' },
+      ]);
+      render(
+        <ConfigureAmsSlotModal
+          {...defaultProps}
+          slotInfo={{ ...genericPlaSlot, savedPresetId: 'builtin_GFG99', caliIdx: 0 }}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: /Dark Brown/ })).toBeInTheDocument();
+      });
+      expect(screen.getByRole('option', { name: /Dark Brown/ }).closest('optgroup')).toHaveAttribute(
+        'label',
+        'Other K profiles on this printer',
+      );
+    });
+
+    it('sends the cali_idx of a profile picked from the other-profiles group', async () => {
+      (api.getBuiltinFilaments as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { filament_id: 'GFG99', name: 'Generic PETG', filament_type: 'PETG' },
+      ]);
+      render(
+        <ConfigureAmsSlotModal
+          {...defaultProps}
+          slotInfo={{ ...genericPlaSlot, savedPresetId: 'builtin_GFG99', caliIdx: 0 }}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: /Marble/ })).toBeInTheDocument();
+      });
+      const marble = genericPlaProfiles.find(p => p.name === 'Marble')!;
+      fireEvent.change(screen.getByRole('combobox'), {
+        target: { value: `${marble.name}|${marble.k_value}` },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /Configure Slot/i }));
+
+      await waitFor(() => {
+        expect(api.configureAmsSlot).toHaveBeenCalled();
+      });
+      const payload = (api.configureAmsSlot as ReturnType<typeof vi.fn>).mock.calls[0][3];
+      expect(payload.cali_idx).toBe(marble.slot_id);
+      expect(payload.kprofile_filament_id).toBe('GFL99');
+    });
+
+    it('distinguishes two profiles that share a name but differ in K', async () => {
+      // The picker used to key options by name alone, so same-named profiles
+      // were indistinguishable and the first always won.
+      (api.getKProfiles as ReturnType<typeof vi.fn>).mockResolvedValue({
+        profiles: [
+          { ...genericPlaProfiles[0], slot_id: 1, name: 'PLA', k_value: '0.020' },
+          { ...genericPlaProfiles[1], slot_id: 2, name: 'PLA', k_value: '0.045' },
+        ],
+      });
+      render(
+        <ConfigureAmsSlotModal
+          {...defaultProps}
+          slotInfo={{ ...genericPlaSlot, caliIdx: 0 }}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: /K=0.045/ })).toBeInTheDocument();
+      });
+      fireEvent.change(screen.getByRole('combobox'), { target: { value: 'PLA|0.045' } });
+      fireEvent.click(screen.getByRole('button', { name: /Configure Slot/i }));
+
+      await waitFor(() => {
+        expect(api.configureAmsSlot).toHaveBeenCalled();
+      });
+      expect((api.configureAmsSlot as ReturnType<typeof vi.fn>).mock.calls[0][3].cali_idx).toBe(2);
+    });
+  });
+
   it('does not include the active K-profile when caliIdx is 0 or null (#1689 guard)', async () => {
     // cali_idx == 0 / null means no profile is active (printer default 0.020).
     // The safety net only triggers for activeIdx > 0 — otherwise unrelated

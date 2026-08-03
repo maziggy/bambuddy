@@ -438,6 +438,11 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                         {Math.max(0, Math.round(spool.label_weight - spool.weight_used))} / {spool.label_weight}g
                       </p>
                     )}
+                    {spool.note && (
+                      <p className="text-[10px] text-bambu-gray/70 mt-1 truncate" title={spool.note}>
+                        {spool.note}
+                      </p>
+                    )}
                   </button>
                 ))}
               </div>
@@ -513,6 +518,11 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
                                 {Math.max(0, Math.round(spool.label_weight - spool.weight_used))} / {spool.label_weight}g
                               </p>
                             )}
+                            {spool.note && (
+                              <p className="text-[10px] text-bambu-gray/70 mt-1 truncate" title={spool.note}>
+                                {spool.note}
+                              </p>
+                            )}
                           </button>
                         ))}
                     </div>
@@ -562,7 +572,7 @@ export function AssignSpoolModal({ isOpen, onClose, printerId, amsId, trayId, tr
 
 
         {assignMutation.isError && (
-          <div className="mx-4 mb-4 p-2 bg-red-500/20 border border-red-500/50 rounded text-sm text-red-400">
+          <div className="mx-4 mb-4 p-2 bg-red-100 dark:bg-red-500/20 border border-red-300 dark:border-red-500/50 rounded text-sm text-red-700 dark:text-red-400">
             {(assignMutation.error as Error).message}
           </div>
         )}

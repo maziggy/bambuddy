@@ -501,6 +501,12 @@ class TestCloudRouteRegionPlumbing:
 
         def handler(request: httpx.Request) -> httpx.Response:
             captured.append(str(request.url))
+            # The TOTP path now performs a CSRF handshake first (#2696): it
+            # fetches /api/csrf and refuses to submit the code unless that call
+            # yields a bbl_csrf_token cookie. Mint one here so region-routing
+            # tests reach the TFA POST they are actually asserting on.
+            if request.url.path == "/api/csrf":
+                return httpx.Response(204, headers={"set-cookie": "bbl_csrf_token=csrf-test-token; Path=/"})
             return httpx.Response(status, json=response_json)
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -574,6 +580,10 @@ class TestCloudRouteRegionPlumbing:
                 # TOTP endpoint lives on bambulab.cn (without the api. prefix),
                 # NOT bambulab.com — that's exactly the bug we just fixed.
                 assert any("bambulab.cn/api/sign-in/tfa" in url for url in captured_urls), captured_urls
+                # The CSRF handshake (#2696) must follow the same origin —
+                # fetching a token from the global site would hand the .cn
+                # endpoint a cookie it never issued.
+                assert any("bambulab.cn/api/csrf" in url for url in captured_urls), captured_urls
                 assert not any("bambulab.com" in url for url in captured_urls), captured_urls
         finally:
             set_shared_http_client(None)
@@ -583,11 +593,22 @@ class TestCloudRouteRegionPlumbing:
     @pytest.mark.integration
     async def test_cloud_status_exposes_stored_region(self, async_client: AsyncClient):
         """GET /cloud/status returns the stored region so the UI can render
-        'Connected (China)' after a reload."""
+        'Connected (China)' after a reload.
+
+        ``validate_token`` is stubbed because the endpoint now asks Bambu whether
+        the stored token is still accepted rather than assuming it is — without
+        the stub this test would make a live call to api.bambulab.cn with a fake
+        token, get a 401, and correctly report the session as expired. Region
+        plumbing is what's under test here.
+        """
         from backend.app.api.routes.cloud import store_token
         from backend.app.core.database import async_session
+        from backend.app.services.bambu_cloud import BambuCloudService
 
-        with patch("backend.app.core.auth.is_auth_enabled", return_value=False):
+        with (
+            patch("backend.app.core.auth.is_auth_enabled", return_value=False),
+            patch.object(BambuCloudService, "validate_token", AsyncMock(return_value=True)),
+        ):
             async with async_session() as db:
                 await store_token(db, "cn-token", "token-auth", "china", user=None)
 

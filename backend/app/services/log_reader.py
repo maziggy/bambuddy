@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
+from backend.app.core.logging_filters import URL_CREDENTIALS_PATTERN
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.models.user import User
@@ -24,6 +25,21 @@ logger = logging.getLogger(__name__)
 # The trace_id is left as part of the message group — callers that need it can
 # parse it out; the log-health scanner does not.
 LOG_LINE_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2},\d{3})\s+(\w+)\s+\[([^\]]+)\]\s+(.*)$")
+
+# LDAP Distinguished Names carry PII — the leaf ``CN=`` is the user's real name
+# (#2681). Match a run of at least two ``attr=value`` RDN components joined by
+# commas, where ``attr`` is a known LDAP attribute type. Requiring two components
+# keeps this from clobbering an incidental ``key=value`` in an unrelated log line,
+# while still catching DNs wherever they surface — the deliberate "auth successful"
+# line, ldap3 exception strings, and group DNs alike. Bias is intentionally toward
+# redaction: over-redacting a rare debug line to ``[DN]`` is a safe failure; leaking
+# a name is not.
+# The value char class excludes `<>;+` — RFC 4514 requires those escaped inside a
+# DN value, so an unescaped one marks the end of the DN, not part of it. That stops
+# the final (comma-unbounded) component from greedily swallowing trailing log text
+# such as ``… -> GroupName``.
+_LDAP_RDN = r"(?:CN|OU|DC|UID|O|L|ST|C|SN|GN|DN|E|MAIL|STREET|GIVENNAME|SURNAME)=[^,\n<>;+]+"
+_LDAP_DN_PATTERN = re.compile(rf"(?i)\b{_LDAP_RDN}(?:\s*,\s*{_LDAP_RDN})+")
 
 
 class LogEntry(BaseModel):
@@ -153,11 +169,17 @@ def sanitize_log_content(content: str, sensitive_strings: dict[str, str] | None 
                 continue  # Skip very short strings to prevent over-redaction
             content = re.sub(re.escape(value), label, content)
 
-    # Replace credentials in URLs (e.g. http://user:pass@host, rtsps://bblp:code@host)
-    content = re.sub(r"((?:https?|rtsps?)://)[^/:@\s]+:[^/@\s]+@", r"\1[CREDENTIALS]@", content)
+    # Replace credentials in URLs (e.g. http://user:pass@host, rtsps://bblp:code@host).
+    # Shares its pattern with the log-pipeline redaction in ``core.logging_filters`` so
+    # the two can't drift; the bundle drops the username too, where the live log keeps
+    # it for diagnosis.
+    content = URL_CREDENTIALS_PATTERN.sub(r"\g<scheme>[CREDENTIALS]@", content)
 
     # Replace email addresses
     content = re.sub(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "[EMAIL]", content)
+
+    # Replace LDAP Distinguished Names (#2681) — PII on par with email.
+    content = _LDAP_DN_PATTERN.sub("[DN]", content)
 
     # Replace Bambu Lab printer serial numbers (format: 00M/01D/01S/01P/03W + alphanumeric, 12-16 chars total)
     content = re.sub(r"\b0[0-3][A-Z0-9][A-Z0-9]{9,13}\b", "[SERIAL]", content, flags=re.IGNORECASE)

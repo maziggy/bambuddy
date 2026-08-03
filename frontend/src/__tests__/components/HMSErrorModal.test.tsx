@@ -6,7 +6,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
-import { HMSErrorModal } from '../../components/HMSErrorModal';
+import { HMSErrorModal, filterKnownHMSErrors } from '../../components/HMSErrorModal';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 import type { HMSError } from '../../api/client';
@@ -23,6 +23,13 @@ const unknownError: HMSError = {
   attr: 0xFFFF,
   code: '0xFFFF',
   severity: 1,
+};
+
+// Error code 0700_8011 = AMS filament runout (#2587).
+const runoutError: HMSError = {
+  attr: 0x0700,
+  code: '0x8011',
+  severity: 2,
 };
 
 describe('HMSErrorModal', () => {
@@ -119,6 +126,110 @@ describe('HMSErrorModal', () => {
       await waitFor(() => {
         expect(onClose).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('runout guidance (#2587)', () => {
+    it('shows the generic runout text when no guidance is provided', () => {
+      render(<HMSErrorModal {...defaultProps} errors={[runoutError]} />);
+      expect(
+        screen.getByText('AMS filament ran out. Please insert a new filament into the same AMS slot.')
+      ).toBeInTheDocument();
+    });
+
+    it('names both the expected and ran-out slot when both are resolved', () => {
+      render(
+        <HMSErrorModal
+          {...defaultProps}
+          errors={[runoutError]}
+          runoutGuidance={{ expectedSlotLabel: 'AMS-A · Slot 3', ranOutSlotLabel: 'AMS-A · Slot 2' }}
+        />
+      );
+      const p = screen.getByText(/waiting for compatible filament/i);
+      expect(p.textContent).toContain('AMS-A · Slot 3');
+      expect(p.textContent).toContain('AMS-A · Slot 2');
+      // The misleading "same slot" text must be gone.
+      expect(screen.queryByText(/into the same AMS slot/i)).not.toBeInTheDocument();
+    });
+
+    it('names only the expected slot when the ran-out slot is unknown', () => {
+      render(
+        <HMSErrorModal
+          {...defaultProps}
+          errors={[runoutError]}
+          runoutGuidance={{ expectedSlotLabel: 'AMS-A · Slot 3', ranOutSlotLabel: null }}
+        />
+      );
+      const p = screen.getByText(/waiting for compatible filament/i);
+      expect(p.textContent).toContain('AMS-A · Slot 3');
+    });
+
+    it('shows an honest fallback when the slot cannot be resolved', () => {
+      render(
+        <HMSErrorModal
+          {...defaultProps}
+          errors={[runoutError]}
+          runoutGuidance={{ expectedSlotLabel: null, ranOutSlotLabel: null }}
+        />
+      );
+      expect(screen.getByText(/could not determine which slot/i)).toBeInTheDocument();
+    });
+
+    it('does not apply runout guidance to non-runout errors', () => {
+      render(
+        <HMSErrorModal
+          {...defaultProps}
+          errors={[knownError]}
+          runoutGuidance={{ expectedSlotLabel: 'AMS-A · Slot 3', ranOutSlotLabel: 'AMS-A · Slot 2' }}
+        />
+      );
+      // 0300_400C keeps its own description; no slot injection.
+      expect(screen.getByText('The task was canceled.')).toBeInTheDocument();
+      expect(screen.queryByText(/waiting for compatible filament/i)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('MQTT command verification failed (#2732)', () => {
+    // attr 0x05000500, code 0x00010007 — a real P1S on firmware 01.10.00.00.
+    // getShortCode() collapses this to "0500_0007", which matches nothing, so
+    // before #2732 filterKnownHMSErrors dropped the one error that explained
+    // why the printer accepted every job and started none of them.
+    const verifyFailedError: HMSError = {
+      attr: 0x05000500,
+      code: '0x10007',
+      severity: 1,
+      full_code: '0500050000010007',
+    };
+
+    it('surfaces the error instead of filtering it out', () => {
+      render(<HMSErrorModal {...defaultProps} errors={[verifyFailedError]} />);
+      expect(screen.queryByText('No errors')).not.toBeInTheDocument();
+      expect(screen.getByText(/could not verify it/i)).toBeInTheDocument();
+    });
+
+    it('counts towards the known-error filter', () => {
+      expect(filterKnownHMSErrors([verifyFailedError])).toHaveLength(1);
+    });
+
+    it('shows the remedy, not just the fault', () => {
+      render(<HMSErrorModal {...defaultProps} errors={[verifyFailedError]} />);
+      expect(screen.getByText(/Enable Developer Mode on the printer/i)).toBeInTheDocument();
+    });
+
+    it('displays the code the printer screen shows, not the truncated form', () => {
+      render(<HMSErrorModal {...defaultProps} errors={[verifyFailedError]} />);
+      expect(screen.getByText('[0500-0500-0001-0007]')).toBeInTheDocument();
+      expect(screen.queryByText('[0500-0007]')).not.toBeInTheDocument();
+    });
+
+    it('leaves short-code errors on the two-group display', () => {
+      render(<HMSErrorModal {...defaultProps} errors={[knownError]} />);
+      expect(screen.getByText('[0300-400C]')).toBeInTheDocument();
+    });
+
+    it('does not add the remedy line to other errors', () => {
+      render(<HMSErrorModal {...defaultProps} errors={[knownError]} />);
+      expect(screen.queryByText(/Enable Developer Mode/i)).not.toBeInTheDocument();
     });
   });
 

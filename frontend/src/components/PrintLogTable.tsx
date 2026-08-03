@@ -64,7 +64,7 @@ export function PrintLogTable({ archiveId }: PrintLogTableProps) {
               run.status === 'completed'
                 ? 'text-bambu-green'
                 : run.status === 'failed'
-                  ? 'text-red-400'
+                  ? 'text-red-700 dark:text-red-400'
                   : 'text-bambu-gray';
             return (
               <tr

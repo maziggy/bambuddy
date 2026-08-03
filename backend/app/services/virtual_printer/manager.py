@@ -5,6 +5,7 @@ bound to its dedicated IP address, regardless of mode.
 """
 
 import asyncio
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -128,6 +129,85 @@ _SLICER_OPTIONS_WAIT_TIMEOUT = 5.0
 # scheduler tick interval before dispatch picks the item up.
 _RECENT_QUEUE_ITEM_TTL = 30.0
 
+# BambuStudio's tri-state calibration options (bed_leveling / flow_cali /
+# nozzle_offset_cali) travel on the project_file command as a bool plus an int
+# companion — off=0, on=1, auto=2 (getValueInt parity). The int carries the full
+# state; the bool is true only for "on".
+_TRISTATE_INT = {0: "off", 1: "on", 2: "auto"}
+
+
+def _tristate_from_slicer(data: dict, bool_field: str, int_field: str) -> str | None:
+    """Reconstruct off/on/auto from a captured slicer project_file dict.
+
+    Prefer the int companion (auto_bed_leveling / extrude_cali_flag / etc.) which
+    carries all three states; fall back to the bool field (on/off only); return
+    None when the slicer sent neither so the caller can use its own default.
+    """
+    if int_field in data:
+        try:
+            resolved = _TRISTATE_INT.get(int(data[int_field]))
+        except (TypeError, ValueError):
+            resolved = None
+        if resolved is not None:
+            return resolved
+    if bool_field in data:
+        return "on" if bool(data[bool_field]) else "off"
+    return None
+
+
+def _extract_slicer_ams_mapping_json(data: dict, log_prefix: str) -> str | None:
+    """Pull the slicer's own AMS-slot pick out of a captured project_file payload.
+
+    BambuStudio/OrcaSlicer resolves the physical AMS tray for each filament
+    live, right before sending — either automatically or via the slicer's
+    manual per-filament AMS-slot assignment dialog — and embeds the result as
+    ``ams_mapping`` (``list[int]``, position = slot_id-1, value = global tray
+    ID) directly in the MQTT ``project_file`` command. Confirmed by wire
+    capture: the field is present and already in the exact shape
+    ``PrintQueueItem.ams_mapping`` expects.
+
+    The VP-queue path previously never read this — every queued print had the
+    scheduler re-derive a mapping from just the 3MF's static type/color at
+    dispatch time (`PrintScheduler._compute_ams_mapping_for_printer`), discarding
+    the slicer's already-correct, live-resolved pick. That re-derivation can
+    land on the wrong physical spool whenever the file's type+color match
+    isn't unique (e.g. two spools of the same color) or the file's own
+    filament-slot color wasn't what the user actually intended for that
+    particular print. Capturing it here — mirroring the existing
+    ``nozzle_mapping`` passthrough for H2C rack-swap models (#1780) — lets the
+    scheduler's "already resolved, don't touch it" branch in
+    ``_ensure_ams_mapping`` use the slicer's own choice unchanged.
+
+    That branch skipping ``_compute_ams_mapping_for_printer`` is also what
+    makes this a trade rather than a pure win: ``prefer_lowest_filament``, its
+    AMS-filament-backup gate (#1766), the inventory-remain overrides and the
+    per-slot force-color overrides all live inside that function. Callers are
+    responsible for the gating — this parser only says what the slicer sent.
+
+    Returns ``None`` when the field is absent, unparsable, or the classic
+    "all -1" unresolved-race sentinel (#2589) — never worth trusting over a
+    fresh live computation.
+    """
+    raw = data.get("ams_mapping")
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("%s Slicer ams_mapping is unparseable JSON, dropping: %r", log_prefix, raw)
+            return None
+    # bool is a subclass of int in Python — isinstance(True, int) is True —
+    # so it must be excluded explicitly, or [True, False] would pass as a
+    # valid mapping.
+    if not isinstance(raw, list) or not raw or not all(isinstance(v, int) and not isinstance(v, bool) for v in raw):
+        return None
+    if all(v < 0 for v in raw):
+        # #2589 sentinel — every slot unresolved. Let the scheduler compute a
+        # fresh mapping from live AMS state instead of trusting this.
+        return None
+    return json.dumps(raw)
+
 
 def _get_serial_for_model(model: str, serial_suffix: str) -> str:
     """Get serial number for the given model and suffix."""
@@ -156,6 +236,7 @@ class VirtualPrinterInstance:
         target_printer_id: int | None = None,
         auto_dispatch: bool = True,
         queue_force_color_match: bool = False,
+        save_ams_mapping: bool = False,
         gcode_injection: bool = False,
         bind_ip: str = "",
         remote_interface_ip: str = "",
@@ -179,6 +260,7 @@ class VirtualPrinterInstance:
         self.target_printer_id = target_printer_id
         self.auto_dispatch = auto_dispatch
         self.queue_force_color_match = queue_force_color_match
+        self.save_ams_mapping = save_ams_mapping
         self.gcode_injection = gcode_injection
         self.bind_ip = bind_ip
         self.remote_interface_ip = remote_interface_ip
@@ -391,8 +473,9 @@ class VirtualPrinterInstance:
         row was already written with settings defaults. This method runs
         on the late MQTT path: it looks up the most recent queue items
         committed for this filename and patches in the slicer's
-        ``nozzle_mapping`` + workflow flags, but only while the items are
-        still ``pending`` (scheduler hasn't dispatched them yet).
+        ``nozzle_mapping`` + ``ams_mapping`` + workflow flags, but only
+        while the items are still ``pending`` (scheduler hasn't dispatched
+        them yet).
         """
         if not self._session_factory:
             return
@@ -411,9 +494,16 @@ class VirtualPrinterInstance:
         # `nozzles_info` is intentionally not stamped — column kept for
         # legacy rows but never written; see PrintQueueItem.nozzles_info.
         patch: dict = {}
+        # Tri-state options (off/on/auto) — reconstruct from the int companion.
+        for bool_field, int_field, column in (
+            ("bed_leveling", "auto_bed_leveling", "bed_levelling"),
+            ("flow_cali", "extrude_cali_flag", "flow_cali"),
+        ):
+            resolved = _tristate_from_slicer(data, bool_field, int_field)
+            if resolved is not None:
+                patch[column] = resolved
+        # On/off options.
         for mqtt_field, column in (
-            ("bed_leveling", "bed_levelling"),
-            ("flow_cali", "flow_cali"),
             ("vibration_cali", "vibration_cali"),
             ("layer_inspect", "layer_inspect"),
             ("timelapse", "timelapse"),
@@ -437,12 +527,34 @@ class VirtualPrinterInstance:
             if raw is not None:
                 patch["nozzle_mapping"] = json.dumps(raw)
 
-        if not patch:
+        # Same two gates as the immediate path in `_add_to_print_queue`: a
+        # model-based VP has no live AMS layout for the slicer to have resolved
+        # tray IDs against, and taking the slicer's pick at all is the per-VP
+        # `save_ams_mapping` opt-in (it makes the scheduler skip
+        # `_compute_ams_mapping_for_printer`, and with it prefer-lowest and the
+        # #1766 backup gate).
+        ams_mapping_json = (
+            _extract_slicer_ams_mapping_json(data, f"[VP {self.name}] Late MQTT")
+            if self.target_printer_id is not None and self.save_ams_mapping
+            else None
+        )
+        # `Force color match` still wins for this dispatch — see the same
+        # decision in `_add_to_print_queue`. The archive patch below is
+        # deliberately not gated on it: persisting the pick for later reprints
+        # is exactly what the toggle promises.
+        if ams_mapping_json is not None and not self.queue_force_color_match:
+            patch["ams_mapping"] = ams_mapping_json
+
+        # `ams_mapping_json` alone is enough to keep going even when `patch` is
+        # empty: with `Force color match` on it never reaches the queue item,
+        # but it still has to be written onto the archive below.
+        if not patch and ams_mapping_json is None:
             self._recent_queue_items.pop(stash_key, None)
             return
 
         from sqlalchemy import select, update
 
+        from backend.app.models.archive import PrintArchive
         from backend.app.models.print_queue import PrintQueueItem
 
         try:
@@ -450,23 +562,49 @@ class VirtualPrinterInstance:
                 # Only stamp items still pending; once the scheduler has
                 # picked the row up we can't safely race the dispatcher.
                 result = await db.execute(
-                    select(PrintQueueItem.id).where(
+                    select(PrintQueueItem.id, PrintQueueItem.archive_id).where(
                         PrintQueueItem.id.in_(queue_item_ids),
                         PrintQueueItem.status == "pending",
                     )
                 )
-                eligible_ids = [row[0] for row in result.all()]
+                rows = result.all()
+                eligible_ids = [row[0] for row in rows]
                 if not eligible_ids:
                     self._recent_queue_items.pop(stash_key, None)
                     return
-                await db.execute(update(PrintQueueItem).where(PrintQueueItem.id.in_(eligible_ids)).values(**patch))
+                if patch:
+                    await db.execute(update(PrintQueueItem).where(PrintQueueItem.id.in_(eligible_ids)).values(**patch))
+
+                # The archive was already created (with no slicer_ams_mapping)
+                # before this late MQTT arrived — see
+                # `_extract_slicer_ams_mapping_json`'s docstring. Patch it here
+                # too so a reprint later still picks up the slicer's pick, and
+                # the "AMS mapping from slicer" badge reflects reality instead
+                # of staying stuck on the archive's initial (empty) snapshot.
+                # Already gated on `save_ams_mapping` above, and deliberately
+                # NOT on `queue_force_color_match`: that toggle decides how
+                # *this* print is matched, not whether the pick is worth
+                # keeping for a later reprint.
+                if ams_mapping_json is not None:
+                    archive_ids = {row[1] for row in rows if row[1] is not None}
+                    if archive_ids:
+                        archive_result = await db.execute(select(PrintArchive).where(PrintArchive.id.in_(archive_ids)))
+                        for archive in archive_result.scalars().all():
+                            extra = dict(archive.extra_data or {})
+                            extra["slicer_ams_mapping"] = {
+                                "mapping": json.loads(ams_mapping_json),
+                                "printer_id": self.target_printer_id,
+                            }
+                            archive.extra_data = extra
+
                 await db.commit()
                 logger.info(
-                    "[VP %s] Late slicer MQTT for %s — retroactively stamped %s onto queue item(s) %s",
+                    "[VP %s] Late slicer MQTT for %s — retroactively stamped %s onto queue item(s) %s%s",
                     self.name,
                     stash_key,
                     sorted(patch.keys()),
                     eligible_ids,
+                    " and saved the slicer's AMS pick onto the archive" if ams_mapping_json is not None else "",
                 )
         except Exception as e:
             logger.error(
@@ -714,6 +852,19 @@ class VirtualPrinterInstance:
                 def _bool_setting(value: str | None, default: bool) -> bool:
                     return value.lower() == "true" if value is not None else default
 
+                def _tristate_setting(value: str | None, default: str) -> str:
+                    """Tri-state workflow default, coercing legacy true/false rows."""
+                    if value is None:
+                        return default
+                    low = value.strip().lower()
+                    if low in ("on", "off", "auto"):
+                        return low
+                    if low in ("true", "1"):
+                        return "on"
+                    if low in ("false", "0"):
+                        return "off"
+                    return default
+
                 def _slicer_or(field_mqtt: str, settings_default: bool) -> bool:
                     """Slicer's MQTT value if present, else the settings default.
 
@@ -725,13 +876,27 @@ class VirtualPrinterInstance:
                         return bool(slicer_opts[field_mqtt])
                     return settings_default
 
+                def _slicer_tristate(bool_field: str, int_field: str, settings_default: str) -> str:
+                    """Slicer's tri-state (off/on/auto) if present, else the default."""
+                    if slicer_opts is not None:
+                        resolved = _tristate_from_slicer(slicer_opts, bool_field, int_field)
+                        if resolved is not None:
+                            return resolved
+                    return settings_default
+
                 # Note the MQTT field names differ from Bambuddy's column
                 # names: MQTT uses `bed_leveling` (single L) while the
                 # column / settings key use `bed_levelling` (double L).
-                bed_levelling = _slicer_or(
-                    "bed_leveling", _bool_setting(await get_setting(db, "default_bed_levelling"), True)
+                bed_levelling = _slicer_tristate(
+                    "bed_leveling",
+                    "auto_bed_leveling",
+                    _tristate_setting(await get_setting(db, "default_bed_levelling"), "auto"),
                 )
-                flow_cali = _slicer_or("flow_cali", _bool_setting(await get_setting(db, "default_flow_cali"), False))
+                flow_cali = _slicer_tristate(
+                    "flow_cali",
+                    "extrude_cali_flag",
+                    _tristate_setting(await get_setting(db, "default_flow_cali"), "auto"),
+                )
                 vibration_cali = _slicer_or(
                     "vibration_cali", _bool_setting(await get_setting(db, "default_vibration_cali"), True)
                 )
@@ -775,6 +940,60 @@ class VirtualPrinterInstance:
                         if raw is not None:
                             nozzle_mapping_json = json.dumps(raw)
 
+                # Slicer's own live-resolved AMS-slot pick (see docstring on
+                # `_extract_slicer_ams_mapping_json`). Stamped onto every plate
+                # below, same treatment as nozzle_mapping_json above — when
+                # present it makes `_ensure_ams_mapping` skip its own
+                # type/color re-derivation entirely and dispatch use exactly
+                # the tray the slicer/user picked.
+                #
+                # Two gates, both required:
+                #
+                # 1. This VP must target one fixed printer. A model-based
+                #    ("Any <model>") VP has no MQTT bridge to a real printer,
+                #    so the slicer has no live AMS layout to resolve tray IDs
+                #    against — whatever it sends here is meaningless (or,
+                #    worse, coincidentally valid for the wrong printer once
+                #    the scheduler later picks one).
+                # 2. The per-VP `save_ams_mapping` opt-in must be on. Taking
+                #    the slicer's pick means `_ensure_ams_mapping` returns
+                #    early and `_compute_ams_mapping_for_printer` never runs —
+                #    and that function is where `prefer_lowest_filament`, its
+                #    AMS-filament-backup gate (#1766) and the inventory-remain
+                #    overrides live. Honouring the slicer unconditionally would
+                #    silently retire all of that for every existing queue-mode
+                #    VP on upgrade, so it's opt-in like every other queue-mode
+                #    behaviour toggle (#2700 review).
+                #
+                # Either gate failing leaves it unset, and the scheduler's
+                # normal type/color re-derivation runs against whichever
+                # printer actually gets the job.
+                ams_mapping_json: str | None = None
+                if slicer_opts is not None and self.target_printer_id is not None and self.save_ams_mapping:
+                    ams_mapping_json = _extract_slicer_ams_mapping_json(slicer_opts, f"[VP {self.name}]")
+
+                # `Force color match` is the user asking Bambuddy to do the
+                # matching strictly, against the printer's live trays. Its only
+                # effect on a fixed-printer item is via the per-slot
+                # `filament_overrides` written below, which are consumed inside
+                # `_compute_ams_mapping_for_printer` — the exact function a
+                # stored mapping skips. So when both toggles are on, the
+                # explicit strictness wins for *this* dispatch and the slicer's
+                # pick is still persisted onto the archive for later reprints,
+                # which is what `Save AMS mapping` actually promises (#2700
+                # review).
+                queue_ams_mapping_json = ams_mapping_json
+                if queue_ams_mapping_json is not None and self.queue_force_color_match:
+                    logger.info(
+                        "[VP %s] Saved the slicer's AMS pick to the archive but not onto the queue item(s): "
+                        "'Force color match' is on, so the scheduler matches against live trays for this print.",
+                        self.name,
+                    )
+                    queue_ams_mapping_json = None
+
+                # Parsed once for the per-plate length check in the loop below.
+                queue_ams_mapping = json.loads(queue_ams_mapping_json) if queue_ams_mapping_json else None
+
                 service = ArchiveService(db)
                 archive = await service.archive_print(
                     printer_id=None,
@@ -785,6 +1004,14 @@ class VirtualPrinterInstance:
                         "source_ip": source_ip,
                     },
                     prefer_filename_for_name=prefer_filename,
+                    # Slicer's own live AMS-slot pick -- promoted to
+                    # `extra_data.slicer_ams_mapping` by archive_print() so a
+                    # later reprint can reuse it. Already gated on the per-VP
+                    # `save_ams_mapping` opt-in above. Tagged with the printer
+                    # it was resolved against so a later reprint on a
+                    # *different* printer knows not to reuse it (#2700 review).
+                    slicer_ams_mapping=(json.loads(ams_mapping_json) if ams_mapping_json else None),
+                    slicer_ams_mapping_printer_id=self.target_printer_id,
                 )
                 if archive:
                     logger.info("[VP %s] Archived: %s - %s", self.name, archive.id, archive.print_name)
@@ -844,11 +1071,20 @@ class VirtualPrinterInstance:
                             if types:
                                 required_filament_types_json = json.dumps(types)
                             if self.queue_force_color_match:
+                                # Carry tray_info_idx so force_color_match can
+                                # tell Bambu PLA variants apart (#2650). Bambu
+                                # reports Basic/Matte/Silk all as tray_type
+                                # "PLA"; the variant lives only in tray_info_idx
+                                # (GFA00/GFA01/GFA06/...). A blank idx (custom or
+                                # third-party spool) means "no variant
+                                # constraint" and the scheduler falls back to
+                                # type+colour.
                                 overrides = [
                                     {
                                         "slot_id": r["slot_id"],
                                         "type": r.get("type", ""),
                                         "color": r.get("color", ""),
+                                        "tray_info_idx": r.get("tray_info_idx", ""),
                                         "force_color_match": True,
                                     }
                                     for r in requirements
@@ -856,6 +1092,31 @@ class VirtualPrinterInstance:
                                 ]
                                 if overrides:
                                     filament_overrides_json = json.dumps(overrides)
+
+                        # The slicer's mapping is indexed by the 3MF's own
+                        # file-global slot ids (position = slot_id - 1), so one
+                        # array covers every plate of a multi-plate Send All —
+                        # each plate just reads the entries for the slots it
+                        # actually prints. What must be checked is that it
+                        # reaches that far: a mapping shorter than this plate's
+                        # highest slot id can't address the plate's own slots,
+                        # and `_ensure_ams_mapping` would keep it anyway
+                        # because it only rejects an all-unresolved mapping. Fall
+                        # back to a computed mapping for that plate instead
+                        # (#2700 review).
+                        plate_ams_mapping_json = queue_ams_mapping_json
+                        if queue_ams_mapping is not None and requirements:
+                            max_slot_id = max((r.get("slot_id") or 0) for r in requirements)
+                            if max_slot_id > len(queue_ams_mapping):
+                                logger.warning(
+                                    "[VP %s] Slicer ams_mapping has %d entries but plate %s needs slot %d; "
+                                    "dropping it for this plate so the scheduler computes one from live AMS state.",
+                                    self.name,
+                                    len(queue_ams_mapping),
+                                    plate_id,
+                                    max_slot_id,
+                                )
+                                plate_ams_mapping_json = None
 
                         queue_item = PrintQueueItem(
                             printer_id=self.target_printer_id,
@@ -882,6 +1143,9 @@ class VirtualPrinterInstance:
                             # the same nozzle pick across plates rather than only the
                             # first one (mirrors the #1697 / #1188 per-plate loop fix).
                             nozzle_mapping=nozzle_mapping_json,
+                            # Slicer's own live AMS-slot pick, when present —
+                            # see `_extract_slicer_ams_mapping_json`.
+                            ams_mapping=plate_ams_mapping_json,
                         )
                         db.add(queue_item)
                         await db.flush()  # populate queue_item.id before logging
@@ -1095,25 +1359,36 @@ class VirtualPrinterInstance:
             self._mqtt.set_bridge(self._mqtt_bridge)
             await self._mqtt_bridge.start()
 
-            # RTSPS camera passthrough on port 322. BambuStudio's camera button
-            # connects to the device IP it bound on (the VP), not the IP in
-            # `ipcam.rtsp_url`. Without a listener on <bind_ip>:322 the slicer
-            # gets connection refused → "LAN connection failed". Same raw TCP
-            # pass-through used by SlicerProxyManager in proxy mode.
+            # Camera passthrough. BambuStudio / OrcaSlicer connect the "camera"
+            # button to the device IP they bound on (the VP), not the IP in the
+            # printer's `ipcam.rtsp_url`. Without a listener the slicer gets
+            # connection refused → "LAN connection failed" (RTSP models) or
+            # OrcaSlicer error `[2:-10061]` (chamber-image models, #1868).
+            #
+            # The port depends on the TARGET printer's model:
+            #   RTSPS (X1/X2/H2/P2S)        → 322
+            #   chamber-image (A1/P1P/P1S)  → 6000
+            #
+            # `get_camera_port()` is the same source of truth used by
+            # `routes/camera.py`, so slicer and Bambuddy UI agree.
             target_client = self._printer_manager.get_client(self.target_printer_id)
             target_ip = getattr(target_client, "ip_address", None) if target_client else None
+            target_model = getattr(target_client, "model", None) if target_client else None
             if target_ip:
+                from backend.app.services.camera import get_camera_port
+
+                camera_port = get_camera_port(target_model)
                 self._rtsp_proxy = TCPProxy(
-                    name="RTSP",
-                    listen_port=322,
+                    name=f"Camera-{camera_port}",
+                    listen_port=camera_port,
                     target_host=target_ip,
-                    target_port=322,
+                    target_port=camera_port,
                     bind_address=bind_addr,
                 )
                 self._tasks.append(
                     asyncio.create_task(
-                        run_with_logging(self._rtsp_proxy.start(), "RTSP"),
-                        name=f"vp_{self.id}_rtsp",
+                        run_with_logging(self._rtsp_proxy.start(), f"Camera-{camera_port}"),
+                        name=f"vp_{self.id}_camera",
                     )
                 )
 
@@ -1197,7 +1472,7 @@ class VirtualPrinterInstance:
             try:
                 await self._rtsp_proxy.stop()
             except Exception:
-                logger.exception("[VP %s] RTSP proxy stop failed", self.name)
+                logger.exception("[VP %s] Camera proxy stop failed", self.name)
             self._rtsp_proxy = None
         if self._ftp:
             await self._ftp.stop()
@@ -1468,6 +1743,7 @@ class VirtualPrinterManager:
                 # instance silently keeps the old value until process
                 # restart (#1552 follow-up family).
                 or instance.queue_force_color_match != vp.queue_force_color_match
+                or instance.save_ams_mapping != vp.save_ams_mapping
                 or instance.gcode_injection != vp.gcode_injection
                 or proxy_target_changed
             )
@@ -1522,6 +1798,7 @@ class VirtualPrinterManager:
                     target_printer_id=vp.target_printer_id,
                     auto_dispatch=vp.auto_dispatch,
                     queue_force_color_match=vp.queue_force_color_match,
+                    save_ams_mapping=vp.save_ams_mapping,
                     gcode_injection=vp.gcode_injection,
                     bind_ip=vp.bind_ip or "",
                     remote_interface_ip=vp.remote_interface_ip or "",

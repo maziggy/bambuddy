@@ -325,3 +325,94 @@ describe('OIDCProviderSettings', () => {
     });
   });
 });
+
+describe('env-managed provider (#2593)', () => {
+  const envManagedProvider = {
+    ...mockProviders[0],
+    id: 2,
+    name: 'EnvIdP',
+    is_env_managed: true,
+  };
+
+  it('marks the provider as environment managed', async () => {
+    server.use(
+      http.get('/api/v1/auth/oidc/providers/all', () => HttpResponse.json([envManagedProvider]))
+    );
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByText('EnvIdP')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Environment Managed/i)).toBeInTheDocument();
+  });
+
+  it('offers no edit or delete control for it', async () => {
+    server.use(
+      http.get('/api/v1/auth/oidc/providers/all', () => HttpResponse.json([envManagedProvider]))
+    );
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByText('EnvIdP')).toBeInTheDocument();
+    });
+    // Startup rewrites this row from the environment on every boot, and the API
+    // answers 409 — offering the controls would promise an edit that cannot land.
+    expect(screen.queryByTestId('edit-provider-2')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('delete-provider-2')).not.toBeInTheDocument();
+  });
+
+  it('offers no icon controls for it either', async () => {
+    server.use(
+      http.get('/api/v1/auth/oidc/providers/all', () =>
+        HttpResponse.json([
+          { ...envManagedProvider, icon_url: 'https://idp.example.com/i.png', has_icon: true },
+        ])
+      )
+    );
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByText('EnvIdP')).toBeInTheDocument();
+    });
+    // Both icon routes answer 409 for an env-managed provider, so a click could
+    // only ever produce an error toast — the same reason the rest are hidden.
+    expect(screen.queryByTestId('refresh-icon-2')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('remove-icon-2')).not.toBeInTheDocument();
+  });
+
+  it('still offers them for a UI-created provider', async () => {
+    server.use(
+      http.get('/api/v1/auth/oidc/providers/all', () =>
+        HttpResponse.json([{ ...mockProviders[0], is_env_managed: false }])
+      )
+    );
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByText('TestIdP')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('edit-provider-1')).toBeInTheDocument();
+    expect(screen.getByTestId('delete-provider-1')).toBeInTheDocument();
+  });
+
+  it('hides the enable/disable toggle for env-managed providers', async () => {
+    server.use(
+      http.get('/api/v1/auth/oidc/providers/all', () =>
+        HttpResponse.json([
+          { ...mockProviders[0], id: 2, name: 'EnvIdP', is_enabled: true, is_env_managed: true },
+          { ...mockProviders[0], id: 3, name: 'UiIdP', is_enabled: true, is_env_managed: false },
+        ])
+      )
+    );
+    render(<OIDCProviderSettings />);
+
+    await waitFor(() => {
+      expect(screen.getByText('EnvIdP')).toBeInTheDocument();
+      expect(screen.getByText('UiIdP')).toBeInTheDocument();
+    });
+    // The toggle carries no testid, so it is counted: two cards are rendered and
+    // exactly one switch may exist — the UI provider's. Enabling the env-managed
+    // one would be reverted by the next boot, and the API answers 409.
+    expect(screen.getAllByRole('switch')).toHaveLength(1);
+  });
+});

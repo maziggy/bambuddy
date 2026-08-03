@@ -8,19 +8,19 @@ from pathlib import Path
 
 import defusedxml.ElementTree as ET
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, func, inspect, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from backend.app.api.routes.library_variants import normalize_model_name, resolve_variant_model
 from backend.app.core.auth import RequirePermissionIfAuthEnabled, require_ownership_permission
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
-from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.print_batch import PrintBatch
-from backend.app.models.print_queue import PrintQueueItem
+from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
 from backend.app.models.printer import Printer
 from backend.app.models.project import Project
 from backend.app.models.user import User
@@ -34,19 +34,44 @@ from backend.app.schemas.print_queue import (
     PrintQueueItemResponse,
     PrintQueueItemUpdate,
     PrintQueueReorder,
+    QueueVariantCreate,
+    QueueVariantSummary,
 )
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
+from backend.app.services.filament_requirements import overrides_for_plate
 from backend.app.services.notification_service import notification_service
-from backend.app.utils.printer_models import normalize_printer_model, normalize_printer_model_id
+from backend.app.utils.printer_models import (
+    is_gcode_compatible,
+)
 from backend.app.utils.threemf_tools import (
-    extract_bed_type_from_3mf,
-    extract_filament_usage_from_3mf,
+    extract_plate_metadata_from_3mf,
     extract_print_time_from_3mf,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/queue", tags=["queue"])
+
+
+def _variant_summaries(item: PrintQueueItem) -> list[QueueVariantSummary]:
+    """Cross-model candidates for display (#671), or [] if they weren't loaded.
+
+    Every route that builds a queue response eager-loads ``variants``. Reading
+    the attribute unguarded would still be a landmine for the next one that
+    doesn't: a lazy load on an async session raises rather than degrading, so a
+    forgotten ``selectinload`` would turn a card render into a 500.
+    """
+    if "variants" in inspect(item).unloaded:
+        return []
+    return [
+        QueueVariantSummary(
+            library_file_id=v.library_file_id,
+            filename=v.library_file.filename if v.library_file else "",
+            target_model=v.target_model,
+            position=v.position,
+        )
+        for v in item.variants
+    ]
 
 
 def _extract_filament_types_from_3mf(file_path: Path, plate_id: int | None = None) -> list[str]:
@@ -114,6 +139,22 @@ def _extract_filament_types_from_3mf(file_path: Path, plate_id: int | None = Non
 # in utils/threemf_tools.py so the notification path (main.py) can reuse it
 # without importing from a routes module (#1785).
 _extract_print_time_from_3mf = extract_print_time_from_3mf
+
+
+async def _resolve_source_path(db: AsyncSession, item: PrintQueueItem) -> Path | None:
+    """Resolve an existing queue item's source 3MF on disk, or None."""
+    if item.archive_id:
+        result = await db.execute(select(PrintArchive).where(PrintArchive.id == item.archive_id))
+        archive = result.scalar_one_or_none()
+        if archive:
+            return settings.base_dir / archive.file_path
+    elif item.library_file_id:
+        result = await db.execute(LibraryFile.active().where(LibraryFile.id == item.library_file_id))
+        library_file = result.scalar_one_or_none()
+        if library_file:
+            lib_path = Path(library_file.file_path)
+            return lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
+    return None
 
 
 def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
@@ -187,6 +228,8 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "timelapse": item.timelapse,
         "use_ams": item.use_ams,
         "nozzle_offset_cali": item.nozzle_offset_cali,
+        "preheat_override": item.preheat_override,
+        "preheat_chamber_target_override": item.preheat_chamber_target_override,
         "status": item.status,
         "started_at": item.started_at,
         "completed_at": item.completed_at,
@@ -206,6 +249,12 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "nozzle_mapping": nozzle_mapping_parsed,
         "nozzles_info": nozzles_info_parsed,
         "cleanup_library_after_dispatch": item.cleanup_library_after_dispatch,
+        # Cross-model alternatives (#671). Guarded rather than read directly:
+        # every route that reaches here eager-loads the relationship, but a
+        # caller that forgets would trigger a lazy load, and a lazy load on an
+        # async session raises rather than degrading. An empty list is the
+        # correct answer for the ordinary item this would most likely be.
+        "variants": _variant_summaries(item),
     }
     response = PrintQueueItemResponse(**item_dict)
     if item.archive:
@@ -229,20 +278,35 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
             response.nozzle_diameter = item.archive.nozzle_diameter
             response.sliced_for_model = item.archive.sliced_for_model
             response.bed_type = item.archive.bed_type
+            # Marks history/reprint rows whose archive carries the slicer's own
+            # live-resolved AMS-slot pick (extra_data.slicer_ams_mapping) — see
+            # `_extract_slicer_ams_mapping_json` in virtual_printer/manager.py.
+            #
+            # Only when the saved mapping was resolved against *this* row's
+            # printer: a global tray ID means nothing on another printer, so
+            # that's the exact condition under which the mapping is reused. A
+            # badge on a row where nothing gets reused would be a lie (#2700
+            # review). Model-based rows (printer_id None) never match, which is
+            # correct — the mapping is not reused there either.
+            extra = item.archive.extra_data if isinstance(item.archive.extra_data, dict) else {}
+            saved_mapping = extra.get("slicer_ams_mapping")
+            response.archive_has_slicer_ams_mapping = (
+                isinstance(saved_mapping, dict)
+                and isinstance(saved_mapping.get("mapping"), list)
+                and item.printer_id is not None
+                and saved_mapping.get("printer_id") == item.printer_id
+            )
             if item.plate_id:
                 archive_path = settings.base_dir / item.archive.file_path
                 if archive_path.exists():
-                    plate_time = _extract_print_time_from_3mf(archive_path, item.plate_id)
-                    plate_weight = sum(
-                        f["used_g"] for f in extract_filament_usage_from_3mf(archive_path, item.plate_id)
-                    )
-                    plate_bed = extract_bed_type_from_3mf(archive_path, item.plate_id)
-                    if plate_time is not None:
-                        response.print_time_seconds = plate_time
-                    if plate_weight > 0:
-                        response.filament_used_grams = plate_weight
-                    if plate_bed:
-                        response.bed_type = plate_bed
+                    # One cached parse for all three per-plate overrides (#2573).
+                    plate_meta = extract_plate_metadata_from_3mf(archive_path, item.plate_id)
+                    if plate_meta.print_time_seconds is not None:
+                        response.print_time_seconds = plate_meta.print_time_seconds
+                    if plate_meta.filament_used_grams > 0:
+                        response.filament_used_grams = plate_meta.filament_used_grams
+                    if plate_meta.bed_type:
+                        response.bed_type = plate_meta.bed_type
     if item.library_file:
         response.library_file_name = (
             item.library_file.file_metadata.get("print_name") if item.library_file.file_metadata else None
@@ -264,17 +328,14 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
             lib_path = Path(item.library_file.file_path)
             library_file_path = lib_path if lib_path.is_absolute() else settings.base_dir / item.library_file.file_path
             if library_file_path.exists():
-                plate_time = _extract_print_time_from_3mf(library_file_path, item.plate_id)
-                plate_weight = sum(
-                    f["used_g"] for f in extract_filament_usage_from_3mf(library_file_path, item.plate_id)
-                )
-                plate_bed = extract_bed_type_from_3mf(library_file_path, item.plate_id)
-                if plate_time is not None:
-                    response.print_time_seconds = plate_time
-                if plate_weight > 0:
-                    response.filament_used_grams = plate_weight
-                if plate_bed:
-                    response.bed_type = plate_bed
+                # One cached parse for all three per-plate overrides (#2573).
+                plate_meta = extract_plate_metadata_from_3mf(library_file_path, item.plate_id)
+                if plate_meta.print_time_seconds is not None:
+                    response.print_time_seconds = plate_meta.print_time_seconds
+                if plate_meta.filament_used_grams > 0:
+                    response.filament_used_grams = plate_meta.filament_used_grams
+                if plate_meta.bed_type:
+                    response.bed_type = plate_meta.bed_type
     if item.printer:
         response.printer_name = item.printer.name
     return response
@@ -305,6 +366,8 @@ async def list_queue(
             selectinload(PrintQueueItem.library_file),
             selectinload(PrintQueueItem.created_by),
             selectinload(PrintQueueItem.batch),
+            # Cross-model candidates (#671) and their files, for the card label.
+            selectinload(PrintQueueItem.variants).selectinload(PrintQueueVariant.library_file),
         )
         .order_by(PrintQueueItem.printer_id.nulls_first(), PrintQueueItem.position)
     )
@@ -349,6 +412,146 @@ async def list_queue(
     return [_enrich_response(item) for item in items]
 
 
+async def _resolve_queue_variants(
+    db: AsyncSession,
+    specs: list[QueueVariantCreate],
+    current_user: User | None,
+) -> list[tuple[QueueVariantCreate, LibraryFile, str]]:
+    """Validate a cross-model candidate set and pair each file with its model (#671).
+
+    Validated as a set, not file by file, because the failure modes are about the
+    set: two candidates for the same printer give the resolver no basis to choose,
+    and a set where nothing can ever run is a job that waits forever.
+
+    At least one candidate must have an active printer — the rest may not, which
+    is deliberate. Grouping the H2C slice before the H2C arrives is a reasonable
+    thing to do, and refusing the whole queue action over it would be worse than
+    letting that candidate simply never match.
+    """
+    file_ids = [s.library_file_id for s in specs]
+    if len(set(file_ids)) != len(file_ids):
+        raise HTTPException(400, "The same file cannot be listed twice as a variant")
+
+    rows = (await db.execute(LibraryFile.active().where(LibraryFile.id.in_(file_ids)))).scalars().all()
+    by_id = {f.id: f for f in rows}
+
+    resolved: list[tuple[QueueVariantCreate, LibraryFile, str]] = []
+    seen_models: dict[str, str] = {}
+    any_active_printer = False
+
+    for spec in specs:
+        library_file = by_id.get(spec.library_file_id)
+        # Same IDOR posture as the single-file path: a file the caller cannot read
+        # is reported as missing rather than forbidden.
+        if not library_file or (
+            current_user
+            and not current_user.has_permission(Permission.LIBRARY_READ_ALL.value)
+            and library_file.created_by_id != current_user.id
+        ):
+            raise HTTPException(404, f"Library file not found: {spec.library_file_id}")
+
+        from backend.app.utils.filename import InvalidFilenameError, validate_print_filename
+
+        try:
+            validate_print_filename(library_file.filename)
+        except InvalidFilenameError as e:
+            raise HTTPException(400, str(e)) from e
+
+        model = resolve_variant_model(library_file, spec.target_model)
+        if not model:
+            raise HTTPException(
+                400,
+                f"{library_file.filename} does not say which printer it was sliced for — "
+                "set its target model explicitly",
+            )
+
+        # Cross-model safety gate (#2578), per candidate. A set is only as safe as
+        # its worst member, and model-based dispatch has no human in the loop.
+        sliced_for = (library_file.file_metadata or {}).get("sliced_for_model")
+        if not is_gcode_compatible(sliced_for, model):
+            raise HTTPException(
+                400,
+                f"{library_file.filename} was sliced for {sliced_for} and cannot be dispatched to {model} printers",
+            )
+
+        if model in seen_models:
+            raise HTTPException(
+                400,
+                f"{library_file.filename} and {seen_models[model]} are both for {model} — "
+                "variants must target different printers",
+            )
+        seen_models[model] = library_file.filename
+
+        has_printer = (
+            (
+                await db.execute(
+                    select(Printer).where(Printer.model == model).where(Printer.is_active == True)  # noqa: E712
+                )
+            )
+            .scalars()
+            .first()
+        )
+        any_active_printer = any_active_printer or bool(has_printer)
+
+        resolved.append((spec, library_file, model))
+
+    if not any_active_printer:
+        raise HTTPException(400, f"No active printers for any of: {', '.join(seen_models)}")
+
+    return resolved
+
+
+def _variant_values(
+    spec: QueueVariantCreate,
+    library_file: LibraryFile,
+    model: str,
+    position: int,
+) -> dict:
+    """Column values for one candidate, extracted from its own 3MF.
+
+    Each candidate is a different slice, so its filament requirements and print
+    time come from its own file rather than being inherited from the item.
+
+    Returns values rather than a row so a quantity>1 batch can build one row per
+    copy without re-opening the 3MF for each.
+    """
+    lib_path = Path(library_file.file_path)
+    file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
+
+    required_types = None
+    filament_overrides_json = None
+    print_time = (library_file.file_metadata or {}).get("print_time_seconds")
+
+    if file_path.exists():
+        types = _extract_filament_types_from_3mf(file_path, spec.plate_id)
+        if types:
+            required_types = json.dumps(types)
+        if spec.plate_id:
+            plate_time = _extract_print_time_from_3mf(file_path, spec.plate_id)
+            if plate_time is not None:
+                print_time = plate_time
+        if spec.filament_overrides:
+            plate_overrides = overrides_for_plate(spec.filament_overrides, file_path, spec.plate_id)
+            if plate_overrides:
+                filament_overrides_json = json.dumps(plate_overrides)
+                override_types = sorted({o["type"] for o in plate_overrides if "type" in o})
+                if override_types:
+                    existing = set(json.loads(required_types)) if required_types else set()
+                    required_types = json.dumps(sorted(existing | set(override_types)))
+
+    return {
+        "position": position,
+        "library_file_id": library_file.id,
+        "target_model": model,
+        "plate_id": spec.plate_id,
+        "ams_mapping": json.dumps(spec.ams_mapping) if spec.ams_mapping else None,
+        "nozzle_mapping": json.dumps(spec.nozzle_mapping) if spec.nozzle_mapping else None,
+        "filament_overrides": filament_overrides_json,
+        "required_filament_types": required_types,
+        "print_time_seconds": print_time,
+    }
+
+
 @router.post("/", response_model=PrintQueueItemResponse)
 async def add_to_queue(
     data: PrintQueueItemCreate,
@@ -356,17 +559,40 @@ async def add_to_queue(
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE),
 ):
     """Add an item to the print queue."""
-    # Normalize target_model (e.g., "Bambu Lab X1E" / "C13" -> "X1E")
-    target_model_norm = None
-    if data.target_model:
-        target_model_norm = (
-            normalize_printer_model(data.target_model)
-            or normalize_printer_model_id(data.target_model)
-            or data.target_model
-        )
+    # Normalize target_model (e.g., "Bambu Lab X1E" / "C13" -> "X1E").
+    # normalize_model_name resolves internal codes first: the previous
+    # `normalize_printer_model(x) or normalize_printer_model_id(x)` chain never
+    # reached the code map, because the first call returns unknown input
+    # unchanged — so a "C13" target stayed "C13", matched no printer row and
+    # left the item waiting forever. Identical result for every other spelling.
+    target_model_norm = normalize_model_name(data.target_model)
 
-    # Validate that either archive_id or library_file_id is provided
-    if not data.archive_id and not data.library_file_id:
+    # Cross-model alternatives (#671): several sliced files, whichever printer
+    # frees up first. The whole candidate set is validated before anything is
+    # written — a half-valid set would produce a job that can only reach some of
+    # the printers the user asked for, with nothing to say which.
+    variant_specs: list[tuple[QueueVariantCreate, LibraryFile, str]] = []
+    if data.variants:
+        if data.printer_id:
+            raise HTTPException(
+                400, "Cannot specify both printer_id and variants — pick a printer or offer alternatives"
+            )
+        if data.archive_id or data.library_file_id:
+            raise HTTPException(
+                400, "Cannot combine variants with archive_id or library_file_id — the variants are the files"
+            )
+        variant_specs = await _resolve_queue_variants(db, data.variants, current_user)
+        # Mirror the first candidate onto the item so the queue listing, the SJF
+        # grouping and the "Any H2S" label have something before a printer is
+        # picked. Resolution overwrites it with whichever candidate actually runs.
+        target_model_norm = variant_specs[0][2]
+
+    # Validate that either archive_id or library_file_id is provided.
+    # A cross-model item deliberately holds neither: its files live on the
+    # variant rows. Pointing library_file_id at one of them would be worse than
+    # useless — that FK is ON DELETE CASCADE, so deleting a single alternative
+    # would take the whole queue item with it.
+    if not data.archive_id and not data.library_file_id and not data.variants:
         raise HTTPException(400, "Either archive_id or library_file_id must be provided")
 
     # Cannot specify both printer_id and target_model
@@ -379,8 +605,10 @@ async def add_to_queue(
         if not result.scalar_one_or_none():
             raise HTTPException(400, "Printer not found")
 
-    # Validate target_model has active printers
-    if target_model_norm:
+    # Validate target_model has active printers. Skipped for cross-model items:
+    # target_model there is just the first candidate, and _resolve_queue_variants
+    # has already required that *some* candidate has a printer.
+    if target_model_norm and not data.variants:
         result = await db.execute(
             select(Printer).where(Printer.model == target_model_norm).where(Printer.is_active == True)  # noqa: E712
         )
@@ -448,11 +676,27 @@ async def add_to_queue(
         except InvalidFilenameError as e:
             raise HTTPException(400, str(e)) from e
 
+    # Cross-model safety gate (#2578): a G-code 3MF sliced for one model must
+    # not be queued for dispatch to an incompatible model. The UI can no longer
+    # produce such rows, but API-created rows must be rejected here too — the
+    # scheduler assigns model-based items to hardware with no human in the loop.
+    if target_model_norm:
+        sliced_for = None
+        if archive:
+            sliced_for = archive.sliced_for_model
+        elif library_file and library_file.file_metadata:
+            sliced_for = library_file.file_metadata.get("sliced_for_model")
+        if not is_gcode_compatible(sliced_for, target_model_norm):
+            raise HTTPException(
+                400,
+                f"File was sliced for {sliced_for} and cannot be dispatched to {target_model_norm} printers",
+            )
+
     # Extract filament types for model-based assignment (used by scheduler for validation)
     required_filament_types = None
+    file_path = None
     if target_model_norm:
         # Get file path from archive or library file
-        file_path = None
         if archive:
             file_path = settings.base_dir / archive.file_path
         elif library_file:
@@ -468,15 +712,17 @@ async def add_to_queue(
     # If filament overrides are provided, update required_filament_types to match override types
     filament_overrides_json = None
     if data.filament_overrides and target_model_norm:
-        filament_overrides_json = json.dumps(data.filament_overrides)
-        # Update required_filament_types from overrides so scheduler validates against overridden types
-        override_types = sorted({o["type"] for o in data.filament_overrides if "type" in o})
-        if override_types:
-            # Merge with existing types (overrides may only cover some slots)
-            existing_types = set(json.loads(required_filament_types)) if required_filament_types else set()
-            # Replace types for overridden slots, keep others
-            all_types = existing_types | set(override_types)
-            required_filament_types = json.dumps(sorted(all_types))
+        plate_overrides = overrides_for_plate(data.filament_overrides, file_path, data.plate_id)
+        if plate_overrides:
+            filament_overrides_json = json.dumps(plate_overrides)
+            # Update required_filament_types from overrides so scheduler validates against overridden types
+            override_types = sorted({o["type"] for o in plate_overrides if "type" in o})
+            if override_types:
+                # Merge with existing types (overrides may only cover some slots)
+                existing_types = set(json.loads(required_filament_types)) if required_filament_types else set()
+                # Replace types for overridden slots, keep others
+                all_types = existing_types | set(override_types)
+                required_filament_types = json.dumps(sorted(all_types))
 
     # Validate quantity
     quantity = max(1, data.quantity)
@@ -610,6 +856,51 @@ async def add_to_queue(
             raise HTTPException(status_code=404, detail="Project not found")
 
     ams_mapping_json = json.dumps(data.ams_mapping) if data.ams_mapping else None
+    # Reprint fallback: the caller didn't specify an explicit ams_mapping (no
+    # per-slot filament-mapping edit was made), but the archive carries the
+    # slicer's own live-resolved AMS-slot pick from the original print (see
+    # `extra_data.slicer_ams_mapping`, written by the VP-queue path via
+    # `_extract_slicer_ams_mapping_json`). Reuse it so the reprint dispatches
+    # to the exact same physical spool instead of the scheduler re-deriving a
+    # (possibly ambiguous) mapping from just the file's static type/color.
+    #
+    # Global tray IDs only mean something relative to the specific printer
+    # they were resolved against, so this only fires when the reprint targets
+    # that exact printer (`extra_data.slicer_ams_mapping.printer_id`) — never
+    # for a model-based dispatch (data.printer_id is None) or a reprint aimed
+    # at a different printer, where the same tray number can hold a
+    # completely different spool (#2700 review).
+    #
+    # It also stands down when the request carries force-color-match overrides:
+    # those are the caller asking the scheduler to match strictly against the
+    # printer's live trays, and they are only ever applied inside
+    # `_compute_ams_mapping_for_printer` — the function a stored mapping makes
+    # the scheduler skip. Same precedence as the VP-side toggle pair (#2700
+    # review).
+    #
+    # Note this is otherwise unconditional — it applies regardless of whether
+    # the physical spool in that slot has changed since the original print.
+    # #1308 covers re-verifying a stored mapping against live AMS state at
+    # dispatch time; that check is a separate PR and, once merged, will also
+    # catch a stale slot inherited through this fallback.
+    wants_live_color_match = any(
+        isinstance(o, dict) and o.get("force_color_match") for o in (data.filament_overrides or [])
+    )
+    if (
+        ams_mapping_json is None
+        and not wants_live_color_match
+        and archive
+        and archive.extra_data
+        and data.printer_id is not None
+    ):
+        saved = archive.extra_data.get("slicer_ams_mapping")
+        if (
+            isinstance(saved, dict)
+            and saved.get("printer_id") == data.printer_id
+            and isinstance(saved.get("mapping"), list)
+            and saved["mapping"]
+        ):
+            ams_mapping_json = json.dumps(saved["mapping"])
     items = []
     for i in range(quantity):
         item = PrintQueueItem(
@@ -634,6 +925,8 @@ async def add_to_queue(
             timelapse=data.timelapse,
             use_ams=data.use_ams,
             nozzle_offset_cali=data.nozzle_offset_cali,
+            preheat_override=data.preheat_override,
+            preheat_chamber_target_override=data.preheat_chamber_target_override,
             gcode_injection=data.gcode_injection,
             cleanup_library_after_dispatch=data.cleanup_library_after_dispatch,
             project_id=data.project_id,
@@ -645,6 +938,22 @@ async def add_to_queue(
         )
         db.add(item)
         items.append(item)
+
+    if variant_specs:
+        variant_values = [
+            _variant_values(spec, library_file, model, position)
+            for position, (spec, library_file, model) in enumerate(variant_specs)
+        ]
+        # SJF orders pending items before any printer is known, so the row carries
+        # the shortest candidate's estimate. Resolution replaces it with the one
+        # that actually runs.
+        estimates = [v["print_time_seconds"] for v in variant_values if v["print_time_seconds"]]
+        for item in items:
+            # Each copy in a quantity>1 batch gets its own candidate rows —
+            # attempt counts are per-item, and two copies must be free to land on
+            # different printers.
+            item.variants.extend(PrintQueueVariant(**values) for values in variant_values)
+            item.print_time_seconds = min(estimates) if estimates else None
 
     await db.commit()
 
@@ -739,7 +1048,10 @@ async def bulk_update_queue_items(
     skipped_count = 0
 
     for item in items:
-        if item.status != "pending":
+        # Skip non-pending rows and rows a dispatch worker has claimed (#2615) —
+        # editing a claimed row mid-upload would split it from the in-flight
+        # dispatch, so it's excluded from the bulk change (cancel to move it).
+        if item.status != "pending" or item.dispatching_at is not None:
             skipped_count += 1
             continue
 
@@ -1004,6 +1316,8 @@ async def get_queue_item(
             selectinload(PrintQueueItem.library_file),
             selectinload(PrintQueueItem.created_by),
             selectinload(PrintQueueItem.batch),
+            # Cross-model candidates (#671) and their files, for the card label.
+            selectinload(PrintQueueItem.variants).selectinload(PrintQueueVariant.library_file),
         )
         .where(PrintQueueItem.id == item_id)
     )
@@ -1034,7 +1348,14 @@ async def update_queue_item(
     """Update a queue item."""
     user, can_modify_all = auth_result
 
-    result = await db.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))
+    result = await db.execute(
+        select(PrintQueueItem)
+        # Needed by the cross-model guard below, and by the response builder —
+        # without it _variant_summaries falls back to [] and a PATCH would strip
+        # the alternatives out of the payload it echoes back.
+        .options(selectinload(PrintQueueItem.variants).selectinload(PrintQueueVariant.library_file))
+        .where(PrintQueueItem.id == item_id)
+    )
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(404, "Queue item not found")
@@ -1047,15 +1368,38 @@ async def update_queue_item(
     if item.status != "pending":
         raise HTTPException(400, "Can only update pending items")
 
+    # Dispatch claim (#2615): the row is pending but a scheduler worker has
+    # already claimed it and is uploading to its printer. Editing now (e.g.
+    # reassigning printer_id) would split the queue row from the in-flight
+    # archive/expected-print/physical command. Reject until dispatch finishes;
+    # to move it, cancel first (the coordinated escape) and re-queue.
+    if item.dispatching_at is not None:
+        raise HTTPException(409, "Item is being dispatched — cancel it first to make changes")
+
     update_data = data.model_dump(exclude_unset=True)
 
-    # Normalize target_model if being updated
+    # Normalize target_model if being updated (see add_to_queue for why the
+    # code map has to run first).
     if "target_model" in update_data and update_data["target_model"]:
-        update_data["target_model"] = (
-            normalize_printer_model(update_data["target_model"])
-            or normalize_printer_model_id(update_data["target_model"])
-            or update_data["target_model"]
-        )
+        update_data["target_model"] = normalize_model_name(update_data["target_model"])
+
+    # A cross-model item (#671) owns its own printer decision: each candidate
+    # carries its model, and the resolver folds the winner onto the row at
+    # dispatch. Assigning a printer here would leave a row with variants *and* a
+    # printer_id, and the fixed-printer branch of the scheduler wins that race —
+    # so it would dispatch a row whose library_file_id is still null and die in
+    # the upload. Narrowing target_model is refused for the same reason: it
+    # would silently discard every alternative the user queued.
+    #
+    # Compared against the current value rather than merely present, because the
+    # edit dialog re-sends target_model unchanged on every save.
+    if item.variants:
+        for field in ("printer_id", "target_model"):
+            if field in update_data and update_data[field] != getattr(item, field):
+                raise HTTPException(
+                    400,
+                    "This job has printer alternatives — remove them before assigning a printer or model",
+                )
 
     # Cannot specify both printer_id and target_model
     new_printer_id = update_data.get("printer_id", item.printer_id)
@@ -1077,15 +1421,39 @@ async def update_queue_item(
         if not result.scalars().first():
             raise HTTPException(400, f"No active printers for model: {update_data['target_model']}")
 
+        # Cross-model safety gate (#2578) — same check as the create route, so
+        # a mismatched target can't be introduced by editing either.
+        sliced_for = None
+        if item.archive_id:
+            result = await db.execute(select(PrintArchive.sliced_for_model).where(PrintArchive.id == item.archive_id))
+            sliced_for = result.scalar_one_or_none()
+        elif item.library_file_id:
+            result = await db.execute(select(LibraryFile).where(LibraryFile.id == item.library_file_id))
+            lib = result.scalar_one_or_none()
+            if lib and lib.file_metadata:
+                sliced_for = lib.file_metadata.get("sliced_for_model")
+        if not is_gcode_compatible(sliced_for, update_data["target_model"]):
+            raise HTTPException(
+                400,
+                f"File was sliced for {sliced_for} and cannot be dispatched to {update_data['target_model']} printers",
+            )
+
     # Serialize ams_mapping to JSON for TEXT column storage
     if "ams_mapping" in update_data:
         update_data["ams_mapping"] = json.dumps(update_data["ams_mapping"]) if update_data["ams_mapping"] else None
 
-    # Serialize filament_overrides to JSON for TEXT column storage
+    # Serialize filament_overrides to JSON for TEXT column storage, keeping only
+    # the slots this item's plate actually prints (#2551 — same shared-override
+    # list the create path narrows).
     if "filament_overrides" in update_data:
-        update_data["filament_overrides"] = (
-            json.dumps(update_data["filament_overrides"]) if update_data["filament_overrides"] else None
-        )
+        overrides = update_data["filament_overrides"]
+        if overrides:
+            overrides = overrides_for_plate(
+                overrides,
+                await _resolve_source_path(db, item),
+                update_data.get("plate_id", item.plate_id),
+            )
+        update_data["filament_overrides"] = json.dumps(overrides) if overrides else None
 
     # Serialize H2C rack-swap nozzle pick (#1780) to JSON for TEXT column
     # storage; same Text-as-opaque-blob convention as ams_mapping above.
@@ -1093,6 +1461,16 @@ async def update_queue_item(
         update_data["nozzle_mapping"] = (
             json.dumps(update_data["nozzle_mapping"]) if update_data["nozzle_mapping"] else None
         )
+
+    # Re-check the dispatch claim right before mutating (#2615). Several awaited
+    # validations ran since the guard above, and a scheduler worker may have
+    # claimed the row in that gap. A fresh read (item isn't dirty yet, so no
+    # autoflush races the check) narrows the window to effectively nothing.
+    claimed = (
+        await db.execute(select(PrintQueueItem.dispatching_at).where(PrintQueueItem.id == item_id))
+    ).scalar_one_or_none()
+    if claimed is not None:
+        raise HTTPException(409, "Item is being dispatched — cancel it first to make changes")
 
     for field, value in update_data.items():
         setattr(item, field, value)
@@ -1268,9 +1646,7 @@ async def stop_queue_item(
     holding only _OWN saw the Stop button in the queue UI but got 403 on click.
     """
 
-    from backend.app.models.smart_plug import SmartPlug
     from backend.app.services.printer_manager import printer_manager
-    from backend.app.services.tasmota import tasmota_service
 
     user, can_modify_all = auth_result
 
@@ -1317,35 +1693,39 @@ async def stop_queue_item(
     item.status = "cancelled"
     item.completed_at = datetime.now(timezone.utc)
     item.error_message = "Stopped by user" if stop_sent else "Stopped by user (printer was offline)"
-    await db.commit()
 
-    # Get smart plug info if auto-off is enabled
-    plug_ip = None
-    if auto_off_after:
-        result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-        plug = result.scalar_one_or_none()
-        if plug and plug.enabled:
-            plug_ip = plug.ip_address
+    # Reconcile the linked archive when the printer is offline (#2603). When the
+    # stop command reaches the printer it later reports the stop over MQTT and
+    # on_print_complete flips the archive to cancelled/failed. When the printer is
+    # offline no such event ever arrives, so the archive would stay "printing"
+    # forever (queue row cancelled, archive still printing — the reporter's
+    # archive 436). Close it out here, mirroring what the MQTT path would have
+    # done. Only touch a still-"printing" archive so we never overwrite a real
+    # completion that raced in.
+    if not stop_sent and item.archive_id:
+        archive = await db.get(PrintArchive, item.archive_id)
+        if archive and archive.status == "printing":
+            archive.status = "cancelled"
+            archive.completed_at = datetime.now(timezone.utc)
+            archive.failure_reason = "Stopped by user (printer was offline)"
+
+    await db.commit()
 
     logger.info("Stopped printing queue item %s (stop command sent: %s)", item_id, stop_sent)
 
-    # Schedule background task for cooldown + power off
-    if plug_ip:
+    # Schedule power-off if the queue item opted in. Delegates to the smart-plug
+    # manager so the off honours each plug's configured strategy (time delay or
+    # temperature threshold), is cancelled if the printer starts printing again,
+    # and never cuts power on a loaded print (#1890). Previously an inline block
+    # hardcoded a 50°C / 600s cooldown wait and powered off on the timeout
+    # regardless of print state.
+    if auto_off_after:
+        from backend.app.services.smart_plug_manager import smart_plug_manager
 
-        async def cooldown_and_poweroff():
-            logger.info("Auto-off: Waiting for printer %s to cool down before power off...", printer_id)
-            await printer_manager.wait_for_cooldown(printer_id, target_temp=50.0, timeout=600)
-            # Re-fetch plug since we're in a new async context
-            from backend.app.core.database import async_session
-
-            async with async_session() as new_db:
-                result = await new_db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-                plug = result.scalar_one_or_none()
-                if plug and plug.enabled:
-                    logger.info("Auto-off: Powering off printer %s", printer_id)
-                    await tasmota_service.turn_off(plug)
-
-        spawn_background_task(cooldown_and_poweroff(), name=f"queue-cooldown-poweroff-{printer_id}")
+        try:
+            await smart_plug_manager.schedule_off_after_queue_job(printer_id, db)
+        except Exception as e:
+            logger.warning("Auto-off: Failed to schedule power-off for printer %s: %s", printer_id, e)
 
     return {"message": "Print stopped" if stop_sent else "Queue item cancelled (printer was offline)"}
 
@@ -1386,6 +1766,7 @@ async def start_queue_item(
             selectinload(PrintQueueItem.printer),
             selectinload(PrintQueueItem.library_file),
             selectinload(PrintQueueItem.batch),
+            selectinload(PrintQueueItem.variants).selectinload(PrintQueueVariant.library_file),
         )
         .where(PrintQueueItem.id == item_id)
     )

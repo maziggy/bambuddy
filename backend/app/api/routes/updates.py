@@ -110,6 +110,84 @@ def _is_docker_environment() -> bool:
     return False
 
 
+# Mount points the shipped compose file gives Bambuddy. Only these are
+# consulted when guessing the compose directory — an arbitrary bind mount
+# (a NAS share, an external library root) says nothing about where the
+# compose file lives.
+_COMPOSE_BIND_MOUNTPOINTS = ("/app/data", "/app/logs")
+
+# A named volume resolves to ``.../docker/volumes/<project>_bambuddy_data/_data``
+# in mountinfo. That names the compose *project* but reveals nothing about
+# the directory holding the compose file, so these entries are skipped.
+_DOCKER_NAMED_VOLUME_ROOT = re.compile(r"/docker/volumes/[^/]+/_data/?$")
+
+
+def _compose_dir_from_mountinfo() -> str | None:
+    """Guess the host directory holding the compose file, or None (#2664).
+
+    ``docker compose pull`` only works from the directory containing the
+    compose file, so the command the update box prints is unusable until the
+    user remembers where that is. Compose knows the answer — it stamps
+    ``com.docker.compose.project.working_dir`` onto every container it
+    creates — but reading your own labels requires the Docker socket, and
+    mounting that into Bambuddy would hand the container root-equivalent
+    access to the host in exchange for a convenience string. So we infer.
+
+    ``/proc/self/mountinfo`` exposes the *host* side of a bind mount in its
+    root field: a ``./data:/app/data`` line in the compose file surfaces as
+    ``/opt/bambuddy/data``, whose parent is the compose directory. The leaf
+    must match the mount point's own name before we take the parent —
+    ``/mnt/nas/prints:/app/data`` is a bind mount whose parent is emphatically
+    not a compose directory.
+
+    This is a guess and is treated as one — it only ever prefills the setting
+    the user can overwrite. The root field is relative to the *mounted device*
+    rather than to the host's ``/``, so a compose directory that sits under a
+    separate mount loses that mount's own prefix. Measured against real
+    containers: a compose file on the root filesystem (here a ZFS dataset
+    mounted at ``/``) came back exactly right, while one under ``/tmp`` — its
+    own tmpfs — inferred ``/claude-1001/...`` for ``/tmp/claude-1001/...``.
+    Nothing inside the container can tell the two apart, which is precisely
+    why the field is editable. The shipped compose file uses named volumes,
+    for which nothing is inferable at all.
+    """
+    try:
+        with open("/proc/self/mountinfo") as f:
+            lines = f.readlines()
+    except OSError:
+        return None
+
+    for line in lines:
+        parts = line.split()
+        # mountID parentID major:minor root mountPoint ...
+        if len(parts) < 5:
+            continue
+        root, mount_point = parts[3], parts[4]
+        if mount_point not in _COMPOSE_BIND_MOUNTPOINTS:
+            continue
+        if _DOCKER_NAMED_VOLUME_ROOT.search(root):
+            continue
+        parent, _, leaf = root.rstrip("/").rpartition("/")
+        if parent and leaf == mount_point.rsplit("/", 1)[-1]:
+            return parent
+    return None
+
+
+def _detect_compose_dir() -> str | None:
+    """Best-effort compose directory for the update instructions (#2664).
+
+    ``BAMBUDDY_COMPOSE_DIR`` wins when set — it is the only source that is
+    stated rather than inferred, and the shipped compose file carries a
+    commented ``${PWD}`` line for it.
+    """
+    env_dir = os.environ.get("BAMBUDDY_COMPOSE_DIR", "").strip()
+    if env_dir:
+        return env_dir
+    if not _is_docker_environment():
+        return None
+    return _compose_dir_from_mountinfo()
+
+
 def _is_ha_addon() -> bool:
     """Detect if running as a Home Assistant Supervisor addon.
 
@@ -527,6 +605,11 @@ async def check_for_updates(
                 "is_windows_installer": is_windows_installer,
                 "update_method": update_method,
                 "installer_download_url": installer_download_url,
+                # Prefill only — never the value the user saved. The settings
+                # response owns ``docker_compose_dir``; keeping the two apart
+                # means clearing the field falls back to the guess instead of
+                # resurrecting the cleared value from a stale update check.
+                "compose_dir_detected": _detect_compose_dir() if update_method == "docker" else None,
             }
 
     except httpx.HTTPError as e:

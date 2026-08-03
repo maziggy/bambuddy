@@ -402,10 +402,13 @@ export function MakerworldPage() {
   const instances = resolved?.instances ?? [];
   const alreadyImported = (resolved?.already_imported_library_ids.length ?? 0) > 0;
 
-  const hasToken = statusQuery.data?.has_cloud_token ?? false;
   // Only block Print Now / Import actions on an import-capable login.
   // Browse/resolve works anonymously.
   const canDownload = statusQuery.data?.can_download ?? false;
+  // A stored token Bambu has rejected downloads nothing, but it isn't "no
+  // token" either — saying "sign in" to someone who believes they already are
+  // is what made this so confusing. Name the actual state.
+  const signInExpired = statusQuery.data?.sign_in_expired ?? false;
 
   const coverUrl = useMemo(() => pickString(design, 'coverUrl'), [design]);
   const title = pickString(design, 'title');
@@ -430,17 +433,21 @@ export function MakerworldPage() {
           screens (tablet/phone), with the sidebar tucked below the main flow. */}
       <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
         <div className="space-y-6 min-w-0">
-      {!hasToken && (
+      {!canDownload && (
         <Card className="border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20">
           <CardContent>
             <div className="flex items-start gap-3 py-2">
               <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
               <div className="text-sm">
                 <p className="font-medium text-amber-900 dark:text-amber-100">
-                  {t('makerworld.signInRequiredTitle')}
+                  {signInExpired
+                    ? t('makerworld.signInExpiredTitle')
+                    : t('makerworld.signInRequiredTitle')}
                 </p>
                 <p className="text-amber-800 dark:text-amber-200 mt-1">
-                  {t('makerworld.signInRequiredBody')}{' '}
+                  {signInExpired
+                    ? t('makerworld.signInExpiredBody')
+                    : t('makerworld.signInRequiredBody')}{' '}
                   <Link to="/profiles" className="underline">
                     {t('makerworld.openCloudSettings')}
                   </Link>

@@ -55,8 +55,15 @@ class FailureAnalysisService:
         if project_id:
             from backend.app.models.archive import PrintArchive
 
+            # Soft-deleted archives (#1343) keep their project_id, so without
+            # this the failure rate for a project still counts prints the user
+            # deleted from it — and disagrees with the project's own numbers,
+            # which now exclude them (#2731).
             project_archive_ids = await self.db.execute(
-                select(PrintArchive.id).where(PrintArchive.project_id == project_id)
+                select(PrintArchive.id).where(
+                    PrintArchive.project_id == project_id,
+                    PrintArchive.deleted_at.is_(None),
+                )
             )
             archive_ids = [row[0] for row in project_archive_ids.fetchall()]
             if archive_ids:

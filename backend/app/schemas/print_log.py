@@ -1,9 +1,17 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class PrintLogEntrySchema(BaseModel):
+    # from_attributes lets the routes build this straight off the ORM row.
+    # The GET serialiser used to name every field by hand, and each field it
+    # forgot came back as its default — a silent null rather than an error.
+    # That cost the log its failure_reason (#1687 part 4) and then its cost /
+    # energy_kwh / energy_cost (#2636). Validating from the row removes the
+    # chance to forget one.
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     archive_id: int | None = None
     print_name: str | None = None

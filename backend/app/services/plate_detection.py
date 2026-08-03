@@ -604,16 +604,28 @@ async def capture_camera_image(
     # Try external camera first if requested and available
     if use_external and external_camera_url and external_camera_type:
         try:
+            from backend.app.api.routes.camera import live_frame_for_capture
             from backend.app.services.external_camera import capture_frame
 
-            image_data = await capture_frame(
-                external_camera_url,
-                external_camera_type,
-                snapshot_url=external_camera_snapshot_url,
-            )
-            if image_data:
-                camera_source = "external"
-                logger.debug("Captured frame from external camera for printer %s", printer_id)
+            # What this function's docstring already promised, but only the
+            # built-in fallback below delivered: an external camera is
+            # single-reader too, so capturing while a viewer watches fails
+            # (#2707).
+            defer, buffered = live_frame_for_capture(printer_id)
+            if defer:
+                if buffered:
+                    image_data = buffered
+                    camera_source = "external (buffered)"
+                    logger.debug("Using buffered external frame for printer %s", printer_id)
+            else:
+                image_data = await capture_frame(
+                    external_camera_url,
+                    external_camera_type,
+                    snapshot_url=external_camera_snapshot_url,
+                )
+                if image_data:
+                    camera_source = "external"
+                    logger.debug("Captured frame from external camera for printer %s", printer_id)
         except Exception as e:
             logger.warning("Failed to capture from external camera: %s", e)
 

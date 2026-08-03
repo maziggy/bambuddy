@@ -7,8 +7,17 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { LoginPage } from '../../pages/LoginPage';
+import { setAuthToken } from '../../api/client';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
+
+// Spy on navigation so we can assert the #1889 redirect-away-if-authenticated
+// guard. importActual keeps BrowserRouter / useLocation / useSearchParams real.
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', async (importActual) => {
+  const actual = await importActual<typeof import('react-router-dom')>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
 
 describe('LoginPage', () => {
   beforeEach(() => {
@@ -829,6 +838,50 @@ describe('LoginPage', () => {
       });
       // …but Beta's icon stays put. If state leaks to the parent, this fails.
       expect(screen.getByRole('button', { name: /BetaIdP/i }).querySelector('img')).not.toBeNull();
+    });
+  });
+
+  // #1889: an already-authenticated visit to /login must redirect to the app,
+  // not render the credentials form. Browsers autocomplete the origin to its
+  // most-visited path (/login), so live sessions kept landing on the form and
+  // it looked like Bambuddy "never stays logged in".
+  describe('authenticated redirect (#1889)', () => {
+    const mockUser = {
+      id: 1,
+      username: 'testuser',
+      role: 'admin' as const,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    };
+
+    afterEach(() => {
+      setAuthToken(null);
+    });
+
+    it('redirects an already-authenticated visitor away from /login', async () => {
+      // A live session: token present, /api/v1/auth/me answers 200.
+      setAuthToken('valid-token', 'session');
+      server.use(http.get('/api/v1/auth/me', () => HttpResponse.json(mockUser)));
+      mockNavigate.mockClear();
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
+      });
+    });
+
+    it('does not redirect an unauthenticated visitor', async () => {
+      // No token → checkAuthStatus leaves user null; the form must stay put.
+      server.use(http.get('/api/v1/auth/me', () => HttpResponse.json(mockUser)));
+      mockNavigate.mockClear();
+
+      render(<LoginPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
+      });
+      expect(mockNavigate).not.toHaveBeenCalledWith('/', { replace: true });
     });
   });
 });

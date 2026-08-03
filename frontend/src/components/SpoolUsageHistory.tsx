@@ -19,8 +19,8 @@ interface SpoolUsageHistoryProps {
 
 const STATUS_COLORS: Record<string, string> = {
   completed: 'text-bambu-green',
-  failed: 'text-red-400',
-  aborted: 'text-yellow-400',
+  failed: 'text-red-700 dark:text-red-400',
+  aborted: 'text-yellow-700 dark:text-yellow-400',
 };
 
 export function SpoolUsageHistory({ spoolId }: SpoolUsageHistoryProps) {
@@ -67,7 +67,7 @@ export function SpoolUsageHistory({ spoolId }: SpoolUsageHistoryProps) {
           size="sm"
           onClick={() => clearMutation.mutate()}
           disabled={clearMutation.isPending}
-          className="text-xs text-bambu-gray hover:text-red-400"
+          className="text-xs text-bambu-gray hover:text-red-700 dark:hover:text-red-400"
         >
           <Trash2 className="w-3 h-3 mr-1" />
           {t('inventory.clearHistory')}

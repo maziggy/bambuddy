@@ -112,6 +112,13 @@ services:
       # Port BamBuddy runs on (default: 8000)
       # Usage: PORT=8080 docker compose up -d
       - PORT=${PORT:-8000}
+      # Directory this compose file lives in, so Settings → Updates can print
+      # an update command you can paste from anywhere instead of one that only
+      # works if you are already in the right directory (#2664). Uncomment to
+      # have Compose fill it in from the shell you run `docker compose` in; the
+      # field is also editable in Settings if you would rather set it there or
+      # if you drive Compose with `-f` from elsewhere.
+      #- BAMBUDDY_COMPOSE_DIR=${PWD}
       # Virtual printer: Set to the Docker host's IP when using bridge mode (ports:).
       # Required for FTP passive mode to work behind NAT.
       # Example: VIRTUAL_PRINTER_PASV_ADDRESS=192.168.1.100
@@ -147,6 +154,13 @@ services:
       # You also need to mount your certificates to the container (see volumes section above).
       # - USE_SYSTEM_TRUST_STORE=true
     restart: unless-stopped
+    # Docker's default is 10s, after which it SIGKILLs. Bambuddy shuts down in
+    # well under that (uvicorn caps its wait on in-flight requests at 5s, then
+    # the app checkpoints the SQLite WAL, disconnects MQTT and stops the virtual
+    # printers), but a Pi with several virtual printers and a slow SD card can be
+    # nearer the limit than is comfortable. The headroom costs nothing — the
+    # container exits as soon as it is done, not when the timer expires.
+    stop_grace_period: 30s
 
   # Optional: External PostgreSQL database
   # Uncomment to run Postgres alongside Bambuddy (or use an external Postgres host)

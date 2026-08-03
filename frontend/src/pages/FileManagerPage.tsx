@@ -14,11 +14,13 @@ import {
   FolderPlus,
   FileBox,
   Clock,
+  CalendarClock,
   HardDrive,
   File,
   MoveRight,
   CheckSquare,
   Square,
+  Layers,
   LayoutGrid,
   List,
   Search,
@@ -32,6 +34,7 @@ import {
   Archive as ArchiveIcon,
   Briefcase,
   Cog,
+  Play,
   Printer,
   Pencil,
   Image,
@@ -58,6 +61,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { PrintModal } from '../components/PrintModal';
 import { ModelViewerModal } from '../components/ModelViewerModal';
 import { SliceModal } from '../components/SliceModal';
+import { RunWithPipelineModal } from '../components/RunWithPipelineModal';
 import { BulkTagsPickerModal } from '../components/BulkTagsPickerModal';
 import { FileUploadModal } from '../components/FileUploadModal';
 import { FolderReadmePanel } from '../components/FolderReadmePanel';
@@ -67,7 +71,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import { useAuth } from '../contexts/AuthContext';
-import { formatDuration, parseUTCDate } from '../utils/date';
+import { formatDuration, parseUTCDate, formatDate } from '../utils/date';
 import { formatFileSize } from '../utils/file';
 
 type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
@@ -292,7 +296,7 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: Renam
               )}
             </div>
             {filenameError && (
-              <p className="mt-1 text-xs text-red-400">{filenameError}</p>
+              <p className="mt-1 text-xs text-red-700 dark:text-red-400">{filenameError}</p>
             )}
           </div>
           <div className="flex justify-end gap-2 pt-2">
@@ -555,16 +559,28 @@ interface FolderTreeItemProps {
   depth?: number;
   wrapNames?: boolean;
   defaultExpanded?: boolean;
+  showModified?: boolean;
   hasPermission: (permission: Permission) => boolean;
   t: TFunction;
 }
 
-function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, onRename, depth = 0, wrapNames = false, defaultExpanded = true, hasPermission, t }: FolderTreeItemProps) {
+function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, onRename, depth = 0, wrapNames = false, defaultExpanded = true, showModified = false, hasPermission, t }: FolderTreeItemProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [showActions, setShowActions] = useState(false);
   const hasChildren = folder.children.length > 0;
   const isLinked = folder.project_id || folder.archive_id;
   const isExternal = folder.is_external;
+  // #1781: users with only library:delete_own may delete empty, unlinked,
+  // non-external folders. The backend enforces the same rule and additionally
+  // counts trashed files (invisible here), so a 403 can still come back.
+  const canDeleteFolder =
+    hasPermission('library:delete_all') ||
+    (hasPermission('library:delete_own') && folder.file_count === 0 && !hasChildren && !isExternal && !isLinked);
+  const deleteDisabledTooltip = canDeleteFolder
+    ? undefined
+    : hasPermission('library:delete_own') && !isExternal && !isLinked
+      ? t('fileManager.onlyEmptyFoldersDeletable')
+      : t('fileManager.noPermissionDeleteFolder');
 
   return (
     <div>
@@ -591,16 +607,29 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
           <div className="w-4.5" />
         )}
         {isExternal ? (
-          <FolderSymlink className="w-4 h-4 text-purple-400 flex-shrink-0" />
+          <FolderSymlink className="w-4 h-4 text-purple-600 dark:text-purple-400 flex-shrink-0" />
         ) : (
           <FolderOpen className="w-4 h-4 text-bambu-green flex-shrink-0" />
         )}
-        <span className={`text-sm flex-1 min-w-0 ${wrapNames ? 'break-all' : 'truncate'}`} title={folder.name}>{folder.name}</span>
+        <div className="flex-1 min-w-0">
+          <span className={`block text-sm ${wrapNames ? 'break-all' : 'truncate'}`} title={folder.name}>{folder.name}</span>
+          {/* #2680 follow-up: the same toolbar toggle that shows dates on file
+              cards also shows them here. This is `latest_activity_at` — the
+              newest timestamp among the folder itself, its files and its
+              subfolders (the value "sort by recent activity" orders on) — not
+              the folder's own on-disk mtime, hence the distinct label. */}
+          {showModified && folder.latest_activity_at && (
+            <span className="mt-0.5 flex items-center gap-1 text-xs text-bambu-gray" title={t('fileManager.lastActivity')}>
+              <CalendarClock className="w-3 h-3 flex-shrink-0" />
+              <span className="truncate">{formatDate(folder.latest_activity_at)}</span>
+            </span>
+          )}
+        </div>
         {/* Link indicator - clickable to change link */}
         {isLinked && (
           <button
             onClick={(e) => { e.stopPropagation(); onLink(folder); }}
-            className="flex-shrink-0 flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors"
+            className="flex-shrink-0 flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-500/30 transition-colors"
             title={`${folder.project_name ? `Project: ${folder.project_name}` : `Archive: ${folder.archive_name}`} (click to change)`}
           >
             <Link2 className="w-3 h-3" />
@@ -614,7 +643,7 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
         {/* Read-only indicator for external folders */}
         {isExternal && folder.external_readonly && (
           <span title={t('fileManager.readOnly')}>
-            <Lock className="w-3 h-3 text-amber-400 flex-shrink-0" />
+            <Lock className="w-3 h-3 text-amber-600 dark:text-amber-400 flex-shrink-0" />
           </span>
         )}
         {folder.file_count > 0 && (
@@ -666,11 +695,11 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
                 </button>
                 <button
                   className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
-                    hasPermission('library:delete_all') ? 'text-red-400 hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
+                    canDeleteFolder ? 'text-red-700 dark:text-red-400 hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
                   }`}
-                  onClick={() => { if (hasPermission('library:delete_all')) { onDelete(folder.id); setShowActions(false); } }}
-                  disabled={!hasPermission('library:delete_all')}
-                  title={!hasPermission('library:delete_all') ? t('fileManager.noPermissionDeleteFolder') : undefined}
+                  onClick={() => { if (canDeleteFolder) { onDelete(folder.id); setShowActions(false); } }}
+                  disabled={!canDeleteFolder}
+                  title={deleteDisabledTooltip}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   {t('common.delete')}
@@ -695,6 +724,7 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
               depth={depth + 1}
               wrapNames={wrapNames}
               defaultExpanded={defaultExpanded}
+              showModified={showModified}
               hasPermission={hasPermission}
               t={t}
             />
@@ -729,6 +759,7 @@ interface FileCardProps {
   onDownload: (id: number) => void;
   onPrint?: (file: LibraryFileListItem) => void;
   onSlice?: (file: LibraryFileListItem) => void;
+  onRunPipeline?: (file: LibraryFileListItem) => void;
   useSlicerApi?: boolean;
   onPreview3d?: (file: LibraryFileListItem) => void;
   onRename?: (file: LibraryFileListItem) => void;
@@ -738,10 +769,11 @@ interface FileCardProps {
   hasPermission: (permission: Permission) => boolean;
   canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
   authEnabled: boolean;
+  showModified: boolean;
   t: TFunction;
 }
 
-function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onPrint, onSlice, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, onTagClick, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
+function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onPrint, onSlice, onRunPipeline, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, onTagClick, thumbnailVersion, hasPermission, canModify, authEnabled, showModified, t }: FileCardProps) {
   const [showActions, setShowActions] = useState(false);
 
   return (
@@ -797,6 +829,14 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
             {file.sliced_for_model}
           </div>
         )}
+        {/* Counts the whole group, including members in other folders (#671 /
+            #2570) — printing this file will offer all of them. */}
+        {(file.variant_count ?? 0) > 1 && (
+          <div className="mt-1 text-xs text-bambu-green flex items-center gap-1">
+            <Layers className="w-3 h-3" />
+            {t('fileManager.variants.badge', { count: file.variant_count })}
+          </div>
+        )}
         {file.print_count > 0 && (
           <div className="mt-1 text-xs text-bambu-green">
             {t('fileManager.printedCount', { count: file.print_count })}
@@ -806,6 +846,14 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
           <div className="mt-1 text-xs text-bambu-gray flex items-center gap-1">
             <User className="w-3 h-3" />
             {file.created_by_username}
+          </div>
+        )}
+        {/* #2680: last-modified date, toggled from the toolbar. Uses the real
+            on-disk mtime when known, else the DB created_at. */}
+        {showModified && (
+          <div className="mt-1 text-xs text-bambu-gray flex items-center gap-1" title={t('fileManager.lastModified')}>
+            <CalendarClock className="w-3 h-3" />
+            {formatDate(file.fs_modified_at ?? file.created_at)}
           </div>
         )}
         {(file.tags?.length ?? 0) > 0 && (
@@ -864,6 +912,19 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
                   {t('slice.action')}
                 </button>
               )}
+              {onRunPipeline && useSlicerApi && isSliceableFilename(file.filename) && (
+                <button
+                  className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
+                    hasPermission('pipelines:run') ? 'text-white hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
+                  }`}
+                  onClick={() => { if (hasPermission('pipelines:run')) { onRunPipeline(file); setShowActions(false); } }}
+                  disabled={!hasPermission('pipelines:run')}
+                  title={!hasPermission('pipelines:run') ? t('library.runWithPipeline.noPermission') : undefined}
+                >
+                  <Play className="w-3.5 h-3.5" />
+                  {t('library.runWithPipeline.actionLabel')}
+                </button>
+              )}
               {onPreview3d && (file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'stl' || file.file_type === 'gcode.3mf') && (
                 <button
                   className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
@@ -916,7 +977,7 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
               )}
               <button
                 className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
-                  canModify('library', 'delete', file.created_by_id) ? 'text-red-400 hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
+                  canModify('library', 'delete', file.created_by_id) ? 'text-red-700 dark:text-red-400 hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
                 }`}
                 onClick={() => { if (canModify('library', 'delete', file.created_by_id)) { onDelete(file.id); setShowActions(false); } }}
                 disabled={!canModify('library', 'delete', file.created_by_id)}
@@ -978,6 +1039,8 @@ export function FileManagerPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'file' | 'folder' | 'bulk'; id: number; count?: number } | null>(null);
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
   const [sliceFile, setSliceFile] = useState<LibraryFileListItem | null>(null);
+  // Slicer Pipelines (#1425 PR B) — file gets "Run with pipeline" action.
+  const [runPipelineFile, setRunPipelineFile] = useState<LibraryFileListItem | null>(null);
   const [renameItem, setRenameItem] = useState<{ type: 'file' | 'folder'; id: number; name: string } | null>(null);
   const [thumbnailVersions, setThumbnailVersions] = useState<Record<number, number>>({});
   const [viewerFile, setViewerFile] = useState<LibraryFileListItem | null>(null);
@@ -1060,6 +1123,10 @@ export function FileManagerPage() {
     const saved = localStorage.getItem('library-sort-direction');
     return (saved as SortDirection) || 'asc';
   });
+  // Show/hide the last-modified date on each file card (#2680). Persisted.
+  const [showModified, setShowModified] = useState<boolean>(
+    () => localStorage.getItem('library-show-modified') === 'true'
+  );
 
   // Mobile detection for touch-friendly UI
   const isMobile = useIsMobile();
@@ -1248,7 +1315,11 @@ export function FileManagerPage() {
           comparison = (a.print_name || a.filename).localeCompare(b.print_name || b.filename);
           break;
         case 'date':
-          comparison = (parseUTCDate(a.created_at)?.getTime() ?? 0) - (parseUTCDate(b.created_at)?.getTime() ?? 0);
+          // #2680: sort by real on-disk mtime (matches `ls -t`), falling back to
+          // the DB created_at for managed uploads that have no filesystem mtime.
+          comparison =
+            (parseUTCDate(a.fs_modified_at ?? a.created_at)?.getTime() ?? 0) -
+            (parseUTCDate(b.fs_modified_at ?? b.created_at)?.getTime() ?? 0);
           break;
         case 'size':
           comparison = a.file_size - b.file_size;
@@ -1346,6 +1417,20 @@ export function FileManagerPage() {
       setDeleteConfirm(null);
       showToast(error.message, 'error');
     },
+  });
+
+  // "These files are the same job for different printers" (#671 / #2570).
+  // Durable, unlike the ad-hoc selection the Print button uses: once grouped,
+  // printing any member offers the others without re-selecting them.
+  const groupAsVersionsMutation = useMutation({
+    mutationFn: (fileIds: number[]) =>
+      api.createVariantGroup(fileIds.map((id) => ({ library_file_id: id }))),
+    onSuccess: (group) => {
+      queryClient.invalidateQueries({ queryKey: ['library-files'] });
+      showToast(t('fileManager.variants.grouped', { count: group.members.length }), 'success');
+      setSelectedFiles([]);
+    },
+    onError: (error: Error) => showToast(error.message, 'error'),
   });
 
   const bulkDeleteMutation = useMutation({
@@ -1480,6 +1565,36 @@ export function FileManagerPage() {
     if (!files) return [];
     return files.filter(f => selectedFiles.includes(f.id) && isSlicedFile(f.filename));
   }, [files, selectedFiles, isSlicedFile]);
+
+  // The clicked file's variant group, so printing one member offers the rest
+  // without the user re-selecting them (#2570).
+  const { data: printFileGroup } = useQuery({
+    queryKey: ['variant-group', printFile?.variant_group_id],
+    queryFn: () => api.getVariantGroup(printFile!.variant_group_id!),
+    enabled: !!printFile?.variant_group_id,
+  });
+
+  // Candidates for a cross-model print (#671), or undefined for an ordinary one.
+  // An explicit multi-selection wins over the group: the user just said, in this
+  // action, which files they meant.
+  const printVariantFiles = useMemo(() => {
+    if (!printFile) return undefined;
+    if (selectedSlicedFiles.length > 1) {
+      return selectedSlicedFiles.map(f => ({
+        id: f.id,
+        filename: f.filename,
+        sliced_for_model: f.sliced_for_model,
+      }));
+    }
+    if (printFileGroup && printFileGroup.members.length > 1) {
+      return printFileGroup.members.map(m => ({
+        id: m.library_file_id,
+        filename: m.filename,
+        sliced_for_model: m.target_model,
+      }));
+    }
+    return undefined;
+  }, [printFile, selectedSlicedFiles, printFileGroup]);
 
   // Handlers
   const handleFileSelect = useCallback((id: number) => {
@@ -1705,12 +1820,12 @@ export function FileManagerPage() {
             <span className="text-white font-medium">{stats.total_files}</span>
           </div>
           <div className="flex items-center gap-2 text-sm">
-            <FolderOpen className="w-4 h-4 text-blue-400" />
+            <FolderOpen className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             <span className="text-bambu-gray">{t('fileManager.folders')}:</span>
             <span className="text-white font-medium">{stats.total_folders}</span>
           </div>
           <div className="flex items-center gap-2 text-sm">
-            <HardDrive className="w-4 h-4 text-amber-400" />
+            <HardDrive className="w-4 h-4 text-amber-600 dark:text-amber-400" />
             <span className="text-bambu-gray">{t('fileManager.size')}:</span>
             <span className="text-white font-medium">{formatFileSize(stats.total_size_bytes)}</span>
           </div>
@@ -1891,7 +2006,7 @@ export function FileManagerPage() {
                   setTopLevelView('external');
                 }}
               >
-                <FolderSymlink className="w-4 h-4 text-purple-400" />
+                <FolderSymlink className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                 <span className="text-sm">{t('fileManager.allExternal')}</span>
               </div>
             )}
@@ -1910,6 +2025,7 @@ export function FileManagerPage() {
                 onRename={(f) => setRenameItem({ type: 'folder', id: f.id, name: f.name })}
                 wrapNames={wrapFolderNames}
                 defaultExpanded={!collapseFoldersByDefault}
+                showModified={showModified}
                 hasPermission={hasPermission}
                 t={t}
               />
@@ -1917,11 +2033,13 @@ export function FileManagerPage() {
           </div>
         </div>
 
-        {/* Files area */}
+        {/* Files area + README rail (#2520 item 2). On wide screens the
+            README docks as a collapsible right-hand column (rendered after
+            the files column, below) so it no longer steals vertical space
+            from the file list; on narrow screens it stacks above the list
+            via `order-first` and the page itself scrolls. */}
+        <div className="flex-1 flex flex-col lg:flex-row min-w-0 min-h-0 gap-4 lg:gap-6">
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          {/* Markdown description panel (#1268) — auto-hides if the folder
-              has no README/description.md so non-users pay no UI cost. */}
-          {selectedFolderId !== null && <FolderReadmePanel folderId={selectedFolderId} />}
           {/* Tag filter rail (#1268). Lists every catalog tag as a togglable
               chip — active chips are filled green and show an X, inactive
               chips are outlined and toggle ON when clicked. Clicking an active
@@ -1965,13 +2083,13 @@ export function FileManagerPage() {
           )}
           {/* External folder info bar */}
           {selectedFolder?.is_external && (
-            <div className="flex items-center gap-3 mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
-              <FolderSymlink className="w-5 h-5 text-purple-400 flex-shrink-0" />
+            <div className="flex items-center gap-3 mb-4 p-3 bg-purple-50 dark:bg-purple-500/10 border border-purple-300 dark:border-purple-500/30 rounded-lg">
+              <FolderSymlink className="w-5 h-5 text-purple-600 dark:text-purple-400 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-purple-300">{t('fileManager.externalFolder')}</span>
+                  <span className="text-sm font-medium text-purple-700 dark:text-purple-300">{t('fileManager.externalFolder')}</span>
                   {selectedFolder.external_readonly && (
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 flex items-center gap-1">
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 flex items-center gap-1">
                       <Lock className="w-3 h-3" />
                       {t('fileManager.readOnly')}
                     </span>
@@ -2097,6 +2215,20 @@ export function FileManagerPage() {
                     <SortDesc className="w-4 h-4 text-white" />
                   )}
                 </button>
+                <button
+                  onClick={() => setShowModified((v) => {
+                    const next = !v;
+                    localStorage.setItem('library-show-modified', String(next));
+                    return next;
+                  })}
+                  className={`p-1.5 rounded bg-bambu-dark border transition-colors ${
+                    showModified ? 'border-bambu-green text-bambu-green' : 'border-bambu-dark-tertiary text-white hover:border-bambu-green'
+                  }`}
+                  title={showModified ? t('fileManager.hideModified') : t('fileManager.showModified')}
+                  aria-pressed={showModified}
+                >
+                  <CalendarClock className="w-4 h-4" />
+                </button>
               </div>
 
               {/* Results count */}
@@ -2139,7 +2271,11 @@ export function FileManagerPage() {
                   </span>
                   <div className="hidden sm:block flex-1" />
                   <div className="w-full sm:w-auto flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
-                    {selectedSlicedFiles.length === 1 && (
+                    {/* Print used to disappear the moment a second sliced file was
+                        selected. Selecting several is now how you say "same job,
+                        different printers" (#671) — one queue item, whichever
+                        machine frees up first. */}
+                    {selectedSlicedFiles.length >= 1 && (
                       <Button
                         variant="primary"
                         size="sm"
@@ -2148,7 +2284,26 @@ export function FileManagerPage() {
                         title={!hasPermission('queue:create') ? t('fileManager.noPermissionAddToQueue') : undefined}
                       >
                         <Printer className="w-4 h-4 sm:mr-1" />
-                        <span className="hidden sm:inline">{t('common.print')}</span>
+                        <span className="hidden sm:inline">
+                          {selectedSlicedFiles.length > 1
+                            ? t('fileManager.variants.printAlternatives', { count: selectedSlicedFiles.length })
+                            : t('common.print')}
+                        </span>
+                      </Button>
+                    )}
+                    {selectedSlicedFiles.length >= 2 && !selectedSlicedFiles.some(f => f.variant_group_id) && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => groupAsVersionsMutation.mutate(selectedSlicedFiles.map(f => f.id))}
+                        disabled={
+                          groupAsVersionsMutation.isPending
+                          || !hasAnyPermission('library:update_own', 'library:update_all')
+                        }
+                        title={t('fileManager.variants.groupTooltip')}
+                      >
+                        <Layers className="w-4 h-4 sm:mr-1" />
+                        <span className="hidden sm:inline">{t('fileManager.variants.groupAction')}</span>
                       </Button>
                     )}
                     <Button
@@ -2265,6 +2420,7 @@ export function FileManagerPage() {
                     onDownload={handleDownload}
                     onPrint={setPrintFile}
                     onSlice={setSliceFile}
+                    onRunPipeline={setRunPipelineFile}
                     useSlicerApi={settings?.use_slicer_api ?? false}
                     onPreview3d={(f) => {
                       // Sliced files (.gcode / .gcode.3mf) open the same
@@ -2284,6 +2440,7 @@ export function FileManagerPage() {
                     hasPermission={hasPermission}
                     canModify={canModify}
                     authEnabled={authEnabled}
+                    showModified={showModified}
                   />
                 ))}
               </div>
@@ -2360,6 +2517,14 @@ export function FileManagerPage() {
                       </div>
                       <div className="min-w-0">
                         <div className="text-sm text-white truncate">{file.print_name || file.filename}</div>
+                        {/* #2680: last-modified date under the name, toggled from
+                            the toolbar. Real on-disk mtime when known, else created_at. */}
+                        {showModified && (
+                          <div className="text-xs text-bambu-gray flex items-center gap-1 mt-0.5" title={t('fileManager.lastModified')}>
+                            <CalendarClock className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{formatDate(file.fs_modified_at ?? file.created_at)}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                     {/* Uploaded By - only show when auth is enabled */}
@@ -2379,8 +2544,8 @@ export function FileManagerPage() {
                     <div>
                       <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
                         file.file_type === '3mf' ? 'bg-bambu-green/20 text-bambu-green'
-                        : (file.file_type === 'gcode' || file.file_type === 'gcode.3mf') ? 'bg-blue-500/20 text-blue-400'
-                        : file.file_type === 'stl' ? 'bg-purple-500/20 text-purple-400'
+                        : (file.file_type === 'gcode' || file.file_type === 'gcode.3mf') ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
+                        : file.file_type === 'stl' ? 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-400'
                         : 'bg-bambu-gray/20 text-bambu-gray'
                       }`}>
                         {file.file_type.toUpperCase()}
@@ -2446,6 +2611,20 @@ export function FileManagerPage() {
                           <Cog className="w-4 h-4" />
                         </button>
                       )}
+                      {(settings?.use_slicer_api ?? false) && isSliceableFilename(file.filename) && (
+                        <button
+                          onClick={() => hasPermission('pipelines:run') && setRunPipelineFile(file)}
+                          className={`p-1.5 rounded transition-colors ${
+                            hasPermission('pipelines:run')
+                              ? 'hover:bg-bambu-dark text-bambu-gray hover:text-bambu-green'
+                              : 'text-bambu-gray/50 cursor-not-allowed'
+                          }`}
+                          title={hasPermission('pipelines:run') ? t('library.runWithPipeline.actionLabel', 'Run with pipeline') : t('library.runWithPipeline.noPermission', 'You do not have permission to run pipelines')}
+                          disabled={!hasPermission('pipelines:run')}
+                        >
+                          <Play className="w-4 h-4" />
+                        </button>
+                      )}
                       {(file.file_type === '3mf' || file.file_type === 'gcode' || file.file_type === 'gcode.3mf' || file.file_type === 'stl') && (
                         <button
                           onClick={() => {
@@ -2509,7 +2688,7 @@ export function FileManagerPage() {
                         onClick={() => canModify('library', 'delete', file.created_by_id) && setDeleteConfirm({ type: 'file', id: file.id })}
                         className={`p-1.5 rounded transition-colors ${
                           canModify('library', 'delete', file.created_by_id)
-                            ? 'hover:bg-bambu-dark text-bambu-gray hover:text-red-400'
+                            ? 'hover:bg-bambu-dark text-bambu-gray hover:text-red-700 dark:hover:text-red-400'
                             : 'text-bambu-gray/50 cursor-not-allowed'
                         }`}
                         title={canModify('library', 'delete', file.created_by_id) ? t('common.delete') : t('fileManager.noPermissionDeleteFile')}
@@ -2523,6 +2702,10 @@ export function FileManagerPage() {
               </div>
             </div>
           )}
+        </div>
+          {/* README rail — collapsible right column on lg+, stacks on top
+              on mobile. See the files-area wrapper comment above (#2520). */}
+          {selectedFolderId !== null && <FolderReadmePanel folderId={selectedFolderId} />}
         </div>
       </div>
 
@@ -2625,11 +2808,21 @@ export function FileManagerPage() {
         />
       )}
 
-      {printFile && (
+      {/* Held back until the variant group has loaded. The modal reads its
+          candidate list once, on mount, so opening before the group arrives
+          would show a single-file print for a file that has alternatives. */}
+      {printFile && (!printFile.variant_group_id || printFileGroup !== undefined) && (
         <PrintModal
           mode="create"
-          libraryFileId={printFile.id}
-          archiveName={printFile.print_name || printFile.filename}
+          libraryFileId={printVariantFiles?.[0]?.id ?? printFile.id}
+          variantFiles={printVariantFiles}
+          // Naming a cross-model job after one of its files reads as though the
+          // others aren't part of it.
+          archiveName={
+            printVariantFiles && printVariantFiles.length > 1
+              ? `${printVariantFiles[0].filename} ${t('common.plusNMore', { count: printVariantFiles.length - 1 })}`
+              : printFile.print_name || printFile.filename
+          }
           onClose={() => setPrintFile(null)}
           onSuccess={() => {
             setPrintFile(null);
@@ -2645,6 +2838,13 @@ export function FileManagerPage() {
         <SliceModal
           source={{ kind: 'libraryFile', id: sliceFile.id, filename: sliceFile.filename }}
           onClose={() => setSliceFile(null)}
+        />
+      )}
+
+      {runPipelineFile && (
+        <RunWithPipelineModal
+          source={{ kind: 'libraryFile', id: runPipelineFile.id, filename: runPipelineFile.filename }}
+          onClose={() => setRunPipelineFile(null)}
         />
       )}
 

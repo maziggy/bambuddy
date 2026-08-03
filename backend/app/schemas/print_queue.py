@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, PlainSerializer, model_validator
+from pydantic import BaseModel, BeforeValidator, Field, PlainSerializer, model_validator
+
+from backend.app.utils.printer_models import MAX_CHAMBER_TEMP_C
 
 
 # Custom serializer to ensure UTC datetimes have Z suffix
@@ -13,6 +15,52 @@ def serialize_utc_datetime(dt: datetime | None) -> str | None:
 
 
 UTCDatetime = Annotated[datetime | None, PlainSerializer(serialize_utc_datetime)]
+
+
+def _coerce_tristate(v: object) -> object:
+    """Map legacy on/off booleans onto the tri-state calibration options.
+
+    bed_levelling / flow_cali / nozzle_offset_cali were plain booleans before we
+    added BambuStudio's third "auto" state (skip if recently done). Rows and API
+    payloads created under the old scheme carry bool / 0-1 int / "true"/"false";
+    coerce them so old clients and un-migrated rows still validate. getValueInt
+    parity: off=0, on=1, auto=2.
+    """
+    if isinstance(v, bool):
+        return "on" if v else "off"
+    if isinstance(v, int):
+        return {0: "off", 1: "on", 2: "auto"}.get(v, "auto")
+    if isinstance(v, str):
+        low = v.strip().lower()
+        if low in ("true", "1"):
+            return "on"
+        if low in ("false", "0"):
+            return "off"
+    return v
+
+
+# Tri-state calibration option: "auto" (printer decides / skip if recent),
+# "on" (force every print), "off" (never). Mirrors BambuStudio's ops_auto.
+TriState = Annotated[Literal["off", "on", "auto"], BeforeValidator(_coerce_tristate)]
+
+
+class QueueVariantCreate(BaseModel):
+    """One candidate file for a cross-model queue item (#671).
+
+    Per-file rather than per-item because the settings genuinely differ between
+    candidates: an H2C slice is dual-nozzle and will not share slot count, AMS
+    mapping or nozzle mapping with the H2S slice of the same model.
+
+    ``target_model`` is normally omitted and read from the file's own
+    ``sliced_for_model``; supply it only for a legacy 3MF that declares none.
+    """
+
+    library_file_id: int
+    target_model: str | None = None
+    plate_id: int | None = None
+    ams_mapping: list[int] | None = None
+    nozzle_mapping: list[int] | None = None
+    filament_overrides: list[dict] | None = None
 
 
 class PrintQueueItemCreate(BaseModel):
@@ -39,17 +87,23 @@ class PrintQueueItemCreate(BaseModel):
     ams_mapping: list[int] | None = None
     # Plate ID for multi-plate 3MF files (1-indexed, None = auto-detect/plate 1)
     plate_id: int | None = None
-    # Print options
-    bed_levelling: bool = True
-    flow_cali: bool = False
+    # Print options. bed_levelling / flow_cali / nozzle_offset_cali are tri-state
+    # (off/on/auto), defaulting to "auto" to match BambuStudio. vibration_cali /
+    # layer_inspect / timelapse stay on/off (BambuStudio exposes no auto for them).
+    bed_levelling: TriState = "auto"
+    flow_cali: TriState = "auto"
     vibration_cali: bool = True
     layer_inspect: bool = False
     timelapse: bool = False
     use_ams: bool = True
-    # Nozzle offset calibration — dual-nozzle printers only (#1682). Default True
-    # matches BambuStudio's default; the MQTT layer ignores the flag on
-    # single-nozzle printers so the wire value stays "skip" there.
-    nozzle_offset_cali: bool = True
+    # Nozzle offset calibration — dual-nozzle printers only (#1682). The MQTT
+    # layer ignores the value on single-nozzle printers so the wire stays "skip".
+    nozzle_offset_cali: TriState = "auto"
+    # Preheat / heat-soak per-item override (#1468). 'inherit' uses the global
+    # preheat_enabled setting; 'on' / 'off' force the decision. The chamber
+    # target falls through: this override → max(filament-map[loaded tray]) → 0.
+    preheat_override: Literal["inherit", "on", "off"] = "inherit"
+    preheat_chamber_target_override: int | None = Field(default=None, ge=0, le=MAX_CHAMBER_TEMP_C)
     # Auto-print G-code injection
     gcode_injection: bool = False
     # Batch: create multiple copies (creates a batch if > 1)
@@ -63,6 +117,12 @@ class PrintQueueItemCreate(BaseModel):
     # Direct printer-card uploads are temporary library files. The scheduler
     # deletes them after creating the durable archive copy.
     cleanup_library_after_dispatch: bool = False
+    # Cross-model alternatives (#671): several sliced files, one job, whichever
+    # printer frees up first. Mutually exclusive with printer_id (a specific
+    # printer defeats the purpose) and with archive_id/library_file_id (the
+    # candidates ARE the files). The scheduler resolves one onto the row at
+    # dispatch, after which the item is an ordinary single-file job.
+    variants: list[QueueVariantCreate] | None = None
 
 
 class PrintQueueItemUpdate(BaseModel):
@@ -78,19 +138,30 @@ class PrintQueueItemUpdate(BaseModel):
     ams_mapping: list[int] | None = None
     plate_id: int | None = None
     # Print options
-    bed_levelling: bool | None = None
-    flow_cali: bool | None = None
+    bed_levelling: TriState | None = None
+    flow_cali: TriState | None = None
     vibration_cali: bool | None = None
     layer_inspect: bool | None = None
     timelapse: bool | None = None
     use_ams: bool | None = None
-    nozzle_offset_cali: bool | None = None
+    nozzle_offset_cali: TriState | None = None
+    preheat_override: Literal["inherit", "on", "off"] | None = None
+    preheat_chamber_target_override: int | None = Field(default=None, ge=0, le=MAX_CHAMBER_TEMP_C)
     # Auto-print G-code injection
     gcode_injection: bool | None = None
     # H2C dual-nozzle-rack slicer pick (#1780). list[int] per-filament
     # physical nozzle position IDs from BambuStudio's project_file MQTT
     # body; sent back to the printer verbatim on dispatch.
     nozzle_mapping: list[int] | None = None
+
+
+class QueueVariantSummary(BaseModel):
+    """One candidate on a cross-model queue item, for display (#671)."""
+
+    library_file_id: int
+    filename: str
+    target_model: str
+    position: int
 
 
 class PrintQueueItemResponse(BaseModel):
@@ -119,13 +190,15 @@ class PrintQueueItemResponse(BaseModel):
     ams_mapping: list[int] | None = None
     plate_id: int | None = None  # Plate ID for multi-plate 3MF files
     # Print options
-    bed_levelling: bool = True
-    flow_cali: bool = False
+    bed_levelling: TriState = "auto"
+    flow_cali: TriState = "auto"
     vibration_cali: bool = True
     layer_inspect: bool = False
     timelapse: bool = False
     use_ams: bool = True
-    nozzle_offset_cali: bool = True
+    nozzle_offset_cali: TriState = "auto"
+    preheat_override: Literal["inherit", "on", "off"] = "inherit"
+    preheat_chamber_target_override: int | None = None
     status: Literal["pending", "printing", "completed", "failed", "skipped", "cancelled"]
     started_at: UTCDatetime
     completed_at: UTCDatetime
@@ -157,6 +230,12 @@ class PrintQueueItemResponse(BaseModel):
     # 3MFs: when `plate_id` is set, the value is the matching plate's
     # `curr_bed_type` rather than the archive-level first-plate default.
     bed_type: str | None = None
+    # True when the source archive carries the slicer's own live-resolved
+    # AMS-slot pick (extra_data.slicer_ams_mapping) *and* it was resolved
+    # against this row's own printer — the only case where dispatch actually
+    # reuses that exact physical spool instead of the scheduler re-deriving one
+    # from the file's static type/color.
+    archive_has_slicer_ams_mapping: bool = False
 
     # User tracking (Issue #206)
     created_by_id: int | None = None
@@ -165,6 +244,11 @@ class PrintQueueItemResponse(BaseModel):
     # Batch grouping
     batch_id: int | None = None
     batch_name: str | None = None
+
+    # Cross-model alternatives (#671), in priority order. Empty for every
+    # ordinary item. Present until dispatch resolves one onto the row, after
+    # which library_file_id / target_model name the candidate that actually ran.
+    variants: list[QueueVariantSummary] = []
 
     # Shortest-job-first scheduling
     been_jumped: bool = False
@@ -226,13 +310,15 @@ class PrintQueueBulkUpdate(BaseModel):
     auto_off_after: bool | None = None
     manual_start: bool | None = None
     # Print options
-    bed_levelling: bool | None = None
-    flow_cali: bool | None = None
+    bed_levelling: TriState | None = None
+    flow_cali: TriState | None = None
     vibration_cali: bool | None = None
     layer_inspect: bool | None = None
     timelapse: bool | None = None
     use_ams: bool | None = None
-    nozzle_offset_cali: bool | None = None
+    nozzle_offset_cali: TriState | None = None
+    preheat_override: Literal["inherit", "on", "off"] | None = None
+    preheat_chamber_target_override: int | None = Field(default=None, ge=0, le=MAX_CHAMBER_TEMP_C)
     # Auto-print G-code injection
     gcode_injection: bool | None = None
 

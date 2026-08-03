@@ -10,6 +10,8 @@
  * is not part of the configurable triple.
  */
 
+import { MAX_CHAMBER_TEMP_C } from './printer';
+
 export type PresetTriple = readonly [number, number, number];
 
 export const NOZZLE_TEMP_DEFAULTS: PresetTriple = [120, 220, 260];
@@ -28,7 +30,7 @@ export interface PresetCategory {
 export const PRESET_CATEGORIES: readonly PresetCategory[] = [
   { key: 'nozzle_temp_presets', defaults: NOZZLE_TEMP_DEFAULTS, lo: 0, hi: 320, unit: 'C' },
   { key: 'bed_temp_presets', defaults: BED_TEMP_DEFAULTS, lo: 0, hi: 140, unit: 'C' },
-  { key: 'chamber_temp_presets', defaults: CHAMBER_TEMP_DEFAULTS, lo: 0, hi: 60, unit: 'C' },
+  { key: 'chamber_temp_presets', defaults: CHAMBER_TEMP_DEFAULTS, lo: 0, hi: MAX_CHAMBER_TEMP_C, unit: 'C' },
   { key: 'fan_speed_presets', defaults: FAN_SPEED_DEFAULTS, lo: 0, hi: 100, unit: '%' },
 ];
 

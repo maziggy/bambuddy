@@ -16,10 +16,11 @@ import socket
 
 from backend.app.models.printer import Printer
 from backend.app.schemas.printer import DiagnosticCheck, PrinterDiagnosticResult
+from backend.app.services.bambu_mqtt import CONNECT_ERROR_AUTH_REJECTED
 from backend.app.services.camera import get_camera_port
 from backend.app.services.discovery import is_running_in_docker
 from backend.app.services.printer_manager import printer_manager
-from backend.app.utils.printer_models import has_external_storage
+from backend.app.utils.printer_models import has_external_storage, has_remote_storage_toggle
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,27 @@ async def _check_port(ip: str, port: int, timeout: float = _PORT_PROBE_TIMEOUT) 
         return True
     except Exception:
         return False
+
+
+# Public alias. The connection watchdog probes the MQTT port before rebuilding a
+# client, so it can tell "the printer is switched off" (leave it alone, paho will
+# keep retrying) from "the printer is answering but our session is dead" (#2732).
+check_port = _check_port
+
+
+def _auth_reason_params(reason: str | None) -> dict:
+    """Map a client's CONNACK-refusal slug onto the check's `params.reason`.
+
+    The frontend renders `diagnostic.check.<id>.<status>_<reason>` when a reason
+    is present and falls back to the plain per-status text otherwise, so an
+    unknown or absent slug degrades to today's generic wording rather than a
+    missing string. Only `auth_rejected` currently carries its own message:
+    that is the one case where the printer positively told us the credentials
+    were wrong, as opposed to us merely observing that we are not connected.
+    """
+    if reason == CONNECT_ERROR_AUTH_REJECTED:
+        return {"reason": CONNECT_ERROR_AUTH_REJECTED}
+    return {}
 
 
 def _camera_port_for_printer(printer: Printer | None) -> tuple[int, str]:
@@ -204,13 +226,33 @@ async def run_connection_diagnostic(
     # and A1 Mini). They never set home_flag bit 11, so a naive read of
     # `store_to_sdcard` would fall through to a false `fail` for every
     # A1-series user (#1703).
+    #
+    # Some models (P1-series) DO have a slot but no reachable control to turn
+    # the option on: the Bambu Studio toggle only appears when the printer
+    # publishes `support_save_remote_print_file_to_storage`, which current
+    # P1 firmware never does, and the P1S/P1P have no screen. For those,
+    # `store_to_sdcard` is stuck False with no way to fix it — report `skip`
+    # (with a reason the UI explains) instead of a permanently-red `fail`
+    # (#2524).
     state = printer_manager.get_status(printer.id) if printer else None
-    model_has_slot = has_external_storage(getattr(printer, "model", None)) if printer else True
+    model = getattr(printer, "model", None) if printer else None
+    model_has_slot = has_external_storage(model) if printer else True
+    store_to_sdcard = getattr(state, "store_to_sdcard", None) if state else None
     if not model_has_slot or state is None or not state.connected:
         checks.append(DiagnosticCheck(id="external_storage", status="skip"))
-    elif getattr(state, "store_to_sdcard", None) is True:
+    elif store_to_sdcard is True:
         checks.append(DiagnosticCheck(id="external_storage", status="pass"))
-    elif getattr(state, "store_to_sdcard", None) is False:
+    elif store_to_sdcard is False and not has_remote_storage_toggle(model):
+        # Slot present but no way to enable it on this firmware — don't nag
+        # with an unresolvable fail; explain why via the reason param.
+        checks.append(
+            DiagnosticCheck(
+                id="external_storage",
+                status="skip",
+                params={"reason": "unsupported_model"},
+            )
+        )
+    elif store_to_sdcard is False:
         checks.append(DiagnosticCheck(id="external_storage", status="fail"))
     else:
         # State exists but the field was never populated — skip rather than
@@ -229,14 +271,30 @@ async def run_connection_diagnostic(
                 serial_number=serial_number,
                 access_code=access_code,
             )
-            checks.append(DiagnosticCheck(id="mqtt_auth", status="pass" if result.get("success") else "fail"))
+            checks.append(
+                DiagnosticCheck(
+                    id="mqtt_auth",
+                    status="pass" if result.get("success") else "fail",
+                    params=_auth_reason_params(result.get("reason")),
+                )
+            )
         except Exception:
             logger.debug("test_connection failed during diagnostic", exc_info=True)
             checks.append(DiagnosticCheck(id="mqtt_auth", status="fail"))
     elif state is not None:
         # Existing printer: trust the live MQTT state rather than opening a
         # second connection (Bambu printers tolerate few concurrent sessions).
-        checks.append(DiagnosticCheck(id="mqtt_auth", status="pass" if state.connected else "fail"))
+        # `connected == False` alone does not say *why* — the live client keeps
+        # the last CONNACK refusal, so a rejected access code can be reported as
+        # such instead of as a generic failure the user has to guess at (#2698).
+        client = printer_manager.get_client(printer.id) if printer else None
+        checks.append(
+            DiagnosticCheck(
+                id="mqtt_auth",
+                status="pass" if state.connected else "fail",
+                params={} if state.connected else _auth_reason_params(getattr(client, "last_connect_error", None)),
+            )
+        )
     else:
         checks.append(DiagnosticCheck(id="mqtt_auth", status="skip"))
 

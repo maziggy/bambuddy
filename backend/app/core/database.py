@@ -23,12 +23,63 @@ def _set_sqlite_pragmas(dbapi_conn, connection_record):
     cursor.close()
 
 
+# Resolved connection-pool configuration, captured at engine creation so
+# /system/db-pool can report it without re-deriving the dialect defaults.
+_pool_config: dict = {}
+
+# What the PostgreSQL server itself will allow, read once at startup. None on
+# SQLite, or when the probe could not run. Reported by get_pool_status() so a
+# support bundle carries both sides of the comparison.
+_server_connection_limits: dict | None = None
+
+
+def _resolve_pool_kwargs() -> dict:
+    """Build the pool kwargs for ``create_async_engine`` (issue #2572).
+
+    Dialect-aware defaults, each overridable via env (``DB_POOL_SIZE`` etc.):
+      - PostgreSQL: pool_size 20 + max_overflow 80, ``pool_pre_ping`` (recover
+        server-dropped connections instead of erroring the request) and
+        ``pool_recycle`` 1800s. The old hard-coded 10 + 20 exhausted on large
+        farms while printer callbacks held connections.
+      - SQLite: pool_size 20 + max_overflow 200 (unchanged); no pre-ping /
+        recycle — the connection is a local file, not a server socket.
+    """
+    if is_sqlite():
+        pool_size = settings.db_pool_size if settings.db_pool_size is not None else 20
+        max_overflow = settings.db_max_overflow if settings.db_max_overflow is not None else 200
+        kwargs = {"pool_size": pool_size, "max_overflow": max_overflow}
+    else:
+        pool_size = settings.db_pool_size if settings.db_pool_size is not None else 20
+        max_overflow = settings.db_max_overflow if settings.db_max_overflow is not None else 80
+        kwargs = {
+            "pool_size": pool_size,
+            "max_overflow": max_overflow,
+            "pool_pre_ping": True,
+            "pool_recycle": settings.db_pool_recycle if settings.db_pool_recycle is not None else 1800,
+            # LIFO checkout keeps a bursty farm on a small hot connection set and
+            # lets overflow connections recycle out during quiet spells (#2572).
+            "pool_use_lifo": settings.db_pool_use_lifo if settings.db_pool_use_lifo is not None else True,
+        }
+    if settings.db_pool_timeout is not None:
+        kwargs["pool_timeout"] = settings.db_pool_timeout
+    return kwargs
+
+
 def _create_engine():
     """Create the async engine with dialect-appropriate settings."""
-    if is_sqlite():
-        kwargs = {"pool_size": 20, "max_overflow": 200}
-    else:
-        kwargs = {"pool_size": 10, "max_overflow": 20}
+    kwargs = _resolve_pool_kwargs()
+
+    global _pool_config
+    _pool_config = {
+        "pool_size": kwargs["pool_size"],
+        "max_overflow": kwargs["max_overflow"],
+        # SQLAlchemy's own defaults when we don't pass the kwarg.
+        "pool_timeout": kwargs.get("pool_timeout", 30),
+        "pool_recycle": kwargs.get("pool_recycle", -1),
+        "pool_pre_ping": kwargs.get("pool_pre_ping", False),
+        "pool_use_lifo": kwargs.get("pool_use_lifo", False),
+    }
+
     eng = create_async_engine(
         settings.database_url,
         echo=settings.debug,
@@ -77,6 +128,40 @@ async_session = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
+
+
+def get_pool_status() -> dict:
+    """Snapshot the DB connection pool for diagnostics (issue #2572).
+
+    Returns the resolved configuration plus live gauges (checked-out /
+    checked-in / overflow). Reads the pool's own counters — it does NOT
+    check out a connection, so it stays truthful even when the pool is
+    exhausted. Gauges a given pool implementation doesn't expose come back
+    as ``None`` rather than raising.
+    """
+    pool = engine.sync_engine.pool
+    gauges: dict = {}
+    for key, method_name in (
+        ("current_size", "size"),
+        ("checked_out", "checkedout"),
+        ("checked_in", "checkedin"),
+        ("overflow", "overflow"),
+    ):
+        method = getattr(pool, method_name, None)
+        try:
+            gauges[key] = method() if callable(method) else None
+        except Exception:
+            # A gauge should never take down the diagnostics endpoint.
+            gauges[key] = None
+    return {
+        "dialect": "sqlite" if is_sqlite() else "postgresql",
+        "config": dict(_pool_config),
+        # Both sides of the ceiling-vs-server comparison, so a support bundle
+        # shows whether a TooManyConnectionsError was a misconfiguration or a
+        # genuine leak. None on SQLite or if the startup probe couldn't run.
+        "server_limits": dict(_server_connection_limits) if _server_connection_limits else None,
+        **gauges,
+    }
 
 
 async def run_with_retry(fn, *, max_attempts: int = 3, label: str = ""):
@@ -189,6 +274,7 @@ async def init_db():
         oidc_provider,
         orca_base_cache,
         pending_upload,
+        pipeline_run,
         print_batch,
         print_log,
         print_queue,
@@ -198,6 +284,7 @@ async def init_db():
         project_bom,
         settings,
         shopping_list,
+        slicer_pipeline,
         slot_preset,
         smart_plug,
         smart_plug_energy_snapshot,
@@ -238,6 +325,107 @@ async def init_db():
     # Seed default catalog entries
     await seed_spool_catalog()
     await seed_color_catalog()
+
+    await check_pool_fits_server()
+
+
+async def check_pool_fits_server() -> None:
+    """Warn when the pool may ask PostgreSQL for more connections than it allows.
+
+    ``pool_size + max_overflow`` is the most connections one worker process will
+    ever open. If that exceeds what the server permits, the pool never reaches
+    its own limit and so never queues: it goes straight to the server, which
+    refuses with ``TooManyConnectionsError``. That surfaces wherever the next
+    connection happened to be needed — in the reported case, halfway through a
+    queue dispatch, which then left an expected-print registration and a dispatch
+    claim behind (#2702 follow-up).
+
+    The distinction is worth knowing when reading a log: SQLAlchemy's own
+    ``QueuePool limit ... timed out`` means the pool is the bottleneck (too much
+    concurrency, or connections held too long), whereas asyncpg's
+    ``TooManyConnectionsError`` means the pool's ceiling is above the server's.
+
+    Not clamped, deliberately. Pool sizes are fixed when the engine is created,
+    which happens at import — before any connection exists to ask the server
+    with — and ``engine`` / ``async_session`` are imported by name in ~150 places,
+    so swapping the engine afterwards would leave stale references. The correct
+    ceiling also depends on the worker count and on anything else sharing the
+    server, neither of which Bambuddy can see. So this reports the mismatch with
+    both numbers and the knobs to fix it, and leaves the choice to the operator.
+    """
+    global _server_connection_limits
+    if is_sqlite():
+        return
+
+    from sqlalchemy import text
+
+    in_use: int | None = None
+    try:
+        async with engine.connect() as conn:
+            max_conn = int((await conn.execute(text("SHOW max_connections"))).scalar_one())
+            reserved = int((await conn.execute(text("SHOW superuser_reserved_connections"))).scalar_one())
+            try:
+                in_use = int(
+                    (
+                        await conn.execute(
+                            text("SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'client backend'")
+                        )
+                    ).scalar_one()
+                )
+            except Exception as exc:
+                # `pg_stat_activity.backend_type` is PostgreSQL 10+, and a
+                # restricted role sees fewer rows. The count is a nice-to-have
+                # for spotting other clients; the warning itself only needs the
+                # two settings above, so losing it must not cost the warning.
+                # Done last on purpose: a failed statement can abort the
+                # transaction, and nothing else uses this connection after it.
+                logger.debug("Could not count client backends: %s", exc)
+    except Exception as exc:
+        # A diagnostic must never be the reason startup fails. An older server
+        # or a restricted role may refuse these.
+        logger.debug("Could not read PostgreSQL connection limits: %s", exc)
+        return
+
+    available = max_conn - reserved
+    ceiling = _pool_config.get("pool_size", 0) + _pool_config.get("max_overflow", 0)
+    _server_connection_limits = {
+        "max_connections": max_conn,
+        "superuser_reserved_connections": reserved,
+        "available_to_bambuddy": available,
+        "client_backends_at_startup": in_use,
+        "pool_ceiling_per_worker": ceiling,
+    }
+
+    if ceiling > available:
+        in_use_note = (
+            f" {in_use} client connection(s) are open on the server right now, including "
+            "this one — a count well above 1 means something else shares it."
+            if in_use is not None
+            else ""
+        )
+        logger.warning(
+            "DB pool may exceed what PostgreSQL allows: this worker can open up to %d "
+            "connections (pool_size %d + max_overflow %d) but the server permits %d "
+            "(max_connections %d minus %d reserved for superusers).%s Exhaustion surfaces "
+            "as TooManyConnectionsError at whatever ran next, not as a pool timeout. "
+            "Lower DB_POOL_SIZE / DB_MAX_OVERFLOW, or raise the server's "
+            "max_connections — and account for every worker process and any other "
+            "client sharing this server.",
+            ceiling,
+            _pool_config.get("pool_size", 0),
+            _pool_config.get("max_overflow", 0),
+            available,
+            max_conn,
+            reserved,
+            in_use_note,
+        )
+    else:
+        logger.info(
+            "DB pool fits the server: up to %d connection(s) per worker, %d available (max_connections %d).",
+            ceiling,
+            available,
+            max_conn,
+        )
 
 
 # B2: Module-level counter exposing the number of rows skipped during the last
@@ -435,6 +623,187 @@ async def _migrate_normalize_printer_ids(conn) -> None:
             await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids = '[]'"))
         else:
             await conn.execute(text("UPDATE api_keys SET printer_ids = NULL WHERE printer_ids::text = '[]'"))
+
+
+async def _migrate_scope_force_color_overrides_to_plate(conn) -> None:
+    """Re-scope queue items that carry another plate's filament overrides (#2551).
+
+    Queueing several plates of one 3MF used to store the union of every selected
+    plate's overrides on each item, so a ``force_color_match`` plate printing one
+    colour sat at Waiting until a printer had the whole batch's palette loaded.
+    The write paths now narrow to the plate, but items queued before the fix would
+    stay stuck until the user deleted and re-added them by hand — with a waiting
+    reason that gives no hint as to why. Repair them here instead.
+
+    Only pending items are touched: a printing or finished item's overrides are a
+    record of what it dispatched with, not an instruction. An item whose plate we
+    cannot read keeps every override, per ``overrides_for_plate``. Idempotent —
+    an already-scoped item narrows to itself and is not rewritten.
+    """
+    import json
+    from pathlib import Path
+
+    from sqlalchemy import text
+
+    from backend.app.services.filament_requirements import overrides_for_plate
+
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT q.id, q.plate_id, q.filament_overrides, "
+                "a.file_path AS archive_path, l.file_path AS library_path "
+                "FROM print_queue q "
+                "LEFT JOIN print_archives a ON a.id = q.archive_id "
+                "LEFT JOIN library_files l ON l.id = q.library_file_id "
+                "WHERE q.status = 'pending' "
+                "AND q.plate_id IS NOT NULL "
+                "AND q.filament_overrides IS NOT NULL"
+            )
+        )
+    ).fetchall()
+
+    repaired = 0
+    for row in rows:
+        try:
+            overrides = json.loads(row.filament_overrides)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(overrides, list) or not overrides:
+            continue
+
+        stored_path = row.archive_path or row.library_path
+        if not stored_path:
+            continue
+        path = Path(stored_path)
+        if not path.is_absolute():
+            path = settings.base_dir / stored_path
+
+        scoped = overrides_for_plate(overrides, path, row.plate_id)
+        if len(scoped) == len(overrides):
+            continue
+
+        async with conn.begin_nested():
+            await conn.execute(
+                text("UPDATE print_queue SET filament_overrides = :overrides WHERE id = :id"),
+                {"overrides": json.dumps(scoped) if scoped else None, "id": row.id},
+            )
+        repaired += 1
+
+    if repaired:
+        logger.info(
+            "Re-scoped the filament overrides of %d queued item(s) to the plate they print (#2551)",
+            repaired,
+        )
+
+
+async def _migrate_scope_run_filament_to_plate(conn) -> None:
+    """Repair completed print-log rows that stored a multi-plate 3MF's whole-file
+    filament (and cost) instead of the printed plate's (#2614).
+
+    When the AMS tracker measured nothing for a completed run, the per-run filament
+    fell back to ``PrintArchive.filament_used_grams`` — the sum over EVERY plate of
+    the source 3MF (right for the archive card / project rollup, wrong for one
+    printed plate). So each printed plate of a 22-plate file logged the full ~12 kg,
+    inflating lifetime / user / project / filament stats by the plate count. The
+    forward fix scopes new rows; this repairs the rows already written.
+
+    Only completed rows whose stored grams EXACTLY equal the archive's whole-file
+    value are touched — that is the mis-copy signature. Tracker-measured rows (a
+    rounded spool-delta sum) and partial-progress rows (scaled to progress) never
+    match, so they are never clobbered. Cost is scaled by the plate's share of the
+    whole so it stays consistent with the corrected grams. Runs AFTER the #2603
+    archive plate_id backfill so ``print_archives.plate_id`` is populated.
+
+    Gated to run **exactly once** via a settings flag. This is not merely for
+    idempotency: a genuine single-plate print carries a ``plate_id`` too (the UI
+    always sends one), and for it the plate estimate legitimately equals the
+    whole-file value — so those rows match the signature on every boot. Without
+    the one-shot gate we would re-parse every single-plate 3MF on the print log at
+    each startup, a cost that grows without bound with print history. One pass is
+    enough: the forward fix keeps all new rows correct.
+    """
+    from pathlib import Path
+
+    from sqlalchemy import text
+
+    from backend.app.utils.threemf_tools import extract_plate_metadata_from_3mf
+
+    flag = "_backfill_2614_plate_filament_done"
+
+    async with conn.begin_nested():
+        already = (
+            await conn.execute(text('SELECT value FROM settings WHERE "key" = :k'), {"k": flag})
+        ).scalar_one_or_none()
+        if already:
+            return
+
+        rows = (
+            await conn.execute(
+                text(
+                    "SELECT ple.id AS entry_id, ple.filament_used_grams AS grams, ple.cost AS cost, "
+                    "a.plate_id AS plate_id, a.filament_used_grams AS whole_grams, a.file_path AS file_path "
+                    "FROM print_log_entries ple "
+                    "JOIN print_archives a ON a.id = ple.archive_id "
+                    "WHERE ple.status = 'completed' "
+                    "AND a.plate_id IS NOT NULL "
+                    "AND a.file_path IS NOT NULL "
+                    "AND a.filament_used_grams IS NOT NULL "
+                    "AND ple.filament_used_grams IS NOT NULL "
+                    "AND ple.filament_used_grams = a.filament_used_grams"
+                )
+            )
+        ).fetchall()
+
+        corrected = 0
+        grams_removed = 0.0
+        for row in rows:
+            path = Path(row.file_path)
+            if not path.is_absolute():
+                path = settings.base_dir / row.file_path
+            if not path.exists():
+                continue
+            try:
+                plate_grams = extract_plate_metadata_from_3mf(path, row.plate_id).filament_used_grams
+            except Exception as exc:
+                logger.warning(
+                    "[#2614] could not read plate %s of %s for log entry %s: %s",
+                    row.plate_id,
+                    row.file_path,
+                    row.entry_id,
+                    exc,
+                )
+                continue
+            if not plate_grams or plate_grams <= 0:
+                continue
+            new_grams = round(plate_grams, 2)
+            if abs(new_grams - (row.grams or 0)) < 0.01:
+                continue  # nothing to change (e.g. a genuine single-plate file)
+            new_cost = row.cost
+            whole = row.whole_grams or 0
+            if row.cost and whole > 0:
+                new_cost = round(row.cost * (plate_grams / whole), 2)
+            await conn.execute(
+                text("UPDATE print_log_entries SET filament_used_grams = :g, cost = :c WHERE id = :id"),
+                {"g": new_grams, "c": new_cost, "id": row.entry_id},
+            )
+            corrected += 1
+            grams_removed += (row.grams or 0) - new_grams
+
+        if corrected:
+            logger.info(
+                "[#2614] Re-scoped %d completed print-log row(s) from whole-file to plate filament "
+                "(removed %.0f g of over-counted usage from statistics)",
+                corrected,
+                grams_removed,
+            )
+
+        # Mark done unconditionally (even when nothing matched) so this one-shot
+        # never re-scans the print log on subsequent boots. id/timestamps come
+        # from the table's own defaults; "key" is quoted as it's a keyword.
+        await conn.execute(
+            text('INSERT INTO settings ("key", value) VALUES (:k, :v)'),
+            {"k": flag, "v": "true"},
+        )
 
 
 async def _migrate_drop_library_print_name(conn) -> None:
@@ -668,6 +1037,23 @@ async def run_migrations(conn):
     """
     from sqlalchemy import text
 
+    # Migration: Add parent_run_id column to pipeline_runs (#1425 PR C).
+    # Links a retry-failed run back to its parent so the dashboard can show
+    # "Retry of run #N" inline. Idempotent on both SQLite and Postgres.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE pipeline_runs ADD COLUMN parent_run_id INTEGER REFERENCES pipeline_runs(id) ON DELETE SET NULL",
+    )
+
+    # Migration: Add source_archive_id column to pipeline_runs (#1425 PR B follow-up).
+    # Allows a pipeline run to source from an archive's source 3MF in addition
+    # to a library file. Idempotent — _safe_execute swallows the "already exists"
+    # case on both SQLite and Postgres.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE pipeline_runs ADD COLUMN source_archive_id INTEGER REFERENCES print_archives(id) ON DELETE SET NULL",
+    )
+
     # Migration: Add is_favorite column to print_archives
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN is_favorite BOOLEAN DEFAULT 0")
 
@@ -685,6 +1071,13 @@ async def run_migrations(conn):
 
     # Migration: Add f3d_path column to print_archives for Fusion 360 design files
     await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN f3d_path VARCHAR(500)")
+
+    # Migration: Add plate_id column to print_archives (#2603). The selected plate
+    # of a multi-plate 3MF is copied from the queue item at dispatch so Print
+    # History can show the actual plate instead of falling back to Plate 1.
+    # Nullable, no default — identical DDL on SQLite and Postgres. Backfilled from
+    # linked queue rows below.
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN plate_id INTEGER")
 
     # Migration: Add on_maintenance_due column to notification_providers
     await _safe_execute(conn, "ALTER TABLE notification_providers ADD COLUMN on_maintenance_due BOOLEAN DEFAULT 0")
@@ -970,6 +1363,15 @@ async def run_migrations(conn):
             conn, "ALTER TABLE virtual_printers ADD COLUMN queue_force_color_match BOOLEAN DEFAULT FALSE"
         )
 
+    # Migration: Add save_ams_mapping column to virtual_printers. Opt-in flag:
+    # when true, VP queue-mode uploads persist the slicer's own AMS-slot pick
+    # onto the archive (`extra_data.slicer_ams_mapping`) for reuse on reprint.
+    # Default false to preserve current behaviour for upgraders.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN save_ams_mapping BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(conn, "ALTER TABLE virtual_printers ADD COLUMN save_ams_mapping BOOLEAN DEFAULT FALSE")
+
     # Per-VP opt-in for auto-print G-code injection (#1516). Default false so
     # existing gcode_snippets users don't silently start injecting on VP/Studio
     # Send jobs after upgrading.
@@ -1159,6 +1561,78 @@ async def run_migrations(conn):
     else:
         await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN nozzle_offset_cali BOOLEAN DEFAULT TRUE")
 
+    # Migration: convert bed_levelling / flow_cali / nozzle_offset_cali from
+    # boolean to tri-state strings (off/on/auto). BambuStudio exposes a third
+    # "auto" state for these (skip the calibration if it was done recently); our
+    # booleans could only send force-on / off. Legacy rows map true->'on',
+    # false->'off'; the new default is 'auto'. Idempotent on both dialects:
+    # SQLite leans on column affinity (a BOOLEAN-declared column stores text
+    # fine) and only rewrites rows still holding 0/1; PostgreSQL alters the
+    # column type only while it is still boolean, so re-runs and fresh
+    # create_all() schemas (already VARCHAR) are skipped. Column names are
+    # hardcoded constants, not user input.
+    _tristate_cols = ("bed_levelling", "flow_cali", "nozzle_offset_cali")
+    if is_sqlite():
+        for _col in _tristate_cols:
+            async with conn.begin_nested():
+                # B608 is a false positive here: _col is a hardcoded constant
+                # from _tristate_cols, never user input, and SQL identifiers
+                # can't be bound as parameters. Suppressed inline below.
+                await conn.execute(
+                    text(f"UPDATE print_queue SET {_col} = 'on' WHERE {_col} IN (1, '1', 'true', 'True')")  # nosec B608
+                )
+                await conn.execute(
+                    text(f"UPDATE print_queue SET {_col} = 'off' WHERE {_col} IN (0, '0', 'false', 'False')")  # nosec B608
+                )
+    else:
+        for _col in _tristate_cols:
+            result = await conn.execute(
+                text(
+                    "SELECT data_type FROM information_schema.columns "
+                    "WHERE table_name = 'print_queue' AND column_name = :col"
+                ),
+                {"col": _col},
+            )
+            row = result.fetchone()
+            if row and row[0] == "boolean":
+                await _safe_execute(conn, f"ALTER TABLE print_queue ALTER COLUMN {_col} DROP DEFAULT")
+                await _safe_execute(
+                    conn,
+                    f"ALTER TABLE print_queue ALTER COLUMN {_col} TYPE VARCHAR(8) "
+                    f"USING (CASE WHEN {_col} THEN 'on' ELSE 'off' END)",
+                )
+                await _safe_execute(conn, f"ALTER TABLE print_queue ALTER COLUMN {_col} SET DEFAULT 'auto'")
+
+    # Migration: normalise the workflow-default settings rows that back these
+    # options from legacy "true"/"false" to the tri-state vocabulary so the API
+    # returns real values (the AppSettings validator also coerces on read, but
+    # rewriting keeps the stored data honest). Only these three became tri-state.
+    for _skey in ("default_bed_levelling", "default_flow_cali", "default_nozzle_offset_cali"):
+        async with conn.begin_nested():
+            await conn.execute(
+                text("UPDATE settings SET value = 'on' WHERE key = :k AND lower(value) IN ('true', '1')"),
+                {"k": _skey},
+            )
+            await conn.execute(
+                text("UPDATE settings SET value = 'off' WHERE key = :k AND lower(value) IN ('false', '0')"),
+                {"k": _skey},
+            )
+
+    # Migration: Per-item preheat / heat-soak override (#1468). preheat_override
+    # is one of {inherit, on, off} — 'inherit' falls back to the global
+    # preheat_enabled setting; 'on' / 'off' force the decision. The chamber
+    # target column overrides the filament-map derivation when not null.
+    # Existing rows default to 'inherit' + NULL so behaviour is unchanged for
+    # in-flight queues.
+    await _safe_execute(
+        conn,
+        "ALTER TABLE print_queue ADD COLUMN preheat_override VARCHAR(10) DEFAULT 'inherit'",
+    )
+    await _safe_execute(
+        conn,
+        "ALTER TABLE print_queue ADD COLUMN preheat_chamber_target_override INTEGER",
+    )
+
     # Migration: Add library_file_id column to print_queue and make archive_id nullable
     # This allows queue items to reference library files directly (archive created at print start)
     try:
@@ -1222,6 +1696,22 @@ async def run_migrations(conn):
                 await conn.execute(text("ALTER TABLE print_queue_new2 RENAME TO print_queue"))
         except (OperationalError, ProgrammingError):
             pass  # Already applied
+
+    # Migration: Add dispatching_at claim column to print_queue (#2615). Nullable
+    # timestamp; the type differs by dialect (SQLite DATETIME vs Postgres
+    # TIMESTAMP) so an existing-DB upgrade doesn't hit "type datetime does not
+    # exist" on Postgres. On a fresh DB create_all() already built the column, so
+    # the ALTER is swallowed as "already exists".
+    #
+    # Placed AFTER the print_queue_new2 table-recreate above: that recreate
+    # (SQLite-only, and only on ancient DBs whose archive_id is still NOT NULL)
+    # rebuilds print_queue from an explicit column list that doesn't carry this
+    # column, so adding it earlier would let the recreate silently drop it. Adding
+    # it here means it survives that path.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN dispatching_at DATETIME")
+    else:
+        await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN dispatching_at TIMESTAMP")
 
     # Migration: Add HA energy sensor entity columns to smart_plugs
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN ha_power_entity VARCHAR(100)")
@@ -2109,6 +2599,14 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN rest_energy_url VARCHAR(500)")
     await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN rest_energy_multiplier REAL DEFAULT 1.0")
 
+    # Migration (#2539): a REST plug's lifetime energy counter, separate from its
+    # today counter. Devices differ in which they expose — a Shelly reports only
+    # a cumulative `aenergy.total`, a Tasmota behind a REST bridge reports both —
+    # and conflating the two made the cumulative value read as "today", so it
+    # never reset at midnight and "Total" stayed empty forever.
+    await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN rest_energy_total_path VARCHAR(200)")
+    await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN rest_energy_total_multiplier REAL DEFAULT 1.0")
+
     # Migration: Add batch_id column to print_queue for batch grouping
     try:
         async with conn.begin_nested():
@@ -2488,6 +2986,63 @@ async def run_migrations(conn):
     if not column_existed:
         async with conn.begin_nested():
             await conn.execute(text("UPDATE api_keys SET can_manage_inventory = can_queue"))
+
+    # #1832 follow-up: carve maintenance CRUD out of the admin denylist so
+    # HA-style automations can log "cleaned nozzle" via API key. Distinct
+    # from the two backfills above: MAINTENANCE_CREATE / _UPDATE / _DELETE
+    # were EXPLICITLY denied for every API key under the pre-migration model
+    # (they were on ``_APIKEY_DENIED_PERMISSIONS``), so no existing
+    # integration relies on them. Column default TRUE matches the "safe,
+    # on-by-default" pattern for keys created via the UI going forward;
+    # existing rows backfill to FALSE so the upgrade path does not silently
+    # widen scope for keys created before this flag existed. Users opt in
+    # via Settings → API Keys per key.
+    column_existed = await _api_keys_column_exists(conn, "can_manage_maintenance")
+    await _safe_execute(
+        conn,
+        "ALTER TABLE api_keys ADD COLUMN can_manage_maintenance BOOLEAN DEFAULT TRUE",
+    )
+    if not column_existed:
+        async with conn.begin_nested():
+            await conn.execute(text("UPDATE api_keys SET can_manage_maintenance = FALSE"))
+
+    # #1888: carve archive CRUD (create/update/delete — NOT purge) out of the
+    # admin denylist so automations can prune old prints via API key. Same
+    # shape and reasoning as can_manage_maintenance above: ARCHIVES_CREATE /
+    # _UPDATE_* / _DELETE_* were EXPLICITLY denied for every API key under the
+    # pre-migration model (they were on ``_APIKEY_DENIED_PERMISSIONS``), so no
+    # existing integration relies on them. Column default TRUE for keys created
+    # via the UI going forward; existing rows backfill to FALSE so the upgrade
+    # path does not silently widen scope for keys created before this flag
+    # existed. Users opt in via Settings → API Keys per key. BOOLEAN is valid
+    # on both SQLite and Postgres, so no dialect branch is needed.
+    column_existed = await _api_keys_column_exists(conn, "can_manage_archives")
+    await _safe_execute(
+        conn,
+        "ALTER TABLE api_keys ADD COLUMN can_manage_archives BOOLEAN DEFAULT TRUE",
+    )
+    if not column_existed:
+        async with conn.begin_nested():
+            await conn.execute(text("UPDATE api_keys SET can_manage_archives = FALSE"))
+
+    # #1893: carve project CRUD + membership (create/update/delete, add-archives)
+    # out of the admin denylist so automations can manage projects via API key.
+    # Identical shape and reasoning to can_manage_archives above: PROJECTS_CREATE
+    # / _UPDATE / _DELETE were EXPLICITLY denied for every API key under the
+    # pre-migration model (they were on ``_APIKEY_DENIED_PERMISSIONS``), so no
+    # existing integration relies on them. Column default TRUE for keys created
+    # via the UI going forward; existing rows backfill to FALSE so the upgrade
+    # path does not silently widen scope for keys created before this flag
+    # existed. Users opt in via Settings → API Keys per key. BOOLEAN is valid on
+    # both SQLite and Postgres, so no dialect branch is needed.
+    column_existed = await _api_keys_column_exists(conn, "can_manage_projects")
+    await _safe_execute(
+        conn,
+        "ALTER TABLE api_keys ADD COLUMN can_manage_projects BOOLEAN DEFAULT TRUE",
+    )
+    if not column_existed:
+        async with conn.begin_nested():
+            await conn.execute(text("UPDATE api_keys SET can_manage_projects = FALSE"))
 
     # Migration: Soft-delete column for trash bin (Issue #1008). Indexed so the
     # sweeper's "SELECT ... WHERE deleted_at < cutoff" and the trash list's
@@ -3076,9 +3631,23 @@ async def run_migrations(conn):
     else:
         await _safe_execute(conn, "ALTER TABLE users ADD COLUMN IF NOT EXISTS orca_cloud_pending_at TIMESTAMP")
 
+    # Migration: record when Bambu rejects a stored cloud token. Until now the
+    # only state we kept was the token string itself, so a dead credential was
+    # indistinguishable from a live one and the UI reported "connected" forever
+    # while every cloud call 401'd. DATETIME is SQLite-only — Postgres uses
+    # TIMESTAMP, so the column is dialect-branched per project convention.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_token_invalid_at DATETIME")
+    else:
+        await _safe_execute(conn, "ALTER TABLE users ADD COLUMN IF NOT EXISTS cloud_token_invalid_at TIMESTAMP")
+
     # Data migration: drop the embedded 3MF Title (`print_name`) from library
     # file metadata so the FileManager displays the filename, not the title (#1489).
     await _migrate_drop_library_print_name(conn)
+
+    # Data migration: queue items written before #2551 carry every selected plate's
+    # filament overrides, so a force-colour plate waits on colours it never prints.
+    await _migrate_scope_force_color_overrides_to_plate(conn)
 
     # Backfill NULL print_archives.created_at — older rows (and rows imported
     # via the SQLite ↔ Postgres cross-DB restore path) can land with NULL
@@ -3239,9 +3808,259 @@ async def run_migrations(conn):
     else:
         await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN is_autologin BOOLEAN DEFAULT false")
 
+    # Migration: Add is_env_managed column to oidc_providers (#2593). Marks the
+    # provider upserted from BAMBUDDY_OIDC_* env vars on startup. Postgres
+    # rejects ``DEFAULT 0`` for BOOLEAN columns.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN is_env_managed BOOLEAN DEFAULT 0")
+    else:
+        await _safe_execute(conn, "ALTER TABLE oidc_providers ADD COLUMN is_env_managed BOOLEAN DEFAULT false")
+
+    # Migration: Add dispatch_attempts to print_queue (#2555). Counts the times
+    # the start-watchdog reverted the row from 'printing' back to 'pending' so a
+    # printer that never actually starts stops being retried forever. INTEGER
+    # DEFAULT 0 is spelled identically on SQLite and Postgres — no dialect branch.
+    # Verified on both dialects: ADD COLUMN ... DEFAULT 0 backfills existing rows,
+    # so no separate UPDATE is needed (and _safe_execute is DDL-only — see its
+    # docstring). The scheduler reads it as `(item.dispatch_attempts or 0) + 1`
+    # regardless, so even a NULL row could not disable the retry cap.
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN dispatch_attempts INTEGER DEFAULT 0")
+
+    # Backfill: copy the selected plate from linked queue rows onto their archives
+    # (#2603). Recovers the plate for archives created before print_archives had a
+    # plate_id column, wherever the queue row still points at the archive and
+    # carries a plate. Runs here — after every print_queue column migration
+    # (plate_id, archive_id) — because it reads print_queue.plate_id, which is
+    # added far earlier in this function but must exist before this DML runs on a
+    # first-ever migration pass. Correlated-subquery form so the DML is identical
+    # on SQLite and Postgres; the WHERE plate_id IS NULL guard makes it idempotent
+    # and keeps it from clobbering values set on later runs.
+    async with conn.begin_nested():
+        # Only do any work (and, on SQLite, the FTS rebuild below) when there is
+        # actually a plate to recover — so this is a one-off cost on the upgrade
+        # boot, not an every-boot tax once every archive is backfilled.
+        has_work = (
+            await conn.execute(
+                text(
+                    "SELECT 1 FROM print_archives a "
+                    "JOIN print_queue q ON q.archive_id = a.id "
+                    "WHERE a.plate_id IS NULL AND q.plate_id IS NOT NULL "
+                    "LIMIT 1"
+                )
+            )
+        ).first() is not None
+        if has_work:
+            # SQLite: print_archives has an external-content FTS index (archive_fts,
+            # created above) whose AFTER UPDATE trigger issues an FTS 'delete' for
+            # the row. Archives created before that table existed were never indexed
+            # (its creation runs no rebuild), and updating an un-indexed row trips
+            # "database disk image is malformed". plate_id isn't even an FTS column,
+            # so the trigger's re-index is pointless here — but it still fires. Rebuild
+            # the index from the content table first so every row is present and the
+            # trigger's 'delete' is well-defined. Postgres has no such FTS table.
+            if is_sqlite():
+                await conn.execute(text("INSERT INTO archive_fts(archive_fts) VALUES('rebuild')"))
+            await conn.execute(
+                text(
+                    "UPDATE print_archives "
+                    "SET plate_id = ("
+                    "  SELECT pq.plate_id FROM print_queue pq "
+                    "  WHERE pq.archive_id = print_archives.id AND pq.plate_id IS NOT NULL "
+                    "  LIMIT 1"
+                    ") "
+                    "WHERE plate_id IS NULL "
+                    "AND EXISTS ("
+                    "  SELECT 1 FROM print_queue pq "
+                    "  WHERE pq.archive_id = print_archives.id AND pq.plate_id IS NOT NULL"
+                    ")"
+                )
+            )
+
+    # Migration: repair completed print-log rows that stored a multi-plate 3MF's
+    # whole-file filament instead of the printed plate's (#2614). Runs AFTER the
+    # #2603 archive plate_id backfill above so print_archives.plate_id is populated.
+    await _migrate_scope_run_filament_to_plate(conn)
+
+    # Migration: Add controls_printer_power to smart_plugs (#2629). Marks
+    # whether a plug actually feeds the printer's own power — only then may an
+    # auto-off mark the printer offline. Defaults to true so existing plugs
+    # keep the previous behaviour; accessory plugs (filter fan, lights) are
+    # opted out by the user. BOOLEAN literals differ per dialect (SQLite has
+    # no true/false keyword), so the default is dialect-branched.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE smart_plugs ADD COLUMN controls_printer_power BOOLEAN DEFAULT 1")
+    else:
+        await _safe_execute(
+            conn,
+            "ALTER TABLE smart_plugs ADD COLUMN IF NOT EXISTS controls_printer_power BOOLEAN DEFAULT true",
+        )
+
+    # Migration: real filesystem mtime for library files/folders (#2680). The
+    # folder tree's "sort by recent activity" and the file pane's date sort must
+    # track the on-disk mtime (``ls -t``), not Bambuddy's DB ``updated_at`` — for
+    # a bulk external scan every row's ``updated_at`` is the same scan instant, so
+    # ordering was arbitrary. Nullable; the timestamp type differs by dialect
+    # (SQLite DATETIME vs Postgres TIMESTAMP) so an existing-DB upgrade doesn't hit
+    # "type datetime does not exist" on Postgres. On a fresh DB create_all() already
+    # built the column, so the ALTER is swallowed as "already exists".
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN fs_modified_at DATETIME")
+        await _safe_execute(conn, "ALTER TABLE library_folders ADD COLUMN fs_modified_at DATETIME")
+    else:
+        await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN fs_modified_at TIMESTAMP")
+        await _safe_execute(conn, "ALTER TABLE library_folders ADD COLUMN fs_modified_at TIMESTAMP")
+
     # Migration: Disambiguate the four ``user_print_*`` notification template
     # names by appending " Email" (#1792). See ``_migrate_rename_user_print_template_names``.
     await _migrate_rename_user_print_template_names(conn)
+
+    # Migration: per-file print progress inside a project (#1897).
+    # - print_archives.library_file_id: which library file a queued run was
+    #   dispatched from; nullable, no FK constraint added to existing tables
+    #   (SQLite can't ADD CONSTRAINT; the application uses SET NULL semantics
+    #   via the ORM on fresh installs and tolerates dangling ids by matching
+    #   hash/filename as fallback anyway).
+    # - projects.target_sets: optional copies-per-file target. INTEGER is
+    #   spelled identically on SQLite and Postgres — no dialect branch.
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN library_file_id INTEGER")
+    await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN target_sets INTEGER")
+
+    # Migration: persist the timelapse snapshot-diff baseline (#2704).
+    # The list of video filenames present on the printer when the print began,
+    # so the diff survives a restart and the manual scan can use it instead of
+    # the clock-based matching that a LAN-only printer defeats. No dialect
+    # branch: SQLAlchemy renders this column as `JSON` on both SQLite and
+    # Postgres for a fresh install (checked with CreateTable against each
+    # dialect), so spelling the ALTER the same way keeps a migrated database
+    # identical to a new one. Matching matters on Postgres in particular —
+    # asyncpg binds the serialised value as json and would reject a TEXT column
+    # (mirrors the `projects.attachments JSON` migration above).
+    await _safe_execute(conn, "ALTER TABLE print_archives ADD COLUMN timelapse_baseline JSON")
+
+    # Migration: plate-clear-required notification opt-in (#2525). Off by
+    # default — it fires after every print, at the same moment as the
+    # print-complete alert. Postgres rejects `DEFAULT 0` for BOOLEAN.
+    if is_sqlite():
+        await _safe_execute(
+            conn, "ALTER TABLE notification_providers ADD COLUMN on_plate_clear_required BOOLEAN DEFAULT 0"
+        )
+    else:
+        await _safe_execute(
+            conn, "ALTER TABLE notification_providers ADD COLUMN on_plate_clear_required BOOLEAN DEFAULT false"
+        )
+
+    # Migration: variant grouping for library files (#671 / #2570). The
+    # `file_variant_groups` table itself needs no migration — create_all() above
+    # builds it — but the two member-side columns do. INTEGER and the inline
+    # REFERENCES clause are spelled identically on SQLite and Postgres, and
+    # SQLite accepts a REFERENCES on ADD COLUMN (same form as the
+    # pipeline_runs.parent_run_id migration at the top of this function).
+    await _safe_execute(
+        conn,
+        "ALTER TABLE library_files ADD COLUMN variant_group_id INTEGER "
+        "REFERENCES file_variant_groups(id) ON DELETE SET NULL",
+    )
+    await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN variant_position INTEGER DEFAULT 0")
+    # User-declared target model for a file whose 3MF does not say (#671).
+    # VARCHAR(50) is spelled identically on SQLite and Postgres.
+    await _safe_execute(conn, "ALTER TABLE library_files ADD COLUMN variant_target_model VARCHAR(50)")
+    # The model declares index=True, so fresh installs get this from create_all();
+    # migrated databases need it spelled out. Resolution looks members up by group
+    # on every scheduler pass that touches a grouped item.
+    await _safe_execute(
+        conn,
+        "CREATE INDEX IF NOT EXISTS ix_library_files_variant_group_id ON library_files (variant_group_id)",
+    )
+    await _migrate_backfill_variant_groups(conn)
+
+
+async def _migrate_backfill_variant_groups(conn) -> None:
+    """Build variant groups from the slice provenance already on disk (#671 / #2570).
+
+    ``sliced_from_library_file_id`` has been stamped into ``file_metadata`` by the
+    Slice button (routes/library.py) and the pipeline runner (routes/pipeline_runs.py)
+    since those features shipped, and until now nothing ever read it back — the
+    link existed but was inert. This promotes it to real group membership so an
+    existing library arrives with its slice sets already grouped instead of
+    requiring the user to re-declare by hand what Bambuddy itself recorded.
+
+    Only sources with **two or more** sliced children carrying **distinct**
+    ``sliced_for_model`` values produce a group:
+
+    - Fewer than two candidates is not a choice, and a one-member group would
+      change nothing at print time while creating a row per sliced file in every
+      library on earth.
+    - Two children sliced for the same printer are not alternatives — the
+      resolver has no basis to prefer one, so grouping them would turn a
+      harmless duplicate into an arbitrary pick. Those sources are skipped
+      whole; the user can still group them by hand and choose an order.
+
+    The unsliced source file is deliberately not a member. It has no
+    ``sliced_for_model``, so it can never be a dispatch candidate; showing it
+    alongside its variants is a File Manager listing concern, which is out of
+    scope.
+
+    Idempotent: only files with no group yet are considered, so a re-run after a
+    partial apply resumes rather than duplicating, and a user who has since
+    ungrouped files by hand does not get them silently regrouped.
+    """
+    from sqlalchemy import text
+
+    from backend.app.models.library import FileVariantGroup
+
+    if is_sqlite():
+        source_expr = "json_extract(file_metadata, '$.sliced_from_library_file_id')"
+        model_expr = "json_extract(file_metadata, '$.sliced_for_model')"
+    else:
+        # file_metadata is JSON, not JSONB — cast before using the -> operators,
+        # matching _migrate_drop_library_print_name above.
+        source_expr = "file_metadata::jsonb->>'sliced_from_library_file_id'"
+        model_expr = "file_metadata::jsonb->>'sliced_for_model'"
+
+    async with conn.begin_nested():
+        rows = (
+            await conn.execute(
+                text(
+                    f"SELECT id, {source_expr} AS source_id, {model_expr} AS model "  # noqa: S608 — dialect literals
+                    "FROM library_files "
+                    f"WHERE {source_expr} IS NOT NULL AND {model_expr} IS NOT NULL "
+                    "AND variant_group_id IS NULL AND deleted_at IS NULL "
+                    "ORDER BY id"
+                )
+            )
+        ).fetchall()
+
+        by_source: dict[str, list[tuple[int, str]]] = {}
+        for file_id, source_id, model in rows:
+            by_source.setdefault(str(source_id), []).append((file_id, str(model)))
+
+        for source_id, members in by_source.items():
+            if len(members) < 2:
+                continue
+            models = [m for _, m in members]
+            if len(set(models)) != len(models):
+                # Same printer sliced twice — ambiguous, leave it to the user.
+                continue
+
+            # Name the group after the source file when it is still around; its
+            # filename is what the user recognises. A deleted source leaves the
+            # variants perfectly usable, so fall back rather than skip.
+            name_row = (
+                await conn.execute(
+                    text("SELECT filename FROM library_files WHERE id = :sid"),
+                    {"sid": int(source_id)},
+                )
+            ).fetchone()
+            group_name = name_row[0] if name_row else f"{members[0][1]} + {len(members) - 1} more"
+
+            result = await conn.execute(FileVariantGroup.__table__.insert().values(name=group_name))
+            group_id = result.inserted_primary_key[0]
+
+            for position, (file_id, _model) in enumerate(members):
+                await conn.execute(
+                    text("UPDATE library_files SET variant_group_id = :gid, variant_position = :pos WHERE id = :fid"),
+                    {"gid": group_id, "pos": position, "fid": file_id},
+                )
 
 
 _USER_PRINT_TEMPLATE_RENAMES: tuple[tuple[str, str, str], ...] = (
@@ -3326,7 +4145,7 @@ async def seed_default_groups():
 
     from sqlalchemy import select
 
-    from backend.app.core.permissions import DEFAULT_GROUPS
+    from backend.app.core.permissions import ALL_PERMISSIONS, DEFAULT_GROUPS
     from backend.app.models.group import Group
     from backend.app.models.user import User
 
@@ -3479,63 +4298,31 @@ async def seed_default_groups():
                 group.permissions = perms
         await session.commit()
 
-        # Backfill library:purge + archives:purge for the Administrators group
-        # on existing installs. Both permissions were added after Administrators
-        # was first seeded, so upgrading users miss them even though the default
-        # config (ALL_PERMISSIONS) includes them for fresh installs.
+        # Backfill: sync the Administrators system group to ALL_PERMISSIONS.
+        # Administrators' contract is full access to every feature — fresh
+        # installs get that via DEFAULT_GROUPS["Administrators"]["permissions"]
+        # = ALL_PERMISSIONS. Upgrading installs would otherwise stay frozen at
+        # whatever permission set existed when they were first seeded, so a
+        # newly-added Permission enum member silently leaves admins gated out
+        # of the feature it controls.
+        #
+        # Generalises the previous one-off admin backfills (library:purge,
+        # archives:purge, the OWN/ALL read-flag set + legacy read flags,
+        # orca_cloud:auth, printer_sensor_history:read, …): every current
+        # Permission enum value is appended to the admin group if missing.
+        # Additive only — never removes a permission an operator added by
+        # hand. Run AFTER the legacy-rename migration above so the renamed
+        # OWN/ALL variants land in the group before the sync sees them.
         result = await session.execute(select(Group).where(Group.name == "Administrators"))
         admin_group = result.scalar_one_or_none()
         if admin_group and admin_group.permissions is not None:
             perms = list(admin_group.permissions)
             added = False
-            for new_perm in ("library:purge", "archives:purge"):
+            for new_perm in ALL_PERMISSIONS:
                 if new_perm not in perms:
                     perms.append(new_perm)
                     added = True
-                    logger.info("Added %s to Administrators group (backfill)", new_perm)
-            if added:
-                admin_group.permissions = perms
-        await session.commit()
-
-        # Backfill the read flag set for the Administrators group on existing
-        # installs (maziggy/bambuddy-security #2). Two layers:
-        #
-        # (a) New OWN/ALL splits — `archives:read_own` etc. Fresh installs get
-        #     these via ALL_PERMISSIONS; upgrades need the explicit backfill
-        #     so admin's permission set matches a fresh install's.
-        #
-        # (b) Legacy `archives:read` / `library:read` / `queue:read`. The
-        #     frontend still gates download / preview UI on these LEGACY
-        #     strings (see ArchivesPage / FileManagerPage), so admin needs
-        #     them retained even though the new API uses the OWN/ALL split.
-        #     The PERMISSION_MIGRATION_ALL map deliberately doesn't rename
-        #     read flags for admin — this backfill ensures they're present
-        #     even if they were stripped by hand or by an older migration.
-        #
-        # Also includes orca_cloud:auth for parity with fresh-install
-        # behaviour (ALL_PERMISSIONS covers it; backfill makes sure an
-        # admin role that's been customised since seed still has it).
-        result = await session.execute(select(Group).where(Group.name == "Administrators"))
-        admin_group = result.scalar_one_or_none()
-        if admin_group and admin_group.permissions is not None:
-            perms = list(admin_group.permissions)
-            added = False
-            for new_perm in (
-                "archives:read",
-                "archives:read_own",
-                "archives:read_all",
-                "library:read",
-                "library:read_own",
-                "library:read_all",
-                "queue:read",
-                "queue:read_own",
-                "queue:read_all",
-                "orca_cloud:auth",
-            ):
-                if new_perm not in perms:
-                    perms.append(new_perm)
-                    added = True
-                    logger.info("Added %s to Administrators group (backfill)", new_perm)
+                    logger.info("Added %s to Administrators group (ALL_PERMISSIONS sync)", new_perm)
             if added:
                 admin_group.permissions = perms
         await session.commit()
@@ -3590,6 +4377,31 @@ async def seed_default_groups():
                 perms.append("inventory:forecast_write")
                 changed = True
                 logger.info("Added inventory:forecast_write to group '%s' (backfill)", group.name)
+            if changed:
+                group.permissions = perms
+        await session.commit()
+
+        # Backfill pipeline permissions (#1425) for non-admin groups.
+        # Administrators is handled by the ALL_PERMISSIONS sync above.
+        #   - Operators: all three (matches fresh-install DEFAULT_GROUPS)
+        #   - Any other group with library:read_own or settings:read:
+        #     pipelines:read only
+        result = await session.execute(select(Group))
+        for group in result.scalars().all():
+            if not group.permissions or group.name == "Administrators":
+                continue
+            perms = list(group.permissions)
+            changed = False
+            if group.name == "Operators":
+                for new_perm in ("pipelines:read", "pipelines:write", "pipelines:run"):
+                    if new_perm not in perms:
+                        perms.append(new_perm)
+                        changed = True
+                        logger.info("Added %s to Operators group (backfill)", new_perm)
+            elif "pipelines:read" not in perms and ("library:read_own" in perms or "settings:read" in perms):
+                perms.append("pipelines:read")
+                changed = True
+                logger.info("Added pipelines:read to group '%s' (backfill)", group.name)
             if changed:
                 group.permissions = perms
         await session.commit()

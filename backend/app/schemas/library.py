@@ -205,6 +205,10 @@ class FileListResponse(BaseModel):
     created_by_id: int | None = None
     created_by_username: str | None = None
     created_at: datetime
+    # Real on-disk modification time (#2680). Populated for external files from
+    # their filesystem mtime; null for managed uploads. The file pane's date sort
+    # and the "Modified" column use ``fs_modified_at ?? created_at``.
+    fs_modified_at: datetime | None = None
 
     # Key metadata fields for display
     print_name: str | None = None
@@ -215,6 +219,13 @@ class FileListResponse(BaseModel):
     # Tags assigned to this file (#1268). Empty list when the file has none —
     # never null, so the FE can iterate without a guard.
     tags: list[TagSummary] = []
+
+    # Variant grouping (#671 / #2570). ``variant_count`` is the size of the whole
+    # group, not of the current listing — members can live in different folders,
+    # so counting the rows on screen would under-report. Projected in the list
+    # query so the badge and the smart-print decision cost no extra request.
+    variant_group_id: int | None = None
+    variant_count: int = 0
 
     class Config:
         from_attributes = True
@@ -393,3 +404,58 @@ class BatchThumbnailResponse(BaseModel):
     succeeded: int
     failed: int
     results: list[BatchThumbnailResult]
+
+
+# ============ Variant Group Schemas (#671 / #2570) ============
+
+
+class VariantGroupMemberRequest(BaseModel):
+    """One file joining a variant group.
+
+    ``target_model`` is optional and normally omitted — it is read from the
+    file's own ``sliced_for_model``. Supply it only for a legacy 3MF that
+    declares no model, where there is nothing else to go on.
+    """
+
+    library_file_id: int
+    target_model: str | None = Field(None, max_length=50)
+
+
+class VariantGroupCreate(BaseModel):
+    """Declare that these files are the same job sliced for different printers.
+
+    Order is significant: it is the priority used when more than one printer is
+    idle at the same moment. Two members minimum — a group of one expresses no
+    choice.
+    """
+
+    members: list[VariantGroupMemberRequest] = Field(..., min_length=2)
+    name: str | None = Field(None, max_length=255)
+
+
+class VariantGroupUpdate(BaseModel):
+    """Rename a group and/or re-order its members.
+
+    ``member_file_ids`` must list exactly the group's current members; a partial
+    list is rejected rather than guessing where the omitted ones belong.
+    """
+
+    name: str | None = Field(None, max_length=255)
+    member_file_ids: list[int] | None = None
+
+
+class VariantGroupMemberResponse(BaseModel):
+    """A file within a group, with the model it will be dispatched to."""
+
+    library_file_id: int
+    filename: str
+    target_model: str
+    position: int
+
+
+class VariantGroupResponse(BaseModel):
+    """A variant group and its members, in priority order."""
+
+    id: int
+    name: str
+    members: list[VariantGroupMemberResponse]

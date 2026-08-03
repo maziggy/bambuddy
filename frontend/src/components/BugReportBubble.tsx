@@ -6,6 +6,7 @@ import { api, bugReportApi, type PrinterDiagnosticResult } from '../api/client';
 import { DiagnosticChecklist } from './ConnectionDiagnostic';
 import { SystemHealthPanel } from './SystemHealthPanel';
 import { Collapsible } from './Collapsible';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 type ViewState = 'form' | 'logging' | 'stopping' | 'submitting' | 'success' | 'error';
 
@@ -47,9 +48,36 @@ function formatElapsed(seconds: number): string {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
-export function BugReportBubble() {
+interface BugReportBubbleProps {
+  /**
+   * Render the floating disc in the bottom-right corner. False when the
+   * trigger lives somewhere else — the compact header does this (#2750), so
+   * the panel still mounts here while the button that opens it sits in the
+   * header. The panel deliberately stays at the Layout root rather than
+   * moving into the header with its button: the header is a ``fixed z-40``
+   * element and therefore its own stacking context, so a ``z-50`` panel
+   * nested inside it would be capped at the header's level and end up
+   * underneath every ordinary z-50 modal in the app.
+   */
+  showTrigger?: boolean;
+  /** Controlled open state. Falls back to internal state when omitted. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export function BugReportBubble({ showTrigger = true, open, onOpenChange }: BugReportBubbleProps = {}) {
   const { t } = useTranslation();
-  const [isOpen, setIsOpen] = useState(false);
+  const isMobile = useIsMobile();
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = open !== undefined;
+  const isOpen = isControlled ? open : internalOpen;
+  const setIsOpen = useCallback(
+    (next: boolean) => {
+      if (!isControlled) setInternalOpen(next);
+      onOpenChange?.(next);
+    },
+    [isControlled, onOpenChange],
+  );
   const [viewState, setViewState] = useState<ViewState>('form');
   const [description, setDescription] = useState('');
   const [email, setEmail] = useState('');
@@ -109,8 +137,12 @@ export function BugReportBubble() {
     return () => clearTimeout(timer);
   }, [viewState, elapsedSeconds]);
 
-  const handleOpen = () => {
-    setIsOpen(true);
+  // Reset on open rather than in the click handler: the panel now has two
+  // possible triggers (the floating disc here, and the compact header's button
+  // which only flips the controlled flag), and a stale half-filled form
+  // reappearing for one of them would be a nasty little inconsistency.
+  useEffect(() => {
+    if (!isOpen) return;
     setViewState('form');
     setDescription('');
     setEmail('');
@@ -120,7 +152,9 @@ export function BugReportBubble() {
     setErrorMessage('');
     setElapsedSeconds(0);
     setWasDebug(false);
-  };
+  }, [isOpen]);
+
+  const handleOpen = () => setIsOpen(true);
 
   const handleClose = () => {
     setIsOpen(false);
@@ -216,25 +250,47 @@ export function BugReportBubble() {
 
   return (
     <>
-      {/* Floating bubble */}
-      <button
-        onClick={handleOpen}
-        className="fixed bottom-4 right-4 z-40 w-12 h-12 rounded-full bg-red-500 hover:bg-red-600 text-white shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110 flex items-center justify-center"
-        title={t('bugReport.title')}
-      >
-        <Bug className="w-5 h-5" />
-      </button>
+      {/* Floating bubble. Absent below the sidebar-compact breakpoint, where
+          the compact header carries the trigger instead — see Layout. */}
+      {showTrigger && (
+        <button
+          onClick={handleOpen}
+          className="fixed bottom-4 right-4 z-40 w-12 h-12 rounded-full bg-red-500 hover:bg-red-600 text-white shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110 flex items-center justify-center"
+          title={t('bugReport.title')}
+        >
+          <Bug className="w-5 h-5" />
+        </button>
+      )}
 
-      {/* Slide-in panel anchored to bottom-right */}
+      {/* Slide-in panel anchored to bottom-right; a bottom sheet on phones.
+          The desktop geometry cannot be reused there: `w-full` resolves against
+          the viewport for a fixed element, so on a 375px screen the panel was
+          375px wide and then pushed 16px in from the right, putting its left
+          edge at -16px and cutting a strip of the form off-screen. `max-w-md`
+          hid this on anything above ~464px wide. */}
       {isOpen && (
         <div
           id="bug-report-modal"
-          className="fixed bottom-20 right-4 z-50 w-full max-w-md"
+          className={
+            isMobile
+              ? 'fixed inset-x-0 bottom-0 z-50'
+              : showTrigger
+                ? 'fixed bottom-20 right-4 z-50 w-full max-w-md'
+                // Trigger is in the compact header, so anchor under it rather
+                // than to a corner the user did not touch. Only reachable
+                // between the mobile and sidebar-compact breakpoints — below
+                // that it is a bottom sheet, above it the disc is back.
+                : 'fixed top-16 right-4 z-50 w-full max-w-md'
+          }
           onPaste={handlePaste}
         >
           <div
             ref={modalRef}
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 max-h-[80vh] overflow-y-auto"
+            className={`bg-white dark:bg-gray-800 shadow-2xl border border-gray-200 dark:border-gray-700 overflow-y-auto ${
+              isMobile
+                ? 'rounded-t-2xl max-h-[85vh] pb-[env(safe-area-inset-bottom)]'
+                : 'rounded-lg max-h-[80vh]'
+            }`}
           >
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800 z-10">

@@ -14,6 +14,7 @@ import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { FileManagerPage } from './pages/FileManagerPage';
 import { LibraryTrashPage } from './pages/LibraryTrashPage';
 import { CameraPage } from './pages/CameraPage';
+import { CamWallPage } from './pages/CamWallPage';
 import { StreamOverlayPage } from './pages/StreamOverlayPage';
 import { ExternalLinkPage } from './pages/ExternalLinkPage';
 import { GroupEditPage } from './pages/GroupEditPage';
@@ -25,6 +26,7 @@ import { SetupPage } from './pages/SetupPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { GCodeViewerPage } from './pages/GCodeViewerPage';
 import { useWebSocket } from './hooks/useWebSocket';
+import { usePrintProgressTitle } from './hooks/usePrintProgressTitle';
 import { useStreamTokenSync } from './hooks/useCameraStreamToken';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
@@ -88,6 +90,7 @@ function StreamTokenSync() {
 
 function WebSocketProvider({ children }: { children: React.ReactNode }) {
   useWebSocket();
+  usePrintProgressTitle();
   return <>{children}</>;
 }
 
@@ -182,6 +185,11 @@ function App() {
                 {/* Stream overlay page - standalone for OBS/streaming embeds, no auth required */}
                 <Route path="/overlay/:printerId" element={<StreamOverlayPage />} />
 
+                {/* Cam Wall on its own URL (#2531). Outside ProtectedRoute because a
+                    ?token= kiosk has no session to protect; the page itself sends a
+                    tokenless visitor to /login, and the backend gates the feed. */}
+                <Route path="/camwall" element={<CamWallPage />} />
+
                 {/* SpoolBuddy kiosk UI */}
                 <Route element={<ProtectedRoute><WebSocketProvider><SpoolBuddyLayout /></WebSocketProvider></ProtectedRoute>}>
                   <Route path="spoolbuddy" element={<SpoolBuddyDashboard />} />
@@ -197,6 +205,10 @@ function App() {
                   <Route index element={<PrintersPage />} />
                   <Route path="archives" element={<ArchivesPage />} />
                   <Route path="queue" element={<QueuePage />} />
+                  {/* Slicer Pipelines (#1425) — Pipelines tab lives on the
+                      Print Queue page (Queue + History + Timeline +
+                      Pipelines). Old standalone URL redirects. */}
+                  <Route path="pipelines/runs" element={<Navigate to="/queue?tab=pipelines" replace />} />
                   <Route path="stats" element={<StatsPage />} />
                   <Route path="profiles" element={<ProfilesPage />} />
                   <Route path="maintenance" element={<MaintenancePage />} />

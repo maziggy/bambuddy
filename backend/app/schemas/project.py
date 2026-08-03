@@ -26,6 +26,7 @@ class ProjectCreate(BaseModel):
     color: str | None = None
     target_count: int | None = None
     target_parts_count: int | None = None
+    target_sets: int | None = None  # Copies-per-file target (#1897)
     notes: str | None = None
     tags: str | None = None
     due_date: datetime | None = None
@@ -49,6 +50,7 @@ class ProjectUpdate(BaseModel):
     status: str | None = None  # active, completed, archived
     target_count: int | None = None
     target_parts_count: int | None = None
+    target_sets: int | None = None  # Copies-per-file target (#1897)
     notes: str | None = None
     tags: str | None = None
     due_date: datetime | None = None
@@ -108,6 +110,7 @@ class ProjectResponse(BaseModel):
     status: str
     target_count: int | None
     target_parts_count: int | None = None
+    target_sets: int | None = None  # Copies-per-file target (#1897)
     notes: str | None = None
     attachments: list | None = None
     tags: str | None = None
@@ -127,6 +130,13 @@ class ProjectResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ProjectFileProgress(BaseModel):
+    """Completed-run count for one library file inside a project (#1897)."""
+
+    file_id: int
+    completed_count: int
 
 
 class ArchivePreview(BaseModel):
@@ -150,7 +160,15 @@ class ProjectListResponse(BaseModel):
     status: str
     target_count: int | None
     target_parts_count: int | None = None
+    target_sets: int | None = None  # Copies-per-file target (#1897); the shared edit dialog needs it
     budget: float | None = None
+    # The edit dialog is shared with the project detail page and seeds its fields
+    # from whichever project object it is handed, so the list payload has to carry
+    # everything the dialog edits — otherwise a save from the list view submits a
+    # blank tags field and a default priority over the stored values (#2536).
+    tags: str | None = None
+    due_date: datetime | None = None
+    priority: str = "normal"
     created_at: datetime
     # Quick stats
     archive_count: int = 0  # Number of print jobs
@@ -269,6 +287,7 @@ class ProjectExport(BaseModel):
     status: str
     target_count: int | None
     target_parts_count: int | None
+    target_sets: int | None = None
     notes: str | None
     tags: str | None
     due_date: datetime | None
@@ -287,6 +306,7 @@ class ProjectImport(BaseModel):
     status: str = "active"
     target_count: int | None = None
     target_parts_count: int | None = None
+    target_sets: int | None = None
     notes: str | None = None
     tags: str | None = None
     due_date: datetime | None = None

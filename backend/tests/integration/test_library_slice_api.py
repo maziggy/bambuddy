@@ -69,6 +69,17 @@ def _install_mock_sidecar(handler: Callable[[httpx.Request], httpx.Response]) ->
     return client
 
 
+def _is_slice_post(request: httpx.Request) -> bool:
+    """True for the slice call itself, false for the progress polls beside it.
+
+    Since #2730 a slice is supervised by a 1 Hz poll of
+    ``GET /slice/progress/{id}``, which shares this mock transport. Tests that
+    count *slice attempts* — primary vs embedded-settings fallback — have to
+    exclude those, or the count becomes a measure of how long the test took.
+    """
+    return request.method == "POST" and request.url.path.endswith("/slice")
+
+
 async def _wait_for_job(client: AsyncClient, job_id: int, timeout: float = 5.0) -> dict:
     """Poll `/api/v1/slice-jobs/{id}` until the job hits a terminal state.
 
@@ -93,15 +104,24 @@ async def _wait_for_job(client: AsyncClient, job_id: int, timeout: float = 5.0) 
 
 
 @pytest.fixture
-async def slice_test_setup(db_session, tmp_path):
-    """Source LibraryFile + 3 LocalPresets + preferred_slicer=orcaslicer."""
+async def slice_test_setup(db_session, tmp_path, monkeypatch):
+    """Source LibraryFile + 3 LocalPresets + preferred_slicer=orcaslicer.
+
+    ``base_dir`` is patched via ``monkeypatch`` rather than assigned and
+    restored by hand. ``app_settings`` is a process-wide singleton, and the
+    hand-rolled version only restored after the ``yield`` — so anything raising
+    during setup (a commit, a refresh) left ``base_dir`` pointing at a
+    ``tmp_path`` that pytest then deleted, and every later test in that xdist
+    worker which reads it failed. That was the cause of intermittent failures
+    in ``TestLibraryPathHelpers`` and ``TestArchivePlatesDesignOverrides``,
+    which share nothing with this module but land in the same worker.
+    """
     storage_dir = tmp_path / "library" / "files"
     storage_dir.mkdir(parents=True, exist_ok=True)
     src_path = storage_dir / "Cube.stl"
     src_path.write_bytes(b"solid Cube\nendsolid\n")
 
-    original_base_dir = app_settings.base_dir
-    app_settings.base_dir = tmp_path
+    monkeypatch.setattr(app_settings, "base_dir", tmp_path)
 
     src_file = LibraryFile(
         filename="Cube.stl",
@@ -137,7 +157,6 @@ async def slice_test_setup(db_session, tmp_path):
         "tmp_path": tmp_path,
     }
 
-    app_settings.base_dir = original_base_dir
     slicer_api_module.set_shared_http_client(None)
 
 
@@ -206,7 +225,7 @@ class TestSliceLibraryFile:
             captured["url"] = str(request.url)
             return httpx.Response(
                 status_code=200,
-                content=b"PK\x03\x04 fake-3mf",
+                content=_make_3mf_with_settings(),  # #2671: real zip; validation rejects non-3MF bodies
                 headers={
                     "x-print-time-seconds": "656",
                     "x-filament-used-g": "0.94",
@@ -249,7 +268,7 @@ class TestSliceLibraryFile:
             captured["body"] = bytes(request.content)
             return httpx.Response(
                 status_code=200,
-                content=b"PK\x03\x04 fake",
+                content=_make_3mf_with_settings(),  # #2671: real zip; validation rejects non-3MF bodies
                 headers={
                     "x-print-time-seconds": "10",
                     "x-filament-used-g": "0.1",
@@ -291,7 +310,7 @@ class TestSliceLibraryFile:
             captured["body"] = bytes(request.content)
             return httpx.Response(
                 status_code=200,
-                content=b"PK\x03\x04 fake",
+                content=_make_3mf_with_settings(),  # #2671: real zip; validation rejects non-3MF bodies
                 headers={
                     "x-print-time-seconds": "10",
                     "x-filament-used-g": "0.1",
@@ -314,6 +333,82 @@ class TestSliceLibraryFile:
         assert b"curr_bed_type" not in captured["body"], (
             "bed_type must stay out of the process JSON when no override is set"
         )
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_auto_orient_and_arrange_reach_the_sidecar(self, async_client: AsyncClient, slice_test_setup):
+        """#2548: the two layout passes are per-slice options, so ticking
+        them in the SliceModal has to come out the other end as the
+        sidecar's ``orient`` / ``arrange`` form fields. Before this the
+        flags existed on the wire but only #1493's cross-class detector
+        could set arrange, and nothing at all could set orient."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = bytes(request.content)
+            return httpx.Response(
+                status_code=200,
+                content=_make_3mf_with_settings(),
+                headers={
+                    "x-print-time-seconds": "10",
+                    "x-filament-used-g": "0.1",
+                    "x-filament-used-mm": "1.0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+        response = await async_client.post(
+            f"/api/v1/library/files/{slice_test_setup['src_file_id']}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+                "auto_orient": True,
+                "auto_arrange": True,
+            },
+        )
+        assert response.status_code == 202
+        final = await _wait_for_job(async_client, response.json()["job_id"])
+        assert final["status"] == "completed", final
+
+        assert b'name="orient"' in captured["body"]
+        assert b'name="arrange"' in captured["body"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_layout_flags_absent_by_default(self, async_client: AsyncClient, slice_test_setup):
+        """Companion to the above. Both default to off, and off is expressed
+        by omitting the field — the sidecar reads any present value as
+        truthy, so a "false" on the wire would auto-arrange every slice."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = bytes(request.content)
+            return httpx.Response(
+                status_code=200,
+                content=_make_3mf_with_settings(),
+                headers={
+                    "x-print-time-seconds": "10",
+                    "x-filament-used-g": "0.1",
+                    "x-filament-used-mm": "1.0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+        response = await async_client.post(
+            f"/api/v1/library/files/{slice_test_setup['src_file_id']}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+            },
+        )
+        assert response.status_code == 202
+        final = await _wait_for_job(async_client, response.json()["job_id"])
+        assert final["status"] == "completed", final
+
+        assert b'name="orient"' not in captured["body"]
+        assert b'name="arrange"' not in captured["body"]
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -406,6 +501,8 @@ class TestSliceLibraryFile:
         call_count = {"n": 0}
 
         def handler(request: httpx.Request) -> httpx.Response:
+            if not _is_slice_post(request):
+                return httpx.Response(404)
             call_count["n"] += 1
             # First call: profile triplet present → simulate CLI 5xx
             if call_count["n"] == 1:
@@ -416,7 +513,7 @@ class TestSliceLibraryFile:
             # Retry: no profile triplet → succeed with embedded settings
             return httpx.Response(
                 status_code=200,
-                content=b"PK\x03\x04 fake-3mf",
+                content=_make_3mf_with_settings(),  # #2671: real zip; validation rejects non-3MF bodies
                 headers={
                     "x-print-time-seconds": "100",
                     "x-filament-used-g": "1.0",
@@ -446,7 +543,9 @@ class TestSliceLibraryFile:
         # STL has no embedded settings — the CLI 5xx is terminal.
         call_count = {"n": 0}
 
-        def handler(_: httpx.Request) -> httpx.Response:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if not _is_slice_post(request):
+                return httpx.Response(404)
             call_count["n"] += 1
             return httpx.Response(
                 status_code=500,
@@ -499,7 +598,7 @@ class TestSliceLibraryFile:
             captured["body"] = request.content
             return httpx.Response(
                 status_code=200,
-                content=b"PK\x03\x04 fake-3mf",
+                content=_make_3mf_with_settings(),  # #2671: real zip; validation rejects non-3MF bodies
                 headers={
                     "x-print-time-seconds": "1",
                     "x-filament-used-g": "0",
@@ -533,6 +632,105 @@ class TestSliceLibraryFile:
         assert "Metadata/slice_info.config" in names
         assert "Metadata/cut_information.xml" in names
         assert "3D/3dmodel.model" in names
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_use_embedded_settings_skips_profile_triplet(
+        self, async_client: AsyncClient, db_session, slice_test_setup
+    ):
+        # "Slice as designed" (#2611): with use_embedded_settings the 3MF is
+        # sliced on its own project_settings.config — no --load-settings — so
+        # the sidecar request carries ONLY the model file, never the
+        # printer/process/filament profile parts. Succeeds on the first call
+        # (no crash-fallback), and the result is flagged used_embedded_settings.
+        src_3mf_path = slice_test_setup["tmp_path"] / "library" / "files" / "designed.3mf"
+        src_3mf_path.write_bytes(_make_3mf_with_settings({"wall_loops": "5"}))
+        threemf = LibraryFile(
+            filename="designed.3mf",
+            file_path=str(src_3mf_path.relative_to(slice_test_setup["tmp_path"])),
+            file_type="3mf",
+            file_size=src_3mf_path.stat().st_size,
+        )
+        db_session.add(threemf)
+        await db_session.commit()
+        await db_session.refresh(threemf)
+
+        captured: dict = {}
+        call_count = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if not _is_slice_post(request):
+                return httpx.Response(404)
+            call_count["n"] += 1
+            captured["body"] = request.content
+            return httpx.Response(
+                status_code=200,
+                content=_make_3mf_with_settings(),  # #2671: real zip; validation rejects non-3MF bodies
+                headers={
+                    "x-print-time-seconds": "100",
+                    "x-filament-used-g": "1.0",
+                    "x-filament-used-mm": "100",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+        response = await async_client.post(
+            f"/api/v1/library/files/{threemf.id}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+                "use_embedded_settings": True,
+            },
+        )
+        assert response.status_code == 202
+        final = await _wait_for_job(async_client, response.json()["job_id"])
+        assert final["status"] == "completed", final
+        assert final["result"]["used_embedded_settings"] is True
+        assert call_count["n"] == 1  # embedded path taken directly, no fallback retry
+
+        # The multipart body must NOT carry any profile part — that is the
+        # whole point of the mode. Their presence would mean --load-settings
+        # ran and overrode the designer's embedded settings.
+        body = captured["body"]
+        assert b"printerProfile" not in body
+        assert b"presetProfile" not in body
+        assert b"filamentProfile" not in body
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_use_embedded_settings_ignored_for_stl(self, async_client: AsyncClient, slice_test_setup):
+        # An STL has no embedded project settings to honour, so the flag is a
+        # no-op: the normal profile path runs and the triplet is forwarded.
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = request.content
+            return httpx.Response(
+                status_code=200,
+                content=_make_3mf_with_settings(),  # #2671: real zip; validation rejects non-3MF bodies
+                headers={
+                    "x-print-time-seconds": "1",
+                    "x-filament-used-g": "0",
+                    "x-filament-used-mm": "0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+        response = await async_client.post(
+            f"/api/v1/library/files/{slice_test_setup['src_file_id']}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+                "use_embedded_settings": True,
+            },
+        )
+        assert response.status_code == 202
+        final = await _wait_for_job(async_client, response.json()["job_id"])
+        assert final["status"] == "completed", final
+        assert final["result"]["used_embedded_settings"] is False
+        assert b"printerProfile" in captured["body"]  # profile path still ran
 
 
 # ---------------------------------------------------------------------------
@@ -672,6 +870,8 @@ class TestCrossClassSliceAllLoop:
         captured_requests: list[dict] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
+            if not _is_slice_post(request):
+                return httpx.Response(404)
             # Multipart bodies aren't trivially parseable here; pull
             # the plate field by string search since the helper sends
             # ``name="plate"`` immediately followed by the value.
@@ -739,6 +939,284 @@ class TestCrossClassSliceAllLoop:
         # Per-plate-result totals are summed onto the merged archive.
         assert new_archive.print_time_seconds == 600 * 3
         assert new_archive.filament_used_grams == pytest.approx(5.0 * 3)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_user_requested_arrange_also_loops_per_plate(
+        self, async_client: AsyncClient, db_session, slice_test_setup, printer_factory, archive_factory, monkeypatch
+    ):
+        """#2548 inherits #1493's hazard. The per-plate loop exists because
+        ``--arrange`` is project-wide: a single ``--slice 0 --arrange 1``
+        collapses every plate's objects onto one bed. That is a property of
+        the flag, not of the cross-class detour that first needed it — so a
+        user ticking auto-arrange over "all plates" on a SAME-class source
+        must take the same loop. Keying the loop on the cross-class decision
+        alone would send one call and silently return a one-plate result.
+        """
+        from backend.app.models.archive import PrintArchive
+
+        tmp_path = slice_test_setup["tmp_path"]
+        monkeypatch.setattr(app_settings, "archive_dir", tmp_path / "archive")
+
+        src_dir = tmp_path / "archives" / "src_same_class"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        src_3mf = src_dir / "tray.3mf"
+        src_3mf.write_bytes(self._make_multi_plate_x1c_source(plate_count=2))
+        printer = await printer_factory()
+        source = await archive_factory(
+            printer.id,
+            filename="tray.3mf",
+            file_path=str(src_3mf.relative_to(tmp_path)),
+            sliced_for_model="X1C",
+            with_run=False,
+        )
+
+        # X1C target: same nozzle class as the X1C source, so #1493's
+        # detector stays off and only the user's flag is in play.
+        x1c = LocalPreset(
+            name="# Bambu Lab X1 Carbon 0.4 nozzle",
+            preset_type="printer",
+            source="orcaslicer",
+            setting=json.dumps({"name": "Bambu Lab X1 Carbon 0.4 nozzle", "printer_model": "Bambu Lab X1 Carbon"}),
+        )
+        db_session.add(x1c)
+        await db_session.commit()
+        await db_session.refresh(x1c)
+
+        captured_requests: list[dict] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if not _is_slice_post(request):
+                return httpx.Response(404)
+            body = request.content
+            plate = None
+            marker = b'name="plate"\r\n\r\n'
+            idx = body.find(marker)
+            if idx != -1:
+                start = idx + len(marker)
+                end = body.find(b"\r\n", start)
+                try:
+                    plate = int(body[start:end].decode("utf-8"))
+                except (UnicodeDecodeError, ValueError):
+                    plate = None
+            captured_requests.append(
+                {
+                    "plate": plate,
+                    "arrange": b'name="arrange"' in body,
+                    "orient": b'name="orient"' in body,
+                }
+            )
+            return httpx.Response(
+                status_code=200,
+                content=self._make_single_plate_sliced_output(plate or 1),
+                headers={
+                    "x-print-time-seconds": "300",
+                    "x-filament-used-g": "2.0",
+                    "x-filament-used-mm": "800.0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+
+        resp = await async_client.post(
+            f"/api/v1/archives/{source.id}/slice",
+            json={
+                "printer_preset": {"source": "local", "id": str(x1c.id)},
+                "process_preset": {"source": "local", "id": str(slice_test_setup["process_id"])},
+                "filament_presets": [{"source": "local", "id": str(slice_test_setup["filament_id"])}],
+                "plate": 0,
+                "auto_arrange": True,
+                "auto_orient": True,
+            },
+        )
+        assert resp.status_code == 202, resp.text
+        final = await _wait_for_job(async_client, resp.json()["job_id"], timeout=15.0)
+        assert final["status"] == "completed", final
+
+        assert [c["plate"] for c in captured_requests] == [1, 2]
+        assert all(c["arrange"] for c in captured_requests)
+        # Orient rides along on every sub-slice too — it is per-object, so
+        # dropping it on the loop path would quietly ignore the user's tick.
+        assert all(c["orient"] for c in captured_requests)
+
+        new_archive = await db_session.get(PrintArchive, final["result"]["archive_id"])
+        with zipfile.ZipFile(tmp_path / new_archive.file_path, "r") as zf:
+            entries = set(zf.namelist())
+        assert "Metadata/plate_1.gcode" in entries
+        assert "Metadata/plate_2.gcode" in entries
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_embedded_settings_slice_all_with_arrange_still_loops(
+        self, async_client: AsyncClient, db_session, slice_test_setup, printer_factory, archive_factory, monkeypatch
+    ):
+        """ "Slice as designed" must not skip the loop. The project-wide
+        collapse comes from ``--arrange``; where the print config came from
+        has no bearing on it. Taking the single-call embedded branch here
+        would return one consolidated plate for a job the user asked to
+        slice as N — and the per-plate calls must still omit the profile
+        triplet, or "as designed" would silently stop meaning that.
+        """
+        from backend.app.models.archive import PrintArchive
+
+        tmp_path = slice_test_setup["tmp_path"]
+        monkeypatch.setattr(app_settings, "archive_dir", tmp_path / "archive")
+
+        src_dir = tmp_path / "archives" / "src_embedded"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        src_3mf = src_dir / "kit.3mf"
+        src_3mf.write_bytes(self._make_multi_plate_x1c_source(plate_count=2))
+        printer = await printer_factory()
+        source = await archive_factory(
+            printer.id,
+            filename="kit.3mf",
+            file_path=str(src_3mf.relative_to(tmp_path)),
+            sliced_for_model="X1C",
+            with_run=False,
+        )
+
+        x1c = LocalPreset(
+            name="# Bambu Lab X1 Carbon 0.4 nozzle",
+            preset_type="printer",
+            source="orcaslicer",
+            setting=json.dumps({"name": "Bambu Lab X1 Carbon 0.4 nozzle", "printer_model": "Bambu Lab X1 Carbon"}),
+        )
+        db_session.add(x1c)
+        await db_session.commit()
+        await db_session.refresh(x1c)
+
+        captured_requests: list[dict] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if not _is_slice_post(request):
+                return httpx.Response(404)
+            body = request.content
+            plate = None
+            marker = b'name="plate"\r\n\r\n'
+            idx = body.find(marker)
+            if idx != -1:
+                start = idx + len(marker)
+                end = body.find(b"\r\n", start)
+                try:
+                    plate = int(body[start:end].decode("utf-8"))
+                except (UnicodeDecodeError, ValueError):
+                    plate = None
+            captured_requests.append(
+                {
+                    "plate": plate,
+                    "arrange": b'name="arrange"' in body,
+                    "has_profiles": b'name="printerProfile"' in body,
+                }
+            )
+            return httpx.Response(
+                status_code=200,
+                content=self._make_single_plate_sliced_output(plate or 1),
+                headers={
+                    "x-print-time-seconds": "300",
+                    "x-filament-used-g": "2.0",
+                    "x-filament-used-mm": "800.0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+
+        resp = await async_client.post(
+            f"/api/v1/archives/{source.id}/slice",
+            json={
+                "printer_preset": {"source": "local", "id": str(x1c.id)},
+                "process_preset": {"source": "local", "id": str(slice_test_setup["process_id"])},
+                "filament_presets": [{"source": "local", "id": str(slice_test_setup["filament_id"])}],
+                "plate": 0,
+                "use_embedded_settings": True,
+                "auto_arrange": True,
+            },
+        )
+        assert resp.status_code == 202, resp.text
+        final = await _wait_for_job(async_client, resp.json()["job_id"], timeout=15.0)
+        assert final["status"] == "completed", final
+
+        assert [c["plate"] for c in captured_requests] == [1, 2]
+        assert all(c["arrange"] for c in captured_requests)
+        # No --load-settings on any sub-call: the file's own settings drive
+        # each plate, which is what "slice as designed" promises.
+        assert not any(c["has_profiles"] for c in captured_requests)
+        assert final["result"]["used_embedded_settings"] is True
+
+        new_archive = await db_session.get(PrintArchive, final["result"]["archive_id"])
+        with zipfile.ZipFile(tmp_path / new_archive.file_path, "r") as zf:
+            entries = set(zf.namelist())
+        assert "Metadata/plate_1.gcode" in entries
+        assert "Metadata/plate_2.gcode" in entries
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_cross_class_arrange_survives_user_leaving_the_box_unticked(
+        self, async_client: AsyncClient, db_session, slice_test_setup, printer_factory, archive_factory, monkeypatch
+    ):
+        """The user's per-slice choice is a union with #1493's decision, not
+        a replacement for it. Arrange is what keeps a class-crossing slice
+        from landing in the target's dead zone or segfaulting ZFiller — so
+        the default-false ``auto_arrange`` must not be able to turn it off.
+        """
+        tmp_path = slice_test_setup["tmp_path"]
+        monkeypatch.setattr(app_settings, "archive_dir", tmp_path / "archive")
+
+        src_dir = tmp_path / "archives" / "src_cross_single"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        src_3mf = src_dir / "clip.3mf"
+        src_3mf.write_bytes(self._make_multi_plate_x1c_source(plate_count=1))
+        printer = await printer_factory()
+        source = await archive_factory(
+            printer.id,
+            filename="clip.3mf",
+            file_path=str(src_3mf.relative_to(tmp_path)),
+            sliced_for_model="X1C",
+            with_run=False,
+        )
+
+        h2d = LocalPreset(
+            name="# Bambu Lab H2D 0.4 nozzle",
+            preset_type="printer",
+            source="orcaslicer",
+            setting=json.dumps({"name": "Bambu Lab H2D 0.4 nozzle", "printer_model": "Bambu Lab H2D"}),
+        )
+        db_session.add(h2d)
+        await db_session.commit()
+        await db_session.refresh(h2d)
+
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if not _is_slice_post(request):
+                return httpx.Response(404)
+            captured["body"] = bytes(request.content)
+            return httpx.Response(
+                status_code=200,
+                content=self._make_single_plate_sliced_output(1),
+                headers={
+                    "x-print-time-seconds": "300",
+                    "x-filament-used-g": "2.0",
+                    "x-filament-used-mm": "800.0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+
+        resp = await async_client.post(
+            f"/api/v1/archives/{source.id}/slice",
+            json={
+                "printer_preset": {"source": "local", "id": str(h2d.id)},
+                "process_preset": {"source": "local", "id": str(slice_test_setup["process_id"])},
+                "filament_presets": [{"source": "local", "id": str(slice_test_setup["filament_id"])}],
+                "plate": 1,
+                "auto_arrange": False,
+            },
+        )
+        assert resp.status_code == 202, resp.text
+        final = await _wait_for_job(async_client, resp.json()["job_id"], timeout=15.0)
+        assert final["status"] == "completed", final
+
+        assert b'name="arrange"' in captured["body"], "cross-class arrange must survive an explicit auto_arrange=false"
 
 
 class TestSliceArchiveResliceModel:
@@ -1288,6 +1766,50 @@ class TestSlicerRejectionMessage:
         assert _slicer_rejection_message("") is None
         assert _slicer_rejection_message("Slicer sidecar unreachable: connection reset") is None
 
+    def test_replaces_input_preset_invalid_placeholder_with_cli_error_line(self):
+        # #1851: the CLI emits its catch-all "input preset file is invalid"
+        # placeholder for every -5 exit, including real preset-vs-printer
+        # compatibility rejections. The actual diagnostic only appears in the
+        # stdout `[error] run NNNN:` line; the function must prefer that.
+        text = (
+            "Slicer CLI failed (500): Slicing failed with error from slicer: "
+            "The input preset file is invalid and can not be parsed.: "
+            "Slicer process failed (exit code 251)\n"
+            "stdout: [2026-06-29 04:12:11.952784] [trace] Initializing StaticPrintConfigs\n"
+            "[2026-06-29 04:12:12.175810] [error] run 3008: filament preset "
+            "Generic PLA @BBL H2C (slot 1) is not compatible with printer "
+            "Bambu Lab A1 0.4 nozzle.\n"
+            "run found error, return -5, exit..."
+        )
+        assert (
+            _slicer_rejection_message(text) == "filament preset Generic PLA @BBL H2C (slot 1) is not compatible with "
+            "printer Bambu Lab A1 0.4 nozzle."
+        )
+
+    def test_keeps_meaningful_reason_even_when_cli_error_line_present(self):
+        # When the headline error_string is already a useful reason (here:
+        # the bed-boundary rejection), don't override it with a generic
+        # `[error]` line that may just be the same message restated. Avoids
+        # double-text duplication in the user-facing detail.
+        text = (
+            "Slicer CLI failed (500): Slicing failed with error from slicer: "
+            "Some objects are located over the boundary of the heated bed.: "
+            "Slicer process failed (exit code 204)\n"
+            "stdout: [error] some unrelated stdout chatter"
+        )
+        assert _slicer_rejection_message(text) == "Some objects are located over the boundary of the heated bed."
+
+    def test_cli_error_line_without_run_prefix(self):
+        # The CLI sometimes logs `[error] <msg>` without the `run NNNN:`
+        # prefix (different code paths). The regex must still pick it up.
+        text = (
+            "Slicer CLI failed (500): Slicing failed with error from slicer: "
+            "The input preset file is invalid and can not be parsed.: "
+            "Slicer process failed (exit code 251)\n"
+            "stdout: [2026-06-29 12:00:00.000000] [error] Configuration parse failed: missing key 'printer_settings_id'"
+        )
+        assert _slicer_rejection_message(text) == "Configuration parse failed: missing key 'printer_settings_id'"
+
 
 class TestSliceSlicerRejection:
     @pytest.mark.asyncio
@@ -1314,6 +1836,8 @@ class TestSliceSlicerRejection:
         call_count = {"n": 0}
 
         def handler(request: httpx.Request) -> httpx.Response:
+            if not _is_slice_post(request):
+                return httpx.Response(404)
             call_count["n"] += 1
             return httpx.Response(
                 status_code=500,
@@ -1477,3 +2001,356 @@ class TestNozzleClassGuard:
         if resp.status_code == 400:
             detail = resp.json().get("detail", "")
             assert "isn't supported" not in detail, f"guard still firing on preset path: {detail!r}"
+
+
+class TestUnusedSlotSubstitutionOnSinglePlateSource:
+    """#2711: a single-plate 3MF must still get its unused slots substituted.
+
+    The SliceModal omits ``plate`` entirely for single-plate and STL sources —
+    it skips the plate picker, so ``selectedPlate`` stays null and the field
+    never reaches the body. The schema documents an absent plate as "plate 1",
+    but the substitution used to read it as "unknown plate" and skip, so every
+    single-plate project reached the CLI with the dropdown values of slots the
+    plate never paints with.
+
+    In the reported case that was a MakerWorld project declaring four filaments
+    while plate 1 paints with one, the other three carrying presets baked into
+    the source for a different printer. The CLI rejected the whole slice with
+    "filament preset ... (slot 1) is not compatible with printer ...", and the
+    modal disables unused rows so there was no way to correct it by hand.
+    """
+
+    @staticmethod
+    def _single_plate_using_only_slot_3() -> bytes:
+        """One plate, one object, painted with slot 3 — slots 1, 2 and 4 are
+        declared by the project but unused. Mirrors the reported file."""
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr(
+                "Metadata/project_settings.config",
+                json.dumps({"filament_type": ["PLA", "PLA", "PLA", "TPU"]}),
+            )
+            zf.writestr(
+                "Metadata/model_settings.config",
+                "<?xml version='1.0'?>\n<config>"
+                '<object id="1"><metadata key="extruder" value="3"/></object>'
+                '<plate><metadata key="plater_id" value="1"/>'
+                '<model_instance><metadata key="object_id" value="1"/>'
+                '<metadata key="instance_id" value="0"/></model_instance>'
+                "</plate></config>",
+            )
+        return buf.getvalue()
+
+    @staticmethod
+    def _filament_names_sent(body: bytes) -> list[str]:
+        """Pull the ``name`` of each ``filamentProfile`` part, in slot order.
+
+        ``slice_model`` sends one repeated ``filamentProfile`` part per slot as
+        ``filament_N.json``; the parts stay in submission order, so a plain
+        scan preserves the slot mapping.
+        """
+        names: list[str] = []
+        marker = b'name="filamentProfile"; filename="filament_'
+        pos = body.find(marker)
+        while pos != -1:
+            start = body.find(b"{", pos)
+            end = body.find(b"\r\n", start)
+            names.append(json.loads(body[start:end].decode("utf-8"))["name"])
+            pos = body.find(marker, end)
+        return names
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unused_slots_are_substituted_when_the_body_omits_plate(
+        self, async_client: AsyncClient, db_session, slice_test_setup
+    ):
+        tmp_path = slice_test_setup["tmp_path"]
+        src = tmp_path / "library" / "files" / "train.3mf"
+        src.write_bytes(self._single_plate_using_only_slot_3())
+        threemf = LibraryFile(
+            filename="train.3mf",
+            file_path=str(src.relative_to(tmp_path)),
+            file_type="3mf",
+            file_size=src.stat().st_size,
+        )
+        db_session.add(threemf)
+
+        # Four distinguishable filament presets, one per project slot. Only
+        # slot 3's is compatible with the target in the reported scenario.
+        slots = []
+        for i in range(1, 5):
+            p = LocalPreset(
+                name=f"slot{i}",
+                preset_type="filament",
+                source="orcaslicer",
+                setting=json.dumps({"name": f"slot{i}", "type": "filament"}),
+            )
+            db_session.add(p)
+            slots.append(p)
+        await db_session.commit()
+        await db_session.refresh(threemf)
+        for p in slots:
+            await db_session.refresh(p)
+
+        captured: list[list[str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if not _is_slice_post(request):
+                return httpx.Response(404)
+            captured.append(self._filament_names_sent(request.content))
+            return httpx.Response(
+                status_code=200,
+                content=_make_3mf_with_settings(),
+                headers={
+                    "x-print-time-seconds": "100",
+                    "x-filament-used-g": "1.0",
+                    "x-filament-used-mm": "100",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+        response = await async_client.post(
+            f"/api/v1/library/files/{threemf.id}/slice",
+            json={
+                "printer_preset": {"source": "local", "id": str(slice_test_setup["printer_id"])},
+                "process_preset": {"source": "local", "id": str(slice_test_setup["process_id"])},
+                "filament_presets": [{"source": "local", "id": str(p.id)} for p in slots],
+                # No "plate" — exactly what the modal sends for a single-plate
+                # source. This is the whole point of the test.
+            },
+        )
+        assert response.status_code == 202, response.text
+
+        final = await _wait_for_job(async_client, response.json()["job_id"])
+        assert final["status"] == "completed", final
+
+        assert captured, "sidecar was never called"
+        # Every slot carries slot 3's profile: the array length stays intact
+        # (the source's per-slot references depend on it) while nothing the
+        # plate doesn't print with can fail the CLI's validators.
+        assert captured[0] == ["slot3", "slot3", "slot3", "slot3"], captured[0]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_slice_all_keeps_every_slot(self, async_client: AsyncClient, db_session, slice_test_setup):
+        """``plate=0`` is the all-plates sentinel, so nothing is unused.
+
+        It reaches the same call site, and plate ids are 1-indexed — the
+        geometry lookup for plate 0 matches nothing. Without an explicit
+        exclusion the project's support-filament slot would be the only
+        member of the used set and would be copied over every colour.
+        """
+        tmp_path = slice_test_setup["tmp_path"]
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr(
+                "Metadata/project_settings.config",
+                json.dumps(
+                    {
+                        "enable_support": "1",
+                        "support_filament": "4",
+                        "support_interface_filament": "4",
+                        "filament_type": ["PLA", "PLA", "PLA", "PVA"],
+                    }
+                ),
+            )
+            zf.writestr(
+                "Metadata/model_settings.config",
+                "<?xml version='1.0'?>\n<config>"
+                '<object id="1"><metadata key="extruder" value="1"/></object>'
+                '<object id="2"><metadata key="extruder" value="2"/></object>'
+                '<plate><metadata key="plater_id" value="1"/>'
+                '<model_instance><metadata key="object_id" value="1"/></model_instance></plate>'
+                '<plate><metadata key="plater_id" value="2"/>'
+                '<model_instance><metadata key="object_id" value="2"/></model_instance></plate>'
+                "</config>",
+            )
+        src = tmp_path / "library" / "files" / "multi.3mf"
+        src.write_bytes(buf.getvalue())
+        threemf = LibraryFile(
+            filename="multi.3mf",
+            file_path=str(src.relative_to(tmp_path)),
+            file_type="3mf",
+            file_size=src.stat().st_size,
+        )
+        db_session.add(threemf)
+
+        slots = []
+        for i in range(1, 5):
+            p = LocalPreset(
+                name=f"slot{i}",
+                preset_type="filament",
+                source="orcaslicer",
+                setting=json.dumps({"name": f"slot{i}", "type": "filament"}),
+            )
+            db_session.add(p)
+            slots.append(p)
+        await db_session.commit()
+        await db_session.refresh(threemf)
+        for p in slots:
+            await db_session.refresh(p)
+
+        captured: list[list[str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if not _is_slice_post(request):
+                return httpx.Response(404)
+            captured.append(self._filament_names_sent(request.content))
+            return httpx.Response(
+                status_code=200,
+                content=_make_3mf_with_settings(),
+                headers={
+                    "x-print-time-seconds": "100",
+                    "x-filament-used-g": "1.0",
+                    "x-filament-used-mm": "100",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+        response = await async_client.post(
+            f"/api/v1/library/files/{threemf.id}/slice",
+            json={
+                "printer_preset": {"source": "local", "id": str(slice_test_setup["printer_id"])},
+                "process_preset": {"source": "local", "id": str(slice_test_setup["process_id"])},
+                "filament_presets": [{"source": "local", "id": str(p.id)} for p in slots],
+                "plate": 0,
+            },
+        )
+        assert response.status_code == 202, response.text
+
+        final = await _wait_for_job(async_client, response.json()["job_id"])
+        assert final["status"] == "completed", final
+
+        assert captured, "sidecar was never called"
+        assert captured[0] == ["slot1", "slot2", "slot3", "slot4"], captured[0]
+
+
+class TestFilamentRequirementsFullSlots:
+    """#2712: what the slice modal is handed must be positional.
+
+    The modal's filament list maps index 0 to slot 1, and the backend forwards
+    it in that order as ``filament_1.json``..``filament_N.json``. A MakerWorld
+    source that ships slice_info and paints with slot 4 alone therefore has to
+    present four rows — a one-row list binds the user's pick to slot 1, and
+    slot 4 slices with whatever the source had baked in. Picking PETG produced
+    a PLA print, and the print dialog then correctly refused to match PETG.
+
+    Print-time AMS matching shares this endpoint and needs the opposite: only
+    the slots the plate consumes, so it doesn't demand spools for slots the
+    G-code never touches. Hence the opt-in flag rather than a shape change.
+    """
+
+    @staticmethod
+    def _sliced_source_using_only_slot_4() -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr(
+                "Metadata/project_settings.config",
+                json.dumps(
+                    {
+                        "filament_type": ["PLA", "PLA", "PLA", "PLA"],
+                        "filament_colour": ["#38CC0A", "#161616", "#898989", "#898989"],
+                    }
+                ),
+            )
+            # MakerWorld ships slice_info without plate G-code, which is what
+            # sends this file down the "already sliced" branch.
+            zf.writestr(
+                "Metadata/slice_info.config",
+                "<?xml version='1.0'?>\n<config><plate>"
+                "<metadata key='index' value='1'/>"
+                "<filament id='4' tray_info_idx='GFL99' type='PLA' color='#898989'"
+                " used_m='35.51' used_g='105.92'/>"
+                "</plate></config>",
+            )
+        return buf.getvalue()
+
+    async def _make_file(self, db_session, tmp_path) -> int:
+        src = tmp_path / "library" / "files" / "tunnel.3mf"
+        src.write_bytes(self._sliced_source_using_only_slot_4())
+        lib = LibraryFile(
+            filename="tunnel.3mf",
+            file_path=str(src.relative_to(tmp_path)),
+            file_type="3mf",
+            file_size=src.stat().st_size,
+        )
+        db_session.add(lib)
+        await db_session.commit()
+        await db_session.refresh(lib)
+        return lib.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_full_slots_returns_one_row_per_project_slot(
+        self, async_client: AsyncClient, db_session, slice_test_setup
+    ):
+        file_id = await self._make_file(db_session, slice_test_setup["tmp_path"])
+
+        r = await async_client.get(f"/api/v1/library/files/{file_id}/filament-requirements?plate_id=1&full_slots=true")
+        assert r.status_code == 200, r.text
+        filaments = r.json()["filaments"]
+
+        assert [f["slot_id"] for f in filaments] == [1, 2, 3, 4]
+        # Only slot 4 prints, so only its row is selectable in the modal.
+        assert [f["used_in_plate"] for f in filaments] == [False, False, False, True]
+        # The used row keeps what the slice actually reported.
+        assert filaments[3]["used_grams"] == 105.9
+        assert filaments[3]["tray_info_idx"] == "GFL99"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_print_path_still_gets_only_the_used_slot(
+        self, async_client: AsyncClient, db_session, slice_test_setup
+    ):
+        """Without the flag the response must be byte-for-byte what it was.
+
+        PrintModal drives AMS matching off this; widening it would ask the
+        user to load three spools the print never touches.
+        """
+        file_id = await self._make_file(db_session, slice_test_setup["tmp_path"])
+
+        r = await async_client.get(f"/api/v1/library/files/{file_id}/filament-requirements?plate_id=1")
+        assert r.status_code == 200, r.text
+        filaments = r.json()["filaments"]
+
+        assert [f["slot_id"] for f in filaments] == [4]
+        assert filaments[0]["used_in_plate"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_unsliced_sources_are_unaffected_by_the_flag(
+        self, async_client: AsyncClient, db_session, slice_test_setup
+    ):
+        """Those already returned the full project list; the flag must not
+        double-handle them or change what the modal has been getting."""
+        tmp_path = slice_test_setup["tmp_path"]
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("3D/3dmodel.model", "<model/>")
+            zf.writestr(
+                "Metadata/project_settings.config",
+                json.dumps({"filament_type": ["PLA", "PETG"], "filament_colour": ["#000000", "#FFFFFF"]}),
+            )
+        src = tmp_path / "library" / "files" / "raw.3mf"
+        src.write_bytes(buf.getvalue())
+        lib = LibraryFile(
+            filename="raw.3mf",
+            file_path=str(src.relative_to(tmp_path)),
+            file_type="3mf",
+            file_size=src.stat().st_size,
+        )
+        db_session.add(lib)
+        await db_session.commit()
+        await db_session.refresh(lib)
+
+        with_flag = await async_client.get(
+            f"/api/v1/library/files/{lib.id}/filament-requirements?plate_id=1&full_slots=true"
+        )
+        without = await async_client.get(f"/api/v1/library/files/{lib.id}/filament-requirements?plate_id=1")
+
+        assert with_flag.status_code == 200 and without.status_code == 200
+        assert with_flag.json()["filaments"] == without.json()["filaments"]
+        assert [f["slot_id"] for f in with_flag.json()["filaments"]] == [1, 2]

@@ -6,7 +6,7 @@ import { Layers, Settings2, Package, Unlink, Link2, X } from 'lucide-react';
 import type { SpoolBuddyOutletContext } from '../../components/spoolbuddy/SpoolBuddyLayout';
 import { api } from '../../api/client';
 import type { PrinterStatus, AMSTray, SpoolAssignment } from '../../api/client';
-import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, formatSlotLabel, isBambuLabSpool } from '../../utils/amsHelpers';
+import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, formatSlotLabel, isBambuLabSpool, resolveSlotNozzleDiameter } from '../../utils/amsHelpers';
 import { getSwatchStyle } from '../../utils/colors';
 import { AmsUnitCard, HumidityIndicator, TemperatureIndicator, NozzleBadge } from '../../components/spoolbuddy/AmsUnitCard';
 import type { AmsThresholds } from '../../components/spoolbuddy/AmsUnitCard';
@@ -687,6 +687,7 @@ export function SpoolBuddyAmsPage() {
           printerId={selectedPrinterId}
           slotInfo={configureSlotModal}
           printerModel={mapModelCode(printer?.model ?? null) || undefined}
+          nozzleDiameter={resolveSlotNozzleDiameter(status, configureSlotModal.amsId)}
           fullScreen
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ['slotPresets', selectedPrinterId] });

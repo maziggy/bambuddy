@@ -6,6 +6,7 @@ import { api } from '../api/client';
 import { Card, CardContent } from './Card';
 import { Button } from './Button';
 import { useToast } from '../contexts/ToastContext';
+import { invalidateArchiveAndProjectViews } from '../utils/projectQueries';
 
 interface BatchProjectModalProps {
   selectedIds: number[];
@@ -43,14 +44,9 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  // Helper to invalidate all project-related queries
-  const invalidateProjectQueries = () => {
-    queryClient.invalidateQueries({ queryKey: ['archives'] });
-    queryClient.invalidateQueries({ queryKey: ['projects'] });
-    // Invalidate project detail pages (partial match catches all project IDs)
-    queryClient.invalidateQueries({ queryKey: ['project'] });
-    queryClient.invalidateQueries({ queryKey: ['project-archives'] });
-  };
+  // Helper to invalidate all project-related queries. The shared version also
+  // covers the timeline and file-progress views, which this list was missing.
+  const invalidateProjectQueries = () => invalidateArchiveAndProjectViews(queryClient);
 
   // Assign to project mutation (uses bulk API)
   const assignMutation = useMutation({
@@ -129,7 +125,7 @@ export function BatchProjectModal({ selectedIds, onClose }: BatchProjectModalPro
                   className="w-full flex items-center gap-3 p-3 rounded-lg bg-bambu-dark hover:bg-bambu-dark-tertiary border border-bambu-dark-tertiary transition-colors text-left disabled:opacity-50"
                 >
                   <div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center shrink-0">
-                    <XCircle className="w-4 h-4 text-red-400" />
+                    <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-white font-medium">Remove from project</p>

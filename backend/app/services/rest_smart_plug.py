@@ -1,10 +1,8 @@
 """Service for controlling smart plugs via generic REST/HTTP API."""
 
-import ipaddress
 import json
 import logging
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
 
 import httpx
 
@@ -24,18 +22,39 @@ class RESTSmartPlugService:
         self.timeout = timeout
 
     @staticmethod
-    def _validate_url(url: str) -> bool:
-        """Block cloud metadata and link-local IPs."""
+    def _url_error(url: str) -> str | None:
+        """Return why *url* is rejected by the LAN-service policy, else None.
+
+        Split out from ``_validate_url`` so ``test_connection`` can tell the
+        user which rule the URL broke instead of a single fixed sentence.
+        """
+        from backend.app.api.routes._url_safety import assert_safe_lan_service_url
+
         try:
-            parsed = urlparse(url)
-            hostname = parsed.hostname
-            if not hostname:
-                return False
-            addr = ipaddress.ip_address(hostname)
-            return not addr.is_loopback and not addr.is_link_local
-        except ValueError:
-            # Hostname is not an IP (e.g., "openhab.local") — allow it
-            return True
+            assert_safe_lan_service_url(url, label="REST plug URL")
+        except ValueError as exc:
+            return str(exc)
+        return None
+
+    @staticmethod
+    def _validate_url(url: str) -> bool:
+        """Apply the shared LAN-service SSRF policy to a REST plug URL.
+
+        Delegates to ``_url_safety.assert_safe_lan_service_url`` — the same
+        guard Spoolman, the notification providers and the LAN-service
+        settings use — rather than reimplementing a narrower check. The
+        hand-rolled version this replaces got the policy wrong in both
+        directions: it rejected a literal ``127.0.0.1`` (so an openHAB or
+        Node-RED instance on the same host could only be reached by spelling
+        it ``localhost``), while allowing every target the shared policy
+        rejects unconditionally — Alibaba/AWS-IPv6 metadata endpoints,
+        numeric-encoded IPs, multicast and the unspecified address — because
+        anything that wasn't a bare IP literal fell through to ``True``.
+
+        Loopback and RFC-1918 stay permitted on purpose: a REST-controlled
+        plug bridge running next to Bambuddy is the normal topology.
+        """
+        return RESTSmartPlugService._url_error(url) is None
 
     def _parse_headers(self, headers_json: str | None) -> dict[str, str]:
         """Parse JSON string to dict of headers."""
@@ -193,12 +212,25 @@ class RESTSmartPlugService:
     async def get_energy(self, plug: "SmartPlug") -> dict | None:
         """Get energy monitoring data.
 
-        Each value (power, energy) can come from its own URL or fall back to the shared status URL.
-        Multipliers are applied to convert units (e.g., Wh → kWh with multiplier 0.001).
+        Each value can come from its own URL or fall back to the shared status URL.
+        Multipliers convert units (e.g. Wh → kWh with multiplier 0.001).
+
+        Two distinct energy counters, because devices differ in which they have
+        (#2539):
+
+        - ``rest_energy_path`` — energy used **today**, resetting at midnight.
+        - ``rest_energy_total_path`` — a **lifetime** counter that never resets.
+          A Shelly exposes only this one (``aenergy.total``, in Wh). Reading it as
+          "today" is wrong all day long, and leaves Total and the hourly snapshots
+          — which the Statistics page's date filters run on — permanently empty.
+
+        Yesterday is not read from the device: no REST device we know of reports
+        it. It is derived from the lifetime counter's snapshots instead, in
+        ``services.plug_energy_history``.
 
         Returns dict with energy data or None if not available.
         """
-        if not plug.rest_power_path and not plug.rest_energy_path:
+        if not plug.rest_power_path and not plug.rest_energy_path and not plug.rest_energy_total_path:
             return None
 
         headers = self._parse_headers(plug.rest_headers)
@@ -206,30 +238,40 @@ class RESTSmartPlugService:
 
         power_url = plug.rest_power_url or plug.rest_status_url if plug.rest_power_path else None
         energy_url = plug.rest_energy_url or plug.rest_status_url if plug.rest_energy_path else None
+        # The lifetime counter almost always rides on the same response as the
+        # today counter (one Shelly RPC call returns both `apower` and
+        # `aenergy.total`), so it shares the energy URL and the dedupe below
+        # collapses them into a single fetch.
+        total_url = plug.rest_energy_url or plug.rest_status_url if plug.rest_energy_total_path else None
 
-        # Fetch data — deduplicate when both resolve to the same URL
+        # Fetch data — deduplicate when several resolve to the same URL
         fetched: dict[str, Any] = {}
 
-        for url in {power_url, energy_url} - {None}:
+        for url in {power_url, energy_url, total_url} - {None}:
             fetched[url] = await self._fetch_json(url, headers)
 
-        # Extract power value
-        if plug.rest_power_path and power_url and fetched.get(power_url) is not None:
-            raw = self._extract_json_path(fetched[power_url], plug.rest_power_path)
-            if raw is not None:
-                try:
-                    energy["power"] = float(raw) * (plug.rest_power_multiplier or 1.0)
-                except (ValueError, TypeError):
-                    pass
+        def _read(path: str | None, url: str | None, multiplier: float | None) -> float | None:
+            if not path or not url or fetched.get(url) is None:
+                return None
+            raw = self._extract_json_path(fetched[url], path)
+            if raw is None:
+                return None
+            try:
+                return float(raw) * (multiplier or 1.0)
+            except (ValueError, TypeError):
+                return None
 
-        # Extract energy value
-        if plug.rest_energy_path and energy_url and fetched.get(energy_url) is not None:
-            raw = self._extract_json_path(fetched[energy_url], plug.rest_energy_path)
-            if raw is not None:
-                try:
-                    energy["today"] = float(raw) * (plug.rest_energy_multiplier or 1.0)
-                except (ValueError, TypeError):
-                    pass
+        power = _read(plug.rest_power_path, power_url, plug.rest_power_multiplier)
+        if power is not None:
+            energy["power"] = power
+
+        today = _read(plug.rest_energy_path, energy_url, plug.rest_energy_multiplier)
+        if today is not None:
+            energy["today"] = today
+
+        total = _read(plug.rest_energy_total_path, total_url, plug.rest_energy_total_multiplier)
+        if total is not None:
+            energy["total"] = total
 
         return energy if energy else None
 
@@ -250,8 +292,9 @@ class RESTSmartPlugService:
             - success: bool
             - error: error message if failed
         """
-        if not self._validate_url(url):
-            return {"success": False, "error": "Invalid URL (loopback/link-local addresses are blocked)"}
+        url_error = self._url_error(url)
+        if url_error:
+            return {"success": False, "error": url_error}
 
         parsed_headers = self._parse_headers(headers)
 

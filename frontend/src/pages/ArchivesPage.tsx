@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -56,13 +56,19 @@ import {
   Cog,
   Archive as ArchiveIcon,
   History,
+  CheckCircle2,
+  Columns,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { SliceModal } from '../components/SliceModal';
+import { RunWithPipelineModal } from '../components/RunWithPipelineModal';
 import { openInSlicer, type SlicerType } from '../utils/slicer';
 import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDuration } from '../utils/date';
 import { getCurrencySymbol } from '../utils/currency';
 import { getBedTypeInfo } from '../utils/bedType';
+import { invalidateArchiveAndProjectViews } from '../utils/projectQueries';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import type { Archive, PrintLogEntry, ProjectListItem } from '../api/client';
@@ -74,6 +80,7 @@ import { PurgeArchivesModal } from '../components/PurgeArchivesModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { EditArchiveModal, FAILURE_REASON_KEYS } from '../components/EditArchiveModal';
 import { PrintLogModal } from '../components/PrintLogModal';
+import { ColumnConfigModal, type ColumnConfig } from '../components/ColumnConfigModal';
 import { ContextMenu, type ContextMenuItem } from '../components/ContextMenu';
 import { BatchTagModal } from '../components/BatchTagModal';
 import { BatchProjectModal } from '../components/BatchProjectModal';
@@ -92,6 +99,126 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatFileSize } from '../utils/file';
 
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
+
+// ---------------------------------------------------------------------------
+// Print Log column configuration (#2636, reporter @ajbastien)
+//
+// The log view used to hardcode seven columns, which left four populated
+// columns of `print_log_entries` — filament used, cost, energy, energy cost —
+// unreachable in the UI even though the API has always returned them. They are
+// per-run actuals (partial prints scaled to progress, multi-plate archives
+// scoped to the printed plate), so they are exactly what a log is for.
+//
+// Persisted per browser like the Inventory table's config, under its own key.
+// Labels are NOT read back from storage: they are re-derived from `t()` on
+// every render so a stored config from before a language switch doesn't pin
+// the column picker to the old language.
+// ---------------------------------------------------------------------------
+const LOG_COLUMN_CONFIG_KEY = 'bambuddy-printlog-columns';
+
+/** Column id -> i18n key. Also the authoritative list of valid ids. */
+const LOG_COLUMN_LABEL_KEYS: Record<string, string> = {
+  date: 'archives.log.date',
+  print_name: 'archives.log.printName',
+  printer: 'archives.log.printer',
+  user: 'archives.log.user',
+  status: 'archives.log.status',
+  duration: 'archives.log.duration',
+  completed_at: 'archives.log.completedAt',
+  filament: 'archives.log.filament',
+  filament_used: 'archives.log.filamentUsed',
+  cost: 'archives.log.cost',
+  energy: 'archives.log.energy',
+  energy_cost: 'archives.log.energyCost',
+};
+
+// Defaults reproduce the previous seven columns in the same order, plus the
+// filament amount the issue actually asked for. The rest ship hidden: they are
+// available to anyone who wants them without widening the table for everyone
+// who doesn't.
+const DEFAULT_LOG_COLUMNS: Array<{ id: string; visible: boolean }> = [
+  { id: 'date', visible: true },
+  { id: 'print_name', visible: true },
+  { id: 'printer', visible: true },
+  { id: 'user', visible: true },
+  { id: 'status', visible: true },
+  { id: 'duration', visible: true },
+  { id: 'filament', visible: true },
+  { id: 'filament_used', visible: true },
+  { id: 'completed_at', visible: false },
+  { id: 'cost', visible: false },
+  { id: 'energy', visible: false },
+  { id: 'energy_cost', visible: false },
+];
+
+/** Stored config merged with the defaults: unknown ids (removed columns) are
+ *  dropped and ids added by a later Bambuddy version are appended with their
+ *  default visibility, so an upgrade never silently hides a new column or
+ *  crashes on one that no longer exists. */
+function loadLogColumnConfig(): Array<{ id: string; visible: boolean }> {
+  try {
+    const stored = localStorage.getItem(LOG_COLUMN_CONFIG_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored) as Array<{ id: string; visible: boolean }>;
+      const known = new Set(Object.keys(LOG_COLUMN_LABEL_KEYS));
+      const storedIds = new Set(parsed.map((c) => c.id));
+      const valid = parsed
+        .filter((c) => known.has(c.id))
+        .map((c) => ({ id: c.id, visible: !!c.visible }));
+      const added = DEFAULT_LOG_COLUMNS.filter((c) => !storedIds.has(c.id));
+      if (valid.length > 0) return [...valid, ...added];
+    }
+  } catch {
+    // Corrupt or unavailable storage falls back to defaults.
+  }
+  return DEFAULT_LOG_COLUMNS.map((c) => ({ ...c }));
+}
+
+const LOG_SORT_KEY = 'bambuddy-printlog-sort';
+
+type LogSortState = { column: string; direction: 'asc' | 'desc' };
+
+/** Column ids the backend will order by. Kept in step with
+ *  ``_SORTABLE_COLUMNS`` in ``routes/print_log.py`` — an id missing there
+ *  comes back as a 400, so a header is only made clickable if it is listed
+ *  in both. */
+const SORTABLE_LOG_COLUMNS = new Set(Object.keys(LOG_COLUMN_LABEL_KEYS));
+
+const DEFAULT_LOG_SORT: LogSortState = { column: 'date', direction: 'desc' };
+
+function loadLogSort(): LogSortState {
+  try {
+    const stored = localStorage.getItem(LOG_SORT_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored) as LogSortState;
+      if (SORTABLE_LOG_COLUMNS.has(parsed?.column) && (parsed.direction === 'asc' || parsed.direction === 'desc')) {
+        return parsed;
+      }
+    }
+  } catch {
+    // Fall through to the default.
+  }
+  return { ...DEFAULT_LOG_SORT };
+}
+
+function saveLogSort(state: LogSortState) {
+  try {
+    localStorage.setItem(LOG_SORT_KEY, JSON.stringify(state));
+  } catch {
+    // Private-mode / quota failures shouldn't break the page.
+  }
+}
+
+function saveLogColumnConfig(config: Array<{ id: string; visible: boolean }>) {
+  try {
+    localStorage.setItem(
+      LOG_COLUMN_CONFIG_KEY,
+      JSON.stringify(config.map((c) => ({ id: c.id, visible: c.visible }))),
+    );
+  } catch {
+    // Private-mode / quota failures shouldn't break the page.
+  }
+}
 
 /**
  * Check if an archive represents a sliced/printable file.
@@ -145,6 +272,7 @@ async function openInSlicerWithToken(
 function ArchiveCard({
   archive,
   printerName,
+  printerMap,
   isSelected,
   onSelect,
   selectionMode,
@@ -170,6 +298,10 @@ function ArchiveCard({
   currency: string;
   t: TFunction;
   onNavigateToArchive?: (archiveId: number) => void;
+  /** Printer id -> name, for naming the printer a saved slicer AMS mapping
+   *  belongs to. The card can't know which printer a reprint will target, so
+   *  the badge names the one the mapping is actually good for. */
+  printerMap: Map<number, string>;
 }) {
   // Debug: log when card is highlighted
   if (isHighlighted) {
@@ -181,8 +313,20 @@ function ArchiveCard({
   const { hasPermission, canModify } = useAuth();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
+  // Name of the printer this archive's saved slicer AMS mapping was resolved
+  // against, or undefined when there is none. Undefined also when the printer
+  // has since been deleted — a mapping whose printer is gone can never be
+  // reused, so the badge stays off rather than naming a ghost.
+  const savedSlicerAmsMappingPrinter = useMemo(() => {
+    const saved = (archive.extra_data as Record<string, unknown> | null)?.slicer_ams_mapping as
+      | { mapping?: unknown; printer_id?: number }
+      | undefined;
+    if (!saved || !Array.isArray(saved.mapping) || saved.printer_id == null) return undefined;
+    return printerMap.get(saved.printer_id);
+  }, [archive.extra_data, printerMap]);
   const [showReprint, setShowReprint] = useState(false);
   const [showSliceModal, setShowSliceModal] = useState(false);
+  const [showRunPipeline, setShowRunPipeline] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   // #1343: when true, the delete also drops the row from Quick Stats. Default
   // off — soft delete preserves the archive's filament/time/cost contribution.
@@ -357,7 +501,9 @@ function ArchiveCard({
   const deleteMutation = useMutation({
     mutationFn: (purgeStats: boolean) => api.deleteArchive(archive.id, purgeStats),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
+      // A deleted archive leaves its project too, so the project views have to
+      // be refreshed alongside the archive list (#2731).
+      invalidateArchiveAndProjectViews(queryClient);
       showToast(t('archives.toast.archiveDeleted'));
     },
     onError: () => {
@@ -382,8 +528,7 @@ function ArchiveCard({
   const assignProjectMutation = useMutation({
     mutationFn: (projectId: number | null) => api.updateArchive(archive.id, { project_id: projectId }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      invalidateArchiveAndProjectViews(queryClient);
       showToast(t('archives.toast.projectUpdated'));
     },
     onError: () => {
@@ -438,6 +583,19 @@ function ArchiveCard({
           }
         },
       },
+      // Run-with-pipeline (#1425 PR B follow-up). Sources from archive's
+      // source 3MF (or file_path fallback). Only when slicer-api is on.
+      ...(useSlicerApi
+        ? [{
+            label: t('library.runWithPipeline.actionLabel'),
+            icon: <Play className="w-4 h-4" />,
+            onClick: () => setShowRunPipeline(true),
+            disabled: !hasPermission('pipelines:run'),
+            title: !hasPermission('pipelines:run')
+              ? t('library.runWithPipeline.noPermission')
+              : undefined,
+          }]
+        : []),
     ]),
     {
       label: archive.external_url ? t('archives.menu.externalLink') : t('archives.menu.viewOnMakerWorld'),
@@ -933,6 +1091,7 @@ function ArchiveCard({
         <div className="flex items-center justify-between gap-2 mb-1">
           <h3 className="min-w-0 font-medium text-white truncate">
             {archive.print_name || archive.filename}
+            {archive.plate_id != null && ` — ${t('printers.plateNumber', { number: archive.plate_id })}`}
           </h3>
           <Button
             variant="ghost"
@@ -958,7 +1117,7 @@ function ArchiveCard({
             className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
               isSlicedFile(archive)
                 ? 'bg-bambu-green/20 text-bambu-green'
-                : 'bg-orange-500/20 text-orange-400'
+                : 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400'
             }`}
             title={
               isSlicedFile(archive)
@@ -1024,8 +1183,8 @@ function ArchiveCard({
                   archive.time_accuracy >= 95 && archive.time_accuracy <= 105
                     ? 'bg-bambu-green/20 text-bambu-green'
                     : archive.time_accuracy > 105
-                      ? 'bg-blue-500/20 text-blue-400'
-                      : 'bg-orange-500/20 text-orange-400'
+                      ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
+                      : 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400'
                 }`}>
                   {archive.time_accuracy > 100 ? '+' : ''}{(archive.time_accuracy - 100).toFixed(0)}%
                 </span>
@@ -1093,12 +1252,26 @@ function ArchiveCard({
           )}
         </div>
 
+        {/* Slicer's own saved AMS-slot pick (see "Save AMS mapping" VP setting).
+            Named with the printer it was resolved against: global tray IDs mean
+            nothing on any other printer, so a reprint only reuses these exact
+            spools when it targets that same printer. */}
+        {savedSlicerAmsMappingPrinter && (
+          <div
+            className="flex items-center gap-1.5 text-bambu-green text-xs mb-3"
+            title={t('archives.card.slicerAmsMappingTooltip', { printer: savedSlicerAmsMappingPrinter })}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            {t('archives.card.slicerAmsMapping', { printer: savedSlicerAmsMappingPrinter })}
+          </div>
+        )}
+
         {/* Tags & Notes */}
         {(archive.tags || archive.notes) && (
           <div className="flex flex-wrap items-center gap-1.5 mb-3">
             {archive.notes && (
               <div
-                className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs"
+                className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 rounded text-xs"
                 title={archive.notes}
               >
                 <StickyNote className="w-3 h-3" />
@@ -1225,7 +1398,7 @@ function ArchiveCard({
             disabled={!canModify('archives', 'delete', archive.created_by_id)}
             title={!canModify('archives', 'delete', archive.created_by_id) ? t('archives.card.noPermissionDelete') : t('archives.card.delete')}
           >
-            <Trash2 className="w-3 h-3 sm:w-4 sm:h-4 text-red-400" />
+            <Trash2 className="w-3 h-3 sm:w-4 sm:h-4 text-red-600 dark:text-red-400" />
           </Button>
         </div>
       </CardContent>
@@ -1277,6 +1450,15 @@ function ArchiveCard({
         />
       )}
 
+      {/* Run-with-Pipeline Modal (#1425 PR B). Sources from archive — backend
+          reads source_3mf_path, falls back to file_path. */}
+      {showRunPipeline && (
+        <RunWithPipelineModal
+          source={{ kind: 'archive', id: archive.id, filename: archive.print_name || archive.filename || 'model' }}
+          onClose={() => setShowRunPipeline(false)}
+        />
+      )}
+
       {/* Delete Confirmation */}
       {showDeleteConfirm && (
         <ConfirmModal
@@ -1301,8 +1483,8 @@ function ArchiveCard({
             <div
               className={
                 (deleteImpactQuery.data?.currently_printing ?? 0) > 0
-                  ? 'text-sm text-red-400 mb-2'
-                  : 'text-sm text-amber-400 mb-2'
+                  ? 'text-sm text-red-600 dark:text-red-400 mb-2'
+                  : 'text-sm text-amber-600 dark:text-amber-400 mb-2'
               }
             >
               {(deleteImpactQuery.data?.currently_printing ?? 0) > 0
@@ -1582,6 +1764,7 @@ function ArchiveListRow({
   const navigate = useNavigate();
   const [showReprint, setShowReprint] = useState(false);
   const [showSliceModal, setShowSliceModal] = useState(false);
+  const [showRunPipeline, setShowRunPipeline] = useState(false);
   const [showTimelapse, setShowTimelapse] = useState(false);
   const [showTimelapseSelect, setShowTimelapseSelect] = useState(false);
   const [availableTimelapses, setAvailableTimelapses] = useState<Array<{ name: string; path: string; size: number; mtime: string | null }>>([]);
@@ -1718,7 +1901,9 @@ function ArchiveListRow({
   const deleteMutation = useMutation({
     mutationFn: (purgeStats: boolean) => api.deleteArchive(archive.id, purgeStats),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
+      // A deleted archive leaves its project too, so the project views have to
+      // be refreshed alongside the archive list (#2731).
+      invalidateArchiveAndProjectViews(queryClient);
       showToast(t('archives.toast.archiveDeleted'));
     },
     onError: () => {
@@ -1743,8 +1928,7 @@ function ArchiveListRow({
   const assignProjectMutation = useMutation({
     mutationFn: (projectId: number | null) => api.updateArchive(archive.id, { project_id: projectId }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      invalidateArchiveAndProjectViews(queryClient);
       showToast(t('archives.toast.projectUpdated'));
     },
     onError: () => {
@@ -1797,6 +1981,19 @@ function ArchiveListRow({
           }
         },
       },
+      // Run-with-pipeline (#1425 PR B follow-up). Sources from archive's
+      // source 3MF (or file_path fallback). Only when slicer-api is on.
+      ...(useSlicerApi
+        ? [{
+            label: t('library.runWithPipeline.actionLabel'),
+            icon: <Play className="w-4 h-4" />,
+            onClick: () => setShowRunPipeline(true),
+            disabled: !hasPermission('pipelines:run'),
+            title: !hasPermission('pipelines:run')
+              ? t('library.runWithPipeline.noPermission')
+              : undefined,
+          }]
+        : []),
     ]),
     {
       label: archive.external_url ? t('archives.menu.externalLink') : t('archives.menu.viewOnMakerWorld'),
@@ -2101,7 +2298,7 @@ function ArchiveListRow({
                 title={t('archives.card.openFolder', { name: linkedFolders[0].name })}
                 onClick={(e) => e.stopPropagation()}
               >
-                <FolderOpen className="w-3.5 h-3.5 text-yellow-400" />
+                <FolderOpen className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-400" />
               </Link>
             )}
           </div>
@@ -2217,7 +2414,7 @@ function ArchiveListRow({
             disabled={!canModify('archives', 'delete', archive.created_by_id)}
             title={!canModify('archives', 'delete', archive.created_by_id) ? t('archives.card.noPermissionDelete') : t('archives.card.delete')}
           >
-            <Trash2 className="w-4 h-4 text-red-400" />
+            <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
           </Button>
           <Button
             variant="ghost"
@@ -2280,6 +2477,15 @@ function ArchiveListRow({
         />
       )}
 
+      {/* Run-with-Pipeline Modal (#1425 PR B). Sources from archive — backend
+          reads source_3mf_path, falls back to file_path. */}
+      {showRunPipeline && (
+        <RunWithPipelineModal
+          source={{ kind: 'archive', id: archive.id, filename: archive.print_name || archive.filename || 'model' }}
+          onClose={() => setShowRunPipeline(false)}
+        />
+      )}
+
       {/* Delete Confirmation */}
       {showDeleteConfirm && (
         <ConfirmModal
@@ -2304,8 +2510,8 @@ function ArchiveListRow({
             <div
               className={
                 (deleteImpactQuery.data?.currently_printing ?? 0) > 0
-                  ? 'text-sm text-red-400 mb-2'
-                  : 'text-sm text-amber-400 mb-2'
+                  ? 'text-sm text-red-600 dark:text-red-400 mb-2'
+                  : 'text-sm text-amber-600 dark:text-amber-400 mb-2'
               }
             >
               {(deleteImpactQuery.data?.currently_printing ?? 0) > 0
@@ -2662,6 +2868,16 @@ export function ArchivesPage() {
     return saved ? Number(saved) : 25;
   });
 
+  // Print Log column configuration (#2636). Stored without labels; the picker
+  // gets freshly translated ones below.
+  const [logColumns, setLogColumns] = useState(loadLogColumnConfig);
+  const [showLogColumnModal, setShowLogColumnModal] = useState(false);
+  const [logSort, setLogSort] = useState<LogSortState>(loadLogSort);
+  const visibleLogColumns = useMemo(
+    () => logColumns.filter((c) => c.visible).map((c) => c.id),
+    [logColumns],
+  );
+
   const handleNavigateToArchive = useCallback((archiveId: number) => {
     setPendingNavigationArchiveId(archiveId);
     setHighlightedArchiveId(archiveId);
@@ -2719,7 +2935,7 @@ export function ArchivesPage() {
   });
 
   const { data: printLogData, isLoading: isLogLoading } = useQuery({
-    queryKey: ['print-log', filterPrinter, logFilterUser, logFilterStatus, logFilterDateFrom, logFilterDateTo, search, logOffset, logPageSize],
+    queryKey: ['print-log', filterPrinter, logFilterUser, logFilterStatus, logFilterDateFrom, logFilterDateTo, search, logOffset, logPageSize, logSort.column, logSort.direction],
     queryFn: () => api.getPrintLog({
       search: search || undefined,
       printerId: filterPrinter || undefined,
@@ -2729,6 +2945,8 @@ export function ArchivesPage() {
       dateTo: logFilterDateTo || undefined,
       limit: logPageSize,
       offset: logOffset,
+      sortBy: logSort.column,
+      sortDir: logSort.direction,
     }),
     enabled: viewMode === 'log',
   });
@@ -2742,13 +2960,184 @@ export function ArchivesPage() {
   const useSlicerApi = settings?.use_slicer_api ?? false;
   const currency = getCurrencySymbol(settings?.currency || 'USD');
 
+  // Print Log columns, with labels translated at render time (#2636).
+  const logColumnConfig: ColumnConfig[] = useMemo(
+    () =>
+      logColumns.map((c) => ({
+        ...c,
+        label: t(LOG_COLUMN_LABEL_KEYS[c.id] ?? c.id),
+      })),
+    [logColumns, t],
+  );
+  const defaultLogColumnConfig: ColumnConfig[] = useMemo(
+    () =>
+      DEFAULT_LOG_COLUMNS.map((c) => ({
+        ...c,
+        label: t(LOG_COLUMN_LABEL_KEYS[c.id] ?? c.id),
+      })),
+    [t],
+  );
+  // Click a header to sort by it; click again to flip. Dates, durations and
+  // amounts open on descending — "newest / biggest first" is what someone
+  // reaching for those wants — while text opens A-Z.
+  const handleLogSort = useCallback((colId: string) => {
+    if (!SORTABLE_LOG_COLUMNS.has(colId)) return;
+    setLogSort((prev) => {
+      const numericFirstDesc = ['date', 'completed_at', 'duration', 'filament_used', 'cost', 'energy', 'energy_cost'];
+      const next: LogSortState =
+        prev.column === colId
+          ? { column: colId, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
+          : { column: colId, direction: numericFirstDesc.includes(colId) ? 'desc' : 'asc' };
+      saveLogSort(next);
+      return next;
+    });
+    // Page 1 of the new order, not whatever offset the old one was on —
+    // otherwise sorting by cost from page 3 lands you in the middle of the
+    // re-sorted list with no indication why.
+    setLogOffset(0);
+  }, []);
+
+  const handleLogColumnSave = useCallback((config: ColumnConfig[]) => {
+    const stripped = config.map((c) => ({ id: c.id, visible: c.visible }));
+    setLogColumns(stripped);
+    saveLogColumnConfig(stripped);
+  }, []);
+
+  // Columns that hold a number and read better right-aligned. Kept as data so
+  // the header and the body can't drift apart.
+  const LOG_NUMERIC_COLUMNS = useMemo(
+    () => new Set(['duration', 'filament_used', 'cost', 'energy', 'energy_cost']),
+    [],
+  );
+
+  const renderLogCell = useCallback(
+    (colId: string, entry: PrintLogEntry) => {
+      switch (colId) {
+        case 'date':
+          return (
+            <span className="text-white whitespace-nowrap">
+              {formatDateTime(entry.started_at || entry.created_at, timeFormat)}
+            </span>
+          );
+        case 'completed_at':
+          return (
+            <span className="text-bambu-gray-light whitespace-nowrap">
+              {entry.completed_at ? formatDateTime(entry.completed_at, timeFormat) : '—'}
+            </span>
+          );
+        case 'print_name':
+          return (
+            <div className="flex items-center gap-2">
+              {entry.thumbnail_path && (
+                <img
+                  src={api.getPrintLogThumbnail(entry.id)}
+                  alt=""
+                  className="w-8 h-8 rounded object-cover flex-shrink-0"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+              )}
+              <span className="text-white break-words" title={entry.print_name || ''}>
+                {entry.print_name || '—'}
+              </span>
+            </div>
+          );
+        case 'printer':
+          return <span className="text-bambu-gray-light">{entry.printer_name || '—'}</span>;
+        case 'user':
+          return <span className="text-bambu-gray-light">{entry.created_by_username || '—'}</span>;
+        case 'status':
+          return (
+            <>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                entry.status === 'completed' ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400' :
+                entry.status === 'failed' ? 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400' :
+                entry.status === 'stopped' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400' :
+                entry.status === 'cancelled' ? 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400' :
+                entry.status === 'skipped' ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400' :
+                'bg-gray-500/20 text-gray-400'
+              }`}>
+                {entry.status}
+              </span>
+              {entry.failure_reason && (
+                <span className="block text-[10px] text-bambu-gray mt-0.5">
+                  {t(`editArchive.failureReasons.${entry.failure_reason}`, { defaultValue: entry.failure_reason })}
+                </span>
+              )}
+            </>
+          );
+        case 'duration':
+          return (
+            <span className="text-bambu-gray-light whitespace-nowrap">
+              {entry.duration_seconds ? formatDuration(entry.duration_seconds) : '—'}
+            </span>
+          );
+        case 'filament':
+          return (
+            <div className="flex items-center gap-1.5">
+              {entry.filament_color && (
+                <div className="flex items-center gap-0.5 flex-wrap">
+                  {entry.filament_color.split(',').map((color, i) => {
+                    const trimmed = color.trim();
+                    return (
+                      <span
+                        key={i}
+                        className="w-3 h-3 rounded-full border border-black/20 flex-shrink-0"
+                        style={{ backgroundColor: trimmed.startsWith('#') ? trimmed : undefined }}
+                        title={trimmed}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+              <span className="text-bambu-gray-light text-xs">
+                {entry.filament_type || '—'}
+              </span>
+            </div>
+          );
+        case 'filament_used':
+          // Per-run actual, not the archive's estimate: partial prints are
+          // scaled to progress and multi-plate archives are scoped to the
+          // plate that printed. One decimal matches the per-archive log table.
+          return (
+            <span className="text-bambu-gray-light whitespace-nowrap tabular-nums">
+              {entry.filament_used_grams != null ? `${entry.filament_used_grams.toFixed(1)} g` : '—'}
+            </span>
+          );
+        case 'cost':
+          return (
+            <span className="text-bambu-gray-light whitespace-nowrap tabular-nums">
+              {entry.cost != null ? `${currency}${entry.cost.toFixed(2)}` : '—'}
+            </span>
+          );
+        case 'energy':
+          // Written by the energy background task after the row itself, so a
+          // just-finished print shows "—" for a moment. That is accurate: the
+          // measurement genuinely isn't in yet.
+          return (
+            <span className="text-bambu-gray-light whitespace-nowrap tabular-nums">
+              {entry.energy_kwh != null ? `${entry.energy_kwh.toFixed(2)} kWh` : '—'}
+            </span>
+          );
+        case 'energy_cost':
+          return (
+            <span className="text-bambu-gray-light whitespace-nowrap tabular-nums">
+              {entry.energy_cost != null ? `${currency}${entry.energy_cost.toFixed(2)}` : '—'}
+            </span>
+          );
+        default:
+          return null;
+      }
+    },
+    [currency, t, timeFormat],
+  );
+
   const bulkDeleteMutation = useMutation({
     mutationFn: async (ids: number[]) => {
       await Promise.all(ids.map((id) => api.deleteArchive(id)));
       return ids.length;
     },
     onSuccess: (count) => {
-      queryClient.invalidateQueries({ queryKey: ['archives'] });
+      invalidateArchiveAndProjectViews(queryClient);
       setSelectedIds(new Set());
       showToast(`${count} archive${count !== 1 ? 's' : ''} deleted`);
     },
@@ -2909,7 +3298,12 @@ export function ArchivesPage() {
     localStorage.setItem('logPageSize', logPageSize.toString());
   }, [logPageSize]);
 
-  const printerMap = new Map(printers?.map((p) => [p.id, p.name]) || []);
+  // Memoised: it's handed to every ArchiveCard as a prop, and a fresh Map each
+  // render would re-run their lookups for no reason.
+  const printerMap = useMemo(
+    () => new Map<number, string>(printers?.map((p) => [p.id, p.name]) || []),
+    [printers],
+  );
 
   // Extract unique materials and colors from archives
   const uniqueMaterials = [...new Set(
@@ -3225,19 +3619,19 @@ export function ArchivesPage() {
       )}
 
       {no3MFWarning?.has_fallback && !no3MFWarningDismissed && (
-        <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+        <div className="mb-6 rounded-lg border border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-4 py-3 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-amber-200">
+            <div className="text-sm font-medium text-amber-900 dark:text-amber-200">
               {t('archives.no3mfBanner.title')}
             </div>
-            <div className="text-xs text-amber-200/80 mt-1">
+            <div className="text-xs text-amber-800/90 dark:text-amber-200/80 mt-1">
               {t('archives.no3mfBanner.body')}{' '}
               <a
                 href="https://wiki.bambuddy.cool/getting-started/#step-4-enable-store-sent-files-on-external-storage"
                 target="_blank"
                 rel="noreferrer"
-                className="underline hover:text-amber-100 inline-flex items-center gap-1"
+                className="underline hover:text-amber-900 dark:hover:text-amber-100 inline-flex items-center gap-1"
               >
                 {t('archives.no3mfBanner.docsLink')}
                 <ExternalLink className="w-3 h-3" />
@@ -3246,7 +3640,7 @@ export function ArchivesPage() {
           </div>
           <button
             onClick={dismissNo3MFWarning}
-            className="text-amber-200/60 hover:text-amber-200 flex-shrink-0 p-1 -m-1"
+            className="text-amber-800/70 dark:text-amber-200/60 hover:text-amber-900 dark:hover:text-amber-200 flex-shrink-0 p-1 -m-1"
             title={t('archives.no3mfBanner.dismissLabel')}
             aria-label={t('archives.no3mfBanner.dismissLabel')}
           >
@@ -3495,7 +3889,7 @@ export function ArchivesPage() {
               onClick={() => setFilterFavorites(!filterFavorites)}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors flex-shrink-0 ${
                 filterFavorites
-                  ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400'
+                  ? 'bg-yellow-100 dark:bg-yellow-500/20 border-yellow-500 text-yellow-700 dark:text-yellow-400'
                   : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
               }`}
               title={filterFavorites ? t('archives.showAll') : t('archives.showFavoritesOnly')}
@@ -3507,7 +3901,7 @@ export function ArchivesPage() {
               onClick={() => setHideFailed(!hideFailed)}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors flex-shrink-0 ${
                 hideFailed
-                  ? 'bg-red-500/20 border-red-500 text-red-400'
+                  ? 'bg-red-100 dark:bg-red-500/20 border-red-500 text-red-700 dark:text-red-400'
                   : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
               }`}
               title={hideFailed ? t('archives.showFailedPrints') : t('archives.hideFailedPrints')}
@@ -3519,7 +3913,7 @@ export function ArchivesPage() {
               onClick={() => setHideDuplicates(!hideDuplicates)}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors flex-shrink-0 ${
                 hideDuplicates
-                  ? 'bg-purple-500/20 border-purple-500 text-purple-400'
+                  ? 'bg-purple-100 dark:bg-purple-500/20 border-purple-500 text-purple-700 dark:text-purple-400'
                   : 'bg-bambu-dark border-bambu-dark-tertiary text-bambu-gray hover:text-white'
               }`}
               title={t('archives.hideDuplicates')}
@@ -3631,7 +4025,12 @@ export function ArchivesPage() {
       {/* Archives */}
       {isLoading ? (
         <div className="text-center py-12 text-bambu-gray">{t('archives.loadingArchives')}</div>
-      ) : filteredArchives?.length === 0 ? (
+      ) : filteredArchives?.length === 0 && viewMode !== 'log' ? (
+        // The log view is exempt: `print_log_entries` is an independent table
+        // that outlives the archives it refers to (deleting an archive only
+        // NULLs the FK), so "no archives" says nothing about whether there is
+        // a log to show. Without the guard, purging archives made the whole
+        // Print Log unreachable — the view has its own empty state below.
         <Card>
           <CardContent className="text-center py-12">
             <p className="text-bambu-gray">
@@ -3663,6 +4062,7 @@ export function ArchivesPage() {
                 key={archive.id}
                 archive={archive}
                 printerName={archive.printer_id ? printerMap.get(archive.printer_id) || 'Unknown' : (archive.sliced_for_model || 'No Printer')}
+                printerMap={printerMap}
                 isSelected={selectedIds.has(archive.id)}
                 onSelect={toggleSelect}
                 selectionMode={selectionMode}
@@ -3800,8 +4200,19 @@ export function ArchivesPage() {
                     onChange={(e) => { setLogFilterDateTo(e.target.value); setLogOffset(0); }}
                   />
                 </div>
-                {/* Clear log button */}
-                <div className="ml-auto">
+                {/* Columns + clear log */}
+                <div className="ml-auto flex items-center gap-2">
+                  {/* #2636: the log carries more per-run data than fits on one
+                      screen, so which columns show is the user's choice. */}
+                  <button
+                    type="button"
+                    onClick={() => setShowLogColumnModal(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-bambu-gray border border-bambu-dark-tertiary rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
+                    title={t('inventory.configureColumns')}
+                  >
+                    <Columns className="w-4 h-4" />
+                    <span className="hidden sm:inline">{t('archives.log.columns')}</span>
+                  </button>
                   <Button
                     variant="danger"
                     size="sm"
@@ -3832,81 +4243,62 @@ export function ArchivesPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-bambu-dark-tertiary text-bambu-gray text-left">
-                        <th className="px-4 py-3 font-medium">{t('archives.log.date')}</th>
-                        <th className="px-4 py-3 font-medium">{t('archives.log.printName')}</th>
-                        <th className="px-4 py-3 font-medium">{t('archives.log.printer')}</th>
-                        <th className="px-4 py-3 font-medium">{t('archives.log.user')}</th>
-                        <th className="px-4 py-3 font-medium">{t('archives.log.status')}</th>
-                        <th className="px-4 py-3 font-medium">{t('archives.log.duration')}</th>
-                        <th className="px-4 py-3 font-medium">{t('archives.log.filament')}</th>
+                        {visibleLogColumns.map((colId) => {
+                          const sortable = SORTABLE_LOG_COLUMNS.has(colId);
+                          const isActive = logSort.column === colId;
+                          const label = t(LOG_COLUMN_LABEL_KEYS[colId] ?? colId);
+                          return (
+                            <th
+                              key={colId}
+                              scope="col"
+                              aria-sort={
+                                isActive ? (logSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'
+                              }
+                              className={`px-4 py-3 font-medium ${LOG_NUMERIC_COLUMNS.has(colId) ? 'text-right' : ''}`}
+                            >
+                              {sortable ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleLogSort(colId)}
+                                  className={`inline-flex items-center gap-1 font-medium transition-colors hover:text-bambu-green ${
+                                    isActive ? 'text-bambu-green' : ''
+                                  }`}
+                                  title={t('archives.log.sortBy', { column: label })}
+                                >
+                                  {label}
+                                  {isActive ? (
+                                    logSort.direction === 'asc' ? (
+                                      <ChevronUp className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <ChevronDown className="w-3.5 h-3.5" />
+                                    )
+                                  ) : (
+                                    // Held at low opacity rather than omitted, so
+                                    // the header doesn't shift sideways when it
+                                    // becomes the active sort.
+                                    <ArrowUpDown className="w-3.5 h-3.5 opacity-30" />
+                                  )}
+                                </button>
+                              ) : (
+                                label
+                              )}
+                            </th>
+                          );
+                        })}
                         <th className="px-4 py-3 font-medium w-10" aria-label={t('common.actions')} />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-bambu-dark-tertiary">
                       {printLogData.items.map((entry) => (
                         <tr key={entry.id} className="hover:bg-bambu-dark-secondary/50">
-                          <td className="px-4 py-3 text-white whitespace-nowrap">
-                            {formatDateTime(entry.started_at || entry.created_at, timeFormat)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              {entry.thumbnail_path && (
-                                <img
-                                  src={api.getPrintLogThumbnail(entry.id)}
-                                  alt=""
-                                  className="w-8 h-8 rounded object-cover flex-shrink-0"
-                                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                                />
-                              )}
-                              <span className="text-white break-words" title={entry.print_name || ''}>
-                                {entry.print_name || '—'}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-bambu-gray-light">{entry.printer_name || '—'}</td>
-                          <td className="px-4 py-3 text-bambu-gray-light">{entry.created_by_username || '—'}</td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                              entry.status === 'completed' ? 'bg-green-500/20 text-green-400' :
-                              entry.status === 'failed' ? 'bg-red-500/20 text-red-400' :
-                              entry.status === 'stopped' ? 'bg-yellow-500/20 text-yellow-400' :
-                              entry.status === 'cancelled' ? 'bg-orange-500/20 text-orange-400' :
-                              entry.status === 'skipped' ? 'bg-blue-500/20 text-blue-400' :
-                              'bg-gray-500/20 text-gray-400'
-                            }`}>
-                              {entry.status}
-                            </span>
-                            {entry.failure_reason && (
-                              <span className="block text-[10px] text-bambu-gray mt-0.5">
-                                {t(`editArchive.failureReasons.${entry.failure_reason}`, { defaultValue: entry.failure_reason })}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-bambu-gray-light whitespace-nowrap">
-                            {entry.duration_seconds ? formatDuration(entry.duration_seconds) : '—'}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-1.5">
-                              {entry.filament_color && (
-                                <div className="flex items-center gap-0.5 flex-wrap">
-                                  {entry.filament_color.split(',').map((color, i) => {
-                                    const trimmed = color.trim();
-                                    return (
-                                      <span
-                                        key={i}
-                                        className="w-3 h-3 rounded-full border border-black/20 flex-shrink-0"
-                                        style={{ backgroundColor: trimmed.startsWith('#') ? trimmed : undefined }}
-                                        title={trimmed}
-                                      />
-                                    );
-                                  })}
-                                </div>
-                              )}
-                              <span className="text-bambu-gray-light text-xs">
-                                {entry.filament_type || '—'}
-                              </span>
-                            </div>
-                          </td>
+                          {visibleLogColumns.map((colId) => (
+                            <td
+                              key={colId}
+                              className={`px-4 py-3 ${LOG_NUMERIC_COLUMNS.has(colId) ? 'text-right' : ''}`}
+                            >
+                              {renderLogCell(colId, entry)}
+                            </td>
+                          ))}
                           <td className="px-4 py-3 text-right">
                             <div className="inline-flex items-center gap-2">
                               <button
@@ -3941,7 +4333,7 @@ export function ArchivesPage() {
                                     ? t('archives.log.deleteEntryTitle')
                                     : t('archives.permission.noDelete')
                                 }
-                                className="text-bambu-gray hover:text-red-400 disabled:opacity-40 disabled:hover:text-bambu-gray transition-colors"
+                                className="text-bambu-gray hover:text-red-600 dark:hover:text-red-400 disabled:opacity-40 disabled:hover:text-bambu-gray transition-colors"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -4055,6 +4447,15 @@ export function ArchivesPage() {
       {showTagManagement && (
         <TagManagementModal onClose={() => setShowTagManagement(false)} />
       )}
+
+      {/* Print Log column picker (#2636) */}
+      <ColumnConfigModal
+        isOpen={showLogColumnModal}
+        onClose={() => setShowLogColumnModal(false)}
+        columns={logColumnConfig}
+        defaultColumns={defaultLogColumnConfig}
+        onSave={handleLogColumnSave}
+      />
 
       {/* Clear Log Confirmation */}
       {showClearLogConfirm && (

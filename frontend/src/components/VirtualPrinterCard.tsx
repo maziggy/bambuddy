@@ -55,6 +55,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
   const [localModel, setLocalModel] = useState(printer.model || '');
   const [localAutoDispatch, setLocalAutoDispatch] = useState(printer.auto_dispatch ?? true);
   const [localQueueForceColorMatch, setLocalQueueForceColorMatch] = useState(printer.queue_force_color_match ?? false);
+  const [localSaveAmsMapping, setLocalSaveAmsMapping] = useState(printer.save_ams_mapping ?? false);
   const [localGcodeInjection, setLocalGcodeInjection] = useState(printer.gcode_injection ?? false);
   const [localTailscaleDisabled, setLocalTailscaleDisabled] = useState(printer.tailscale_disabled ?? true);
   const [showAccessCode, setShowAccessCode] = useState(false);
@@ -101,6 +102,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
       setLocalModel(printer.model || '');
       setLocalAutoDispatch(printer.auto_dispatch ?? true);
       setLocalQueueForceColorMatch(printer.queue_force_color_match ?? false);
+      setLocalSaveAmsMapping(printer.save_ams_mapping ?? false);
       setLocalGcodeInjection(printer.gcode_injection ?? false);
       setLocalTailscaleDisabled(printer.tailscale_disabled ?? true);
     }
@@ -133,6 +135,12 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
       setLocalTargetPrinterId(printer.target_printer_id);
       setLocalBindIp(printer.bind_ip || '');
       setLocalTailscaleDisabled(printer.tailscale_disabled ?? true);
+      // Queue-mode behaviour toggles. Without these the switch stays visually
+      // flipped after a failed save, so the card claims a setting the server
+      // never accepted.
+      setLocalQueueForceColorMatch(printer.queue_force_color_match ?? false);
+      setLocalSaveAmsMapping(printer.save_ams_mapping ?? false);
+      setLocalGcodeInjection(printer.gcode_injection ?? false);
       setPendingAction(null);
     },
   });
@@ -318,7 +326,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
               </button>
               <button
                 onClick={() => setShowDeleteConfirm(true)}
-                className="p-1.5 text-bambu-gray hover:text-red-400 transition-colors flex-shrink-0"
+                className="p-1.5 text-bambu-gray hover:text-red-600 dark:hover:text-red-400 transition-colors flex-shrink-0"
                 title={t('common.delete')}
               >
                 <Trash2 className="w-4 h-4" />
@@ -329,7 +337,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                 Shown only when this VP is marked Tailscale-exposed AND the daemon is up. */}
             <div className="flex items-center gap-2 -mt-2">
               {tailscaleFqdn && (
-                <span className="flex items-center gap-1 text-green-400/70 min-w-0">
+                <span className="flex items-center gap-1 text-green-700/80 dark:text-green-400/70 min-w-0">
                   <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" />
                   <span className="font-mono text-xs truncate">
                     {tailscaleIp ? `${tailscaleIp} (${tailscaleFqdn})` : tailscaleFqdn}
@@ -439,6 +447,36 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
               </div>
             )}
 
+            {/* Save-AMS-mapping toggle - only for queue mode */}
+            {localMode === 'queue' && (
+              <div className="pt-2 border-t border-bambu-dark-tertiary">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-white text-sm font-medium">{t('virtualPrinter.saveAmsMapping.title')}</div>
+                    <div className="text-[10px] text-bambu-gray">{t('virtualPrinter.saveAmsMapping.description')}</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const newVal = !localSaveAmsMapping;
+                      setLocalSaveAmsMapping(newVal);
+                      setPendingAction('saveAmsMapping');
+                      updateMutation.mutate({ save_ams_mapping: newVal });
+                    }}
+                    disabled={pendingAction === 'saveAmsMapping'}
+                    className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${
+                      localSaveAmsMapping ? 'bg-bambu-green' : 'bg-bambu-dark-tertiary'
+                    } ${pendingAction === 'saveAmsMapping' ? 'opacity-50' : ''}`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                        localSaveAmsMapping ? 'translate-x-5' : ''
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* G-code injection toggle - only for queue mode (#1516) */}
             {localMode === 'queue' && (
               <div className="pt-2 border-t border-bambu-dark-tertiary">
@@ -521,8 +559,8 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
             {/* Proxy mode: hint about using target printer's access code */}
             {localMode === 'proxy' && (
               <div className="pt-2 border-t border-bambu-dark-tertiary">
-                <div className="flex items-start gap-2 p-2 rounded bg-blue-500/10 border border-blue-500/30">
-                  <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+                <div className="flex items-start gap-2 p-2 rounded bg-blue-50 border border-blue-300 dark:bg-blue-500/10 dark:border-blue-500/30">
+                  <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-bambu-gray">
                     {t('virtualPrinter.proxy.accessCodeHint')}
                   </p>
@@ -536,17 +574,17 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                 <div className="flex items-center gap-2 mb-2">
                   <div className="text-white text-sm font-medium">{t('virtualPrinter.accessCode.title')}</div>
                   {inheritsAccessCodeFromTarget ? (
-                    <span className="flex items-center gap-1 text-xs text-blue-400">
+                    <span className="flex items-center gap-1 text-xs text-blue-700 dark:text-blue-400">
                       <Info className="w-3 h-3" />
                       {t('virtualPrinter.accessCode.inheritedFromTarget')}
                     </span>
                   ) : printer.access_code_set ? (
-                    <span className="flex items-center gap-1 text-xs text-green-400">
+                    <span className="flex items-center gap-1 text-xs text-green-700 dark:text-green-400">
                       <Check className="w-3 h-3" />
                       {t('virtualPrinter.accessCode.isSet')}
                     </span>
                   ) : (
-                    <span className="flex items-center gap-1 text-xs text-yellow-400">
+                    <span className="flex items-center gap-1 text-xs text-yellow-700 dark:text-yellow-400">
                       <AlertTriangle className="w-3 h-3" />
                       {t('virtualPrinter.accessCode.notSet')}
                     </span>
@@ -603,7 +641,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
                     </div>
                     {localAccessCode && (
                       <p className="text-xs text-bambu-gray mt-1">
-                        <span className={localAccessCode.length === 8 ? 'text-green-400' : 'text-yellow-400'}>
+                        <span className={localAccessCode.length === 8 ? 'text-green-700 dark:text-green-400' : 'text-yellow-700 dark:text-yellow-400'}>
                           {t('virtualPrinter.accessCode.charCount', { count: localAccessCode.length })}
                         </span>
                       </p>
@@ -666,7 +704,7 @@ export function VirtualPrinterCard({ printer, models }: VirtualPrinterCardProps)
               <div className="flex items-center gap-2 mb-1">
                 <div className="text-white text-sm font-medium">{t('virtualPrinter.remoteInterface.title')}</div>
                 {localRemoteInterfaceIp ? (
-                  <span className="flex items-center gap-1 text-xs text-green-400"><Check className="w-3 h-3" /></span>
+                  <span className="flex items-center gap-1 text-xs text-green-700 dark:text-green-400"><Check className="w-3 h-3" /></span>
                 ) : (
                   <span className="flex items-center gap-1 text-xs text-bambu-gray" title={t('virtualPrinter.remoteInterface.optional')}><Info className="w-3 h-3" /></span>
                 )}

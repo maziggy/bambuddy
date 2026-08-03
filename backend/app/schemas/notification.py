@@ -19,6 +19,7 @@ class ProviderType(StrEnum):
     DISCORD = "discord"
     WEBHOOK = "webhook"
     HOMEASSISTANT = "homeassistant"
+    BARK = "bark"
 
 
 class NotificationProviderBase(BaseModel):
@@ -62,6 +63,9 @@ class NotificationProviderBase(BaseModel):
 
     # Event triggers - Build plate detection
     on_plate_not_empty: bool = Field(default=True, description="Notify when objects detected on plate before print")
+    on_plate_clear_required: bool = Field(
+        default=False, description="Notify when a finished print is waiting for plate-clear confirmation"
+    )
 
     # Event triggers - Bed cooled
     on_bed_cooled: bool = Field(default=False, description="Notify when bed cools after print")
@@ -146,6 +150,7 @@ class NotificationProviderUpdate(BaseModel):
 
     # Event triggers - Build plate detection
     on_plate_not_empty: bool | None = None
+    on_plate_clear_required: bool | None = None
 
     # Event triggers - Bed cooled
     on_bed_cooled: bool | None = None
@@ -233,6 +238,10 @@ class PushoverConfig(BaseModel):
     user_key: str = Field(..., description="Your Pushover user key")
     app_token: str = Field(..., description="Your Pushover application token")
     priority: int = Field(default=0, ge=-2, le=2, description="Message priority (-2 to 2)")
+    # Emergency priority (2) only: how often to re-alert and when to stop.
+    # Pushover requires retry >= 30s and expire <= 10800s (3h).
+    retry: int = Field(default=60, ge=30, le=10800, description="Emergency re-alert interval in seconds (priority 2)")
+    expire: int = Field(default=3600, ge=30, le=10800, description="Emergency alert expiry in seconds (priority 2)")
 
 
 class TelegramConfig(BaseModel):

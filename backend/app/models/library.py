@@ -31,6 +31,14 @@ class LibraryFolder(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    # Real on-disk modification time of the directory this folder mirrors (#2680).
+    # For external folders this is captured from ``os.stat().st_mtime`` on scan so
+    # the tree's "sort by recent activity" matches ``ls -t`` instead of ordering by
+    # the DB row's ``updated_at`` (which is the scan instant, identical for every
+    # row of a bulk scan). Null for managed (internal) folders, which have no
+    # meaningful directory mtime — callers fall back to ``updated_at``/``created_at``.
+    fs_modified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     # Relationships
     parent: Mapped["LibraryFolder | None"] = relationship(
         "LibraryFolder",
@@ -50,6 +58,41 @@ class LibraryFolder(Base):
     )
     project: Mapped["Project | None"] = relationship()
     archive: Mapped["PrintArchive | None"] = relationship()
+
+
+class FileVariantGroup(Base):
+    """A set of library files that are the same job sliced for different printers.
+
+    Members are peers, not a source/output hierarchy. The group answers one
+    question — "which of these files goes to an H2S, and which to an H2C" — and
+    both open features need that answer from opposite ends: the print queue
+    picks the printer and needs the matching file (#671), the File Manager's
+    print action has the printer already and needs the same match (#2570).
+
+    The group deliberately stores no model information of its own. Each
+    member's target model comes from its own ``file_metadata['sliced_for_model']``,
+    parsed out of the 3MF, so a group can never disagree with the files it
+    contains. It also carries no pointer to an unsliced source file: that is a
+    display concern for the grouped File Manager listing, which is not built.
+
+    Deleting a group ungroups its files rather than deleting them (the member
+    side is ON DELETE SET NULL) — every member is independently printable.
+    """
+
+    __tablename__ = "file_variant_groups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    files: Mapped[list["LibraryFile"]] = relationship(
+        back_populates="variant_group",
+        order_by="LibraryFile.variant_position",
+    )
+    created_by: Mapped["User | None"] = relationship()
 
 
 class LibraryFile(Base):
@@ -90,6 +133,23 @@ class LibraryFile(Base):
     source_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     source_url: Mapped[str | None] = mapped_column(String(512), nullable=True, index=True)
 
+    # Variant grouping (#671 / #2570). A file belongs to at most one group of
+    # "same job, sliced for a different printer" siblings. SET NULL on group
+    # delete: ungrouping must never take the files with it. ``variant_position``
+    # is the user's priority order within the group — when two printers are idle
+    # at the same scheduler tick, the lowest position wins, so the pick is
+    # reproducible instead of depending on which match the scheduler found first.
+    variant_group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("file_variant_groups.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    variant_position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # User's answer to "which printer is this for", for a file that does not say.
+    # Files imported before Bambuddy parsed ``sliced_for_model`` — and raw .gcode —
+    # declare nothing, and without this they could never be grouped. Deliberately
+    # NOT written into ``file_metadata``: that holds what was parsed out of the
+    # file, and a user's assertion must not become indistinguishable from it.
+    variant_target_model: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
     # User tracking (Issue #206)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
@@ -102,10 +162,19 @@ class LibraryFile(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    # Real on-disk modification time of the file (#2680). Captured from
+    # ``os.stat().st_mtime`` for external files on scan so the file pane's date
+    # sort and the folder tree's recursive "recent activity" bubble reflect the
+    # actual filesystem mtime (``ls -t``) rather than the DB ``updated_at`` (the
+    # scan instant, identical across a bulk scan). Null for managed uploads —
+    # callers fall back to ``created_at``.
+    fs_modified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     # Relationships
     folder: Mapped["LibraryFolder | None"] = relationship(back_populates="files")
     project: Mapped["Project | None"] = relationship()
     created_by: Mapped["User | None"] = relationship()
+    variant_group: Mapped["FileVariantGroup | None"] = relationship(back_populates="files")
     # Tags (#1268). M2M via library_file_tags. Loaded explicitly via
     # ``selectinload`` in list_files so each row in the listing carries its
     # chip set without N+1 fetches.

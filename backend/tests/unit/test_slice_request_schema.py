@@ -152,3 +152,29 @@ class TestPresetsRequired:
     def test_empty_request_rejected(self):
         with pytest.raises(ValidationError):
             SliceRequest()
+
+
+class TestLayoutFlags:
+    """#2548: auto-orient / auto-arrange are per-slice options on the
+    request, not stored settings. Both must default to off — they rewrite
+    the object placement the file came with, which is never something to do
+    to a user who did not ask for it."""
+
+    def test_both_default_to_off(self):
+        req = SliceRequest(
+            printer_preset=PresetRef(source="local", id="1"),
+            process_preset=PresetRef(source="local", id="2"),
+            filament_preset=PresetRef(source="local", id="3"),
+        )
+        assert req.auto_orient is False
+        assert req.auto_arrange is False
+
+    def test_flags_are_independent(self):
+        req = SliceRequest(
+            printer_preset=PresetRef(source="local", id="1"),
+            process_preset=PresetRef(source="local", id="2"),
+            filament_preset=PresetRef(source="local", id="3"),
+            auto_orient=True,
+        )
+        assert req.auto_orient is True
+        assert req.auto_arrange is False

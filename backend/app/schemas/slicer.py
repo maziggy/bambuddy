@@ -82,6 +82,32 @@ class SliceRequest(BaseModel):
         default=False,
         description="If true, request a 3MF response with embedded G-code instead of raw G-code.",
     )
+    design_overrides: list[str] | None = Field(
+        default=None,
+        description=(
+            "3MF only. Process setting keys from the source file's "
+            "``different_settings_to_system`` to carry onto the picked process "
+            "preset (#2622) — the designer's own wall count, infill, first-layer "
+            "height and so on, which ``--load-settings`` would otherwise discard. "
+            "Only keys the source actually lists as changed are applied; anything "
+            "else is ignored. ``None``/empty means a plain profile slice."
+        ),
+    )
+    use_embedded_settings: bool = Field(
+        default=False,
+        description=(
+            "3MF only. Slice using the file's embedded "
+            "``Metadata/project_settings.config`` (the designer's own tweaks — wall "
+            "count, infill, etc.) instead of the picked printer/process/filament "
+            "triplet. This is the 'slice as designed' path: no ``--load-settings`` "
+            "override, so a MakerWorld author's settings survive. Ignored for STL / "
+            "plain-model 3MF (no embedded profile to honour). The preset refs are "
+            "still required by the validator but go unused on this path. Only makes "
+            "sense when the picked printer matches the design's target model — the "
+            "UI gates the toggle on that; there is no cross-printer re-targeting here "
+            "(that is exactly what the profile path is for)."
+        ),
+    )
     bed_type: str | None = Field(
         default=None,
         max_length=64,
@@ -91,6 +117,27 @@ class SliceRequest(BaseModel):
             "'High Temp Plate', 'Textured PEI Plate', 'Smooth PEI Plate', "
             "'Cool Plate (SuperTack)', 'Supertack Plate'. None ⇒ inherit from the "
             "process preset unchanged (#1337)."
+        ),
+    )
+    auto_orient: bool = Field(
+        default=False,
+        description=(
+            "Let the slicer pick each object's orientation before slicing "
+            "(BambuStudio / OrcaSlicer ``--orient 1``, the GUI's 'Auto orient'). "
+            "Off by default: it rotates geometry, so a model the designer laid "
+            "flat on purpose would silently change. Applies on the embedded-"
+            "settings path too — it is a CLI action, not a profile value (#2548)."
+        ),
+    )
+    auto_arrange: bool = Field(
+        default=False,
+        description=(
+            "Let the slicer lay the objects out on the plate before slicing "
+            "(``--arrange 1``, the GUI's 'Auto arrange'). Off by default: it "
+            "repositions objects, discarding a deliberate layout. Forced on "
+            "regardless for cross-nozzle-class re-slices, where the source's "
+            "coordinates land in the target's dead zone (#1493). Applies on the "
+            "embedded-settings path too (#2548)."
         ),
     )
 

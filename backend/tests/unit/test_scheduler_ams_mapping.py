@@ -1029,6 +1029,61 @@ class TestExtractNozzleMappingFrom3mf:
         assert result is None
         zf.close()
 
+    def test_single_active_under_report_with_multi_group_falls_through(self):
+        """#1825: extruder_nozzle_stats under-reports the second nozzle, but the
+        slice genuinely uses two extruders (group_id 0 and 1). The shortcut must
+        NOT fire — the parser has to honour the per-filament group_id assignment.
+
+        H2D HT-AMS scenario from the report: physical_extruder_map ['1','0'],
+        extruder_nozzle_stats ['Standard#1','Standard#0'] (sum==1), but ASA is
+        group_id 0 (→ LEFT) and PETG is group_id 1 (→ RIGHT). Before the fix
+        the shortcut collapsed both onto LEFT; now group_id wins.
+        """
+        slice_info = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+          <plate>
+            <filament id="1" type="ASA"  color="#FF0000" used_g="5.0" group_id="0"/>
+            <filament id="2" type="PETG" color="#00FF00" used_g="3.0" group_id="1"/>
+          </plate>
+        </config>"""
+        zf = _make_3mf_zip(
+            {
+                "physical_extruder_map": ["1", "0"],
+                "extruder_nozzle_stats": ["Standard#1", "Standard#0"],
+            },
+            slice_info_xml=slice_info,
+        )
+        result = extract_nozzle_mapping_from_3mf(zf)
+        # group_id 0 → physical_extruder_map[0] = 1 (LEFT)
+        # group_id 1 → physical_extruder_map[1] = 0 (RIGHT)
+        assert result == {1: 1, 2: 0}
+        zf.close()
+
+    def test_single_active_with_single_group_still_uses_shortcut(self):
+        """When stats report one active extruder AND the slice is truly
+        single-group, the shortcut is still correct and must continue to fire
+        (preserves the #851 behaviour for genuine single-nozzle prints made on
+        a multi-nozzle printer where only one nozzle is installed).
+        """
+        slice_info = """<?xml version="1.0" encoding="UTF-8"?>
+        <config>
+          <plate>
+            <filament id="1" type="PLA" color="#FF0000" used_g="5.0" group_id="0"/>
+            <filament id="2" type="PLA" color="#00FF00" used_g="3.0" group_id="0"/>
+          </plate>
+        </config>"""
+        zf = _make_3mf_zip(
+            {
+                "physical_extruder_map": ["1", "0"],
+                "extruder_nozzle_stats": ["Standard#1", "Standard#0"],
+            },
+            slice_info_xml=slice_info,
+        )
+        result = extract_nozzle_mapping_from_3mf(zf)
+        # Only extruder index 0 is active → physical_extruder_map[0] = 1 (LEFT)
+        assert result == {1: 1, 2: 1}
+        zf.close()
+
 
 class TestNozzleAwareMapping:
     """Test nozzle-aware filament matching in the print scheduler."""
@@ -1446,3 +1501,50 @@ class TestX1CModel:
         ]
         result = scheduler._match_filaments_to_slots(required, loaded)
         assert result == [5, 7]
+
+
+class TestFtsNozzleBypass:
+    """#2186: with a Filament Track Switch (FTS) installed, the per-nozzle hard
+    filter in the dispatch mapping must be skipped so a spool loaded in the OTHER
+    nozzle's AMS can be routed to the requested nozzle. Without an FTS the filter
+    still applies (cross-nozzle assignment fails on the printer).
+    """
+
+    @pytest.fixture
+    def scheduler(self):
+        return PrintScheduler()
+
+    def _repro_loaded(self):
+        # Mirrors the reporter's H2C: AMS-A (id 0) on the LEFT extruder (1) holds
+        # the black PLA the model wants; AMS-B (id 1) on the RIGHT extruder (0)
+        # holds a red PLA.
+        return [
+            {"type": "PLA", "color": "#000000", "global_tray_id": 1, "extruder_id": 1},  # AMS-A slot2 black, LEFT
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 6, "extruder_id": 0},  # AMS-B slot3 red, RIGHT
+        ]
+
+    def test_fts_routes_correct_colour_from_other_nozzle(self, scheduler):
+        """Model wants black PLA on the RIGHT nozzle; the black spool sits on the
+        LEFT AMS. With FTS the nozzle filter is skipped, so it picks the black spool
+        (gtid 1) — not the wrong-colour red already on the right (gtid 6).
+        Reproduces #2186 (b3 fed red instead of black)."""
+        required = [{"slot_id": 1, "type": "PLA", "color": "#000000", "nozzle_id": 0}]
+        result = scheduler._match_filaments_to_slots(required, self._repro_loaded(), fts_installed=True)
+        assert result == [1]  # black PLA from AMS-A, routed to the right nozzle by the FTS
+
+    def test_without_fts_nozzle_filter_still_applies(self, scheduler):
+        """No FTS: cross-nozzle assignment isn't possible, so a RIGHT-nozzle request
+        is restricted to right-side trays and matches the red PLA by type. Correct
+        non-FTS behaviour — and exactly why #2186 needed the FTS bypass."""
+        required = [{"slot_id": 1, "type": "PLA", "color": "#000000", "nozzle_id": 0}]
+        result = scheduler._match_filaments_to_slots(required, self._repro_loaded(), fts_installed=False)
+        assert result == [6]  # only the right-side PLA is eligible
+
+    def test_fts_flag_is_noop_without_nozzle_id(self, scheduler):
+        """Single-nozzle 3MFs carry no nozzle_id, so the per-nozzle filter never
+        runs and the FTS flag changes nothing — the exact-colour match wins either
+        way. (Single-nozzle printers also never have an FTS.)"""
+        required = [{"slot_id": 1, "type": "PLA", "color": "#000000"}]
+        for fts in (True, False):
+            result = scheduler._match_filaments_to_slots(required, self._repro_loaded(), fts_installed=fts)
+            assert result == [1]  # exact black match, no nozzle involved

@@ -1,4 +1,8 @@
-import type { PrintQueueItem, Printer } from '../../api/client';
+import type { PrintQueueItem, Printer, CalibrationMode } from '../../api/client';
+import type { VariantCandidate } from './VariantCandidates';
+
+export type { CalibrationMode };
+export type { VariantCandidate };
 
 /**
  * Mode of operation for the PrintModal.
@@ -36,30 +40,52 @@ export interface PrintModalProps {
   /** Delete the LibraryFile after dispatch — used by the Printers-page Direct-Print flow
    *  so transient uploads don't linger in File Manager. Only applies to library-file prints. */
   cleanupLibraryAfterDispatch?: boolean;
+  /**
+   * Cross-model alternatives (#671): the same job sliced for several printers,
+   * to be queued as ONE item that runs on whichever frees up first.
+   *
+   * Supplied by the File Manager when the user multi-selects sliced files, or
+   * when the clicked file belongs to a variant group. Two or more entries put
+   * the modal in cross-model mode: the printer picker is replaced by the ordered
+   * candidate list, and submit posts `variants` instead of a single file.
+   * `libraryFileId` must still be the first candidate — the shared filament and
+   * plate preview reads from it.
+   */
+  variantFiles?: VariantCandidate[];
 }
 
 /**
  * Print options that can be configured for a print job.
  */
+export type PreheatOverride = 'inherit' | 'on' | 'off';
+
 export interface PrintOptions {
-  bed_levelling: boolean;
-  flow_cali: boolean;
+  bed_levelling: CalibrationMode;
+  flow_cali: CalibrationMode;
   vibration_cali: boolean;
   layer_inspect: boolean;
   timelapse: boolean;
-  nozzle_offset_cali: boolean;
+  nozzle_offset_cali: CalibrationMode;
+  // Per-item preheat / heat-soak override (#1468). 'inherit' uses the global
+  // Settings → Workflow toggle; 'on' / 'off' force the per-print decision.
+  // chamber_target_override is non-null to bypass the per-filament-type
+  // derivation with an explicit °C target.
+  preheat_override: PreheatOverride;
+  preheat_chamber_target_override: number | null;
 }
 
 /**
  * Default print options values.
  */
 export const DEFAULT_PRINT_OPTIONS: PrintOptions = {
-  bed_levelling: true,
-  flow_cali: false,
+  bed_levelling: 'auto',
+  flow_cali: 'auto',
   vibration_cali: true,
   layer_inspect: false,
   timelapse: false,
-  nozzle_offset_cali: true,
+  nozzle_offset_cali: 'auto',
+  preheat_override: 'inherit',
+  preheat_chamber_target_override: null,
 };
 
 /**
@@ -208,6 +234,18 @@ export interface FilamentMappingProps {
   forceColorMatch?: Record<number, boolean>;
   /** Called when a slot's force-color-match checkbox is toggled. */
   onForceColorMatchChange?: (slotId: number, value: boolean) => void;
+  /** Names the plate this panel maps, when one panel is rendered per selected
+   *  plate. Each plate prints its own subset of the file's slots and gets its
+   *  own AMS mapping, so the panels have to be told apart. */
+  plateLabel?: string;
+  /** The archive's own saved AMS-slot pick from the slicer
+   *  (`extra_data.slicer_ams_mapping`, written when the source virtual
+   *  printer has "Save AMS mapping" enabled) — position = slot_id-1, value =
+   *  global tray ID. When present, a "Mapping" toggle next to "Re-read" lets
+   *  the user select every slot from this array instead of the type/color
+   *  auto-match. Undefined/omitted when the archive has no saved mapping —
+   *  the toggle is hidden and behaviour is unchanged. */
+  archiveAmsMapping?: number[];
 }
 
 /**

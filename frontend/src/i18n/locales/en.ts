@@ -33,6 +33,7 @@ export default {
 
   // Common
   common: {
+    plusNMore: '+{{count}} more',
     save: 'Save',
     saving: 'Saving...',
     cancel: 'Cancel',
@@ -101,6 +102,8 @@ export default {
     now: 'Now',
     collapse: 'Collapse',
     expand: 'Expand',
+    previous: 'Previous',
+    next: 'Next',
     viewArchive: 'View archive',
     viewInFileManager: 'View in File Manager',
     addedBy: 'Added by {{username}}',
@@ -194,22 +197,37 @@ export default {
       extraLarge: 'Extra large cards',
     },
     pageView: {
+      openCamWallPage: 'Open cam wall as page',
       cards: 'Cards',
       camWall: 'Cam wall',
     },
     camWall: {
+      page: {
+        tokenRejected:
+          'This Cam Wall link is no longer valid. The token may have expired or been revoked.',
+        loadFailed: 'Could not load the printers.',
+      },
       noPrinters: 'No printers to show',
       noSignal: 'No signal',
       live: 'Live',
       snap: 'Snap',
       off: 'Off',
       summary: '{{live}} live, {{snap}} snapshots, {{total}} total',
+      layer: 'Layer {{cur}}/{{total}}',
+      timeLeft: '{{time}} left',
+      statusMode: {
+        off: 'Off',
+        compact: 'Compact',
+        full: 'Full',
+      },
       settings: {
         title: 'Cam wall settings',
         maxLive: 'Max live streams',
         maxLiveHint: 'How many tiles stream live at once. Others refresh as snapshots.',
         snapshotInterval: 'Snapshot interval (seconds)',
         snapshotIntervalHint: 'How often non-live tiles fetch a fresh snapshot.',
+        statusOverlay: 'Status overlay',
+        statusOverlayHint: 'Compact: state badge only. Full: + progress, layer, time left.',
       },
     },
     // Controls
@@ -341,6 +359,9 @@ export default {
     toast: {
       printerDeleted: 'Printer deleted',
       missingSpoolAssignment: 'Print started on {{printer}}. Missing spool assignment for: {{slots}}',
+      assignmentVerified: 'Filament loaded on slot {{slot}} ({{printer}})',
+      assignmentVerifiedNoKprofile: 'Slot {{slot}} on {{printer}} loaded, but the flow calibration (K-profile) was not applied',
+      assignmentNotConfirmed: 'Could not confirm the assignment for slot {{slot}} on {{printer}} — check the AMS slot',
       printerAdded: 'Printer added',
       printerUpdated: 'Printer updated',
       failedToDelete: 'Failed to delete printer',
@@ -408,6 +429,7 @@ export default {
       unload: 'Unload',
     },
     bedJog: {
+      limitWarning: 'Travel limits are not enforced during manual moves — a Bambu firmware bug ignores software endstops for remote commands. Move carefully to avoid a collision.',
       title: 'Jog Controls',
       bed: 'Bed',
       step: 'Step (mm)',
@@ -463,6 +485,8 @@ export default {
       skip: 'Skip',
       confirmTitle: 'Skip Object?',
       confirmMessage: 'Are you sure you want to skip "{{name}}"? This cannot be undone.',
+      confirmAllMessage: 'All remaining objects are selected. This will stop the print job. Continue?',
+      confirmMultipleMessage: 'Skip {{count}} selected objects? This cannot be undone.',
     },
     // Confirm modals
     confirm: {
@@ -561,6 +585,10 @@ export default {
       notSupported: 'Drying not supported',
       powerRequired: 'Connect AMS power adapter to enable drying',
       startingDrying: 'Starting drying...',
+      toastCommandSent: 'Drying command sent',
+      toastStopped: 'Drying stopped',
+      toastNotStarted: 'The printer accepted the command but the AMS never started drying. Check that the AMS power adapter is connected and that the printer is idle.',
+      screenOnly: 'AMS drying on this printer can only be controlled from the printer\'s own screen (Bambu limitation)',
       stoppingDrying: 'Stopping drying...',
       rotateTray: 'Rotate spool during drying',
       rotateUnavailableReason: 'Unavailable — a slot in this AMS is loaded to the toolhead. The spool is locked by the feed tube and cannot rotate. Retract the filament first.',
@@ -585,6 +613,12 @@ export default {
     activeJobSlot: {
       title: 'This slot is filament {{n}} in the active print',
       ariaLabel: 'Active print slot {{n}}',
+    },
+    expectedSlot: {
+      title: 'The printer is waiting for filament in this slot',
+      ariaLabel: 'Expected filament slot {{n}}',
+      label: '{{ams}} · Slot {{slot}}',
+      external: 'External spool',
     },
     // Filaments section
     filaments: 'Filaments',
@@ -639,10 +673,27 @@ export default {
     fans: {
       partCooling: 'Part Cooling Fan',
       auxiliary: 'Auxiliary Fan',
+      leftAuxiliary: 'Left Auxiliary Fan',
+      exhaust: 'Exhaust',
       chamber: 'Chamber Fan',
     },
     // HMS errors
     clickToViewHmsErrors: 'Click to view HMS errors',
+    aiDetection: {
+      safe: 'Safe',
+      warning: 'Warning',
+      failure: 'Failure',
+      idle: 'Idle',
+      tooltip: 'AI Failure Detection: {{status}} (score {{score}}) - click for details',
+      tooltipIdle: 'AI Failure Detection enabled - monitoring starts with the next print - click for details',
+      modalTitle: 'AI Failure Detection - {{name}}',
+      currentStatus: 'Status',
+      score: 'Score',
+      framesAnalyzed: 'Frames analyzed',
+      idleHint: 'No print is being monitored right now. Monitoring starts automatically with the next print.',
+      lastError: 'Last error',
+      openSettings: 'Open settings',
+    },
     estimatedCompletion: 'Estimated completion time',
     plateNumber: 'Plate {{number}}',
     slotOptions: 'Slot options',
@@ -889,6 +940,8 @@ export default {
       uploadedBy: 'Uploaded By',
       noPermissionReprint: 'You do not have permission to reprint',
       noFileForReprint: 'No 3MF file available — the file could not be downloaded from the printer when the print was recorded',
+      slicerAmsMapping: 'AMS mapping saved ({{printer}})',
+      slicerAmsMappingTooltip: 'The slicer\'s own AMS slot choice was saved for {{printer}}. Tray numbers only mean something on that printer, so a reprint reuses them only when it targets {{printer}} again.',
       noPermissionEdit: 'You do not have permission to edit archives',
       noPermissionDelete: 'You do not have permission to delete archives',
       openInBambuStudio: 'Open in Slicer',
@@ -981,6 +1034,13 @@ export default {
       status: 'Status',
       duration: 'Duration',
       filament: 'Filament',
+      filamentUsed: 'Filament Used',
+      cost: 'Cost',
+      energy: 'Energy',
+      energyCost: 'Energy Cost',
+      completedAt: 'Finished',
+      columns: 'Columns',
+      sortBy: 'Sort by {{column}}',
       allPrinters: 'All Printers',
       allUsers: 'All Users',
       allStatuses: 'All Statuses',
@@ -1018,6 +1078,80 @@ export default {
     },
   },
 
+  // Sticky upload-progress toast (#1625 follow-up — restored the
+  // legacy bg-dispatch toast UI for the scheduler-driven dispatch path).
+  // Strings mirror 0b43ac0d's backgroundDispatch namespace.
+  dispatchToast: {
+    untitled: 'Print job',
+    startingPrints: 'Starting prints',
+    progressSummary: '{{complete}}/{{total}} complete • Processing: {{processing}}',
+    expandDetails: 'Expand dispatch details',
+    collapseDetails: 'Collapse dispatch details',
+    awaitingPrinter: 'Awaiting printer…',
+    status: {
+      processing: 'Processing',
+      completed: 'Completed',
+      failed: 'Failed',
+    },
+    failed: {
+      generic: 'Dispatch failed',
+      upload_failed: 'Upload to printer failed',
+      start_command_failed: 'Printer rejected start command',
+    },
+    dismiss: 'Dismiss',
+  },
+
+  // Pipeline Runs dashboard (#1425 PR C). Lists every Slicer Pipeline run
+  // across every pipeline with status + pipeline filters and pagination.
+  // Each row expands to per-copy job status; partial-failure runs get a
+  // Retry-failed button; in-flight runs get a Cancel button.
+  pipelineRuns: {
+    title: 'Pipeline Runs',
+    loading: 'Loading…',
+    empty: 'No pipeline runs yet.',
+    filter: {
+      pipeline: 'Pipeline',
+      status: 'Status',
+      target: 'Target',
+      all: 'All',
+      allPipelines: 'All pipelines',
+      allStatus: 'All statuses',
+      allTargets: 'All targets',
+      clear: 'Clear filters',
+      noMatches: 'No runs match the current filters.',
+    },
+    totalCount_one: '{{n}} run',
+    totalCount_other: '{{n}} runs',
+    copies: '{{n}} copies',
+    failedCount: '{{n}} failed',
+    copyN: 'Copy {{n}}',
+    retryFailed: 'Retry failed',
+    retryOf: 'retry of #{{n}}',
+    pagination: '{{start}}–{{end}} of {{total}}',
+    cancelledByUser: 'Cancelled by user',
+    toast: {
+      cancelled: 'Run cancelled',
+      cancelFailed: 'Cancel failed',
+      retryStarted: 'Retry started',
+      retryFailed: 'Retry failed',
+      cleared: '{{n}} runs cleared',
+      clearFailed: 'Clear failed',
+    },
+    clearLog: 'Clear log',
+    clearConfirmTitle: 'Clear log?',
+    clearConfirmBody: 'Delete every completed, failed, cancelled, and partial-failure pipeline run? In-flight runs are kept. This cannot be undone.',
+    clearConfirmAction: 'Clear',
+    jobStatus: {
+      pending: 'pending',
+      awaiting_printer: 'awaiting printer',
+      queued: 'queued',
+      printing: 'printing',
+      completed: 'completed',
+      failed: 'failed',
+      cancelled: 'cancelled',
+    },
+  },
+
   // Queue page
   queue: {
     title: 'Print Queue',
@@ -1030,6 +1164,10 @@ export default {
       lineItem: 'Slot {{slot}}: needs {{required}} g, {{remaining}} g remaining',
       unknown: 'unknown',
       printAnyway: 'Print Anyway',
+    },
+    slicerAmsMapping: {
+      rowBadge: 'AMS slots saved for this printer',
+      rowTooltip: 'This archive carries the exact AMS slots the slicer picked, saved for the printer this item targets. A reprint on it can reuse those trays instead of matching again by type and colour.',
     },
     // Print modal
     editQueueItem: 'Edit Queue Item',
@@ -1098,6 +1236,7 @@ export default {
       queue: 'Queue',
       history: 'History',
       timeline: 'Timeline',
+      pipelines: 'Pipelines',
     },
     // Layout toggle on the Queue tab — distinct from the sort dropdown
     // (those control order; these control whether items render as one flat
@@ -1111,6 +1250,8 @@ export default {
     history: {
       emptyTitle: 'No history yet',
       emptyDescription: 'Completed, cancelled, and failed prints will appear here.',
+      showMore: 'Show more',
+      showingCount: 'Showing {{shown}} of {{total}}',
     },
     // Drag ghost label when multi-dragging
     dragGhost: {
@@ -1175,6 +1316,7 @@ export default {
     },
     // Time
     time: {
+      etaIfStartedNow: 'Completion time if this job started now',
       asap: 'ASAP',
       overdue: 'Overdue',
       now: 'Now',
@@ -1374,6 +1516,7 @@ export default {
     periodCost: 'Period Cost',
     avgPerPrint: 'Avg per Print',
     usageOverTime: 'Usage Over Time',
+    energyOverTime: 'Energy Over Time',
     filamentByWeight: 'Weight',
     printDuration: 'Print Duration',
     printerUtilization: 'Printer Utilization',
@@ -1540,6 +1683,8 @@ export default {
       smartPlugs: 'Smart Plugs',
       notifications: 'Notifications',
       queue: 'Workflow',
+      queueDispatch: 'Queue & Dispatch',
+      queuePipelines: 'Pipelines',
       filament: 'Filament',
       network: 'Network',
       apiKeys: 'API Keys',
@@ -1919,8 +2064,17 @@ export default {
     manageLibraryDescription: 'Upload, rename, and delete library files; import models from MakerWorld',
     manageInventory: 'Manage Inventory',
     manageInventoryDescription: 'Create, update, and delete spools and inventory records. Required for SpoolBuddy kiosks (NFC scan, scale readings, kiosk system commands).',
+    manageMaintenance: 'Manage Maintenance',
+    manageMaintenanceDescription: 'Log completed maintenance, reset counters, edit intervals, and manage the maintenance-type catalog. Suited to Home Assistant automations that record "I cleaned the nozzle" without granting broader printer control.',
+    manageArchives: 'Manage Archives',
+    manageArchivesDescription: 'Edit and delete print archives, including removing old prints. Does not include purging their statistics contribution. Suited to automations that prune the print history.',
+    manageProjects: 'Manage Projects',
+    manageProjectsDescription: 'Create, update, and delete projects, and add archives to them. Suited to automations that organize prints into projects.',
     libraryBadge: 'Library',
     inventoryBadge: 'Inventory',
+    maintenanceBadge: 'Maintenance',
+    archivesBadge: 'Archives',
+    projectsBadge: 'Projects',
     cloudAccess: 'Allow cloud access',
     cloudAccessDescription: 'Read Bambu Cloud presets and filaments on your behalf. Requires you to be signed into Bambu Cloud.',
     cloudBadge: 'Cloud',
@@ -1987,8 +2141,34 @@ export default {
     tempFanPresetsChamber: 'Chamber temperature',
     tempFanPresetsFan: 'Fan speed',
     tempFanPresetsReset: 'Reset to defaults',
+    concurrentUploadsTitle: 'Concurrent Uploads',
+    concurrentUploadsDescription: 'How many printers the queue may send files to at the same time. Printers receive files slowly (a large print can take several minutes), and each one waits its turn — so on a bigger fleet, raising this is what stops the last printer in a batch from waiting out every transfer before it. Lower it if your network or Bambuddy host struggles with parallel transfers.',
+    concurrentUploadsLabel: 'Printers uploaded to at once',
+    concurrentUploadsHelp: '1 sends to one printer at a time (the old behaviour). Default is 4.',
     staggeredStart: 'Staggered Start',
     staggeredStartDescription: 'Default group size and interval when staggering multi-printer batch starts. Can be overridden per batch in the print modal.',
+    preheatTitle: 'Preheat & Heat Soak',
+    preheatDescription: 'Heat the bed (and chamber, if supported) and hold at temperature before each queued print starts. Helpful for engineering filaments (PA, ABS) on printers without an active chamber heater — the bed warms the chamber by radiation while the soak timer runs. The bed target is read from the print file; chamber behaviour depends on printer model.',
+    preheatEnabled: 'Enable preheat & soak',
+    preheatEnabledDesc: 'When off, queued prints dispatch immediately. Each queue item can override per print.',
+    preheatFilamentTargetsLabel: 'Per-filament chamber target (°C)',
+    preheatFilamentTargetsHint: 'Bambuddy picks the highest target across the loaded AMS slots; PLA-only prints derive 0 and skip the chamber phase automatically.',
+    preheatFilamentTargetsReset: 'Reset to defaults',
+    preheatFilamentTargetsDefaultRow: 'Other / unmapped',
+    preheatMaxWait: 'Max wait (seconds)',
+    preheatMaxWaitHelp: 'Cap on the chamber warm-up phase before falling through.',
+    preheatSoak: 'Soak (seconds)',
+    preheatSoakHelp: 'Hold time after target reached or max-wait elapsed.',
+    preheatHardwareTitle: 'Per-printer behaviour:',
+    preheatHardwareDetail: 'H2C/H2D/H2D Pro/H2S/X2D/X1E actively heat the chamber via M141. X1C/P2S read chamber temp but rely on bed-radiation heating. P1S/P1P/A1/A1 Mini have no chamber sensor — only the soak timer applies.',
+    preheatPerItemDesc: 'Heat the bed and chamber before this print starts. Defaults to the global Settings → Workflow toggle.',
+    preheatOverride_inherit: 'Inherit',
+    preheatOverride_on: 'On',
+    preheatOverride_off: 'Off',
+    calibrationMode_off: 'Off',
+    calibrationMode_on: 'On',
+    calibrationMode_auto: 'Auto',
+    preheatTargetOverride: 'Chamber target override (°C, blank = filament default)',
     plateClear: 'Plate-Clear Confirmation',
     requirePlateClear: 'Require plate-clear confirmation',
     requirePlateClearDescription: 'When enabled, the scheduler waits for per-printer plate-clear confirmation before starting queued prints on printers with finished jobs. Disabling this also hides the plate status badge and the "Mark plate as cleared" button on printer cards.',
@@ -2085,6 +2265,8 @@ export default {
     slicerCard: 'Slicer',
     orcaslicerApiUrl: 'OrcaSlicer sidecar URL',
     bambuStudioApiUrl: 'Bambu Studio sidecar URL',
+    slicerStallTimeout: 'Slicer stall timeout (minutes)',
+    slicerStallTimeoutDescription: 'Give up on a slice after this long with no progress from the sidecar. Heavy models that keep reporting progress are never cut off, however long they take. Sidecars that do not report progress use this as a total time limit instead.',
     slicerApiUrlDescription: 'URL of the slicer-API sidecar container. Leave blank to use the SLICER_API_URL / BAMBU_STUDIO_API_URL env var defaults.',
     slicerBundlesRemoved: {
       title: 'Slicer Bundles (removed)',
@@ -2156,6 +2338,7 @@ export default {
       connectionFailed: 'Connection failed',
       testFailed: 'Test failed',
       cameraConnected: 'Camera connected{{resolution}}',
+      cameraConnectedCoalesced: 'Camera connected{{resolution}} (shared with a capture already running)',
     },
     testConnection: 'Test Connection',
     catalog: {
@@ -2292,11 +2475,15 @@ export default {
     styleGlow: 'Glow',
     styleVibrant: 'Vibrant',
     themeToggleHint: 'Toggle between dark, light, and system mode using the icon in the sidebar.',
+    progressInTitle: 'Print progress in tab',
+    progressInTitleDescription: 'Show the active print\'s percentage and a progress ring in the browser tab.',
     // Archive
     autoArchivePrints: 'Auto-archive prints',
     autoArchiveDescription: 'Automatically save 3MF files when prints complete',
     saveThumbnailsDescription: 'Extract and save preview images from 3MF files',
     captureFinishPhotoDescription: 'Take a photo from printer camera when print completes. Bambuddy records a brief timelapse during the print so the photo can be sourced from the moment before the bed drops; the timelapse file is kept if you enabled timelapse for this print, otherwise it is deleted automatically after the photo is captured.',
+    finishPhotoRestorePlate: 'Restore plate for finish photo',
+    finishPhotoRestorePlateDescription: 'The printer drops the build plate about 100 mm when a print ends, leaving the finished print below the camera\'s framing. Bambuddy raises it back to just above the last printed layer, takes the photo, then lowers it again. Skipped when the print height is unknown or another job is queued.',
     ffmpegNotInstalled: 'ffmpeg not installed',
     ffmpegRequired: 'Camera capture requires ffmpeg. Install it via <brew>brew install ffmpeg</brew> (macOS) or <apt>apt install ffmpeg</apt> (Linux).',
     // Camera
@@ -2340,6 +2527,9 @@ export default {
     updateAvailableVersion: 'Update available: v{{version}}',
     releaseNotes: 'Release Notes',
     updateViaDocker: 'Update via Docker Compose:',
+    composeDirectory: 'Compose directory',
+    composeDirectoryHint: 'Directory containing your docker-compose.yml. Leave blank to omit the cd.',
+    copyUpdateCommand: 'Copy update command',
     updateViaHomeAssistant: 'Updates are managed by the Home Assistant Supervisor. Open Settings → Add-ons → Bambuddy in Home Assistant to install the new version.',
     updateViaWindowsInstaller: 'Windows installations are updated by re-running the installer. Download the new version below — your data, settings and printers are preserved.',
     downloadWindowsInstaller: 'Download installer for v{{version}}',
@@ -2536,6 +2726,105 @@ export default {
       migrationErrorWarning: '{{count}} legacy row(s) failed to re-encrypt at startup. Check server logs and restart Bambuddy to retry.',
     },
 
+    // Slicer Pipeline limits (#1425 PR C). Admin-tunable cap that constrains
+    // the copies input in the Run-with-pipeline modal. Lives on the Workflow
+    // tab's Queue & Dispatch sub-tab.
+    pipelineLimits: {
+      title: 'Slicer Pipeline limits',
+      maxCopiesLabel: 'Max copies per run',
+      maxCopiesDesc: 'Upper bound on the copies operators can request when running a pipeline. Server-side hard cap is 1000.',
+    },
+
+    // Slicer Pipelines (#1425): list/edit/delete preset bundles users saved
+    // from the Slice dialog. Lives in Settings → Workflow → Pipelines sub-tab.
+    pipelines: {
+      title: 'Slicer Pipelines',
+      subtitle: 'Reusable preset bundles (printer + process + filaments + bed type). Save one from the Slice dialog and apply it with a single click on the next file.',
+      loading: 'Loading pipelines…',
+      loadError: 'Could not load pipelines.',
+      confirmDelete: 'Delete this pipeline? This cannot be undone.',
+      staleWarning: 'One or more referenced presets no longer exist. Re-save this pipeline from the Slice dialog to fix.',
+      empty: {
+        title: 'No pipelines yet.',
+        howto: 'Open the Slice dialog for any file, pick your printer / process / filaments / bed type, then click "Save as pipeline". Your saved pipelines will appear here.',
+      },
+      field: {
+        name: 'Pipeline name',
+        description: 'Description',
+        targetPrinter: 'Target printer',
+        noTarget: '— No target —',
+        // PR C
+        targetKind: 'Target type',
+        targetKindSpecific: 'Specific printer',
+        targetKindClass: 'Printer class',
+        targetModelClass: 'Printer model',
+        fanoutStrategy: 'Fanout strategy',
+        fanout: {
+          max_parallel: 'Max parallel — distribute across any idle matching printer',
+          round_robin: 'Round robin — cycle through eligible printers',
+          fill_one_first: 'Fill one first — pin all copies to one printer',
+        },
+        // Short labels for the inline target chip on each pipeline card.
+        // The verbose ones above explain the strategy in the editor; the
+        // card just needs a compact reminder of which one is in use.
+        fanoutShort: {
+          max_parallel: 'parallel',
+          round_robin: 'round robin',
+          fill_one_first: 'fill one first',
+        },
+      },
+      action: {
+        save: 'Save',
+        cancel: 'Cancel',
+        rename: 'Rename',
+        delete: 'Delete',
+      },
+      slot: {
+        printer: 'Printer',
+        process: 'Process',
+        filament: 'Filament',
+        filamentN: 'Filament {{n}}',
+        filamentAll: 'All {{n}} slots',
+        bed: 'Bed',
+      },
+      // PR C polish — grouped sections in the card body, plus the
+      // panel-level search + filter row.
+      group: {
+        profiles: 'Profiles',
+        filaments: 'Filaments',
+      },
+      searchPlaceholder: 'Search pipelines…',
+      filterTargetType: 'Filter by target type',
+      filterTarget: 'Filter by target',
+      filter: {
+        all: 'All targets',
+        noTarget: 'No target set',
+        count: '{{shown}} / {{total}}',
+        noMatches: 'No pipelines match the current filters.',
+      },
+      toast: {
+        saved: 'Pipeline saved',
+        saveFailed: 'Save failed',
+        deleted: 'Pipeline deleted',
+        deleteFailed: 'Delete failed',
+      },
+      // PR B target binding + last-run summary
+      noTargetHint: 'Set a target printer to run this',
+      noTargetWarning: 'Set a target printer before running this pipeline.',
+      runs: {
+        lastRun: 'Last run',
+        status: {
+          queued: 'queued',
+          slicing: 'slicing',
+          dispatching: 'dispatching',
+          in_progress: 'printing',
+          completed: 'completed',
+          failed: 'failed',
+          partial_failure: 'partial failure',
+          cancelled: 'cancelled',
+        },
+      },
+    },
   },
 
   // Notifications (for push notifications)
@@ -2597,10 +2886,51 @@ export default {
     title: 'Errors - {{name}}',
     noErrors: 'No errors',
     viewOnWiki: 'View on Bambu Lab Wiki',
+    mqttVerifyFailedRemedy: 'Enable Developer Mode on the printer, restart the printer, then start the job again.',
+    unknownCode: 'Unknown HMS code — see the Bambu Lab wiki for details.',
     clearInstructions: 'Clear errors on the printer to dismiss them here.',
     clearErrors: 'Clear Errors',
     clearSuccess: 'HMS errors cleared',
     clearFailed: 'Failed to clear HMS errors',
+    actionSuccess: 'Action sent to printer',
+    actionFailed: 'Failed to send action',
+    runoutExpectedSlot: 'Filament ran out in {{ranOut}}. The printer is now waiting for compatible filament in {{expected}}. Insert a spool into {{expected}}, then select Retry.',
+    runoutExpectedSlotOnly: 'The printer is waiting for compatible filament in {{expected}}. Insert a spool there, then select Retry.',
+    runoutSlotUnknown: 'Filament ran out and the print is paused. Bambuddy could not determine which slot the printer now expects — check the printer screen for the requested slot.',
+    actions: {
+      RESUME_PRINTING: "Resume Printing",
+      RESUME_PRINTING_DEFECTS: "Resume (defects acceptable)",
+      RESUME_PRINTING_PROBELM_SOLVED: "Resume (problem solved)",
+      STOP_PRINTING: "Stop Printing",
+      CHECK_ASSISTANT: "Check Assistant",
+      FILAMENT_EXTRUDED: "Filament Extruded, Continue",
+      RETRY_FILAMENT_EXTRUDED: "Not Extruded Yet, Retry",
+      CONTINUE: "Finished, Continue",
+      LOAD_VIRTUAL_TRAY: "Load Filament",
+      OK_BUTTON: "OK",
+      FILAMENT_LOAD_RESUME: "Filament Loaded, Resume",
+      JUMP_TO_LIVEVIEW: "View Liveview",
+      NO_REMINDER_NEXT_TIME: "No Reminder Next Time",
+      REFRESH_NOZZLE: "Recheck",
+      IGNORE_NO_REMINDER_NEXT_TIME: "Ignore. Don't Remind Next Time",
+      IGNORE_RESUME: "Ignore this and Resume",
+      PROBLEM_SOLVED_RESUME: "Problem Solved and Resume",
+      TURN_OFF_FIRE_ALARM: "Got it, Turn off the Fire Alarm.",
+      RETRY_PROBLEM_SOLVED: "Retry (problem solved)",
+      CANCLE: "Cancle",
+      STOP_DRYING: "Stop Drying",
+      PROCEED: "Proceed",
+      OK_JUMP_RACK: "OK",
+      ABORT: "Abort",
+      DISABLE_PURIFICATION: "Disable Purification for This Print",
+      DONT_REMIND_NEXT_TIME: "Don't Remind Me",
+      DBL_CHECK_CANCEL: "Cancel",
+      DBL_CHECK_DONE: "Done",
+      DBL_CHECK_RETRY: "Retry",
+      DBL_CHECK_RESUME: "Resume",
+      DBL_CHECK_OK: "Confirm",
+      REMOVE_CLOSE_BTN: "Close",
+    }
   },
 
   // MQTT Debug modal
@@ -2901,6 +3231,7 @@ export default {
       clearAll: 'Clear All',
       permissionsSelected: '{{count}} selected',
       noResults: 'No permissions match your search',
+      websocketHint: 'Required for live updates. Without it, the interface falls back to periodic polling.',
     },
   },
 
@@ -3016,37 +3347,24 @@ export default {
     },
     orcaCloud: {
       connectedAs: 'Connected as',
+      connectedShort: 'Connected to Orca Cloud',
       logout: 'Disconnect',
       noLogoutPermission: 'You do not have permission to disconnect',
       noConnectPermission: 'You do not have permission to connect to Orca Cloud',
       retry: 'Retry',
-      back: 'Use a different sign-in method',
+      connectButton: 'Connect Orca Cloud',
       connect: {
         title: 'Connect to Orca Cloud',
         description: 'Sign in to your Orca Cloud account to sync your slicer profiles into Bambuddy.',
       },
-      providers: {
-        google: 'Sign in with Google',
-        apple: 'Sign in with Apple',
-        github: 'Sign in with GitHub',
-        email: 'Sign in with email and password',
-      },
-      password: {
-        title: 'Sign in with email and password',
-        email: 'Email',
-        emailPlaceholder: 'you@example.com',
-        password: 'Password',
-        submit: 'Sign in',
-      },
-      paste: {
-        title: 'Finish signing in',
-        step1: 'A new tab opened with the Orca Cloud sign-in page. Sign in with your Orca account.',
-        step2: 'Your browser will be redirected to a "localhost" URL that fails to load. That is expected — the URL is what we need.',
-        step3: 'Copy the entire URL from your browser\'s address bar and paste it below.',
-        signInUrl: 'If the sign-in tab did not open, click this URL:',
-        label: 'Paste the callback URL here',
-        placeholder: 'http://localhost:41172/callback?code=...&state=...',
-        submit: 'Finish connecting',
+      device: {
+        title: 'Approve Bambuddy in Orca Cloud',
+        instruction: 'Open Orca Cloud and approve this code. Bambuddy connects automatically once you approve.',
+        codeLabel: 'Your pairing code',
+        openButton: 'Open Orca Cloud approval page',
+        manualHint: 'Or go to {{url}} and enter the code above.',
+        waiting: 'Waiting for you to approve…',
+        cancel: 'Cancel',
       },
       profiles: {
         title: 'Your Orca Cloud profiles ({{count}})',
@@ -3054,16 +3372,13 @@ export default {
         empty: 'No profiles found in your Orca Cloud account yet.',
       },
       toast: {
-        connected: 'Connected to Orca Cloud as {{email}}',
         disconnected: 'Disconnected from Orca Cloud',
       },
       errors: {
-        startFailed: 'Could not start the Orca Cloud sign-in flow.',
-        finishFailed: 'Could not finish the Orca Cloud sign-in.',
-        passwordFailed: 'Could not sign in with that email and password.',
-        passwordEmpty: 'Please enter both your email and password.',
-        emptyPaste: 'Please paste the callback URL from your browser.',
-        noCode: 'That URL does not look like an Orca Cloud callback (no code parameter). Copy the full URL from your address bar.',
+        startFailed: 'Could not start Orca Cloud pairing.',
+        denied: 'The pairing was denied in Orca Cloud.',
+        expired: 'The pairing code expired. Click Connect to try again.',
+        pollFailed: 'Lost the connection while waiting for approval. Please try again.',
       },
     },
     localProfiles: {
@@ -3102,6 +3417,8 @@ export default {
       },
     },
     connectedAs: 'Connected as',
+    signInExpiredTitle: 'Bambu Cloud sign-in expired',
+    signInExpiredBody: 'Bambu Lab no longer accepts the stored token. Sign in again to restore cloud profiles, MakerWorld imports and firmware checks.',
     logout: 'Logout',
     noLogoutPermission: 'You do not have permission to logout',
     failedToLoad: 'Failed to load profiles',
@@ -3285,6 +3602,13 @@ export default {
 
   // File manager
   fileManager: {
+    variants: {
+      badge: '{{count}} versions',
+      groupAction: 'Group as versions',
+      groupTooltip: 'Mark these files as the same job sliced for different printers',
+      grouped: 'Grouped {{count}} files as versions',
+      printAlternatives: 'Print ({{count}} alternatives)',
+    },
     title: 'File Manager',
     subtitle: 'Organize and manage your print files',
     uploadFiles: 'Upload Files',
@@ -3358,6 +3682,9 @@ export default {
     searchSubfoldersHint: 'Including subfolders',
     readme: {
       truncated: 'Truncated',
+      show: 'Show README',
+      hide: 'Hide README',
+      label: 'README',
     },
     tags: {
       title: 'Tags',
@@ -3402,6 +3729,10 @@ export default {
     prints: 'Prints',
     ascending: 'Ascending',
     descending: 'Descending',
+    showModified: 'Show modified dates',
+    hideModified: 'Hide modified dates',
+    lastModified: 'Last modified',
+    lastActivity: 'Last activity',
     resultsCount: '{{showing}} of {{total}} files',
     selectAll: 'Select All',
     deselectAll: 'Deselect All',
@@ -3427,6 +3758,7 @@ export default {
     noPermissionRenameFolder: 'You do not have permission to rename folders',
     noPermissionLinkFolder: 'You do not have permission to link folders',
     noPermissionDeleteFolder: 'You do not have permission to delete folders',
+    onlyEmptyFoldersDeletable: 'You can only delete empty folders',
     noPermissionPrint: 'You do not have permission to print',
     noPermissionAddToQueue: 'You do not have permission to add to queue',
     noPermissionSlice: 'You do not have permission to slice files',
@@ -3517,6 +3849,9 @@ export default {
     targetParts: 'Target Parts',
     targetPartsPlaceholder: 'e.g., 150',
     targetPartsHelp: 'Total objects needed',
+    targetSets: 'Copies per File',
+    targetSetsPlaceholder: 'e.g., 10',
+    targetSetsHelp: 'Times each printable file should be printed',
     tagsLabel: 'Tags (comma-separated)',
     tagsPlaceholder: 'e.g., voron, functional, gift',
     dueDate: 'Due Date',
@@ -3592,6 +3927,9 @@ export default {
     progress: {
       platesProgress: 'Plates Progress',
       partsProgress: 'Parts Progress',
+      setsProgress: 'Complete Sets',
+      sets: 'sets',
+      setsHint: 'A set is complete once every printable file has reached this count',
       printJobs: 'print jobs',
       parts: 'parts',
       percentComplete: '{{percent}}% complete',
@@ -3630,6 +3968,8 @@ export default {
       forQuickAccess: 'to this project for quick access.',
       fileCount: '{{count}} file(s)',
       empty: 'No folders linked. Go to File Manager and link a folder to this project.',
+      printedCount: 'Printed {{count}} time(s)',
+      progressTooltip: '{{done}} of {{target}} completed prints',
       noFiles: 'No files in this folder.',
     },
     bom: {
@@ -3712,6 +4052,10 @@ export default {
     toastArchives: '{{count}} prints archived with Bambuddy. See who keeps it independent.',
     toastAnniversary: 'One year with Bambuddy! See who keeps the project independent.',
     toastVersionUpdate: 'Updated to v{{version}}. Bambuddy stays free thanks to its supporters.',
+    toastBusiness: "Running Bambuddy on {{count}} printers? There's a support plan for teams — priority fixes, invoicing, and a direct line to the maintainer.",
+    businessCta: 'Bambuddy for business',
+    businessTitle: 'Bambuddy for business',
+    businessTagline: "You're running {{count}} printers. Priority support, commercial licensing and invoicing are available for teams and print farms.",
   },
 
   // Library (K Profiles)
@@ -3729,6 +4073,46 @@ export default {
     deleteConfirm: 'Are you sure you want to delete this filament?',
     importFromPrinter: 'Import from Printer',
     exportToFile: 'Export to File',
+    // Slicer Pipelines run from the File Manager (#1425 PR B). The Run-with-pipeline
+    // modal is a two-step dialog: pick a pipeline, then either fire (eligibility ok)
+    // or confirm-and-fire (eligibility report shown). Lives in components/RunWithPipelineModal.tsx.
+    runWithPipeline: {
+      actionLabel: 'Run with pipeline',
+      noPermission: 'You do not have permission to run pipelines',
+      modalTitle: 'Run with pipeline',
+      confirmTitle: 'Confirm run',
+      confirmIntro: 'Pre-flight found issues with this run',
+      sourceHint: 'Source',
+      pipelineHint: 'Pipeline',
+      targetHint: 'Target',
+      pipelineListAria: 'Available pipelines',
+      runAnyway: 'Run anyway',
+      loading: 'Loading…',
+      empty: 'No pipelines saved yet. Open the Slice dialog and click "Save as pipeline" to create one.',
+      noTarget: 'No target printer set',
+      noTargetMessage: 'This pipeline has no target printer set. Open it in Settings to pick one.',
+      // PR C — copies input + class-targeted pipelines.
+      copies: 'Copies',
+      copiesHint: 'max {{n}}',
+      classTarget: 'Any {{model}}',
+      toast: {
+        started: 'Pipeline run started',
+        failed: 'Could not start run',
+      },
+      issue: {
+        printerNotSet: 'No target printer set on this pipeline.',
+        printerNotFound: 'Target printer no longer exists.',
+        printerDisabled: 'Target printer is disabled.',
+        printerOffline: 'Target printer is offline.',
+        filamentType: 'Filament slot {{slot}}: expected {{expected}}, AMS has {{actual}}',
+        filamentColor: 'Filament slot {{slot}}: colour differs (expected {{expected}}, AMS has {{actual}})',
+        amsSlotMissing: 'AMS slot {{slot}} not available on this printer',
+        filamentUnverified: 'Filament slot {{slot}} comes from a cloud / standard preset and could not be statically verified.',
+        // PR C — class targeting
+        noClassMatches: 'No printers in this install match the pipeline\'s target model class ({{expected}}).',
+        classNotSet: 'Pipeline target is set to a printer class but no model was chosen.',
+      },
+    },
   },
 
   // Slice (slicer-API integration via SliceModal)
@@ -3756,6 +4140,17 @@ export default {
     refreshPresets: 'Refresh',
     refreshPresetsTitle: 'Refresh presets — fetch the latest cloud and bundled listings (use after deleting a preset in Bambu Studio or Bambu Handy)',
     allPresetsRequired: 'All presets must be selected',
+    useEmbedded: "Use the file's built-in settings",
+    useEmbeddedHint: "Slice it the way the designer set it up (walls, infill, filament) instead of the profiles above. Offered because your printer matches the file's.",
+    autoOrient: 'Auto-orient objects',
+    autoOrientHint: 'Let the slicer turn each object onto its best printing side first. Overrides the way the model was laid down in the file.',
+    autoArrange: 'Auto-arrange on the plate',
+    autoArrangeHint: 'Let the slicer position the objects so they no longer overlap. Replaces the layout the file came with.',
+    designSettings: 'Keep the designer\'s settings',
+    designSettingsHint: 'This file changes {{count}} print setting(s) from the stock profile.',
+    designSettingsSelected: '{{selected}} of {{total}} selected',
+    designSettingsPrinterCoupled: 'printer-specific',
+    designSettingsPrinterCoupledHint: 'Tuned for the printer this file was designed for — may be wrong or out of range on yours.',
     enqueuing: 'Submitting slice job…',
     queued: 'Queued…',
     failed: 'Slicing failed. Check the slicer sidecar logs.',
@@ -3792,6 +4187,22 @@ export default {
       highTemp: 'High Temp Plate',
       texturedPEI: 'Textured PEI Plate',
       smoothPEI: 'Smooth PEI Plate',
+    },
+    // Slicer Pipelines (#1425) — apply a saved bundle or save the current pick.
+    pipelines: {
+      label: 'Pipeline',
+      applyAria: 'Apply pipeline',
+      applyPrompt: 'Apply pipeline…',
+      empty: 'No saved pipelines',
+      saveButton: 'Save as pipeline',
+      saveTitle: 'Save the current four-slot selection as a reusable pipeline',
+      namePlaceholder: 'Pipeline name',
+      nameAria: 'New pipeline name',
+      toast: {
+        applied: 'Applied "{{name}}"',
+        saved: 'Pipeline saved',
+        saveFailed: 'Save failed',
+      },
     },
   },
 
@@ -3916,6 +4327,8 @@ export default {
       title: 'Print spool labels',
       selectedCount: '{{count}} selected',
       pickSpools: 'Pick which spools to print labels for:',
+      monochrome: 'Monochrome (black & white printer)',
+      monochromeHint: 'Drops the colour swatch and widens the text',
       searchPlaceholder: 'Search name, brand, or #ID',
       filterByMaterial: 'Material:',
       allMaterials: 'All',
@@ -3996,6 +4409,8 @@ export default {
     searchBrand: 'Search brand...',
     useCustomBrand: 'Use "{{brand}}"',
     useCustomMaterial: 'Use custom material: {{material}}',
+    suggestedOptions: 'Suggested',
+    allOptions: 'All',
     colorName: 'Color Name',
     colorNamePlaceholder: 'Jade White, Fire Red...',
     color: 'Color',
@@ -4302,9 +4717,25 @@ export default {
 
   // Print modal
   printModal: {
+    variants: {
+      editNote: 'These alternatives were set when the job was queued. Cancel and re-queue to change them.',
+      title: 'Printer alternatives',
+      help: 'One job, one queue slot. The first matching printer to free up runs its file.',
+      unknownModel: 'Unknown model',
+      plateFor: 'Plate for {{filename}}',
+      moveUp: 'Move up',
+      moveDown: 'Move down',
+      queued: 'Queued with {{count}} alternatives',
+    },
     selectPrinter: 'Select Printer',
     selectPlate: 'Select Plate',
     filamentMapping: 'Filament Mapping',
+    useArchiveMapping: 'Mapping',
+    useArchiveMappingTooltip: 'Select every slot from the AMS mapping saved with this archive (from the slicer), instead of matching by type/color.',
+    clickToChangeSlot: 'Click to change slot assignment',
+    reRead: 'Re-read',
+    plateN: 'Plate {{n}}',
+    plateFilamentsUnreadable: 'The filaments of a selected plate could not be read, so it can\'t be mapped. Deselect it to queue the others.',
     totalCost: 'Total cost:',
     slotRemainingShort: ' - {{grams}}g left',
     printSettings: 'Print Settings',
@@ -4342,6 +4773,7 @@ export default {
     overrideWith: 'Override with',
     resetToOriginal: 'Reset to original',
     insufficientFilamentTitle: 'Not enough filament',
+    waitingForAmsStatus: 'Waiting for AMS status from {{printer}}…',
     insufficientFilamentMessage: 'Some assigned spools have less filament remaining than this print needs:',
     insufficientFilamentLine: '{{printer}} - {{slot}}: needs {{required}}g, remaining {{remaining}}g',
     printAnyway: 'Print anyway',
@@ -4414,7 +4846,8 @@ export default {
     noPrintersConnected: 'No printers connected',
     printersConnected: '{{connected}}/{{total}} connected',
     cloudProfiles: 'Cloud Profiles',
-    cloudProfilesDescription: 'Filament, printer, and process presets from Bambu Cloud',
+    cloudProfilesDescription: 'Filament, printer, and process presets from Bambu Cloud and Orca Cloud',
+    cloudProfilesAccounts: 'Connected accounts — Bambu Cloud: {{bambu}}, Orca Cloud: {{orca}}',
     appSettings: 'App Settings',
     appSettingsDescription: 'Bambuddy configuration (complete database)',
     spoolInventory: 'Spool Inventory',
@@ -4540,6 +4973,20 @@ export default {
     backupSize: 'Size',
     localTimeHint: 'Local time ({{tz}})',
     defaultPathLabel: 'Default:',
+    // Backup output-path probe (#2544)
+    pathCheck: {
+      title: 'Bambuddy cannot write to this directory',
+      howToFix: 'How to fix:',
+      sandboxed: 'The Bambuddy service cannot write to {{path}}. Its systemd unit runs with ProtectSystem=strict, which makes every directory outside the install, data and log directories read-only for the service - even one you can write to from your own shell.',
+      read_only: '{{path}} is on a read-only filesystem.',
+      permission_denied: 'Bambuddy is not allowed to write to {{path}}. Check the directory owner and permissions.',
+      no_space: 'The filesystem holding {{path}} is full.',
+      not_a_directory: '{{path}} exists but is not a directory.',
+      missing: '{{path}} does not exist and could not be created.',
+      error: 'Bambuddy cannot write to {{path}}.',
+      ephemeralTitle: 'These backups will not survive a container restart',
+      container_ephemeral: '{{path}} is inside the Bambuddy container, not on the host. Backups written there are lost when the container is recreated. Mount the directory from the host:',
+    },
 
     // Category labels
     categories: {
@@ -4688,7 +5135,15 @@ export default {
       kValueHelp: 'Typical range: 0.01 - 0.06 for PLA, 0.02 - 0.10 for PETG',
       filament: 'Filament',
       selectFilament: 'Select filament...',
-      noFilamentsHelp: 'No filaments found. Create a K-profile in Bambu Studio first.',
+      source: {
+        local: 'Imported',
+        orcaCloud: 'Orca Cloud',
+        bambuCloud: 'Bambu Cloud',
+        builtin: 'Built-in',
+      },
+      noFilamentsHelp: 'No filaments available. Sign in to Bambu Cloud, or import presets under Profiles → Local Profiles.',
+      searchFilaments: 'Search filaments...',
+      noFilamentMatches: 'No filament matches that search',
       flowType: 'Flow Type',
       highFlow: 'High Flow',
       standard: 'Standard',
@@ -4721,6 +5176,8 @@ export default {
       profileSaved: 'K-profile saved',
       profilesSaved: 'K-profile saved to {{count}} extruders',
       selectAtLeastOneExtruder: 'Please select at least one extruder',
+      selectFilament: 'Select a filament first',
+      filamentNotResolvable: 'No Bambu filament ID for {{name}} — the printer cannot store a profile for it',
       profileDeleted: 'K-profile deleted',
       profilesDeleted: 'Deleted {{count}} profiles',
       exportedProfiles: 'Exported {{count}} profiles',
@@ -4809,6 +5266,10 @@ export default {
     queueForceColorMatch: {
       title: 'Force color match',
       description: 'Refuse to dispatch onto a printer that does not have the exact filament type and color loaded. Off by default — without this, the queue uses model-only matching and may pick a printer with the wrong color loaded.',
+    },
+    saveAmsMapping: {
+      title: 'Save AMS mapping',
+      description: 'Persist the slicer\'s own AMS-slot pick (from the project_file MQTT command) onto the archive, so a later reprint reuses the exact physical spool instead of re-deriving one from the file\'s type/color. Off by default.',
     },
     gcodeInjection: {
       title: 'G-code injection',
@@ -4994,6 +5455,8 @@ export default {
     autoOffDescription: 'Turn off when print completes (one-shot)',
     autoOffPersistent: 'Keep Enabled',
     autoOffPersistentDescription: 'Stay enabled between prints instead of one-shot',
+    controlsPrinterPower: 'Powers the printer',
+    controlsPrinterPowerDescription: 'Turn off if this plug only powers an accessory (filter fan, lights). Otherwise switching it off marks the printer offline.',
     autoOffAfterDrying: 'Auto Off After Drying',
     autoOffAfterDryingDescription: 'Turn off when AMS drying completes',
     delayAfterDryingMinutes: 'Drying delay (minutes)',
@@ -5093,7 +5556,12 @@ export default {
     restPowerPath: 'Power JSON Path',
     restPowerMultiplier: 'Power Multiplier',
     restEnergyUrl: 'Energy URL',
-    restEnergyPath: 'Energy JSON Path',
+    restEnergyPath: 'Energy JSON Path (today)',
+    restEnergyTotalPath: 'Energy JSON Path (lifetime)',
+    restEnergyTotalMultiplier: 'Lifetime Multiplier',
+    restEnergyTotalPathHint: 'e.g. aenergy.total',
+    restEnergyTotalHint:
+      "Many plugs — every Shelly among them — report only a lifetime counter that never resets. It belongs here, not in the field above: read as today's usage it would never reset at midnight, and Yesterday and Total would stay empty. Bambuddy works Today and Yesterday out from it, which takes a day or two of readings to fill in. A Shelly reports watt-hours, so use a multiplier of 0.001.",
     restEnergyMultiplier: 'Energy Multiplier',
     restUrlRequired: 'At least one URL (ON or OFF) is required for REST plugs',
     restHeadersHint: 'e.g. {"Authorization": "Bearer your-token"}',
@@ -5121,6 +5589,7 @@ export default {
       discord: 'Discord',
       webhook: 'Webhook',
       homeassistant: 'Home Assistant',
+      bark: 'Bark',
     },
     // Provider descriptions
     providerDescriptions: {
@@ -5132,6 +5601,7 @@ export default {
       callmebot: 'Free WhatsApp notifications via CallMeBot',
       webhook: 'Generic HTTP POST to any URL',
       homeassistant: 'Persistent notifications in Home Assistant dashboard',
+      bark: 'iOS push notifications via Bark (self-hostable)',
     },
     // NotificationProviderCard
     lastSuccess: 'Last: {{date}}',
@@ -5170,6 +5640,9 @@ export default {
     printStarted: 'Print Started',
     plateNotEmpty: 'Plate Not Empty',
     plateNotEmptyDescription: 'Objects detected before print',
+    plateClearRequired: 'Plate Clear Required',
+    plateClearRequiredDescription: 'Print finished, queue waits for plate confirmation',
+    plateClear: 'Plate Clear',
     printCompleted: 'Print Completed',
     bedCooledLabel: 'Bed Cooled',
     bedCooledDescription: 'Bed cooled below threshold after print',
@@ -5265,6 +5738,7 @@ export default {
     add: 'Add',
     nameRequired: 'Name is required',
     fieldRequired: '{{field}} is required',
+    haDataInvalid: 'The Data field must be a valid JSON object, e.g. {"priority": "high", "ttl": 0}',
     // Config field labels
     phoneNumber: 'Phone Number',
     apiKey: 'API Key',
@@ -5274,8 +5748,13 @@ export default {
     userKey: 'User Key',
     appToken: 'App Token',
     priority: 'Priority',
+    pushoverRetry: 'Emergency Retry (s)',
+    pushoverExpire: 'Emergency Expire (s)',
     botToken: 'Bot Token',
     chatId: 'Chat ID',
+    telegramThreadId: 'Forum Topic ID',
+    telegramThreadIdHelp: 'Optional. Posts into a single topic of a forum group — the last number in the topic link (t.me/c/.../25). Leave empty for the General topic.',
+    telegramThreadIdInvalid: 'Forum Topic ID must be a number.',
     smtpServer: 'SMTP Server',
     smtpPort: 'SMTP Port',
     security: 'Security',
@@ -5571,6 +6050,7 @@ export default {
     filteringFor: 'Filtering for: {{material}}',
     noKProfile: 'No K profile (use default 0.020)',
     noMatchingKProfiles: 'No matching K profiles found. Default K=0.020 will be used.',
+    otherKProfiles: 'Other K profiles on this printer',
     selectFilamentFirst: 'Select a filament profile first',
     kFromCalibration: 'K={{value}} from printer calibration',
     customColorLabel: 'Custom Color (optional)',
@@ -5992,6 +6472,7 @@ export default {
         pass: 'The printer reports this option is on — sent files will be stored on the SD card and archives will have thumbnails and slicer metadata.',
         fail: 'The printer reports this option is off. Enable "Store sent files on external storage" — on newer firmware (P2S 01.02 / Bambu Studio 2.6+) the toggle lives on the printer\'s Print Settings; on older versions it\'s in Bambu Studio / OrcaSlicer\'s Device tab. Without it, every archived print is missing its thumbnail and slicer metadata.',
         skip: 'Not checked — needs a live MQTT connection. On older slicers where this setting lives only in the slicer the printer never reports it, so this check will pass even when the option is off — verify install step 4 manually.',
+        skip_unsupported_model: 'This model has an SD slot but no way to turn the option on — current P1-series firmware doesn\'t expose the toggle in Bambu Studio and the printer has no screen. Nothing to fix here; archived prints may lack thumbnails and slicer metadata until Bambu Lab adds firmware support.',
       },
       port_rtsps: {
         title: 'Camera port ({{protocol}} {{port}})',
@@ -6013,7 +6494,8 @@ export default {
       mqtt_auth: {
         title: 'Printer credentials',
         pass: 'The printer accepted the connection.',
-        fail: 'The printer is reachable but rejected the connection. The access code or serial number is most likely wrong. The access code changes every time Developer Mode is toggled — re-copy it from the printer screen.',
+        fail: 'The printer is reachable but Bambuddy is not connected to it. The access code or serial number is most likely wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-copy it from the printer screen. A printer that is rebooting, or already at its limit of simultaneous connections, can look the same.',
+        fail_auth_rejected: 'The printer refused Bambuddy\'s credentials. The access code or serial number is wrong — the access code changes every time LAN Only or Developer Mode is toggled, so re-copy it from the printer screen and save it in the printer settings.',
         skip: 'Not checked — the printer could not be reached.',
       },
       developer_mode: {
@@ -6177,8 +6659,12 @@ export default {
     description: 'Monitor prints with a self-hosted Obico ML API and act on detected failures automatically.',
     mlUrl: 'Obico ML API URL',
     mlUrlHint: 'Base URL of your self-hosted Obico ml_api container (e.g. http://192.168.1.10:3333).',
+    mlToken: 'ML API Token (optional)',
+    mlTokenPlaceholder: 'Leave empty if the server runs without ML_API_TOKEN',
+    mlTokenHint: 'Must match the ML_API_TOKEN environment variable of your Obico ml_api container. Leave empty when the container runs without one.',
     test: 'Test',
     testSuccess: 'ML API reachable and healthy.',
+    testSuccessTokenUnknown: 'ML API reachable and healthy. The token could not be checked.',
     testFailed: 'Could not reach the ML API.',
     sensitivity: 'Sensitivity',
     sensitivityLow: 'Low (fewer false positives)',
@@ -6213,6 +6699,8 @@ export default {
     resolveButton: 'Resolve',
     signInRequiredTitle: 'Bambu Cloud sign-in required to download',
     signInRequiredBody: 'You can browse model details anonymously, but MakerWorld requires a Bambu Cloud account to download 3MF files.',
+    signInExpiredTitle: 'Bambu Cloud sign-in expired',
+    signInExpiredBody: 'You are still signed in to Bambuddy, but Bambu Lab has stopped accepting the stored token, so downloads will fail. Sign in to Bambu Cloud again.',
     openCloudSettings: 'Open Cloud settings',
     untitledModel: 'Untitled model',
     byCreator: 'by {{name}}',
@@ -6386,10 +6874,15 @@ export default {
     saveFailed: 'Could not save auto-purge settings.',
   },
   cameraTokens: {
+    scope: {
+      camera_stream: 'Camera stream',
+      camwall: 'Cam Wall',
+      overlay: 'Streaming Overlay',
+    },
     title: 'Camera API Tokens',
     navTitle: 'Camera API tokens',
     description:
-      'Long-lived tokens for embedding the camera stream into Home Assistant, Frigate, kiosks, or any other tool that needs a stable URL. Each token is camera-stream-only and can be revoked at any time.',
+      'Long-lived tokens for embedding the camera stream into Home Assistant, Frigate, kiosks, or any other tool that needs a stable URL. Pick the scope when you create one; a token can be revoked at any time.',
     loading: 'Loading…',
     confirmRevoke: {
       title: 'Revoke this token?',
@@ -6398,6 +6891,13 @@ export default {
       confirm: 'Revoke',
     },
     create: {
+      scopeLabel: 'Scope',
+      hintCameraStream:
+        'A camera-stream token can only fetch camera streams and snapshots. Use it for Home Assistant, Frigate, or anything embedding a single camera.',
+      hintCamWall:
+        "A Cam Wall token opens /camwall on a screen with no login. It can see every printer's name and state, and their camera streams. It cannot see filenames, addresses or access codes.",
+      hintOverlay:
+        "A Streaming Overlay token opens /overlay/{printerId} on a screen with no login — for OBS or any live stream. It can see one printer's camera stream plus its live print status, including the filename shown on screen. It cannot see addresses or access codes.",
       title: 'Create new token',
       nameLabel: 'Token name',
       namePlaceholder: 'e.g. Home Assistant',
@@ -6407,6 +6907,12 @@ export default {
         'Maximum lifetime is 365 days. The token value is shown only once on creation — copy it now.',
     },
     created: {
+      camWallUrlTitle: 'Cam Wall URL for this display',
+      camWallUrlHint:
+        'Open this on the screen. Anyone who can read the URL can watch the wall, so treat it like a key — revoke the token to cut the display off.',
+      overlayUrlTitle: 'Overlay URL for OBS',
+      overlayUrlHint:
+        "Add this as a Browser Source in OBS. Change the /overlay/1 number to your printer's number (from its URL on the Printers page). Anyone who can read the URL can watch the stream, so treat it like a key — revoke the token to cut it off.",
       title: 'Token created — copy it now',
       warning:
         'This is the only time this token will be visible. After you close this dialog you can never view it again.',
@@ -6414,6 +6920,7 @@ export default {
       dismiss: "I've saved it",
     },
     list: {
+      scope: 'Scope',
       myTitle: 'My tokens',
       allTitle: 'All users (admin view)',
       empty: 'No tokens yet.',

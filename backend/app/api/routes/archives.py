@@ -29,9 +29,11 @@ from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveSta
 from backend.app.schemas.print_log import PrintLogResponse
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.archive import ArchiveService
+from backend.app.services.design_settings import overrides_from_config
 from backend.app.utils.http import build_content_disposition
 from backend.app.utils.safe_path import safe_join_under
 from backend.app.utils.threemf_tools import (
+    expand_to_project_slots,
     extract_embedded_presets_from_3mf,
     extract_nozzle_mapping_from_3mf,
     extract_project_filaments_from_3mf,
@@ -40,6 +42,9 @@ from backend.app.utils.threemf_tools import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/archives", tags=["archives"])
+
+# Path of the embedded slicer config inside a BambuStudio/OrcaSlicer 3MF.
+_PROJECT_SETTINGS_PATH = "Metadata/project_settings.config"
 
 
 def _safe_filename(filename: str) -> str:
@@ -117,6 +122,28 @@ def _match_timelapse_by_timestamp(
             return None, None
 
     return best_video, best_diff
+
+
+async def _claimed_timelapse_stems(db, printer_id: int | None, exclude_archive_id: int) -> set[str]:
+    """Video filenames already attached to another archive of this printer (#2704).
+
+    Lets the baseline diff drop a previous print's late-landing video from the
+    candidate list without ordering the candidates — ordering could only be done
+    on mtime or the filename timestamp, and both come from a clock the printer
+    can't sync in LAN-only mode. ``attach_timelapse`` stores the video under the
+    printer's own filename and the MP4 conversion keeps the stem, so the stem of
+    ``timelapse_path`` is what was claimed.
+    """
+    if printer_id is None:
+        return set()
+    rows = await db.execute(
+        select(PrintArchive.timelapse_path).where(
+            PrintArchive.printer_id == printer_id,
+            PrintArchive.id != exclude_archive_id,
+            PrintArchive.timelapse_path.is_not(None),
+        )
+    )
+    return {Path(p).stem for p in rows.scalars().all() if p}
 
 
 def _ensure_archive_visible(
@@ -570,6 +597,8 @@ async def list_archives_slim(
             PrintLogEntry.filament_color,
             PrintLogEntry.status,
             PrintLogEntry.cost,
+            PrintLogEntry.energy_kwh,
+            PrintLogEntry.energy_cost,
             PrintLogEntry.created_at,
         )
         .outerjoin(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
@@ -593,8 +622,12 @@ async def list_archives_slim(
                 # print_time_seconds (slicer estimate) for non-completed
                 # events would diverge from Quick Stats — so expose the
                 # measured value here unconditionally.
+                #
+                # Trust an explicit 0 (reconciled aborts store it deliberately;
+                # their real end time is unknown) instead of recomputing the
+                # multi-day disconnect gap from the timestamps (#2592).
                 r.duration_seconds
-                if r.duration_seconds and r.duration_seconds > 0
+                if r.duration_seconds is not None
                 else (
                     int((r.completed_at - r.started_at).total_seconds())
                     if r.started_at and r.completed_at and (r.completed_at - r.started_at).total_seconds() > 0
@@ -608,6 +641,8 @@ async def list_archives_slim(
             "started_at": r.started_at,
             "completed_at": r.completed_at,
             "cost": r.cost,
+            "energy_kwh": r.energy_kwh,
+            "energy_cost": r.energy_cost,
             "quantity": 1,
             "created_at": r.created_at,
         }
@@ -1071,7 +1106,12 @@ async def get_archive_stats(
     )
     total_seconds = 0
     for duration_seconds, started_at, completed_at in time_rows.all():
-        if duration_seconds:
+        # Trust an explicitly stored duration, INCLUDING 0: a reconciled abort
+        # stores 0 on purpose because its real end time is unknown, and the
+        # started_at→completed_at fallback would otherwise bank the whole
+        # multi-day disconnect gap as print time (#2592). Only rows with a NULL
+        # duration (legacy entries that never recorded one) fall back.
+        if duration_seconds is not None:
             total_seconds += duration_seconds
         elif started_at and completed_at:
             elapsed = (completed_at - started_at).total_seconds()
@@ -1277,6 +1317,13 @@ async def _sum_snapshot_deltas(
     """
     from backend.app.models.smart_plug import SmartPlug
     from backend.app.models.smart_plug_energy_snapshot import SmartPlugEnergySnapshot
+    from backend.app.utils.local_time import to_naive_utc
+
+    # ``recorded_at`` is a naive column holding UTC. Binding an aware datetime
+    # against it raises DataError on asyncpg (SQLite silently drops the offset),
+    # which took the whole date-filtered energy figure down on Postgres.
+    dt_from = to_naive_utc(dt_from)
+    dt_to = to_naive_utc(dt_to)
 
     plug_ids_result = await db.execute(select(SmartPlug.id))
     plug_ids = [row[0] for row in plug_ids_result.all()]
@@ -1651,13 +1698,17 @@ async def update_archive(
 async def toggle_favorite(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_UPDATE_ALL,
+            Permission.ARCHIVES_UPDATE_OWN,
+        )
+    ),
 ):
     """Toggle favorite status for an archive."""
+    user, can_modify_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_modify_all)
 
     archive.is_favorite = not archive.is_favorite
     await db.commit()
@@ -2206,13 +2257,17 @@ async def get_timelapse(
 async def delete_timelapse(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_DELETE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_DELETE_ALL,
+            Permission.ARCHIVES_DELETE_OWN,
+        )
+    ),
 ):
     """Remove the timelapse video from an archive."""
+    user, can_modify_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_modify_all)
 
     if not archive.timelapse_path:
         raise HTTPException(404, "No timelapse attached to this archive")
@@ -2232,34 +2287,41 @@ async def delete_timelapse(
 @router.post("/{archive_id}/timelapse/scan")
 async def scan_timelapse(
     archive_id: int,
-    db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
     """Scan printer for timelapse matching this archive and attach it."""
+    from backend.app.core.database import async_session
     from backend.app.models.printer import Printer
     from backend.app.services.bambu_ftp import (
+        delete_archived_timelapse,
         download_file_bytes_async,
         get_ftp_retry_settings,
         list_files_async,
+        remote_file_settled,
         with_ftp_retry,
     )
 
-    service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    # Read the archive + printer in a short session and release the pooled DB
+    # connection BEFORE the FTP scan/download below — a timelapse pull walks
+    # several directories and fetches a 100MB+ video, so holding Depends(get_db)
+    # across it pinned one connection idle-in-transaction for minutes (#2572).
+    # Scalar columns stay readable on the detached rows (expire_on_commit=False);
+    # the attach at the end runs in its own fresh short session.
+    async with async_session() as db:
+        archive = await ArchiveService(db).get_archive(archive_id)
+        if not archive:
+            raise HTTPException(404, "Archive not found")
 
-    if archive.timelapse_path:
-        return {"status": "exists", "message": "Timelapse already attached"}
+        if archive.timelapse_path:
+            return {"status": "exists", "message": "Timelapse already attached"}
 
-    if not archive.printer_id:
-        raise HTTPException(400, "Archive has no associated printer")
+        if not archive.printer_id:
+            raise HTTPException(400, "Archive has no associated printer")
 
-    # Get printer
-    result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+        result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
+        printer = result.scalar_one_or_none()
+        if not printer:
+            raise HTTPException(404, "Printer not found")
 
     # Get base name from archive filename (without .3mf extension)
     base_name = Path(archive.filename).stem
@@ -2285,18 +2347,48 @@ async def scan_timelapse(
         f for f in files if not f.get("is_directory") and f.get("name", "").lower().endswith((".mp4", ".avi"))
     ]
 
+    # Strategy 0: snapshot diff against the baseline captured at print start
+    # (#2704). This is the same comparison the automatic scan makes, and the
+    # only one here that doesn't depend on the printer's clock — a printer in
+    # LAN-only mode can't reach Bambu's NTP server, so the timestamps in both
+    # the filename and the FTP mtime can be days out. One reporter's P1S was
+    # six and a half days off, which defeats every strategy below.
+    #
+    # When a baseline exists it is authoritative and the clock-based strategies
+    # are skipped entirely: they can only turn an honest "pick one yourself"
+    # into a confident wrong answer. Those strategies stay for archives created
+    # before the baseline was persisted.
+    used_baseline = archive.timelapse_baseline is not None
+    if used_baseline:
+        baseline = set(archive.timelapse_baseline)
+        async with async_session() as db:
+            claimed = await _claimed_timelapse_stems(db, archive.printer_id, archive_id)
+        candidates = [
+            f for f in video_files if f.get("name", "") not in baseline and Path(f.get("name", "")).stem not in claimed
+        ]
+        if len(candidates) == 1:
+            matching_file = candidates[0]
+            logger.info("Matched timelapse by print-start baseline: %s", matching_file.get("name"))
+        elif candidates:
+            # Ambiguous — offer only the plausible files instead of guessing.
+            video_files = candidates
+            logger.info("Baseline left %s unclaimed candidates for archive %s", len(candidates), archive_id)
+        else:
+            logger.info("Baseline shows no unclaimed new video on the printer for archive %s", archive_id)
+
     # Strategy 1: Match by print name in filename
-    for f in video_files:
-        fname = f.get("name", "")
-        if base_name.lower() in fname.lower():
-            matching_file = f
-            break
+    if not used_baseline:
+        for f in video_files:
+            fname = f.get("name", "")
+            if base_name.lower() in fname.lower():
+                matching_file = f
+                break
 
     # Strategy 2: Match by timestamp proximity against print START time.
     # Bambu timelapse filename embeds the print start time in printer-local clock.
     # See _match_timelapse_by_timestamp for the offset-search rationale and why we
     # intentionally don't try to match filename against end time here.
-    if not matching_file and archive.started_at:
+    if not used_baseline and not matching_file and archive.started_at:
         candidate, diff = _match_timelapse_by_timestamp(video_files, archive.started_at)
         if candidate is not None:
             matching_file = candidate
@@ -2304,7 +2396,7 @@ async def scan_timelapse(
 
     # Strategy 3: Use file modification time from FTP listing
     # This handles cases where printer's filename timestamp is wrong but file mtime is correct
-    if not matching_file and (archive.started_at or archive.completed_at or archive.created_at):
+    if not used_baseline and not matching_file and (archive.started_at or archive.completed_at or archive.created_at):
         from datetime import datetime, timedelta
 
         _archive_start = archive.started_at
@@ -2332,7 +2424,7 @@ async def scan_timelapse(
 
     # Strategy 4: If only one timelapse exists and archive was recently completed, use it
     # This handles cases where printer clock is wrong or timezone issues exist
-    if not matching_file and len(video_files) == 1:
+    if not used_baseline and not matching_file and len(video_files) == 1:
         from datetime import datetime, timedelta, timezone
 
         archive_completed = archive.completed_at or archive.created_at
@@ -2382,6 +2474,7 @@ async def scan_timelapse(
             remote_path,
             socket_timeout=ftp_timeout,
             printer_model=printer.model,
+            expected_size=matching_file.get("size"),
             max_retries=ftp_retry_count,
             retry_delay=ftp_retry_delay,
             operation_name=f"Download timelapse {matching_file['name']}",
@@ -2393,16 +2486,41 @@ async def scan_timelapse(
             remote_path,
             socket_timeout=ftp_timeout,
             printer_model=printer.model,
+            expected_size=matching_file.get("size"),
         )
 
     if not timelapse_data:
         raise HTTPException(500, "Failed to download timelapse")
 
-    # Attach timelapse to archive
-    success = await service.attach_timelapse(archive_id, timelapse_data, matching_file["name"])
+    # Confirm the printer has finished writing before we commit to this file and
+    # delete the original: matching the listing's size proves we got what it
+    # said, not that the file was complete (#2704).
+    if not await remote_file_settled(
+        printer.ip_address,
+        printer.access_code,
+        remote_path,
+        len(timelapse_data),
+        printer_model=printer.model,
+    ):
+        raise HTTPException(409, "The printer is still writing this video — try again in a moment")
+
+    # Attach in a fresh short session (the read session was released before FTP).
+    async with async_session() as db:
+        success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, matching_file["name"])
 
     if not success:
         raise HTTPException(500, "Failed to attach timelapse")
+
+    # Safe now, and only now: the transfer matched the size the listing reported
+    # and the bytes are committed to the archive (#2704).
+    await delete_archived_timelapse(
+        printer.ip_address,
+        printer.access_code,
+        remote_path,
+        verified=matching_file.get("size") is not None,
+        printer_model=printer.model,
+        printer_name=printer.name,
+    )
 
     return {
         "status": "attached",
@@ -2415,34 +2533,40 @@ async def scan_timelapse(
 async def select_timelapse(
     archive_id: int,
     filename: str = Query(..., description="Timelapse filename to attach"),
-    db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_ALL),
 ):
     """Manually select a timelapse from the printer to attach."""
+    from backend.app.core.database import async_session
     from backend.app.models.printer import Printer
     from backend.app.services.bambu_ftp import (
+        delete_archived_timelapse,
         download_file_bytes_async,
         get_ftp_retry_settings,
         list_files_async,
+        remote_file_settled,
         with_ftp_retry,
     )
 
-    service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    # Read the archive + printer in a short session and release the pooled DB
+    # connection BEFORE the FTP scan/download below (#2572); scalars stay
+    # readable after close (expire_on_commit=False), the attach reopens one.
+    async with async_session() as db:
+        archive = await ArchiveService(db).get_archive(archive_id)
+        if not archive:
+            raise HTTPException(404, "Archive not found")
 
-    if not archive.printer_id:
-        raise HTTPException(400, "Archive has no associated printer")
+        if not archive.printer_id:
+            raise HTTPException(400, "Archive has no associated printer")
 
-    result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
-    printer = result.scalar_one_or_none()
-    if not printer:
-        raise HTTPException(404, "Printer not found")
+        result = await db.execute(select(Printer).where(Printer.id == archive.printer_id))
+        printer = result.scalar_one_or_none()
+        if not printer:
+            raise HTTPException(404, "Printer not found")
 
     # Find the file on the printer
     files = []
     remote_path = None
+    expected_size = None
     for timelapse_dir in ["/timelapse", "/timelapse/video", "/record", "/recording"]:
         try:
             files = await list_files_async(
@@ -2451,6 +2575,7 @@ async def select_timelapse(
             for f in files:
                 if f.get("name") == filename:
                     remote_path = f.get("path") or f"{timelapse_dir}/{filename}"
+                    expected_size = f.get("size")
                     break
             if remote_path:
                 break
@@ -2471,6 +2596,7 @@ async def select_timelapse(
             remote_path,
             socket_timeout=ftp_timeout,
             printer_model=printer.model,
+            expected_size=expected_size,
             max_retries=ftp_retry_count,
             retry_delay=ftp_retry_delay,
             operation_name=f"Download timelapse {filename}",
@@ -2482,14 +2608,40 @@ async def select_timelapse(
             remote_path,
             socket_timeout=ftp_timeout,
             printer_model=printer.model,
+            expected_size=expected_size,
         )
 
     if not timelapse_data:
         raise HTTPException(500, "Failed to download timelapse")
 
-    success = await service.attach_timelapse(archive_id, timelapse_data, filename)
+    # Confirm the printer has finished writing before we commit to this file and
+    # delete the original: matching the listing's size proves we got what it
+    # said, not that the file was complete (#2704).
+    if not await remote_file_settled(
+        printer.ip_address,
+        printer.access_code,
+        remote_path,
+        len(timelapse_data),
+        printer_model=printer.model,
+    ):
+        raise HTTPException(409, "The printer is still writing this video — try again in a moment")
+
+    # Attach in a fresh short session (the read session was released before FTP).
+    async with async_session() as db:
+        success = await ArchiveService(db).attach_timelapse(archive_id, timelapse_data, filename)
     if not success:
         raise HTTPException(500, "Failed to attach timelapse")
+
+    # Safe now, and only now: the transfer matched the size the listing reported
+    # and the bytes are committed to the archive (#2704).
+    await delete_archived_timelapse(
+        printer.ip_address,
+        printer.access_code,
+        remote_path,
+        verified=expected_size is not None,
+        printer_model=printer.model,
+        printer_name=printer.name,
+    )
 
     return {
         "status": "attached",
@@ -2720,13 +2872,17 @@ async def upload_photo(
     archive_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_UPDATE_ALL,
+            Permission.ARCHIVES_UPDATE_OWN,
+        )
+    ),
 ):
     """Upload a photo of the printed result."""
+    user, can_modify_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_modify_all)
 
     if not file.filename or not file.filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
         raise HTTPException(400, "File must be an image (.jpg, .jpeg, .png, .webp)")
@@ -2810,13 +2966,17 @@ async def delete_photo(
     archive_id: int,
     filename: str,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_DELETE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_DELETE_ALL,
+            Permission.ARCHIVES_DELETE_OWN,
+        )
+    ),
 ):
     """Delete a photo."""
+    user, can_modify_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_modify_all)
 
     if not archive.photos or filename not in archive.photos:
         raise HTTPException(404, "Photo not found")
@@ -3269,10 +3429,28 @@ async def get_plate_preview(
 async def upload_archive(
     file: UploadFile = File(...),
     printer_id: int | None = None,
+    prefer_filename_for_name: bool = Query(
+        False,
+        description=(
+            "Name the archive after the uploaded filename instead of the print_name "
+            "embedded in the 3MF's metadata. Off by default, which keeps the embedded "
+            "name. Turn it on when the filename you send is the meaningful one — an "
+            "integration naming files after its own jobs, or a file whose embedded "
+            "title is a stale name from whoever originally sliced it."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_CREATE),
 ):
-    """Manually upload a 3MF file to archive."""
+    """Manually upload a 3MF file to archive.
+
+    prefer_filename_for_name is the same flag the FTP review flow and
+    virtual-printer dispatch already pass to ArchiveService.archive_print —
+    this endpoint just didn't expose it (#1152 follow-up). Those callers derive
+    it from the VP-scoped `virtual_printer_archive_name_source` setting; here it
+    is per-request, because the caller is an API client that knows whether the
+    filename it sent is the meaningful one (#2609).
+    """
     if not file.filename or not file.filename.endswith(".3mf"):
         raise HTTPException(400, "File must be a .3mf file")
 
@@ -3298,6 +3476,7 @@ async def upload_archive(
             printer_id=printer_id,
             source_file=temp_path,
             created_by_id=current_user.id if current_user else None,
+            prefer_filename_for_name=prefer_filename_for_name,
         )
 
         if not archive:
@@ -3313,10 +3492,22 @@ async def upload_archive(
 async def upload_archives_bulk(
     files: list[UploadFile] = File(...),
     printer_id: int | None = None,
+    prefer_filename_for_name: bool = Query(
+        False,
+        description=(
+            "Name each archive after its uploaded filename instead of the print_name "
+            "embedded in the 3MF's metadata. Applies to every file in the batch. Off "
+            "by default, which keeps the embedded name."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_CREATE),
 ):
-    """Bulk upload multiple 3MF files to archive."""
+    """Bulk upload multiple 3MF files to archive.
+
+    prefer_filename_for_name applies to every file in the batch. See
+    upload_archive for the flag's lineage.
+    """
     from backend.app.api.routes.library import validate_print_file_upload
 
     results = []
@@ -3351,6 +3542,7 @@ async def upload_archives_bulk(
                 printer_id=printer_id,
                 source_file=temp_path,
                 created_by_id=current_user.id if current_user else None,
+                prefer_filename_for_name=prefer_filename_for_name,
             )
 
             if archive:
@@ -3414,11 +3606,23 @@ async def get_archive_plates(
     # Printer / process preset names the 3MF was prepared with — used by the
     # SliceModal to default its dropdowns (#1325).
     embedded_presets: dict[str, str | None] = {"printer": None, "process": None}
+    # Process settings the designer changed away from the stock preset (#2622),
+    # offered in the SliceModal for a cross-printer re-slice. Same payload the
+    # library plates endpoint returns — SliceModal reads one shape for both.
+    design_overrides: list[dict] = []
 
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
             namelist = zf.namelist()
             embedded_presets = extract_embedded_presets_from_3mf(zf)
+            if _PROJECT_SETTINGS_PATH in namelist:
+                try:
+                    design_overrides = [
+                        o._asdict()
+                        for o in overrides_from_config(json.loads(zf.read(_PROJECT_SETTINGS_PATH).decode("utf-8")))
+                    ]
+                except (ValueError, OSError, KeyError):
+                    design_overrides = []
 
             # Find all plate gcode files to determine available plates
             gcode_files = [n for n in namelist if n.startswith("Metadata/plate_") and n.endswith(".gcode")]
@@ -3680,6 +3884,7 @@ async def get_archive_plates(
         "has_gcode": has_gcode,
         "embedded_printer": embedded_presets["printer"],
         "embedded_process": embedded_presets["process"],
+        "design_overrides": design_overrides,
     }
 
 
@@ -3732,6 +3937,7 @@ async def _try_preview_slice_filaments(
     """
     from backend.app.api.routes.settings import get_setting
     from backend.app.services.slice_preview import get_preview_filaments
+    from backend.app.services.slicer_api import get_stall_timeout_seconds
 
     preferred = (await get_setting(db, "preferred_slicer")) or "bambu_studio"
     if preferred == "orcaslicer":
@@ -3757,6 +3963,7 @@ async def _try_preview_slice_filaments(
         file_name=file_path.name,
         api_url=api_url,
         request_id=request_id,
+        timeout_seconds=await get_stall_timeout_seconds(db),
     )
 
 
@@ -3765,6 +3972,7 @@ async def get_filament_requirements(
     archive_id: int,
     plate_id: int | None = None,
     request_id: str | None = None,
+    full_slots: bool = False,
     db: AsyncSession = Depends(get_db),
     auth_result: tuple[User | None, bool] = Depends(
         require_ownership_permission(
@@ -3874,6 +4082,14 @@ async def get_filament_requirements(
                                 }
                             )
 
+            # Re-slicing a source that already carries slice_info (#2712).
+            # See library.py for the full rationale: the slice modal's list is
+            # positional, so a source using only slot 4 must still present
+            # four slots or the pick lands on slot 1. The print path keeps the
+            # used-only list it depends on.
+            if full_slots and filaments:
+                filaments = expand_to_project_slots(zf, filaments)
+
             # Unsliced project files: see library.py for full rationale.
             # Return the FULL project_settings.config slot list with a
             # used_in_plate flag derived from the preview slice; the
@@ -3940,8 +4156,12 @@ async def slice_archive(
     )
 
     archive = await db.get(PrintArchive, archive_id)
-    if archive is None:
-        raise HTTPException(status_code=404, detail="Archive not found")
+    # Per-row ownership gate — mirror the archive read routes. LIBRARY_UPLOAD
+    # alone let a READ_OWN caller slice another user's archive by raw id even
+    # though GET on that id returned 404. API-key / auth-disabled callers
+    # (current_user is None) keep can_read_all=True — no per-row identity.
+    can_read_all = current_user is None or current_user.has_permission(Permission.ARCHIVES_READ_ALL.value)
+    archive = _ensure_archive_visible(archive, current_user, can_read_all)
 
     src_relative = archive.source_3mf_path or archive.file_path
     if not src_relative:
@@ -4012,6 +4232,7 @@ async def slice_archive(
         kind="archive",
         source_id=archive.id,
         source_name=archive.print_name or archive.filename or f"archive {archive.id}",
+        owner_id=user_id,
         run=_run,
     )
     return {
@@ -4084,15 +4305,19 @@ async def update_project_page(
     archive_id: int,
     update_data: dict,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_UPDATE_ALL,
+            Permission.ARCHIVES_UPDATE_OWN,
+        )
+    ),
 ):
     """Update project page metadata in the 3MF file."""
     from backend.app.services.archive import ProjectPageParser
 
+    user, can_modify_all = auth_result
     service = ArchiveService(db)
-    archive = await service.get_archive(archive_id)
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(await service.get_archive(archive_id), user, can_modify_all)
 
     file_path = settings.base_dir / archive.file_path
     if not file_path.is_file():
@@ -4202,13 +4427,17 @@ async def upload_source_3mf(
     archive_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_UPDATE_ALL,
+            Permission.ARCHIVES_UPDATE_OWN,
+        )
+    ),
 ):
     """Upload the original source 3MF project file for an archive."""
+    user, can_modify_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_modify_all)
 
     if not file.filename or not file.filename.endswith(".3mf"):
         raise HTTPException(400, "File must be a .3mf file")
@@ -4463,13 +4692,17 @@ async def upload_source_3mf_by_name(
 async def delete_source_3mf(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_DELETE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_DELETE_ALL,
+            Permission.ARCHIVES_DELETE_OWN,
+        )
+    ),
 ):
     """Delete the source 3MF project file from an archive."""
+    user, can_modify_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_modify_all)
 
     if not archive.source_3mf_path:
         raise HTTPException(404, "No source 3MF attached to this archive")
@@ -4496,13 +4729,17 @@ async def upload_f3d(
     archive_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_UPDATE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_UPDATE_ALL,
+            Permission.ARCHIVES_UPDATE_OWN,
+        )
+    ),
 ):
     """Upload a Fusion 360 design file for an archive."""
+    user, can_modify_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_modify_all)
 
     if not file.filename or not file.filename.endswith(".f3d"):
         raise HTTPException(400, "File must be a .f3d file")
@@ -4576,13 +4813,17 @@ async def download_f3d(
 async def delete_f3d(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_DELETE_OWN),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.ARCHIVES_DELETE_ALL,
+            Permission.ARCHIVES_DELETE_OWN,
+        )
+    ),
 ):
     """Delete the Fusion 360 design file from an archive."""
+    user, can_modify_all = auth_result
     result = await db.execute(select(PrintArchive).where(PrintArchive.id == archive_id))
-    archive = result.scalar_one_or_none()
-    if not archive:
-        raise HTTPException(404, "Archive not found")
+    archive = _ensure_archive_visible(result.scalar_one_or_none(), user, can_modify_all)
 
     if not archive.f3d_path:
         raise HTTPException(404, "No F3D file attached to this archive")

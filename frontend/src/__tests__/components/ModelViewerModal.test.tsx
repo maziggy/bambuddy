@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { render } from '../utils';
 import { ModelViewerModal } from '../../components/ModelViewerModal';
+import { setStreamToken } from '../../api/client';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
 
@@ -383,6 +384,33 @@ describe('ModelViewerModal', () => {
         // The selected button should have the green border class
         expect(allPlatesButton).toHaveClass('border-bambu-green');
       });
+    });
+
+    // #2661: plate-thumbnail endpoints are gated behind a camera stream token
+    // (an <img> can't send a Bearer header), so the src must carry ?token=.
+    // Without it the 3D Preview thumbnails 401 while the Slice dialog (which
+    // already appends the token) shows the same file's thumbnails fine.
+    it('appends the camera stream token to plate thumbnail URLs', async () => {
+      setStreamToken('tok-2661');
+      try {
+        render(
+          <ModelViewerModal
+            archiveId={1}
+            title="Test Model"
+            onClose={mockOnClose}
+          />
+        );
+
+        await waitFor(() => {
+          expect(screen.getByText('Plate 1')).toBeInTheDocument();
+        });
+
+        const thumb = screen.getByAltText('Plate 1') as HTMLImageElement;
+        expect(thumb.src).toContain('/api/v1/archives/1/plates/1/thumbnail');
+        expect(thumb.src).toContain('token=tok-2661');
+      } finally {
+        setStreamToken(null);
+      }
     });
 
     it('allows plate selection via click', async () => {

@@ -34,6 +34,10 @@ describe('getCurrencySymbol', () => {
     expect(getCurrencySymbol('BZD')).toBe('BZ$');
   });
 
+  it('returns ₱ for PHP', () => {
+    expect(getCurrencySymbol('PHP')).toBe('₱');
+  });
+
   it('returns the code itself for unknown currencies', () => {
     expect(getCurrencySymbol('XYZ')).toBe('XYZ');
   });
@@ -57,7 +61,15 @@ describe('SUPPORTED_CURRENCIES', () => {
     expect(SUPPORTED_CURRENCIES.find((c) => c.code === 'BZD')).toBeDefined();
   });
 
-  it('has 30 entries', () => {
-    expect(SUPPORTED_CURRENCIES).toHaveLength(30);
+  it('contains IDR', () => {
+    expect(SUPPORTED_CURRENCIES.find((c) => c.code === 'IDR')).toBeDefined();
+  });
+
+  it('contains PHP', () => {
+    expect(SUPPORTED_CURRENCIES.find((c) => c.code === 'PHP')).toEqual({ code: 'PHP', label: 'PHP (₱)' });
+  });
+
+  it('has 32 entries', () => {
+    expect(SUPPORTED_CURRENCIES).toHaveLength(32);
   });
 });

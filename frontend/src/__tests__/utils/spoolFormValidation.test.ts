@@ -93,4 +93,46 @@ describe('validateForm', () => {
       expect(result.errors.material).toBeDefined();
     });
   });
+
+  // #1905: a spool created by quick-add / CSV import / RFID scan has no preset,
+  // brand or subtype. Demanding them on every later edit blocked changes to
+  // unrelated fields, and the forced preset pick then rewrote the spool's
+  // manufacturer. Edit and copy now match what the backend requires: material.
+  describe('edit and copy modes', () => {
+    it('only requires material when editing', () => {
+      const result = validateForm(defaultFormData, false, false, 'edit');
+      expect(result.isValid).toBe(false);
+      expect(result.errors.material).toBeDefined();
+      expect(result.errors.slicer_filament).toBeUndefined();
+      expect(result.errors.brand).toBeUndefined();
+      expect(result.errors.subtype).toBeUndefined();
+    });
+
+    it('passes when editing a spool that only has material', () => {
+      const data = { ...defaultFormData, material: 'ASA' };
+      const result = validateForm(data, false, false, 'edit');
+      expect(result.isValid).toBe(true);
+      expect(Object.keys(result.errors)).toHaveLength(0);
+    });
+
+    it('passes when copying a spool that only has material', () => {
+      const data = { ...defaultFormData, material: 'ASA' };
+      const result = validateForm(data, false, false, 'copy');
+      expect(result.isValid).toBe(true);
+    });
+
+    it('still requires the full details in create mode', () => {
+      const data = { ...defaultFormData, material: 'ASA' };
+      const result = validateForm(data, false, false, 'create');
+      expect(result.isValid).toBe(false);
+      expect(result.errors.slicer_filament).toBeDefined();
+      expect(result.errors.brand).toBeDefined();
+      expect(result.errors.subtype).toBeDefined();
+    });
+
+    it('defaults to create mode when no mode is given', () => {
+      const data = { ...defaultFormData, material: 'ASA' };
+      expect(validateForm(data).isValid).toBe(false);
+    });
+  });
 });

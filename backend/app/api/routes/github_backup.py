@@ -12,6 +12,7 @@ from backend.app.core.permissions import Permission
 from backend.app.models.github_backup import GitHubBackupConfig, GitHubBackupLog
 from backend.app.models.user import User
 from backend.app.schemas.github_backup import (
+    CloudAccountCounts,
     GitHubBackupConfigCreate,
     GitHubBackupConfigResponse,
     GitHubBackupConfigUpdate,
@@ -49,7 +50,21 @@ async def _enforce_private_repo(repo_url: str, token: str, provider: str) -> Non
 
     Used by POST and PATCH /config so a backup configuration can never be
     saved against a public repository.
+
+    The URL is policy-checked first: the Gitea and Forgejo backends derive
+    their API base from this value (``get_api_base``) and then request it with
+    the supplied token, so an unchecked repository_url is an outbound fetch to
+    an operator-supplied host. A self-hosted Gitea on the LAN is the normal
+    case, so the LAN-service tier applies — this only rules out the targets
+    that are wrong under any topology.
     """
+    from backend.app.api.routes._url_safety import assert_safe_lan_service_url
+
+    try:
+        assert_safe_lan_service_url(repo_url, label="Repository URL")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     result = await github_backup_service.test_connection(repo_url, token, provider=provider)
     if not result.get("success"):
         message = result.get("message") or "Connection test failed"
@@ -59,6 +74,39 @@ async def _enforce_private_repo(repo_url: str, token: str, provider: str) -> Non
         raise HTTPException(status_code=400, detail=_UNKNOWN_VISIBILITY_ERROR)
     if is_private is False:
         raise HTTPException(status_code=400, detail=_PUBLIC_REPO_ERROR)
+
+
+async def _count_cloud_accounts(db: AsyncSession) -> tuple[int, int]:
+    """How many Bambu / Orca accounts a backup would collect from.
+
+    Asks the collector itself rather than re-deriving the rule, so the number
+    the UI gates on can't drift from the number the backup actually uses
+    (#2717). Counts only — never who.
+    """
+    try:
+        bambu, orca = await github_backup_service.cloud_accounts(db)
+        return len(bambu), len(orca)
+    except Exception:
+        # A settings page must still render when a credential store is
+        # unreadable; the toggle simply shows as unavailable.
+        logger.warning("Failed to count connected cloud accounts", exc_info=True)
+        return 0, 0
+
+
+@router.get("/cloud-accounts", response_model=CloudAccountCounts)
+async def get_cloud_accounts(
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.GITHUB_BACKUP),
+):
+    """How many cloud accounts the Cloud Profiles category would collect from.
+
+    Its own endpoint rather than a field on ``/config``, because the settings
+    form needs this before any config exists — ``/config`` answers ``null``
+    until the first save, which would leave the toggle disabled during the
+    very setup it's part of.
+    """
+    bambu, orca = await _count_cloud_accounts(db)
+    return CloudAccountCounts(bambu=bambu, orca=orca)
 
 
 def _config_to_response(config: GitHubBackupConfig) -> dict:

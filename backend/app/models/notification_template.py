@@ -86,6 +86,12 @@ DEFAULT_TEMPLATES = [
         "body_template": "{printer}: Objects detected on build plate. Print has been paused. Clear plate and resume.",
     },
     {
+        "event_type": "plate_clear_required",
+        "name": "Plate Clear Required",
+        "title_template": "Plate Clear Required",
+        "body_template": "{printer}: print finished. Confirm the build plate is clear before the queue continues.",
+    },
+    {
         "event_type": "filament_low",
         "name": "Filament Low",
         "title_template": "Filament Low",

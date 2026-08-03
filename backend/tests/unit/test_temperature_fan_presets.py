@@ -9,7 +9,7 @@ from backend.app.schemas.settings import AppSettingsUpdate
 PRESET_FIELDS = [
     ("nozzle_temp_presets", "[120, 220, 260]", 0, 320),
     ("bed_temp_presets", "[55, 75, 90]", 0, 140),
-    ("chamber_temp_presets", "[35, 45, 60]", 0, 60),
+    ("chamber_temp_presets", "[35, 45, 60]", 0, 65),
     ("fan_speed_presets", "[50, 75, 100]", 0, 100),
 ]
 

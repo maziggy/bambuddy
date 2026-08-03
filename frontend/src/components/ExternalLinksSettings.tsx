@@ -337,7 +337,7 @@ export function ExternalLinksSettings() {
                       <button
                         onClick={() => handleDelete(link)}
                         disabled={deleteMutation.isPending}
-                        className="p-2 rounded-lg hover:bg-red-500/20 text-bambu-gray hover:text-red-400 transition-colors disabled:opacity-50"
+                        className="p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-500/20 text-bambu-gray hover:text-red-900 dark:hover:text-red-400 transition-colors disabled:opacity-50"
                         title={t('externalLinks.deleteLink')}
                       >
                         <Trash2 className="w-4 h-4" />

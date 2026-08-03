@@ -66,7 +66,7 @@ type TFunction = (key: string, options?: Record<string, unknown>) => string;
 function StatusBadge({ status, t }: { status: string; t: TFunction }) {
   const colors = {
     active: 'bg-bambu-green/20 text-bambu-green',
-    completed: 'bg-blue-500/20 text-blue-400',
+    completed: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400',
     archived: 'bg-bambu-gray/20 text-bambu-gray',
   };
   const color = colors[status as keyof typeof colors] || colors.active;
@@ -172,9 +172,9 @@ function ArchiveGrid({ archives, t }: { archives: Archive[]; t: TFunction }) {
 function PriorityBadge({ priority, t }: { priority: string; t: TFunction }) {
   const config = {
     low: { color: 'bg-gray-500/20 text-gray-400', label: t('projectDetail.priority.low') },
-    normal: { color: 'bg-blue-500/20 text-blue-400', label: t('projectDetail.priority.normal') },
-    high: { color: 'bg-orange-500/20 text-orange-400', label: t('projectDetail.priority.high') },
-    urgent: { color: 'bg-red-500/20 text-red-400', label: t('projectDetail.priority.urgent') },
+    normal: { color: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400', label: t('projectDetail.priority.normal') },
+    high: { color: 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400', label: t('projectDetail.priority.high') },
+    urgent: { color: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400', label: t('projectDetail.priority.urgent') },
   };
   const { color, label } = config[priority as keyof typeof config] || config.normal;
 
@@ -193,9 +193,9 @@ function getDueDateStatus(dateString: string | null, t: TFunction): { color: str
   const now = new Date();
   const diffDays = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-  if (diffDays < 0) return { color: 'text-red-400', label: t('projectDetail.dueDate.overdue') };
-  if (diffDays === 0) return { color: 'text-orange-400', label: t('projectDetail.dueDate.today') };
-  if (diffDays <= 3) return { color: 'text-yellow-400', label: t('projectDetail.dueDate.daysLeft', { count: diffDays }) };
+  if (diffDays < 0) return { color: 'text-red-700 dark:text-red-400', label: t('projectDetail.dueDate.overdue') };
+  if (diffDays === 0) return { color: 'text-orange-700 dark:text-orange-400', label: t('projectDetail.dueDate.today') };
+  if (diffDays <= 3) return { color: 'text-yellow-700 dark:text-yellow-400', label: t('projectDetail.dueDate.daysLeft', { count: diffDays }) };
   return { color: 'text-bambu-gray', label: t('projectDetail.dueDate.daysLeft', { count: diffDays }) };
 }
 
@@ -267,6 +267,29 @@ export function ProjectDetailPage() {
     }
     return map;
   }, [allProjectFiles]);
+
+  // Per-file completed-run counts (#1897); a file absent from the response has 0
+  const { data: fileProgress } = useQuery({
+    queryKey: ['project-file-progress', projectId],
+    queryFn: () => api.getProjectFileProgress(projectId),
+    enabled: projectId > 0,
+  });
+
+  const progressByFileId = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const row of fileProgress ?? []) map.set(row.file_id, row.completed_count);
+    return map;
+  }, [fileProgress]);
+
+  // Complete sets (#1897): the number of finished assemblies — the minimum
+  // completed count across the project's printable files, capped at the target.
+  const completeSets = useMemo(() => {
+    const target = project?.target_sets;
+    if (!target || !allProjectFiles) return null;
+    const printable = allProjectFiles.filter((f) => isSlicedFilename(f.filename));
+    if (printable.length === 0) return null;
+    return Math.min(...printable.map((f) => Math.min(progressByFileId.get(f.id) ?? 0, target)));
+  }, [project?.target_sets, allProjectFiles, progressByFileId]);
 
   const currency = getCurrencySymbol(settings?.currency || 'USD');
   const timeFormat: TimeFormat = settings?.time_format || 'system';
@@ -536,7 +559,7 @@ export function ProjectDetailPage() {
       </div>
 
       {/* Progress bars (if targets set) */}
-      {(project.target_count || project.target_parts_count) && (
+      {(project.target_count || project.target_parts_count || project.target_sets) && (
         <Card>
           <CardContent className="p-4 space-y-4">
             {/* Plates progress */}
@@ -599,6 +622,27 @@ export function ProjectDetailPage() {
                 </div>
               </div>
             )}
+            {/* Complete sets progress (#1897): min per-file completed count */}
+            {project.target_sets ? (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-bambu-gray">{t('projectDetail.progress.setsProgress')}</span>
+                  <span className="text-sm font-medium text-white">
+                    {completeSets ?? 0} / {project.target_sets} {t('projectDetail.progress.sets')}
+                  </span>
+                </div>
+                <div className="h-3 bg-bambu-dark rounded-full overflow-hidden">
+                  <div
+                    className="h-full transition-all duration-500"
+                    style={{
+                      width: `${Math.min(((completeSets ?? 0) / project.target_sets) * 100, 100)}%`,
+                      backgroundColor: (completeSets ?? 0) >= project.target_sets ? '#22c55e' : project.color || '#6b7280',
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-bambu-gray/70 mt-1">{t('projectDetail.progress.setsHint')}</p>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       )}
@@ -627,13 +671,13 @@ export function ProjectDetailPage() {
             icon={Clock}
             label={t('projectDetail.stats.printTime')}
             value={formatDurationFromHours(stats.total_print_time_hours)}
-            color="text-yellow-400"
+            color="text-yellow-600 dark:text-yellow-400"
           />
           <StatCard
             icon={Printer}
             label={t('projectDetail.stats.filamentUsed')}
             value={formatFilament(stats.total_filament_grams)}
-            color="text-purple-400"
+            color="text-purple-600 dark:text-purple-400"
           />
         </div>
       )}
@@ -692,7 +736,7 @@ export function ProjectDetailPage() {
                     <p className="text-sm text-bambu-gray">
                       {t('projectDetail.cost.total')}: <span className="text-white font-semibold">{currency}{project.budget.toFixed(2)}</span>
                     </p>
-                    <p className={`text-sm ${remaining >= 0 ? 'text-bambu-green' : 'text-red-400'}`}>
+                    <p className={`text-sm ${remaining >= 0 ? 'text-bambu-green' : 'text-red-700 dark:text-red-400'}`}>
                       {t('projectDetail.cost.remaining')}: <span className="font-semibold">{currency}{remaining.toFixed(2)}</span>
                     </p>
                   </div>
@@ -727,7 +771,7 @@ export function ProjectDetailPage() {
                     <span className={`text-xs px-2 py-0.5 rounded ${
                       child.status === 'completed' ? 'bg-status-ok/20 text-status-ok' :
                       child.status === 'archived' ? 'bg-bambu-gray/20 text-bambu-gray' :
-                      'bg-blue-500/20 text-blue-400'
+                      'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
                     }`}>
                       {child.status}
                     </span>
@@ -946,12 +990,47 @@ export function ProjectDetailPage() {
                                 </p>
                                 <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
                                   file.file_type === '3mf' ? 'bg-bambu-green/20 text-bambu-green'
-                                  : (file.file_type === 'gcode' || file.file_type === 'gcode.3mf') ? 'bg-blue-500/20 text-blue-400'
+                                  : (file.file_type === 'gcode' || file.file_type === 'gcode.3mf') ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
                                   : 'bg-bambu-gray/20 text-bambu-gray'
                                 }`}>
                                   {file.file_type.toUpperCase()}
                                 </span>
                               </div>
+
+                              {/* Per-file print progress (#1897) */}
+                              {printable && (() => {
+                                const done = progressByFileId.get(file.id) ?? 0;
+                                const target = project.target_sets;
+                                if (!target) {
+                                  // No copies-per-file target — show a plain printed-count badge
+                                  return done > 0 ? (
+                                    <span
+                                      className="shrink-0 text-xs px-1.5 py-0.5 rounded-full bg-bambu-dark text-bambu-gray"
+                                      title={t('projectDetail.files.printedCount', { count: done })}
+                                    >
+                                      {done}×
+                                    </span>
+                                  ) : null;
+                                }
+                                const pct = Math.min((done / target) * 100, 100);
+                                const textColor =
+                                  done >= target ? 'text-status-ok' : done > 0 ? 'text-status-warning' : 'text-bambu-gray';
+                                const barColor =
+                                  done >= target ? 'bg-status-ok' : done > 0 ? 'bg-status-warning' : 'bg-bambu-gray';
+                                return (
+                                  <div
+                                    className="shrink-0 w-20"
+                                    title={t('projectDetail.files.progressTooltip', { done, target })}
+                                  >
+                                    <p className={`text-xs font-medium text-right ${textColor}`}>
+                                      {done} / {target}
+                                    </p>
+                                    <div className="h-1 bg-bambu-dark rounded-full overflow-hidden mt-1">
+                                      <div className={`h-full ${barColor}`} style={{ width: `${pct}%` }} />
+                                    </div>
+                                  </div>
+                                );
+                              })()}
 
                               {/* Print actions for sliced files */}
                               {printable && (
@@ -1221,7 +1300,7 @@ export function ProjectDetailPage() {
                             href={item.sourcing_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-1 mt-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                            className="flex items-center gap-1 mt-1 text-xs text-blue-700 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 transition-colors"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <ExternalLink className="w-3 h-3 shrink-0" />
@@ -1286,7 +1365,7 @@ export function ProjectDetailPage() {
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
                     event.event_type === 'print_completed' ? 'bg-status-ok/20 text-status-ok' :
                     event.event_type === 'print_failed' ? 'bg-status-error/20 text-status-error' :
-                    event.event_type === 'print_started' ? 'bg-yellow-500/20 text-yellow-400' :
+                    event.event_type === 'print_started' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400' :
                     'bg-bambu-dark-tertiary text-bambu-gray'
                   }`}>
                     {event.event_type === 'print_completed' && <CheckCircle className="w-4 h-4" />}
@@ -1351,7 +1430,7 @@ export function ProjectDetailPage() {
             </div>
             <div className="flex items-center gap-4 text-sm">
               {stats.in_progress_prints > 0 && (
-                <span className="text-yellow-400">
+                <span className="text-yellow-700 dark:text-yellow-400">
                   {t('projectDetail.queue.printing', { count: stats.in_progress_prints })}
                 </span>
               )}

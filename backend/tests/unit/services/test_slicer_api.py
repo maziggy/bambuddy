@@ -226,9 +226,11 @@ class TestSliceWithProfiles:
 
         def handler(request: httpx.Request) -> httpx.Response:
             captured["body"] = request.content
+            # export_3mf=True → the response body must be a valid 3MF zip, or the
+            # #2671 output validation rejects it. This test is about the request.
             return httpx.Response(
                 status_code=200,
-                content=b"3MF-BYTES",
+                content=_valid_3mf_zip(),
                 headers={"x-print-time-seconds": "0", "x-filament-used-g": "0", "x-filament-used-mm": "0"},
             )
 
@@ -308,6 +310,115 @@ class TestSliceWithProfiles:
         assert b'name="arrange"' not in captured["body"]
 
     @pytest.mark.asyncio
+    async def test_orient_true_emits_form_field(self):
+        """#2548: user-requested auto-orient reaches the sidecar as its own
+        form field, which it turns into ``--orient 1``."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = request.content
+            return httpx.Response(
+                status_code=200,
+                content=b"3MF",
+                headers={"x-print-time-seconds": "0", "x-filament-used-g": "0", "x-filament-used-mm": "0"},
+            )
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        await service.slice_with_profiles(
+            model_bytes=b"x",
+            model_filename="Cube.3mf",
+            printer_profile_json="{}",
+            process_profile_json="{}",
+            filament_profile_jsons=["{}"],
+            orient=True,
+        )
+
+        assert b'name="orient"' in captured["body"]
+
+    @pytest.mark.asyncio
+    async def test_orient_false_omits_form_field(self):
+        """An off flag must be expressed by ABSENCE, never by sending
+        "false". The sidecar branches on ``settings.orient !== undefined``
+        and multipart fields arrive as strings — and ``"false"`` is truthy
+        in JavaScript, so sending it would switch auto-orient ON for every
+        user who left the box unticked."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = request.content
+            return httpx.Response(
+                status_code=200,
+                content=b"3MF",
+                headers={"x-print-time-seconds": "0", "x-filament-used-g": "0", "x-filament-used-mm": "0"},
+            )
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        await service.slice_with_profiles(
+            model_bytes=b"x",
+            model_filename="Cube.3mf",
+            printer_profile_json="{}",
+            process_profile_json="{}",
+            filament_profile_jsons=["{}"],
+            orient=False,
+        )
+
+        body = captured["body"]
+        assert b'name="orient"' not in body
+        assert b"false" not in body
+
+    @pytest.mark.asyncio
+    async def test_profileless_slice_forwards_both_layout_flags(self):
+        """The embedded-settings path and the segfault fallback both run
+        through ``slice_without_profiles``. Arrange / orient are CLI actions
+        on the geometry rather than profile values, so a user's per-slice
+        choice has to survive those routes too (#2548) — before this they
+        could not be expressed there at all."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = request.content
+            return httpx.Response(
+                status_code=200,
+                content=b"3MF",
+                headers={"x-print-time-seconds": "0", "x-filament-used-g": "0", "x-filament-used-mm": "0"},
+            )
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        await service.slice_without_profiles(
+            model_bytes=b"x",
+            model_filename="Cube.3mf",
+            arrange=True,
+            orient=True,
+        )
+
+        body = captured["body"]
+        assert b'name="arrange"' in body
+        assert b'name="orient"' in body
+
+    @pytest.mark.asyncio
+    async def test_profileless_slice_defaults_omit_layout_flags(self):
+        """The filament-discovery preview also uses this method and passes
+        neither flag — it must keep sending the pre-#2548 payload, since
+        rearranging objects would not change which slots a plate consumes
+        but would burn the arrange pass on every preview."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = request.content
+            return httpx.Response(
+                status_code=200,
+                content=b"3MF",
+                headers={"x-print-time-seconds": "0", "x-filament-used-g": "0", "x-filament-used-mm": "0"},
+            )
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        await service.slice_without_profiles(model_bytes=b"x", model_filename="Cube.3mf")
+
+        body = captured["body"]
+        assert b'name="arrange"' not in body
+        assert b'name="orient"' not in body
+
+    @pytest.mark.asyncio
     async def test_multi_filament_sends_one_part_per_profile(self):
         # Multi-color slicing requires N filament profiles, in plate-slot
         # order, sent as N repeated multipart `filamentProfile` parts (NOT a
@@ -360,6 +471,104 @@ class TestSliceWithProfiles:
         assert result.print_time_seconds == 0
         assert result.filament_used_g == 0.0
         assert result.filament_used_mm == 0.0
+
+
+def _valid_3mf_zip() -> bytes:
+    """Minimal-but-valid ZIP so is_zipfile() accepts it as a 3MF container."""
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("[Content_Types].xml", "<Types/>")
+        zf.writestr("Metadata/plate_1.gcode", "; G-CODE\nG28\n")
+    return buf.getvalue()
+
+
+class TestSliceOutputValidation:
+    """#2671: a 200 with a non-3MF body must not be persisted as a slice."""
+
+    _SLICE_KW = {
+        "model_bytes": b"solid Cube\n",
+        "model_filename": "Cube.stl",
+        "printer_profile_json": "{}",
+        "process_profile_json": "{}",
+        "filament_profile_jsons": ["{}"],
+    }
+
+    @pytest.mark.asyncio
+    async def test_413_gives_actionable_reverse_proxy_message(self):
+        # A 413 is a proxy/CDN body-size cap, not the slicer — the message must
+        # point at the right layer so the user stops editing the wrong one.
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(status_code=413, content=b"<html>413 Request Entity Too Large</html>")
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        with pytest.raises(SlicerInputError) as exc_info:
+            await service.slice_with_profiles(export_3mf=True, **self._SLICE_KW)
+        msg = str(exc_info.value)
+        assert "413" in msg
+        assert "client_max_body_size" in msg
+        assert "proxy" in msg.lower()
+
+    @pytest.mark.asyncio
+    async def test_export_3mf_rejects_non_zip_200_body(self):
+        # The exact failure from #2671: sidecar/proxy returns 200 with a tiny
+        # garbage body; Bambuddy must NOT accept it as a sliced 3MF.
+        body = b'{"detail":"Not Found"}xxxxxx'  # 28 bytes, not a zip
+        assert len(body) == 28
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(status_code=200, content=body)
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        with pytest.raises(SlicerApiServerError) as exc_info:
+            await service.slice_with_profiles(export_3mf=True, **self._SLICE_KW)
+        msg = str(exc_info.value)
+        assert "not a valid" in msg.lower()
+        assert "28 bytes" in msg
+
+    @pytest.mark.asyncio
+    async def test_export_3mf_accepts_valid_zip_body(self):
+        zip_bytes = _valid_3mf_zip()
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                status_code=200,
+                content=zip_bytes,
+                headers={"x-print-time-seconds": "656"},
+            )
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        result = await service.slice_with_profiles(export_3mf=True, **self._SLICE_KW)
+        assert result.content == zip_bytes
+        assert result.print_time_seconds == 656
+
+    @pytest.mark.asyncio
+    async def test_raw_gcode_body_not_zip_validated(self):
+        # export_3mf defaults False (preview / raw-gcode callers): the body is
+        # legitimately not a zip, so the validation must NOT fire.
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(status_code=200, content=b"; G-CODE\nG28\n")
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        result = await service.slice_with_profiles(**self._SLICE_KW)
+        assert result.content == b"; G-CODE\nG28\n"
+
+    @pytest.mark.asyncio
+    async def test_without_profiles_also_rejects_non_zip_200_body(self):
+        # The validation lives in the shared response handler, so the
+        # embedded-settings path (slice_without_profiles) is covered too.
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(status_code=200, content=b"nope")
+
+        service = SlicerApiService("http://sidecar:3000", client=_mock_client(handler))
+        with pytest.raises(SlicerApiServerError):
+            await service.slice_without_profiles(
+                model_bytes=b"solid Cube\n",
+                model_filename="Cube.stl",
+                export_3mf=True,
+            )
 
 
 class TestHealth:

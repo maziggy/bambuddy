@@ -136,7 +136,7 @@ export function NotificationTemplateEditor({ template, onClose }: NotificationTe
         {/* Content */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-4">
           {error && (
-            <div className="p-3 bg-red-500/20 border border-red-500/50 rounded text-red-400 text-sm">
+            <div className="p-3 bg-red-100 dark:bg-red-500/20 border border-red-300 dark:border-red-500/50 rounded text-red-700 dark:text-red-400 text-sm">
               {error}
             </div>
           )}
@@ -245,7 +245,7 @@ export function NotificationTemplateEditor({ template, onClose }: NotificationTe
             variant="ghost"
             onClick={() => resetMutation.mutate()}
             disabled={resetMutation.isPending}
-            className="text-orange-400 hover:text-orange-300"
+            className="text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300"
           >
             {resetMutation.isPending ? (
               <Loader2 className="w-4 h-4 animate-spin mr-2" />

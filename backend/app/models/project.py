@@ -30,6 +30,9 @@ class Project(Base):
     target_parts_count: Mapped[int | None] = mapped_column(
         Integer, nullable=True
     )  # Optional target number of parts/objects
+    # Optional copies-per-file target (#1897): every printable file in the
+    # project's linked folders should be printed this many times ("sets").
+    target_sets: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Phase 2: Rich text notes (HTML from WYSIWYG editor)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

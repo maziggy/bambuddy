@@ -12,7 +12,7 @@ interface CameraDiagnoseModalProps {
 
 function StageIcon({ status }: { status: CameraDiagnoseStage['status'] }) {
   if (status === 'ok') return <CheckCircle2 className="w-5 h-5 text-bambu-green flex-shrink-0" />;
-  if (status === 'failed') return <XCircle className="w-5 h-5 text-red-400 flex-shrink-0" />;
+  if (status === 'failed') return <XCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />;
   return <MinusCircle className="w-5 h-5 text-bambu-gray flex-shrink-0" />;
 }
 
@@ -77,7 +77,7 @@ export function CameraDiagnoseModal({ printerId, printerName, onClose }: CameraD
           )}
 
           {diagnose.isError && (
-            <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-300">
+            <div className="rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-300">
               {t('camera.diagnose.runFailed', { error: (diagnose.error as Error).message })}
             </div>
           )}
@@ -112,7 +112,7 @@ export function CameraDiagnoseModal({ printerId, printerName, onClose }: CameraD
                 className={
                   result.overall_status === 'ok'
                     ? 'rounded-lg bg-bambu-green/10 border border-bambu-green/30 px-4 py-3 text-sm text-bambu-green'
-                    : 'rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-300'
+                    : 'rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-300'
                 }
               >
                 {t(`camera.diagnose.summary.${result.summary_code}`, {

@@ -38,6 +38,21 @@ export interface PlateMetadata {
 interface EmbeddedPresets {
   embedded_printer?: string | null;
   embedded_process?: string | null;
+  // Process settings the designer changed away from the stock preset, read
+  // from the 3MF's own `different_settings_to_system` (#2622). Offered in the
+  // SliceModal so a re-slice for another printer can carry them instead of
+  // losing them to the picked process profile. Empty for STL, OrcaSlicer
+  // files, and older exports that predate the field.
+  design_overrides?: DesignOverride[];
+}
+
+// One process setting the designer deviated on. `printer_coupled` marks the
+// values that only make sense on the machine they were tuned for (speeds,
+// accelerations, prime-tower geometry) — offered, but never pre-selected.
+export interface DesignOverride {
+  key: string;
+  value: unknown;
+  printer_coupled: boolean;
 }
 
 export interface ArchivePlatesResponse extends EmbeddedPresets {

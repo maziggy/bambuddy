@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session
 from backend.app.models.library import LibraryFile
+from backend.app.models.print_queue import PrintQueueVariant
 from backend.app.models.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -351,6 +352,7 @@ class LibraryTrashService:
         for row in rows:
             self._unlink_on_disk(row)
             deleted += 1
+        await delete_dependent_variants(db, [r.id for r in rows])
         # Single DELETE is faster than N await db.delete() round-trips; we
         # still need the Python loop above to unlink bytes on disk.
         await db.execute(delete(LibraryFile).where(LibraryFile.id.in_([r.id for r in rows])))
@@ -383,8 +385,25 @@ class LibraryTrashService:
     async def hard_delete_now(self, db: AsyncSession, file: LibraryFile) -> None:
         """Bypass retention and delete this trashed file + its bytes immediately."""
         self._unlink_on_disk(file)
+        await delete_dependent_variants(db, [file.id])
         await db.delete(file)
         await db.commit()
+
+
+async def delete_dependent_variants(db: AsyncSession, file_ids: list[int]) -> None:
+    """Drop cross-model queue candidates that pointed at these files (#671).
+
+    SQLite ships with ``PRAGMA foreign_keys`` off — verified, not assumed — so
+    the ON DELETE CASCADE on ``print_queue_variants.library_file_id`` never fires
+    on the default deployment and the rows would outlive the file.
+
+    The scheduler already refuses to dispatch a candidate whose file is missing
+    or trashed, so nothing prints wrongly without this. It is here so the table
+    does not fill with rows referencing files that no longer exist.
+    """
+    if not file_ids:
+        return
+    await db.execute(delete(PrintQueueVariant).where(PrintQueueVariant.library_file_id.in_(file_ids)))
 
 
 library_trash_service = LibraryTrashService()

@@ -192,7 +192,7 @@ export function VirtualPrinterSettings() {
               <h2 className="text-lg font-semibold text-white">{t('virtualPrinter.title')}</h2>
             </div>
             {status && (
-              <div className={`flex items-center gap-2 text-sm ${isRunning ? 'text-green-400' : 'text-bambu-gray'}`}>
+              <div className={`flex items-center gap-2 text-sm ${isRunning ? 'text-green-700 dark:text-green-400' : 'text-bambu-gray'}`}>
                 <span className={`w-2 h-2 rounded-full ${isRunning ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`} />
                 {isRunning ? t('virtualPrinter.running') : t('virtualPrinter.stopped')}
               </div>
@@ -272,12 +272,12 @@ export function VirtualPrinterSettings() {
               <div className="text-white font-medium mb-2">{t('virtualPrinter.accessCode.title')}</div>
               <div className="text-sm text-bambu-gray mb-3">
                 {settings?.access_code_set ? (
-                  <span className="flex items-center gap-1 text-green-400">
+                  <span className="flex items-center gap-1 text-green-700 dark:text-green-400">
                     <Check className="w-4 h-4" />
                     {t('virtualPrinter.accessCode.isSet')}
                   </span>
                 ) : (
-                  <span className="flex items-center gap-1 text-yellow-400">
+                  <span className="flex items-center gap-1 text-yellow-700 dark:text-yellow-400">
                     <AlertTriangle className="w-4 h-4" />
                     {t('virtualPrinter.accessCode.notSet')}
                   </span>
@@ -311,7 +311,7 @@ export function VirtualPrinterSettings() {
               <p className="text-xs text-bambu-gray mt-2">
                 {t('virtualPrinter.accessCode.hint')}
                 {localAccessCode && (
-                  <span className={localAccessCode.length === 8 ? 'text-green-400' : 'text-yellow-400'}>
+                  <span className={localAccessCode.length === 8 ? 'text-green-700 dark:text-green-400' : 'text-yellow-700 dark:text-yellow-400'}>
                     {' '}{t('virtualPrinter.accessCode.charCount', { count: localAccessCode.length })}
                   </span>
                 )}
@@ -325,12 +325,12 @@ export function VirtualPrinterSettings() {
               <div className="text-white font-medium mb-2">{t('virtualPrinter.targetPrinter.title')}</div>
               <div className="text-sm text-bambu-gray mb-3">
                 {localTargetPrinterId ? (
-                  <span className="flex items-center gap-1 text-green-400">
+                  <span className="flex items-center gap-1 text-green-700 dark:text-green-400">
                     <Check className="w-4 h-4" />
                     {t('virtualPrinter.targetPrinter.configured')}
                   </span>
                 ) : (
-                  <span className="flex items-center gap-1 text-yellow-400">
+                  <span className="flex items-center gap-1 text-yellow-700 dark:text-yellow-400">
                     <AlertTriangle className="w-4 h-4" />
                     {t('virtualPrinter.targetPrinter.notConfigured')}
                   </span>
@@ -361,7 +361,7 @@ export function VirtualPrinterSettings() {
                 {t('virtualPrinter.targetPrinter.hint')}
               </p>
               {!printers?.length && (
-                <p className="text-xs text-yellow-400 mt-2">
+                <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-2">
                   <AlertTriangle className="w-3 h-3 inline mr-1" />
                   {t('virtualPrinter.targetPrinter.noPrinters')}
                 </p>
@@ -375,7 +375,7 @@ export function VirtualPrinterSettings() {
               <div className="text-white font-medium mb-2">{t('virtualPrinter.remoteInterface.title')}</div>
               <div className="text-sm text-bambu-gray mb-3">
                 {localRemoteInterfaceIp ? (
-                  <span className="flex items-center gap-1 text-green-400">
+                  <span className="flex items-center gap-1 text-green-700 dark:text-green-400">
                     <Check className="w-4 h-4" />
                     {t('virtualPrinter.remoteInterface.configured')}
                   </span>
@@ -487,7 +487,7 @@ export function VirtualPrinterSettings() {
                   href="https://wiki.bambuddy.cool/features/virtual-printer/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-yellow-500/20 border border-yellow-500/50 rounded-md text-yellow-400 hover:bg-yellow-500/30 transition-colors"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-500/50 rounded-md text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 transition-colors"
                 >
                   <ExternalLink className="w-4 h-4" />
                   {t('virtualPrinter.setupRequired.readGuide')}
@@ -501,7 +501,7 @@ export function VirtualPrinterSettings() {
         <Card>
           <CardContent className="py-4">
             <div className="flex items-start gap-3">
-              <Info className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+              <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-bambu-gray">
                 <p className="mb-2">
                   <strong className="text-white">{localMode === 'proxy' ? t('virtualPrinter.howItWorks.titleProxy') : t('virtualPrinter.howItWorks.title')}:</strong>

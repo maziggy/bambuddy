@@ -28,6 +28,7 @@
 services:
   orca-slicer-api:
     image: ghcr.io/maziggy/orca-slicer-api:${SIDECAR_TAG:-latest}
+    platform: linux/amd64
     container_name: orca-slicer-api
     restart: unless-stopped
     ports:
@@ -46,6 +47,7 @@ services:
 
   bambu-studio-api:
     image: ghcr.io/maziggy/bambu-studio-api:${SIDECAR_TAG:-latest}
+    platform: linux/amd64
     container_name: bambu-studio-api
     restart: unless-stopped
     ports:

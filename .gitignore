@@ -41,6 +41,9 @@ firmware/
 # Virtual printer (auto-generated certs and uploads at repo root)
 /virtual_printer/
 
+# Runtime certificates (auto-generated locally, contain private key material)
+/certs/
+
 # IDE
 .idea/
 .vscode/

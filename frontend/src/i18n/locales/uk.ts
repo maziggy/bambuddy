@@ -679,6 +679,7 @@ export default {
       targetSummary: "{{filament}} при {{temp}}°C",
       notSupported: "Сушіння не підтримується",
       powerRequired: "Підключіть адаптер живлення AMS, щоб увімкнути сушіння",
+      cannotDryNow: "AMS зараз не може почати сушіння",
       startingDrying: "Запуск сушіння…",
       toastCommandSent: "Надіслано команду сушіння",
       toastStopped: "Сушіння зупинено",
@@ -687,6 +688,15 @@ export default {
       stoppingDrying: "Припинення сушіння...",
       rotateTray: "Обертати котушку під час сушіння",
       rotateUnavailableReason: "Недоступно: філамент із цього слота AMS завантажено в інструментальну головку. Котушка заблокована подавальною трубкою й не може обертатися. Спочатку вивантажте філамент.",
+      startMode: "Час початку",
+      modeNow: "Зараз",
+      modeDelay: "Після затримки",
+      modeAtTime: "За часом",
+      schedule: "Запланувати",
+      scheduledFor: "Сушіння заплановано на {{time}}",
+      scheduledAsap: "Сушіння заплановано (очікування принтера)",
+      cancelScheduled: "Скасувати заплановане сушіння",
+      scheduleFailed: "Не вдалося запланувати сушіння",
     },
     // AMS Filament Backup status badge (printer-wide auto-switch to another spool)
     amsBackup: {

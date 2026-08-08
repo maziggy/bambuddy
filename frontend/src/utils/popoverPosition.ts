@@ -1,6 +1,20 @@
 export interface PopoverPosition {
   top: number;
   left: number;
+  /** Which side of the trigger the popover landed on. */
+  placement: 'below' | 'above';
+  /**
+   * Viewport y of the popover edge facing the trigger: the top edge for
+   * 'below' (equals `top`), the bottom edge for 'above'. Anchoring an
+   * 'above' popover by this edge (CSS `bottom`) lets late-appearing content
+   * grow it upward, keeping it glued to the trigger.
+   */
+  anchorY: number;
+  /**
+   * X-offset within the popover for an anchor arrow pointing at the
+   * trigger's center, clamped inside the popover's rounded corners.
+   */
+  arrowLeft: number;
 }
 
 interface RectLike {
@@ -38,10 +52,10 @@ export interface ComputePopoverPositionOpts {
  * Compute fixed-positioning coordinates for a popover anchored to a trigger.
  *
  * Default placement is BELOW the trigger, right-aligned to the trigger. Flips
- * to ABOVE the trigger when below would overflow the viewport (#1447 — the
- * AMS drying popover on the printer card sits at the bottom of the AMS row
- * and was rendering off the bottom of the viewport with the Start button
- * unreachable on smaller screens).
+ * to ABOVE the trigger when below would overflow the viewport and above fits
+ * (#1447: the AMS drying popover on the printer card sits at the bottom of
+ * the AMS row and was rendering off the bottom of the viewport with the Start
+ * button unreachable on smaller screens).
  *
  * Horizontal axis right-aligns to triggerRect.right and clamps to the
  * viewport with the configured margin so a trigger near the right edge
@@ -72,15 +86,19 @@ export function computePopoverPosition(opts: ComputePopoverPositionOpts): Popove
 
   // Vertical: prefer below, flip to above only when below overflows AND
   // above would actually fit. If neither fits (a popover taller than the
-  // viewport), stay below — at least the top of the popover is visible
-  // and the user can scroll inside it, which is better than flipping to a
-  // top-clipped position where the action buttons might also be unreachable.
+  // viewport), stay below: at least the top of the popover is visible and
+  // the user can scroll to the rest, which beats flipping to a top-clipped
+  // position where the action buttons might also be unreachable (#1447,
+  // #1458, #1669). Callers that cap their own height still rely on this;
+  // IndicatorControlPopover sets no maxHeight at all.
   let top = triggerRect.bottom + gap;
+  let placement: PopoverPosition['placement'] = 'below';
   const wouldOverflowBottom = top + estimatedHeight > viewportHeight - margin;
   if (wouldOverflowBottom) {
     const aboveTop = triggerRect.top - gap - estimatedHeight;
     if (aboveTop >= margin) {
       top = aboveTop;
+      placement = 'above';
     }
   }
 
@@ -95,5 +113,9 @@ export function computePopoverPosition(opts: ComputePopoverPositionOpts): Popove
     left = Math.max(margin, viewportWidth - popoverWidth - margin);
   }
 
-  return { top, left };
+  const anchorY = placement === 'above' ? triggerRect.top - gap : top;
+  // Keep the arrow clear of the popover's rounded corners.
+  const arrowLeft = Math.max(14, Math.min(popoverWidth - 14, triggerCenter - left));
+
+  return { top, left, placement, anchorY, arrowLeft };
 }

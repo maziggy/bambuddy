@@ -55,6 +55,12 @@ class TestDefaultGroups:
         viewers = DEFAULT_GROUPS["Viewers"]
         assert "printers:clear_plate" not in viewers["permissions"]
 
+    def test_only_administrators_are_system_group(self):
+        """Operators and Viewers are default groups, but should stay editable."""
+        assert DEFAULT_GROUPS["Administrators"]["is_system"] is True
+        assert DEFAULT_GROUPS["Operators"]["is_system"] is False
+        assert DEFAULT_GROUPS["Viewers"]["is_system"] is False
+
 
 class TestPermissionCategoriesCompleteness:
     """Test that all enum permissions appear in exactly one category."""

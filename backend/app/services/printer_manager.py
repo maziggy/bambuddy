@@ -280,8 +280,8 @@ def display_temperatures(temperatures: dict | None, model: str | None) -> dict[s
     return out
 
 
-def uniform_tray_drying_hint(loaded_trays: list[tuple[str, object]]) -> tuple[str | None, int | None]:
-    """Guess an active cycle's filament + target temperature from the loaded trays.
+def uniform_tray_filament_hint(loaded_types: list[str]) -> str | None:
+    """Guess an active cycle's filament from the loaded trays.
 
     Bambu never echoes back which filament or temperature a drying cycle is
     running, so the badge normally reads the target we cached when we sent the
@@ -291,30 +291,31 @@ def uniform_tray_drying_hint(loaded_trays: list[tuple[str, object]]) -> tuple[st
     It answers only when every loaded tray holds the same filament type. On a
     mixed unit the first tray is evidence of nothing: an AMS holding two PETG
     and two PLA spools, drying PLA at the 45°C the user picked, was labelled
-    "PETG @ 65°C" purely because slot 1 happened to be PETG (#2759). Saying
-    nothing and letting the badge show just the countdown beats stating a
-    temperature the cycle isn't using.
+    "PETG @ 65°C" purely because slot 1 happened to be PETG (#2759).
+
+    Deliberately no temperature. The RFID-recommended ``drying_temp`` used to be
+    returned alongside a uniform filament, which narrowed #2759 to units whose
+    spools disagree but left the uniform case stating a temperature just as
+    invented: a unit loaded entirely with PLA, drying at the 45°C the user
+    picked, read "PLA @ 55°C" the moment the cached target went missing. The
+    filament type is real evidence — every spool in the unit agrees on it, and
+    the dryer heats all of them — but the temperature is a free choice in the
+    popover, so a recommendation is never evidence of what is running. The badge
+    shows the filament and the countdown, and names a temperature only when we
+    actually sent it.
 
     Args:
-        loaded_trays: ``(tray_type, drying_temp)`` for each tray, in slot order.
-            Empty slots (falsy tray_type) are ignored. ``drying_temp`` is the
-            RFID-recommended value and may be None or unparseable.
+        loaded_types: ``tray_type`` for each tray, in slot order. Empty slots
+            (falsy) are ignored.
 
     Returns:
-        ``(filament, temp)``, either of which may be None.
+        The shared filament type, or None if the loaded trays disagree or the
+        unit is empty.
     """
-    types = {str(tray_type) for tray_type, _ in loaded_trays if tray_type}
+    types = {str(tray_type) for tray_type in loaded_types if tray_type}
     if len(types) != 1:
-        return None, None
-    filament = next(iter(types))
-    for tray_type, drying_temp in loaded_trays:
-        if not tray_type or not drying_temp:
-            continue
-        try:
-            return filament, int(drying_temp)
-        except (TypeError, ValueError):
-            continue
-    return filament, None
+        return None
+    return next(iter(types))
 
 
 def supports_drying(model: str | None, firmware: str | None) -> bool:
@@ -1333,8 +1334,9 @@ def printer_state_to_dict(
             # per-tick AMS push, so prefer the cached target from the last
             # ``send_drying_command``. When we have no record (drying
             # started in a previous backend lifetime, or the cache was
-            # never seeded), fall back to the loaded trays — but only when
-            # they agree on a filament type. See uniform_tray_drying_hint.
+            # never seeded), the loaded trays can still name the filament
+            # if they agree — but never the temperature, which only the
+            # cache knows. See uniform_tray_filament_hint.
             ams_id_int = int(ams_data.get("id", 0))
             target = (drying_targets or {}).get(ams_id_int)
             dry_target_temp: int | None = None
@@ -1349,14 +1351,8 @@ def printer_state_to_dict(
                         dry_target_temp = None
                 if fil_val:
                     dry_filament = str(fil_val)
-            if dry_target_temp is None or not dry_filament:
-                hint_filament, hint_temp = uniform_tray_drying_hint(
-                    [(tray.get("tray_type") or "", tray.get("drying_temp")) for tray in trays]
-                )
-                if not dry_filament:
-                    dry_filament = hint_filament
-                if dry_target_temp is None:
-                    dry_target_temp = hint_temp
+            if not dry_filament:
+                dry_filament = uniform_tray_filament_hint([tray.get("tray_type") or "" for tray in trays])
 
             ams_units.append(
                 {

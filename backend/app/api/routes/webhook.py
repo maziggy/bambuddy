@@ -115,6 +115,10 @@ async def webhook_add_to_queue(
         scheduled_time=scheduled_time,
         require_previous_success=data.require_previous_success,
         auto_off_after=data.auto_off_after,
+        # Attribute to the key's owner so the item shows up under `queue:read_own`
+        # for the person whose key it is. Legacy keys predating per-user ownership
+        # have no `user_id`, and those rows stay ownerless.
+        created_by_id=api_key.user_id,
     )
     db.add(queue_item)
     await db.flush()

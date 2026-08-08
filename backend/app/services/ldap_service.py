@@ -14,6 +14,7 @@ import logging
 from dataclasses import dataclass
 
 from ldap3 import ALL, SUBTREE, Connection, Server, Tls
+from ldap3.core.exceptions import LDAPObjectClassError
 
 logger = logging.getLogger(__name__)
 
@@ -155,31 +156,54 @@ def _extract_user_info(
 
     canonical_username = _pick_canonical_username(user_entry, fallback_username)
 
-    # Also search for POSIX groups (memberUid-based) using the service account
-    posix_filter = f"(&(objectClass=posixGroup)(memberUid={_ldap_escape(canonical_username)}))"
-    service_conn.search(
-        search_base=config.search_base,
-        search_filter=posix_filter,
-        search_scope=SUBTREE,
-        attributes=["cn"],
-    )
-    for entry in service_conn.entries:
-        groups.append(str(entry.entry_dn))
-
-    # POSIX primary group: user's gidNumber matches a posixGroup's gidNumber.
-    # Standard Unix semantics treat this as full group membership, so we need
-    # to resolve it to a group DN alongside the memberUid results.
-    if hasattr(user_entry, "gidNumber") and user_entry.gidNumber:
-        primary_gid = str(user_entry.gidNumber)
-        primary_filter = f"(&(objectClass=posixGroup)(gidNumber={_ldap_escape(primary_gid)}))"
+    # Also search for POSIX groups, both the memberUid kind and the primary
+    # gidNumber kind. Both filters name the posixGroup object class, and ldap3
+    # validates that name against the schema it fetched at connect time
+    # (get_info=ALL) before it builds the request — so on a directory that
+    # publishes a schema without posixGroup it raises client-side and nothing is
+    # ever sent. A directory with no posixGroup class has no posixGroup entries,
+    # which is exactly the answer the searches would have returned, so the
+    # correct response is to carry on with the memberOf groups collected above.
+    #
+    # Left uncaught, that exception escaped authenticate_ldap_user, and the login
+    # route reports any LDAP error as "Incorrect username or password" — so an
+    # lldap user, whose accounts carry posixAccount but whose directory defines
+    # no group classes beyond groupOfNames, could never log in and had nothing
+    # but a wrong-password message to go on (#2769). This predates the primary
+    # gidNumber lookup: the memberUid filter has named the class since #794.
+    try:
+        posix_filter = f"(&(objectClass=posixGroup)(memberUid={_ldap_escape(canonical_username)}))"
         service_conn.search(
             search_base=config.search_base,
-            search_filter=primary_filter,
+            search_filter=posix_filter,
             search_scope=SUBTREE,
             attributes=["cn"],
         )
         for entry in service_conn.entries:
             groups.append(str(entry.entry_dn))
+
+        # POSIX primary group: user's gidNumber matches a posixGroup's gidNumber.
+        # Standard Unix semantics treat this as full group membership, so we need
+        # to resolve it to a group DN alongside the memberUid results.
+        if hasattr(user_entry, "gidNumber") and user_entry.gidNumber:
+            primary_gid = str(user_entry.gidNumber)
+            primary_filter = f"(&(objectClass=posixGroup)(gidNumber={_ldap_escape(primary_gid)}))"
+            service_conn.search(
+                search_base=config.search_base,
+                search_filter=primary_filter,
+                search_scope=SUBTREE,
+                attributes=["cn"],
+            )
+            for entry in service_conn.entries:
+                groups.append(str(entry.entry_dn))
+    except LDAPObjectClassError:
+        # Logged once per authentication, at info: it is the explanation for a
+        # user's POSIX groups being absent from their mapping, and it is not an
+        # error the operator can or should act on.
+        logger.info(
+            "Directory publishes no posixGroup object class; skipping POSIX group lookup "
+            "(memberOf groups are unaffected)"
+        )
 
     # Dedupe group DNs (user may be in a group via both memberUid and primary gidNumber).
     # Case-insensitive comparison — LDAP DNs are case-insensitive by spec.

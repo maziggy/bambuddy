@@ -119,10 +119,17 @@ def ftp_client_factory(ftp_server):
 
 @pytest.fixture(autouse=True)
 def clear_ftp_mode_cache():
-    """Clear BambuFTPClient mode cache before and after each test."""
+    """Clear BambuFTPClient's per-printer caches before and after each test.
+
+    Both are class-level dicts keyed by IP, and every test here talks to
+    127.0.0.1 — a handshake cool-off left behind by one test would make the
+    next one's ``connect()`` return False without touching the server (#2780).
+    """
     BambuFTPClient._mode_cache.clear()
+    BambuFTPClient._handshake_blocked_until.clear()
     yield
     BambuFTPClient._mode_cache.clear()
+    BambuFTPClient._handshake_blocked_until.clear()
 
 
 @pytest.fixture()

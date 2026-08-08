@@ -142,3 +142,49 @@ async def test_scan_timelapse_attaches_and_persists_via_fresh_session(
     assert archive.timelapse_path.endswith("test_print.gcode.mp4")
     # And the bytes actually landed on disk under the staged archive dir.
     assert (archive_dir / "test_print.gcode.mp4").read_bytes() == video_bytes
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_scan_timelapse_reports_a_wedged_file_service_as_503(
+    async_client: AsyncClient, archive_factory, printer_factory, db_session
+):
+    """A printer that cannot negotiate TLS is named as such, not as a 500.
+
+    #2780's reporter triggered this scan to reproduce their problem and got
+    HTTP 500 with "Failed to connect to printer or no timelapse directory
+    found" — one message for two unrelated causes, neither of which pointed at
+    the printer's file service being wedged.
+    """
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, filename="test_print.gcode.3mf")
+
+    with (
+        patch("backend.app.services.bambu_ftp.ftps_handshake_blocked", return_value=True),
+        patch("backend.app.services.bambu_ftp.list_files_async", AsyncMock(return_value=[])) as mock_list,
+    ):
+        response = await async_client.post(f"/api/v1/archives/{archive.id}/timelapse/scan")
+
+    assert response.status_code == 503, response.text
+    assert "TLS" in response.json()["detail"]
+    # And we did not walk all four candidate directories to find that out.
+    mock_list.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_scan_timelapse_reports_a_missing_directory_as_404(
+    async_client: AsyncClient, archive_factory, printer_factory, db_session
+):
+    """A reachable printer with no timelapse directory is a 404, not a 500."""
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, filename="test_print.gcode.3mf")
+
+    with (
+        patch("backend.app.services.bambu_ftp.ftps_handshake_blocked", return_value=False),
+        patch("backend.app.services.bambu_ftp.list_files_async", AsyncMock(return_value=[])),
+    ):
+        response = await async_client.post(f"/api/v1/archives/{archive.id}/timelapse/scan")
+
+    assert response.status_code == 404, response.text
+    assert "timelapse" in response.json()["detail"].lower()

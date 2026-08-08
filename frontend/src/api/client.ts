@@ -908,12 +908,21 @@ export interface ProjectStats {
   bom_cost: number;
 }
 
+// A sub-project as listed on its parent's page. The figures cover the child's
+// own subtree, so the listed rows add up to the parent's roll-up minus the
+// parent's own prints (#1264).
 export interface ProjectChildPreview {
   id: number;
   name: string;
   color: string | null;
   status: string;
   progress_percent: number | null;
+  descendant_count: number;
+  total_archives: number;
+  completed_prints: number;
+  total_print_time_hours: number;
+  total_filament_grams: number;
+  total_cost: number;  // Filament + energy + BOM, matching the parent's cost card
 }
 
 export interface Project {
@@ -936,9 +945,13 @@ export interface Project {
   parent_id: number | null;
   parent_name: string | null;
   children: ProjectChildPreview[];
+  descendant_count: number;  // Sub-projects at any depth beneath this one (#1264)
   created_at: string;
   updated_at: string;
   stats?: ProjectStats;
+  // This project's numbers combined with every sub-project's. Null when there
+  // are none, since it would only repeat `stats` (#1264).
+  rollup_stats?: ProjectStats | null;
   url: string | null;  // External link rendered next to project name on the card (#1155)
   cover_image_filename: string | null;  // Filename within project attachments dir (#1155)
 }
@@ -985,6 +998,8 @@ export interface ProjectListItem {
   failed_count: number;  // Sum of quantities for failed prints
   queue_count: number;
   progress_percent: number | null;  // Plates progress
+  parent_id: number | null;  // #1264 — set when this is a sub-project
+  child_count: number;  // #1264 — direct sub-projects only
   archives: ArchivePreview[];
   url: string | null;  // #1155
   cover_image_filename: string | null;  // #1155
@@ -1389,6 +1404,12 @@ export interface CloudLoginResponse {
   message: string;
   verification_type?: 'email' | 'totp' | null;
   tfa_key?: string | null;
+  /**
+   * Machine-readable cause of a failure. 'captcha' means Bambu's anti-abuse
+   * layer is challenging this network and no credential will be accepted until
+   * it clears — the UI must explain that in place rather than toast `message`.
+   */
+  reason?: 'captcha' | string | null;
 }
 
 // Orca Cloud types — paste-flow PKCE handshake against auth.orcaslicer.com.
@@ -2170,6 +2191,75 @@ export interface HATestConnectionResult {
   error: string | null;
 }
 
+// A Home Assistant entity bound to a printer for display on its card (#1148, #448).
+// Read-only: unlike a SmartPlug there is nothing here to switch.
+export interface PrinterHASensor {
+  id: number;
+  printer_id: number;
+  name: string;
+  entity_id: string;
+  kind: 'binary' | 'numeric';
+  device_class: string | null;  // HA's own class: "door", "temperature", ...
+  unit: string | null;  // numeric sensors only
+  // What counts as needing attention. Binary sensors use alert_state, numeric
+  // ones the thresholds; all null means the sensor is display-only.
+  alert_state: 'on' | 'off' | null;
+  alert_above: number | null;
+  alert_below: number | null;
+  block_print: boolean;  // hold the printer's queue while alerting
+  notify_on_alert: boolean;
+  show_on_printer_card: boolean;
+  sort_order: number;
+  last_state: string | null;
+  last_changed: string | null;
+  last_checked: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PrinterHASensorReading {
+  id: number;
+  name: string;
+  entity_id: string;
+  kind: 'binary' | 'numeric';
+  device_class: string | null;
+  unit: string | null;
+  state: string | null;  // null when unreadable or not yet polled
+  value: number | null;  // numeric sensors only
+  alerting: boolean;
+  block_print: boolean;
+  reachable: boolean;
+  last_changed: string | null;
+}
+
+export interface PrinterHASensorCreate {
+  printer_id: number;
+  name: string;
+  entity_id: string;
+  kind: 'binary' | 'numeric';
+  device_class?: string | null;
+  unit?: string | null;
+  alert_state?: 'on' | 'off' | null;
+  alert_above?: number | null;
+  alert_below?: number | null;
+  block_print?: boolean;
+  notify_on_alert?: boolean;
+  show_on_printer_card?: boolean;
+  sort_order?: number;
+}
+
+export type PrinterHASensorUpdate = Partial<Omit<PrinterHASensorCreate, 'printer_id'>>;
+
+// An entity offered by the binding picker.
+export interface HADisplayEntity {
+  entity_id: string;
+  friendly_name: string;
+  state: string | null;
+  domain: string;  // "binary_sensor" | "sensor"
+  device_class: string | null;
+  unit_of_measurement: string | null;
+}
+
 export interface SmartPlugEnergy {
   power: number | null;  // Current watts
   voltage: number | null;  // Volts
@@ -2618,6 +2708,7 @@ export interface NotificationProvider {
   on_plate_clear_required: boolean;
   // Bed cooled
   on_bed_cooled: boolean;
+  on_ha_sensor_alert: boolean;
   // First layer complete
   on_first_layer_complete: boolean;
   // Inventory stock alerts
@@ -2678,6 +2769,7 @@ export interface NotificationProviderCreate {
   on_plate_clear_required?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
+  on_ha_sensor_alert?: boolean;
   // First layer complete
   on_first_layer_complete?: boolean;
   // Inventory stock alerts
@@ -2731,6 +2823,7 @@ export interface NotificationProviderUpdate {
   on_plate_clear_required?: boolean;
   // Bed cooled
   on_bed_cooled?: boolean;
+  on_ha_sensor_alert?: boolean;
   // First layer complete
   on_first_layer_complete?: boolean;
   // Inventory stock alerts
@@ -2823,10 +2916,92 @@ export interface GitHubBackupStatus {
   configured: boolean;
   enabled: boolean;
   is_running: boolean;
+  restore_running: boolean;
   progress: string | null;
   last_backup_at: string | null;
   last_backup_status: string | null;
   next_scheduled_run: string | null;
+}
+
+// Restore from a Git backup (#2656). Cloud profiles are absent deliberately —
+// the backup collector never writes them, so there is nothing to restore.
+export type RestoreCategory = 'kprofiles' | 'settings' | 'spools' | 'archives';
+
+export interface GitHubCommitInfo {
+  sha: string;
+  message: string;
+  author: string;
+  date: string;
+}
+
+export interface GitHubCommitListResponse {
+  success: boolean;
+  message: string;
+  branch: string;
+  commits: GitHubCommitInfo[];
+}
+
+/**
+ * Values the server interpolates into a translated note or preview detail.
+ * Kept to strings and numbers on purpose — anything richer would have to be
+ * formatted server-side and could not be translated.
+ */
+export type GitHubRestoreParams = Record<string, string | number>;
+
+export interface GitHubRestorePreviewCategory {
+  category: RestoreCategory;
+  available: boolean;
+  item_count: number;
+  /** English rendering. Used as i18next's defaultValue, never shown on its own. */
+  detail: string | null;
+  /** Key under backup.restoreFromGit.details, or null when there is no caveat. */
+  detail_code: string | null;
+  detail_params: GitHubRestoreParams;
+}
+
+export interface GitHubRestorePreview {
+  success: boolean;
+  message: string;
+  ref: string;
+  commit: GitHubCommitInfo | null;
+  metadata_version: string | null;
+  categories: GitHubRestorePreviewCategory[];
+}
+
+export interface GitHubRestoreRequest {
+  ref?: string;
+  categories: RestoreCategory[];
+  overwrite_existing?: boolean;
+}
+
+/**
+ * One tally note, as a translation code plus its parameters (#2656).
+ *
+ * Same contract as {@link LocalBackupPathCheck} one card down: the server picks
+ * the code and supplies typed params, and the client renders
+ * ``t(`backup.restoreFromGit.notes.${code}`, { ...params, defaultValue: message })``.
+ * A code the client does not know yet falls back to the English `message`
+ * rather than showing the raw key.
+ */
+export interface GitHubRestoreNote {
+  code: string;
+  params: GitHubRestoreParams;
+  message: string;
+}
+
+export interface GitHubRestoreCategoryResult {
+  restored: number;
+  skipped: number;
+  failed: number;
+  notes: GitHubRestoreNote[];
+}
+
+export interface GitHubRestoreResponse {
+  success: boolean;
+  message: string;
+  log_id: number | null;
+  ref: string | null;
+  results: Record<string, GitHubRestoreCategoryResult>;
 }
 
 export interface LocalBackupStatus {
@@ -5198,6 +5373,22 @@ export const api = {
   getHASensorEntities: () =>
     request<HASensorEntity[]>('/smart-plugs/ha/sensors'),
 
+  // Home Assistant sensors bound to a printer (#1148, #448)
+  getHASensors: (printerId?: number) =>
+    request<PrinterHASensor[]>(`/ha-sensors/${printerId ? `?printer_id=${printerId}` : ''}`),
+  getHASensorReadings: (printerId: number) =>
+    request<PrinterHASensorReading[]>(`/ha-sensors/by-printer/${printerId}/readings`),
+  getBindableHAEntities: (search?: string) => {
+    const params = search ? `?search=${encodeURIComponent(search)}` : '';
+    return request<HADisplayEntity[]>(`/ha-sensors/entities${params}`);
+  },
+  createHASensor: (data: PrinterHASensorCreate) =>
+    request<PrinterHASensor>('/ha-sensors/', { method: 'POST', body: JSON.stringify(data) }),
+  updateHASensor: (id: number, data: PrinterHASensorUpdate) =>
+    request<PrinterHASensor>(`/ha-sensors/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteHASensor: (id: number) =>
+    request<{ message: string }>(`/ha-sensors/${id}`, { method: 'DELETE' }),
+
   // REST smart plug
   testRESTConnection: (url: string, method: string = 'GET', headers?: string | null) =>
     request<{ success: boolean; error: string | null }>('/smart-plugs/rest/test-connection', {
@@ -6686,6 +6877,19 @@ export const api = {
 
   clearGitHubBackupLogs: (keepLast: number = 10) =>
     request<{ deleted: number; message: string }>(`/github-backup/logs?keep_last=${keepLast}`, { method: 'DELETE' }),
+
+  // Restore from a Git backup (#2656)
+  getGitHubBackupCommits: (limit: number = 20) =>
+    request<GitHubCommitListResponse>(`/github-backup/commits?limit=${limit}`),
+
+  getGitHubRestorePreview: (ref: string = 'HEAD') =>
+    request<GitHubRestorePreview>(`/github-backup/restore/preview?ref=${encodeURIComponent(ref)}`),
+
+  restoreFromGitHub: (payload: GitHubRestoreRequest) =>
+    request<GitHubRestoreResponse>('/github-backup/restore', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 
   // Scheduled local backups
   getLocalBackupStatus: () =>

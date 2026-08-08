@@ -59,7 +59,7 @@ class GitHubBackupLog(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(20))  # running/success/failed/skipped
-    trigger: Mapped[str] = mapped_column(String(20))  # manual/scheduled
+    trigger: Mapped[str] = mapped_column(String(20))  # manual/scheduled/restore
 
     commit_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
     files_changed: Mapped[int] = mapped_column(Integer, default=0)

@@ -528,6 +528,7 @@ async def login(
             message=result.get("message", "Unknown error"),
             verification_type=result.get("verification_type"),
             tfa_key=result.get("tfa_key"),
+            reason=result.get("reason"),
         )
     except BambuCloudAuthError as e:
         raise HTTPException(status_code=401, detail=str(e))
@@ -573,6 +574,7 @@ async def verify_code(
             success=result.get("success", False),
             needs_verification=False,
             message=result.get("message", "Unknown error"),
+            reason=result.get("reason"),
         )
     except BambuCloudAuthError as e:
         raise HTTPException(status_code=401, detail=str(e))

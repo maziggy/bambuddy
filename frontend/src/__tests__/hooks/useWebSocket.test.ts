@@ -623,16 +623,23 @@ describe('useWebSocket hook', () => {
 
   /**
    * #2754 (reporter @mic4rd): live updates froze whenever the tab wasn't in
-   * front, and caught up all at once on switching back. The cache writes ran
-   * inside requestAnimationFrame, and a hidden tab gets no rendering
-   * opportunities — so the browser holds queued frame callbacks indefinitely
-   * rather than merely throttling them.
+   * front, and caught up all at once on switching back.
    *
-   * The stub below is what makes these tests meaningful: it hands back a
-   * handle and never invokes the callback, which is what a real hidden tab
-   * does. `document.hidden` is set alongside it to name the scenario, but the
-   * production code doesn't branch on visibility — it simply no longer defers
-   * to a frame. Reintroduce a rAF wrapper on either path and these fail.
+   * Two causes, fixed in two rounds. First the cache writes ran inside a
+   * requestAnimationFrame, and a hidden tab gets no rendering opportunities —
+   * the browser holds queued frame callbacks indefinitely rather than merely
+   * throttling them. The rAF stub below is what makes those tests meaningful:
+   * it hands back a handle and never invokes the callback, which is what a
+   * real hidden tab does.
+   *
+   * Removing the frame callback did not close the report, because the 100ms
+   * coalescing timer was still in the path and a hidden page's timers are
+   * clamped to at best once a second — once a minute past five minutes hidden.
+   * So the writes must not depend on a timer either while hidden, which is
+   * what `writes without waiting on a timer` pins down. Note it deliberately
+   * never advances the clock: a test that advances fake timers cannot tell a
+   * throttled timer from a prompt one, which is exactly why the original tests
+   * kept passing while the reporter's tab stayed frozen.
    */
   describe('hidden tab (#2754)', () => {
     let rafSpy: ReturnType<typeof vi.fn>;
@@ -690,6 +697,49 @@ describe('useWebSocket hook', () => {
       expect(rafSpy).not.toHaveBeenCalled();
     });
 
+    it('writes without waiting on a timer', async () => {
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+
+      renderHook(() => useWebSocket(), { wrapper: createWrapper(queryClient) });
+      const ws = await waitForWs();
+      act(() => ws.open());
+
+      act(() => {
+        ws.simulateMessage({
+          type: 'printer_status',
+          printer_id: 1,
+          data: { state: 'RUNNING', progress: 42 },
+        });
+      });
+
+      // No advanceTimersByTime: a hidden tab's timers are throttled to once a
+      // second at best, so anything the title depends on has to have landed
+      // already. Reintroduce the coalescing timer on this path and the cache
+      // is still empty here.
+      expect(queryClient.getQueryData(['printerStatus', 1])).toMatchObject({
+        state: 'RUNNING',
+        progress: 42,
+      });
+    });
+
+    it('applies the newest value when several arrive before a frame would have run', async () => {
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+
+      renderHook(() => useWebSocket(), { wrapper: createWrapper(queryClient) });
+      const ws = await waitForWs();
+      act(() => ws.open());
+
+      act(() => {
+        ws.simulateMessage({ type: 'printer_status', printer_id: 1, data: { progress: 40 } });
+        ws.simulateMessage({ type: 'printer_status', printer_id: 1, data: { progress: 41 } });
+      });
+
+      // Writing through per message must not resurrect an earlier one: the
+      // pending map is drained on each flush, so a stale entry cannot be
+      // re-applied over the newer value.
+      expect(queryClient.getQueryData(['printerStatus', 1])).toMatchObject({ progress: 41 });
+    });
+
     it('drains queued messages instead of wedging the queue', async () => {
       const { useWebSocket } = await import('../../hooks/useWebSocket');
       const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -712,6 +762,46 @@ describe('useWebSocket hook', () => {
 
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['archives'] });
       expect(rafSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('visible tab still coalesces (#2754)', () => {
+    /**
+     * The counterpart to the hidden-tab block: the write-through is scoped to
+     * a hidden tab on purpose. A visible one is painting, and the 100ms window
+     * is what stops a burst of status messages turning into a render cascade —
+     * so "just always write through" is not the simplification it looks like.
+     */
+    it('defers the write while the tab is visible', async () => {
+      const { useWebSocket } = await import('../../hooks/useWebSocket');
+
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+      });
+      vi.useFakeTimers();
+      try {
+        renderHook(() => useWebSocket(), { wrapper: createWrapper(client) });
+        const ws = await waitForWs();
+        act(() => ws.open());
+
+        act(() => {
+          ws.simulateMessage({
+            type: 'printer_status',
+            printer_id: 1,
+            data: { state: 'RUNNING', progress: 42 },
+          });
+        });
+
+        expect(client.getQueryData(['printerStatus', 1])).toBeUndefined();
+
+        await act(async () => {
+          vi.advanceTimersByTime(200);
+        });
+
+        expect(client.getQueryData(['printerStatus', 1])).toMatchObject({ progress: 42 });
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

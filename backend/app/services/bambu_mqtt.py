@@ -46,6 +46,16 @@ _ACTIVE_PRINT_STATES = frozenset({"PREPARE", "SLICING", "RUNNING", "PAUSE"})
 # are deliberately excluded — those SHOULD end it.
 _ACTIVE_DRY_STATUSES = frozenset({1, 2, 3})  # Checking, Drying, Cooling
 
+# A drying cycle that runs to term ends with its countdown all but exhausted, so
+# the last dry_time we saw before the drop to 0 tells us whether the firmware
+# ended the cycle on schedule or aborted it. More than this many minutes still on
+# the clock means it was cut short, and the firmware's own reason codes are worth
+# capturing at INFO — #2770 aborted a 12-hour cycle 20 minutes in (700 minutes
+# left), and the log said only "drying complete", so the report carried no
+# evidence of why. The margin absorbs a stale last observation between AMS
+# pushes; it is not a judgement about how short "short" is.
+_EARLY_DRY_END_MINUTES = 5
+
 # CONNACK reason codes that mean the printer actively refused our credentials,
 # as opposed to being unreachable or busy. Bambu speaks MQTT 3.1.1, whose
 # single-byte CONNACK return codes paho maps onto the v5 reason-code space:
@@ -750,6 +760,11 @@ class BambuMQTTClient:
         # — only the dry_time countdown — so we cache what we sent to drive
         # the UI badge. Cleared on stop or on the dry_time falling edge to 0.
         self._drying_targets: dict[int, dict[str, object]] = {}
+        # AMS ids we have sent a stop for and not yet seen end. A stop always
+        # ends a cycle far short of its duration, which on the telemetry alone
+        # is indistinguishable from the firmware abandoning it — so the cycle-end
+        # log would otherwise blame the printer for our own decision (#2770).
+        self._drying_stops_sent: set[int] = set()
 
         self.state = PrinterState()
         self._client: mqtt.Client | None = None
@@ -1349,6 +1364,25 @@ class BambuMQTTClient:
 
             # Intercept request-topic messages (print commands from slicer/Bambuddy)
             if msg.topic == self.topic_publish:
+                # Record it before returning. This topic carries every command
+                # travelling *to* the printer, including the ones Bambu Studio
+                # sends, and it used to be the one thing an MQTT capture could
+                # never show -- which is why "what does Studio put in the drying
+                # command?" had no answer from a user's log (#2774). Filed as
+                # "out" so the direction filter groups it with our own commands
+                # rather than with printer telemetry; anything sent through
+                # send_command lands twice, once on publish and once on the
+                # broker's echo, and the pair is itself evidence the command
+                # reached the broker.
+                if self._logging_enabled:
+                    self._message_log.append(
+                        MQTTLogEntry(
+                            timestamp=datetime.now(timezone.utc).isoformat(),
+                            topic=msg.topic,
+                            direction="out",
+                            payload=payload,
+                        )
+                    )
                 self._handle_request_message(payload)
                 return
 
@@ -2819,13 +2853,7 @@ class BambuMQTTClient:
             previous = self._previous_dry_times.get(ams_id, 0)
             self._previous_dry_times[ams_id] = current
             if previous > 0 and current == 0:
-                logger.info(
-                    "[%s] AMS %d drying complete (dry_time %d → 0)",
-                    self.serial_number,
-                    ams_id,
-                    previous,
-                )
-                self._drying_targets.pop(ams_id, None)
+                self._log_drying_cycle_end(ams_id, previous, ams_unit, self._drying_targets.pop(ams_id, None))
                 if self.on_drying_complete:
                     self.on_drying_complete(ams_id)
 
@@ -2864,6 +2892,71 @@ class BambuMQTTClient:
         # it would miss exactly the confirmation we are after.
         if self._pending_assignments:
             self._check_assignment_verifications()
+
+    def _log_drying_cycle_end(
+        self,
+        ams_id: int,
+        remaining: int,
+        ams_unit: dict,
+        target: dict[str, object] | None,
+    ) -> None:
+        """Report a finished drying cycle, with the firmware's reason when it was
+        cut short (#2770).
+
+        A cycle that reaches its configured duration needs no explanation and
+        keeps the one-line "drying complete" it has always had. One that ends
+        with most of its countdown left was ended by somebody, and there are
+        only two candidates: a stop Bambuddy sent — the print-takes-priority
+        stop, or the user's Stop button — which is named as such, or the
+        firmware.
+
+        For the firmware case the only account of why lives in fields we already
+        parse but have never written down: the ``dry_status`` /
+        ``dry_sub_status`` phase from the info hex, the per-unit
+        ``dry_sf_reason`` constraint codes, and whatever HMS errors are live at
+        that moment. Logging them at INFO puts them in every support bundle by
+        default, which is what a report like #2770 needs before its cause can be
+        argued about at all.
+        """
+        if ams_id in self._drying_stops_sent:
+            self._drying_stops_sent.discard(ams_id)
+            logger.info(
+                "[%s] AMS %d drying stopped by Bambuddy (dry_time %d → 0)",
+                self.serial_number,
+                ams_id,
+                remaining,
+            )
+            return
+
+        if remaining <= _EARLY_DRY_END_MINUTES:
+            logger.info(
+                "[%s] AMS %d drying complete (dry_time %d → 0)",
+                self.serial_number,
+                ams_id,
+                remaining,
+            )
+            return
+
+        requested_minutes: int | None = None
+        if target is not None:
+            try:
+                requested_minutes = int(target.get("duration_hours") or 0) * 60 or None
+            except (TypeError, ValueError):
+                requested_minutes = None
+
+        logger.info(
+            "[%s] AMS %d drying ended early — %d of %s minutes still on the clock. "
+            "Bambuddy sent no stop command, so the firmware ended this cycle: "
+            "dry_status=%s dry_sub_status=%s dry_sf_reason=%s hms=%s",
+            self.serial_number,
+            ams_id,
+            remaining,
+            requested_minutes if requested_minutes is not None else "?",
+            ams_unit.get("dry_status"),
+            ams_unit.get("dry_sub_status"),
+            ams_unit.get("dry_sf_reason") or [],
+            [e.full_code for e in self.state.hms_errors] or "none",
+        )
 
     def register_assignment_verification(
         self,
@@ -5492,13 +5585,22 @@ class BambuMQTTClient:
         )
         # Track the active-cycle target so the badge can show "PETG @ 65°C"
         # while drying. Bambu only echoes dry_time on subsequent pushes.
+        # duration_hours is not shown anywhere; it is what lets the cycle-end log
+        # say how much of the requested time the firmware actually ran (#2770).
         if mode == 1:
             self._drying_targets[ams_id] = {
                 "filament": filament or "",
                 "temp": int(temp),
+                "duration_hours": int(duration),
             }
+            self._drying_stops_sent.discard(ams_id)
         else:
             self._drying_targets.pop(ams_id, None)
+            # Remember that this cycle's end is ours, so the cycle-end log
+            # attributes it to Bambuddy instead of to the firmware (#2770). A
+            # stop always ends the cycle far short of its duration, which is
+            # otherwise indistinguishable from the firmware abandoning it.
+            self._drying_stops_sent.add(ams_id)
         return True
 
     @staticmethod

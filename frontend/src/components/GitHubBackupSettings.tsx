@@ -36,10 +36,12 @@ import type {
   CloudAuthStatus,
   Printer,
 } from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent, CardHeader } from './Card';
 import { Button } from './Button';
 import { Toggle } from './Toggle';
 import { ConfirmModal } from './ConfirmModal';
+import { GitHubRestoreModal } from './GitHubRestoreModal';
 import { useToast } from '../contexts/ToastContext';
 import { formatRelativeTime, parseUTCDate } from '../utils/date';
 
@@ -93,6 +95,16 @@ const PROVIDER_TOKEN_PLACEHOLDER: Record<GitProviderType, string> = {
   gitlab: 'glpat-xxxxxxxxxxxx',
 };
 
+// Each provider names its scopes differently, so a single hint could only ever
+// be right for one of them (#2775). Naming the scopes up front is also what
+// keeps a token from being minted more permissive than a backup needs.
+const PROVIDER_TOKEN_HINT_I18N_KEY: Record<GitProviderType, string> = {
+  github: 'backup.tokenHintGitHub',
+  gitea: 'backup.tokenHintGitea',
+  forgejo: 'backup.tokenHintForgejo',
+  gitlab: 'backup.tokenHintGitLab',
+};
+
 interface GitHubBackupAutosaveState {
   repository_url: string;
   branch: string;
@@ -133,6 +145,14 @@ export function GitHubBackupSettings() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { t } = useTranslation();
+  const { hasPermission } = useAuth();
+
+  // All three restore endpoints are gated on GITHUB_RESTORE server-side, so a
+  // user without it gets a 403 the moment the modal opens its preview. Hide the
+  // button rather than offer an action that cannot work. Deliberately scoped to
+  // the button: the card itself stays visible, since backup configuration is a
+  // separate permission. hasPermission returns true when auth is off.
+  const canRestoreFromGit = hasPermission('github:restore');
 
   // Local state for form
   const [repoUrl, setRepoUrl] = useState('');
@@ -157,6 +177,9 @@ export function GitHubBackupSettings() {
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [restoreResult, setRestoreResult] = useState<{ success: boolean; message: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Restore from the Git backup repository (#2656)
+  const [showGitRestore, setShowGitRestore] = useState(false);
 
   // Scheduled local backup state
   const [deleteConfirmFile, setDeleteConfirmFile] = useState<string | null>(null);
@@ -701,7 +724,7 @@ export function GitHubBackupSettings() {
                     className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                   />
                   <p className="text-xs text-bambu-gray mt-1">
-                    {t('backup.tokenHint')}
+                    {t(PROVIDER_TOKEN_HINT_I18N_KEY[provider])}
                   </p>
                 </div>
 
@@ -951,6 +974,18 @@ export function GitHubBackupSettings() {
                           {testLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                           {t('backup.test')}
                         </Button>
+                        {/* Restore from the backup repo (#2656) */}
+                        {canRestoreFromGit && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setShowGitRestore(true)}
+                            disabled={status.restore_running}
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                            {t('backup.restoreFromGit.button')}
+                          </Button>
+                        )}
                       </>
                     )}
                   </>
@@ -1007,6 +1042,7 @@ export function GitHubBackupSettings() {
                   <thead>
                     <tr className="text-bambu-gray border-b border-bambu-dark-tertiary">
                       <th className="text-left py-2 px-2">{t('backup.date')}</th>
+                      <th className="text-left py-2 px-2">{t('backup.trigger')}</th>
                       <th className="text-left py-2 px-2">{t('backup.status')}</th>
                       <th className="text-left py-2 px-2">{t('backup.commit')}</th>
                     </tr>
@@ -1015,6 +1051,12 @@ export function GitHubBackupSettings() {
                     {logs.slice(0, 10).map((log) => (
                       <tr key={log.id} className="border-b border-bambu-dark-tertiary/50 hover:bg-bambu-dark-secondary">
                         <td className="py-2 px-2 text-white">{formatDateTime(log.started_at)}</td>
+                        {/* A restore writes a log row too, and without this it
+                            was indistinguishable from a backup: a successful
+                            run dated now, while Last backup said otherwise. */}
+                        <td className="py-2 px-2 text-bambu-gray">
+                          {t(`backup.triggers.${log.trigger}`, { defaultValue: log.trigger })}
+                        </td>
                         <td className="py-2 px-2"><StatusBadge status={log.status} /></td>
                         <td className="py-2 px-2">
                           {log.commit_sha ? (
@@ -1444,6 +1486,9 @@ export function GitHubBackupSettings() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Restore from the Git backup repository (#2656) */}
+      {showGitRestore && <GitHubRestoreModal onClose={() => setShowGitRestore(false)} />}
 
       {/* Delete Backup Confirmation Modal */}
       {deleteConfirmFile && (

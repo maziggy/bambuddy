@@ -25,7 +25,7 @@ interface CardSectionProps {
 export function Card({ children, className = '', onClick, onContextMenu, ...rest }: CardProps) {
   return (
     <div
-      className={`bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary card-shadow ${className}`}
+      className={`bg-bambu-dark-secondary rounded-xl border border-bambu-dark-tertiary card-shadow ${onClick ? 'cursor-pointer' : ''} ${className}`}
       onClick={onClick}
       onContextMenu={onContextMenu}
       {...rest}

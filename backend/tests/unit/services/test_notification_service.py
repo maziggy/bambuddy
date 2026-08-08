@@ -920,6 +920,64 @@ class TestHomeAssistantProvider:
             assert payload["data"]["ttl"] == 0
 
     @pytest.mark.asyncio
+    async def test_send_homeassistant_custom_data_keeps_nested_structures(self, service):
+        """Nested objects and lists reach the notify service unaltered (#1441).
+
+        The three tests around this one all use flat scalars, which is also all
+        the placeholder and the wiki showed — so a user asking whether action
+        buttons work had nothing telling them the field is a verbatim
+        pass-through rather than a key/value list. ``actions`` is the case they
+        asked about: a list of objects, the shape an HA automation writes under
+        ``data.actions``. Nothing between the textarea and the POST inspects the
+        parsed value beyond "is it an object", so this asserts the whole
+        structure rather than a key at a time.
+        """
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        mock_db = AsyncMock()
+
+        with (
+            patch.object(service, "_get_client", new_callable=AsyncMock) as mock_get_client,
+            patch(
+                "backend.app.api.routes.settings.get_homeassistant_settings",
+                new_callable=AsyncMock,
+            ) as mock_ha_settings,
+        ):
+            mock_get_client.return_value = mock_client
+            mock_ha_settings.return_value = {
+                "ha_url": "http://ha.local:8123",
+                "ha_token": "test-token-123",
+                "ha_enabled": True,
+            }
+
+            actions = [
+                {"action": "SNOOZE_PRINT_FINISHED", "title": "Snooze 20 min"},
+                {"action": "BED_COOL_NOTIFY_ON", "title": "Notify on Bed Cool"},
+            ]
+            config = {
+                "service": "notify.mobile_app_myphone",
+                "data": json.dumps({"ttl": 0, "priority": "high", "group": "3D Printer", "actions": actions}),
+            }
+            success, _ = await service._send_homeassistant(config, "Print Finished", "Print is finished", db=mock_db)
+
+            assert success is True
+            payload = mock_client.post.call_args.kwargs.get("json") or mock_client.post.call_args[1].get("json")
+            assert payload["data"] == {
+                "ttl": 0,
+                "priority": "high",
+                "group": "3D Printer",
+                "actions": actions,
+            }
+            # Spelled out separately: a flattening or scalar-only filter would
+            # still leave the three sibling keys correct, so the equality above
+            # is not on its own evidence that the list survived.
+            assert payload["data"]["actions"] == actions
+
+    @pytest.mark.asyncio
     async def test_send_homeassistant_without_data_omits_key(self, service):
         """Without configured data the payload carries no "data" key — the
         default persistent_notification.create schema rejects unknown keys."""

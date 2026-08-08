@@ -26,6 +26,28 @@
 /* Enable class-based dark mode for Tailwind v4 */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Restore the pointer cursor on interactive controls (#2791).  Tailwind v3's
+   Preflight set `button { cursor: pointer }`; v4 dropped it to match the
+   browser default of `cursor: default`, so every button in the app looked
+   unclickable unless someone remembered to add `cursor-pointer` by hand.
+   Only a handful of the ~930 buttons did, which is why the UI felt
+   inconsistent rather than uniformly wrong.
+
+   This lives in `base`, the lowest of Tailwind's cascade layers, so the
+   `cursor-not-allowed` / `disabled:cursor-*` utilities dotted around the
+   codebase still win.  The `:not(:disabled)` guard covers the elements that
+   are disabled without also carrying such a utility. */
+@layer base {
+  button:not(:disabled),
+  select:not(:disabled),
+  summary,
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+}
+
 @theme {
   /* Accent colors - use CSS variables for theming */
   --color-bambu-green: var(--accent);

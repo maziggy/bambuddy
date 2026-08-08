@@ -5,11 +5,16 @@ drive the localized fix text the user sees when a printer won't connect,
 so a status flip is a user-facing regression — each one is asserted here.
 """
 
+import ssl
 import types
 from contextlib import ExitStack
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from backend.app.services.printer_diagnostic import _same_subnet, run_connection_diagnostic
+from backend.app.services.printer_diagnostic import (
+    _check_ftps_tls,
+    _same_subnet,
+    run_connection_diagnostic,
+)
 
 MOD = "backend.app.services.printer_diagnostic"
 
@@ -20,8 +25,13 @@ def _statuses(result):
 
 
 def _port_probe(overrides=None):
-    """Sync side_effect for _check_port. Defaults: every port reachable."""
-    reachable = {8883: True, 990: True, 322: True, 6000: True}
+    """Sync side_effect for _check_port. Defaults: every port reachable.
+
+    990 is absent: the FTPS check runs a real TLS handshake through
+    ``_check_ftps_tls`` rather than a bare TCP probe, and ``_Env(ftps=...)``
+    drives it.
+    """
+    reachable = {8883: True, 322: True, 6000: True}
     reachable.update(overrides or {})
 
     def _probe(ip, port, timeout=3.0):
@@ -45,6 +55,7 @@ class _Env:
         self,
         *,
         ports=None,
+        ftps="ok",
         in_docker=True,
         network_mode="host",
         host_ip="192.168.1.5",
@@ -54,6 +65,8 @@ class _Env:
         connect_error: str | None = None,
     ):
         self.ports = ports or _port_probe()
+        # What the FTPS probe reports: "ok", "closed" or "no_tls" (#2780).
+        self.ftps = ftps
         self.in_docker = in_docker
         self.network_mode = network_mode
         self.host_ip = host_ip
@@ -84,6 +97,7 @@ class _Env:
             client.last_connect_error = self.connect_error
             manager.get_client.return_value = client
         self._stack.enter_context(patch(f"{MOD}._check_port", new_callable=AsyncMock, side_effect=self.ports))
+        self._stack.enter_context(patch(f"{MOD}._check_ftps_tls", new_callable=AsyncMock, return_value=self.ftps))
         self._stack.enter_context(patch(f"{MOD}.is_running_in_docker", return_value=self.in_docker))
         self._stack.enter_context(patch(f"{MOD}._detect_docker_network_mode", return_value=self.network_mode))
         self._stack.enter_context(patch(f"{MOD}._get_host_ip", return_value=self.host_ip))
@@ -144,13 +158,32 @@ class TestExistingPrinter:
         assert s["mqtt_auth"] == "skip"
 
     async def test_ftps_and_rtsps_only_warn(self):
-        with _Env(ports=_port_probe({990: False, 322: False}), state=_state()):
+        with _Env(ports=_port_probe({322: False}), ftps="closed", state=_state()):
             result = await run_connection_diagnostic("192.168.1.50", printer=_printer())
         s = _statuses(result)
         # No critical failure -> warnings, not problems.
         assert result.overall == "warnings"
         assert s["port_ftps"] == "warn"
         assert s["port_rtsps"] == "warn"
+        # Nothing was listening, so the message stays the generic "unblock the
+        # port" one — no reason variant.
+        ftps_check = next(c for c in result.checks if c.id == "port_ftps")
+        assert ftps_check.params == {}
+
+    async def test_open_port_that_cannot_negotiate_tls_says_so(self):
+        """An open 990 that fails the handshake must not read as healthy.
+
+        #2780's reporter saw port 990 green while every 3MF download died in
+        the TLS handshake, so the archives arrived empty with nothing on
+        screen to explain it. The reason variant selects a message that names
+        a printer restart instead of sending the user to their firewall.
+        """
+        with _Env(ftps="no_tls", state=_state()):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="P2S"))
+        assert _statuses(result)["port_ftps"] == "warn"
+        ftps_check = next(c for c in result.checks if c.id == "port_ftps")
+        assert ftps_check.params == {"reason": "no_tls"}
+        assert result.overall == "warnings"
 
     async def test_a1_mini_uses_chamber_image_camera_port(self):
         # A1/P1-family printers use the chamber-image camera protocol on 6000,
@@ -425,3 +458,63 @@ class TestExternalStorageCheck:
         with _Env(state=_state(store_to_sdcard=True)):
             result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="P1S"))
         assert _statuses(result)["external_storage"] == "pass"
+
+
+class TestFtpsTlsProbe:
+    """The FTPS probe must reach the handshake, not stop at the TCP accept.
+
+    #2780: a printer whose file service stops answering with TLS still
+    accepts the connection on 990, so the old bare TCP probe reported it
+    green while every archive came back empty.
+    """
+
+    async def test_completed_handshake_is_ok(self):
+        writer = MagicMock()
+        writer.wait_closed = AsyncMock()
+        with patch(f"{MOD}.asyncio.open_connection", new_callable=AsyncMock, return_value=(MagicMock(), writer)):
+            assert await _check_ftps_tls("192.168.1.50", "X1C") == "ok"
+        writer.close.assert_called_once()
+
+    async def test_handshake_failure_on_an_open_port_is_no_tls(self):
+        with patch(
+            f"{MOD}.asyncio.open_connection",
+            new_callable=AsyncMock,
+            side_effect=ssl.SSLError("[SSL: WRONG_VERSION_NUMBER] wrong version number"),
+        ):
+            assert await _check_ftps_tls("192.168.1.50", "P2S") == "no_tls"
+
+    async def test_refused_connection_is_closed(self):
+        with patch(f"{MOD}.asyncio.open_connection", new_callable=AsyncMock, side_effect=ConnectionRefusedError):
+            assert await _check_ftps_tls("192.168.1.50", "X1C") == "closed"
+
+    async def test_timeout_is_closed_not_no_tls(self):
+        # A printer that is switched off never gets far enough to say anything
+        # about TLS — that has to stay the generic "port unreachable" advice.
+        with patch(f"{MOD}.asyncio.open_connection", new_callable=AsyncMock, side_effect=TimeoutError):
+            assert await _check_ftps_tls("192.168.1.50", "X1C") == "closed"
+
+    async def test_probe_mirrors_the_model_tls_cap(self):
+        """The probe must negotiate exactly what the FTP client negotiates.
+
+        A P2S is pinned to TLS 1.2 by its ftp_profiles entry; probing it on a
+        context that also offers 1.3 could pass where the real transfer fails
+        (or the reverse), which is the class of false green this check exists
+        to remove.
+        """
+        contexts = []
+
+        async def _capture(host, port, ssl=None):
+            contexts.append(ssl)
+            writer = MagicMock()
+            writer.wait_closed = AsyncMock()
+            return MagicMock(), writer
+
+        with patch(f"{MOD}.asyncio.open_connection", new=_capture):
+            await _check_ftps_tls("192.168.1.50", "P2S")
+            await _check_ftps_tls("192.168.1.50", "X1C")
+
+        capped, uncapped = contexts
+        assert capped.maximum_version == ssl.TLSVersion.TLSv1_2
+        assert capped.minimum_version == ssl.TLSVersion.TLSv1_2
+        assert uncapped.maximum_version != ssl.TLSVersion.TLSv1_2
+        assert uncapped.minimum_version == ssl.TLSVersion.TLSv1_2

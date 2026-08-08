@@ -82,6 +82,9 @@ class NotificationProvider(Base):
     on_ams_ht_humidity_high = Column(Boolean, default=False)  # AMS-HT humidity above threshold
     on_ams_ht_temperature_high = Column(Boolean, default=False)  # AMS-HT temperature above threshold
 
+    # Event triggers - Home Assistant sensors bound to a printer (#1148)
+    on_ha_sensor_alert = Column(Boolean, default=False)  # Bound HA sensor entered its alert state
+
     # Event triggers - Build plate detection
     on_plate_not_empty = Column(Boolean, default=True)  # Objects detected on plate before print
     # Off by default: fires after every print, alongside the print-complete alert (#2525)

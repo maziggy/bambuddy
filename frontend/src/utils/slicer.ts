@@ -29,6 +29,56 @@ export type SlicerType = 'bambu_studio' | 'orcaslicer';
 type Platform = 'windows' | 'macos' | 'linux' | 'unknown';
 
 /**
+ * Resolve the desktop "Open in Slicer" target. Prefers an explicit
+ * `open_in_slicer` override (#1329), then falls back to the API slicer's
+ * `preferred_slicer`, then Bambu Studio. This is ONLY the URI-handoff target;
+ * the in-app SliceModal keeps using `preferred_slicer` for the sidecar.
+ */
+export function resolveDesktopSlicer(
+  openInSlicer?: SlicerType | null,
+  preferredSlicer?: SlicerType,
+): SlicerType {
+  return openInSlicer ?? preferredSlicer ?? 'bambu_studio';
+}
+
+/**
+ * File types a slicer can be handed — both by the desktop URI handler and by
+ * the in-app sidecar. Source geometry only: a sliced file is an output, and
+ * neither slicer has anything to do with one.
+ *
+ * Lives here rather than beside either caller because both the File Manager
+ * (which has a filename) and the 3D preview (which has a `LibraryFile.file_type`)
+ * decide the same thing about the same file. They used to hold separate lists,
+ * and the two disagreed — a card menu offered a desktop handoff for an STL
+ * whose own 3D preview showed "Open in Slicer" greyed out.
+ */
+export const SLICEABLE_FILE_TYPES = ['3mf', 'stl', 'step', 'stp'] as const;
+
+/**
+ * Does a `LibraryFile.file_type` name a sliceable source file?
+ *
+ * The backend stores compound extensions whole — a sliced 3MF classifies as
+ * `gcode.3mf`, not `3mf` (`classify_file_type` in `api/routes/library.py`) — so
+ * membership alone is enough to exclude sliced output here.
+ */
+export function isSliceableFileType(fileType?: string | null): boolean {
+  const normalized = (fileType || '').toLowerCase();
+  return (SLICEABLE_FILE_TYPES as readonly string[]).includes(normalized);
+}
+
+/**
+ * Does a filename name a sliceable source file?
+ *
+ * Checked against the name rather than a stored type, so the compound
+ * extensions have to be ruled out explicitly: `.gcode.3mf` ends with `.3mf`.
+ */
+export function isSliceableFilename(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith('.gcode') || lower.endsWith('.gcode.3mf')) return false;
+  return SLICEABLE_FILE_TYPES.some((ext) => lower.endsWith(`.${ext}`));
+}
+
+/**
  * Detect the user's operating system
  */
 export function detectPlatform(): Platform {

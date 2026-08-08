@@ -33,6 +33,7 @@ from backend.app.api.routes import (
     firmware,
     github_backup,
     groups,
+    ha_sensors,
     inventory,
     kprofiles,
     labels,
@@ -90,12 +91,14 @@ from backend.app.services.bambu_ftp import (
     cache_3mf_download,
     clear_3mf_cache,
     download_file_async,
+    ftps_handshake_blocked,
     get_cached_3mf,
     get_ftp_retry_settings,
     with_ftp_retry,
 )
 from backend.app.services.bambu_mqtt import PrinterState
 from backend.app.services.github_backup import github_backup_service
+from backend.app.services.ha_sensor_manager import ha_sensor_manager
 from backend.app.services.homeassistant import homeassistant_service
 from backend.app.services.library_trash import library_trash_service
 from backend.app.services.local_backup import local_backup_service
@@ -1277,9 +1280,29 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     # Include AMS dry_time and tray state values so drying/slot changes trigger broadcasts
     ams_dry_key = tuple(a.get("dry_time", 0) for a in (state.raw_data.get("ams") or [])) if state.raw_data else ()
     # Include tray states so load/unload transitions (state 11→10) trigger broadcasts (#784)
+    #
+    # The filament identity fields are here because Configure Slot writes
+    # exactly those and nothing else. Re-configuring a slot from PLA to another
+    # brand or colour of PLA leaves id/tray_type/state identical, so the key
+    # matched, this function returned before broadcasting, and the card kept
+    # showing the old filament until the 30s fallback poll or a page reload —
+    # even though the configure route asks the printer for a fresh pushall and
+    # that push does carry the new values. Reset always worked, because it
+    # clears tray_type.
+    #
+    # These fields only change when someone configures a slot or swaps a spool,
+    # so unlike temperature or progress they add no broadcast traffic mid-print.
     ams_tray_key = (
         tuple(
-            (t.get("id"), t.get("tray_type", ""), t.get("state"))
+            (
+                t.get("id"),
+                t.get("tray_type", ""),
+                t.get("state"),
+                t.get("tray_color", ""),
+                t.get("tray_info_idx", ""),
+                t.get("tray_sub_brands", ""),
+                t.get("cali_idx"),
+            )
             for a in (state.raw_data.get("ams") or [])
             for t in a.get("tray", [])
         )
@@ -3131,6 +3154,16 @@ async def on_print_start(printer_id: int, data: dict):
             temp_path.parent.mkdir(parents=True, exist_ok=True)
 
             for remote_path in remote_paths:
+                if ftps_handshake_blocked(printer.ip_address):
+                    # The printer's FTPS service is not completing a TLS
+                    # handshake, so it has no path we could reach — walking the
+                    # remaining candidates only re-runs the same failure
+                    # (#2780). Fall through to the no-3MF archive now.
+                    logger.warning(
+                        "Giving up on the 3MF for printer %s: its file service is not answering over TLS",
+                        printer_id,
+                    )
+                    break
                 logger.debug("Trying FTP download: %s", remote_path)
                 try:
                     if ftp_retry_enabled:
@@ -3172,12 +3205,14 @@ async def on_print_start(printer_id: int, data: dict):
                 except Exception as e:
                     logger.debug("FTP download failed for %s: %s", remote_path, e)
 
-            if downloaded_filename:
+            if downloaded_filename or ftps_handshake_blocked(printer.ip_address):
                 break
 
         # If still not found, try listing directories to find matching file
-        # Different printer models use different directory structures
-        if not downloaded_filename and (filename or subtask_name):
+        # Different printer models use different directory structures. Skipped
+        # when the printer's FTPS handshake is failing — the directory walk is
+        # five more connections that cannot get further than the download did.
+        if not downloaded_filename and (filename or subtask_name) and not ftps_handshake_blocked(printer.ip_address):
             search_term = (subtask_name or filename).lower().replace(".gcode", "").replace(".3mf", "")
             logger.info("Direct FTP download failed, searching directories for '%s'", search_term)
             search_dirs = ["/cache", "/model", "/data", "/data/Metadata", "/"]
@@ -7344,6 +7379,9 @@ async def lifespan(app: FastAPI):
     # Start the smart plug scheduler for time-based on/off
     smart_plug_manager.start_scheduler()
 
+    # Start the Home Assistant sensor poller (#1148)
+    ha_sensor_manager.start()
+
     # Resume any pending auto-offs that were interrupted by restart
     await smart_plug_manager.resume_pending_auto_offs()
 
@@ -7422,6 +7460,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     print_scheduler.stop()
     smart_plug_manager.stop_scheduler()
+    ha_sensor_manager.stop()
     notification_service.stop_digest_scheduler()
     github_backup_service.stop_scheduler()
     local_backup_service.stop_scheduler()
@@ -7922,6 +7961,7 @@ app.include_router(cloud.router, prefix=app_settings.api_prefix)
 app.include_router(orca_cloud.router, prefix=app_settings.api_prefix)
 app.include_router(local_presets.router, prefix=app_settings.api_prefix)
 app.include_router(smart_plugs.router, prefix=app_settings.api_prefix)
+app.include_router(ha_sensors.router, prefix=app_settings.api_prefix)
 app.include_router(print_log.router, prefix=app_settings.api_prefix)
 app.include_router(print_queue.router, prefix=app_settings.api_prefix)
 app.include_router(kprofiles.router, prefix=app_settings.api_prefix)

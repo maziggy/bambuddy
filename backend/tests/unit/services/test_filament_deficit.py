@@ -13,6 +13,7 @@ the contract for the cases that matter:
 from __future__ import annotations
 
 import json
+import logging
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
@@ -63,6 +64,32 @@ async def _setup_archive_3mf(db_session, tmp_path: Path, filaments: list[dict]) 
     return archive
 
 
+async def _setup_library_3mf(db_session, base_dir: Path, filaments: list[dict], *, absolute: bool = False):
+    """Create a 3MF under ``base_dir`` and a LibraryFile row pointing at it.
+
+    Mirrors production storage: the file lands in
+    ``<base_dir>/archive/library/files/`` and the row stores the path
+    *relative* to base_dir, exactly as ``library.py`` writes it (#2779).
+    """
+    from backend.app.models.library import LibraryFile
+
+    rel_path = Path("archive/library/files/deficit_probe.gcode.3mf")
+    abs_path = base_dir / rel_path
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_3mf(abs_path, filaments)
+
+    lib_file = LibraryFile(
+        filename="deficit_probe.gcode.3mf",
+        file_path=str(abs_path) if absolute else str(rel_path),
+        file_type="3mf",
+        file_size=abs_path.stat().st_size,
+    )
+    db_session.add(lib_file)
+    await db_session.commit()
+    await db_session.refresh(lib_file)
+    return lib_file
+
+
 async def _spool(
     db_session,
     *,
@@ -103,10 +130,12 @@ async def _queue_item(
     archive: PrintArchive | None,
     ams_mapping: list[int] | None,
     plate_id: int | None = None,
+    library_file=None,
 ) -> PrintQueueItem:
     item = PrintQueueItem(
         printer_id=printer_id,
         archive_id=archive.id if archive else None,
+        library_file_id=library_file.id if library_file else None,
         ams_mapping=json.dumps(ams_mapping) if ams_mapping is not None else None,
         plate_id=plate_id,
         status="pending",
@@ -225,6 +254,88 @@ class TestFilamentDeficit:
             deficit = await compute_deficit_for_queue_item(db_session, item)
 
         assert deficit == []
+
+    @pytest.mark.asyncio
+    async def test_library_file_with_relative_path_is_checked(self, db_session, printer_factory, tmp_path):
+        """#2779: a Library-backed item stores its path relative to base_dir.
+
+        Resolving it against the process working directory finds nothing, and
+        "no source" is treated as "nothing to verify" — so the check returned
+        no deficit and the scheduler dispatched onto a spool that could not
+        finish the print. Every Slicer Pipeline item and everything queued via
+        the Library's Add to queue is library-backed, so the guard was absent
+        for all of them. Numbers are the reporter's: 20.5 g needed, 9 g left.
+        """
+        printer = await printer_factory()
+        lib_file = await _setup_library_3mf(
+            db_session,
+            tmp_path,
+            [{"id": "1", "type": "PLA", "color": "#FFFFFF", "used_g": "20.5"}],
+        )
+        assert not Path(lib_file.file_path).is_absolute()  # the shape that broke
+
+        spool = await _spool(db_session, label_weight=1000, weight_used=991.0)  # 9g left
+        await _assign(db_session, printer_id=printer.id, spool_id=spool.id, ams_id=0, tray_id=0)
+        item = await _queue_item(
+            db_session, printer_id=printer.id, archive=None, library_file=lib_file, ams_mapping=[0]
+        )
+
+        with patch("backend.app.services.filament_deficit.app_settings.base_dir", tmp_path):
+            deficit = await compute_deficit_for_queue_item(db_session, item)
+
+        assert len(deficit) == 1
+        assert deficit[0].required_grams == 20.5
+        assert deficit[0].remaining_grams == 9.0
+
+    @pytest.mark.asyncio
+    async def test_library_file_with_absolute_path_is_checked(self, db_session, printer_factory, tmp_path):
+        """The other half of the resolver: a row that already holds an absolute
+        path must not be joined onto base_dir a second time."""
+        printer = await printer_factory()
+        lib_file = await _setup_library_3mf(
+            db_session,
+            tmp_path,
+            [{"id": "1", "type": "PLA", "color": "#FFFFFF", "used_g": "100.0"}],
+            absolute=True,
+        )
+        spool = await _spool(db_session, label_weight=1000, weight_used=970.0)  # 30g left
+        await _assign(db_session, printer_id=printer.id, spool_id=spool.id, ams_id=0, tray_id=0)
+        item = await _queue_item(
+            db_session, printer_id=printer.id, archive=None, library_file=lib_file, ams_mapping=[0]
+        )
+
+        # A base_dir the file is NOT under — joining it on would break the path.
+        with patch("backend.app.services.filament_deficit.app_settings.base_dir", tmp_path / "elsewhere"):
+            deficit = await compute_deficit_for_queue_item(db_session, item)
+
+        assert len(deficit) == 1
+        assert deficit[0].required_grams == 100.0
+
+    @pytest.mark.asyncio
+    async def test_missing_source_is_logged_not_just_skipped(self, db_session, printer_factory, caplog):
+        """A source that is configured but absent still dispatches — the upload
+        would fail seconds later anyway, and wedging the queue on a missing
+        file is the worse trade. But it must not pass silently: skipping the
+        check without a trace is what let #2779 go unnoticed for every
+        library-backed item.
+        """
+        printer = await printer_factory()
+        archive = PrintArchive(
+            filename="ghost.3mf",
+            file_path="/nonexistent/ghost.3mf",
+            file_size=0,
+            status="completed",
+        )
+        db_session.add(archive)
+        await db_session.commit()
+        await db_session.refresh(archive)
+        item = await _queue_item(db_session, printer_id=printer.id, archive=archive, ams_mapping=[0])
+
+        with caplog.at_level(logging.WARNING, logger="backend.app.services.filament_deficit"):
+            deficit = await compute_deficit_for_queue_item(db_session, item)
+
+        assert deficit == []
+        assert any("ghost.3mf" in r.getMessage() for r in caplog.records)
 
     @pytest.mark.asyncio
     async def test_returns_empty_when_3mf_missing(self, db_session, printer_factory):

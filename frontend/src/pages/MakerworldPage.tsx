@@ -11,7 +11,7 @@ import {
   type MakerworldRecentImport,
   type MakerworldResolvedModel,
 } from '../api/client';
-import { openInSlicer, type SlicerType } from '../utils/slicer';
+import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 import { Button } from '../components/Button';
 import { Card, CardContent, CardHeader } from '../components/Card';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -185,7 +185,7 @@ export function MakerworldPage() {
   // whichever slicer this button actually drives — depends on useSlicerApi.
   const useSlicerApi = settingsQuery.data?.use_slicer_api ?? false;
   const apiSlicer: SlicerType = settingsQuery.data?.preferred_slicer || 'bambu_studio';
-  const desktopSlicer: SlicerType = settingsQuery.data?.open_in_slicer || apiSlicer;
+  const desktopSlicer: SlicerType = resolveDesktopSlicer(settingsQuery.data?.open_in_slicer, settingsQuery.data?.preferred_slicer);
   const preferredSlicer: SlicerType = useSlicerApi ? apiSlicer : desktopSlicer;
   const preferredSlicerName =
     preferredSlicer === 'orcaslicer' ? 'OrcaSlicer' : 'Bambu Studio';

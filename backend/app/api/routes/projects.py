@@ -4,12 +4,14 @@ import logging
 import os
 import uuid
 import zipfile
+from collections.abc import Sequence
+from dataclasses import dataclass, fields
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -68,10 +70,42 @@ _FAILURE_STATUSES = ("failed", "aborted", "cancelled", "stopped")
 _LIVE_ARCHIVE = PrintArchive.deleted_at.is_(None)
 
 
-async def compute_project_stats(
-    db: AsyncSession, project_id: int, target_count: int | None = None, target_parts_count: int | None = None
-) -> ProjectStats:
-    """Compute statistics for a project.
+@dataclass
+class _ProjectTotals:
+    """Raw per-project aggregates, before targets turn them into percentages.
+
+    Kept addable so a master project's numbers are the plain sum of its own
+    and every descendant's (#1264) — no second set of SQL that could drift
+    from the single-project path.
+    """
+
+    total_runs: int = 0
+    total_items: int = 0
+    completed_items: int = 0
+    failed_runs: int = 0
+    total_time_seconds: float = 0.0
+    total_filament_grams: float = 0.0
+    filament_cost: float = 0.0
+    energy_kwh: float = 0.0
+    energy_cost: float = 0.0
+    queued_prints: int = 0
+    in_progress_prints: int = 0
+    bom_total_items: int = 0
+    bom_completed_items: int = 0
+    bom_cost: float = 0.0
+
+    def __add__(self, other: "_ProjectTotals") -> "_ProjectTotals":
+        return _ProjectTotals(
+            **{f.name: getattr(self, f.name) + getattr(other, f.name) for f in fields(_ProjectTotals)}
+        )
+
+
+async def _load_totals(db: AsyncSession, project_ids: Sequence[int]) -> dict[int, _ProjectTotals]:
+    """Aggregate prints, queue and BOM for several projects at once.
+
+    Grouped rather than one round trip per project because a master project
+    has to aggregate its whole subtree, and the sub-project list shows each
+    branch's own roll-up alongside it (#1264).
 
     Aggregates from ``print_log_entries`` joined to ``print_archives`` so
     every actual run contributes — pre-fix this counted ``print_archives``
@@ -83,31 +117,28 @@ async def compute_project_stats(
     Orphan log entries (``archive_id IS NULL`` after archive deletion via
     ``ON DELETE SET NULL``) are excluded by the inner join — they can't
     be attributed to a project.
+
+    Projects with nothing recorded are absent from every grouped result, so
+    the caller gets a zeroed ``_ProjectTotals`` for them rather than a KeyError.
     """
-    # Per-run aggregates from print_log_entries joined on archive_id so
-    # the WHERE filters by archives.project_id. Each run's duration,
-    # filament, cost, and energy come from the log row, not the source
-    # archive — so multi-plate 3MFs and reprints both count correctly.
-    log_stats_result = await db.execute(
+    totals: dict[int, _ProjectTotals] = {pid: _ProjectTotals() for pid in project_ids}
+    if not totals:
+        return totals
+
+    # Per-run aggregates. Each run's duration, filament, cost, and energy come
+    # from the log row, not the source archive — so multi-plate 3MFs and
+    # reprints both count correctly. The total/completed/failed splits are all
+    # per-run too: quantity is summed per run, while failures are counted as
+    # runs rather than parts.
+    log_rows = await db.execute(
         select(
+            PrintArchive.project_id.label("project_id"),
             func.count(PrintLogEntry.id).label("total_runs"),
             func.coalesce(func.sum(PrintLogEntry.duration_seconds), 0).label("total_time"),
             func.coalesce(func.sum(PrintLogEntry.filament_used_grams), 0).label("total_filament"),
             func.coalesce(func.sum(PrintLogEntry.cost), 0).label("total_filament_cost"),
             func.coalesce(func.sum(PrintLogEntry.energy_kwh), 0).label("total_energy"),
             func.coalesce(func.sum(PrintLogEntry.energy_cost), 0).label("total_energy_cost"),
-        )
-        .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
-        .where(PrintArchive.project_id == project_id, _LIVE_ARCHIVE)
-    )
-    log_stats = log_stats_result.first()
-    total_archives = int(log_stats.total_runs or 0)
-
-    # Total items the project has produced or attempted: sum of quantity
-    # per run (each run contributes its archive's quantity). The total/
-    # completed/failed splits are all per-run, not per-file.
-    items_split_result = await db.execute(
-        select(
             func.coalesce(func.sum(PrintArchive.quantity), 0).label("total_items"),
             func.coalesce(
                 func.sum(case((PrintLogEntry.status == "completed", PrintArchive.quantity), else_=0)),
@@ -119,75 +150,235 @@ async def compute_project_stats(
             ).label("failed_runs"),
         )
         .join(PrintArchive, PrintArchive.id == PrintLogEntry.archive_id)
-        .where(PrintArchive.project_id == project_id, _LIVE_ARCHIVE)
+        .where(PrintArchive.project_id.in_(list(totals)), _LIVE_ARCHIVE)
+        .group_by(PrintArchive.project_id)
     )
-    items_split = items_split_result.first()
-    total_items = int(items_split.total_items or 0)
-    completed_items = int(items_split.completed_items or 0)
-    failed_prints = int(items_split.failed_runs or 0)
+    for row in log_rows:
+        entry = totals[row.project_id]
+        entry.total_runs = int(row.total_runs or 0)
+        entry.total_time_seconds = float(row.total_time or 0)
+        entry.total_filament_grams = float(row.total_filament or 0)
+        entry.filament_cost = float(row.total_filament_cost or 0)
+        entry.energy_kwh = float(row.total_energy or 0)
+        entry.energy_cost = float(row.total_energy_cost or 0)
+        entry.total_items = int(row.total_items or 0)
+        entry.completed_items = int(row.completed_items or 0)
+        entry.failed_runs = int(row.failed_runs or 0)
 
-    # Count queued items
-    queued_result = await db.execute(
-        select(func.count(PrintQueueItem.id)).where(
-            PrintQueueItem.project_id == project_id, PrintQueueItem.status == "pending"
-        )
-    )
-    queued_prints = queued_result.scalar() or 0
-
-    # Count in-progress items
-    in_progress_result = await db.execute(
-        select(func.count(PrintQueueItem.id)).where(
-            PrintQueueItem.project_id == project_id, PrintQueueItem.status == "printing"
-        )
-    )
-    in_progress_prints = in_progress_result.scalar() or 0
-
-    # Calculate progress for plates (target_count vs total_archives)
-    progress_percent = None
-    remaining_prints = None
-    if target_count and target_count > 0:
-        progress_percent = round((total_archives / target_count) * 100, 1)
-        remaining_prints = max(0, target_count - total_archives)
-
-    # Calculate progress for parts (target_parts_count vs completed_items)
-    parts_progress_percent = None
-    remaining_parts = None
-    if target_parts_count and target_parts_count > 0:
-        parts_progress_percent = round((completed_items / target_parts_count) * 100, 1)
-        remaining_parts = max(0, target_parts_count - completed_items)
-
-    # BOM stats
-    bom_result = await db.execute(
+    queue_rows = await db.execute(
         select(
+            PrintQueueItem.project_id.label("project_id"),
+            func.coalesce(func.sum(case((PrintQueueItem.status == "pending", 1), else_=0)), 0).label("queued"),
+            func.coalesce(func.sum(case((PrintQueueItem.status == "printing", 1), else_=0)), 0).label("in_progress"),
+        )
+        .where(PrintQueueItem.project_id.in_(list(totals)))
+        .group_by(PrintQueueItem.project_id)
+    )
+    for row in queue_rows:
+        entry = totals[row.project_id]
+        entry.queued_prints = int(row.queued or 0)
+        entry.in_progress_prints = int(row.in_progress or 0)
+
+    bom_rows = await db.execute(
+        select(
+            ProjectBOMItem.project_id.label("project_id"),
             func.count(ProjectBOMItem.id).label("total"),
             func.sum(case((ProjectBOMItem.quantity_acquired >= ProjectBOMItem.quantity_needed, 1), else_=0)).label(
                 "completed"
             ),
             func.coalesce(func.sum(ProjectBOMItem.unit_price * ProjectBOMItem.quantity_needed), 0).label("bom_cost"),
-        ).where(ProjectBOMItem.project_id == project_id)
+        )
+        .where(ProjectBOMItem.project_id.in_(list(totals)))
+        .group_by(ProjectBOMItem.project_id)
     )
-    bom_stats = bom_result.first()
+    for row in bom_rows:
+        entry = totals[row.project_id]
+        entry.bom_total_items = int(row.total or 0)
+        entry.bom_completed_items = int(row.completed or 0)
+        entry.bom_cost = float(row.bom_cost or 0)
+
+    return totals
+
+
+def _stats_from_totals(
+    totals: _ProjectTotals, target_count: int | None = None, target_parts_count: int | None = None
+) -> ProjectStats:
+    """Turn raw aggregates into the response shape, applying the targets."""
+    # Calculate progress for plates (target_count vs total_archives)
+    progress_percent = None
+    remaining_prints = None
+    if target_count and target_count > 0:
+        progress_percent = round((totals.total_runs / target_count) * 100, 1)
+        remaining_prints = max(0, target_count - totals.total_runs)
+
+    # Calculate progress for parts (target_parts_count vs completed_items)
+    parts_progress_percent = None
+    remaining_parts = None
+    if target_parts_count and target_parts_count > 0:
+        parts_progress_percent = round((totals.completed_items / target_parts_count) * 100, 1)
+        remaining_parts = max(0, target_parts_count - totals.completed_items)
 
     return ProjectStats(
-        total_archives=total_archives,
-        total_items=int(total_items),
-        completed_prints=completed_items,  # Now reflects sum of quantities for completed prints
-        failed_prints=int(failed_prints),
-        queued_prints=queued_prints,
-        in_progress_prints=in_progress_prints,
-        total_print_time_hours=round((log_stats.total_time or 0) / 3600, 2),
-        total_filament_grams=round(log_stats.total_filament or 0, 2),
+        total_archives=totals.total_runs,
+        total_items=totals.total_items,
+        completed_prints=totals.completed_items,  # Sum of quantities for completed prints
+        failed_prints=totals.failed_runs,
+        queued_prints=totals.queued_prints,
+        in_progress_prints=totals.in_progress_prints,
+        total_print_time_hours=round(totals.total_time_seconds / 3600, 2),
+        total_filament_grams=round(totals.total_filament_grams, 2),
         progress_percent=progress_percent,
         parts_progress_percent=parts_progress_percent,
-        estimated_cost=round((log_stats.total_filament_cost or 0), 2),
-        total_energy_kwh=round((log_stats.total_energy or 0), 3),
-        total_energy_cost=round((log_stats.total_energy_cost or 0), 3),
+        estimated_cost=round(totals.filament_cost, 2),
+        total_energy_kwh=round(totals.energy_kwh, 3),
+        total_energy_cost=round(totals.energy_cost, 3),
         remaining_prints=remaining_prints,
         remaining_parts=remaining_parts,
-        bom_total_items=bom_stats.total or 0,
-        bom_completed_items=int(bom_stats.completed or 0),
-        bom_cost=round(float(bom_stats.bom_cost or 0), 2),
+        bom_total_items=totals.bom_total_items,
+        bom_completed_items=totals.bom_completed_items,
+        bom_cost=round(totals.bom_cost, 2),
     )
+
+
+async def compute_project_stats(
+    db: AsyncSession, project_id: int, target_count: int | None = None, target_parts_count: int | None = None
+) -> ProjectStats:
+    """Compute statistics for a single project, excluding any sub-projects.
+
+    Sub-project roll-ups go through ``compute_subtree_stats`` instead. This
+    stays own-prints-only on purpose: it is what every existing caller means
+    by "this project's numbers", and widening it would silently restate the
+    figures of anyone who had already nested projects over the API.
+    """
+    totals = (await _load_totals(db, [project_id]))[project_id]
+    return _stats_from_totals(totals, target_count, target_parts_count)
+
+
+def _descendants_of(children: dict[int, list[int]], root_id: int) -> list[int]:
+    """Every project nested under ``root_id``, at any depth, root excluded.
+
+    Walked in Python off one already-fetched parent map rather than a recursive
+    CTE, so SQLite and PostgreSQL stay on identical code paths.
+
+    ``seen`` is not belt-and-braces. ``update_project`` only ever rejected a
+    project as its own *direct* parent, so any database written before that
+    guard was widened can hold A -> B -> A, and an unguarded walk over one
+    would never terminate.
+    """
+    found: list[int] = []
+    seen = {root_id}
+    stack = [root_id]
+    while stack:
+        for child in children.get(stack.pop(), ()):
+            if child in seen:
+                continue
+            seen.add(child)
+            found.append(child)
+            stack.append(child)
+    return found
+
+
+async def _project_descendants(db: AsyncSession, root_id: int) -> list[int]:
+    """``_descendants_of`` for callers that only need the ids, not the totals."""
+    rows = (await db.execute(select(Project.id, Project.parent_id).where(Project.parent_id.is_not(None)))).all()
+    children: dict[int, list[int]] = {}
+    for pid, parent_id in rows:
+        children.setdefault(parent_id, []).append(pid)
+    return _descendants_of(children, root_id)
+
+
+@dataclass
+class _SubtreeReport:
+    """What the detail endpoint needs to describe a project and its tree."""
+
+    descendant_count: int
+    # None when the project has no sub-projects: the roll-up would be identical
+    # to the project's own stats, and the UI uses its absence to stay quiet
+    # rather than showing a second, equal set of numbers.
+    rollup: ProjectStats | None
+    child_previews: list[ProjectChildPreview]
+
+
+async def compute_subtree_stats(db: AsyncSession, root_id: int) -> _SubtreeReport:
+    """Roll a project's own numbers up with every sub-project beneath it (#1264).
+
+    Four queries regardless of tree size or depth: one for the parent map, then
+    the three grouped aggregates in ``_load_totals`` covering the whole subtree
+    at once. Each direct child's preview carries *its* branch's roll-up, so the
+    listed rows add up to the master's total minus the master's own prints.
+    """
+    rows = (
+        await db.execute(
+            select(
+                Project.id,
+                Project.parent_id,
+                Project.name,
+                Project.color,
+                Project.status,
+                Project.target_count,
+                Project.target_parts_count,
+            )
+        )
+    ).all()
+    by_id = {row.id: row for row in rows}
+    children: dict[int, list[int]] = {}
+    for row in rows:
+        if row.parent_id is not None:
+            children.setdefault(row.parent_id, []).append(row.id)
+
+    descendants = _descendants_of(children, root_id)
+    if not descendants:
+        return _SubtreeReport(descendant_count=0, rollup=None, child_previews=[])
+
+    totals = await _load_totals(db, [root_id, *descendants])
+
+    def branch(node_id: int) -> tuple[_ProjectTotals, list[int]]:
+        """Totals for ``node_id`` plus everything under it, and that id list."""
+        ids = [node_id, *_descendants_of(children, node_id)]
+        summed = _ProjectTotals()
+        for pid in ids:
+            summed = summed + totals[pid]
+        return summed, ids
+
+    def summed_target(ids: Sequence[int], attr: str) -> int | None:
+        """Targets add up across the tree; all-unset stays unset, not zero."""
+        total = sum(getattr(by_id[pid], attr) or 0 for pid in ids)
+        return total or None
+
+    subtree_ids = [root_id, *descendants]
+    root_totals, _ = branch(root_id)
+    rollup = _stats_from_totals(
+        root_totals,
+        summed_target(subtree_ids, "target_count"),
+        summed_target(subtree_ids, "target_parts_count"),
+    )
+
+    previews: list[ProjectChildPreview] = []
+    for child_id in sorted(children.get(root_id, ()), key=lambda cid: by_id[cid].name):
+        child = by_id[child_id]
+        child_totals, child_ids = branch(child_id)
+        # Progress here is runs-against-plate-target, matching what the child's
+        # own page reports. It used to be completed *quantities* against the
+        # same target, so a row's percentage disagreed with the page it linked
+        # to.
+        child_stats = _stats_from_totals(child_totals, summed_target(child_ids, "target_count"))
+        previews.append(
+            ProjectChildPreview(
+                id=child.id,
+                name=child.name,
+                color=child.color,
+                status=child.status,
+                progress_percent=child_stats.progress_percent,
+                descendant_count=len(child_ids) - 1,
+                total_archives=child_stats.total_archives,
+                completed_prints=child_stats.completed_prints,
+                total_print_time_hours=child_stats.total_print_time_hours,
+                total_filament_grams=child_stats.total_filament_grams,
+                total_cost=round(child_stats.estimated_cost + child_stats.total_energy_cost + child_stats.bom_cost, 2),
+            )
+        )
+
+    return _SubtreeReport(descendant_count=len(descendants), rollup=rollup, child_previews=previews)
 
 
 @router.get("", response_model=list[ProjectListResponse])
@@ -205,6 +396,20 @@ async def list_projects(
 
     result = await db.execute(query)
     projects = result.scalars().all()
+
+    # Direct sub-project counts for every project in one pass (#1264). Counted
+    # across all projects rather than the filtered page: a sub-project hidden
+    # by the status filter is still a sub-project, and a parent that claimed
+    # none would invite deleting it as if nothing hung off it.
+    child_counts = dict(
+        (
+            await db.execute(
+                select(Project.parent_id, func.count(Project.id))
+                .where(Project.parent_id.is_not(None))
+                .group_by(Project.parent_id)
+            )
+        ).all()
+    )
 
     # Compute quick stats for each project. Same per-run aggregation as
     # ``compute_project_stats`` — counts and quantities come from
@@ -290,6 +495,8 @@ async def list_projects(
                 failed_count=failed_count,
                 queue_count=queue_count,
                 progress_percent=progress_percent,
+                parent_id=project.parent_id,
+                child_count=child_counts.get(project.id, 0),
                 archives=archive_previews,
                 url=project.url,
                 cover_image_filename=project.cover_image_filename,
@@ -501,38 +708,6 @@ async def create_project_from_template(
 # ============ Dynamic {project_id} Routes ============
 
 
-async def get_child_previews(db: AsyncSession, parent_id: int) -> list[ProjectChildPreview]:
-    """Get preview info for child projects."""
-    result = await db.execute(select(Project).where(Project.parent_id == parent_id).order_by(Project.name))
-    children = result.scalars().all()
-
-    previews = []
-    for child in children:
-        # Get completed count for progress (sum of quantities)
-        completed_result = await db.execute(
-            select(func.coalesce(func.sum(PrintArchive.quantity), 0)).where(
-                PrintArchive.project_id == child.id,
-                PrintArchive.status == "completed",
-                _LIVE_ARCHIVE,
-            )
-        )
-        completed_count = completed_result.scalar() or 0
-        progress = None
-        if child.target_count and child.target_count > 0:
-            progress = round((int(completed_count) / child.target_count) * 100, 1)
-
-        previews.append(
-            ProjectChildPreview(
-                id=child.id,
-                name=child.name,
-                color=child.color,
-                status=child.status,
-                progress_percent=progress,
-            )
-        )
-    return previews
-
-
 @router.get("/{project_id}", response_model=ProjectResponse)
 async def get_project(
     project_id: int,
@@ -552,8 +727,7 @@ async def get_project(
         parent_result = await db.execute(select(Project.name).where(Project.id == project.parent_id))
         parent_name = parent_result.scalar()
 
-    # Get children
-    children = await get_child_previews(db, project.id)
+    subtree = await compute_subtree_stats(db, project.id)
 
     stats = await compute_project_stats(db, project.id, project.target_count, project.target_parts_count)
 
@@ -578,10 +752,12 @@ async def get_project(
         template_source_id=project.template_source_id,
         parent_id=project.parent_id,
         parent_name=parent_name,
-        children=children,
+        children=subtree.child_previews,
+        descendant_count=subtree.descendant_count,
         created_at=project.created_at,
         updated_at=project.updated_at,
         stats=stats,
+        rollup_stats=subtree.rollup,
     )
 
 
@@ -644,6 +820,12 @@ async def update_project(
             parent_result = await db.execute(select(Project).where(Project.id == data.parent_id))
             if not parent_result.scalar_one_or_none():
                 raise HTTPException(status_code=400, detail="Parent project not found")
+            # Refusing only the project itself left A -> B -> A reachable in two
+            # calls, and a cycle has no root to roll figures up to — the walk in
+            # ``_descendants_of`` would revisit forever without its seen-set
+            # (#1264).
+            if data.parent_id in await _project_descendants(db, project_id):
+                raise HTTPException(status_code=400, detail="Project cannot be moved under one of its own sub-projects")
             project.parent_id = data.parent_id
         else:
             project.parent_id = None
@@ -657,8 +839,7 @@ async def update_project(
         parent_result = await db.execute(select(Project.name).where(Project.id == project.parent_id))
         parent_name = parent_result.scalar()
 
-    # Get children
-    children = await get_child_previews(db, project.id)
+    subtree = await compute_subtree_stats(db, project.id)
 
     stats = await compute_project_stats(db, project.id, project.target_count, project.target_parts_count)
 
@@ -683,10 +864,12 @@ async def update_project(
         template_source_id=project.template_source_id,
         parent_id=project.parent_id,
         parent_name=parent_name,
-        children=children,
+        children=subtree.child_previews,
+        descendant_count=subtree.descendant_count,
         created_at=project.created_at,
         updated_at=project.updated_at,
         stats=stats,
+        rollup_stats=subtree.rollup,
     )
 
 
@@ -702,6 +885,12 @@ async def delete_project(
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    # Sub-projects move up to the deleted project's own parent rather than
+    # being cut loose at the top level, so deleting a middle layer collapses
+    # the tree by one instead of scattering a branch (#1264). Left to the ORM
+    # this would null their parent_id instead, which loses the grandparent.
+    await db.execute(update(Project).where(Project.parent_id == project_id).values(parent_id=project.parent_id))
 
     await db.delete(project)
 

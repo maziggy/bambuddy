@@ -4167,3 +4167,35 @@ class TestExtruderJogAPI:
         assert response.status_code == 200
         sent = mock_client.send_gcode.call_args.args[0]
         assert "E-3.50" in sent
+
+
+class TestCoverWhenFileServiceIsWedged:
+    """The cover endpoint must not report a wedged printer as "no cover".
+
+    #2780: once a printer stops completing the FTPS handshake, every cover
+    request walked all 16 candidate paths three times over and ended in a 404
+    that read as "this print has no thumbnail" — the opposite of the truth.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_returns_503_naming_the_file_service(self, async_client: AsyncClient, printer_factory, db_session):
+        printer = await printer_factory(name="Wedged P2S")
+        state = MagicMock(subtask_name="job", state="RUNNING", gcode_file=None)
+
+        with (
+            patch("backend.app.api.routes.printers.printer_manager.get_status", return_value=state),
+            patch("backend.app.api.routes.printers.resolve_plate_id", return_value=1),
+            patch("backend.app.api.routes.printers.get_cached_3mf", return_value=None),
+            patch("backend.app.api.routes.printers.ftps_handshake_blocked", return_value=True),
+            patch(
+                "backend.app.api.routes.printers.download_file_try_paths_async",
+                new=AsyncMock(return_value=False),
+            ) as mock_download,
+        ):
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/cover")
+
+        assert response.status_code == 503, response.text
+        assert "TLS" in response.json()["detail"]
+        # The whole point: no FTP fan-out against a printer that cannot answer.
+        mock_download.assert_not_called()

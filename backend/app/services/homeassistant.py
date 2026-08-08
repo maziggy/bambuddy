@@ -1,5 +1,6 @@
 """Service for communicating with Home Assistant via REST API."""
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -363,6 +364,107 @@ class HomeAssistantService:
         except Exception as e:
             logger.warning("Failed to list HA sensor entities: %s", e)
             return []
+
+    async def list_display_entities(self, url: str, token: str, search: str | None = None) -> list[dict]:
+        """List entities that can be bound to a printer for display (#1148, #448).
+
+        Covers every ``binary_sensor.*`` plus the ``sensor.*`` entities that
+        carry a reading. Distinct from ``list_sensor_entities``, which exists
+        for a plug's energy monitoring and therefore only admits power/energy
+        units — an enclosure thermometer is exactly what that one filters out.
+
+        A ``sensor.*`` qualifies when it has a unit or its state parses as a
+        number. That drops the text sensors (``sensor.washing_machine_status``)
+        that the card has no way to render as a value.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    f"{url.rstrip('/')}/api/states",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                response.raise_for_status()
+
+                entities = []
+                search_lower = search.lower().strip() if search else None
+
+                for entity in response.json():
+                    entity_id = entity.get("entity_id", "")
+                    domain = entity_id.split(".")[0] if "." in entity_id else ""
+                    if domain not in ("binary_sensor", "sensor"):
+                        continue
+
+                    attrs = entity.get("attributes", {})
+                    unit = attrs.get("unit_of_measurement")
+                    state = entity.get("state")
+
+                    if domain == "sensor" and not unit and as_float(state) is None:
+                        continue
+
+                    friendly_name = attrs.get("friendly_name") or entity_id
+                    if search_lower and (
+                        search_lower not in entity_id.lower() and search_lower not in friendly_name.lower()
+                    ):
+                        continue
+
+                    entities.append(
+                        {
+                            "entity_id": entity_id,
+                            "friendly_name": friendly_name,
+                            "state": state,
+                            "domain": domain,
+                            "device_class": attrs.get("device_class"),
+                            "unit_of_measurement": unit,
+                        }
+                    )
+
+                return sorted(entities, key=lambda x: x["friendly_name"].lower())
+        except Exception as e:
+            logger.warning("Failed to list HA display entities: %s", e)
+            return []
+
+    async def fetch_states(self, entity_ids: list[str]) -> dict[str, dict | None]:
+        """Read several entities in one pass, keyed by entity_id.
+
+        One GET per entity over a shared client rather than a single
+        ``/api/states`` sweep: the poller only ever wants a handful of bound
+        entities, and pulling every state in the user's Home Assistant on a
+        15-second cadence is a lot of payload to throw away.
+
+        A ``None`` value means that entity could not be read — the callers
+        treat that as "no opinion" rather than as a state, so an unreachable
+        Home Assistant never trips an alert or holds a print.
+        """
+        if not entity_ids:
+            return {}
+        if not self.base_url or not self.token:
+            return dict.fromkeys(entity_ids)
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+
+            async def _one(entity_id: str) -> tuple[str, dict | None]:
+                try:
+                    response = await client.get(
+                        f"{self.base_url}/api/states/{entity_id}",
+                        headers=self._headers(),
+                    )
+                    response.raise_for_status()
+                    return entity_id, response.json()
+                except Exception as e:
+                    logger.debug("Failed to read HA entity %s: %s", entity_id, e)
+                    return entity_id, None
+
+            results = await asyncio.gather(*(_one(e) for e in entity_ids))
+
+        return dict(results)
+
+
+def as_float(value) -> float | None:
+    """Parse a HA state to a number, or None for "unknown"/"unavailable"/text."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 # Singleton instance

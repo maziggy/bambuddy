@@ -122,6 +122,12 @@ DEFAULT_TEMPLATES = [
         "body_template": "{printer}: Bed cooled to {bed_temp}°C (threshold: {threshold}°C)",
     },
     {
+        "event_type": "ha_sensor_alert",
+        "name": "Home Assistant Sensor Alert",
+        "title_template": "Sensor Alert",
+        "body_template": "{printer}: {sensor} is {state}",
+    },
+    {
         "event_type": "first_layer_complete",
         "name": "First Layer Complete",
         "title_template": "First Layer Complete",

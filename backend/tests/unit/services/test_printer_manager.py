@@ -1378,9 +1378,10 @@ class TestDryingTargetExposure:
         assert result["ams"][0]["dry_filament"] == "PETG"
         assert result["ams"][0]["dry_target_temp"] == 65
 
-    def test_falls_back_to_loaded_tray_when_no_cache(self):
-        """No cached target → derive from the loaded trays' tray_type +
-        RFID-recommended drying_temp when they agree on a filament."""
+    def test_falls_back_to_loaded_tray_filament_when_no_cache(self):
+        """No cached target → name the filament from the loaded trays when they
+        agree on a type. The temperature stays unknown: only the cache records
+        what we actually sent."""
         state = self._state_with_ams(
             {
                 "id": 0,
@@ -1392,7 +1393,7 @@ class TestDryingTargetExposure:
         )
         result = printer_state_to_dict(state, drying_targets=None)
         assert result["ams"][0]["dry_filament"] == "ABS"
-        assert result["ams"][0]["dry_target_temp"] == 70
+        assert result["ams"][0]["dry_target_temp"] is None
 
     def test_returns_none_when_no_cache_and_empty_trays(self):
         """No cache + no loaded tray with tray_type → both fields are None."""
@@ -1443,8 +1444,8 @@ class TestDryingTargetExposure:
         assert result["ams"][0]["dry_target_temp"] is None
 
     def test_fallback_survives_multiple_trays_of_one_type(self):
-        """Agreement across slots is still evidence — a unit loaded entirely
-        with PLA keeps the fallback the mixed case gives up."""
+        """Agreement across slots is still evidence of the filament — a unit
+        loaded entirely with PLA keeps the name the mixed case gives up."""
         state = self._state_with_ams(
             {
                 "id": 0,
@@ -1458,23 +1459,41 @@ class TestDryingTargetExposure:
         )
         result = printer_state_to_dict(state, drying_targets={})
         assert result["ams"][0]["dry_filament"] == "PLA"
-        assert result["ams"][0]["dry_target_temp"] == 45
 
-    def test_fallback_takes_temp_from_a_later_tray_when_slot_one_has_none(self):
-        """Only Bambu spools carry an RFID drying_temp. A third-party spool in
-        slot 1 alongside a genuine one of the same type should not cost us the
-        temperature."""
+    def test_uniform_unit_never_invents_a_temperature(self):
+        """#2759 follow-up — the reporter's second AMS held only PLA and was
+        drying at the 45°C they picked, but with no cached target the badge
+        answered with the RFID recommendation and read "PLA @ 55°C". Every
+        spool agreeing tells us the filament; it tells us nothing about a
+        temperature the user chose freely in the popover."""
         state = self._state_with_ams(
             {
                 "id": 0,
                 "dry_time": 719,
                 "tray": [
-                    {"id": 0, "tray_type": "PLA", "state": 11},
-                    {"id": 1, "tray_type": "PLA", "drying_temp": 45, "state": 11},
+                    {"id": 0, "tray_type": "PLA", "drying_temp": 55, "state": 11},
+                    {"id": 1, "tray_type": "PLA", "drying_temp": 55, "state": 11},
                 ],
             }
         )
         result = printer_state_to_dict(state, drying_targets={})
+        assert result["ams"][0]["dry_filament"] == "PLA"
+        assert result["ams"][0]["dry_target_temp"] is None
+
+    def test_cached_temp_survives_a_unit_whose_trays_disagree(self):
+        """The cache is authoritative for both fields. A mixed unit costs us the
+        filament fallback but must not touch a target we actually sent."""
+        state = self._state_with_ams(
+            {
+                "id": 0,
+                "dry_time": 719,
+                "tray": [
+                    {"id": 0, "tray_type": "PETG", "drying_temp": 65, "state": 11},
+                    {"id": 1, "tray_type": "PLA", "drying_temp": 55, "state": 11},
+                ],
+            }
+        )
+        result = printer_state_to_dict(state, drying_targets={0: {"filament": "PLA", "temp": 45}})
         assert result["ams"][0]["dry_filament"] == "PLA"
         assert result["ams"][0]["dry_target_temp"] == 45
 

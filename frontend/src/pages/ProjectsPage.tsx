@@ -13,6 +13,7 @@ import {
   ListTodo,
   Package,
   Layers,
+  FolderTree,
   Clock,
   CheckCircle2,
   AlertTriangle,
@@ -31,6 +32,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { getCurrencySymbol } from '../utils/currency';
+import { eligibleParents } from '../utils/projectTree';
 
 const PROJECT_COLORS = [
   '#ef4444', // red
@@ -69,7 +71,17 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
   const [budget, setBudget] = useState(project?.budget?.toString() || '');
   const [url, setUrl] = useState(project?.url || '');
   const [urlError, setUrlError] = useState<string | null>(null);
+  const [parentId, setParentId] = useState<number | null>(project?.parent_id ?? null);
   const queryClient = useQueryClient();
+
+  // Unfiltered on purpose: a completed or archived project is still a legal
+  // parent, and the picker offering fewer options than the list does would be
+  // hard to explain.
+  const { data: allProjects } = useQuery({
+    queryKey: ['projects', undefined],
+    queryFn: () => api.getProjects(),
+  });
+  const parentOptions = eligibleParents(allProjects || [], project?.id);
   const [coverImageFilename, setCoverImageFilename] = useState(project?.cover_image_filename || null);
   const coverFileInputRef = useRef<HTMLInputElement>(null);
   const [coverUploading, setCoverUploading] = useState(false);
@@ -132,6 +144,9 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
       // Pydantic accepts null to clear the URL; an empty string would fail the
       // http(s) prefix validator.
       url: project ? (trimmedUrl || null) : (trimmedUrl || undefined),
+      // The API reads 0 as "remove the parent" — null would be indistinguishable
+      // from the field having been omitted (#1264).
+      parent_id: project ? (parentId ?? 0) : (parentId ?? undefined),
       ...(project && { status }),
     });
   };
@@ -193,6 +208,26 @@ export function ProjectModal({ project, onClose, onSave, isLoading, currencySymb
               maxLength={2048}
             />
             {urlError && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{urlError}</p>}
+          </div>
+
+          {/* #1264: Nest this project under another one */}
+          <div>
+            <label className="block text-sm font-medium text-white mb-1">
+              {t('projects.parentLabel')}
+            </label>
+            <select
+              value={parentId ?? ''}
+              onChange={(e) => setParentId(e.target.value ? parseInt(e.target.value, 10) : null)}
+              className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white focus:outline-none focus:border-bambu-green"
+            >
+              <option value="">{t('projects.parentNone')}</option>
+              {parentOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-bambu-gray mt-1">{t('projects.parentHint')}</p>
           </div>
 
           {/* #1155: Cover image — only available when editing an existing project,
@@ -510,6 +545,7 @@ function ProjectCoverThumbnail({
 
 interface ProjectCardProps {
   project: ProjectListItem;
+  parentName?: string;  // #1264 — resolved by the caller, which holds the whole list
   onClick: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -517,7 +553,7 @@ interface ProjectCardProps {
   t: TFunction;
 }
 
-function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission, t }: ProjectCardProps) {
+function ProjectCard({ project, parentName, onClick, onEdit, onDelete, hasPermission, t }: ProjectCardProps) {
   // Plates progress: archive_count / target_count
   const platesProgressPercent = project.target_count
     ? Math.round((project.archive_count / project.target_count) * 100)
@@ -621,7 +657,24 @@ function ProjectCard({ project, onClick, onEdit, onDelete, hasPermission, t }: P
                     {t('projects.statusArchived')}
                   </span>
                 )}
+                {/* #1264: without these, eight sub-projects of one programme
+                    look like eight unrelated projects in the grid. */}
+                {project.child_count > 0 && (
+                  <span
+                    className="text-xs bg-bambu-dark text-bambu-gray px-2 py-0.5 rounded-full whitespace-nowrap inline-flex items-center gap-1"
+                    title={t('projects.subProjectCount', { count: project.child_count })}
+                  >
+                    <FolderTree className="w-3 h-3" />
+                    {project.child_count}
+                  </span>
+                )}
               </div>
+              {parentName && (
+                <p className="text-xs text-bambu-gray mt-1 flex items-center gap-1">
+                  <Layers className="w-3 h-3 flex-shrink-0" />
+                  <span className="truncate">{t('projects.partOf', { name: parentName })}</span>
+                </p>
+              )}
               {project.description && (
                 <p className="text-sm text-bambu-gray/70 mt-1 line-clamp-1">
                   {project.description}
@@ -889,6 +942,96 @@ export function ProjectsPage() {
     queryKey: ['projects', statusFilter === 'all' ? undefined : statusFilter],
     queryFn: () => api.getProjects(statusFilter === 'all' ? undefined : statusFilter),
   });
+
+  // Parent names come from the unfiltered list, so a sub-project still says
+  // what it belongs to when the status filter has hidden its parent (#1264).
+  // Same query key the parent picker uses — one request shared between them,
+  // and the same one as above whenever the filter is 'all'.
+  const { data: allProjects } = useQuery({
+    queryKey: ['projects', undefined],
+    queryFn: () => api.getProjects(),
+  });
+  const namesById = new Map((allProjects || []).map((p) => [p.id, p.name]));
+
+  // A sub-project is drawn inside its parent's group rather than as another
+  // card somewhere in the grid — two cards that belong together are not
+  // something a caption can convey when they sit columns apart (#1264).
+  const visible = projects || [];
+  const visibleIds = new Set(visible.map((p) => p.id));
+  const childrenByParent = new Map<number, ProjectListItem[]>();
+  for (const project of visible) {
+    // Parent hidden by the status filter: the child has nothing to nest under
+    // here, so it stays a top-level card and keeps its "part of" caption.
+    if (project.parent_id !== null && visibleIds.has(project.parent_id)) {
+      const siblings = childrenByParent.get(project.parent_id) || [];
+      siblings.push(project);
+      childrenByParent.set(project.parent_id, siblings);
+    }
+  }
+  // Everything drawn at the top of the grid, in order. Roots first, then any
+  // project the roots cannot reach: a database written before the API refused
+  // A -> B -> A can still hold a cycle, and a cycle has no root, so filtering
+  // on "has no visible parent" alone would drop every project in it off the
+  // page. Each entry point marks its whole branch as drawn, so nothing appears
+  // twice either.
+  const drawn = new Set<number>();
+  const markDrawn = (id: number) => {
+    if (drawn.has(id)) return;
+    drawn.add(id);
+    for (const child of childrenByParent.get(id) || []) markDrawn(child.id);
+  };
+  const topLevel: ProjectListItem[] = [];
+  for (const project of visible) {
+    if (project.parent_id !== null && visibleIds.has(project.parent_id)) continue;
+    topLevel.push(project);
+    markDrawn(project.id);
+  }
+  for (const project of visible) {
+    if (drawn.has(project.id)) continue;
+    topLevel.push(project);
+    markDrawn(project.id);
+  }
+
+  const renderProjectTree = (project: ProjectListItem, depth: number, seen: Set<number>) => {
+    const card = (
+      <ProjectCard
+        project={project}
+        // Only when it is detached from its parent — inside the group the
+        // nesting is already visible, and the caption would be noise.
+        parentName={depth === 0 && project.parent_id !== null ? namesById.get(project.parent_id) : undefined}
+        onClick={() => handleClick(project)}
+        onEdit={() => handleEdit(project)}
+        onDelete={() => handleDeleteClick(project.id)}
+        hasPermission={hasPermission}
+        t={t}
+      />
+    );
+
+    // Drop any child that is already an ancestor on this path. A database
+    // written before the API refused A -> B -> A can still hold a cycle, and
+    // following one would draw the same project over and over.
+    const descended = new Set(seen).add(project.id);
+    const children = (childrenByParent.get(project.id) || []).filter((c) => !descended.has(c.id));
+    if (children.length === 0) return <div key={project.id}>{card}</div>;
+
+    return (
+      <div key={project.id} className="col-span-full space-y-4">
+        {card}
+        <div
+          className="ml-4 md:ml-8 pl-4 md:pl-6 border-l-2 rounded-l space-y-4"
+          style={{ borderColor: project.color || '#6b7280' }}
+        >
+          <p className="text-xs uppercase tracking-wide text-bambu-gray flex items-center gap-1.5">
+            <FolderTree className="w-3.5 h-3.5" />
+            {t('projects.subProjectsOf', { name: project.name })}
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {children.map((child) => renderProjectTree(child, depth + 1, descended))}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const createMutation = useMutation({
     mutationFn: (data: ProjectCreate) => api.createProject(data),
@@ -1159,17 +1302,7 @@ export function ProjectsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-          {projects?.map((project) => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              onClick={() => handleClick(project)}
-              onEdit={() => handleEdit(project)}
-              onDelete={() => handleDeleteClick(project.id)}
-              hasPermission={hasPermission}
-              t={t}
-            />
-          ))}
+          {topLevel.map((project) => renderProjectTree(project, 0, new Set()))}
         </div>
       )}
 

@@ -11,6 +11,7 @@ are not tested here — they require a live LDAP server.
 """
 
 import pytest
+from ldap3.core.exceptions import LDAPObjectClassError
 
 from backend.app.services.ldap_service import (
     LDAPConfig,
@@ -297,6 +298,11 @@ class _MockConnection:
 
     _search_fixture: dict[str, list] = {}
     _instances: list["_MockConnection"] = []
+    # Filter substring that should raise LDAPObjectClassError instead of
+    # searching, standing in for ldap3's client-side schema validation — it
+    # rejects an object class the server's published schema doesn't define
+    # before the request is ever built (#2769).
+    _raise_object_class_error_on: str | None = None
 
     def __init__(self, *args, **kwargs):
         self.entries: list = []
@@ -320,6 +326,9 @@ class _MockConnection:
         # **kwargs absorbs ldap3 options like size_limit that the real client supports
         self.search_calls.append(search_filter or "")
         self.last_attrs = list(attributes) if attributes is not None else None
+        needle = _MockConnection._raise_object_class_error_on
+        if needle and needle in (search_filter or ""):
+            raise LDAPObjectClassError(f"invalid class in objectClass attribute: {needle}")
         for needle, entries in _MockConnection._search_fixture.items():
             if needle in (search_filter or ""):
                 self.entries = entries
@@ -333,6 +342,7 @@ def mock_ldap(monkeypatch):
     """Patch Connection + _create_server in ldap_service so authenticate_ldap_user can run offline."""
     _MockConnection._search_fixture = {}
     _MockConnection._instances = []
+    _MockConnection._raise_object_class_error_on = None
     monkeypatch.setattr("backend.app.services.ldap_service.Connection", _MockConnection)
     monkeypatch.setattr("backend.app.services.ldap_service._create_server", lambda config: None)
     return _MockConnection
@@ -431,6 +441,84 @@ class TestAuthenticateLdapUserGroups:
         service_conn = _MockConnection._instances[0]
         gidnumber_searches = [call for call in service_conn.search_calls if "gidNumber=" in call]
         assert gidnumber_searches == []
+
+
+class TestDirectoryWithoutPosixGroupClass:
+    """A directory whose published schema defines no posixGroup class (#2769).
+
+    ldap3 fetches the schema at connect time (get_info=ALL) and validates object
+    class names in a filter against it before building the request, so both POSIX
+    group searches raise client-side and nothing reaches the server. lldap is the
+    case in the wild: it puts posixAccount on every account it creates, which
+    gives each user a gidNumber, but defines no group class beyond groupOfNames.
+    Left uncaught the exception escaped authenticate_ldap_user and the login route
+    reported it as "Incorrect username or password", so LDAP login was impossible.
+    """
+
+    def test_authenticates_and_keeps_memberof_groups(self, mock_ldap):
+        """The reporter's setup: the mapped membership comes from memberOf, which
+        is read off the user entry and never touches a posixGroup filter."""
+        user_entry = _MockEntry(
+            "uid=peter,ou=people,dc=fablab,dc=test",
+            uid="peter",
+            gidNumber=1001,  # lldap gives every account one
+            memberOf=["cn=AAUStudents,ou=groups,dc=fablab,dc=test"],
+        )
+        mock_ldap._search_fixture = {"(uid=peter)": [user_entry]}
+        mock_ldap._raise_object_class_error_on = "objectClass=posixGroup"
+
+        info = authenticate_ldap_user(_base_config(), "peter", "password")
+
+        assert info is not None
+        assert info.groups == ["cn=AAUStudents,ou=groups,dc=fablab,dc=test"]
+
+    def test_authenticates_with_no_groups_at_all(self, mock_ldap):
+        """No memberOf either. The user still gets in — auto-provisioning assigns
+        the configured default group, which is the whole point of that setting."""
+        user_entry = _MockEntry("uid=peter,ou=people,dc=fablab,dc=test", uid="peter", gidNumber=1001)
+        mock_ldap._search_fixture = {"(uid=peter)": [user_entry]}
+        mock_ldap._raise_object_class_error_on = "objectClass=posixGroup"
+
+        info = authenticate_ldap_user(_base_config(), "peter", "password")
+
+        assert info is not None
+        assert info.username == "peter"
+        assert info.groups == []
+
+    def test_abandons_the_primary_gid_search_after_the_first_rejection(self, mock_ldap):
+        """Both filters name the same class, so once one is rejected the other
+        cannot succeed. Attempting it would only produce a second identical
+        exception to swallow."""
+        user_entry = _MockEntry("uid=peter,ou=people,dc=fablab,dc=test", uid="peter", gidNumber=1001)
+        mock_ldap._search_fixture = {"(uid=peter)": [user_entry]}
+        mock_ldap._raise_object_class_error_on = "objectClass=posixGroup"
+
+        authenticate_ldap_user(_base_config(), "peter", "password")
+
+        service_conn = _MockConnection._instances[0]
+        posix_searches = [call for call in service_conn.search_calls if "posixGroup" in call]
+        assert len(posix_searches) == 1
+        assert "memberUid=peter" in posix_searches[0]
+
+    def test_a_directory_that_defines_the_class_is_untouched(self, mock_ldap):
+        """The guard must not cost a normal directory its POSIX groups — both
+        searches still run and both results still land."""
+        user_entry = _MockEntry("cn=mz,dc=test,dc=com", uid="mz", gidNumber=10002)
+        supplementary = _MockEntry("cn=bambuddy-viewers,ou=groups,dc=test,dc=com")
+        primary = _MockEntry("cn=bambuddy-operators,ou=groups,dc=test,dc=com")
+
+        mock_ldap._search_fixture = {
+            "(uid=mz)": [user_entry],
+            "memberUid=mz": [supplementary],
+            "gidNumber=10002": [primary],
+        }
+
+        info = authenticate_ldap_user(_base_config(), "mz", "password")
+
+        assert info.groups == [
+            "cn=bambuddy-viewers,ou=groups,dc=test,dc=com",
+            "cn=bambuddy-operators,ou=groups,dc=test,dc=com",
+        ]
 
 
 # ---------------------------------------------------------------------------

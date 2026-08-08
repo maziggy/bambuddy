@@ -1820,3 +1820,315 @@ class TestSoftDeletedArchivesLeaveTheProject:
         db_session.expire_all()
         result = await db_session.execute(select(PrintArchive.project_id).where(PrintArchive.id == gone_id))
         assert result.scalar_one() is None
+
+
+class TestSubProjectRollup:
+    """Tests for #1264 — nesting projects and rolling their figures up.
+
+    The parent/child columns predate this; what these cover is the roll-up,
+    the cycle guard that a roll-up needs to terminate, and what a delete does
+    to the branch hanging off it.
+    """
+
+    @pytest.fixture
+    async def project_factory(self, db_session):
+        async def _create_project(**kwargs):
+            from backend.app.models.project import Project
+
+            defaults = {"name": "Rollup Project", "color": "#FF0000"}
+            defaults.update(kwargs)
+            project = Project(**defaults)
+            db_session.add(project)
+            await db_session.commit()
+            await db_session.refresh(project)
+            return project
+
+        return _create_project
+
+    @pytest.fixture
+    async def run_factory(self, db_session):
+        """One completed run against a project, with figures worth summing."""
+
+        async def _create_run(project_id, *, grams=100.0, cost=5.0, seconds=3600, status="completed", quantity=1):
+            from backend.app.models.archive import PrintArchive
+            from backend.app.models.print_log import PrintLogEntry
+
+            archive = PrintArchive(
+                filename="test.3mf",
+                file_path="test/test.3mf",
+                file_size=1000,
+                print_name="Run",
+                status=status,
+                quantity=quantity,
+                project_id=project_id,
+            )
+            db_session.add(archive)
+            await db_session.commit()
+            await db_session.refresh(archive)
+
+            db_session.add(
+                PrintLogEntry(
+                    archive_id=archive.id,
+                    print_name=archive.print_name,
+                    status=status,
+                    duration_seconds=seconds,
+                    filament_used_grams=grams,
+                    cost=cost,
+                )
+            )
+            await db_session.commit()
+            return archive
+
+        return _create_run
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_master_project_rolls_up_every_sub_project(
+        self, async_client: AsyncClient, project_factory, run_factory
+    ):
+        """The whole point of the feature: one number for the programme."""
+        master = await project_factory(name="Airframe")
+        wing = await project_factory(name="Wing", parent_id=master.id)
+        tail = await project_factory(name="Tail", parent_id=master.id)
+
+        await run_factory(master.id, grams=10.0, cost=1.0, seconds=3600)
+        await run_factory(wing.id, grams=20.0, cost=2.0, seconds=7200)
+        await run_factory(tail.id, grams=30.0, cost=3.0, seconds=1800)
+
+        body = (await async_client.get(f"/api/v1/projects/{master.id}")).json()
+
+        assert body["descendant_count"] == 2
+        assert body["rollup_stats"]["total_archives"] == 3
+        assert body["rollup_stats"]["total_filament_grams"] == 60.0
+        assert body["rollup_stats"]["estimated_cost"] == 6.0
+        assert body["rollup_stats"]["total_print_time_hours"] == 3.5
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_masters_own_stats_still_mean_its_own_prints(
+        self, async_client: AsyncClient, project_factory, run_factory
+    ):
+        """``stats`` keeps its existing meaning — anyone who nested projects
+        over the API before this shipped must not see their figures restated."""
+        master = await project_factory(name="Airframe")
+        wing = await project_factory(name="Wing", parent_id=master.id)
+        await run_factory(master.id, grams=10.0)
+        await run_factory(wing.id, grams=20.0)
+
+        body = (await async_client.get(f"/api/v1/projects/{master.id}")).json()
+
+        assert body["stats"]["total_archives"] == 1
+        assert body["stats"]["total_filament_grams"] == 10.0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_roll_up_reaches_past_the_first_generation(
+        self, async_client: AsyncClient, project_factory, run_factory
+    ):
+        """Nesting is arbitrary depth, so a grandchild has to count too."""
+        master = await project_factory(name="Airframe")
+        wing = await project_factory(name="Wing", parent_id=master.id)
+        spar = await project_factory(name="Spar", parent_id=wing.id)
+        await run_factory(spar.id, grams=50.0)
+
+        body = (await async_client.get(f"/api/v1/projects/{master.id}")).json()
+
+        assert body["descendant_count"] == 2
+        assert body["rollup_stats"]["total_filament_grams"] == 50.0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_childless_project_reports_no_roll_up_at_all(
+        self, async_client: AsyncClient, project_factory, run_factory
+    ):
+        """Null, not a copy of ``stats`` — the page uses the absence to stay
+        quiet rather than printing the same figures twice."""
+        lonely = await project_factory(name="Solo")
+        await run_factory(lonely.id)
+
+        body = (await async_client.get(f"/api/v1/projects/{lonely.id}")).json()
+
+        assert body["rollup_stats"] is None
+        assert body["descendant_count"] == 0
+        assert body["children"] == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_each_listed_child_carries_its_own_branch_total(
+        self, async_client: AsyncClient, project_factory, run_factory
+    ):
+        """Otherwise the listed rows do not add up to the master's total and
+        the page contradicts itself."""
+        master = await project_factory(name="Airframe")
+        wing = await project_factory(name="Wing", parent_id=master.id)
+        spar = await project_factory(name="Spar", parent_id=wing.id)
+        await run_factory(wing.id, grams=20.0, cost=2.0)
+        await run_factory(spar.id, grams=30.0, cost=3.0)
+
+        body = (await async_client.get(f"/api/v1/projects/{master.id}")).json()
+
+        assert len(body["children"]) == 1
+        row = body["children"][0]
+        assert row["name"] == "Wing"
+        assert row["descendant_count"] == 1
+        assert row["total_archives"] == 2
+        assert row["total_filament_grams"] == 50.0
+        assert row["total_cost"] == 5.0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_roll_up_progress_measures_against_the_summed_targets(
+        self, async_client: AsyncClient, project_factory, run_factory
+    ):
+        """A target on each part of the tree is a target for the whole."""
+        master = await project_factory(name="Airframe", target_count=2)
+        wing = await project_factory(name="Wing", parent_id=master.id, target_count=2)
+        await run_factory(master.id)
+        await run_factory(wing.id)
+        await run_factory(wing.id)
+
+        body = (await async_client.get(f"/api/v1/projects/{master.id}")).json()
+
+        assert body["stats"]["progress_percent"] == 50.0  # 1 of its own 2
+        assert body["rollup_stats"]["progress_percent"] == 75.0  # 3 of the tree's 4
+        assert body["rollup_stats"]["remaining_prints"] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_project_cannot_be_moved_under_its_own_sub_project(
+        self, async_client: AsyncClient, project_factory
+    ):
+        """Rejecting only the direct self-parent left A -> B -> A reachable in
+        two calls, and a cycle has no root to roll anything up to."""
+        master = await project_factory(name="Airframe")
+        wing = await project_factory(name="Wing", parent_id=master.id)
+
+        response = await async_client.patch(f"/api/v1/projects/{master.id}", json={"parent_id": wing.id})
+
+        assert response.status_code == 400
+        assert "sub-projects" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_guard_reaches_a_distant_descendant_too(self, async_client: AsyncClient, project_factory):
+        """A three-deep loop is no more legal than a two-deep one."""
+        master = await project_factory(name="Airframe")
+        wing = await project_factory(name="Wing", parent_id=master.id)
+        spar = await project_factory(name="Spar", parent_id=wing.id)
+
+        response = await async_client.patch(f"/api/v1/projects/{master.id}", json={"parent_id": spar.id})
+
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_unrelated_project_is_still_a_legal_parent(self, async_client: AsyncClient, project_factory):
+        """The guard must not refuse ordinary nesting."""
+        master = await project_factory(name="Airframe")
+        wing = await project_factory(name="Wing", parent_id=master.id)
+        other = await project_factory(name="Ground Station")
+
+        response = await async_client.patch(f"/api/v1/projects/{other.id}", json={"parent_id": wing.id})
+
+        assert response.status_code == 200
+        assert response.json()["parent_id"] == wing.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_cycle_already_in_the_database_does_not_hang_the_roll_up(
+        self, async_client: AsyncClient, project_factory, db_session
+    ):
+        """Databases written before the guard was widened can hold A -> B -> A.
+        Reading one has to terminate, not spin."""
+        from sqlalchemy import update as sa_update
+
+        from backend.app.models.project import Project
+
+        first = await project_factory(name="First")
+        second = await project_factory(name="Second", parent_id=first.id)
+        # Straight to the table: the API now refuses to write this.
+        await db_session.execute(sa_update(Project).where(Project.id == first.id).values(parent_id=second.id))
+        await db_session.commit()
+
+        response = await async_client.get(f"/api/v1/projects/{first.id}")
+
+        assert response.status_code == 200
+        assert response.json()["descendant_count"] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_deleting_a_middle_layer_promotes_its_children(
+        self, async_client: AsyncClient, project_factory, db_session
+    ):
+        """Collapse the tree by one rather than scattering the branch."""
+        from sqlalchemy import select
+
+        from backend.app.models.project import Project
+
+        master = await project_factory(name="Airframe")
+        wing = await project_factory(name="Wing", parent_id=master.id)
+        spar = await project_factory(name="Spar", parent_id=wing.id)
+        # Read the ids out before expiring: an expired instance refreshes itself
+        # on attribute access, which is a lazy load in a sync frame.
+        master_id, spar_id = master.id, spar.id
+
+        response = await async_client.delete(f"/api/v1/projects/{wing.id}")
+        assert response.status_code == 200
+
+        db_session.expire_all()
+        parent_id = (await db_session.execute(select(Project.parent_id).where(Project.id == spar_id))).scalar_one()
+        assert parent_id == master_id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_deleting_a_top_level_project_frees_its_children(
+        self, async_client: AsyncClient, project_factory, db_session
+    ):
+        """Nothing to promote to, so the child becomes top-level — and the
+        delete has to succeed at all, which the bare FK would have refused."""
+        from sqlalchemy import select
+
+        from backend.app.models.project import Project
+
+        master = await project_factory(name="Airframe")
+        wing = await project_factory(name="Wing", parent_id=master.id)
+        wing_id = wing.id  # See the sibling test: expiring invalidates the instance.
+
+        response = await async_client.delete(f"/api/v1/projects/{master.id}")
+        assert response.status_code == 200
+
+        db_session.expire_all()
+        parent_id = (await db_session.execute(select(Project.parent_id).where(Project.id == wing_id))).scalar_one()
+        assert parent_id is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_the_grid_can_tell_a_sub_project_from_a_top_level_one(
+        self, async_client: AsyncClient, project_factory
+    ):
+        """Without these the list view shows eight sub-projects as eight
+        unrelated ones."""
+        master = await project_factory(name="Airframe")
+        await project_factory(name="Wing", parent_id=master.id)
+
+        rows = {p["name"]: p for p in (await async_client.get("/api/v1/projects/")).json()}
+
+        assert rows["Airframe"]["parent_id"] is None
+        assert rows["Airframe"]["child_count"] == 1
+        assert rows["Wing"]["parent_id"] == master.id
+        assert rows["Wing"]["child_count"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_filtered_listing_still_admits_to_its_hidden_children(
+        self, async_client: AsyncClient, project_factory
+    ):
+        """A parent that claimed no children would invite deleting it as if
+        nothing hung off it."""
+        master = await project_factory(name="Airframe", status="active")
+        await project_factory(name="Wing", parent_id=master.id, status="completed")
+
+        rows = {p["name"]: p for p in (await async_client.get("/api/v1/projects/?status=active")).json()}
+
+        assert "Wing" not in rows
+        assert rows["Airframe"]["child_count"] == 1

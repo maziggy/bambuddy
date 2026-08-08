@@ -304,4 +304,127 @@ describe('ProjectDetailPage', () => {
       expect(screen.queryByText('Complete Sets')).not.toBeInTheDocument();
     });
   });
+  describe('sub-project roll-up (#1264)', () => {
+    const withChildren = {
+      ...mockProject,
+      // Supplying `stats` opens the cost card, which reads `budget` — the API
+      // always sends the key, so the mock has to as well.
+      budget: null,
+      descendant_count: 2,
+      children: [
+        {
+          id: 2,
+          name: 'Wing',
+          color: '#ff0000',
+          status: 'active',
+          progress_percent: 50,
+          descendant_count: 1,
+          total_archives: 4,
+          completed_prints: 4,
+          total_print_time_hours: 6,
+          total_filament_grams: 250,
+          total_cost: 12.5,
+        },
+      ],
+      stats: {
+        total_archives: 1,
+        total_items: 1,
+        completed_prints: 1,
+        failed_prints: 0,
+        queued_prints: 0,
+        in_progress_prints: 0,
+        total_print_time_hours: 2,
+        total_filament_grams: 100,
+        progress_percent: null,
+        parts_progress_percent: null,
+        estimated_cost: 5,
+        total_energy_kwh: 0,
+        total_energy_cost: 0,
+        remaining_prints: null,
+        remaining_parts: null,
+        bom_total_items: 0,
+        bom_completed_items: 0,
+        bom_cost: 0,
+      },
+      rollup_stats: {
+        total_archives: 5,
+        total_items: 5,
+        completed_prints: 5,
+        failed_prints: 0,
+        queued_prints: 0,
+        in_progress_prints: 0,
+        total_print_time_hours: 8,
+        total_filament_grams: 350,
+        progress_percent: 40,
+        parts_progress_percent: null,
+        estimated_cost: 17.5,
+        total_energy_kwh: 0,
+        total_energy_cost: 0,
+        remaining_prints: 3,
+        remaining_parts: null,
+        bom_total_items: 0,
+        bom_completed_items: 0,
+        bom_cost: 0,
+      },
+    };
+
+    it('shows the whole programme alongside the project own numbers', async () => {
+      server.use(http.get('/api/v1/projects/:id', () => HttpResponse.json(withChildren)));
+
+      render(<ProjectDetailPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Including 2 sub-projects')).toBeInTheDocument();
+      });
+      // Both sets are on screen at once, which is the point — the roll-up must
+      // not quietly replace what the project itself printed.
+      expect(screen.getByText('350g')).toBeInTheDocument();
+      expect(screen.getByText('100g')).toBeInTheDocument();
+    });
+
+    it('stays quiet when the project has no sub-projects', async () => {
+      // Reversion-proof: if the roll-up were computed unconditionally it would
+      // print a second, identical set of figures under every ordinary project.
+      server.use(
+        http.get('/api/v1/projects/:id', () =>
+          HttpResponse.json({ ...withChildren, children: [], descendant_count: 0, rollup_stats: null })
+        )
+      );
+
+      render(<ProjectDetailPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('100g')).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/Including .* sub-projects/)).not.toBeInTheDocument();
+    });
+
+    it('gives each listed sub-project its own branch total', async () => {
+      server.use(http.get('/api/v1/projects/:id', () => HttpResponse.json(withChildren)));
+
+      render(<ProjectDetailPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Wing')).toBeInTheDocument();
+      });
+      expect(screen.getByText('4 jobs')).toBeInTheDocument();
+      expect(screen.getByText('250g')).toBeInTheDocument();
+      expect(screen.getByText('50%')).toBeInTheDocument();
+    });
+
+    it('marks a sub-project that is itself a parent', async () => {
+      // Otherwise its figures look inflated for a single project rather than
+      // covering the branch under it.
+      server.use(http.get('/api/v1/projects/:id', () => HttpResponse.json(withChildren)));
+
+      render(<ProjectDetailPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Wing')).toBeInTheDocument();
+      });
+      const row = screen.getByText('Wing').closest('a');
+      expect(row).not.toBeNull();
+      expect(row!.textContent).toContain('1');
+    });
+  });
 });

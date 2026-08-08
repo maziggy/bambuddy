@@ -9,9 +9,11 @@ to ensure they are well-formed before use.
 
 import asyncio
 import functools
+import ipaddress
 import logging
 import re
 import shutil
+import socket
 from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
 from urllib.parse import urlparse
@@ -22,13 +24,77 @@ from backend.app.core.logging_filters import redact_url_credentials
 
 logger = logging.getLogger(__name__)
 
+# Protocols ffmpeg may use for an RTSP input. RTSP negotiates its media
+# transport at runtime, so the transports have to be here alongside rtsp itself;
+# tls and crypto cover encrypted variants. Everything ffmpeg would otherwise
+# accept behind an -i — file, http, tcp to anywhere, concat — is left out, so a
+# stream that references something outside itself cannot pull it in.
+_RTSP_PROTOCOL_WHITELIST = "rtsp,rtp,udp,tcp,tls,crypto"
+
+
+def _blocked_host_reason(hostname: str) -> str | None:
+    """Describe why *hostname* is a destination we refuse to fetch, or None to allow it.
+
+    Camera URLs are user-supplied and reach the network — over aiohttp for the
+    HTTP types, and as an ``ffmpeg -i`` argument for RTSP — so this is where the
+    SSRF boundary sits. LAN addresses are deliberately allowed: cameras live on
+    the same network as Bambuddy, and blocking RFC-1918 would remove the feature
+    rather than protect it. What is left to refuse is the host talking to
+    itself, the unspecified address, link-local (which is where the cloud
+    metadata endpoint lives), and the metadata hostnames.
+
+    IP literals are classified with ``ipaddress`` rather than compared against a
+    list of spellings, because 127.0.0.1, 127.0.0.2, 2130706433, 0177.0.0.1,
+    127.1 and ::ffff:127.0.0.1 all arrive at loopback and a list of strings only
+    ever catches whichever one someone thought to write down. ``inet_aton``
+    comes first because it accepts the legacy octal, decimal and short forms
+    that ``ip_address`` rejects — the C resolvers behind aiohttp and ffmpeg
+    accept them, so refusing to understand them here would only mean not seeing
+    where the request is actually going.
+    """
+    host = hostname.lower()
+
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address | None = None
+    try:
+        ip = ipaddress.ip_address(socket.inet_aton(host))
+    except OSError:
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            ip = None
+
+    if ip is None:
+        # A name, not an address. It is not resolved here on purpose: aiohttp
+        # and ffmpeg each resolve independently afterwards, so a check here
+        # decides nothing about where they end up (DNS rebinding), while a
+        # lookup on every capture would break LAN cameras behind slow or
+        # intermittent local DNS.
+        if host == "localhost" or host.endswith(".localhost"):
+            return "localhost"
+        if host in ("metadata.google.internal", "metadata.google"):
+            return "a cloud metadata service"
+        return None
+
+    # ::ffff:127.0.0.1 is loopback wearing an IPv6 spelling.
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:
+        ip = mapped
+
+    if ip.is_loopback:
+        return "loopback"
+    if ip.is_unspecified:
+        return "the unspecified address"
+    if ip.is_link_local:
+        return "a link-local address (the cloud metadata range)"
+    return None
+
 
 def _sanitize_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "https", "rtsp")) -> str | None:
     """Validate and sanitize camera URL, returning a safe reconstructed URL.
 
-    This validates that the URL is well-formed, uses an allowed scheme,
-    does not target cloud metadata services, and returns a reconstructed
-    URL from validated components.
+    This validates that the URL is well-formed, uses an allowed scheme, does not
+    target the host itself or a cloud metadata service, and returns a URL
+    reconstructed from the validated components.
 
     Note: This intentionally allows user-provided URLs as that is the
     purpose of external camera configuration. Local network IPs are
@@ -51,37 +117,35 @@ def _sanitize_camera_url(url: str, allowed_schemes: tuple[str, ...] = ("http", "
         if scheme not in allowed_schemes:
             return None
 
-        # Block cloud metadata service endpoints (SSRF mitigation)
-        # These are dangerous destinations that should never be accessed
         hostname = parsed.hostname or ""
-        hostname_lower = hostname.lower()
-        blocked_hosts = (
-            "169.254.169.254",  # AWS/GCP/Azure metadata
-            "metadata.google.internal",  # GCP metadata
-            "metadata.google",
-            "localhost",  # Block localhost to prevent internal service access
-            "127.0.0.1",
-            "::1",
-            "0.0.0.0",  # nosec B104
-        )
-        if hostname_lower in blocked_hosts:
-            logger.warning("Blocked camera URL targeting restricted host: %s", hostname)
+        if not hostname:
             return None
-
-        # Block link-local addresses (169.254.x.x)
-        if hostname.startswith("169.254."):
-            logger.warning("Blocked camera URL targeting link-local address: %s", hostname)
+        blocked = _blocked_host_reason(hostname)
+        if blocked:
+            logger.warning("Blocked camera URL targeting %s: %s", blocked, hostname)
             return None
 
         # Reconstruct URL from validated components to break taint chain
         # This creates a new string from validated parts
+        #
+        # The credentials are carried across verbatim from netloc rather than
+        # via parsed.username/.password, which urlparse has already percent-
+        # decoded: re-emitting those would corrupt any password containing an
+        # @ or a :. They have to survive at all because most RTSP cameras — and
+        # a fair number of MJPEG ones — carry their login in the URL, and
+        # dropping it turns every one of them into an authentication failure.
+        netloc = parsed.netloc
+        userinfo = f"{netloc.rsplit('@', 1)[0]}@" if "@" in netloc else ""
+        # parsed.hostname has already stripped the brackets off an IPv6 literal;
+        # without them back the result is not a URL any client can parse.
+        host_str = f"[{hostname}]" if ":" in hostname else hostname
         port_str = f":{parsed.port}" if parsed.port else ""
         path = parsed.path or ""
         query = f"?{parsed.query}" if parsed.query else ""
         fragment = f"#{parsed.fragment}" if parsed.fragment else ""
 
         # Build sanitized URL from validated components
-        sanitized = f"{scheme}://{hostname}{port_str}{path}{query}{fragment}"
+        sanitized = f"{scheme}://{userinfo}{host_str}{port_str}{path}{query}{fragment}"
         return sanitized
     except ValueError:
         return None
@@ -380,18 +444,18 @@ async def _capture_frame_uncoalesced(
         return None
 
 
-async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
-    """Capture frame from USB camera using ffmpeg."""
-    ffmpeg = get_ffmpeg_path()
-    if not ffmpeg:
-        logger.error("ffmpeg not found - required for USB camera capture")
-        return None
+def _safe_usb_device_path(device: str) -> str | None:
+    """Rebuild a /dev/videoN path from a validated device number, or None.
 
-    # Validate device path - must be /dev/videoN format where N is 0-99
-    # This prevents path traversal by using a strict allowlist approach
-    import re as regex_module
+    Validate device path - must be /dev/videoN format where N is 0-99. This
+    prevents path traversal by using a strict allowlist approach: the returned
+    path is built from an integer, which cannot carry a traversal, rather than
+    from any part of the caller's string.
 
-    device_match = regex_module.match(r"^/dev/video(\d{1,2})$", device)
+    Returns None if the device does not exist, so a caller cannot hand ffmpeg a
+    path to something that is not a device node.
+    """
+    device_match = re.match(r"^/dev/video(\d{1,2})$", device)
     if not device_match:
         logger.error("Invalid USB device path format: %s", device)
         return None
@@ -399,9 +463,6 @@ async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
     # Convert to integer to break taint chain - integers cannot contain path traversal
     # lgtm[py/path-injection] - device_num is validated integer 0-99
     device_num = int(device_match.group(1))  # Safe: regex guarantees 1-2 digits
-    if device_num > 99:
-        logger.error("USB device number out of range: %s", device_num)
-        return None
 
     # Construct safe path from validated integer (completely untainted)
     safe_device_path = Path(f"/dev/video{device_num}")  # lgtm[py/path-injection]
@@ -410,8 +471,22 @@ async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
         logger.error("USB device does not exist: %s", safe_device_path)
         return None
 
+    return str(safe_device_path)  # lgtm[py/path-injection]
+
+
+async def _capture_usb_frame(device: str, timeout: int) -> bytes | None:
+    """Capture frame from USB camera using ffmpeg."""
+    ffmpeg = get_ffmpeg_path()
+    if not ffmpeg:
+        logger.error("ffmpeg not found - required for USB camera capture")
+        return None
+
+    safe_device = _safe_usb_device_path(device)
+    if not safe_device:
+        return None
+
     # Use the safe path for ffmpeg - this is a hardcoded /dev/videoN path
-    device = str(safe_device_path)  # lgtm[py/path-injection]
+    device = safe_device  # lgtm[py/path-injection]
 
     # Use ffmpeg to grab a single frame from USB camera
     cmd = [
@@ -542,22 +617,34 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
     """Capture frame from RTSP using ffmpeg.
 
     For rtsps:// URLs, a local TLS proxy is used to avoid GnuTLS issues.
+
+    Note: this function intentionally connects to user-configured URLs, the same
+    as the MJPEG and snapshot paths. The URL is sanitized and dangerous
+    destinations are blocked before it reaches ffmpeg.
     """
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
         logger.error("ffmpeg not found - required for RTSP capture")
         return None
 
+    # ffmpeg's -i accepts every protocol it was built with, so an unchecked URL
+    # here is a request to any host and scheme the caller names, not merely to a
+    # camera. Restricting the scheme to RTSP is what keeps this a camera fetch.
+    safe_url = _sanitize_camera_url(url, ("rtsp", "rtsps"))
+    if not safe_url:
+        logger.error("Invalid RTSP URL: %s...", redact_url_credentials(url)[:50])
+        return None
+
     # If rtsps://, use TLS proxy
     proxy_server = None
-    effective_url = url
-    if url.lower().startswith("rtsps://"):
+    effective_url = safe_url
+    if safe_url.lower().startswith("rtsps://"):
         try:
             from urllib.parse import urlparse
 
             from backend.app.services.camera import create_tls_proxy
 
-            parsed = urlparse(url)
+            parsed = urlparse(safe_url)
             target_port = parsed.port or 322
             proxy_port, proxy_server = await create_tls_proxy(parsed.hostname, target_port)
             userinfo = ""
@@ -566,17 +653,24 @@ async def _capture_rtsp_frame(url: str, timeout: int) -> bytes | None:
                 if parsed.password:
                     userinfo += f":{parsed.password}"
                 userinfo += "@"
+            # Points at loopback deliberately, and is built after the check
+            # above rather than re-checked: the destination that mattered was
+            # the one the caller named, and it has already been vetted.
             effective_url = f"rtsp://{userinfo}127.0.0.1:{proxy_port}{parsed.path}"
             if parsed.query:
                 effective_url += f"?{parsed.query}"
         except Exception as e:
             logger.warning("Failed to create TLS proxy for RTSP capture, falling back: %s", e)
-            effective_url = url
+            effective_url = safe_url
 
     cmd = [
         ffmpeg,
         "-rtsp_transport",
         "tcp",
+        # Belt and braces on the scheme check above: a demuxer that follows a
+        # reference out of the stream cannot leave these protocols either.
+        "-protocol_whitelist",
+        _RTSP_PROTOCOL_WHITELIST,
         "-i",
         effective_url,
         "-frames:v",
@@ -956,6 +1050,11 @@ async def _stream_rtsp(
     For rtsps:// URLs, a local TLS proxy (Python OpenSSL) is used instead
     of relying on ffmpeg's GnuTLS backend, which has compatibility issues
     with some printer firmwares.
+
+    Note: this function intentionally connects to user-configured URLs. The URL
+    is sanitized and dangerous destinations are blocked before it reaches
+    ffmpeg — see ``_capture_rtsp_frame``, which guards the one-shot path the
+    same way.
     """
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
@@ -964,16 +1063,21 @@ async def _stream_rtsp(
 
     from backend.app.services.camera import rtsp_socket_timeout_flag
 
+    safe_url = _sanitize_camera_url(url, ("rtsp", "rtsps"))
+    if not safe_url:
+        logger.error("Invalid RTSP stream URL: %s...", redact_url_credentials(url)[:50])
+        return
+
     # If the URL uses rtsps://, set up a TLS proxy so ffmpeg uses plain rtsp://
     proxy_server = None
-    effective_url = url
-    if url.lower().startswith("rtsps://"):
+    effective_url = safe_url
+    if safe_url.lower().startswith("rtsps://"):
         try:
             from urllib.parse import urlparse
 
             from backend.app.services.camera import create_tls_proxy
 
-            parsed = urlparse(url)
+            parsed = urlparse(safe_url)
             target_port = parsed.port or 322
             proxy_port, proxy_server = await create_tls_proxy(parsed.hostname, target_port)
             # Rewrite URL: rtsps://user:pass@host:port/path → rtsp://user:pass@127.0.0.1:proxy/path
@@ -983,12 +1087,14 @@ async def _stream_rtsp(
                 if parsed.password:
                     userinfo += f":{parsed.password}"
                 userinfo += "@"
+            # Loopback by design, and built after the check above rather than
+            # re-checked — see the same rewrite in _capture_rtsp_frame.
             effective_url = f"rtsp://{userinfo}127.0.0.1:{proxy_port}{parsed.path}"
             if parsed.query:
                 effective_url += f"?{parsed.query}"
         except Exception as e:
             logger.warning("Failed to create TLS proxy for RTSP, falling back to direct: %s", e)
-            effective_url = url
+            effective_url = safe_url
 
     cmd = [
         ffmpeg,
@@ -996,6 +1102,8 @@ async def _stream_rtsp(
         "tcp",
         "-rtsp_flags",
         "prefer_tcp",
+        "-protocol_whitelist",
+        _RTSP_PROTOCOL_WHITELIST,
         # Socket I/O timeout name varies by ffmpeg version (#1504); see
         # `rtsp_socket_timeout_flag()` in services.camera.
         f"-{rtsp_socket_timeout_flag()}",
@@ -1109,14 +1217,13 @@ async def _stream_usb(
         logger.error("ffmpeg not found - required for USB camera streaming")
         return
 
-    # Validate device path
-    if not device.startswith("/dev/video"):
-        logger.error("Invalid USB device path: %s", device)
+    # Same validation as the one-shot path: a prefix check accepted
+    # /dev/video/../../<anything that exists>, which -f v4l2 would then refuse
+    # rather than the check refusing it.
+    safe_device = _safe_usb_device_path(device)
+    if not safe_device:
         return
-
-    if not Path(device).exists():
-        logger.error("USB device does not exist: %s", device)
-        return
+    device = safe_device
 
     # ffmpeg command to stream from USB camera (v4l2)
     cmd = [

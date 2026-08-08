@@ -2670,7 +2670,7 @@ def is_sliced_file(filename: str) -> bool:
 async def add_files_to_queue(
     request: AddToQueueRequest,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.QUEUE_CREATE)),
+    current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.QUEUE_CREATE)),
 ):
     """Add library files to the print queue.
 
@@ -2736,6 +2736,10 @@ async def add_files_to_queue(
                 or (folder_projects.get(lib_file.folder_id) if lib_file.folder_id is not None else None),
                 position=max_position,
                 status="pending",
+                # Without this the row is ownerless, and `queue:read_own` filters
+                # on `created_by_id` — so the user who queued the file could not
+                # see it in their own queue.
+                created_by_id=current_user.id if current_user else None,
             )
             db.add(queue_item)
 

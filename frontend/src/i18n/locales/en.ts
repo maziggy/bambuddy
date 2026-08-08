@@ -3522,6 +3522,8 @@ export default {
       verifyButton: 'Verify',
       setTokenButton: 'Set Token',
       useToken: 'Use access token instead',
+      captchaTitle: 'Bambu Cloud is asking for a CAPTCHA',
+      captchaBody: 'Bambu is challenging your network before it will accept a sign-in, and the challenge cannot be answered from Bambuddy. Your email and password are not the problem. The block is tied to your public IP address and normally clears by itself within a few hours — retrying repeatedly makes it last longer. To sign in now, use an access token from a browser session instead.',
       useEmail: 'Login with email instead',
       toast: {
         loggedIn: 'Logged in successfully',
@@ -3855,6 +3857,7 @@ export default {
     scanFolder: 'Scan',
     toast: {
       folderCreated: 'Folder created',
+      openInSlicerFailed: 'Could not open in slicer',
       folderDeleted: 'Folder deleted',
       fileDeleted: 'File deleted',
       filesDeleted: 'Deleted {{count}} files',
@@ -3879,6 +3882,12 @@ export default {
 
   // Projects
   projects: {
+    parentLabel: 'Parent project',
+    parentNone: 'None (top-level project)',
+    parentHint: 'Nest this project under another one so its figures roll up into a master project',
+    partOf: 'Part of {{name}}',
+    subProjectCount: '{{count}} sub-projects',
+    subProjectsOf: 'Sub-projects of {{name}}',
     title: 'Projects',
     subtitle: 'Organize and track your 3D printing projects',
     newProject: 'New Project',
@@ -4026,6 +4035,12 @@ export default {
     },
     subProjects: {
       title: 'Sub-projects ({{count}})',
+      jobs: '{{count}} jobs',
+    },
+    rollup: {
+      title: 'Including {{count}} sub-projects',
+      progress: 'Overall progress',
+      percentComplete: '{{percent}}% complete',
     },
     notes: {
       title: 'Notes',
@@ -4876,7 +4891,10 @@ export default {
     personalAccessToken: 'Personal Access Token',
     tokenSaved: '(saved)',
     enterNewToken: 'Enter new token to update',
-    tokenHint: 'Fine-grained token with Contents read/write permission',
+    tokenHintGitHub: 'Fine-grained token with Contents read and write access, or a classic token with the repo scope.',
+    tokenHintGitLab: 'Token with the api scope, or read_repository and write_repository together.',
+    tokenHintGitea: 'Token with the write:repository scope.',
+    tokenHintForgejo: 'Token with the write:repository scope. A token limited to this one repository is enough.',
     branch: 'Branch',
     provider: 'Git Provider',
     providerGitHub: 'GitHub',
@@ -4922,11 +4940,85 @@ export default {
     clearedLogs: 'Cleared {{count}} logs',
     failedToClearLogs: 'Failed to clear logs: {{message}}',
 
+    // Restore from Git backup (#2656)
+    restoreFromGit: {
+      button: 'Restore from Git',
+      title: 'Restore from Git Backup',
+      subtitle: 'Pick a commit and choose what to restore',
+      commitLabel: 'Backup commit',
+      latestCommit: 'Latest backup (branch tip)',
+      categoriesLabel: 'What to restore',
+      inspecting: 'Reading backup contents...',
+      itemCount: '{{count}} in backup',
+      overwriteLabel: 'Overwrite existing entries',
+      overwriteOn: 'Existing entries will be updated from the backup.',
+      overwriteOff: 'Only missing entries are added; existing ones are left untouched.',
+      selectedCount: '{{count}} selected',
+      restoring: 'Restoring...',
+      confirmTitle: 'Restore from backup?',
+      confirmMessage: 'The selected categories will be restored from this commit. Missing entries are added; existing entries stay as they are.',
+      confirmMessageOverwrite: 'The selected categories will be restored from this commit, overwriting entries that already exist locally. This cannot be undone.',
+      kprofilesOverwriteCaveat: 'K-profiles are the exception: writing a slot always replaces the calibration on the printer.',
+      tally: '{{restored}} restored, {{skipped}} skipped, {{failed}} failed',
+      reloadHint: 'Reload Bambuddy so the restored data appears everywhere.',
+      partialHint: 'The categories listed above finished and are on disk. Any that are missing did not run.',
+      failed: 'Restore failed.',
+      loadFailed: 'Could not read the backup repository.',
+      // Preview caveats. The server sends detail_code + detail_params and the
+      // English detail as defaultValue, same contract as backup.pathCheck.
+      details: {
+        notPresent: 'Not present in this backup commit',
+        unreadableJson: 'Unreadable JSON: {{paths}}',
+        settingsNoPayload: 'No settings in payload',
+        settingsCredentialsWillSkip: '{{count}} credential-like key(s) will be skipped',
+        settingsCompanionWillSkip: '{{count}} credential-like key(s) will be skipped, and {{companion}} switch(es) that depend on them will be left off',
+        settingsCompanionOnlyWillSkip: '{{companion}} switch(es) will be left off - the credential each one needs cannot be restored from a backup',
+        spoolsUsageCount: 'including {{count}} usage record(s)',
+        archivesMetadataOnly: 'Metadata only - 3MF files and thumbnails are not in a Git backup',
+        kprofilesPrinterCount: 'across {{count}} printer(s)',
+      },
+      // Tally notes, same contract. noData is shared by all four categories:
+      // the category heading renders beside it, so naming the category again
+      // would be redundant.
+      notes: {
+        noData: 'No data of this kind in this backup',
+        archivesPrinterMissing: 'Some archives referenced printers that no longer exist - link cleared',
+        archivesProjectMissing: 'Some archives referenced projects that no longer exist - link cleared',
+        archivesOwnerCleared: 'Some archives referenced users that no longer exist - owner cleared, so they are visible only to users with the archives:read_all permission until an admin reassigns them',
+        archivesOwnerUnmatched: 'Some archives name an owner this instance does not have - owner cleared rather than guessed from the backup\'s user id, so they are visible only to users with the archives:read_all permission until an admin reassigns them',
+        archivesOwnerUnknown: 'Some archives were restored without an owner - this backup does not record one, so they are visible only to users with the archives:read_all permission until an admin reassigns them',
+        archivesUndeleted: 'Archive(s) deleted since the backup are visible again - overwrite was on',
+        archivesMetadataOnly: 'Restored archives carry metadata only - the 3MF and thumbnail files are not in a Git backup',
+        spoolUsageUnresolved: '{{count}} usage record(s) skipped - their spool is not in this backup\'s spool list, so there is nothing to attach them to.',
+        spoolUsageUnlinked: '{{count}} usage record(s) restored without their print-history link - select Print archives alongside Spool inventory to keep it.',
+        spoolTagKept: '{{count}} spool tag(s) left as they are - the backup would have cleared a tag that has since been scanned, or moved one onto a second spool.',
+        settingsCredentialsSkipped: '{{count}} credential-like key(s) skipped - re-enter secrets manually',
+        settingsAuthSkipped: '{{count}} authentication setting(s) skipped - change those in Settings > Authentication so the lockout checks still run',
+        settingsCompanionSkipped: '{{keys}} left switched off - the credential each one needs cannot be restored from a backup and this instance has none stored, so switching them on would leave the integration unauthenticated',
+        settingsMqttRelayFailed: 'MQTT settings restored, but the relay could not be reconnected - restart Bambuddy',
+        kprofilesAlwaysOverwrite: 'K-profiles always overwrite the matching slot on the printer',
+        kprofilesAckUnreliable: 'A printer that does not answer still counts as restored - verify the profiles on the printer',
+        kprofilesPrinterMissing: 'No printer with serial {{serial}} - skipped',
+        kprofilesPrinterOffline: '{{printer}} ({{serial}}) is not connected - skipped',
+        kprofilesUnknownNozzle: 'Unexpected nozzle diameter {{nozzle}} for {{serial}} - sent as-is',
+        kprofilesUnmatched: '{{count}} profile(s) for {{nozzle}} had no counterpart on {{printer}} - added as new profiles',
+        kprofilesSendFailed: 'Failed to send {{nozzle}} profiles to {{printer}} ({{serial}})',
+        kprofilesRefused: '{{printer}} ({{serial}}) refused the {{nozzle}} profiles: {{reason}}',
+        kprofilesStepFailed: 'The K-profile step could not be completed - {{reason}}. Anything restored before it is still saved.',
+      },
+    },
+
     // History
     history: 'History',
     clear: 'Clear',
     date: 'Date',
     status: 'Status',
+    trigger: 'Type',
+    triggers: {
+      manual: 'Backup (manual)',
+      scheduled: 'Backup (scheduled)',
+      restore: 'Restore',
+    },
     commit: 'Commit',
 
     // Local Backup
@@ -5408,6 +5500,9 @@ export default {
   // Model Viewer
   modelViewer: {
     openInSlicer: 'Open in Slicer',
+    openInSlicerWith: 'Open in {{slicer}}',
+    moreSlicerOptions: 'More slicer options',
+    openInSlicerFailed: 'Could not open in slicer',
     tabs: {
       model: '3D Model',
       gcode: 'G-code Preview',
@@ -5458,6 +5553,61 @@ export default {
   },
 
   // Smart Plugs
+  haSensors: {
+    label: 'Sensors',
+    unavailable: 'Unavailable',
+    blocksPrints: '{{entity}} — holds prints while alerting',
+    states: {
+      open: 'Open',
+      closed: 'Closed',
+      unlocked: 'Unlocked',
+      locked: 'Locked',
+      detected: 'Detected',
+      clear: 'Clear',
+      wet: 'Wet',
+      dry: 'Dry',
+      problem: 'Problem',
+      ok: 'OK',
+      running: 'Running',
+      stopped: 'Stopped',
+      on: 'On',
+      off: 'Off',
+    },
+    sectionTitle: 'Home Assistant Sensors',
+    add: 'Add Sensor',
+    addTitle: 'Add Home Assistant Sensor',
+    editTitle: 'Edit Home Assistant Sensor',
+    empty: 'No sensors yet. Bind a door contact or a thermometer from Home Assistant to show it on a printer card.',
+    unknownPrinter: 'Unknown printer',
+    badgeBlocks: 'Holds prints',
+    badgeNotifies: 'Notifies',
+    badgeHidden: 'Hidden on card',
+    printer: 'Printer',
+    entity: 'Entity',
+    searchPlaceholder: 'Search entities...',
+    noEntities: 'No matching entities',
+    name: 'Display name',
+    alertWhen: 'Alert when',
+    alertNever: 'Never — display only',
+    alertAbove: 'Above',
+    alertBelow: 'Below',
+    alertHint: 'The alert state highlights the sensor on the printer card and enables the options below.',
+    showOnCard: 'Show on printer card',
+    notifyOnAlert: 'Send a notification when it starts alerting',
+    blockPrint: 'Hold queued prints while alerting',
+    blockPrintHint: 'Jobs stay queued and start on their own once the sensor clears. Ignored while Home Assistant is unreachable.',
+    toast: {
+      created: 'Sensor added',
+      updated: 'Sensor saved',
+      deleted: 'Sensor removed',
+    },
+    error: {
+      pickEntity: 'Pick a Home Assistant entity',
+      nameRequired: 'Enter a display name',
+      printerRequired: 'Pick a printer',
+      alertRequired: 'Set an alert condition first',
+    },
+  },
   smartPlugs: {
     offline: 'Offline',
     admin: 'Admin',
@@ -5770,6 +5920,8 @@ export default {
     notificationEvents: 'Notification Events',
     progressPercent: '(25%, 50%, 75%)',
     bedCooledAfterPrint: '(after print completes)',
+    haSensorAlert: 'Sensor Alert',
+    haSensorAlertDescription: '(a bound Home Assistant sensor needs attention)',
     // Per-event ntfy priority (#990)
     eventPriority: {
       sectionTitle: 'ntfy Priority',
@@ -6513,6 +6665,7 @@ export default {
         title: 'File transfer port (FTPS 990)',
         pass: 'Reachable — sending print files will work.',
         warn: 'Port 990 is unreachable. Monitoring may still work, but sending prints to the printer will fail. Make sure port 990 is not blocked.',
+        warn_no_tls: 'Port 990 is open but the printer\'s file service is not completing a TLS handshake. Print files, covers and timelapses cannot be fetched, so archives stay empty. Restart the printer — unblocking the port will not help.',
       },
       external_storage: {
         title: 'Store sent files on external storage (install step 4)',
@@ -6587,8 +6740,13 @@ export default {
       },
       'ftp-ssl-error': {
         name: 'Secure file-transfer handshake failed',
-        cause: 'The TLS handshake with the printer\'s file-transfer server failed. This is often a firewall or outdated printer firmware.',
-        fix: 'Update the printer firmware and check that no firewall or proxy intercepts the connection on port 990.',
+        cause: 'The printer\'s file service answered port 990 without TLS. Its file server has wedged — a printer-side fault, not a firewall or firmware problem.',
+        fix: 'Restart the printer. Until then print files, covers and timelapses cannot be fetched; printing itself is unaffected.',
+      },
+      'bambu-cloud-captcha': {
+        name: 'Bambu Cloud is asking for a CAPTCHA',
+        cause: 'Bambu\'s anti-abuse layer is challenging this network, so no Bambu Cloud sign-in can complete. It is tied to the public IP address, not to your account or this installation.',
+        fix: 'Wait — it normally clears within a few hours, and repeated sign-in attempts prolong it. To connect meanwhile, sign in with an access token taken from a browser session.',
       },
       'mqtt-connection-flapping': {
         name: 'Printer connection keeps dropping',

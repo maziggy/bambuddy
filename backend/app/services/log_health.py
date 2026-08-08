@@ -124,6 +124,17 @@ SIGNATURES: tuple[LogSignature, ...] = (
         min_count=3,
     ),
     LogSignature(
+        # Bambu's anti-abuse layer is challenging this network with a CAPTCHA,
+        # so no Bambu Cloud sign-in can complete. Nothing in the install is
+        # broken and no credential will help — see bambu_cloud.is_captcha_challenge.
+        id="bambu-cloud-captcha",
+        patterns=_compile(r"challenging this network with a CAPTCHA"),
+        severity="warning",
+        category="environment",
+        wiki_anchor="bambu-cloud-captcha",
+        logger_prefix="backend.app.services.bambu_cloud",
+    ),
+    LogSignature(
         # SQLite write contention. Surfaces inside exception tracebacks; folded
         # continuation lines are part of the entry message, so this still
         # matches. The fix is switching to PostgreSQL under multi-printer load.

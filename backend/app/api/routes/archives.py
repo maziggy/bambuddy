@@ -2295,6 +2295,7 @@ async def scan_timelapse(
     from backend.app.services.bambu_ftp import (
         delete_archived_timelapse,
         download_file_bytes_async,
+        ftps_handshake_blocked,
         get_ftp_retry_settings,
         list_files_async,
         remote_file_settled,
@@ -2330,6 +2331,8 @@ async def scan_timelapse(
     # Different printer models use different paths
     files = []
     for timelapse_path in ["/timelapse", "/timelapse/video", "/record", "/recording"]:
+        if ftps_handshake_blocked(printer.ip_address):
+            break
         try:
             files = await list_files_async(
                 printer.ip_address, printer.access_code, timelapse_path, printer_model=printer.model
@@ -2339,7 +2342,18 @@ async def scan_timelapse(
         except Exception:
             continue
     if not files:
-        raise HTTPException(500, "Failed to connect to printer or no timelapse directory found")
+        # "Couldn't reach the printer" and "the printer has no timelapse
+        # directory" are different problems with different fixes, and both used
+        # to come back as one 500 (#2780). A printer whose file service stopped
+        # answering over TLS needs a restart, and nothing here will work until
+        # it gets one.
+        if ftps_handshake_blocked(printer.ip_address):
+            raise HTTPException(
+                503,
+                f"Printer {printer.ip_address} is not answering its file service over TLS. "
+                "Restart the printer and try again.",
+            )
+        raise HTTPException(404, "No timelapse directory found on the printer")
 
     # Look for matching timelapse
     matching_file = None

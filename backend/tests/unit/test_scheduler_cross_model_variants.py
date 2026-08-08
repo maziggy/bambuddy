@@ -299,7 +299,10 @@ async def _run_check_queue(ctx, scheduler, finder, waiting_notification=None):
         patch.object(scheduler, "_check_auto_drying", AsyncMock()),
         # Selection is what's under test — keep AMS recomputation and the
         # filament-deficit probe out of the way, and never actually dispatch.
-        patch.object(scheduler, "_ensure_ams_mapping", AsyncMock()),
+        # None is the mapping-resolved answer; a bare AsyncMock returns a truthy
+        # sentinel, which the unmappable guard (#2771) reads as "this job can
+        # never print" and fails the item on.
+        patch.object(scheduler, "_ensure_ams_mapping", AsyncMock(return_value=None)),
         patch.object(scheduler, "_block_on_filament_deficit", AsyncMock(return_value=False)),
         patch.object(scheduler, "_launch_uploads", MagicMock()),
     ]

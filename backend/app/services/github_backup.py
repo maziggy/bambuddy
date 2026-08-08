@@ -173,8 +173,31 @@ class GitHubBackupService:
         Returns:
             dict with success, message, log_id, commit_sha, files_changed
         """
+        # Everything from here to `self._running_backup = True` must stay
+        # await-free. Both flags are plain bools and both callers are coroutines
+        # on one event loop, so with no suspension point in between the loop
+        # cannot run the restore service's mirror-image region (see
+        # github_restore.run_restore) in the gap — whichever gets here first sets
+        # its flag before the other can read it. Adding an `await` inside this
+        # block reintroduces the check-then-set race and lets a backup and a
+        # restore run at once.
         if self._running_backup:
             return {"success": False, "message": "A backup is already running", "log_id": None}
+
+        # Imported locally to avoid a module-level import cycle — the restore
+        # service imports this module's singleton to take the mirror-image lock.
+        # A restore rewrites the same tables this collector reads and publishes
+        # K-profiles to the same printers, so the two must not interleave.
+        # (A local `import` of an already-loaded module is not a suspension
+        # point, so it does not break the await-free rule above.)
+        from backend.app.services.github_restore import github_restore_service
+
+        if github_restore_service.is_running:
+            return {
+                "success": False,
+                "message": "A restore is currently running. Wait for it to finish before backing up.",
+                "log_id": None,
+            }
 
         self._running_backup = True
         log_id = None
@@ -805,6 +828,14 @@ class GitHubBackupService:
         if not archives:
             return
 
+        # The natural key for an owner. created_by_id alone is only meaningful on
+        # the instance that wrote it: restoring onto a rebuilt instance — this
+        # feature's main use case — renumbers the users table, so a live id can
+        # land on a different person. username is unique on users, so the restore
+        # can resolve on it and treat a rename as unknown rather than guess.
+        # One query for the map; archives outnumber users by orders of magnitude.
+        user_names = dict((await db.execute(select(User.id, User.username))).all())
+
         archive_list = []
         for a in archives:
             archive_data = {
@@ -840,6 +871,25 @@ class GitHubBackupService:
                 "energy_kwh": a.energy_kwh,
                 "energy_cost": a.energy_cost,
                 "created_at": str(a.created_at) if a.created_at else None,
+                # Soft-deleted archives are collected too — their row is kept on
+                # purpose so the stats endpoint keeps counting their filament and
+                # energy (see archive_service.soft_delete_archive). Recording
+                # deleted_at is what lets a restore put them back the way they
+                # were instead of resurrecting them as visible archives.
+                "deleted_at": str(a.deleted_at) if a.deleted_at else None,
+                # Who owns the archive, for the same reason deleted_at is here:
+                # it is not decoration, it is what the access check runs on.
+                # _ensure_archive_visible (api/routes/archives.py) fails closed on
+                # a NULL created_by_id and the list paths filter on it, so a
+                # restored row without it is invisible to everyone but an admin —
+                # while the restore reports it restored.
+                "created_by_id": a.created_by_id,
+                # Preferred over the id on restore; the id stays as the fallback
+                # for an owner whose row has since gone. Null when the archive
+                # has no owner, or when it points at a user row that no longer
+                # exists locally — the same "absent is not null" rule the restore
+                # applies, so a backup can't claim an owner it cannot name.
+                "created_by_username": user_names.get(a.created_by_id),
             }
             archive_list.append(archive_data)
 

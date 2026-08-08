@@ -61,6 +61,8 @@ function resolveResponse(overrides: Partial<Record<string, unknown>> = {}) {
 // Individual tests layer extra handlers on top via ``server.use``.
 function useAuthedHandlers(opts: {
   slicer?: 'bambu_studio' | 'orcaslicer';
+  openInSlicer?: 'bambu_studio' | 'orcaslicer' | null;
+  useSlicerApi?: boolean;
   recent?: Array<Record<string, unknown>>;
 } = {}) {
   const slicer = opts.slicer ?? 'bambu_studio';
@@ -74,6 +76,8 @@ function useAuthedHandlers(opts: {
         auto_archive: true,
         save_thumbnails: true,
         preferred_slicer: slicer,
+        ...(opts.openInSlicer !== undefined ? { open_in_slicer: opts.openInSlicer } : {}),
+        ...(opts.useSlicerApi !== undefined ? { use_slicer_api: opts.useSlicerApi } : {}),
       }),
     ),
   );
@@ -186,6 +190,46 @@ describe('MakerworldPage', () => {
 
     const sliceButtons = await screen.findAllByRole('button', {
       name: /Save & Slice in OrcaSlicer/,
+    });
+    expect(sliceButtons.length).toBe(2);
+  });
+
+  it('prefers the open_in_slicer override over preferred_slicer for the desktop handoff', async () => {
+    // The URI-handoff label resolves via resolveDesktopSlicer: open_in_slicer
+    // beats preferred_slicer (#1329) when the slicer API is off.
+    useAuthedHandlers({ slicer: 'bambu_studio', openInSlicer: 'orcaslicer' });
+    server.use(
+      http.post('*/makerworld/resolve', () => HttpResponse.json(resolveResponse())),
+    );
+    render(<MakerworldPage />);
+    await userEvent.type(
+      await screen.findByPlaceholderText(/https:\/\/makerworld\.com/i),
+      'https://makerworld.com/en/models/1400373',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /Resolve/i }));
+
+    const sliceButtons = await screen.findAllByRole('button', {
+      name: /Save & Slice in OrcaSlicer/,
+    });
+    expect(sliceButtons.length).toBe(2);
+  });
+
+  it('keeps preferred_slicer for the in-app API slice label, ignoring open_in_slicer', async () => {
+    // With the slicer API on, the sidecar drives the button, so the
+    // open_in_slicer desktop override must not leak into the label.
+    useAuthedHandlers({ slicer: 'bambu_studio', openInSlicer: 'orcaslicer', useSlicerApi: true });
+    server.use(
+      http.post('*/makerworld/resolve', () => HttpResponse.json(resolveResponse())),
+    );
+    render(<MakerworldPage />);
+    await userEvent.type(
+      await screen.findByPlaceholderText(/https:\/\/makerworld\.com/i),
+      'https://makerworld.com/en/models/1400373',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /Resolve/i }));
+
+    const sliceButtons = await screen.findAllByRole('button', {
+      name: /Save & Slice in Bambu Studio/,
     });
     expect(sliceButtons.length).toBe(2);
   });

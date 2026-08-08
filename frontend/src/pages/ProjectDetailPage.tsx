@@ -682,6 +682,80 @@ export function ProjectDetailPage() {
         </div>
       )}
 
+      {/* #1264: the whole programme in one place. Deliberately a separate card
+          from the stats grid above — the figures there are this project's own
+          prints, and the two must not read as one set. The API sends
+          rollup_stats only when there is a sub-project, so there is never an
+          identical pair on screen. */}
+      {project.rollup_stats && (
+        <Card>
+          <CardContent className="p-4">
+            <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-3">
+              <FolderTree className="w-5 h-5" />
+              {t('projectDetail.rollup.title', { count: project.descendant_count })}
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.stats.printJobs')}</p>
+                <p className="text-lg font-semibold text-white">{project.rollup_stats.total_archives}</p>
+                <p className="text-sm text-bambu-gray">
+                  {t('projectDetail.stats.partsPrinted', { count: project.rollup_stats.completed_prints })}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.stats.printTime')}</p>
+                <p className="text-lg font-semibold text-white">
+                  {formatDurationFromHours(project.rollup_stats.total_print_time_hours)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.stats.filamentUsed')}</p>
+                <p className="text-lg font-semibold text-white">
+                  {formatFilament(project.rollup_stats.total_filament_grams)}
+                </p>
+              </div>
+              {(() => {
+                const rollupCost =
+                  project.rollup_stats.estimated_cost +
+                  project.rollup_stats.total_energy_cost +
+                  project.rollup_stats.bom_cost;
+                if (rollupCost <= 0) return null;
+                return (
+                  <div>
+                    <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.totalCost')}</p>
+                    <p className="text-lg font-semibold text-bambu-green">
+                      {currency}{rollupCost.toFixed(2)}
+                    </p>
+                  </div>
+                );
+              })()}
+            </div>
+            {project.rollup_stats.progress_percent !== null && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-bambu-gray">{t('projectDetail.rollup.progress')}</span>
+                  <span className="text-sm font-medium text-white">
+                    {t('projectDetail.rollup.percentComplete', {
+                      percent: project.rollup_stats.progress_percent.toFixed(0),
+                    })}
+                  </span>
+                </div>
+                <div className="h-3 bg-bambu-dark rounded-full overflow-hidden">
+                  <div
+                    className="h-full transition-all duration-500"
+                    style={{
+                      width: `${Math.min(project.rollup_stats.progress_percent, 100)}%`,
+                      backgroundColor:
+                        project.rollup_stats.progress_percent >= 100 ? '#22c55e' : project.color || '#6b7280',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Cost tracking */}
       {stats && (() => {
         const totalCost = stats.estimated_cost + stats.total_energy_cost + stats.bom_cost;
@@ -760,27 +834,48 @@ export function ProjectDetailPage() {
                 <Link
                   key={child.id}
                   to={`/projects/${child.id}`}
-                  className="flex items-center justify-between p-3 bg-bambu-dark rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
+                  className="flex items-center justify-between gap-4 p-3 bg-bambu-dark rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div
-                      className="w-3 h-3 rounded-full"
+                      className="w-3 h-3 rounded-full flex-shrink-0"
                       style={{ backgroundColor: child.color || '#6b7280' }}
                     />
-                    <span className="text-white">{child.name}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded ${
+                    <span className="text-white truncate">{child.name}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${
                       child.status === 'completed' ? 'bg-status-ok/20 text-status-ok' :
                       child.status === 'archived' ? 'bg-bambu-gray/20 text-bambu-gray' :
                       'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400'
                     }`}>
                       {child.status}
                     </span>
+                    {/* A branch of its own, so its figures cover more than the
+                        one project named on this row (#1264). */}
+                    {child.descendant_count > 0 && (
+                      <span className="text-xs text-bambu-gray flex-shrink-0 inline-flex items-center gap-1">
+                        <FolderTree className="w-3 h-3" />
+                        {child.descendant_count}
+                      </span>
+                    )}
                   </div>
-                  {child.progress_percent !== null && (
-                    <span className="text-sm text-bambu-gray">
-                      {child.progress_percent.toFixed(0)}%
-                    </span>
-                  )}
+                  {/* Each row carries its own branch's roll-up, so the rows add
+                      up to the card above minus this project's own prints. */}
+                  <div className="flex items-center gap-4 text-sm text-bambu-gray flex-shrink-0">
+                    {child.total_archives > 0 && (
+                      <span className="hidden sm:inline">
+                        {t('projectDetail.subProjects.jobs', { count: child.total_archives })}
+                      </span>
+                    )}
+                    {child.total_filament_grams > 0 && (
+                      <span className="hidden md:inline">{formatFilament(child.total_filament_grams)}</span>
+                    )}
+                    {child.total_cost > 0 && (
+                      <span className="hidden md:inline">{currency}{child.total_cost.toFixed(2)}</span>
+                    )}
+                    {child.progress_percent !== null && (
+                      <span>{child.progress_percent.toFixed(0)}%</span>
+                    )}
+                  </div>
                 </Link>
               ))}
             </div>
@@ -1474,6 +1569,10 @@ export function ProjectDetailPage() {
             failed_count: stats?.failed_prints || 0,
             queue_count: stats?.queued_prints || 0,
             progress_percent: stats?.progress_percent || null,
+            // Required by ProjectListItem, but nothing in the dialog reads it —
+            // the parent picker works off the project list it fetches itself.
+            // Guarded like every other read of `children` on this page (#1264).
+            child_count: project.children?.length ?? 0,
             archives: [],
           }}
           onClose={() => setShowEditModal(false)}

@@ -144,6 +144,9 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
             {provider.on_ai_failure_detection && (
               <span className="px-2 py-0.5 bg-fuchsia-100 dark:bg-fuchsia-500/20 text-fuchsia-700 dark:text-fuchsia-300 text-xs rounded">{t('notifications.aiFailureDetection')}</span>
             )}
+            {provider.on_ha_sensor_alert && (
+              <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 text-xs rounded">{t('notifications.haSensorAlert')}</span>
+            )}
             {provider.on_filament_low && (
               <span className="px-2 py-0.5 bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400 text-xs rounded">{t('notifications.lowFilament')}</span>
             )}
@@ -391,6 +394,17 @@ export function NotificationProviderCard({ provider, onEdit }: NotificationProvi
                   <Toggle
                     checked={provider.on_ai_failure_detection ?? false}
                     onChange={(checked) => updateMutation.mutate({ on_ai_failure_detection: checked })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">{t('notifications.haSensorAlert')}</p>
+                    <p className="text-xs text-bambu-gray">{t('notifications.haSensorAlertDescription')}</p>
+                  </div>
+                  <Toggle
+                    checked={provider.on_ha_sensor_alert ?? false}
+                    onChange={(checked) => updateMutation.mutate({ on_ha_sensor_alert: checked })}
                   />
                 </div>
 

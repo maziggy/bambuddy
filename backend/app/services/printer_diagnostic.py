@@ -13,12 +13,14 @@ import asyncio
 import ipaddress
 import logging
 import socket
+import ssl
 
 from backend.app.models.printer import Printer
 from backend.app.schemas.printer import DiagnosticCheck, PrinterDiagnosticResult
 from backend.app.services.bambu_mqtt import CONNECT_ERROR_AUTH_REJECTED
 from backend.app.services.camera import get_camera_port
 from backend.app.services.discovery import is_running_in_docker
+from backend.app.services.ftp_profiles import get_ftp_profile
 from backend.app.services.printer_manager import printer_manager
 from backend.app.utils.printer_models import has_external_storage, has_remote_storage_toggle
 
@@ -61,6 +63,56 @@ async def _check_port(ip: str, port: int, timeout: float = _PORT_PROBE_TIMEOUT) 
 # client, so it can tell "the printer is switched off" (leave it alone, paho will
 # keep retrying) from "the printer is answering but our session is dead" (#2732).
 check_port = _check_port
+
+
+async def _check_ftps_tls(ip: str, model: str | None, timeout: float = _PORT_PROBE_TIMEOUT) -> str:
+    """Probe port 990 the way the FTP client does, and say how far it got.
+
+    Returns ``"ok"``, ``"closed"`` (nothing accepted the TCP connection) or
+    ``"no_tls"`` (the port accepted the connection but the TLS handshake did
+    not complete).
+
+    A plain TCP probe cannot tell the last two apart, which is exactly how
+    #2780 hid: the reporter's diagnostic reported port 990 as reachable and
+    green while every real transfer died in the handshake with
+    ``WRONG_VERSION_NUMBER``, so archives quietly arrived empty with nothing
+    on screen to explain it.
+
+    The context mirrors :class:`~backend.app.services.bambu_ftp.ImplicitFTP_TLS`
+    -- including the model's TLS cap -- so a pass here means the FTP client
+    would also get through. Handshake only; no login is attempted, so this
+    stays valid for the pre-save Add-Printer flow where no access code exists
+    yet.
+    """
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    if get_ftp_profile(model).cap_tls_v1_2:
+        context.maximum_version = ssl.TLSVersion.TLSv1_2
+
+    writer = None
+    try:
+        _reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(ip, PORT_FTPS, ssl=context),
+            timeout=timeout,
+        )
+        return "ok"
+    except ssl.SSLError:
+        # The socket was accepted and then failed to negotiate TLS. Reaching
+        # here at all proves something is listening, so this is never "port
+        # blocked" -- it is the printer's file service in a state no retry
+        # gets past.
+        return "no_tls"
+    except Exception:
+        return "closed"
+    finally:
+        if writer is not None:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
 
 
 def _auth_reason_params(reason: str | None) -> dict:
@@ -156,14 +208,22 @@ async def run_connection_diagnostic(
 
     # --- Port reachability (probed in parallel) ---
     camera_port, camera_protocol = _camera_port_for_printer(printer)
-    mqtt_ok, ftps_ok, camera_ok = await asyncio.gather(
+    mqtt_ok, ftps_state, camera_ok = await asyncio.gather(
         _check_port(ip_address, PORT_MQTT),
-        _check_port(ip_address, PORT_FTPS),
+        _check_ftps_tls(ip_address, getattr(printer, "model", None) if printer else None),
         _check_port(ip_address, camera_port),
     )
     # MQTT is connection-critical; FTPS/camera only degrade printing/camera.
     checks.append(DiagnosticCheck(id="port_mqtt", status="pass" if mqtt_ok else "fail"))
-    checks.append(DiagnosticCheck(id="port_ftps", status="pass" if ftps_ok else "warn"))
+    # "no_tls" gets its own message: the port is open, so the usual advice
+    # (unblock port 990) is wrong and only a printer restart helps (#2780).
+    checks.append(
+        DiagnosticCheck(
+            id="port_ftps",
+            status="pass" if ftps_state == "ok" else "warn",
+            params={} if ftps_state != "no_tls" else {"reason": "no_tls"},
+        )
+    )
     checks.append(
         DiagnosticCheck(
             id="port_rtsps",

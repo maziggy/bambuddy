@@ -466,7 +466,7 @@ function SortableQueueItem({
         ${isPrinting ? 'border-blue-500/30 bg-gradient-to-r from-blue-500/5 to-transparent' : ''}
         ${isSelected && isMobileSelectable ? 'sm:border-bambu-dark-tertiary border-bambu-green/40' : ''}
         ${!isSelected && !isPrinting ? 'border-bambu-dark-tertiary hover:border-bambu-dark-tertiary/80' : ''}
-        ${isMobileSelectable ? 'sm:cursor-default' : ''}
+        ${isMobileSelectable ? 'cursor-pointer sm:cursor-default' : ''}
       `}
       onClick={isMobileSelectable ? () => {
         if (window.innerWidth < 640) onToggleSelect();

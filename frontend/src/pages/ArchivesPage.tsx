@@ -64,7 +64,7 @@ import {
 import { api } from '../api/client';
 import { SliceModal } from '../components/SliceModal';
 import { RunWithPipelineModal } from '../components/RunWithPipelineModal';
-import { openInSlicer, type SlicerType } from '../utils/slicer';
+import { openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDuration } from '../utils/date';
 import { getCurrencySymbol } from '../utils/currency';
 import { getBedTypeInfo } from '../utils/bedType';
@@ -740,7 +740,8 @@ function ArchiveCard({
     { label: '', divider: true, onClick: () => {} },
     {
       label: archive.is_favorite ? t('archives.menu.removeFromFavorites') : t('archives.menu.addToFavorites'),
-      icon: <Star className={`w-4 h-4 ${archive.is_favorite ? 'fill-yellow-400 text-yellow-400' : ''}`} />,
+      // Preview the favourited state on hover so the row reads as clickable (#2791).
+      icon: <Star className={`w-4 h-4 ${archive.is_favorite ? 'fill-yellow-400 text-yellow-400' : canModify('archives', 'update', archive.created_by_id) ? 'group-hover:text-yellow-400' : ''}`} />,
       onClick: () => favoriteMutation.mutate(),
       disabled: !canModify('archives', 'update', archive.created_by_id),
       title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
@@ -2138,7 +2139,8 @@ function ArchiveListRow({
     { label: '', divider: true, onClick: () => {} },
     {
       label: archive.is_favorite ? t('archives.menu.removeFromFavorites') : t('archives.menu.addToFavorites'),
-      icon: <Star className={`w-4 h-4 ${archive.is_favorite ? 'fill-yellow-400 text-yellow-400' : ''}`} />,
+      // Preview the favourited state on hover so the row reads as clickable (#2791).
+      icon: <Star className={`w-4 h-4 ${archive.is_favorite ? 'fill-yellow-400 text-yellow-400' : canModify('archives', 'update', archive.created_by_id) ? 'group-hover:text-yellow-400' : ''}`} />,
       onClick: () => favoriteMutation.mutate(),
       disabled: !canModify('archives', 'update', archive.created_by_id),
       title: !canModify('archives', 'update', archive.created_by_id) ? t('archives.permission.noUpdateArchives') : undefined,
@@ -2956,7 +2958,7 @@ export function ArchivesPage() {
   // user hasn't explicitly chosen a different desktop slicer (#1329). This is
   // ONLY the URI-handoff target; the in-app SliceModal still uses
   // preferred_slicer for the sidecar.
-  const preferredSlicer: SlicerType = settings?.open_in_slicer || settings?.preferred_slicer || 'bambu_studio';
+  const preferredSlicer: SlicerType = resolveDesktopSlicer(settings?.open_in_slicer, settings?.preferred_slicer);
   const useSlicerApi = settings?.use_slicer_api ?? false;
   const currency = getCurrencySymbol(settings?.currency || 'USD');
 

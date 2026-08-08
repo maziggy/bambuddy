@@ -28,7 +28,7 @@ from urllib.parse import urlparse
 import certifi
 import httpx
 
-from backend.app.services.bambu_cloud import is_expiry_401
+from backend.app.services.bambu_cloud import is_captcha_challenge, is_expiry_401
 
 logger = logging.getLogger(__name__)
 
@@ -331,18 +331,24 @@ class MakerWorldService:
         if response.status_code == 404:
             raise MakerWorldNotFoundError(f"MakerWorld resource not found: {path}")
         if response.status_code == 418:
-            # MakerWorld's anti-abuse layer challenges the source IP with a
-            # CAPTCHA (``{"captchaId":"...","error":"We need to confirm..."}``).
-            # This is application-level, not Cloudflare-edge, and clears
-            # on its own within 1–4 hours of quiet traffic. There's no
-            # server-side solve — CAPTCHAs are intentionally unsolvable
-            # without a real browser. Surface the upstream message so the
-            # user can recognise it and reach for the "Open on MakerWorld"
-            # fallback instead of thinking the feature is broken.
-            upstream = _extract_upstream_error(response)
-            if upstream and "robot" in upstream.lower():
+            # Bambu's anti-abuse layer challenges the source IP with a CAPTCHA
+            # (``{"captchaId":"...","error":"We need to confirm..."}``). This is
+            # application-level, not Cloudflare-edge, and clears on its own
+            # within 1–4 hours of quiet traffic. There's no server-side solve —
+            # CAPTCHAs are intentionally unsolvable without a real browser.
+            # Surface the upstream message so the user can recognise it and
+            # reach for the "Open on MakerWorld" fallback instead of thinking
+            # the feature is broken.
+            #
+            # The same challenge also lands on the Bambu Cloud sign-in endpoint,
+            # so the shape test lives in ``bambu_cloud`` and is shared (#2790).
+            # It used to be a bare "robot" substring check on the error text,
+            # which missed a challenge worded any other way.
+            if is_captcha_challenge(response):
+                upstream = _extract_upstream_error(response)
+                detail = f" ({upstream})" if upstream else ""
                 raise MakerWorldUnavailableError(
-                    f"MakerWorld is challenging this IP with a CAPTCHA ({upstream}). "
+                    f"MakerWorld is challenging this IP with a CAPTCHA{detail}. "
                     "This usually clears within a few hours. In the meantime, use "
                     "'Open on MakerWorld' below to download the 3MF manually."
                 )

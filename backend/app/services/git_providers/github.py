@@ -115,6 +115,252 @@ class GitHubBackend(GitProviderBackend):
                 "is_private": None,
             }
 
+    async def list_commits(
+        self,
+        repo_url: str,
+        token: str,
+        branch: str,
+        client: httpx.AsyncClient,
+        limit: int = 20,
+    ) -> dict:
+        """List recent commits on ``branch`` via the repo commits API."""
+        try:
+            owner, repo = self.parse_repo_url(repo_url)
+            api_base = self.get_api_base(repo_url)
+            headers = self.get_headers(token)
+
+            # GitHub pages with ``per_page`` and ignores ``limit``; Gitea/Forgejo
+            # do the reverse. Sending both lets GiteaBackend inherit this method
+            # unchanged instead of duplicating it for one query parameter.
+            response = await client.get(
+                f"{api_base}/repos/{owner}/{repo}/commits",
+                headers=headers,
+                params={"sha": branch, "per_page": limit, "limit": limit},
+            )
+
+            if response.status_code == 404:
+                return {
+                    "success": False,
+                    "message": (
+                        f"Branch '{branch}' not found, or the repository has no commits yet. "
+                        "Run a backup before restoring."
+                    ),
+                    "commits": [],
+                }
+            if response.status_code != 200:
+                msg = f"Failed to list commits (HTTP {response.status_code}): {self._truncated_response_text(response)}"
+                logger.warning("list_commits %s/%s: %s", owner, repo, msg)
+                return {"success": False, "message": msg, "commits": []}
+
+            try:
+                data = response.json()
+            except ValueError:
+                return {"success": False, "message": "Non-JSON response listing commits", "commits": []}
+            if not isinstance(data, list):
+                return {"success": False, "message": "Unexpected shape listing commits", "commits": []}
+
+            return {"success": True, "message": "OK", "commits": self._parse_commit_entries(data, limit)}
+
+        except Exception as e:
+            logger.exception("list_commits failed for %s branch=%s", repo_url, branch)
+            return {"success": False, "message": f"{type(e).__name__}: {str(e)[:200]}", "commits": []}
+
+    @staticmethod
+    def _parse_commit_entries(data: list, limit: int) -> list[dict]:
+        """Normalise GitHub/Gitea commit list entries to our flat shape."""
+        commits = []
+        for entry in data[:limit]:
+            if not isinstance(entry, dict):
+                continue
+            sha = entry.get("sha")
+            if not isinstance(sha, str) or not sha:
+                continue
+            commit = entry.get("commit") if isinstance(entry.get("commit"), dict) else {}
+            author = commit.get("author") if isinstance(commit.get("author"), dict) else {}
+            commits.append(
+                {
+                    "sha": sha,
+                    "message": commit.get("message") or "",
+                    "author": author.get("name") or "",
+                    "date": author.get("date") or "",
+                }
+            )
+        return commits
+
+    async def _blob_shas_at(
+        self,
+        client: httpx.AsyncClient,
+        headers: dict,
+        api_base: str,
+        owner: str,
+        repo: str,
+        ref: str,
+    ) -> tuple[dict[str, str] | None, str]:
+        """Return ``({path: blob_sha}, "")`` at ``ref``, or ``(None, error_message)``.
+
+        A commit SHA is a valid tree-ish for the trees API, so this resolves the
+        commit's tree in one request rather than commit -> tree -> list.
+        """
+        response = await client.get(
+            f"{api_base}/repos/{owner}/{repo}/git/trees/{ref}?recursive=1",
+            headers=headers,
+        )
+        if response.status_code == 404:
+            return None, f"Commit or tree '{ref}' not found in the repository"
+        if response.status_code != 200:
+            return None, f"Failed to list tree (HTTP {response.status_code}): {self._truncated_response_text(response)}"
+        try:
+            data = response.json()
+        except ValueError:
+            return None, "Non-JSON response listing tree"
+        # Same limit the push path guards against: a truncated listing would make
+        # a restore silently skip categories that are actually in the backup.
+        if data.get("truncated"):
+            return None, (
+                "Repository tree exceeds the API listing limit (truncated=true), so the backup "
+                "contents cannot be enumerated reliably. Rotate the backup repository."
+            )
+        blobs: dict[str, str] = {}
+        for item in data.get("tree", []):
+            if not isinstance(item, dict) or item.get("type") != "blob":
+                continue
+            path, sha = item.get("path"), item.get("sha")
+            if isinstance(path, str) and isinstance(sha, str) and path and sha:
+                blobs[path] = sha
+        return blobs, ""
+
+    async def get_commit(self, repo_url: str, token: str, ref: str, client: httpx.AsyncClient) -> dict:
+        """Read one commit's metadata directly, for refs outside the list window."""
+        try:
+            owner, repo = self.parse_repo_url(repo_url)
+            api_base = self.get_api_base(repo_url)
+            headers = self.get_headers(token)
+
+            response = await client.get(f"{api_base}/repos/{owner}/{repo}/commits/{ref}", headers=headers)
+            if response.status_code == 404:
+                return {"success": False, "message": f"Commit '{ref}' not found in the repository", "commit": None}
+            if response.status_code != 200:
+                msg = f"Failed to read commit (HTTP {response.status_code}): {self._truncated_response_text(response)}"
+                logger.warning("get_commit %s/%s ref=%s: %s", owner, repo, ref, msg)
+                return {"success": False, "message": msg, "commit": None}
+
+            try:
+                data = response.json()
+            except ValueError:
+                return {"success": False, "message": "Non-JSON response reading commit", "commit": None}
+            if not isinstance(data, dict):
+                return {"success": False, "message": "Unexpected shape reading commit", "commit": None}
+
+            # Same entry shape as list_commits, so callers can treat the two
+            # interchangeably.
+            parsed = self._parse_commit_entries([data], 1)
+            if not parsed:
+                return {"success": False, "message": "Commit response carried no SHA", "commit": None}
+            return {"success": True, "message": "OK", "commit": parsed[0]}
+
+        except Exception as e:
+            logger.exception("get_commit failed for %s ref=%s", repo_url, ref)
+            return {"success": False, "message": f"{type(e).__name__}: {str(e)[:200]}", "commit": None}
+
+    async def list_tree(
+        self,
+        repo_url: str,
+        token: str,
+        ref: str,
+        client: httpx.AsyncClient,
+    ) -> dict:
+        """List blob paths present at ``ref`` via the Git Data trees API."""
+        try:
+            owner, repo = self.parse_repo_url(repo_url)
+            api_base = self.get_api_base(repo_url)
+            headers = self.get_headers(token)
+
+            blobs, error = await self._blob_shas_at(client, headers, api_base, owner, repo, ref)
+            if blobs is None:
+                logger.warning("list_tree %s/%s ref=%s: %s", owner, repo, ref, error)
+                return {"success": False, "message": error, "paths": [], "blob_shas": {}}
+
+            # The map is handed back so fetch_files does not GET the same
+            # recursive tree a second time for the same ref.
+            return {"success": True, "message": "OK", "paths": sorted(blobs), "blob_shas": blobs}
+
+        except Exception as e:
+            logger.exception("list_tree failed for %s ref=%s", repo_url, ref)
+            return {"success": False, "message": f"{type(e).__name__}: {str(e)[:200]}", "paths": [], "blob_shas": {}}
+
+    async def fetch_files(
+        self,
+        repo_url: str,
+        token: str,
+        ref: str,
+        paths: list[str],
+        client: httpx.AsyncClient,
+        blob_shas: dict[str, str] | None = None,
+    ) -> dict:
+        """Read ``paths`` at ``ref`` via the Git Data blobs API.
+
+        The blobs API is used rather than the contents API because contents
+        inlines only files up to 1 MB — an archive-heavy ``print_history.json``
+        can exceed that, and it would come back with an empty body instead of an
+        error.
+        """
+        try:
+            owner, repo = self.parse_repo_url(repo_url)
+            api_base = self.get_api_base(repo_url)
+            headers = self.get_headers(token)
+
+            blobs = blob_shas
+            if blobs is None:
+                blobs, error = await self._blob_shas_at(client, headers, api_base, owner, repo, ref)
+                if blobs is None:
+                    logger.warning("fetch_files %s/%s ref=%s: %s", owner, repo, ref, error)
+                    return {"success": False, "message": error, "files": {}}
+
+            files: dict[str, str] = {}
+            for path in paths:
+                sha = blobs.get(path)
+                if sha is None:
+                    continue
+                response = await client.get(f"{api_base}/repos/{owner}/{repo}/git/blobs/{sha}", headers=headers)
+                if response.status_code != 200:
+                    msg = f"Failed to read {path} (HTTP {response.status_code}): {self._truncated_response_text(response)}"
+                    logger.warning("fetch_files %s/%s: %s", owner, repo, msg)
+                    return {"success": False, "message": msg, "files": {}}
+                text, error = self._decode_blob(response, path)
+                if text is None:
+                    logger.warning("fetch_files %s/%s: %s", owner, repo, error)
+                    return {"success": False, "message": error, "files": {}}
+                files[path] = text
+
+            return {"success": True, "message": "OK", "files": files}
+
+        except Exception as e:
+            logger.exception("fetch_files failed for %s ref=%s", repo_url, ref)
+            return {"success": False, "message": f"{type(e).__name__}: {str(e)[:200]}", "files": {}}
+
+    def _decode_blob(self, response: httpx.Response, path: str) -> tuple[str | None, str]:
+        """Decode a blob API response body to text, or return an error message."""
+        try:
+            data = response.json()
+        except ValueError:
+            return None, f"Non-JSON response reading {path}"
+        if not isinstance(data, dict):
+            return None, f"Unexpected shape reading {path}"
+        content = data.get("content")
+        if not isinstance(content, str):
+            return None, f"Missing content reading {path}"
+        encoding = data.get("encoding", "base64")
+        try:
+            if encoding == "base64":
+                # Both providers wrap base64 payloads at 60 chars; b64decode
+                # tolerates the newlines, but be explicit about it.
+                return base64.b64decode(content).decode("utf-8"), ""
+            if encoding in ("utf-8", "text", "plain"):
+                return content, ""
+        except (ValueError, UnicodeDecodeError) as e:
+            return None, f"Could not decode {path}: {type(e).__name__}"
+        return None, f"Unsupported blob encoding {encoding!r} reading {path}"
+
     async def push_files(
         self,
         repo_url: str,

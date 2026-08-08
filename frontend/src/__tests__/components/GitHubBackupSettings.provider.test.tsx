@@ -112,6 +112,31 @@ describe('GitHubBackupSettings - Provider Selection', () => {
     expect(options).toContain('forgejo');
   });
 
+  it('names the scopes of the selected provider under the token field', async () => {
+    // #2775: one shared hint could only ever be right for one provider, and the
+    // one it was right for was GitHub. A Forgejo user reading "Contents read and
+    // write" has no such setting to find, and guesses wide.
+    render(<GitHubBackupSettings />);
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: /git provider/i })).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/Contents read and write access/i)).toBeInTheDocument();
+
+    const select = screen.getByRole('combobox', { name: /git provider/i });
+    fireEvent.change(select, { target: { value: 'forgejo' } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/write:repository/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Contents read and write access/i)).not.toBeInTheDocument();
+
+    fireEvent.change(select, { target: { value: 'gitlab' } });
+    await waitFor(() => {
+      expect(screen.getByText(/read_repository/i)).toBeInTheDocument();
+    });
+  });
+
   it('loads forgejo provider from existing config', async () => {
     server.use(
       http.get('/api/v1/github-backup/config', () =>

@@ -12,6 +12,11 @@ from backend.app.services.git_providers.github import GitHubBackend
 
 logger = logging.getLogger(__name__)
 
+# Gitea clamps per_page to MAX_RESPONSE_ITEMS, which defaults to 50. Consulted
+# only when a tree response carries no usable total_count: a page at least this
+# long may be a clamped full page and cannot be assumed to be the last one.
+_ASSUMED_MIN_PAGE_SIZE = 50
+
 
 class GiteaBackend(GitHubBackend):
     """Backend for Gitea instances.
@@ -99,6 +104,107 @@ class GiteaBackend(GitHubBackend):
         headers = super().get_headers(token)
         headers["Accept"] = "application/json"
         return headers
+
+    async def _blob_shas_at(
+        self,
+        client: httpx.AsyncClient,
+        headers: dict,
+        api_base: str,
+        owner: str,
+        repo: str,
+        ref: str,
+    ) -> tuple[dict[str, str] | None, str]:
+        """Paged override of GitHub's single-GET tree read (#2656).
+
+        Divergence four, alongside the three in the class docstring. GitHub's
+        recursive trees endpoint is not paginated and signals overflow with
+        ``truncated: true``, which the inherited implementation hard-fails on.
+        Gitea and Forgejo *do* page the same endpoint — ``page``/``per_page``,
+        with ``total_count`` alongside the tree — so the inherited version would
+        read only the first page and then report every category beyond it as
+        absent from the commit. A restore that silently skips categories is the
+        exact failure the GitHub version refuses to allow, so this pages instead.
+
+        The cap mirrors GitLab's: reaching it means there are more pages, and
+        that is a failure rather than a partial result. Because the page size is
+        the server's choice rather than ours (see below), the cap is a page count
+        and not a file count.
+        """
+        blobs: dict[str, str] = {}
+        seen = 0
+        page = 1
+        page_size: int | None = None
+        while page <= 50:
+            response = await client.get(
+                f"{api_base}/repos/{owner}/{repo}/git/trees/{ref}",
+                headers=headers,
+                params={"recursive": "true", "page": page, "per_page": 1000},
+            )
+            if response.status_code == 404:
+                return None, f"Commit or tree '{ref}' not found in the repository"
+            if response.status_code != 200:
+                return None, (
+                    f"Failed to list tree (HTTP {response.status_code}): {self._truncated_response_text(response)}"
+                )
+            try:
+                data = response.json()
+            except ValueError:
+                return None, "Non-JSON response listing tree"
+            if not isinstance(data, dict):
+                return None, "Unexpected shape listing tree"
+
+            entries = data.get("tree")
+            if not isinstance(entries, list):
+                entries = []
+            for item in entries:
+                if not isinstance(item, dict) or item.get("type") != "blob":
+                    continue
+                path, sha = item.get("path"), item.get("sha")
+                if isinstance(path, str) and isinstance(sha, str) and path and sha:
+                    blobs[path] = sha
+
+            # total_count counts every entry, trees included, so compare against
+            # what came back rather than against len(blobs).
+            #
+            # Count what the server actually returned, never the per_page we
+            # asked for: Gitea clamps per_page to MAX_RESPONSE_ITEMS, which
+            # defaults to 50. Deriving the offset from the requested 1000 made
+            # page 2 report 1050 entries seen, which clears any total_count below
+            # that — so the loop stopped and returned the first two pages of a
+            # much larger tree as a success. The restore then read every missing
+            # path as "category not present in this commit" and skipped it
+            # silently, the exact failure this override exists to prevent.
+            total = data.get("total_count")
+            seen += len(entries)
+            if page_size is None:
+                page_size = max(len(entries), _ASSUMED_MIN_PAGE_SIZE)
+
+            if not entries:
+                return blobs, ""
+            if isinstance(total, int):
+                if seen >= total:
+                    return blobs, ""
+            elif len(entries) < page_size:
+                # No usable total_count. This used to return here on the *first*
+                # page, i.e. fail open into a success holding whatever one page
+                # happened to be — 50 entries of an arbitrarily large tree under
+                # the default clamp — and the restore then reported every
+                # category beyond it as absent from the commit. Page until a
+                # short or empty page instead; the page-count ceiling below
+                # still gives the correct hard failure for a tree that really is
+                # too large. A page shorter than the first one (or than Gitea's
+                # default clamp, so a genuinely small tree stays one request)
+                # cannot be followed by another. The residual case is an
+                # instance whose MAX_RESPONSE_ITEMS is set *below* 50 and which
+                # also omits total_count; real Gitea and Forgejo always send it
+                # on this route.
+                return blobs, ""
+            page += 1
+
+        return None, (
+            "Repository tree exceeds the listing limit, so the backup contents cannot be "
+            "enumerated reliably. Rotate the backup repository."
+        )
 
     async def push_files(
         self,

@@ -150,6 +150,62 @@ def _resolve_global_tray_id(slot_id: int, slot_to_tray: list | None, ams_trays: 
     return slot_id - 1
 
 
+def _resolve_slot_to_tray_fallback(printer_id: int, filament_usage: list[dict]) -> tuple[list[int] | None, str]:
+    """Recover a slot-to-tray mapping at completion when print start captured none.
+
+    ``store_print_data`` can only learn the mapping from two sources: the
+    ``ams_mapping`` Bambuddy intercepts on the printer's local request topic, and
+    a queue item's stored mapping. Neither exists for a print dispatched from
+    Bambu Studio while the printer is cloud-bound — the command travels through
+    Bambu's broker and never appears on the local topic we subscribe to. With
+    ``slot_to_tray`` left NULL, ``_resolve_global_tray_id`` guesses by position:
+    slicer slot 1 to the first loaded tray, slot 2 to the second, and so on. An
+    AMS that isn't loaded in slicer order then charges every slot to the wrong
+    spool, and the archive's filament is rewritten to match, so the print
+    silently changes colour when it finishes (#2768).
+
+    The printer knows the real answer. Its ``mapping`` field carries the actual
+    slot-to-tray assignment for the running job, and for the models that never
+    publish it (A1, P1S, P2S) the 3MF's per-slot colours can be matched against
+    the loaded trays instead. The built-in inventory writer has consulted both
+    for as long as it has resolved mappings at completion; this gives the
+    Spoolman writer the same two fallbacks at the same moment.
+
+    Deliberately at completion rather than inside ``store_print_data``: the
+    printer keeps publishing ``mapping`` long after a job ends — it is still in
+    the status payload while the printer sits idle — so reading it at print start
+    risks stamping the *previous* job's mapping onto this one before the printer
+    has pushed the update. At completion the field unambiguously describes the
+    job that just ran.
+
+    Args:
+        printer_id: Printer whose live state is consulted.
+        filament_usage: The 3MF's per-slot estimates, needed by the colour
+            match. Only the ``slot_id``/``color`` keys are read.
+
+    Returns:
+        ``(mapping, source)``, or ``(None, "none")`` when neither fallback
+        produced anything and the positional default stands.
+    """
+    from backend.app.services.printer_manager import printer_manager
+    from backend.app.services.usage_tracker import _decode_mqtt_mapping, _match_slots_by_color
+
+    state = printer_manager.get_status(printer_id)
+    raw_data = getattr(state, "raw_data", None) if state else None
+    if not raw_data:
+        return None, "none"
+
+    decoded = _decode_mqtt_mapping(raw_data.get("mapping"))
+    if decoded:
+        return decoded, "mqtt"
+
+    matched = _match_slots_by_color(filament_usage, raw_data.get("ams"))
+    if matched:
+        return matched, "color_match"
+
+    return None, "none"
+
+
 def build_ams_tray_lookup(raw_data: dict) -> dict[int, dict]:
     """Build lookup of global_tray_id -> tray info from printer state.
 
@@ -327,9 +383,11 @@ async def store_print_data(
     # Prefer the explicit mapping captured from the print command, then fall back
     # to any queue mapping stored for scheduled/reprint jobs.
     slot_to_tray = ams_mapping if ams_mapping is not None else None
+    mapping_source = "print_cmd" if slot_to_tray else None
     if not slot_to_tray and queue_item and queue_item.ams_mapping:
         try:
             slot_to_tray = json.loads(queue_item.ams_mapping)
+            mapping_source = "queue"
         except json.JSONDecodeError:
             pass  # Ignore malformed AMS mapping; fall back to default slot assignment
 
@@ -364,8 +422,15 @@ async def store_print_data(
     )
     logger.debug("[SPOOLMAN] Filament usage: %s", filament_usage)
     logger.debug("[SPOOLMAN] AMS trays: %s", list(ams_trays.keys()))
-    if slot_to_tray:
-        logger.debug("[SPOOLMAN] Custom slot mapping: %s", slot_to_tray)
+    # Logged at info even when there is no mapping: "source: none" here is the
+    # signal that completion will have to fall back, which is the single most
+    # useful line in the log when a print is charged to the wrong spool (#2768).
+    logger.info(
+        "[SPOOLMAN] Print start: archive %s slot_to_tray=%s (source: %s)",
+        archive_id,
+        slot_to_tray,
+        mapping_source or "none",
+    )
     if layer_usage_json:
         logger.debug("[SPOOLMAN] Layer usage data available for partial tracking")
 
@@ -819,6 +884,19 @@ async def _report_partial_usage(
         )
         return
 
+    # Same recovery the completion path does, for the same reason: a print
+    # dispatched from Studio over the cloud left print start with no mapping to
+    # store, and both paths below feed ``slot_to_tray`` to
+    # ``_resolve_global_tray_id`` (#2768). An aborted print charges the wrong
+    # spool just as readily as a finished one.
+    if not slot_to_tray:
+        slot_to_tray, _partial_mapping_source = _resolve_slot_to_tray_fallback(printer_id, filament_usage)
+        logger.info(
+            "[SPOOLMAN] Partial usage: slot_to_tray=%s (source: %s)",
+            slot_to_tray,
+            _partial_mapping_source,
+        )
+
     # Try to use accurate G-code parsed data
     if layer_usage:
         layer_usage_int = {
@@ -999,6 +1077,20 @@ async def report_usage(printer_id: int, archive_id: int):
         # firmware resets it at print end). At completion the current layer
         # is the print's last valid layer.
         _layer_denom_hint = _total_layers or _current_layer
+
+        # Recover the mapping when print start had nothing to store — the
+        # cloud-dispatched Studio print of #2768. Only the 3MF path consumes
+        # ``slot_to_tray``; the remain-delta path below resolves spools from the
+        # AMS slot directly, so there is nothing to recover for it.
+        mapping_source = "stored" if slot_to_tray else "none"
+        if filament_usage and not slot_to_tray:
+            slot_to_tray, mapping_source = _resolve_slot_to_tray_fallback(printer_id, filament_usage)
+        logger.info(
+            "[SPOOLMAN] Archive %s: slot_to_tray=%s (source: %s)",
+            archive_id,
+            slot_to_tray,
+            mapping_source,
+        )
 
         slot_colors: dict[int, str] = {}
         slot_materials: dict[int, str] = {}

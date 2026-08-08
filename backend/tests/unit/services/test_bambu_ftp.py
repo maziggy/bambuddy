@@ -14,6 +14,8 @@ Tests against a real mock implicit FTPS server, covering:
 """
 
 import asyncio
+import logging
+import socket
 import threading
 import time
 from pathlib import Path
@@ -1615,3 +1617,113 @@ class TestUploadDeadline:
 
         time.sleep(_UPLOAD_FLUSH_DELAY)
         assert not (Path(ftp_root) / "cancelme.3mf").exists(), "partial file left on the printer"
+
+
+# ---------------------------------------------------------------------------
+# TestHandshakeCoolOff
+# ---------------------------------------------------------------------------
+class _PlaintextServer:
+    """A socket that accepts on 990 and answers in plaintext, not TLS.
+
+    This is what #2780's printers do once their file service wedges: the TCP
+    connect succeeds, so a port probe reports the printer as healthy, and then
+    the implicit-FTPS handshake dies on ``WRONG_VERSION_NUMBER`` because the
+    first bytes back are an FTP banner rather than a TLS record.
+    """
+
+    def __init__(self):
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.bind(("127.0.0.1", 0))
+        self._sock.listen(8)
+        self.port = self._sock.getsockname()[1]
+        self.accepts = 0
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
+
+    def _serve(self):
+        while not self._stop.is_set():
+            try:
+                conn, _addr = self._sock.accept()
+            except OSError:
+                return
+            self.accepts += 1
+            try:
+                conn.sendall(b"220 Welcome to the printer.\r\n")
+            except OSError:
+                pass
+            finally:
+                conn.close()
+
+    def stop(self):
+        self._stop.set()
+        self._sock.close()
+        self._thread.join(timeout=2)
+
+
+@pytest.fixture()
+def plaintext_server():
+    server = _PlaintextServer()
+    yield server
+    server.stop()
+
+
+class TestHandshakeCoolOff:
+    """A wedged file service must be contacted once, not hundreds of times.
+
+    #2780: an X2D served clean FTPS for five days, flipped, and then failed
+    every handshake for eight more. Because each candidate path opened its own
+    connection, one reporter's log carried 3511 identical handshake failures.
+    """
+
+    def _client(self, server, ip="127.0.0.1"):
+        client = BambuFTPClient(ip, "12345678", timeout=5.0, printer_model="P2S")
+        client.FTP_PORT = server.port
+        return client
+
+    def test_plaintext_answer_on_990_blocks_the_printer(self, plaintext_server, caplog):
+        client = self._client(plaintext_server)
+        with caplog.at_level(logging.WARNING, logger="backend.app.services.bambu_ftp"):
+            assert client.connect() is False
+        assert bambu_ftp.ftps_handshake_blocked("127.0.0.1") is True
+        messages = [r.getMessage() for r in caplog.records]
+        assert any("WRONG_VERSION_NUMBER" in m for m in messages)
+        # The warning has to name the remedy, not just the error: the port is
+        # open, so "unblock port 990" is the wrong advice.
+        assert any("restarted" in m for m in messages)
+
+    def test_blocked_printer_is_not_contacted_again(self, plaintext_server):
+        self._client(plaintext_server).connect()
+        assert plaintext_server.accepts == 1
+
+        for _ in range(5):
+            assert self._client(plaintext_server).connect() is False
+        # Still one: the cool-off answered without opening a socket.
+        assert plaintext_server.accepts == 1
+
+    def test_cooloff_expiry_lets_the_printer_be_retried(self, plaintext_server, monkeypatch):
+        monkeypatch.setattr(bambu_ftp, "_HANDSHAKE_COOLOFF_SECONDS", 0.0)
+        self._client(plaintext_server).connect()
+        assert bambu_ftp.ftps_handshake_blocked("127.0.0.1") is False
+        assert self._client(plaintext_server).connect() is False
+        assert plaintext_server.accepts == 2
+
+    def test_block_is_per_printer(self, plaintext_server):
+        self._client(plaintext_server).connect()
+        assert bambu_ftp.ftps_handshake_blocked("127.0.0.1") is True
+        # A second printer that never failed must stay reachable.
+        assert bambu_ftp.ftps_handshake_blocked("192.0.2.77") is False
+
+    def test_expired_block_lets_a_recovered_printer_straight_back_in(self, ftp_client_factory):
+        """A power-cycled printer is picked up on the next print, not held out.
+
+        The expired entry is also dropped, so the map holds one key per
+        currently-wedged printer rather than one per printer this process has
+        ever failed against.
+        """
+        BambuFTPClient._handshake_blocked_until["127.0.0.1"] = time.monotonic() - 1
+        client = ftp_client_factory()
+        assert client.connect() is True
+        client.disconnect()
+        assert BambuFTPClient._handshake_blocked_until == {}

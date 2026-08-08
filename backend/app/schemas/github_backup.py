@@ -176,6 +176,7 @@ class GitHubBackupStatus(BaseModel):
     configured: bool = Field(description="Whether backup is configured")
     enabled: bool = Field(description="Whether backup is enabled")
     is_running: bool = Field(description="Whether a backup is currently running")
+    restore_running: bool = Field(default=False, description="Whether a restore is currently running")
     progress: str | None = Field(default=None, description="Current backup progress message")
     last_backup_at: datetime | None
     last_backup_status: str | None
@@ -204,3 +205,125 @@ class GitHubBackupTriggerResponse(BaseModel):
     log_id: int | None = None
     commit_sha: str | None = None
     files_changed: int = 0
+
+
+# --- Restore (issue #2656) --------------------------------------------------
+
+# "HEAD" means "whatever the branch tip is right now"; the service resolves it
+# to a concrete SHA before reading anything so preview and apply can't straddle
+# two different commits. Anything else must look like a git object name.
+REF_PATTERN = r"^(?:HEAD|[0-9a-fA-F]{7,40})$"
+
+
+class RestoreCategory(StrEnum):
+    """Backup categories that can be restored.
+
+    Cloud profiles are deliberately absent: restoring a preset means writing to
+    a Bambu or Orca Cloud account, which is a different operation from every
+    other category here — those land in the local database, or on a printer the
+    instance already owns. Tracked separately from #2656.
+    """
+
+    KPROFILES = "kprofiles"
+    SETTINGS = "settings"
+    SPOOLS = "spools"
+    ARCHIVES = "archives"
+
+
+class GitHubCommitInfo(BaseModel):
+    """One commit in the backup repository."""
+
+    sha: str
+    message: str
+    author: str
+    date: str
+
+
+class GitHubCommitListResponse(BaseModel):
+    """Schema for the commit picker."""
+
+    success: bool
+    message: str
+    branch: str
+    commits: list[GitHubCommitInfo] = Field(default_factory=list)
+
+
+class GitHubRestorePreviewCategory(BaseModel):
+    """What a single category looks like inside one backup commit."""
+
+    category: RestoreCategory
+    available: bool = Field(description="Whether this category is present in the commit")
+    item_count: int = Field(default=0, description="Rows/profiles found, 0 when unavailable")
+    detail: str | None = Field(default=None, description="Why unavailable, or extra context, in English")
+    detail_code: str | None = Field(
+        default=None, description="Key under backup.restoreFromGit.details, for the client to translate"
+    )
+    detail_params: dict[str, str | int] = Field(
+        default_factory=dict, description="Interpolation values for detail_code"
+    )
+
+
+class GitHubRestorePreview(BaseModel):
+    """Schema for inspecting a commit before restoring from it."""
+
+    success: bool
+    message: str
+    ref: str = Field(description="The concrete commit SHA that was inspected")
+    commit: GitHubCommitInfo | None = None
+    metadata_version: str | None = Field(default=None, description="version field from backup_metadata.json")
+    categories: list[GitHubRestorePreviewCategory] = Field(default_factory=list)
+
+
+class GitHubRestoreRequest(BaseModel):
+    """Schema for triggering a restore."""
+
+    ref: str = Field(default="HEAD", pattern=REF_PATTERN, description="Commit SHA to restore from, or HEAD")
+    categories: list[RestoreCategory] = Field(..., min_length=1, description="Categories to restore")
+    overwrite_existing: bool = Field(
+        default=False,
+        description="Update rows that already exist locally. When false, only missing rows are inserted.",
+    )
+
+    @model_validator(mode="after")
+    def deduplicate_categories(self) -> "GitHubRestoreRequest":
+        # Same category twice would double-count the result totals.
+        seen: list[RestoreCategory] = []
+        for category in self.categories:
+            if category not in seen:
+                seen.append(category)
+        self.categories = seen
+        return self
+
+
+class GitHubRestoreNote(BaseModel):
+    """One tally note, as a translation code plus the values it interpolates.
+
+    Follows the ``backup.pathCheck`` contract already in use one card down in the
+    same component: the server chooses the code and supplies typed params, and
+    the client renders ``t(`...${code}`, { ...params, defaultValue: message })``.
+    ``message`` is the English original, so a client that does not know a code
+    yet still shows something sensible rather than the raw key.
+    """
+
+    code: str = Field(description="Key under backup.restoreFromGit.notes")
+    params: dict[str, str | int] = Field(default_factory=dict, description="Interpolation values for code")
+    message: str = Field(description="English rendering, used as the client's defaultValue")
+
+
+class GitHubRestoreCategoryResult(BaseModel):
+    """Per-category outcome of a restore."""
+
+    restored: int = 0
+    skipped: int = 0
+    failed: int = 0
+    notes: list[GitHubRestoreNote] = Field(default_factory=list)
+
+
+class GitHubRestoreResponse(BaseModel):
+    """Schema for the restore result."""
+
+    success: bool
+    message: str
+    log_id: int | None = None
+    ref: str | None = Field(default=None, description="The concrete commit SHA restored from")
+    results: dict[str, GitHubRestoreCategoryResult] = Field(default_factory=dict)

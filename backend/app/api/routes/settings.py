@@ -198,6 +198,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "ldap_auto_provision",
             "local_login_enabled",
             "preheat_enabled",
+            "queue_keep_bed_warm",
         ]:
             settings_dict[setting.key] = setting.value.lower() == "true"
         elif setting.key in [
@@ -225,6 +226,8 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "pipeline_max_copies",
             "preheat_max_wait_seconds",
             "preheat_soak_seconds",
+            "queue_keep_warm_bed_temp",
+            "queue_keep_warm_max_minutes",
             "queue_max_concurrent_uploads",
         ]:
             settings_dict[setting.key] = int(setting.value)

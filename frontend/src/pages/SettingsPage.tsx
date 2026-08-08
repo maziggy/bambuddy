@@ -1081,6 +1081,9 @@ export function SettingsPage() {
       (baseline.preheat_filament_targets ?? '') !== (localSettings.preheat_filament_targets ?? '') ||
       (baseline.preheat_max_wait_seconds ?? 900) !== (localSettings.preheat_max_wait_seconds ?? 900) ||
       (baseline.preheat_soak_seconds ?? 300) !== (localSettings.preheat_soak_seconds ?? 300) ||
+      (baseline.queue_keep_bed_warm ?? false) !== (localSettings.queue_keep_bed_warm ?? false) ||
+      (baseline.queue_keep_warm_bed_temp ?? 90) !== (localSettings.queue_keep_warm_bed_temp ?? 90) ||
+      (baseline.queue_keep_warm_max_minutes ?? 120) !== (localSettings.queue_keep_warm_max_minutes ?? 120) ||
       (baseline.nozzle_temp_presets ?? '') !== (localSettings.nozzle_temp_presets ?? '') ||
       (baseline.bed_temp_presets ?? '') !== (localSettings.bed_temp_presets ?? '') ||
       (baseline.chamber_temp_presets ?? '') !== (localSettings.chamber_temp_presets ?? '') ||
@@ -1185,6 +1188,9 @@ export function SettingsPage() {
         preheat_filament_targets: localSettings.preheat_filament_targets,
         preheat_max_wait_seconds: localSettings.preheat_max_wait_seconds,
         preheat_soak_seconds: localSettings.preheat_soak_seconds,
+        queue_keep_bed_warm: localSettings.queue_keep_bed_warm,
+        queue_keep_warm_bed_temp: localSettings.queue_keep_warm_bed_temp,
+        queue_keep_warm_max_minutes: localSettings.queue_keep_warm_max_minutes,
         nozzle_temp_presets: localSettings.nozzle_temp_presets,
         bed_temp_presets: localSettings.bed_temp_presets,
         chamber_temp_presets: localSettings.chamber_temp_presets,
@@ -4766,6 +4772,64 @@ export function SettingsPage() {
                   </p>
                 </div>
               </div>
+              {/* Keep bed warm between consecutive queue prints */}
+              <div className="flex items-center justify-between pt-2 border-t border-bambu-dark-tertiary/50">
+                <div className="flex-1 mr-4">
+                  <p className="text-sm text-white">
+                    {t('settings.keepBedWarm')}
+                  </p>
+                  <p className="text-xs text-bambu-gray mt-0.5">
+                    {t('settings.keepBedWarmDesc')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.queue_keep_bed_warm ?? false}
+                    onChange={(e) => updateSetting('queue_keep_bed_warm', e.target.checked)}
+                    className="sr-only peer"
+                    disabled={!(localSettings.preheat_enabled ?? false) || !(localSettings.require_plate_clear ?? false)}
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                <div>
+                  <label className="block text-xs text-bambu-gray mb-1">
+                    {t('settings.keepWarmBedTemp', 'Chamber-heating bed temperature (°C)')}
+                  </label>
+                  <input
+                    type="number"
+                    min={40}
+                    max={110}
+                    value={localSettings.queue_keep_warm_bed_temp ?? 90}
+                    onChange={(e) => updateSetting('queue_keep_warm_bed_temp', Math.max(40, Math.min(110, parseInt(e.target.value) || 90)))}
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green disabled:opacity-50"
+                    disabled={!(localSettings.preheat_enabled ?? false)}
+                  />
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.keepWarmBedTempHelp', 'Used whenever the bed\'s job is to heat the chamber — the keep-warm hold, and preheat when the print file carries no bed temperature. A higher bed temperature from the print file always wins.')}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs text-bambu-gray mb-1">
+                    {t('settings.keepWarmMaxMinutes', 'Stop keeping warm after (minutes)')}
+                  </label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={480}
+                    value={localSettings.queue_keep_warm_max_minutes ?? 120}
+                    onChange={(e) => updateSetting('queue_keep_warm_max_minutes', Math.max(5, Math.min(480, parseInt(e.target.value) || 120)))}
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green disabled:opacity-50"
+                    disabled={!(localSettings.queue_keep_bed_warm ?? false) || !(localSettings.preheat_enabled ?? false) || !(localSettings.require_plate_clear ?? false)}
+                  />
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.keepWarmMaxMinutesHelp', 'If the plate is not cleared within this time, the heaters are switched off rather than held indefinitely.')}
+                  </p>
+                </div>
+              </div>
+
               {/* Per-filament chamber target editor (#1468) */}
               <div className="pt-2 border-t border-bambu-dark-tertiary/50">
                 <div className="flex items-center justify-between mb-1">

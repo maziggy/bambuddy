@@ -71,6 +71,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@bhamiltoncx](https://github.com/bhamiltoncx)
 - [@g7ufo](https://github.com/g7ufo)
 - [@Heidelberger2000](https://github.com/Heidelberger2000)
+- [@MorganMLGman](https://github.com/MorganMLGman)
 
 ---
 

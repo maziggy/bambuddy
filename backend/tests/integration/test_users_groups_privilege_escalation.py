@@ -86,11 +86,11 @@ async def _create_operator_with_perms(
     assert grp_resp.status_code == 201, grp_resp.text
     gid = grp_resp.json()["id"]
 
-    # Create a regular (role="user") user.
+    # Create a regular user.
     user_resp = await async_client.post(
         "/api/v1/users/",
         headers=headers,
-        json={"username": username, "password": _FIXTURE_PW, "role": "user", "group_ids": [gid]},
+        json={"username": username, "password": _FIXTURE_PW, "group_ids": [gid]},
     )
     assert user_resp.status_code == 201, user_resp.text
     uid = user_resp.json()["id"]
@@ -112,14 +112,14 @@ async def _admin_group_id(db_session) -> int:
 
 
 # ---------------------------------------------------------------------------
-# 1. PATCH /users/{id} {role: "admin"} — USERS_UPDATE holder cannot
-# self-promote
+# 1. PATCH /users/{id} — USERS_UPDATE holder cannot modify users without
+# Administrators-group membership.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_users_update_holder_cannot_set_role_to_admin(async_client: AsyncClient, db_session):
+async def test_users_update_holder_cannot_modify_user(async_client: AsyncClient, db_session):
     admin_token = await _setup_admin(async_client)
     op_token, op_id = await _create_operator_with_perms(
         async_client, admin_token, db_session, username="op1", permissions=["users:update"]
@@ -128,7 +128,7 @@ async def test_users_update_holder_cannot_set_role_to_admin(async_client: AsyncC
     resp = await async_client.patch(
         f"/api/v1/users/{op_id}",
         headers={"Authorization": f"Bearer {op_token}"},
-        json={"role": "admin"},
+        json={"email": "attacker@example.com"},
     )
     assert resp.status_code == 403
 
@@ -152,21 +152,22 @@ async def test_users_update_holder_cannot_target_other_user(async_client: AsyncC
     target = await async_client.post(
         "/api/v1/users/",
         headers=headers,
-        json={"username": "target", "password": _FIXTURE_PW, "role": "user"},
+        json={"username": "target", "password": _FIXTURE_PW},
     )
     target_id = target.json()["id"]
 
-    # Operator attempts to elevate target to admin.
+    # Operator attempts to modify another user.
     resp = await async_client.patch(
         f"/api/v1/users/{target_id}",
         headers={"Authorization": f"Bearer {op_token}"},
-        json={"role": "admin"},
+        json={"email": "attacker@example.com"},
     )
     assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------
-# 2. POST /users/ {role: "admin"} — USERS_CREATE holder cannot create admin
+# 2. POST /users/ with Administrators membership — USERS_CREATE holder cannot
+# create an administrator.
 # ---------------------------------------------------------------------------
 
 
@@ -177,11 +178,12 @@ async def test_users_create_holder_cannot_create_admin(async_client: AsyncClient
     op_token, _ = await _create_operator_with_perms(
         async_client, admin_token, db_session, username="op3", permissions=["users:create"]
     )
+    admin_gid = await _admin_group_id(db_session)
 
     resp = await async_client.post(
         "/api/v1/users/",
         headers={"Authorization": f"Bearer {op_token}"},
-        json={"username": "newadmin", "password": _FIXTURE_PW, "role": "admin"},
+        json={"username": "newadmin", "password": _FIXTURE_PW, "group_ids": [admin_gid]},
     )
     assert resp.status_code == 403
 
@@ -303,13 +305,13 @@ async def test_admin_cannot_strip_administrators_group_permissions(async_client:
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_admin_can_still_perform_user_role_change(async_client: AsyncClient, db_session):
+async def test_admin_role_payload_is_rejected(async_client: AsyncClient):
     admin_token = await _setup_admin(async_client)
     headers = {"Authorization": f"Bearer {admin_token}"}
     target = await async_client.post(
         "/api/v1/users/",
         headers=headers,
-        json={"username": "promoteme", "password": _FIXTURE_PW, "role": "user"},
+        json={"username": "promoteme", "password": _FIXTURE_PW},
     )
     tid = target.json()["id"]
 
@@ -318,8 +320,8 @@ async def test_admin_can_still_perform_user_role_change(async_client: AsyncClien
         headers=headers,
         json={"role": "admin"},
     )
-    assert resp.status_code == 200
-    assert resp.json()["role"] == "admin"
+    assert resp.status_code == 422
+    assert any(error["loc"][-1] == "role" for error in resp.json()["detail"])
 
 
 @pytest.mark.asyncio
@@ -329,8 +331,8 @@ async def test_administrators_group_member_passes_admin_gate(async_client: Async
     rather than the legacy ``role`` column must pass the admin gate. The
     canonical signal is ``User.is_admin``, not ``role == 'admin'``.
 
-    Uses a write endpoint (PATCH /users/{id} {role}) since the admin gate
-    lives on writes only — reads stay at ``USERS_READ`` so operator UIs
+    Uses a write endpoint since the admin gate lives on writes only — reads
+    stay at ``USERS_READ`` so operator UIs
     (Stats filter-by-user, Archives Print Log, File Manager username
     autocomplete) keep working for non-admin operators who hold the
     read permission via a custom group."""
@@ -342,7 +344,7 @@ async def test_administrators_group_member_passes_admin_gate(async_client: Async
     user_resp = await async_client.post(
         "/api/v1/users/",
         headers=headers,
-        json={"username": "groupadmin", "password": _FIXTURE_PW, "role": "user"},
+        json={"username": "groupadmin", "password": _FIXTURE_PW},
     )
     uid = user_resp.json()["id"]
     add = await async_client.post(f"/api/v1/groups/{admin_gid}/users/{uid}", headers=headers)
@@ -352,7 +354,7 @@ async def test_administrators_group_member_passes_admin_gate(async_client: Async
     target_resp = await async_client.post(
         "/api/v1/users/",
         headers=headers,
-        json={"username": "target_member", "password": _FIXTURE_PW, "role": "user"},
+        json={"username": "target_member", "password": _FIXTURE_PW},
     )
     target_id = target_resp.json()["id"]
 

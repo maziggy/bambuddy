@@ -2220,7 +2220,6 @@ class TestUserCreateUpdateFieldLengths:
             json={
                 "username": "u" * 151,
                 "password": "ValidPass1!",
-                "role": "user",
             },
             headers=_auth_header(admin_token),
         )
@@ -2234,7 +2233,6 @@ class TestUserCreateUpdateFieldLengths:
             json={
                 "username": "newuserX",
                 "password": "A1!" + "x" * 254,
-                "role": "user",
             },
             headers=_auth_header(admin_token),
         )
@@ -2249,7 +2247,6 @@ class TestUserCreateUpdateFieldLengths:
                 "username": "newuserY",
                 "password": "ValidPass1!",
                 "email": "a" * 246 + "@x.com",  # total 253 chars -> fine; 248+@x.com=255 -> too long
-                "role": "user",
             },
             headers=_auth_header(admin_token),
         )
@@ -2266,7 +2263,6 @@ class TestUserCreateUpdateFieldLengths:
                 "username": "newuserZ",
                 "password": "ValidPass1!",
                 "email": "a" * 249 + "@x.com",  # 255 chars — exceeds RFC 5321 max of 254
-                "role": "user",
             },
             headers=_auth_header(admin_token),
         )
@@ -2278,7 +2274,7 @@ class TestUserCreateUpdateFieldLengths:
         # Create a user first
         create_resp = await async_client.post(
             "/api/v1/users/",
-            json={"username": "updusr1", "password": "ValidPass1!", "role": "user"},
+            json={"username": "updusr1", "password": "ValidPass1!"},
             headers=_auth_header(admin_token),
         )
         assert create_resp.status_code == 201
@@ -2296,7 +2292,7 @@ class TestUserCreateUpdateFieldLengths:
     async def test_update_password_too_long_rejected(self, async_client: AsyncClient, admin_token: str):
         create_resp = await async_client.post(
             "/api/v1/users/",
-            json={"username": "updusr2", "password": "ValidPass1!", "role": "user"},
+            json={"username": "updusr2", "password": "ValidPass1!"},
             headers=_auth_header(admin_token),
         )
         assert create_resp.status_code == 201
@@ -2314,7 +2310,7 @@ class TestUserCreateUpdateFieldLengths:
     async def test_update_email_too_long_rejected(self, async_client: AsyncClient, admin_token: str):
         create_resp = await async_client.post(
             "/api/v1/users/",
-            json={"username": "updusr3", "password": "ValidPass1!", "role": "user"},
+            json={"username": "updusr3", "password": "ValidPass1!"},
             headers=_auth_header(admin_token),
         )
         assert create_resp.status_code == 201

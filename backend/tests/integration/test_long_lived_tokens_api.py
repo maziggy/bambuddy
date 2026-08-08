@@ -35,7 +35,7 @@ async def _setup_admin(async_client: AsyncClient, *, suffix: str = "") -> str:
     return login.json()["access_token"]
 
 
-async def _create_user(async_client: AsyncClient, admin_token: str, username: str, *, role: str = "user") -> int:
+async def _create_user(async_client: AsyncClient, admin_token: str, username: str) -> int:
     """Create a non-admin user via the admin API and return their id.
 
     The user is assigned to the seeded "Viewers" group so they hold
@@ -54,7 +54,6 @@ async def _create_user(async_client: AsyncClient, admin_token: str, username: st
         json={
             "username": username,
             "password": "UserPass1!",
-            "role": role,
             "group_ids": [viewers["id"]],
         },
     )

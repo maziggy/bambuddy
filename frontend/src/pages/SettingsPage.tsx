@@ -288,14 +288,12 @@ export function SettingsPage() {
     password?: string;
     email?: string;
     confirmPassword: string;
-    role: string;
     group_ids: number[];
   }>({
     username: '',
     password: '',
     email: '',
     confirmPassword: '',
-    role: 'user',
     group_ids: [],
   });
 
@@ -647,7 +645,7 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       setShowCreateUserModal(false);
-      setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+      setUserFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
       showToast(t('settings.toast.userCreated'));
     },
     onError: (error: Error) => {
@@ -662,7 +660,7 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       setShowEditUserModal(false);
       setEditingUserId(null);
-      setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+      setUserFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
       showToast(t('settings.toast.userUpdated'));
     },
     onError: (error: Error) => {
@@ -763,7 +761,6 @@ export function SettingsPage() {
       username: userFormData.username,
       password: advancedAuthEnabled ? undefined : userFormData.password,
       email: userFormData.email || undefined,
-      role: userFormData.role,
       group_ids: userFormData.group_ids.length > 0 ? userFormData.group_ids : undefined,
     });
   };
@@ -791,7 +788,6 @@ export function SettingsPage() {
       username: userFormData.username || undefined,
       password: userFormData.password || undefined,
       email: userFormData.email || undefined,
-      role: userFormData.role,
       group_ids: userFormData.group_ids,
     };
     if (!updateData.password) {
@@ -807,7 +803,6 @@ export function SettingsPage() {
       password: '',
       email: userToEdit.email || '',
       confirmPassword: '',
-      role: userToEdit.role,
       group_ids: userToEdit.groups?.map(g => g.id) || [],
     });
     setShowEditUserModal(true);
@@ -6120,7 +6115,7 @@ export function SettingsPage() {
                     <Lock className="w-4 h-4" />
                     {t('common.enable')}
                   </Button>
-                ) : user?.is_admin && (
+                ) : isAdmin && (
                   <Button variant="secondary" onClick={() => setShowDisableAuthConfirm(true)}>
                     <Unlock className="w-4 h-4" />
                     {t('common.disable')}
@@ -6240,11 +6235,6 @@ export function SettingsPage() {
                         <div>
                           <p className="text-white font-medium text-lg">{user.username}</p>
                           <div className="flex flex-wrap gap-1 mt-2">
-                            {user.is_admin && (
-                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300">
-                                {t('settings.admin')}
-                              </span>
-                            )}
                             {user.groups?.map(group => (
                               <span
                                 key={group.id}
@@ -6281,7 +6271,7 @@ export function SettingsPage() {
                           size="sm"
                           onClick={() => {
                             setShowCreateUserModal(true);
-                            setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+                            setUserFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
                           }}
                         >
                           <Plus className="w-4 h-4" />
@@ -6307,11 +6297,6 @@ export function SettingsPage() {
                                 {userItem.auth_source === 'ldap' && (
                                   <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300">
                                     LDAP
-                                  </span>
-                                )}
-                                {userItem.is_admin && (
-                                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300">
-                                    {t('settings.admin')}
                                   </span>
                                 )}
                                 {userItem.groups?.map(group => (
@@ -6523,7 +6508,7 @@ export function SettingsPage() {
           className="fixed inset-0 bg-black flex items-center justify-center z-50 p-4"
           onClick={() => {
             setShowCreateUserModal(false);
-            setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+            setUserFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
           }}
         >
           <Card
@@ -6541,7 +6526,7 @@ export function SettingsPage() {
                   size="sm"
                   onClick={() => {
                     setShowCreateUserModal(false);
-                    setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+                    setUserFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
                   }}
                 >
                   <X className="w-5 h-5" />
@@ -6590,7 +6575,7 @@ export function SettingsPage() {
                     onSuccess={(user) => {
                       setShowCreateUserModal(false);
                       setCreateUserTab('local');
-                      setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+                      setUserFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
                       showToast(t('users.toast.ldapProvisioned', { username: user.username }));
                     }}
                   />
@@ -6600,7 +6585,7 @@ export function SettingsPage() {
                       onClick={() => {
                         setShowCreateUserModal(false);
                         setCreateUserTab('local');
-                        setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+                        setUserFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
                       }}
                     >
                       {t('common.cancel')}
@@ -6684,7 +6669,7 @@ export function SettingsPage() {
                   variant="secondary"
                   onClick={() => {
                     setShowCreateUserModal(false);
-                    setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+                    setUserFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
                   }}
                 >
                   {t('common.cancel')}
@@ -6721,7 +6706,7 @@ export function SettingsPage() {
           groups={groupsData}
           onClose={() => {
             setShowCreateUserModal(false);
-            setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+            setUserFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
           }}
           onCreate={handleCreateUser}
           isCreating={createUserMutation.isPending}
@@ -6729,7 +6714,7 @@ export function SettingsPage() {
           ldapEnabled={ldapStatus?.ldap_enabled}
           onLdapProvisioned={(user) => {
             setShowCreateUserModal(false);
-            setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+            setUserFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
             showToast(t('users.toast.ldapProvisioned', { username: user.username }));
           }}
         />
@@ -6742,7 +6727,7 @@ export function SettingsPage() {
           onClick={() => {
             setShowEditUserModal(false);
             setEditingUserId(null);
-            setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+            setUserFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
           }}
         >
           <Card
@@ -6761,7 +6746,7 @@ export function SettingsPage() {
                   onClick={() => {
                     setShowEditUserModal(false);
                     setEditingUserId(null);
-                    setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+                    setUserFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
                   }}
                 >
                   <X className="w-5 h-5" />
@@ -6900,7 +6885,7 @@ export function SettingsPage() {
                   onClick={() => {
                     setShowEditUserModal(false);
                     setEditingUserId(null);
-                    setUserFormData({ username: '', password: '', email: '', confirmPassword: '', role: 'user', group_ids: [] });
+                    setUserFormData({ username: '', password: '', email: '', confirmPassword: '', group_ids: [] });
                   }}
                 >
                   {t('users.modal.cancel') || 'Cancel'}

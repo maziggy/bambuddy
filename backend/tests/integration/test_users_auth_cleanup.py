@@ -43,7 +43,6 @@ class TestDeleteUserCleansAuthRows:
             json={
                 "username": username,
                 "password": "Password123!",
-                "role": "user",
             },
         )
         assert create_resp.status_code in (200, 201), create_resp.text

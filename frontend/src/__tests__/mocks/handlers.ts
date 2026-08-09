@@ -285,7 +285,7 @@ export const handlers = [
     return HttpResponse.json({
       id: 1,
       username: 'admin',
-      role: 'admin',
+      role: 'user',
       is_active: true,
       is_admin: true,
       groups: [{ id: 1, name: 'Administrators' }],

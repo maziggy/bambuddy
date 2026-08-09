@@ -40,6 +40,12 @@ def _permission_label(perm: Permission) -> str:
     return perm.value
 
 
+def _active_admin_user_ids(group: Group) -> set[int]:
+    if group.name != "Administrators":
+        return set()
+    return {u.id for u in group.users if u.is_active}
+
+
 @router.get("/permissions", response_model=PermissionsListResponse)
 async def list_permissions(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.GROUPS_READ),
@@ -327,6 +333,14 @@ async def remove_user_from_group(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User is not in this group",
         )
+
+    if group.name == "Administrators" and user.is_active:
+        active_admin_ids = _active_admin_user_ids(group)
+        if user.id in active_admin_ids and len(active_admin_ids) <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot remove the last admin user from Administrators",
+            )
 
     group.users.remove(user)
     await db.commit()

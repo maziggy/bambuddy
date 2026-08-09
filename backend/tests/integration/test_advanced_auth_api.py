@@ -54,7 +54,7 @@ async def _create_regular_user(
     await async_client.post(
         "/api/v1/users/",
         headers=headers,
-        json={"username": username, "password": password, "role": "user"},
+        json={"username": username, "password": password},
     )
     login = await async_client.post(
         "/api/v1/auth/login",
@@ -224,7 +224,7 @@ class TestEmailLoginAPI:
             create_resp = await async_client.post(
                 "/api/v1/users/",
                 headers=headers,
-                json={"username": "emailuser", "email": "emailuser@test.com", "role": "user"},
+                json={"username": "emailuser", "email": "emailuser@test.com"},
             )
             assert create_resp.status_code == 201
             user_id = create_resp.json()["id"]
@@ -256,7 +256,7 @@ class TestEmailLoginAPI:
             create_resp = await async_client.post(
                 "/api/v1/users/",
                 headers=headers,
-                json={"username": "caseuser", "email": "caseuser@test.com", "role": "user"},
+                json={"username": "caseuser", "email": "caseuser@test.com"},
             )
             user_id = create_resp.json()["id"]
             await async_client.patch(
@@ -282,7 +282,7 @@ class TestEmailLoginAPI:
         await async_client.post(
             "/api/v1/users/",
             headers=headers,
-            json={"username": "noemail", "password": "NoEmailPass1!", "email": "noemail@test.com", "role": "user"},
+            json={"username": "noemail", "password": "NoEmailPass1!", "email": "noemail@test.com"},
         )
 
         # Try to login with email — should fail since advanced auth is off
@@ -304,7 +304,7 @@ class TestEmailLoginAPI:
             create_resp = await async_client.post(
                 "/api/v1/users/",
                 headers=headers,
-                json={"username": "usernameuser", "email": "usernameuser@test.com", "role": "user"},
+                json={"username": "usernameuser", "email": "usernameuser@test.com"},
             )
             user_id = create_resp.json()["id"]
             await async_client.patch(
@@ -342,7 +342,7 @@ class TestForgotPasswordAPI:
             create_resp = await async_client.post(
                 "/api/v1/users/",
                 headers=headers,
-                json={"username": "forgotuser", "email": "forgot@test.com", "role": "user"},
+                json={"username": "forgotuser", "email": "forgot@test.com"},
             )
             assert create_resp.status_code == 201
 
@@ -403,7 +403,7 @@ class TestForgotPasswordAPI:
             create_resp = await async_client.post(
                 "/api/v1/users/",
                 headers=headers,
-                json={"username": "resetme", "email": "resetme@test.com", "role": "user"},
+                json={"username": "resetme", "email": "resetme@test.com"},
             )
             user_id = create_resp.json()["id"]
             await async_client.patch(
@@ -482,7 +482,7 @@ class TestAdminResetPasswordAPI:
             create_resp = await async_client.post(
                 "/api/v1/users/",
                 headers=headers,
-                json={"username": "resetuser", "email": "resetuser@test.com", "role": "user"},
+                json={"username": "resetuser", "email": "resetuser@test.com"},
             )
             user_id = create_resp.json()["id"]
 
@@ -557,7 +557,7 @@ class TestAdminResetPasswordAPI:
         create_resp = await async_client.post(
             "/api/v1/users/",
             headers=headers,
-            json={"username": "noemailuser", "password": "Noemail12345!", "role": "user"},
+            json={"username": "noemailuser", "password": "Noemail12345!"},
         )
         user_id = create_resp.json()["id"]
 
@@ -591,7 +591,7 @@ class TestUserCreationAdvancedAuth:
         response = await async_client.post(
             "/api/v1/users/",
             headers=headers,
-            json={"username": "noemailcreate", "role": "user"},
+            json={"username": "noemailcreate"},
         )
         assert response.status_code == 400
         assert "email" in response.json()["detail"].lower()
@@ -608,7 +608,7 @@ class TestUserCreationAdvancedAuth:
             response = await async_client.post(
                 "/api/v1/users/",
                 headers=headers,
-                json={"username": "autopassuser", "email": "autopass@test.com", "role": "user"},
+                json={"username": "autopassuser", "email": "autopass@test.com"},
             )
 
         assert response.status_code == 201
@@ -631,14 +631,14 @@ class TestUserCreationAdvancedAuth:
             resp1 = await async_client.post(
                 "/api/v1/users/",
                 headers=headers,
-                json={"username": "dupemail1", "email": "dupe@test.com", "role": "user"},
+                json={"username": "dupemail1", "email": "dupe@test.com"},
             )
             assert resp1.status_code == 201
 
             resp2 = await async_client.post(
                 "/api/v1/users/",
                 headers=headers,
-                json={"username": "dupemail2", "email": "dupe@test.com", "role": "user"},
+                json={"username": "dupemail2", "email": "dupe@test.com"},
             )
 
         assert resp2.status_code == 400
@@ -656,7 +656,7 @@ class TestUserCreationAdvancedAuth:
             response = await async_client.post(
                 "/api/v1/users/",
                 headers=headers,
-                json={"username": "emailresp", "email": "emailresp@test.com", "role": "user"},
+                json={"username": "emailresp", "email": "emailresp@test.com"},
             )
 
         assert response.status_code == 201

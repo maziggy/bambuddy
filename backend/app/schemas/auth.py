@@ -1,7 +1,7 @@
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def _validate_password_complexity(v: str) -> str:
@@ -47,10 +47,11 @@ class LoginResponse(BaseModel):
 
 
 class UserCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     username: str = Field(..., max_length=150)
     password: str | None = Field(default=None, max_length=256)  # M-NEW-4: cap before pbkdf2
     email: str | None = Field(default=None, max_length=254)  # L-NEW-5: RFC 5321 max
-    role: str = "user"
     group_ids: list[int] | None = None
 
     @field_validator("password")
@@ -62,10 +63,11 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     username: str | None = Field(default=None, max_length=150)
     password: str | None = Field(default=None, max_length=256)  # M-NEW-4: cap before pbkdf2
     email: str | None = Field(default=None, max_length=254)  # L-NEW-5: RFC 5321 max
-    role: str | None = None
     is_active: bool | None = None
     group_ids: list[int] | None = None
 
@@ -83,7 +85,7 @@ class UserResponse(BaseModel):
     email: str | None = None
     role: str  # Deprecated, kept for backward compatibility
     is_active: bool
-    is_admin: bool  # Computed from role and group membership
+    is_admin: bool  # Computed from Administrators group membership
     auth_source: str = "local"  # "local" or "ldap"
     groups: list[GroupBrief] = []
     permissions: list[str] = []  # All permissions from groups

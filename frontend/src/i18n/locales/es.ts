@@ -5659,6 +5659,7 @@ export default {
     priority: 'Prioridad',
     pushoverRetry: 'Reintento de emergencia (s)',
     pushoverExpire: 'Expiración de emergencia (s)',
+    pushoverSound: 'Sonido',
     botToken: 'Token del bot',
     chatId: 'ID del chat',
     telegramThreadId: 'ID del tema del foro',

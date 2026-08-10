@@ -5639,6 +5639,7 @@ export default {
     priority: '優先順序',
     pushoverRetry: '緊急重試 (秒)',
     pushoverExpire: '緊急逾時 (秒)',
+    pushoverSound: '聲音',
     botToken: '機器人權杖',
     chatId: '聊天 ID',
     telegramThreadId: '論壇主題 ID',

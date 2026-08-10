@@ -81,3 +81,20 @@ async def test_non_emergency_priority_omits_retry_and_expire(service_with_captur
     assert ok
     assert "retry" not in client.last_data
     assert "expire" not in client.last_data
+
+
+@pytest.mark.asyncio
+async def test_sound_included_when_set(service_with_capture):
+    service, client = service_with_capture
+    ok, _ = await service._send_pushover({**BASE_CONFIG, "sound": "siren"}, "T", "M")
+    assert ok
+    assert client.last_data["sound"] == "siren"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sound", [None, "", "   "])
+async def test_sound_omitted_when_blank(service_with_capture, sound):
+    service, client = service_with_capture
+    ok, _ = await service._send_pushover({**BASE_CONFIG, "sound": sound}, "T", "M")
+    assert ok
+    assert "sound" not in client.last_data

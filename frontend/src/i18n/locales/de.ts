@@ -6044,6 +6044,7 @@ export default {
     priority: 'Priorität',
     pushoverRetry: 'Notfall-Wiederholung (s)',
     pushoverExpire: 'Notfall-Ablauf (s)',
+    pushoverSound: 'Ton',
     botToken: 'Bot-Token',
     chatId: 'Chat-ID',
     telegramThreadId: 'Forum-Themen-ID',

@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, Save, Loader2, Send, CheckCircle, XCircle } from 'lucide-react';
+import { X, Save, Loader2, Send, CheckCircle, XCircle, Info } from 'lucide-react';
 import { api } from '../api/client';
 import type { NotificationProvider, NotificationProviderCreate, NotificationProviderUpdate, ProviderType } from '../api/client';
 import { Button } from './Button';
@@ -77,6 +77,21 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
 
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Click-to-toggle field-tooltip popover (e.g. Pushover's sound list).
+  // Native `title` attributes don't work on touch devices, so this uses a
+  // click/tap-driven popover instead — closed by clicking outside it.
+  const [openTooltipKey, setOpenTooltipKey] = useState<string | null>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (tooltipRef.current && !tooltipRef.current.contains(e.target as Node)) {
+        setOpenTooltipKey(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
 
   // Fetch printers for linking
   const { data: printers } = useQuery({
@@ -235,6 +250,18 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
           { key: 'user_key', label: 'User Key', placeholder: 'Your Pushover user key', type: 'text', required: true },
           { key: 'app_token', label: 'App Token', placeholder: 'Your Pushover app token', type: 'text', required: true },
           { key: 'priority', label: 'Priority', placeholder: '0 (normal)', type: 'number', required: false },
+          {
+            key: 'sound',
+            label: t('notifications.pushoverSound'),
+            placeholder: 'Leave empty for default',
+            type: 'text',
+            required: false,
+            tooltip:
+              'Built-in sounds: pushover, bike, bugle, cashregister, classical, cosmic, falling, gamelan, ' +
+              'incoming, intermission, magic, mechanical, pianobar, siren, spacealarm, tugboat, alien, climb, ' +
+              'persistent, echo, updown, vibrate, none. Leave blank to use your device default. You can also ' +
+              'enter the name of a custom sound you configured on your phone.',
+          },
           // Emergency priority (2) requires retry/expire — Pushover rejects the
           // message otherwise. Only shown when priority is set to 2.
           {
@@ -404,10 +431,24 @@ export function AddNotificationModal({ provider, onClose }: AddNotificationModal
             {configFields
               .filter((field) => !('showIf' in field) || (field as { showIf?: (cfg: Record<string, string>) => boolean }).showIf?.(config) !== false)
               .map((field) => (
-              <div key={field.key}>
-                <label className="block text-sm text-bambu-gray mb-1">
+              <div key={field.key} ref={openTooltipKey === field.key ? tooltipRef : undefined}>
+                <label className="flex items-center gap-1 text-sm text-bambu-gray mb-1">
                   {field.label} {field.required && '*'}
+                  {'tooltip' in field && field.tooltip && (
+                    <button
+                      type="button"
+                      onClick={() => setOpenTooltipKey(openTooltipKey === field.key ? null : field.key)}
+                      className="text-bambu-gray hover:text-white transition-colors"
+                    >
+                      <Info className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </label>
+                {'tooltip' in field && field.tooltip && openTooltipKey === field.key && (
+                  <div className="mb-2 p-2 text-xs text-bambu-gray bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg">
+                    {field.tooltip}
+                  </div>
+                )}
                 {field.type === 'select' && 'options' in field && field.options ? (
                   <select
                     value={config[field.key] || field.options[0]?.value || ''}

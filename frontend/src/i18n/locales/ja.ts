@@ -6045,6 +6045,7 @@ export default {
     priority: '優先度',
     pushoverRetry: '緊急再通知 (秒)',
     pushoverExpire: '緊急有効期限 (秒)',
+    pushoverSound: 'サウンド',
     botToken: 'ボットトークン',
     chatId: 'チャットID',
     telegramThreadId: 'フォーラムトピック ID',

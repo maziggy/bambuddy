@@ -6093,6 +6093,7 @@ export default {
     priority: 'Priority',
     pushoverRetry: 'Emergency Retry (s)',
     pushoverExpire: 'Emergency Expire (s)',
+    pushoverSound: 'Sound',
     botToken: 'Bot Token',
     chatId: 'Chat ID',
     telegramThreadId: 'Forum Topic ID',

@@ -5992,6 +5992,7 @@ export default {
     priority: 'Öncelik',
     pushoverRetry: 'Acil yeniden deneme (sn)',
     pushoverExpire: 'Acil sona erme (sn)',
+    pushoverSound: 'Ses',
     botToken: 'Bot Belirteci',
     chatId: 'Sohbet ID',
     telegramThreadId: 'Forum Konu Kimliği',

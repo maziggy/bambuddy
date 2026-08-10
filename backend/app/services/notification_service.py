@@ -448,7 +448,7 @@ class NotificationService:
         """Send notification via Pushover.
 
         Args:
-            config: Provider configuration with user_key, app_token, priority
+            config: Provider configuration with user_key, app_token, priority, sound
             title: Notification title
             message: Notification body
             image_data: Optional JPEG image bytes to attach (max 2.5MB)
@@ -471,6 +471,10 @@ class NotificationService:
             "message": message,
             "priority": priority,
         }
+
+        sound = (config.get("sound") or "").strip()
+        if sound:
+            data["sound"] = sound
 
         # Emergency priority (2) keeps re-alerting until acknowledged, so
         # Pushover *requires* retry (how often, >= 30s) and expire (when to

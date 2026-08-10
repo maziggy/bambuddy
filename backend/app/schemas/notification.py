@@ -256,6 +256,7 @@ class PushoverConfig(BaseModel):
     # Pushover requires retry >= 30s and expire <= 10800s (3h).
     retry: int = Field(default=60, ge=30, le=10800, description="Emergency re-alert interval in seconds (priority 2)")
     expire: int = Field(default=3600, ge=30, le=10800, description="Emergency alert expiry in seconds (priority 2)")
+    sound: str | None = Field(default=None, description="Pushover notification sound (built-in sound name, blank = user's default)")
 
 
 class TelegramConfig(BaseModel):

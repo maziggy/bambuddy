@@ -6034,6 +6034,7 @@ export default {
     priority: 'Priorité',
     pushoverRetry: 'Réessai urgence (s)',
     pushoverExpire: 'Expiration urgence (s)',
+    pushoverSound: 'Son',
     botToken: 'Jeton du bot',
     chatId: 'ID du chat',
     telegramThreadId: 'ID du sujet de forum',

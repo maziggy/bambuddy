@@ -6033,6 +6033,7 @@ export default {
     priority: 'Priorità',
     pushoverRetry: 'Ripetizione emergenza (s)',
     pushoverExpire: 'Scadenza emergenza (s)',
+    pushoverSound: 'Suono',
     botToken: 'Token del bot',
     chatId: 'ID chat',
     telegramThreadId: 'ID argomento forum',

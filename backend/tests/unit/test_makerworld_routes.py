@@ -16,6 +16,19 @@ import pytest
 
 from backend.app.api.routes.makerworld import _canonical_url
 from backend.app.models.library import LibraryFile, LibraryFolder
+from backend.app.services.model_providers.base import ModelProvider, ProviderResourceRef
+
+
+class _MockProvider:
+    """Mock provider for testing _canonical_url without real MakerWorld logic."""
+
+    def canonical_url(self, ref: ProviderResourceRef) -> str:
+        if ref.sub_id:
+            return f"https://makerworld.com/models/{ref.external_id}#profileId-{ref.sub_id}"
+        return f"https://makerworld.com/models/{ref.external_id}"
+
+
+_MOCK_PROVIDER = _MockProvider()
 
 
 def _fake_service(**stubs):
@@ -54,13 +67,13 @@ class TestCanonicalUrl:
     silently so it's worth pinning the exact shape."""
 
     def test_without_profile_id(self):
-        assert _canonical_url(1400373) == "https://makerworld.com/models/1400373"
+        assert _canonical_url(1400373, provider=_MOCK_PROVIDER) == "https://makerworld.com/models/1400373"
 
     def test_without_profile_id_when_none(self):
-        assert _canonical_url(1400373, None) == "https://makerworld.com/models/1400373"
+        assert _canonical_url(1400373, None, provider=_MOCK_PROVIDER) == "https://makerworld.com/models/1400373"
 
     def test_with_profile_id(self):
-        assert _canonical_url(1400373, 298919107) == ("https://makerworld.com/models/1400373#profileId-298919107")
+        assert _canonical_url(1400373, 298919107, provider=_MOCK_PROVIDER) == ("https://makerworld.com/models/1400373#profileId-298919107")
 
 
 class TestStatus:

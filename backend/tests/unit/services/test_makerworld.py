@@ -8,55 +8,54 @@ from urllib.error import HTTPError, URLError
 import httpx
 import pytest
 
-from backend.app.services.makerworld import (
-    _MAX_3MF_BYTES,
-    MAKERWORLD_API_BASE,
+from backend.app.services.model_providers.makerworld.errors import (
     MakerWorldAuthError,
     MakerWorldForbiddenError,
     MakerWorldNotFoundError,
-    MakerWorldService,
     MakerWorldUnavailableError,
     MakerWorldUrlError,
 )
+from backend.app.services.model_providers.makerworld.http import _MAX_3MF_BYTES, MAKERWORLD_API_BASE
+from backend.app.services.model_providers.makerworld.service import MakerWorldService, set_shared_http_client
+from backend.app.services.model_providers.makerworld.url import parse_url
 
 
 class TestParseUrl:
-    """MakerWorld URL extraction."""
+    """MakerWorld URL extraction — tests parse_url directly."""
 
     def test_strips_locale_prefix_and_slug(self):
-        model, profile = MakerWorldService.parse_url(
-            "https://makerworld.com/en/models/1400373-self-watering-seed-starter"
-        )
-        assert model == 1400373
-        assert profile is None
+        ref = parse_url("https://makerworld.com/en/models/1400373-self-watering-seed-starter")
+        assert ref.external_id == "1400373"
+        assert ref.sub_id is None
 
     def test_extracts_profile_id_from_fragment(self):
-        model, profile = MakerWorldService.parse_url("https://makerworld.com/en/models/1400373-slug#profileId-1452154")
-        assert model == 1400373
-        assert profile == 1452154
+        ref = parse_url("https://makerworld.com/en/models/1400373-slug#profileId-1452154")
+        assert ref.external_id == "1400373"
+        assert ref.sub_id == "1452154"
 
     def test_accepts_scheme_omitted(self):
-        model, profile = MakerWorldService.parse_url("makerworld.com/models/999")
-        assert model == 999
-        assert profile is None
+        ref = parse_url("makerworld.com/models/999")
+        assert ref.external_id == "999"
+        assert ref.sub_id is None
 
     def test_accepts_subdomain(self):
         # Defensive: if MakerWorld ever stands up a regional subdomain, still accept it
-        model, _ = MakerWorldService.parse_url("https://www.makerworld.com/en/models/42")
-        assert model == 42
+        ref = parse_url("https://www.makerworld.com/en/models/42")
+        assert ref.external_id == "42"
+        assert ref.sub_id is None
 
     def test_rejects_non_makerworld_host(self):
         with pytest.raises(MakerWorldUrlError):
-            MakerWorldService.parse_url("https://thingiverse.com/things/123")
+            parse_url("https://thingiverse.com/things/123")
 
     def test_rejects_malformed_url(self):
         # No /models/ segment anywhere in path
         with pytest.raises(MakerWorldUrlError):
-            MakerWorldService.parse_url("https://makerworld.com/en/creators/foo")
+            parse_url("https://makerworld.com/en/creators/foo")
 
     def test_rejects_empty(self):
         with pytest.raises(MakerWorldUrlError):
-            MakerWorldService.parse_url("")
+            parse_url("")
 
 
 class TestApiBase:
@@ -401,7 +400,7 @@ class TestDownload3MF:
     async def test_s3_host_delegates_to_urllib_path(self):
         svc = MakerWorldService(client=MagicMock(spec=httpx.AsyncClient))
         with patch(
-            "backend.app.services.makerworld._download_s3_urllib",
+            "backend.app.services.model_providers.makerworld.service._download_s3_urllib",
             new=AsyncMock(return_value=(b"payload", "file.3mf")),
         ) as mocked:
             payload, filename = await svc.download_3mf(
@@ -499,7 +498,7 @@ class TestS3UrllibDownload:
 
     @pytest.mark.asyncio
     async def test_returns_bytes_and_filename(self):
-        from backend.app.services.makerworld import _download_s3_urllib
+        from backend.app.services.model_providers.makerworld.http import _download_s3_urllib
 
         fake_resp = MagicMock()
         fake_resp.status = 200
@@ -524,7 +523,7 @@ class TestS3UrllibDownload:
         """The ``_NoRedirect`` handler returns ``None`` from ``redirect_request``,
         which makes ``urllib`` raise ``HTTPError`` instead of following. The
         wrapper must surface that as ``MakerWorldUnavailableError``."""
-        from backend.app.services.makerworld import _download_s3_urllib
+        from backend.app.services.model_providers.makerworld.http import _download_s3_urllib
 
         fake_opener = MagicMock()
         fake_opener.open = MagicMock(
@@ -548,7 +547,7 @@ class TestS3UrllibDownload:
 
     @pytest.mark.asyncio
     async def test_non_200_raises_unavailable(self):
-        from backend.app.services.makerworld import _download_s3_urllib
+        from backend.app.services.model_providers.makerworld.http import _download_s3_urllib
 
         fake_resp = MagicMock()
         fake_resp.status = 403
@@ -570,7 +569,7 @@ class TestS3UrllibDownload:
 
     @pytest.mark.asyncio
     async def test_size_cap_enforced(self):
-        from backend.app.services.makerworld import _download_s3_urllib
+        from backend.app.services.model_providers.makerworld.http import _download_s3_urllib
 
         fake_resp = MagicMock()
         fake_resp.status = 200
@@ -593,7 +592,7 @@ class TestS3UrllibDownload:
 
     @pytest.mark.asyncio
     async def test_network_error_mapped_to_unavailable(self):
-        from backend.app.services.makerworld import _download_s3_urllib
+        from backend.app.services.model_providers.makerworld.http import _download_s3_urllib
 
         fake_opener = MagicMock()
         fake_opener.open = MagicMock(side_effect=URLError("dns fail"))
@@ -699,3 +698,33 @@ class TestFetchThumbnail:
 
         with pytest.raises(MakerWorldUnavailableError):
             await service.fetch_thumbnail("https://makerworld.bblmw.com/makerworld/model/X/blob")
+
+
+class TestSharedHttpClient:
+    """The app-scoped httpx client registered via ``set_shared_http_client``
+    must be reused by per-request services (one shared connection pool, same
+    pattern as ``bambu_cloud``). The setter has to live in the same module as
+    the service class, or the import-time snapshot never sees the lifespan's
+    late registration and every request spins up its own client."""
+
+    @pytest.mark.asyncio
+    async def test_reuses_registered_client(self):
+        client = MagicMock(spec=httpx.AsyncClient)
+        set_shared_http_client(client)
+        try:
+            svc = MakerWorldService()
+            assert svc._client is client
+            assert svc._owns_client is False
+            # close() must NOT close a client it doesn't own
+            await svc.close()
+            client.aclose.assert_not_called()
+        finally:
+            set_shared_http_client(None)
+
+    @pytest.mark.asyncio
+    async def test_creates_and_owns_own_client_when_none_registered(self):
+        set_shared_http_client(None)
+        svc = MakerWorldService()
+        assert svc._owns_client is True
+        await svc.close()
+        assert svc._client.is_closed

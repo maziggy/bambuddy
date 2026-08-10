@@ -205,7 +205,8 @@ class TestMakerWorldSharesTheDetector:
     async def test_a_challenge_worded_differently_is_still_named(self):
         """MakerWorld used to require the literal word "robot" in the error text
         and reported anything else as an unexplained block."""
-        from backend.app.services.makerworld import MakerWorldService, MakerWorldUnavailableError
+        from backend.app.services.model_providers.makerworld.errors import MakerWorldUnavailableError
+        from backend.app.services.model_providers.makerworld.service import MakerWorldService
 
         svc = MakerWorldService(client=MagicMock(spec=httpx.AsyncClient), auth_token="tok")
         svc._client.get = AsyncMock(return_value=_response(418, {"captchaId": "abc", "error": "verification required"}))

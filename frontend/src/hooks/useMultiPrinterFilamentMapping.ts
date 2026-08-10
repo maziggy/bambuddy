@@ -83,6 +83,12 @@ export interface UseMultiPrinterFilamentMappingResult {
   autoConfigurePrinter: (printerId: number) => void;
   /** Get final mapping for a specific printer (for submission) */
   getFinalMapping: (printerId: number) => number[] | undefined;
+  /**
+   * Get the mapping computed purely from this printer's own live trays, with no
+   * manual overrides mixed in. Tray IDs are printer-relative, so this is what a
+   * printer the user has not explicitly configured must be sent (#2799).
+   */
+  getAutoMapping: (printerId: number) => number[] | undefined;
   /** Check if all printers have acceptable mappings */
   allPrintersReady: boolean;
 }
@@ -423,6 +429,12 @@ export function useMultiPrinterFilamentMapping(
     return result?.finalMapping;
   };
 
+  // Get this printer's own auto mapping, free of any manual override (#2799).
+  const getAutoMapping = (printerId: number): number[] | undefined => {
+    const result = printerResults.find((r) => r.printerId === printerId);
+    return result?.autoMapping;
+  };
+
   // Check if all printers have acceptable mappings (no missing types)
   const allPrintersReady = printerResults.every((r) => r.matchStatus !== 'missing');
 
@@ -434,6 +446,7 @@ export function useMultiPrinterFilamentMapping(
     autoConfigureAll,
     autoConfigurePrinter,
     getFinalMapping,
+    getAutoMapping,
     allPrintersReady,
   };
 }

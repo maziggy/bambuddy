@@ -205,7 +205,48 @@ class TestSliceValidation:
             },
         )
         assert response.status_code == 400
-        assert "STL, 3MF, or STEP" in response.json()["detail"]
+        assert "STL or 3MF" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_step_source_is_refused_with_an_explanation(
+        self, async_client: AsyncClient, db_session, slice_test_setup
+    ):
+        """STEP was accepted here and then failed at the sidecar.
+
+        Neither slicer's CLI can load STEP -- it answers "Unknown file format"
+        and exits 250 -- so the job was read, converted and uploaded only to
+        come back as "The input model file to the slicer can not be parsed",
+        which reads as a corrupt model rather than an unsupported format.
+        """
+        from backend.app.models.library import LibraryFile
+
+        step_path = slice_test_setup["tmp_path"] / "part.step"
+        step_path.write_bytes(b"ISO-10303-21;\n")
+        sfile = LibraryFile(
+            filename="part.step",
+            file_path=str(step_path.relative_to(slice_test_setup["tmp_path"])),
+            file_type="step",
+            file_size=14,
+        )
+        db_session.add(sfile)
+        await db_session.commit()
+        await db_session.refresh(sfile)
+
+        response = await async_client.post(
+            f"/api/v1/library/files/{sfile.id}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+            },
+        )
+
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert "STEP" in detail
+        # Naming the way out matters more than the refusal.
+        assert "export" in detail.lower()
 
 
 # ---------------------------------------------------------------------------

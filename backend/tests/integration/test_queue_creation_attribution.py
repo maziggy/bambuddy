@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from backend.app.core.auth import generate_api_key
 from backend.app.core.config import settings as app_settings
 from backend.app.models.api_key import APIKey
+from backend.app.models.group import Group
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.user import User
 
@@ -173,7 +174,14 @@ class TestWebhookQueueAddAttribution:
     async def test_credits_the_key_owner(self, async_client: AsyncClient, db_session, test_engine, printer_and_archive):
         printer, archive = printer_and_archive
 
-        owner = User(username="keyowner", password_hash="x", is_active=True)
+        # The owner needs queue:create in their own right: a key is capped by
+        # its owner's permissions (#1894), so a bare account with no groups
+        # cannot queue through a key however its scope flags are set. This test
+        # is about who the row is credited to, not about the gate.
+        group = Group(name="queue-writers", description="t", permissions=["queue:create"], is_system=False)
+        db_session.add(group)
+        await db_session.flush()
+        owner = User(username="keyowner", password_hash="x", is_active=True, groups=[group])
         db_session.add(owner)
         await db_session.commit()
         await db_session.refresh(owner)

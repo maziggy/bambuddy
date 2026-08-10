@@ -2930,9 +2930,10 @@ export function ArchivesPage() {
     queryFn: api.getSettings,
   });
 
+  // Print Log user filter -- names only, so the slim listing is enough (#1894).
   const { data: users } = useQuery({
-    queryKey: ['users'],
-    queryFn: api.getUsers,
+    queryKey: ['users', 'slim'],
+    queryFn: api.getUsersSlim,
     enabled: viewMode === 'log',
   });
 

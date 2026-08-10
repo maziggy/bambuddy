@@ -6,7 +6,7 @@ import { ModelViewer } from './ModelViewer';
 import { Button } from './Button';
 import { api, withStreamToken } from '../api/client';
 import { useToast } from '../contexts/ToastContext';
-import { isSliceableFileType, openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
+import { isApiSliceableFileType, isSliceableFileType, openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 import type { ArchivePlatesResponse, LibraryFilePlatesResponse, PlateMetadata } from '../types/plates';
 
 // The modal shows the model only; G-code has its own full-page viewer.
@@ -368,12 +368,14 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
   }, [isDraggingDivider, dividerHeight, minPlateHeight, minViewerPx, minViewerRatio]);
 
   // Which file types can be handed to a desktop slicer via the URL protocol
-  // handler — and sliced in-app via the sidecar. Shares its list with
-  // `isSliceableFilename()`, which the File Manager's card menu and list row
-  // use, so a file's "Slice" action and its 3D-preview slicer button can no
-  // longer disagree about the same file.
+  // handler. Shares its list with `isSliceableFilename()`, which the File
+  // Manager's card menu and list row use, so a file's "Slice" action and its
+  // 3D-preview slicer button can no longer disagree about the same file.
   const slicerReadyType = isSliceableFileType(fileType);
   const canOpenInSlicer = isLibrary ? slicerReadyType : true;
+  // The sidecar's list is narrower: its CLI cannot load STEP even though the
+  // desktop GUI opens one fine, so in-app slicing is gated separately.
+  const apiSlicerReadyType = isApiSliceableFileType(fileType);
 
   // When the user has the in-app Slicer API enabled (Settings → Workflow →
   // Slicer → Use Slicer API), library-mode previews route the header's slicer
@@ -382,7 +384,7 @@ export function ModelViewerModal({ archiveId, libraryFileId, title, fileType, on
   // the API is off, when no in-app handler is wired (e.g. archive preview),
   // or when the file type can't be sliced (.gcode / .gcode.3mf, etc.).
   const useBambuddySlicer = Boolean(
-    isLibrary && settings?.use_slicer_api && onSliceWithBambuddy && slicerReadyType,
+    isLibrary && settings?.use_slicer_api && onSliceWithBambuddy && apiSlicerReadyType,
   );
 
   const handleOpenInSlicer = async (slicer: SlicerType) => {

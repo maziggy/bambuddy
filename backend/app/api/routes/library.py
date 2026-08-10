@@ -4464,13 +4464,23 @@ async def slice_library_file(
     lib_file = _ensure_library_file_visible(lib_file, current_user, can_read_all)
 
     src_lower = (lib_file.filename or "").lower()
-    if not (
-        src_lower.endswith(".stl")
-        or src_lower.endswith(".3mf")
-        or src_lower.endswith(".step")
-        or src_lower.endswith(".stp")
-    ):
-        raise HTTPException(status_code=400, detail="Source file must be STL, 3MF, or STEP")
+    if src_lower.endswith(".step") or src_lower.endswith(".stp"):
+        # Neither slicer's CLI can load STEP: OrcaSlicer 2.4.2 and BambuStudio
+        # 02.07.01.62 both answer "Unknown file format. Input file must have
+        # .stl, .obj, .amf(.xml) extension." Accepting the job here meant
+        # reading the file, converting it and uploading it before the sidecar
+        # rejected it as unparseable -- which reads as a corrupt model rather
+        # than an unsupported format. Say so before any of that happens.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "STEP files cannot be sliced. The OrcaSlicer and Bambu Studio command-line "
+                "slicers load only STL and 3MF -- open the STEP in your slicer and export it "
+                "as one of those first."
+            ),
+        )
+    if not (src_lower.endswith(".stl") or src_lower.endswith(".3mf")):
+        raise HTTPException(status_code=400, detail="Source file must be STL or 3MF")
 
     src_path = Path(app_settings.base_dir) / lib_file.file_path
     if not src_path.exists():

@@ -174,6 +174,11 @@ class Permission(StrEnum):
 
     # Users (admin-level)
     USERS_READ = "users:read"
+    # Narrow read: id + username only, no emails/roles/groups/permissions (#1894).
+    # Exists so an id -> name mapping can be resolved without handing out the
+    # full user objects. Pairs with STATS_FILTER_BY_USER, which is useless
+    # without a way to discover the ids it filters on.
+    USERS_READ_SLIM = "users:read_slim"
     USERS_CREATE = "users:create"
     USERS_UPDATE = "users:update"
     USERS_DELETE = "users:delete"
@@ -346,6 +351,7 @@ PERMISSION_CATEGORIES = {
     ],
     "User Management": [
         Permission.USERS_READ,
+        Permission.USERS_READ_SLIM,
         Permission.USERS_CREATE,
         Permission.USERS_UPDATE,
         Permission.USERS_DELETE,

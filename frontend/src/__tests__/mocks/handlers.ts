@@ -484,6 +484,7 @@ export const handlers = [
   http.get('/api/v1/spoolman/spools/linked', () => HttpResponse.json([])),
   http.get('/api/v1/spoolman/spools/unlinked', () => HttpResponse.json([])),
   http.get('/api/v1/users/', () => HttpResponse.json([])),
+  http.get('/api/v1/users/slim', () => HttpResponse.json([])),
 
   // Status / object endpoints → minimal disabled-state responses
   http.get('/api/v1/archives/purge/settings', () =>

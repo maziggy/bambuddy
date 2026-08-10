@@ -37,6 +37,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
+      # Largest model accepted for a slice, in MB. See .env.example.
+      MAX_MODEL_UPLOAD_MB: "${MAX_MODEL_UPLOAD_MB:-512}"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
@@ -55,6 +57,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
+      # Largest model accepted for a slice, in MB. See .env.example.
+      MAX_MODEL_UPLOAD_MB: "${MAX_MODEL_UPLOAD_MB:-512}"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s

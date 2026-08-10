@@ -989,6 +989,12 @@ class PrintScheduler:
                     if await self._block_on_filament_deficit(db, item):
                         continue
 
+                    # Missing-filament pre-dispatch check (#2799). Hold rather
+                    # than let the printer pick a substitute for a filament the
+                    # file needs and this printer does not have.
+                    if await self._block_on_missing_filament_type(db, item):
+                        continue
+
                     # Hold this item back for the next pass rather than racing
                     # another dispatch over the same transient library row. The
                     # printer is still marked busy so a later item does not jump
@@ -1249,6 +1255,13 @@ class PrintScheduler:
 
                         # Filament-deficit pre-dispatch check (#1496).
                         if await self._block_on_filament_deficit(db, item):
+                            continue
+
+                        # Missing-filament pre-dispatch check (#2799). Model-based
+                        # selection already filters on filament type, so this is a
+                        # backstop for an AMS that changed between assignment and
+                        # dispatch.
+                        if await self._block_on_missing_filament_type(db, item):
                             continue
 
                         _claim_library_row(item)
@@ -2073,10 +2086,29 @@ class PrintScheduler:
             except (json.JSONDecodeError, TypeError):
                 stored_mapping = None
 
-        # Already resolved (present and not all-unresolved) — keep as-is so a
-        # user's manual mapping is never overwritten.
+        # Present and resolved. Global tray IDs only mean something relative to
+        # the printer they were resolved against, so "resolved" is not the same
+        # as "resolved *here*" — check the mapping still fits the printer that
+        # is about to run this item before trusting it (#2799). "Print anyway"
+        # is the user overriding exactly this judgement, so it short-circuits.
         if item.ams_mapping and not _mapping_is_all_unresolved(stored_mapping):
-            return None
+            if item.skip_filament_check:
+                return None
+            conflict = await self._stored_mapping_conflict(db, printer_id, item, stored_mapping)
+            if conflict is None:
+                return None
+            logger.warning(
+                "Queue item %s: stored ams_mapping %s does not fit printer %s (%s) — recomputing",
+                item.id,
+                stored_mapping,
+                printer_id,
+                conflict,
+            )
+            # Drop it before recomputing so a failed recompute cannot fall back
+            # to the mapping we just rejected.
+            item.ams_mapping = None
+            stored_mapping = None
+            await db.commit()
 
         computed_mapping = await self._compute_ams_mapping_for_printer(db, printer_id, item)
         if computed_mapping and not _mapping_is_all_unresolved(computed_mapping):
@@ -2102,6 +2134,82 @@ class PrintScheduler:
             await db.commit()
 
         return await self._unmappable_without_ams_message(db, printer_id, item, computed_mapping)
+
+    async def _stored_mapping_conflict(
+        self,
+        db: AsyncSession,
+        printer_id: int,
+        item: PrintQueueItem,
+        stored_mapping: list | None,
+    ) -> str | None:
+        """Describe why ``stored_mapping`` cannot be trusted on ``printer_id`` (#2799).
+
+        A mapping is a list of global tray IDs, and those are only meaningful
+        relative to the printer they were resolved against — the same rule
+        ``print_queue`` documents for tray identity. Two ways a stored mapping
+        arrives at a printer it was not resolved for:
+
+        * the print dialog stamps one mapping onto every selected printer, so a
+          mapping computed against the first printer is dispatched verbatim to
+          the rest, whose AMS slot order differs;
+        * a spool is moved between queueing and dispatch.
+
+        Both end the same way: the slot index still resolves, so nothing looks
+        wrong, and the printer obeys it — an explicit ``ams_mapping`` bypasses
+        the firmware's own type check, so a PETG slot happily prints in ASA.
+
+        Returns a short reason when a required slot points at a tray this
+        printer does not have loaded, or one holding a different filament type.
+        Returns None when the mapping fits, and — deliberately — whenever we
+        lack the evidence to judge, so a recompute only ever follows a positive
+        finding.
+        """
+        if not isinstance(stored_mapping, list) or not stored_mapping:
+            return None
+
+        status = printer_manager.get_status(printer_id)
+        if status is None:
+            return None
+
+        loaded = self._build_loaded_filaments(status)
+        if not loaded:
+            # Nothing reported yet (reconnect, first push pending). Saying
+            # "tray not loaded" here would recompute against an AMS we cannot
+            # see, which is how #2589 produced a bogus all-[-1] in the first
+            # place.
+            return None
+
+        required = await self._get_filament_requirements(db, item)
+        if not required:
+            return None
+        self._apply_filament_overrides(item, required)
+
+        by_tray = {f["global_tray_id"]: f for f in loaded}
+        for req in required:
+            slot_id = req.get("slot_id") or 0
+            if slot_id <= 0:
+                continue
+            if slot_id > len(stored_mapping):
+                return f"slot {slot_id} is not covered by the mapping"
+
+            tray = stored_mapping[slot_id - 1]
+            # An explicit external/virtual selection keeps its meaning — the
+            # user pointed at the spool holder, not at an AMS tray.
+            if isinstance(tray, int) and tray >= 254:
+                continue
+            if not isinstance(tray, int) or tray < 0:
+                return f"slot {slot_id} is unresolved"
+
+            loaded_tray = by_tray.get(tray)
+            if loaded_tray is None:
+                return f"slot {slot_id} points at tray {tray}, which this printer does not have loaded"
+
+            want = _canonical_filament_type((req.get("type") or "").upper())
+            have = _canonical_filament_type((loaded_tray.get("type") or "").upper())
+            if want and have and want != have:
+                return f"slot {slot_id} needs {req.get('type')} but tray {tray} holds {loaded_tray.get('type')}"
+
+        return None
 
     async def _unmappable_without_ams_message(
         self,
@@ -4149,6 +4257,67 @@ class PrintScheduler:
             item.filament_short = False
             await db.commit()
         return False
+
+    async def _block_on_missing_filament_type(
+        self,
+        db: AsyncSession,
+        item: PrintQueueItem,
+    ) -> bool:
+        """Promote to manual_start when a filament the file needs is not loaded (#2799).
+
+        The matcher leaves a requirement it cannot satisfy at ``-1`` and dispatch
+        goes ahead, letting the printer choose — which is how a job prints in the
+        wrong material without anyone being asked. Holding is the same answer the
+        deficit gate already gives for "the spool is too light", so it reuses the
+        same promote-and-notify machinery.
+
+        Keyed off ``required_filament_types`` rather than ``-1`` in the mapping:
+        ``-1`` is overloaded and also pads slots this plate does not print, so
+        gating on the array would hold jobs that are perfectly fine.
+
+        Returns True when this dispatch attempt was blocked.
+        """
+        if item.skip_filament_check or not item.required_filament_types or not item.printer_id:
+            return False
+
+        try:
+            required_types = json.loads(item.required_filament_types)
+        except (json.JSONDecodeError, TypeError):
+            return False
+        if not required_types:
+            return False
+
+        # Without live status _get_missing_filament_types reports everything as
+        # missing; that is the right answer for printer selection but the wrong
+        # one here, where it would hold a job on absence of evidence.
+        if printer_manager.get_status(item.printer_id) is None:
+            return False
+
+        missing = self._get_missing_filament_types(item.printer_id, required_types)
+        if not missing:
+            return False
+
+        item.manual_start = True
+        await db.commit()
+
+        job_name = await self._get_job_name(db, item)
+        printer = await self._get_printer(db, item.printer_id)
+        logger.info(
+            "Queue item %s blocked — printer %s has no %s loaded; promoted to manual_start",
+            item.id,
+            item.printer_id,
+            ", ".join(missing),
+        )
+        try:
+            await notification_service.on_queue_job_waiting(
+                job_name=job_name,
+                target_model=(printer.model if printer else "") or "",
+                waiting_reason="filament_missing",
+                db=db,
+            )
+        except Exception as e:
+            logger.debug("filament_missing notification failed for item %s: %s", item.id, e)
+        return True
 
     async def _propagate_owner_to_printer_manager(self, db: AsyncSession, item: PrintQueueItem) -> None:
         """Hand the queue item's owner to printer_manager so the

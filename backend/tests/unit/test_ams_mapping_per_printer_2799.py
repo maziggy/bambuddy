@@ -109,8 +109,8 @@ class TestStoredMappingConflict:
         assert "slot 3" in conflict
 
     @pytest.mark.asyncio
-    async def test_explicit_external_selection_is_left_alone(self):
-        """>=254 is the user pointing at the spool holder, not an AMS tray."""
+    async def test_unreported_external_feed_is_not_a_conflict(self):
+        """An external spool we have not heard about is absence of evidence."""
         scheduler = _scheduler(P2S_4_TRAYS)
         with patch("backend.app.services.print_scheduler.printer_manager") as pm:
             pm.get_status.return_value = MagicMock()
@@ -118,13 +118,39 @@ class TestStoredMappingConflict:
         assert conflict is None
 
     @pytest.mark.asyncio
-    async def test_unresolved_required_slot_conflicts(self):
+    async def test_external_feed_is_type_checked_like_any_tray(self):
+        """Two printers with different filament in the external feed is the same
+        failure this check exists for, so >=254 is not a free pass."""
+        trays = P2S_4_TRAYS + [{"global_tray_id": 254, "type": "ASA", "color": "161616FF"}]
+        scheduler = _scheduler(trays)
+        with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+            pm.get_status.return_value = MagicMock()
+            conflict = await scheduler._stored_mapping_conflict(AsyncMock(), 9, _item(), [254, -1, 1])
+        assert conflict is not None
+        assert "ASA" in conflict
+
+    @pytest.mark.asyncio
+    async def test_unresolved_required_slot_is_not_a_conflict(self):
+        """-1 says the matcher had nothing, not that the mapping is foreign.
+        Recomputing on it would discard the slots the user did resolve by hand;
+        _block_on_unmatched_filament owns this case instead."""
         scheduler = _scheduler(P2S_4_TRAYS)
         with patch("backend.app.services.print_scheduler.printer_manager") as pm:
             pm.get_status.return_value = MagicMock()
             conflict = await scheduler._stored_mapping_conflict(AsyncMock(), 9, _item(), [2, -1, -1])
+        assert conflict is None
+
+    @pytest.mark.asyncio
+    async def test_foreign_tray_is_caught_without_reading_the_3mf(self):
+        """The cheap pass runs on live status alone; the parse is not cached and
+        this method runs for every pending item on every tick."""
+        scheduler = _scheduler(P2S_4_TRAYS)
+        with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+            pm.get_status.return_value = MagicMock()
+            conflict = await scheduler._stored_mapping_conflict(AsyncMock(), 9, _item(), [7, -1, 1])
         assert conflict is not None
-        assert "unresolved" in conflict
+        assert "does not have loaded" in conflict
+        scheduler._get_filament_requirements.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_no_status_is_not_a_conflict(self):
@@ -213,67 +239,114 @@ class TestEnsureAmsMappingRevalidates:
         assert item.ams_mapping is None
 
 
-class TestBlockOnMissingFilamentType:
-    """A filament the file needs and the printer lacks holds the job."""
+class TestBlockOnUnmatchedFilament:
+    """A slot the plate prints with no tray on this printer holds the job."""
 
     @pytest.mark.asyncio
-    async def test_missing_type_promotes_to_manual_start(self):
-        scheduler = PrintScheduler()
-        scheduler._get_missing_filament_types = MagicMock(return_value=["PETG"])
+    async def test_unresolved_required_slot_holds(self):
+        scheduler = _scheduler(P2S_5_TRAYS)
         scheduler._get_job_name = AsyncMock(return_value="body1")
         scheduler._get_printer = AsyncMock(return_value=MagicMock(model="P2S"))
-        item = _item(required_filament_types=json.dumps(["PETG", "ASA"]))
+        item = _item(ams_mapping=json.dumps([0, -1, -1]))
         db = AsyncMock()
 
-        with patch("backend.app.services.print_scheduler.printer_manager") as pm:
-            pm.get_status.return_value = MagicMock()
-            blocked = await scheduler._block_on_missing_filament_type(db, item)
+        blocked = await scheduler._block_on_unmatched_filament(db, item)
 
         assert blocked is True
         assert item.manual_start is True
+        # The reason names the filament, not a machine token, because it renders
+        # on the queue row.
+        assert item.waiting_reason.startswith("Needs ")
+        assert "PETG" in item.waiting_reason
+        assert "#2850E0" in item.waiting_reason
 
     @pytest.mark.asyncio
-    async def test_all_types_loaded_dispatches(self):
-        scheduler = PrintScheduler()
-        scheduler._get_missing_filament_types = MagicMock(return_value=[])
-        item = _item(required_filament_types=json.dumps(["PETG"]))
+    async def test_padding_for_a_slot_this_plate_skips_does_not_hold(self):
+        """-1 at slot 2, which this plate never prints, is not a missing filament.
+        This is why the hold intersects with the requirement list rather than
+        reading the mapping array on its own."""
+        scheduler = _scheduler(P2S_5_TRAYS)
+        item = _item(ams_mapping=json.dumps([0, -1, 2]))
 
-        with patch("backend.app.services.print_scheduler.printer_manager") as pm:
-            pm.get_status.return_value = MagicMock()
-            blocked = await scheduler._block_on_missing_filament_type(AsyncMock(), item)
+        blocked = await scheduler._block_on_unmatched_filament(AsyncMock(), item)
 
         assert blocked is False
         assert item.manual_start is False
 
     @pytest.mark.asyncio
+    async def test_mapping_too_short_for_the_plate_holds(self):
+        scheduler = _scheduler(P2S_5_TRAYS)
+        scheduler._get_job_name = AsyncMock(return_value="body1")
+        scheduler._get_printer = AsyncMock(return_value=MagicMock(model="P2S"))
+        item = _item(ams_mapping=json.dumps([0]))
+
+        blocked = await scheduler._block_on_unmatched_filament(AsyncMock(), item)
+
+        assert blocked is True
+
+    @pytest.mark.asyncio
     async def test_print_anyway_dispatches(self):
-        scheduler = PrintScheduler()
-        scheduler._get_missing_filament_types = MagicMock(return_value=["PETG"])
-        item = _item(required_filament_types=json.dumps(["PETG"]), skip_filament_check=True)
+        scheduler = _scheduler(P2S_5_TRAYS)
+        item = _item(ams_mapping=json.dumps([0, -1, -1]), skip_filament_check=True)
 
-        with patch("backend.app.services.print_scheduler.printer_manager") as pm:
-            pm.get_status.return_value = MagicMock()
-            blocked = await scheduler._block_on_missing_filament_type(AsyncMock(), item)
+        blocked = await scheduler._block_on_unmatched_filament(AsyncMock(), item)
 
         assert blocked is False
 
     @pytest.mark.asyncio
-    async def test_no_status_does_not_hold(self):
-        """_get_missing_filament_types reports everything missing without status;
-        holding on that would wedge a job on absence of evidence."""
-        scheduler = PrintScheduler()
-        scheduler._get_missing_filament_types = MagicMock(return_value=["PETG"])
-        item = _item(required_filament_types=json.dumps(["PETG"]))
+    async def test_cleared_mapping_is_left_to_the_2589_path(self):
+        """A mapping cleared to None is the unresolvable path, which has its own
+        handling — this gate must not also fail it."""
+        scheduler = _scheduler(P2S_5_TRAYS)
+        item = _item(ams_mapping=None)
 
-        with patch("backend.app.services.print_scheduler.printer_manager") as pm:
-            pm.get_status.return_value = None
-            blocked = await scheduler._block_on_missing_filament_type(AsyncMock(), item)
+        blocked = await scheduler._block_on_unmatched_filament(AsyncMock(), item)
 
         assert blocked is False
 
     @pytest.mark.asyncio
-    async def test_item_without_recorded_types_dispatches(self):
-        scheduler = PrintScheduler()
-        item = _item(required_filament_types=None)
-        blocked = await scheduler._block_on_missing_filament_type(AsyncMock(), item)
+    async def test_unreadable_requirements_dispatches(self):
+        scheduler = _scheduler(P2S_5_TRAYS, requirements=None)
+        item = _item(ams_mapping=json.dumps([0, -1, -1]))
+
+        blocked = await scheduler._block_on_unmatched_filament(AsyncMock(), item)
+
         assert blocked is False
+
+    @pytest.mark.asyncio
+    async def test_nozzle_bound_filament_on_the_wrong_side_holds(self):
+        """The H2D case the type-only scan waved through: PETG is loaded, but on
+        the other nozzle's AMS, so the nozzle-aware matcher left the slot at -1.
+        Reading the mapping inherits that restriction for free."""
+        scheduler = _scheduler(P2S_5_TRAYS)
+        scheduler._get_job_name = AsyncMock(return_value="body1")
+        scheduler._get_printer = AsyncMock(return_value=MagicMock(model="H2D"))
+        item = _item(ams_mapping=json.dumps([0, -1, -1]))
+
+        blocked = await scheduler._block_on_unmatched_filament(AsyncMock(), item)
+
+        assert blocked is True
+
+    @pytest.mark.asyncio
+    async def test_stale_hold_reason_is_cleared_once_the_spool_is_loaded(self):
+        """The route that clears manual_start does not clear waiting_reason, and
+        a held item never reaches this gate — so the pass that lets it through
+        has to drop its own stale message."""
+        scheduler = _scheduler(P2S_5_TRAYS)
+        item = _item(ams_mapping=json.dumps([0, -1, 2]), waiting_reason="Needs PETG #2850E0")
+        db = AsyncMock()
+
+        blocked = await scheduler._block_on_unmatched_filament(db, item)
+
+        assert blocked is False
+        assert item.waiting_reason is None
+        db.commit.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_reason_set_by_another_path_is_left_alone(self):
+        scheduler = _scheduler(P2S_5_TRAYS)
+        item = _item(ams_mapping=json.dumps([0, -1, 2]), waiting_reason="Waiting for matching printer")
+
+        await scheduler._block_on_unmatched_filament(AsyncMock(), item)
+
+        assert item.waiting_reason == "Waiting for matching printer"

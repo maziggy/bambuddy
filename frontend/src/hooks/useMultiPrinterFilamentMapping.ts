@@ -83,12 +83,6 @@ export interface UseMultiPrinterFilamentMappingResult {
   autoConfigurePrinter: (printerId: number) => void;
   /** Get final mapping for a specific printer (for submission) */
   getFinalMapping: (printerId: number) => number[] | undefined;
-  /**
-   * Get the mapping computed purely from this printer's own live trays, with no
-   * manual overrides mixed in. Tray IDs are printer-relative, so this is what a
-   * printer the user has not explicitly configured must be sent (#2799).
-   */
-  getAutoMapping: (printerId: number) => number[] | undefined;
   /** Check if all printers have acceptable mappings */
   allPrintersReady: boolean;
 }
@@ -306,6 +300,14 @@ export function useMultiPrinterFilamentMapping(
   setPerPrinterConfigs: React.Dispatch<React.SetStateAction<Record<number, PerPrinterConfig>>>,
   preferLowest?: boolean,
   inventoryByTrayIdPerPrinter?: Map<number, Map<number, number>>,
+  /**
+   * The printer `defaultMappings` were resolved against — the single selected
+   * printer whose shared mapping panel produced them. Tray IDs are
+   * printer-relative, so they are applied only to that printer (#2799).
+   * `null`/`undefined` means no manual editing has happened, and the record is
+   * then empty anyway.
+   */
+  defaultMappingsPrinterId?: number | null,
 ): UseMultiPrinterFilamentMappingResult {
   // Fetch printer status for all selected printers in parallel
   const statusQueries = useQueries({
@@ -336,12 +338,26 @@ export function useMultiPrinterFilamentMapping(
       // Compute auto mapping for this printer
       const autoMapping = computeAmsMapping(filamentReqs, printerStatus, printerPreferLowest, inventoryByTrayId);
 
-      // Determine which mappings to use:
-      // If printer has override (useDefault=false), use its custom mappings
-      // Otherwise use the default mappings
+      // Which manual overrides apply to THIS printer.
+      //
+      // A mapping entry is a global tray ID, and those only mean something on
+      // the printer they were resolved against. The shared panel is only shown
+      // for a single selected printer, so `defaultMappings` belongs to that one
+      // printer and must not leak onto the others once the selection grows —
+      // doing so is the bug in #2799. It is still applied to its own printer,
+      // where the user's edits were correct and dropping them would be a silent
+      // regression.
+      //
+      // Everything downstream — `finalMapping`, the match badge and
+      // `allPrintersReady` — is derived from this one value, so what the panel
+      // reports and what is submitted cannot drift apart.
+      const ownsDefaultMappings =
+        defaultMappingsPrinterId == null || printerId === defaultMappingsPrinterId;
       const effectiveMappings = !config.useDefault
         ? config.manualMappings
-        : defaultMappings;
+        : ownsDefaultMappings
+          ? defaultMappings
+          : {};
 
       // Compute final mapping with overrides
       const finalMapping = computeMappingWithOverrides(filamentReqs, printerStatus, effectiveMappings, printerPreferLowest, inventoryByTrayId);
@@ -372,7 +388,7 @@ export function useMultiPrinterFilamentMapping(
         inventoryByTrayId,
       };
     });
-  }, [selectedPrinterIds, statusQueries, printers, filamentReqs, perPrinterConfigs, defaultMappings, preferLowest, inventoryByTrayIdPerPrinter]);
+  }, [selectedPrinterIds, statusQueries, printers, filamentReqs, perPrinterConfigs, defaultMappings, preferLowest, inventoryByTrayIdPerPrinter, defaultMappingsPrinterId]);
 
   const isLoading = statusQueries.some((q) => q.isLoading);
 
@@ -429,12 +445,6 @@ export function useMultiPrinterFilamentMapping(
     return result?.finalMapping;
   };
 
-  // Get this printer's own auto mapping, free of any manual override (#2799).
-  const getAutoMapping = (printerId: number): number[] | undefined => {
-    const result = printerResults.find((r) => r.printerId === printerId);
-    return result?.autoMapping;
-  };
-
   // Check if all printers have acceptable mappings (no missing types)
   const allPrintersReady = printerResults.every((r) => r.matchStatus !== 'missing');
 
@@ -446,7 +456,6 @@ export function useMultiPrinterFilamentMapping(
     autoConfigureAll,
     autoConfigurePrinter,
     getFinalMapping,
-    getAutoMapping,
     allPrintersReady,
   };
 }

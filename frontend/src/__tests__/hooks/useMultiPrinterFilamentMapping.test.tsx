@@ -123,6 +123,16 @@ describe('useMultiPrinterFilamentMapping — per-printer mapping (#2799)', () =>
     expect(result.current.getFinalMapping(10)).toEqual([0, -1, 2]);
   });
 
+  it('does not hand shared mappings to anyone when their owner is unknown', () => {
+    // Editing a model-based queue item seeds the shared mappings from its
+    // stored ams_mapping while its printer_id is null, so there is no owner.
+    // "Unknown" must not read as "every printer".
+    const { result } = render([9, 10], { 1: 2, 3: 1 }, null);
+
+    expect(result.current.getFinalMapping(9)).toEqual([2, -1, 1]);
+    expect(result.current.getFinalMapping(10)).toEqual([0, -1, 2]);
+  });
+
   it('flags a printer that cannot satisfy a slot', () => {
     statusByPrinter[10] = status([
       { type: 'PETG', color: '76D9F4FF' },

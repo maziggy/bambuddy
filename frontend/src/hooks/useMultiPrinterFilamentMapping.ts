@@ -351,8 +351,14 @@ export function useMultiPrinterFilamentMapping(
       // Everything downstream — `finalMapping`, the match badge and
       // `allPrintersReady` — is derived from this one value, so what the panel
       // reports and what is submitted cannot drift apart.
+      // An explicit match, never a default. `null` means we do not know which
+      // printer the shared mappings were resolved against — which happens when
+      // editing a model-based queue item, whose `printer_id` is null while its
+      // stored `ams_mapping` seeds them. Treating "unknown" as "yours" would
+      // hand those tray IDs to every selected printer, which is the bug this
+      // whole change is about.
       const ownsDefaultMappings =
-        defaultMappingsPrinterId == null || printerId === defaultMappingsPrinterId;
+        defaultMappingsPrinterId != null && printerId === defaultMappingsPrinterId;
       const effectiveMappings = !config.useDefault
         ? config.manualMappings
         : ownsDefaultMappings

@@ -350,3 +350,55 @@ class TestBlockOnUnmatchedFilament:
         await scheduler._block_on_unmatched_filament(AsyncMock(), item)
 
         assert item.waiting_reason == "Waiting for matching printer"
+
+
+class TestModelBasedVirtualPrinterMapping:
+    """A model-based Virtual Printer stamps a mapping nothing can attribute.
+
+    `virtual_printer/manager.py` writes the slicer's own AMS pick onto the queue
+    item it creates, on the line below `printer_id=self.target_printer_id` —
+    which is None for an "Any P2S" VP. So the tray IDs the slicer resolved are
+    carried by an item the scheduler will hand to whichever printer of that
+    model happens to be free, and the row itself records no printer they could
+    be checked against. Same failure as the print dialog's, arriving from a
+    different direction, and reachable whenever the per-VP `save_ams_mapping`
+    opt-in is on without `queue_force_color_match`.
+
+    The item has no `printer_id` until the model-based path assigns one, so
+    these go through `_ensure_ams_mapping`'s `printer_id` argument rather than
+    `item.printer_id` — which is how that path calls it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_slicer_mapping_is_rechecked_against_the_printer_chosen_for_it(self):
+        scheduler = _scheduler(P2S_5_TRAYS)
+        scheduler._compute_ams_mapping_for_printer = AsyncMock(return_value=[0, -1, 2])
+        # Fresh from the VP: no printer_id, mapping resolved by the slicer.
+        item = _item(printer_id=None)
+        db = AsyncMock()
+
+        with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+            pm.get_status.return_value = MagicMock()
+            await scheduler._ensure_ams_mapping(db, 10, item)
+
+        assert json.loads(item.ams_mapping) == [0, -1, 2]
+        # Judged against the printer the scheduler picked, not the row's own
+        # (absent) one.
+        scheduler._compute_ams_mapping_for_printer.assert_awaited_once()
+        assert scheduler._compute_ams_mapping_for_printer.await_args.args[1] == 10
+
+    @pytest.mark.asyncio
+    async def test_slicer_mapping_survives_on_a_printer_it_happens_to_fit(self):
+        """Not every VP mapping is wrong — one that fits the chosen printer is
+        kept, so the slicer's deliberate slot pick is not thrown away."""
+        scheduler = _scheduler(P2S_4_TRAYS)
+        scheduler._compute_ams_mapping_for_printer = AsyncMock(return_value=[0, -1, 2])
+        item = _item(printer_id=None)
+        db = AsyncMock()
+
+        with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+            pm.get_status.return_value = MagicMock()
+            await scheduler._ensure_ams_mapping(db, 9, item)
+
+        assert json.loads(item.ams_mapping) == SHARED_MAPPING
+        scheduler._compute_ams_mapping_for_printer.assert_not_awaited()

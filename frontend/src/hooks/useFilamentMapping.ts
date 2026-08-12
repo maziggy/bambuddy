@@ -4,6 +4,7 @@ import {
   normalizeColor,
   normalizeColorForCompare,
   colorsAreSimilar,
+  findNearestSimilar,
   formatSlotLabel,
   getGlobalTrayId,
   preferLowestSortKey,
@@ -333,10 +334,10 @@ export function buildFilamentComparison(
             normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
         );
         if (!exactMatch) {
-          similarMatch = idxMatches.find(
-            (f) =>
-              f.type?.toUpperCase() === req.type?.toUpperCase() &&
-              colorsAreSimilar(f.color, req.color)
+          similarMatch = findNearestSimilar(
+            idxMatches.filter((f) => f.type?.toUpperCase() === req.type?.toUpperCase()),
+            req.color,
+            (f) => f.color,
           );
         }
         if (!exactMatch && !similarMatch) {
@@ -355,10 +356,10 @@ export function buildFilamentComparison(
           normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
       );
       if (!exactMatch) {
-        similarMatch = available.find(
-          (f) =>
-            f.type?.toUpperCase() === req.type?.toUpperCase() &&
-            colorsAreSimilar(f.color, req.color)
+        similarMatch = findNearestSimilar(
+          available.filter((f) => f.type?.toUpperCase() === req.type?.toUpperCase()),
+          req.color,
+          (f) => f.color,
         );
       }
       if (!exactMatch && !similarMatch) {

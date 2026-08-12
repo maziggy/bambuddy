@@ -2740,6 +2740,31 @@ class PrintScheduler:
             return ""
         return color.replace("#", "").lower()[:6]
 
+    def _color_distance(self, color1: str | None, color2: str | None) -> float | None:
+        """Euclidean RGB distance, or None when either colour is unusable.
+
+        Ranks the candidates ``_colors_are_similar`` admits (#2804). Eligibility
+        stays the per-channel box that shipped — this only decides which of
+        several eligible spools is closest, so nothing becomes usable or
+        unusable because of it.
+
+        Alpha is dropped by ``_normalize_color_for_compare``, deliberately: the
+        alpha a slicer writes for a transparent filament is not a colour the
+        user chose, and counting it would stop a transparent filament matching
+        itself.
+        """
+        hex1 = self._normalize_color_for_compare(color1)
+        hex2 = self._normalize_color_for_compare(color2)
+        if not hex1 or not hex2 or len(hex1) < 6 or len(hex2) < 6:
+            return None
+        try:
+            dr = int(hex1[0:2], 16) - int(hex2[0:2], 16)
+            dg = int(hex1[2:4], 16) - int(hex2[2:4], 16)
+            db = int(hex1[4:6], 16) - int(hex2[4:6], 16)
+        except ValueError:
+            return None
+        return (dr * dr + dg * dg + db * db) ** 0.5
+
     def _colors_are_similar(self, color1: str | None, color2: str | None, threshold: int = 40) -> bool:
         """Check if two colors are visually similar within a threshold."""
         hex1 = self._normalize_color_for_compare(color1)
@@ -2943,6 +2968,7 @@ class PrintScheduler:
             idx_match = None
             exact_match = None
             similar_match = None
+            similar_distance = float("inf")
             type_only_match = None
 
             # Get available trays (not already used)
@@ -3018,8 +3044,10 @@ class PrintScheduler:
                             if not exact_match:
                                 exact_match = f
                         elif self._colors_are_similar(f_color, req_color):
-                            if not similar_match:
+                            distance = self._color_distance(f_color, req_color)
+                            if distance is not None and distance < similar_distance:
                                 similar_match = f
+                                similar_distance = distance
                         elif not type_only_match:
                             type_only_match = f
 
@@ -3036,8 +3064,15 @@ class PrintScheduler:
                         if not exact_match:
                             exact_match = f
                     elif self._colors_are_similar(f_color, req_color):
-                        if not similar_match:
+                        # Nearest wins, not first-in-tray-order. `available` is
+                        # already in the caller's order (slot order, or the
+                        # prefer-lowest sort), and `<` keeps the earliest of
+                        # equally close spools — so that order survives as the
+                        # tie-break (#2804).
+                        distance = self._color_distance(f_color, req_color)
+                        if distance is not None and distance < similar_distance:
                             similar_match = f
+                            similar_distance = distance
                     elif not type_only_match:
                         type_only_match = f
 
@@ -3047,35 +3082,38 @@ class PrintScheduler:
                 comparisons.append({"slot_id": req.get("slot_id", 0), "global_tray_id": match["global_tray_id"]})
             else:
                 comparisons.append({"slot_id": req.get("slot_id", 0), "global_tray_id": -1})
-            if prefer_lowest:
-                # Pair with the "available (sorted)" log above so the reporter
-                # bundle shows BOTH what the matcher saw AND which match bucket
-                # won — fast triage when "Prefer Lowest Filament" picks the
-                # wrong slot (#1766).
-                if match:
-                    bucket = (
-                        "idx"
-                        if idx_match is not None
-                        else "exact_color"
-                        if exact_match is not None
-                        else "similar_color"
-                        if similar_match is not None
-                        else "type_only"
-                    )
-                    logger.info(
-                        "[prefer-lowest] picked gtid=%s via %s for req slot=%s",
-                        match["global_tray_id"],
-                        bucket,
-                        req.get("slot_id"),
-                    )
-                else:
-                    logger.info(
-                        "[prefer-lowest] NO MATCH for req slot=%s (type=%r color=%r tii=%r)",
-                        req.get("slot_id"),
-                        req_type,
-                        req_color,
-                        req_tray_info_idx,
-                    )
+            # Which bucket won, always — not only under Prefer Lowest (#2804).
+            # "Why did it pick that spool" is the question every wrong-filament
+            # report starts with, and a `similar_color` win is now a ranked
+            # choice among several eligible spools rather than whichever tray
+            # came first, so it is worth being able to see after the fact.
+            # Pairs with the "available (sorted)" log above when Prefer Lowest
+            # is on (#1766).
+            if match:
+                bucket = (
+                    "idx"
+                    if idx_match is not None
+                    else "exact_color"
+                    if exact_match is not None
+                    else "similar_color"
+                    if similar_match is not None
+                    else "type_only"
+                )
+                logger.info(
+                    "[ams-match] picked gtid=%s via %s for req slot=%s%s",
+                    match["global_tray_id"],
+                    bucket,
+                    req.get("slot_id"),
+                    f" (colour distance {similar_distance:.1f})" if bucket == "similar_color" else "",
+                )
+            else:
+                logger.info(
+                    "[ams-match] NO MATCH for req slot=%s (type=%r color=%r tii=%r)",
+                    req.get("slot_id"),
+                    req_type,
+                    req_color,
+                    req_tray_info_idx,
+                )
 
         # Build mapping array
         if not comparisons:

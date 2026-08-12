@@ -11,6 +11,7 @@ import {
 import {
   normalizeColorForCompare,
   colorsAreSimilar,
+  findNearestSimilar,
   preferLowestSortKey,
   compareSortKeys,
   effectivePreferLowest,
@@ -156,10 +157,10 @@ function computeMatchDetails(
     );
     const similarMatch = exactMatch
       ? undefined
-      : candidates.find(
-          (f) =>
-            f.type?.toUpperCase() === req.type?.toUpperCase() &&
-            colorsAreSimilar(f.color, req.color)
+      : findNearestSimilar(
+          candidates.filter((f) => f.type?.toUpperCase() === req.type?.toUpperCase()),
+          req.color,
+          (f) => f.color,
         );
     const typeOnlyMatch =
       exactMatch || similarMatch
@@ -245,10 +246,10 @@ function computeMappingWithOverrides(
     );
     const similarMatch = exactMatch
       ? undefined
-      : candidates.find(
-          (f) =>
-            f.type?.toUpperCase() === req.type?.toUpperCase() &&
-            colorsAreSimilar(f.color, req.color)
+      : findNearestSimilar(
+          candidates.filter((f) => f.type?.toUpperCase() === req.type?.toUpperCase()),
+          req.color,
+          (f) => f.color,
         );
     const typeOnlyMatch =
       exactMatch || similarMatch

@@ -117,6 +117,70 @@ export function colorsAreSimilar(
 }
 
 /**
+ * Euclidean RGB distance between two hex colours, or null if either is unusable.
+ *
+ * Used to rank the candidates `colorsAreSimilar` admits. Eligibility stays the
+ * per-channel box that shipped; this only decides which of several eligible
+ * spools is closest, so no spool becomes usable or unusable because of it.
+ *
+ * Alpha is dropped by `normalizeColorForCompare`, deliberately: the alpha a
+ * slicer writes for a transparent filament is not a colour the user chose, and
+ * counting it would stop a transparent filament matching itself.
+ */
+export function colorDistance(
+  color1: string | undefined,
+  color2: string | undefined,
+): number | null {
+  const hex1 = normalizeColorForCompare(color1);
+  const hex2 = normalizeColorForCompare(color2);
+  if (!hex1 || !hex2 || hex1.length < 6 || hex2.length < 6) return null;
+
+  const dr = parseInt(hex1.substring(0, 2), 16) - parseInt(hex2.substring(0, 2), 16);
+  const dg = parseInt(hex1.substring(2, 4), 16) - parseInt(hex2.substring(2, 4), 16);
+  const db = parseInt(hex1.substring(4, 6), 16) - parseInt(hex2.substring(4, 6), 16);
+  if (Number.isNaN(dr) || Number.isNaN(dg) || Number.isNaN(db)) return null;
+
+  return Math.sqrt(dr * dr + dg * dg + db * db);
+}
+
+/**
+ * The closest colour match among `candidates`, or undefined if none is similar
+ * enough to qualify.
+ *
+ * Callers pass candidates in the order they already established — slot order,
+ * or the "prefer lowest remaining" sort. Ties keep the earliest of them, so
+ * that order survives as the tie-break and Prefer Lowest still decides between
+ * two equally close spools, which is the case it was actually for.
+ *
+ * This exists so the four matchers that pick a spool (`autoMatchFilament`,
+ * `computeAmsMapping`, `computeMappingWithOverrides`, `computeMatchDetails`)
+ * share one ranking rule instead of four copies of "first one within
+ * tolerance", which made the winner depend on AMS slot order.
+ */
+export function findNearestSimilar<T>(
+  candidates: T[],
+  requiredColor: string | undefined,
+  getColor: (candidate: T) => string | undefined,
+): T | undefined {
+  let best: T | undefined;
+  let bestDistance = Infinity;
+
+  for (const candidate of candidates) {
+    const color = getColor(candidate);
+    if (!colorsAreSimilar(color, requiredColor)) continue;
+    const distance = colorDistance(color, requiredColor);
+    if (distance === null) continue;
+    // Strict <: an equally close candidate never displaces an earlier one.
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+
+  return best;
+}
+
+/**
  * Format slot label for display in the UI.
  * @param amsId - AMS unit ID (0-3 for regular AMS, 128+ for AMS-HT)
  * @param trayId - Tray/slot ID within the AMS unit (0-3)
@@ -319,11 +383,12 @@ export function autoMatchFilament(
   );
   const similarMatch = exactMatch
     ? undefined
-    : nozzleFilaments.find(
-        (f) =>
-          !usedTrayIds.has(f.globalTrayId) &&
-          filamentTypesCompatible(f.type, req.type) &&
-          colorsAreSimilar(f.color, req.color)
+    : findNearestSimilar(
+        nozzleFilaments.filter(
+          (f) => !usedTrayIds.has(f.globalTrayId) && filamentTypesCompatible(f.type, req.type),
+        ),
+        req.color,
+        (f) => f.color,
       );
   const typeOnlyMatch =
     exactMatch || similarMatch

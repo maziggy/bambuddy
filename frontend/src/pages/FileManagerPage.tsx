@@ -74,7 +74,7 @@ import { usePageFileDrop } from '../hooks/usePageFileDrop';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDuration, parseUTCDate, formatDate } from '../utils/date';
 import { formatFileSize } from '../utils/file';
-import { isSliceableFilename, openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
+import { isApiSliceableFilename, isSliceableFilename, openInSlicer, resolveDesktopSlicer, type SlicerType } from '../utils/slicer';
 
 type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
 type SortDirection = 'asc' | 'desc';
@@ -895,7 +895,8 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
                   {t('common.print')}
                 </button>
               )}
-              {isSliceableFilename(file.filename) && (useSlicerApi ? onSlice : onOpenInSlicer) && (
+              {(useSlicerApi ? isApiSliceableFilename(file.filename) : isSliceableFilename(file.filename)) &&
+                (useSlicerApi ? onSlice : onOpenInSlicer) && (
                 <button
                   className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
                     canSlice ? 'text-white hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
@@ -913,7 +914,7 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
                   {t('slice.action')}
                 </button>
               )}
-              {onRunPipeline && useSlicerApi && isSliceableFilename(file.filename) && (
+              {onRunPipeline && useSlicerApi && isApiSliceableFilename(file.filename) && (
                 <button
                   className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
                     hasPermission('pipelines:run') ? 'text-white hover:bg-bambu-dark' : 'text-bambu-gray cursor-not-allowed'
@@ -1305,10 +1306,10 @@ export function FileManagerPage() {
     queryFn: () => api.getLibraryStats(),
   });
 
-  // Get users for the username filter autocomplete
+  // Get users for the username filter autocomplete -- names only (#1894)
   const { data: users } = useQuery({
-    queryKey: ['users'],
-    queryFn: () => api.getUsers(),
+    queryKey: ['users', 'slim'],
+    queryFn: () => api.getUsersSlim(),
   });
 
   // Get unique file types for filter dropdown
@@ -2639,7 +2640,7 @@ export function FileManagerPage() {
                           </button>
                         </>
                       )}
-                      {isSliceableFilename(file.filename) && (
+                      {(settings?.use_slicer_api ? isApiSliceableFilename(file.filename) : isSliceableFilename(file.filename)) && (
                         <button
                           onClick={() => {
                             if (!canSlice()) return;
@@ -2656,7 +2657,7 @@ export function FileManagerPage() {
                           {settings?.use_slicer_api ? <Cog className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />}
                         </button>
                       )}
-                      {(settings?.use_slicer_api ?? false) && isSliceableFilename(file.filename) && (
+                      {(settings?.use_slicer_api ?? false) && isApiSliceableFilename(file.filename) && (
                         <button
                           onClick={() => hasPermission('pipelines:run') && setRunPipelineFile(file)}
                           className={`p-1.5 rounded transition-colors ${
@@ -2902,7 +2903,7 @@ export function FileManagerPage() {
           onSliceWithBambuddy={
             // Only offer in-app slicing on files the SliceModal can actually
             // handle (matches the file-row Cog visibility check at :2127).
-            isSliceableFilename(viewerFile.filename) && hasPermission('library:upload')
+            isApiSliceableFilename(viewerFile.filename) && hasPermission('library:upload')
               ? () => {
                   const f = viewerFile;
                   setViewerFile(null);

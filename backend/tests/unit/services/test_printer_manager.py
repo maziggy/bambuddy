@@ -395,6 +395,7 @@ class TestPrinterManager:
             use_ams=True,
             nozzle_offset_cali="auto",
             nozzle_mapping=None,
+            nozzle_slot_extruders=None,
         )
         assert result is True
 

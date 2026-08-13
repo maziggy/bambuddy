@@ -1661,6 +1661,7 @@ async def cancel_batch(
     )
     pending_items = result.scalars().all()
     cancelled_count = 0
+    cancelled_ids: list[int] = []
     for item in pending_items:
         item.status = "cancelled"
         await release_budget_reservation(
@@ -1669,10 +1670,18 @@ async def cancel_batch(
             source_id=item.id,
             status="released",
         )
+        cancelled_ids.append(item.id)
         cancelled_count += 1
 
     batch.status = "cancelled"
     await db.commit()
+
+    # Same as the single-item path: a dispatch already preheating for one of
+    # these cannot see the status change on its own (#2727).
+    from backend.app.services.print_scheduler import scheduler as _scheduler
+
+    for _cancelled_id in cancelled_ids:
+        _scheduler.notify_dispatch_cancelled(_cancelled_id)
 
     return {"message": f"Batch cancelled, {cancelled_count} pending items cancelled"}
 
@@ -1987,6 +1996,12 @@ async def delete_queue_item(
     await db.delete(item)
     await db.commit()
 
+    # Stop an in-flight preheat for this item: the dispatch coroutine is
+    # parked in a sleep and cannot see the status we just wrote (#2727).
+    from backend.app.services.print_scheduler import scheduler as _scheduler
+
+    _scheduler.notify_dispatch_cancelled(item_id)
+
     logger.info("Deleted queue item %s", item_id)
     return {"message": "Queue item deleted"}
 
@@ -2103,6 +2118,12 @@ async def cancel_queue_item(
         status="released",
     )
     await db.commit()
+
+    # Stop an in-flight preheat for this item: the dispatch coroutine is
+    # parked in a sleep and cannot see the status we just wrote (#2727).
+    from backend.app.services.print_scheduler import scheduler as _scheduler
+
+    _scheduler.notify_dispatch_cancelled(item_id)
 
     logger.info("Cancelled queue item %s", item_id)
     return {"message": "Queue item cancelled"}

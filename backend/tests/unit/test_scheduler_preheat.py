@@ -295,21 +295,70 @@ async def test_malformed_filament_targets_falls_back_to_defaults(scheduler, item
 
 
 @pytest.mark.asyncio
-async def test_no_bed_temperature_in_archive_skips(scheduler, item):
-    """Archive without bed_temperature metadata skips entirely rather than
-    guessing a default that might wreck a non-PLA print."""
+async def test_no_bed_temperature_but_chamber_needed_heats_bed_to_configured_temp(scheduler, item):
+    """Archive without bed_temperature still preheats when the chamber needs heat.
+
+    This branch used to return early, on the reasoning that guessing a bed
+    temperature could wreck a print. Two things make the fallback safe, and
+    skipping actively harmful:
+
+    * Preheat's bed target is transient. The print's own gcode issues its
+      M140/M190 the moment it starts, so preheat can never set the temperature
+      the print actually runs at — it only decides how warm things are while
+      the file uploads.
+    * The fallback is gated on a non-zero chamber target, so it only applies to
+      materials the filament map says want a hot chamber (ABS/ASA/PC …). The
+      original concern — inventing a bed temperature for a PLA print — is still
+      guarded, and covered by the sibling test below.
+
+    Skipping meant a chamber-heated print whose slicer metadata carries no bed
+    temperature started with a cold chamber, which is what preheat exists to
+    prevent.
+    """
     db = AsyncMock()
     client = _make_client()
     bare_archive = SimpleNamespace(bed_temperature=None)
 
     with (
         patch.object(scheduler, "_get_bool_setting", AsyncMock(return_value=True)),
-        patch.object(scheduler, "_get_int_setting", _ints()),
+        patch.object(
+            scheduler,
+            "_get_int_setting",
+            _ints(queue_keep_warm_bed_temp=90, preheat_soak_seconds=0, preheat_max_wait_seconds=0),
+        ),
+        patch.object(scheduler, "_get_setting", AsyncMock(return_value=None)),
+        patch("backend.app.services.print_scheduler.printer_manager") as pm,
+        patch("backend.app.services.print_scheduler.asyncio.sleep", AsyncMock()),
+    ):
+        pm.get_client.return_value = client
+        # Bed/chamber already at temperature so the convergence loop exits on its
+        # first pass — its deadline is wall-clock, so a mocked `asyncio.sleep`
+        # would otherwise spin for the full max_wait in real time.
+        pm.get_status.return_value = _make_state(90.0, 46.0, trays=["ABS"])
+        await scheduler._preheat_and_soak(db, item, _make_printer("H2D"), bare_archive)
+
+    client.set_bed_temperature.assert_called_once_with(90)
+
+
+@pytest.mark.asyncio
+async def test_no_bed_temperature_and_no_chamber_target_still_skips(scheduler, item):
+    """PLA (chamber target 0) with no bed metadata → skip, as before.
+
+    Preserves the original guard: with nothing to preheat *for*, no bed
+    temperature is invented for the print.
+    """
+    db = AsyncMock()
+    client = _make_client()
+    bare_archive = SimpleNamespace(bed_temperature=None)
+
+    with (
+        patch.object(scheduler, "_get_bool_setting", AsyncMock(return_value=True)),
+        patch.object(scheduler, "_get_int_setting", _ints(queue_keep_warm_bed_temp=90)),
         patch.object(scheduler, "_get_setting", AsyncMock(return_value=None)),
         patch("backend.app.services.print_scheduler.printer_manager") as pm,
     ):
         pm.get_client.return_value = client
-        pm.get_status.return_value = _make_state(trays=["ABS"])
+        pm.get_status.return_value = _make_state(trays=["PLA"])
         await scheduler._preheat_and_soak(db, item, _make_printer("H2D"), bare_archive)
 
     client.set_bed_temperature.assert_not_called()
@@ -359,7 +408,10 @@ async def test_p1s_no_chamber_sensor_uses_soak_timer_only(scheduler, item, archi
 
     client.set_bed_temperature.assert_called_once_with(60)
     client.set_chamber_temperature.assert_not_called()
-    assert 600 in [call.args[0] for call in sleep_mock.call_args_list]
+    # The soak is slept in slices so a cancellation landing mid-hold is noticed
+    # (a single 600s sleep could not see one), so assert the total rather than a
+    # single call of the full duration.
+    assert sum(call.args[0] for call in sleep_mock.call_args_list) == 600
 
 
 @pytest.mark.asyncio

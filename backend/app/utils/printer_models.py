@@ -234,6 +234,31 @@ DUAL_NOZZLE_MODELS = frozenset(
 )
 
 
+# Printers with a swappable nozzle rack ("Vortek"): the H2C carries six
+# hotends in a rack and mounts one of them on its right extruder at a time.
+#
+# Why this needs its own set rather than reusing DUAL_NOZZLE_MODELS: on every
+# other dual-nozzle printer the dispatch `nozzle_mapping` values ARE the MQTT
+# extruder indices (0 = right, 1 = left). On a rack model the wire wants the
+# *physical* nozzle position for both carriages: the rack positions the
+# firmware reports as IDs 16-21 — see `device.nozzle.info` handling in
+# bambu_mqtt — and 1 for the fixed hotend, which is not its extruder index.
+# Note the H2C does not follow the 0 = right convention either: extruder
+# index 1 is the rack side, confirmed on hardware in #2800.
+# Sending an extruder index where a physical position is expected makes the
+# printer clean and level with one nozzle and then print with another, at the
+# wrong Z (#2800).
+NOZZLE_RACK_MODELS = frozenset(
+    [
+        # Display names (uppercase, no spaces)
+        "H2C",
+        # Internal codes
+        "O1C",  # H2C
+        "O1C2",  # H2C (dual nozzle variant)
+    ]
+)
+
+
 # Models where Bambu's own firmware/UI names the enclosure fan (big_fan2 /
 # airduct part id 3) "Exhaust" rather than "Chamber". On these the printer's
 # touchscreen and Bambu Studio both call it the exhaust fan, and on the P2S it
@@ -320,6 +345,19 @@ def is_dual_nozzle_model(model: str | None) -> bool:
         return False
     normalized = model.strip().upper().replace(" ", "").replace("-", "")
     return normalized in DUAL_NOZZLE_MODELS
+
+
+def is_nozzle_rack_model(model: str | None) -> bool:
+    """Return True if the model mounts its nozzles from a swappable rack (H2C).
+
+    Accepts both the display name and the internal SSDP code, because
+    ``BambuMQTTClient.model`` carries whichever the printer row happens to
+    hold — the same reason the P2S dispatch tweak checks ``("P2S", "N7")``.
+    """
+    if not model:
+        return False
+    normalized = model.strip().upper().replace(" ", "").replace("-", "")
+    return normalized in NOZZLE_RACK_MODELS
 
 
 def supports_nozzle_flow_type(model: str | None) -> bool:

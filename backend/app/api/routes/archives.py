@@ -33,10 +33,12 @@ from backend.app.services.design_settings import overrides_from_config
 from backend.app.utils.http import build_content_disposition
 from backend.app.utils.safe_path import safe_join_under
 from backend.app.utils.threemf_tools import (
+    default_plate_gcode_name,
     expand_to_project_slots,
     extract_embedded_presets_from_3mf,
     extract_nozzle_mapping_from_3mf,
     extract_project_filaments_from_3mf,
+    select_plate_gcode_name,
 )
 
 logger = logging.getLogger(__name__)
@@ -3315,8 +3317,9 @@ async def get_gcode(
 
     When *plate* is provided, returns the G-code for that specific plate
     (e.g. ``?plate=2`` returns ``Metadata/plate_2.gcode``). If omitted, falls
-    back to the first plate found in the archive (preserving the original
-    behaviour for callers that predate the multi-plate viewer).
+    back to the archive's lowest-numbered plate — not the first member in the
+    zip, which is whatever order the slicer wrote and routinely puts plate 2
+    ahead of plate 1.
     """
     user, can_read_all = auth_result
     service = ArchiveService(db)
@@ -3340,25 +3343,11 @@ async def get_gcode(
                 )
 
             if plate is not None:
-                # Resolve plate → filename via the same parsing the plates
-                # endpoint uses (int() on the suffix), so zero-padded names
-                # like plate_01.gcode are found when the plates endpoint
-                # reported index 1.
-                selected = None
-                for gf in gcode_files:
-                    if not gf.startswith("Metadata/plate_"):
-                        continue
-                    suffix = gf[len("Metadata/plate_") : -len(".gcode")]
-                    try:
-                        if int(suffix) == plate:
-                            selected = gf
-                            break
-                    except ValueError:
-                        continue
+                selected = select_plate_gcode_name(gcode_files, plate)
                 if selected is None:
                     raise HTTPException(404, f"Plate {plate} not found in this archive")
             else:
-                selected = gcode_files[0]
+                selected = default_plate_gcode_name(gcode_files)
 
             gcode_content = zf.read(selected).decode("utf-8")
             return Response(content=gcode_content, media_type="text/plain")

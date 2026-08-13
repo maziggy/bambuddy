@@ -22,7 +22,7 @@ import { GcodeToolpathViewer } from '../components/GcodeToolpathViewer';
  */
 export function GCodeViewerPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { t } = useTranslation();
 
   const archiveId = searchParams.get('archive');
@@ -50,13 +50,42 @@ export function GCodeViewerPage() {
     retry: false,
   });
 
+  const archivePlatesQuery = useQuery({
+    queryKey: ['gcode-viewer-archive-plates', archiveId],
+    queryFn: () => api.getArchivePlates(Number(archiveId)),
+    enabled: Boolean(archiveId),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
+  const plates = useMemo(
+    () => (archiveId ? archivePlatesQuery.data?.plates : libraryPlatesQuery.data?.plates) ?? [],
+    [archiveId, archivePlatesQuery.data, libraryPlatesQuery.data],
+  );
+
+  // Which plate the viewer is showing. Without a `plate` in the URL the backend
+  // serves the lowest-numbered one, so that is what the switcher has to mark as
+  // current — the URL stays clean until the user picks something else.
+  const activePlate = useMemo(() => {
+    if (plate) return Number(plate);
+    if (plates.length === 0) return null;
+    return Math.min(...plates.map((p) => p.index));
+  }, [plate, plates]);
+
+  const selectPlate = (index: number) => {
+    // The G-code URL is derived from this parameter, so writing the one already
+    // being shown would refetch the whole toolpath for no change.
+    if (index === activePlate) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('plate', String(index));
+    setSearchParams(next, { replace: true });
+  };
+
   const filamentColors = useMemo<string[] | undefined>(() => {
     if (archiveId) return archiveColorsQuery.data?.filament_colors;
 
-    const plates = libraryPlatesQuery.data?.plates ?? [];
     // Colours are per plate; use the one being previewed.
-    const wanted = plate ? Number(plate) : null;
-    const source = (wanted != null && plates.find((p) => p.index === wanted)) || plates[0];
+    const source = plates.find((p) => p.index === activePlate) || plates[0];
     if (!source?.filaments?.length) return undefined;
 
     // slot_id is 1-based and the G-code's tool numbers are 0-based, so index
@@ -67,7 +96,7 @@ export function GCodeViewerPage() {
       if (filament.color) colors[slot] = filament.color;
     }
     return colors.length > 0 ? colors : undefined;
-  }, [archiveId, archiveColorsQuery.data, libraryPlatesQuery.data, plate]);
+  }, [archiveId, archiveColorsQuery.data, plates, activePlate]);
 
   const gcodeUrl = useMemo(() => {
     // Multi-plate sources need the plate carried through, or the viewer shows
@@ -89,7 +118,7 @@ export function GCodeViewerPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-shrink-0 px-4 py-2 border-b border-bambu-dark-tertiary">
+      <div className="flex-shrink-0 px-4 py-2 border-b border-bambu-dark-tertiary flex flex-wrap items-center gap-x-4 gap-y-2">
         <button
           type="button"
           onClick={handleBack}
@@ -98,6 +127,32 @@ export function GCodeViewerPage() {
           <ArrowLeft className="w-4 h-4" />
           {backLabel}
         </button>
+
+        {/* A sliced multi-plate 3MF holds one toolpath per plate, and only one
+            of them can be on screen. Without this the other plates were
+            unreachable: nothing that opens this page from the File Manager
+            passes a plate, so it showed whichever one the backend picked. */}
+        {plates.length > 1 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-bambu-gray">{t('gcodeViewer.plates', 'Plates')}</span>
+            {plates.map((p) => (
+              <button
+                key={p.index}
+                type="button"
+                onClick={() => selectPlate(p.index)}
+                aria-pressed={p.index === activePlate}
+                title={p.name ?? undefined}
+                className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                  p.index === activePlate
+                    ? 'bg-bambu-green text-white'
+                    : 'bg-bambu-dark-tertiary text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                {t('gcodeViewer.plateN', 'Plate {{n}}', { n: p.index })}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {gcodeUrl ? (

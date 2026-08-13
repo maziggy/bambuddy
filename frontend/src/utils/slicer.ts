@@ -55,6 +55,17 @@ export function resolveDesktopSlicer(
 export const SLICEABLE_FILE_TYPES = ['3mf', 'stl', 'step', 'stp'] as const;
 
 /**
+ * The subset the *sidecar* can slice.
+ *
+ * The desktop slicers open a STEP happily; their command-line interfaces do
+ * not. OrcaSlicer 2.4.2 and Bambu Studio 02.07.01.62 both answer one with
+ * "Unknown file format. Input file must have .stl, .obj, .amf(.xml) extension."
+ * So a STEP still gets an "Open in Slicer" handoff, and no longer gets a
+ * "Slice" button that could only ever fail.
+ */
+export const API_SLICEABLE_FILE_TYPES = ['3mf', 'stl'] as const;
+
+/**
  * Does a `LibraryFile.file_type` name a sliceable source file?
  *
  * The backend stores compound extensions whole — a sliced 3MF classifies as
@@ -76,6 +87,19 @@ export function isSliceableFilename(filename: string): boolean {
   const lower = filename.toLowerCase();
   if (lower.endsWith('.gcode') || lower.endsWith('.gcode.3mf')) return false;
   return SLICEABLE_FILE_TYPES.some((ext) => lower.endsWith(`.${ext}`));
+}
+
+/**
+ * Does a filename name something the slicer *sidecar* can slice?
+ *
+ * Narrower than `isSliceableFilename` by exactly STEP — see
+ * `API_SLICEABLE_FILE_TYPES`. Use this wherever the action posts to
+ * `/library/files/{id}/slice`; use the wider one for the desktop handoff.
+ */
+export function isApiSliceableFilename(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith('.gcode') || lower.endsWith('.gcode.3mf')) return false;
+  return API_SLICEABLE_FILE_TYPES.some((ext) => lower.endsWith(`.${ext}`));
 }
 
 /**
@@ -147,4 +171,14 @@ export function buildDownloadUrl(path: string): string {
 export function openArchiveInSlicer(path: string, slicer: SlicerType = 'bambu_studio'): void {
   const downloadUrl = buildDownloadUrl(path);
   openInSlicer(downloadUrl, slicer);
+}
+
+/**
+ * Does a `LibraryFile.file_type` name something the sidecar can slice?
+ *
+ * The `isSliceableFileType` counterpart, narrowed to the sidecar's formats.
+ */
+export function isApiSliceableFileType(fileType?: string | null): boolean {
+  const normalized = (fileType || '').toLowerCase();
+  return (API_SLICEABLE_FILE_TYPES as readonly string[]).includes(normalized);
 }

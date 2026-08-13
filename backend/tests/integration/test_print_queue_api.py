@@ -2177,14 +2177,20 @@ class TestAbortedStatusNormalisation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_on_print_complete_normalises_aborted_to_cancelled(self, queue_item_factory, db_session):
+    async def test_on_print_complete_normalises_aborted_to_cancelled(
+        self, queue_item_factory, archive_factory, db_session
+    ):
         """Verify the completion handler maps 'aborted' → 'cancelled' for queue items."""
         import asyncio
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        item = await queue_item_factory(status="printing")
+        archive = await archive_factory(filename="Abort_Me.gcode.3mf")
+        item = await queue_item_factory(status="printing", archive_id=archive.id)
 
-        # Build a mock session whose execute returns our item
+        # Build a mock session whose execute returns our item. `get` has to
+        # answer with the item's real archive: the handler checks the completion
+        # is about this row's print before closing it, and an archive that names
+        # a different subtask is exactly what it refuses.
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [item]
 
@@ -2192,6 +2198,7 @@ class TestAbortedStatusNormalisation:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
         mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.get = AsyncMock(return_value=archive)
         mock_session.commit = AsyncMock()
 
         tasks_before = set(asyncio.all_tasks())
@@ -2220,7 +2227,7 @@ class TestAbortedStatusNormalisation:
                 {
                     "status": "aborted",
                     "filename": "test.gcode",
-                    "subtask_name": "Test",
+                    "subtask_name": "Abort_Me",
                     "timelapse_was_active": False,
                 },
             )
@@ -2274,12 +2281,23 @@ class TestAbortedStatusNormalisation:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_completed_status_passes_through_unchanged(self, queue_item_factory, db_session):
-        """Verify normal statuses like 'completed' are not affected by normalisation."""
+    async def test_leaves_a_printing_item_alone_when_the_completion_is_for_another_print(
+        self, queue_item_factory, archive_factory, db_session
+    ):
+        """A completion naming a different subtask must not close this row.
+
+        The handler looks its row up by printer and ``status='printing'`` only,
+        so before this guard any completion delivered for the printer closed
+        whatever was printing on it. That is how a live 14-hour job was marked
+        completed 18 minutes in -- by an event that had nothing to do with it --
+        which also stranded the second plate of its batch, since the queue will
+        not dispatch while the printer is still running.
+        """
         import asyncio
         from unittest.mock import AsyncMock, MagicMock, patch
 
-        item = await queue_item_factory(status="printing")
+        archive = await archive_factory(filename="AMS_Rack.gcode.3mf")
+        item = await queue_item_factory(status="printing", archive_id=archive.id)
 
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [item]
@@ -2288,6 +2306,68 @@ class TestAbortedStatusNormalisation:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
         mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.get = AsyncMock(return_value=archive)
+        mock_session.commit = AsyncMock()
+
+        tasks_before = set(asyncio.all_tasks())
+
+        with (
+            patch("backend.app.main.async_session", return_value=mock_session),
+            patch("backend.app.core.database.async_session", return_value=mock_session),
+            patch("backend.app.main.ws_manager") as mock_ws,
+            patch("backend.app.main.mqtt_relay") as mock_relay,
+            patch("backend.app.main.notification_service") as mock_notif,
+            patch("backend.app.main.smart_plug_manager") as mock_plug,
+            patch("backend.app.main.printer_manager") as mock_pm,
+        ):
+            mock_ws.send_print_complete = AsyncMock()
+            mock_ws.broadcast = AsyncMock()
+            mock_relay.on_print_complete = AsyncMock()
+            mock_relay.on_queue_job_completed = AsyncMock()
+            mock_notif.on_print_complete = AsyncMock()
+            mock_plug.on_print_complete = AsyncMock()
+            mock_pm.get_printer.return_value = None
+
+            from backend.app.main import on_print_complete
+
+            await on_print_complete(
+                item.printer_id,
+                {
+                    "status": "completed",
+                    "filename": "/data/Metadata/plate_1.gcode",
+                    "subtask_name": "Some_Other_Print",
+                    "timelapse_was_active": False,
+                },
+            )
+
+            for task in asyncio.all_tasks() - tasks_before:
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+
+        assert item.status == "printing"
+        assert item.completed_at is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_completed_status_passes_through_unchanged(self, queue_item_factory, archive_factory, db_session):
+        """Verify normal statuses like 'completed' are not affected by normalisation."""
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        archive = await archive_factory(filename="Finish_Me.gcode.3mf")
+        item = await queue_item_factory(status="printing", archive_id=archive.id)
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [item]
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.get = AsyncMock(return_value=archive)
         mock_session.commit = AsyncMock()
 
         tasks_before = set(asyncio.all_tasks())
@@ -2316,7 +2396,7 @@ class TestAbortedStatusNormalisation:
                 {
                     "status": "completed",
                     "filename": "test.gcode",
-                    "subtask_name": "Test",
+                    "subtask_name": "Finish_Me",
                     "timelapse_was_active": False,
                 },
             )

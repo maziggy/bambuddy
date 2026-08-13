@@ -250,6 +250,7 @@ async def get_db() -> AsyncSession:
 async def init_db():
     # Import models to register them with SQLAlchemy
     from backend.app.models import (  # noqa: F401
+        active_print_session,
         active_print_spoolman,
         ams_history,
         ams_label,
@@ -4412,10 +4413,14 @@ async def _migrate_backfill_variant_groups(conn) -> None:
         model_expr = "file_metadata::jsonb->>'sliced_for_model'"
 
     async with conn.begin_nested():
+        # nosec B608 — the only interpolated fragments are the two dialect
+        # literals assigned directly above; both branches are constants and no
+        # caller value reaches this string. They are JSON *expressions*, not
+        # values, so a bind parameter cannot express them.
         rows = (
             await conn.execute(
                 text(
-                    f"SELECT id, {source_expr} AS source_id, {model_expr} AS model "  # noqa: S608 — dialect literals
+                    f"SELECT id, {source_expr} AS source_id, {model_expr} AS model "  # nosec B608
                     "FROM library_files "
                     f"WHERE {source_expr} IS NOT NULL AND {model_expr} IS NOT NULL "
                     "AND variant_group_id IS NULL AND deleted_at IS NULL "

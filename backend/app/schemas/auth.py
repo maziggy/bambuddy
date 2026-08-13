@@ -93,6 +93,22 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
+class UserSlim(BaseModel):
+    """Just enough to resolve a user id to a display name (#1894).
+
+    Deliberately narrower than ``UserResponse``: no email, role, auth source,
+    group membership or permission set. Adding a field here widens what every
+    ``can_read_status`` API key can read about every account, so treat this
+    shape as the contract rather than a starting point.
+    """
+
+    id: int
+    username: str
+
+    class Config:
+        from_attributes = True
+
+
 class LDAPSearchResultResponse(BaseModel):
     """One match from GET /auth/ldap/search — surfaced in the admin UI."""
 

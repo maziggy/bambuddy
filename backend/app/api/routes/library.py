@@ -73,11 +73,15 @@ from backend.app.services.plate_thumbnail import inject_plate_thumbnails_if_miss
 from backend.app.services.process_overrides import apply_process_overrides
 from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
 from backend.app.utils.filename import InvalidFilenameError, validate_print_filename
+from backend.app.utils.safe_path import PathTraversalError, safe_join_under
 from backend.app.utils.threemf_tools import (
+    default_plate_gcode_name,
     expand_to_project_slots,
     extract_embedded_presets_from_3mf,
     extract_nozzle_mapping_from_3mf,
     extract_project_filaments_from_3mf,
+    select_plate_gcode_name,
+    supports_enabled_in_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -290,6 +294,112 @@ def _resolve_upload_destination(target_folder: LibraryFolder | None, filename: s
         return dest, True
     ext = os.path.splitext(filename)[1].lower()
     return get_library_files_dir() / f"{uuid.uuid4().hex}{ext}", False
+
+
+def _unique_external_name(ext_dir: Path, filename: str) -> str:
+    """Return ``filename``, or the first free ``<stem> (n)<suffix>`` variant.
+
+    Splits on the *compound* extension so re-slicing ``Bidoof.3mf`` yields
+    ``Bidoof (2).gcode.3mf`` rather than ``Bidoof.gcode (2).3mf``.
+
+    Uploads answer a name collision with a 409, which is right for a file the
+    user just chose to send. A slice is not that: re-slicing the same source
+    with different settings is routine, and the second run has already spent
+    minutes of CPU by the time the name is known -- refusing to store it would
+    throw that away. Overwriting is worse still, since the target is somebody's
+    NAS and the file being replaced may not even be ours.
+    """
+    stem = filename[: -len(".gcode.3mf")] if filename.endswith(".gcode.3mf") else Path(filename).stem
+    suffix = ".gcode.3mf" if filename.endswith(".gcode.3mf") else Path(filename).suffix
+    candidate = filename
+    counter = 2
+    # Bounded: a directory holding 999 re-slices of one model is pathological,
+    # and an unbounded loop here would hang the request on a mount that lies
+    # about exists() (some SMB shares do under contention).
+    #
+    # safe_join_under rather than `ext_dir / candidate`: `filename` derives
+    # from a name read out of a 3MF, so the very first probe must not be able
+    # to stat its way outside the mount. It raises PathTraversalError, which
+    # the caller turns into a managed-storage fallback.
+    while safe_join_under(ext_dir, candidate, http=False).exists() and counter < 1000:
+        candidate = f"{stem} ({counter}){suffix}"
+        counter += 1
+    return candidate
+
+
+def _resolve_slice_destination(target_folder: LibraryFolder | None, out_filename: str) -> tuple[Path, bool, str | None]:
+    """Resolve where a slice result should be written.
+
+    Returns ``(path, is_external, fallback_reason)``. ``fallback_reason`` is
+    ``None`` on the normal paths and otherwise names why an external folder
+    could not receive the file, so the caller can tell the user instead of
+    quietly filing it elsewhere.
+
+    Slicing a file that lives on an external mount used to store the output in
+    the managed library dir unconditionally, while giving the new row the
+    external folder's ``folder_id`` (#2810). The file therefore appeared in the
+    right folder in the UI and never arrived on the share, which is the one
+    place the user was looking -- and made it un-reproducible from the web UI
+    alone. Uploads learned this in #1112 (``_resolve_upload_destination``) and
+    moves in its follow-up (``_move_file_bytes``); slicing was the last write
+    path still assuming managed storage.
+
+    Unlike uploads, a failure here does not raise. The bytes exist and cost
+    real time to produce, so an unwritable target falls back to managed storage
+    with a reason attached rather than discarding the slice.
+    """
+    if target_folder is None or not target_folder.is_external:
+        return get_library_files_dir() / f"{uuid.uuid4().hex}.gcode.3mf", False, None
+
+    if target_folder.external_readonly:
+        return get_library_files_dir() / f"{uuid.uuid4().hex}.gcode.3mf", False, "external_readonly"
+    if not target_folder.external_path:
+        return get_library_files_dir() / f"{uuid.uuid4().hex}.gcode.3mf", False, "external_no_path"
+
+    ext_dir = Path(target_folder.external_path)
+    if not ext_dir.exists() or not ext_dir.is_dir():
+        return get_library_files_dir() / f"{uuid.uuid4().hex}.gcode.3mf", False, "external_unreachable"
+    if not os.access(ext_dir, os.W_OK):
+        return get_library_files_dir() / f"{uuid.uuid4().hex}.gcode.3mf", False, "external_not_writable"
+
+    try:
+        dest = safe_join_under(ext_dir, _unique_external_name(ext_dir, out_filename), http=False)
+    except PathTraversalError:
+        # The source filename reached us from a 3MF on disk, so this is
+        # defensive rather than expected -- but a name that escapes the mount
+        # must land in managed storage, never outside it.
+        return get_library_files_dir() / f"{uuid.uuid4().hex}.gcode.3mf", False, "external_invalid_name"
+    return dest, True, None
+
+
+async def _folder_tree_file_ids(db: AsyncSession, folder_id: int) -> list[int]:
+    """Every ``LibraryFile`` id under ``folder_id``, at any depth.
+
+    Deleting a folder cascades to its whole subtree, so anything that has to be
+    released before that delete (queue items, cross-model candidates) needs the
+    subtree, not just the folder's own files.
+
+    Trashed rows are included deliberately: they are still real rows and the
+    cascade takes them too.
+    """
+    file_ids: list[int] = []
+    pending = [folder_id]
+    # The API refuses to make a folder its own ancestor, so a loop here would
+    # mean the table is already corrupt -- but this walk runs inside a delete
+    # request, and hanging one is worse than the cost of a set.
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        file_ids.extend(
+            (await db.execute(select(LibraryFile.id).where(LibraryFile.folder_id == current))).scalars().all()
+        )
+        pending.extend(
+            (await db.execute(select(LibraryFolder.id).where(LibraryFolder.parent_id == current))).scalars().all()
+        )
+    return file_ids
 
 
 def _stored_file_path(abs_path: Path, is_external: bool) -> str:
@@ -1343,7 +1453,16 @@ async def delete_folder(
 
         return file_ids
 
-    await get_all_file_ids(folder_id)
+    doomed_file_ids = await get_all_file_ids(folder_id)
+
+    # The folder cascade hard-deletes every file row under it, so the queue has
+    # to be taken off them first — same as the single-file delete below (#2819).
+    # The return value used to be discarded here, which is why this never
+    # happened for a folder delete.
+    from backend.app.services.library_trash import delete_dependent_variants, release_queue_references
+
+    await delete_dependent_variants(db, doomed_file_ids)
+    await release_queue_references(db, doomed_file_ids)
 
     # Delete folder (cascade will handle files and subfolders)
     await db.delete(folder)
@@ -3504,6 +3623,16 @@ _SOURCE_PROCESS_SUPPORT_KEYS_TO_PRESERVE = (
 def _patch_process_support_settings(process_json: str, source_3mf_bytes: bytes) -> str:
     """Overlay the source 3MF's support configuration onto the process JSON.
 
+    The carry is deliberately one-way: a source can switch supports *on*,
+    never off (#2820). The original #1881 rule was "source wins in both
+    directions", which quietly stripped supports from every custom process
+    preset that enabled them — a MakerWorld download nearly always ships
+    `enable_support: 0`, so the reporter's own preset (supports on, normal
+    (auto)) came back out of the slicer disabled and set to tree(auto).
+    Nothing is lost by not carrying the off direction: a process preset
+    with supports *on* is by definition a deliberate user preset, since
+    Bambu's shipped ones all ship them off.
+
     Only fires on 3MF sources — STL / STEP don't carry `project_settings.
     config`. Silently no-ops when the source doesn't have the config, has
     a malformed one, or when the process JSON isn't parseable — the slice
@@ -3521,6 +3650,8 @@ def _patch_process_support_settings(process_json: str, source_3mf_bytes: bytes) 
         return process_json
     if not isinstance(src_cfg, dict):
         return process_json
+    if not supports_enabled_in_config(src_cfg):
+        return process_json
 
     try:
         process_cfg = json.loads(process_json)
@@ -3529,9 +3660,15 @@ def _patch_process_support_settings(process_json: str, source_3mf_bytes: bytes) 
     if not isinstance(process_cfg, dict):
         return process_json
 
-    for key in _SOURCE_PROCESS_SUPPORT_KEYS_TO_PRESERVE:
-        if key in src_cfg:
-            process_cfg[key] = src_cfg[key]
+    carried = {key: src_cfg[key] for key in _SOURCE_PROCESS_SUPPORT_KEYS_TO_PRESERVE if key in src_cfg}
+    process_cfg.update(carried)
+    # Logged because this is the one layer of the process JSON the user
+    # can't see coming: the slice modal shows the picked preset's values,
+    # so a carried key silently disagrees with what was on screen.
+    logger.info(
+        "Carried support settings from the source 3MF onto the process preset: %s",
+        dict(sorted(carried.items())),
+    )
 
     return json.dumps(process_cfg)
 
@@ -4162,8 +4299,25 @@ async def slice_and_persist(
 
     base_name = model_filename.rsplit(".", 1)[0]
     out_filename = f"{base_name}.gcode.3mf"
-    unique_name = f"{uuid.uuid4().hex}.gcode.3mf"
-    out_path = get_library_files_dir() / unique_name  # SEC-PATH-OK: unique_name = uuid.uuid4().hex + ".gcode.3mf"
+    # Write next to the source when the source lives on an external mount
+    # (#2810). The folder is loaded here rather than passed in because every
+    # caller already has only the id.
+    target_folder: LibraryFolder | None = None
+    if folder_id is not None:
+        folder_result = await db.execute(select(LibraryFolder).where(LibraryFolder.id == folder_id))
+        target_folder = folder_result.scalar_one_or_none()
+    out_path, out_is_external, external_fallback = _resolve_slice_destination(target_folder, out_filename)
+    if out_is_external:
+        # _unique_external_name may have suffixed it; the library row has to
+        # show the name the file actually has on the share, or the two drift.
+        out_filename = out_path.name
+    if external_fallback:
+        logger.warning(
+            "Slice output for %s stored in managed library instead of external folder %s: %s",
+            model_filename,
+            target_folder.external_path if target_folder else None,
+            external_fallback,
+        )
     # BS/Orca CLIs skip plate_N.png in headless --export-3mf — render +
     # inject server-side so the library card has a thumbnail. Best-effort:
     # no-op when the slicer did embed thumbs (desktop Studio path), and
@@ -4211,13 +4365,16 @@ async def slice_and_persist(
     )
     if used_embedded_settings:
         metadata["used_embedded_settings"] = True
+    if external_fallback:
+        metadata["external_write_fallback"] = external_fallback
     if extra_metadata:
         metadata.update(extra_metadata)
 
     new_file = LibraryFile(
         folder_id=folder_id,
+        is_external=out_is_external,
         filename=out_filename,
-        file_path=to_relative_path(out_path),
+        file_path=_stored_file_path(out_path, out_is_external),
         # The on-disk payload is a ZIP container — the file_type must
         # record that so the preview endpoint opens it as a 3MF instead
         # of returning the ZIP bytes as text/plain (#1709 / yanglei1980).
@@ -4245,6 +4402,7 @@ async def slice_and_persist(
         filament_used_g=filament_g,
         filament_used_mm=filament_mm,
         used_embedded_settings=used_embedded_settings,
+        external_write_fallback=external_fallback,
     )
 
 
@@ -4464,13 +4622,23 @@ async def slice_library_file(
     lib_file = _ensure_library_file_visible(lib_file, current_user, can_read_all)
 
     src_lower = (lib_file.filename or "").lower()
-    if not (
-        src_lower.endswith(".stl")
-        or src_lower.endswith(".3mf")
-        or src_lower.endswith(".step")
-        or src_lower.endswith(".stp")
-    ):
-        raise HTTPException(status_code=400, detail="Source file must be STL, 3MF, or STEP")
+    if src_lower.endswith(".step") or src_lower.endswith(".stp"):
+        # Neither slicer's CLI can load STEP: OrcaSlicer 2.4.2 and BambuStudio
+        # 02.07.01.62 both answer "Unknown file format. Input file must have
+        # .stl, .obj, .amf(.xml) extension." Accepting the job here meant
+        # reading the file, converting it and uploading it before the sidecar
+        # rejected it as unparseable -- which reads as a corrupt model rather
+        # than an unsupported format. Say so before any of that happens.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "STEP files cannot be sliced. The OrcaSlicer and Bambu Studio command-line "
+                "slicers load only STL and 3MF -- open the STEP in your slicer and export it "
+                "as one of those first."
+            ),
+        )
+    if not (src_lower.endswith(".stl") or src_lower.endswith(".3mf")):
+        raise HTTPException(status_code=400, detail="Source file must be STL or 3MF")
 
     src_path = Path(app_settings.base_dir) / lib_file.file_path
     if not src_path.exists():
@@ -4775,9 +4943,10 @@ async def delete_file(
                 abs_thumb_path.unlink()
             except OSError as e:
                 logger.warning("Failed to delete thumbnail from disk: %s", e)
-        from backend.app.services.library_trash import delete_dependent_variants
+        from backend.app.services.library_trash import delete_dependent_variants, release_queue_references
 
         await delete_dependent_variants(db, [file.id])
+        await release_queue_references(db, [file.id])
         await db.delete(file)
         await db.commit()
         return {"status": "success", "message": "File deleted", "trashed": False}
@@ -4912,6 +5081,7 @@ async def get_thumbnail(
 @router.get("/files/{file_id}/gcode")
 async def get_gcode(
     file_id: int,
+    plate: int | None = None,
     db: AsyncSession = Depends(get_db),
     auth_result: tuple[User | None, bool] = Depends(
         require_ownership_permission(
@@ -4920,7 +5090,15 @@ async def get_gcode(
         )
     ),
 ):
-    """Get gcode for a file (for preview)."""
+    """Get gcode for a file (for preview).
+
+    Mirrors the archive route: ``?plate=2`` returns ``Metadata/plate_2.gcode``,
+    and omitting it returns the lowest-numbered plate. The viewer has been
+    sending ``plate`` since it gained a multi-plate URL, but this route took no
+    such parameter and FastAPI drops unknown query parameters silently — so
+    every multi-plate library file opened on whichever plate the slicer wrote
+    first into the zip, which is not plate 1.
+    """
     user, can_read_all = auth_result
     result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
     file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
@@ -4934,13 +5112,22 @@ async def get_gcode(
     # case, so detect by suffix before checking the type column.
     is_gcode_3mf = file.file_type in ("3mf", "gcode.3mf") or file.filename.lower().endswith(".gcode.3mf")
 
+    if plate is not None and plate < 1:
+        raise HTTPException(status_code=400, detail="Plate index must be >= 1")
+
     if is_gcode_3mf:
         try:
             with zipfile.ZipFile(str(abs_path), "r") as zf:
                 gcode_files = [n for n in zf.namelist() if n.endswith(".gcode")]
                 if not gcode_files:
                     raise HTTPException(status_code=404, detail="No gcode found in 3MF file")
-                gcode_content = zf.read(gcode_files[0])
+                if plate is not None:
+                    selected = select_plate_gcode_name(gcode_files, plate)
+                    if selected is None:
+                        raise HTTPException(status_code=404, detail=f"Plate {plate} not found in this file")
+                else:
+                    selected = default_plate_gcode_name(gcode_files)
+                gcode_content = zf.read(selected)
                 from fastapi.responses import Response
 
                 return Response(content=gcode_content, media_type="text/plain")
@@ -5077,10 +5264,15 @@ async def bulk_delete(
 
     Files not owned by the user are skipped (unless user has *_all permission).
     """
+    from backend.app.services.library_trash import delete_dependent_variants, release_queue_references
+
     user, can_modify_all = auth_result
     deleted_files = 0
     deleted_folders = 0
     skipped_files = 0
+    # External files bypass the trash and are removed for good, so the queue has
+    # to come off them. Collected here and dealt with once, below the loop.
+    hard_deleted: list[LibraryFile] = []
 
     # Delete files first. Managed files go to trash (sweeper hard-deletes bytes
     # later); external files bypass trash since their disk state is outside our
@@ -5102,10 +5294,21 @@ async def bulk_delete(
                     abs_thumb_path.unlink()
                 except OSError as e:
                     logger.warning("Failed to delete thumbnail from disk: %s", e)
-            await db.delete(file)
+            hard_deleted.append(file)
         else:
             file.deleted_at = now
         deleted_files += 1
+
+    # After the loop and before any delete is issued (#2819). Order matters
+    # twice over: a query run while a delete is pending autoflushes it, taking
+    # the cascade with it, and releasing once for the whole set is a couple of
+    # statements rather than a couple per file.
+    if hard_deleted:
+        hard_deleted_ids = [f.id for f in hard_deleted]
+        await delete_dependent_variants(db, hard_deleted_ids)
+        await release_queue_references(db, hard_deleted_ids)
+        for file in hard_deleted:
+            await db.delete(file)
 
     # Delete folders (cascade will handle contents). Folders have no ownership
     # tracking, so users without *_all permission may only delete empty,
@@ -5124,6 +5327,9 @@ async def bulk_delete(
                 )
             )
             deleted_files += file_count_result.scalar() or 0
+            tree_file_ids = await _folder_tree_file_ids(db, folder_id)
+            await delete_dependent_variants(db, tree_file_ids)
+            await release_queue_references(db, tree_file_ids)
             await db.delete(folder)
             deleted_folders += 1
 

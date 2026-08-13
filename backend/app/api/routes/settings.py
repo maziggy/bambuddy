@@ -200,6 +200,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "ldap_auto_provision",
             "local_login_enabled",
             "preheat_enabled",
+            "queue_keep_bed_warm",
         ]:
             settings_dict[setting.key] = setting.value.lower() == "true"
         elif setting.key in [
@@ -228,6 +229,8 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "pipeline_max_copies",
             "preheat_max_wait_seconds",
             "preheat_soak_seconds",
+            "queue_keep_warm_bed_temp",
+            "queue_keep_warm_max_minutes",
             "queue_max_concurrent_uploads",
         ]:
             settings_dict[setting.key] = int(setting.value)
@@ -812,15 +815,8 @@ async def _import_sqlite_to_postgres(sqlite_path: Path, postgres_url: str):
         sorted_tables = [t.name for t in metadata.sorted_tables if t.name in tables_to_import]
 
         # Phase 1: Drop all tables and recreate WITHOUT foreign keys.
-        # This avoids all FK ordering/orphan issues during import.
-        saved_fks = {}
-        for table in metadata.sorted_tables:
-            fks = list(table.foreign_key_constraints)
-            if fks:
-                saved_fks[table.name] = fks
-                for fk in fks:
-                    table.constraints.discard(fk)
-
+        # This avoids all FK ordering/orphan issues during import; the
+        # constraints go back on at the end, once every row has landed.
         async with pg_engine.begin() as conn:
             # Cap how long DROP TABLE will wait for AccessExclusiveLock so
             # any residual concurrent writer (per-printer MQTT clients
@@ -853,11 +849,38 @@ async def _import_sqlite_to_postgres(sqlite_path: Path, postgres_url: str):
             )
             await conn.run_sync(metadata.create_all)
 
-        # Restore FK definitions in metadata (needed for re-adding later)
-        for table_name, fks in saved_fks.items():
-            table_obj = metadata.tables[table_name]
-            for fk in fks:
-                table_obj.constraints.add(fk)
+            # Now strip the foreign keys, at the database level.
+            #
+            # This used to be done by discarding each ForeignKeyConstraint
+            # from `table.constraints` before `create_all`. That only
+            # suppresses the inline REFERENCES clause inside CREATE TABLE:
+            # `Table.foreign_key_constraints` is derived from the *columns'*
+            # ForeignKey objects, which the discard never touched. When
+            # `create_all` meets a dependency cycle it can't sort -- and
+            # library_files / library_folders / print_archives are exactly
+            # such a cycle -- it falls back to emitting those tables' keys
+            # as separate ALTER TABLE ... ADD FOREIGN KEY statements read
+            # straight from that property. Twelve constraints survived,
+            # including library_files.folder_id, and because the same cycle
+            # also drops the ordering edge from `sorted_tables` the child
+            # table was imported before its parent and the restore died on
+            # a ForeignKeyViolationError.
+            #
+            # Dropping them from pg_constraint instead is indifferent to how
+            # create_all chose to emit them, so a future model cycle cannot
+            # reintroduce this. It also keeps the app's global Base.metadata
+            # untouched: the old code only put the constraints back *after*
+            # the transaction, so a failure in here left the running process
+            # with an FK-less metadata until restart.
+            await conn.execute(
+                text(
+                    "DO $$ DECLARE r RECORD; BEGIN "
+                    "FOR r IN (SELECT conrelid::regclass AS tbl, conname FROM pg_constraint "
+                    "WHERE contype = 'f' AND connamespace = 'public'::regnamespace) LOOP "
+                    "EXECUTE 'ALTER TABLE ' || r.tbl || ' DROP CONSTRAINT ' || quote_ident(r.conname); "
+                    "END LOOP; END $$;"
+                )
+            )
 
         # Phase 2: Import data (no FKs to worry about)
         async with pg_engine.begin() as conn:
@@ -955,7 +978,7 @@ async def _import_sqlite_to_postgres(sqlite_path: Path, postgres_url: str):
         src.close()
         logger.info("Cross-database import complete: %d tables imported", len(tables_to_import))
 
-        # Recreate FK constraints from ORM metadata (not from saved definitions).
+        # Recreate FK constraints from ORM metadata, which Phase 1 left intact.
         # Use individual transactions so orphaned SQLite data doesn't block valid FKs.
         from sqlalchemy.schema import AddConstraint
 
@@ -965,11 +988,28 @@ async def _import_sqlite_to_postgres(sqlite_path: Path, postgres_url: str):
                 try:
                     async with pg_engine.begin() as fk_conn:
                         await fk_conn.execute(AddConstraint(fk))
-                except Exception:
-                    failed_fks.append(f"{table.name}.{fk.name}")
+                except Exception as e:
+                    # Name the constraint by what it links, not by `fk.name`:
+                    # these are unnamed in the ORM, so that field is None and
+                    # the warning used to read "print_archives.None" for every
+                    # one of the five keys on that table -- unusable for
+                    # working out which rows to go and look at.
+                    cols = ", ".join(c.name for c in fk.columns)
+                    target = fk.elements[0].target_fullname if fk.elements else "unknown"
+                    failed_fks.append(f"{table.name}({cols}) -> {target}")
+                    # Postgres puts the offending key in a DETAIL line; it
+                    # names the exact orphan value, which is the one thing
+                    # that turns this into an actionable report.
+                    detail = next(
+                        (ln.strip() for ln in str(e).splitlines() if ln.startswith("DETAIL:")),
+                        str(e).splitlines()[0] if str(e) else e.__class__.__name__,
+                    )
+                    logger.info("FK %s(%s) -> %s not restored: %s", table.name, cols, target, detail)
         if failed_fks:
             logger.warning(
-                "Could not restore %d FK constraints (orphaned data in SQLite): %s",
+                "Could not restore %d FK constraints (orphaned data in the backup): %s. "
+                "The data is restored and usable; those columns are simply no longer "
+                "enforced. See the INFO lines above for the offending key in each case.",
                 len(failed_fks),
                 ", ".join(failed_fks),
             )

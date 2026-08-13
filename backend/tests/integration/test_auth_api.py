@@ -232,8 +232,8 @@ class TestAuthMeAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_me_with_api_key_bearer(self, async_client: AsyncClient, db_session):
-        """Verify /me returns synthetic admin user when using API key via Bearer token."""
+    async def test_me_with_ownerless_api_key_bearer(self, async_client: AsyncClient, db_session):
+        """A legacy key has no identity to report, but no longer claims admin (#1894)."""
         from backend.app.core.auth import generate_api_key
         from backend.app.models.api_key import APIKey
 
@@ -253,15 +253,18 @@ class TestAuthMeAPI:
         result = response.json()
         assert result["id"] == 0
         assert result["username"].startswith("api-key:")
-        assert result["role"] == "admin"
-        assert result["is_admin"] is True
+        assert result["role"] != "admin"
+        assert result["is_admin"] is False
         assert result["is_active"] is True
+        # can_read_status defaults True, so the scope-derived set is non-empty
+        # -- but it is a set, not "every permission there is".
         assert len(result["permissions"]) > 0
+        assert "users:create" not in result["permissions"]
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_me_with_api_key_header(self, async_client: AsyncClient, db_session):
-        """Verify /me returns synthetic admin user when using X-API-Key header."""
+    async def test_me_with_ownerless_api_key_header(self, async_client: AsyncClient, db_session):
+        """Same as above via the X-API-Key header rather than Bearer."""
         from backend.app.core.auth import generate_api_key
         from backend.app.models.api_key import APIKey
 
@@ -279,7 +282,7 @@ class TestAuthMeAPI:
         result = response.json()
         assert result["id"] == 0
         assert result["username"].startswith("api-key:")
-        assert result["is_admin"] is True
+        assert result["is_admin"] is False
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -291,6 +294,127 @@ class TestAuthMeAPI:
         )
 
         assert response.status_code == 401
+
+    async def _owned_key(self, async_client: AsyncClient, db_session, **scopes):
+        """Set up auth and return (owner, full_key) for a key with ``scopes``.
+
+        The owner is given an email and a group explicitly rather than relying
+        on what /auth/setup happens to seed, so the assertions about what /me
+        withholds cannot pass vacuously.
+        """
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        from backend.app.core.auth import generate_api_key
+        from backend.app.models.api_key import APIKey
+        from backend.app.models.group import Group
+        from backend.app.models.user import User
+
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "auth_enabled": True,
+                "admin_username": "keyowner",
+                "admin_password": "KeyPass1!",
+            },
+        )
+        owner = (
+            await db_session.execute(select(User).where(User.username == "keyowner").options(selectinload(User.groups)))
+        ).scalar_one()
+        owner.email = "keyowner@example.invalid"
+        group = Group(name="key-owner-group", description="t", permissions=["printers:read"], is_system=False)
+        db_session.add(group)
+        await db_session.flush()
+        owner.groups.append(group)
+
+        full_key, key_hash, key_prefix = generate_api_key()
+        db_session.add(
+            APIKey(name="owned", key_hash=key_hash, key_prefix=key_prefix, enabled=True, user_id=owner.id, **scopes)
+        )
+        await db_session.commit()
+        return owner, full_key
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_me_reports_the_key_owner_not_a_synthetic_admin(self, async_client: AsyncClient, db_session):
+        """The id is the point of #1894 -- it is what created_by_id filters on."""
+        owner, full_key = await self._owned_key(async_client, db_session)
+
+        response = await async_client.get("/api/v1/auth/me", headers={"X-API-Key": full_key})
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["id"] == owner.id
+        assert result["username"] == "keyowner"
+        # The owner is an admin; the key still is not, because no key reaches
+        # an administrative route regardless of who owns it.
+        assert result["is_admin"] is False
+        assert result["role"] != "admin"
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_me_withholds_owner_email_and_groups(self, async_client: AsyncClient, db_session):
+        """Identity, not the owner's profile -- anyone holding the key sees this."""
+        owner, full_key = await self._owned_key(async_client, db_session)
+        assert owner.email is not None and owner.groups  # the helper made both non-empty
+
+        result = (await async_client.get("/api/v1/auth/me", headers={"X-API-Key": full_key})).json()
+
+        assert result["email"] is None
+        assert result["groups"] == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_me_permissions_track_the_key_scopes_not_the_owner(self, async_client: AsyncClient, db_session):
+        """A key owned by an admin still reports only what its flags allow."""
+        _, full_key = await self._owned_key(
+            async_client,
+            db_session,
+            can_read_status=True,
+            can_control_printer=False,
+            can_queue=False,
+        )
+
+        perms = (await async_client.get("/api/v1/auth/me", headers={"X-API-Key": full_key})).json()["permissions"]
+
+        assert "printers:read" in perms  # can_read_status
+        assert "printers:control" not in perms  # can_control_printer is off
+        assert "queue:create" not in perms  # can_queue is off
+        assert "users:create" not in perms  # administrative: unmapped for keys
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_me_permissions_are_exactly_what_the_gate_admits(self, async_client: AsyncClient, db_session):
+        """/me must not drift from _check_apikey_permissions.
+
+        The whole defect in #1894 was a /me response that described a different
+        credential than the one the gate enforces, so pin them to each other
+        rather than to a hand-written list that can rot. The owner is threaded
+        through both sides for the same reason -- the gate narrows to the
+        owner's permissions, so a check that skipped the owner would stop
+        catching drift the moment the owner is not an administrator.
+        """
+        from fastapi import HTTPException
+        from sqlalchemy import select
+
+        from backend.app.core.auth import _check_apikey_permissions, resolve_apikey_owner
+        from backend.app.core.permissions import ALL_PERMISSIONS
+        from backend.app.models.api_key import APIKey
+
+        _, full_key = await self._owned_key(async_client, db_session, can_read_status=True, can_control_printer=False)
+
+        response = await async_client.get("/api/v1/auth/me", headers={"X-API-Key": full_key})
+        reported = set(response.json()["permissions"])
+
+        key = (await db_session.execute(select(APIKey).where(APIKey.name == "owned"))).scalar_one()
+        owner = await resolve_apikey_owner(db_session, key)
+        for perm in ALL_PERMISSIONS:
+            try:
+                _check_apikey_permissions(key, [perm], owner=owner)
+            except HTTPException:
+                assert perm not in reported, f"/me reports '{perm}' but the gate denies it"
+            else:
+                assert perm in reported, f"the gate admits '{perm}' but /me omits it"
 
 
 class TestUsersAPI:

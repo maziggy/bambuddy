@@ -1353,6 +1353,9 @@ export interface AppSettings {
   preheat_filament_targets: string;
   preheat_max_wait_seconds: number;
   preheat_soak_seconds: number;
+  queue_keep_bed_warm: boolean;
+  queue_keep_warm_bed_temp: number;
+  queue_keep_warm_max_minutes: number;
   // User-configurable presets for the printer-card popovers (JSON arrays of 3 ints).
   // Empty string = use built-in defaults.
   nozzle_temp_presets: string;
@@ -1857,6 +1860,11 @@ export interface SliceResponse {
   filament_used_g: number;
   filament_used_mm: number;
   used_embedded_settings: boolean;
+  /** Why the result could not be written to the external folder the source
+   * lives in, and so went to managed storage instead. Null on every normal
+   * slice. Surfaced to the user — a file filed somewhere they aren't looking
+   * with no signal is what made #2810 invisible from the UI. */
+  external_write_fallback?: string | null;
 }
 
 export interface SliceArchiveResponse {
@@ -3457,6 +3465,27 @@ export interface SpoolKProfileInput {
   setting_id?: string | null;
 }
 
+/** One inventory-bound AMS slot, as returned by `/printers/{id}/inventory-remain`. */
+export interface SlotMaterial {
+  ams_id: number;
+  tray_id: number;
+  global_tray_id: number;
+  /** Opaque grouping key from the backend. Two slots back each other up under
+   *  AMS Filament Backup only when both `material_key` and `extruder` match.
+   *  Never parse it — the format belongs to the backend's identity rule. */
+  material_key: string;
+  remaining_g: number;
+  /** 0 = right / single nozzle, 1 = left. */
+  extruder: number;
+}
+
+export interface InventoryRemainResponse {
+  /** Currently-loaded, inventory-bound slots only — drives the prefer-lowest sort. */
+  inventory_remain_g: Record<string, number>;
+  /** Every inventory binding on the printer, with identity + extruder side. */
+  slot_materials: SlotMaterial[];
+}
+
 export interface SpoolAssignment {
   id: number;
   spool_id: number;
@@ -3783,7 +3812,7 @@ export type Permission =
   | 'cloud:auth' | 'orca_cloud:auth'
   | 'makerworld:view' | 'makerworld:import'
   | 'api_keys:read' | 'api_keys:create' | 'api_keys:update' | 'api_keys:delete'
-  | 'users:read' | 'users:create' | 'users:update' | 'users:delete'
+  | 'users:read' | 'users:read_slim' | 'users:create' | 'users:update' | 'users:delete'
   | 'groups:read' | 'groups:create' | 'groups:update' | 'groups:delete'
   | 'pipelines:read' | 'pipelines:write' | 'pipelines:run'
   | 'websocket:connect';
@@ -3871,6 +3900,17 @@ export interface UserResponse {
   groups: GroupBrief[];
   permissions: Permission[];  // All permissions from groups
   created_at: string;
+}
+
+/**
+ * Just enough to label an owner id (#1894). Backed by GET /users/slim, which
+ * is readable with `users:read_slim` as well as the admin-level `users:read`
+ * -- use it anywhere a screen only needs to turn a `created_by_id` into a
+ * name, so operators are not forced into the full listing to get one.
+ */
+export interface UserSlim {
+  id: number;
+  username: string;
 }
 
 export interface UserCreate {
@@ -4264,6 +4304,7 @@ export const api = {
 
   // Users
   getUsers: () => request<UserResponse[]>('/users/'),
+  getUsersSlim: () => request<UserSlim[]>('/users/slim'),
   getUser: (id: number) => request<UserResponse>(`/users/${id}`),
   createUser: (data: UserCreate) =>
     request<UserResponse>('/users/', {
@@ -4483,7 +4524,7 @@ export const api = {
   // when computing the AMS mapping; mirrors backend `_build_inventory_remain_overrides`
   // so internal and Spoolman modes both work uniformly.
   getInventoryRemain: (printerId: number) =>
-    request<{ inventory_remain_g: Record<string, number> }>(
+    request<InventoryRemainResponse>(
       `/printers/${printerId}/inventory-remain`,
     ),
 

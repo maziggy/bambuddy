@@ -161,11 +161,20 @@ def mm_to_grams(
     return volume_cm3 * density_g_cm3
 
 
-def extract_layer_filament_usage_from_3mf(file_path: Path) -> dict[int, dict[int, float]] | None:
+def extract_layer_filament_usage_from_3mf(
+    file_path: Path, plate_id: int | None = None
+) -> dict[int, dict[int, float]] | None:
     """Extract per-layer filament usage from a 3MF file's embedded G-code.
 
     Args:
         file_path: Path to the 3MF file
+        plate_id: Plate to read. Required for multi-plate files — zip member
+            order is whatever the slicer wrote, and Bambu Studio stores
+            ``plate_2.gcode`` ahead of ``plate_1.gcode``, so the old
+            "first member" behaviour read a different plate's layers than
+            the one that printed. Returns None rather than silently falling
+            back to another plate when the requested plate isn't in the
+            file; callers degrade to linear scaling, which is bounded.
 
     Returns:
         Dictionary mapping layers to filament usage, or None if parsing fails.
@@ -173,13 +182,18 @@ def extract_layer_filament_usage_from_3mf(file_path: Path) -> dict[int, dict[int
     """
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
-            # Find G-code file(s) - usually plate_1.gcode or Metadata/plate_1.gcode
-            gcode_files = [f for f in zf.namelist() if f.endswith(".gcode")]
-            if not gcode_files:
+            names = zf.namelist()
+            gcode_path = select_plate_gcode_name(names, plate_id)
+            if gcode_path is None:
+                # No plate asked for, or a file whose single G-code member
+                # doesn't follow the plate_N naming convention (non-Bambu
+                # slicers) — the lone member is unambiguous either way.
+                gcode_files = [f for f in names if f.endswith(".gcode")]
+                if plate_id is None or len(gcode_files) == 1:
+                    gcode_path = default_plate_gcode_name(names)
+            if gcode_path is None:
                 return None
 
-            # Use the first G-code file (typically only one per 3MF export)
-            gcode_path = gcode_files[0]
             gcode_content = zf.read(gcode_path).decode("utf-8", errors="ignore")
 
             return parse_gcode_layer_filament_usage(gcode_content)
@@ -308,6 +322,53 @@ def extract_embedded_presets_from_3mf(zf: zipfile.ZipFile) -> dict[str, str | No
     result["printer"] = _first_settings_id(data.get("printer_settings_id"))
     result["process"] = _first_settings_id(data.get("print_settings_id"))
     return result
+
+
+# Ceiling on the dense per-slot form below. Deliberately larger than the 32
+# entries a print command carries, so a legitimate file is never silently
+# truncated at the limit -- it is either usable or rejected outright.
+_MAX_DENSE_FILAMENT_SLOTS = 64
+
+
+def extract_slot_extruders_from_3mf(file_path: Path) -> list[int] | None:
+    """Per-slot extruder assignment as a dense list, or None (#2800).
+
+    Same data as :func:`extract_nozzle_mapping_from_3mf`, reshaped for the
+    dispatcher: index 0 is filament slot 1, and a slot this file does not
+    print is ``-1``. Nozzle-rack printers (H2C) need it to build the physical
+    ``nozzle_mapping`` the firmware expects — without one they fall back to
+    picking a nozzle themselves, which can level with one hotend and print
+    with another, several millimetres off the bed.
+
+    Takes a path rather than an open archive because the dispatcher is
+    handling the file, not the zip, and a broken file there must not take the
+    print down: an unreadable or non-3MF path returns None, and the caller
+    dispatches exactly as it did before this existed.
+    """
+    try:
+        with zipfile.ZipFile(file_path) as zf:
+            by_slot = extract_nozzle_mapping_from_3mf(zf)
+    except (zipfile.BadZipFile, OSError) as exc:
+        logger.warning("Failed to read nozzle mapping from %s: %s", file_path, exc)
+        return None
+
+    if not by_slot:
+        return None
+
+    # The slot IDs are whatever the file says, so the dense form has to be
+    # bounded before it is built: a corrupt or hostile 3MF declaring
+    # `filament id="50000000"` would otherwise allocate a fifty-million-entry
+    # list here, on the dispatch path. Nothing above 32 is usable anyway --
+    # that is the length of the array the printer is sent.
+    highest_slot = max(by_slot)
+    if highest_slot < 1 or highest_slot > _MAX_DENSE_FILAMENT_SLOTS:
+        logger.warning(
+            "Ignoring nozzle mapping from %s: highest filament slot %s is out of range",
+            file_path,
+            highest_slot,
+        )
+        return None
+    return [by_slot.get(slot, -1) for slot in range(1, highest_slot + 1)]
 
 
 def extract_nozzle_mapping_from_3mf(zf: zipfile.ZipFile) -> dict[int, int] | None:
@@ -702,21 +763,54 @@ def _parse_3mf_gcode_header(content: str) -> dict[str, str]:
     return header
 
 
-def _select_plate_gcode_name(names: list[str], plate_id: int | None) -> str | None:
-    """Pick a plate's ``.gcode`` member out of a 3MF namelist.
+def _plate_number_of(name: str) -> int | None:
+    """Plate index encoded in a ``…/plate_<n>.gcode`` member, or None.
 
-    Prefers ``plate_<id>.gcode``, then falls back to the first ``.gcode``
-    member so single-plate files — and files from slicers that don't use the
-    plate naming convention — still resolve.
+    Parsed as an int rather than string-matched so a zero-padded
+    ``plate_01.gcode`` resolves to the same 1 the plates endpoint reports.
+    """
+    marker = "plate_"
+    idx = name.rfind(marker)
+    if idx < 0 or not name.endswith(".gcode"):
+        return None
+    try:
+        return int(name[idx + len(marker) : -len(".gcode")])
+    except ValueError:
+        return None
+
+
+def select_plate_gcode_name(names: list[str], plate_id: int | None) -> str | None:
+    """The ``.gcode`` member for exactly ``plate_id``, or None if it isn't there.
+
+    Returns None for a ``plate_id`` the file doesn't hold — callers that want a
+    fallback compose this with ``default_plate_gcode_name``; callers serving a
+    user's explicit plate choice want the None so they can 404 instead of
+    quietly rendering a different plate.
+    """
+    if plate_id is None:
+        return None
+    for name in names:
+        if name.endswith(".gcode") and _plate_number_of(name) == plate_id:
+            return name
+    return None
+
+
+def default_plate_gcode_name(names: list[str]) -> str | None:
+    """The ``.gcode`` member to show when no plate was asked for.
+
+    The lowest plate number, NOT the first member in the archive: zip order is
+    whatever the slicer happened to write, and Bambu Studio does not write
+    plates in order — a two-plate file measured here stores ``plate_2.gcode``
+    ahead of ``plate_1.gcode``, so taking the first member opened plate 2. Files
+    from slicers that don't use the plate naming convention keep the old
+    first-member behaviour, since there is no numbering to sort by.
     """
     gcodes = [n for n in names if n.endswith(".gcode")]
     if not gcodes:
         return None
-    if plate_id is not None:
-        suffix = f"plate_{plate_id}.gcode"
-        for name in gcodes:
-            if name.endswith(suffix):
-                return name
+    numbered = [(num, n) for n in gcodes if (num := _plate_number_of(n)) is not None]
+    if numbered:
+        return min(numbered)[1]
     return gcodes[0]
 
 
@@ -742,7 +836,8 @@ def extract_max_z_height_from_3mf(file_path: Path, plate_id: int | None = None) 
     """
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
-            target = _select_plate_gcode_name(zf.namelist(), plate_id)
+            names = zf.namelist()
+            target = select_plate_gcode_name(names, plate_id) or default_plate_gcode_name(names)
             if target is None:
                 return None
             with zf.open(target, "r") as fh:
@@ -864,8 +959,9 @@ def inject_gcode_into_3mf(
     try:
         # Find the target gcode file inside the 3MF
         with zipfile.ZipFile(source_path, "r") as zf:
-            # Plate-specific gcode first, else the first one in the file.
-            target_gcode = _select_plate_gcode_name(zf.namelist(), plate_id)
+            # Plate-specific gcode first, else the lowest-numbered plate.
+            names = zf.namelist()
+            target_gcode = select_plate_gcode_name(names, plate_id) or default_plate_gcode_name(names)
             if target_gcode is None:
                 return None
 
@@ -1003,6 +1099,24 @@ def expand_to_project_slots(zf: zipfile.ZipFile, used: list[dict]) -> list[dict]
     return out
 
 
+# BambuStudio serialises bool config options as string "1"/"0" in
+# project_settings.config, but forks / older versions occasionally write real
+# booleans or ints — accept anything that isn't unambiguously falsy. A missing
+# key counts as off: a 3MF that never declares `enable_support` gives us no
+# support intent to act on.
+_SUPPORTS_DISABLED_VALUES = (False, 0, "0", "false", "False", "", None)
+
+
+def supports_enabled_in_config(cfg: dict[str, object]) -> bool:
+    """Whether a 3MF's ``project_settings.config`` has supports switched on.
+
+    Shared by the callers that read support intent out of a source file so
+    they agree on what "on" means: the slot extractor below and the slice
+    route's process-preset support carry-over (#1881 / #2820).
+    """
+    return cfg.get("enable_support") not in _SUPPORTS_DISABLED_VALUES
+
+
 def extract_support_filament_slots_from_3mf(zf: zipfile.ZipFile) -> set[int]:
     """Slots referenced by the process settings for support material.
 
@@ -1028,12 +1142,7 @@ def extract_support_filament_slots_from_3mf(zf: zipfile.ZipFile) -> set[int]:
         return set()
     if not isinstance(cfg, dict):
         return set()
-    # BambuStudio serialises bool config options as string "1"/"0" in
-    # project_settings.config, but forks / older versions occasionally
-    # write real booleans or ints — accept anything that isn't
-    # unambiguously falsy.
-    enable = cfg.get("enable_support")
-    if enable in (False, 0, "0", "false", "False", "", None):
+    if not supports_enabled_in_config(cfg):
         return set()
     out: set[int] = set()
     for key in ("support_filament", "support_interface_filament"):

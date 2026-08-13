@@ -105,7 +105,10 @@ export function FinancePage() {
   const canUpdateBudgets = hasPermission('cost_centers:modify');
   const canAssignCostCenterUsers = hasPermission('cost_centers:modify');
   const canAdjustWallet = hasPermission('cost_centers:modify');
-  const canReadUsers = hasPermission('users:read');
+  // Finance only ever labels a user or picks one to assign, so the slim
+  // listing suffices -- and a billing operator should not need the admin-level
+  // users:read (emails, roles, permission sets) to staff a cost center (#1894).
+  const canReadUsers = hasPermission('users:read_slim') || hasPermission('users:read');
 
   const canAccessAllCostCenters =
     canReadAllFinance ||
@@ -202,8 +205,8 @@ export function FinancePage() {
   });
 
   const { data: users } = useQuery({
-    queryKey: ['users'],
-    queryFn: api.getUsers,
+    queryKey: ['users', 'slim'],
+    queryFn: api.getUsersSlim,
     enabled: canReadUsers && (canViewMyCostCenters || canAdjustWallet || canAssignCostCenterUsers),
   });
 

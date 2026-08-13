@@ -28,8 +28,19 @@ from backend.app.schemas.group import (
 router = APIRouter(prefix="/groups", tags=["groups"])
 
 
+# Permissions whose derived label would misdescribe what is being granted.
+# The derived form for USERS_READ_SLIM is "Read Slim Users", which reads as a
+# property of the users rather than of the response -- and an admin ticking a
+# box in the group editor has nothing else to go on (#1894).
+_PERMISSION_LABEL_OVERRIDES: dict[Permission, str] = {
+    Permission.USERS_READ_SLIM: "List User Names (id + username only)",
+}
+
+
 def _permission_label(perm: Permission) -> str:
     """Convert permission enum to human-readable label."""
+    if perm in _PERMISSION_LABEL_OVERRIDES:
+        return _PERMISSION_LABEL_OVERRIDES[perm]
     # e.g., "printers:read" -> "Read Printers"
     parts = perm.value.split(":")
     if len(parts) == 2:

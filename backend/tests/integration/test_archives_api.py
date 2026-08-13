@@ -1597,6 +1597,59 @@ class TestArchiveF3DEndpoints:
         response = await async_client.get("/api/v1/archives/999999/filament-requirements?plate_id=1")
         assert response.status_code == 404
 
+    async def _two_plate_archive(self, archive_factory, printer_factory, tmp_path):
+        """An archive whose 3MF stores plate 2 ahead of plate 1, as Studio writes it."""
+        import zipfile
+
+        printer = await printer_factory()
+        path = tmp_path / "two_plates.gcode.3mf"
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("Metadata/plate_2.gcode", "; plate two\nG28\n")
+            zf.writestr("Metadata/plate_1.gcode", "; plate one\nG28\n")
+        # An absolute file_path collapses `settings.base_dir / file_path` onto
+        # itself, so the route reads the file written here.
+        return await archive_factory(printer.id, file_path=str(path), filename="two_plates.gcode.3mf")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_gcode_without_a_plate_serves_the_first_plate(
+        self, async_client: AsyncClient, archive_factory, printer_factory, tmp_path
+    ):
+        """Zip order is whatever the slicer wrote, so the first member here is
+        plate 2. Callers that pass no plate must still land on plate 1."""
+        archive = await self._two_plate_archive(archive_factory, printer_factory, tmp_path)
+
+        response = await async_client.get(f"/api/v1/archives/{archive.id}/gcode")
+
+        assert response.status_code == 200
+        assert "plate one" in response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_gcode_serves_the_requested_plate(
+        self, async_client: AsyncClient, archive_factory, printer_factory, tmp_path
+    ):
+        archive = await self._two_plate_archive(archive_factory, printer_factory, tmp_path)
+
+        first = await async_client.get(f"/api/v1/archives/{archive.id}/gcode?plate=1")
+        second = await async_client.get(f"/api/v1/archives/{archive.id}/gcode?plate=2")
+
+        assert "plate one" in first.text
+        assert "plate two" in second.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_gcode_rejects_a_plate_the_file_does_not_hold(
+        self, async_client: AsyncClient, archive_factory, printer_factory, tmp_path
+    ):
+        archive = await self._two_plate_archive(archive_factory, printer_factory, tmp_path)
+
+        missing = await async_client.get(f"/api/v1/archives/{archive.id}/gcode?plate=3")
+        zeroth = await async_client.get(f"/api/v1/archives/{archive.id}/gcode?plate=0")
+
+        assert missing.status_code == 404
+        assert zeroth.status_code == 400
+
     # ========================================================================
     # Tag Management endpoints (Issue #183)
     # ========================================================================

@@ -101,6 +101,17 @@ html {
   --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   --glow-color: transparent;
 
+  /* Tell the browser which appearance the page is in, so the parts of a form
+     control it draws itself follow the theme.  Bambuddy themes by
+     swapping CSS variables under a `.dark` class, which the browser cannot
+     see: without this declaration it assumes light and paints every native
+     widget internal that way -- number-input steppers, the date picker's
+     calendar button and its popup, `<select>` dropdowns, scrollbars, the
+     autofill highlight.  That is why the quantity steppers in the print
+     dialog were pale grey chips inside a dark field.  Only the widget
+     internals are affected; anything we set ourselves still wins. */
+  color-scheme: light;
+
   font-family: 'Inter', system-ui, sans-serif;
   line-height: 1.5;
   font-weight: 400;
@@ -112,6 +123,12 @@ html {
 
 /* Dark mode base */
 .dark {
+  /* Pairs with `color-scheme: light` on :root -- see the note there.  This
+     sits on `.dark` rather than on each `.dark.bg-*` palette because the
+     kiosk adds `dark` to <html> on its own (SpoolBuddyLayout), and every
+     palette is a dark one regardless of which background it picks. */
+  color-scheme: dark;
+
   --bg-primary: #1a1a1a;
   --bg-secondary: #2d2d2d;
   --bg-tertiary: #3d3d3d;

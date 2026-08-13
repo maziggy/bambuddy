@@ -1053,9 +1053,12 @@ export function StatsPage() {
     queryFn: api.getSettings,
   });
 
+  // Slim listing (#1894): the filter only needs id + username, and gating it
+  // on the admin-level users:read left the dropdown empty for exactly the
+  // operators who were granted stats:filter_by_user.
   const { data: users } = useQuery({
-    queryKey: ['users'],
-    queryFn: api.getUsers,
+    queryKey: ['users', 'slim'],
+    queryFn: api.getUsersSlim,
     enabled: canFilterByUser,
   });
 
@@ -1367,7 +1370,7 @@ export function StatsPage() {
                           value={timeframe.dateFrom || ''}
                           max={timeframe.dateTo || new Date().toISOString().split('T')[0]}
                           onChange={(e) => setTimeframe(prev => ({ ...prev, dateFrom: e.target.value || undefined }))}
-                          className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded-md px-3 py-1.5 text-sm text-white [color-scheme:dark]"
+                          className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded-md px-3 py-1.5 text-sm text-white"
                         />
                       </div>
                       <div>
@@ -1378,7 +1381,7 @@ export function StatsPage() {
                           min={timeframe.dateFrom}
                           max={new Date().toISOString().split('T')[0]}
                           onChange={(e) => setTimeframe(prev => ({ ...prev, dateTo: e.target.value || undefined }))}
-                          className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded-md px-3 py-1.5 text-sm text-white [color-scheme:dark]"
+                          className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded-md px-3 py-1.5 text-sm text-white"
                         />
                       </div>
                       <Button

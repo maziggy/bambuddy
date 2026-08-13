@@ -472,8 +472,8 @@ export function CameraTokensSection() {
         // (e.g. permission missing for some reason), the table still renders
         // with the numeric user_id as fallback.
         try {
-          const users = await api.getUsers();
-          setUserIdToName(new Map(users.map((u: { id: number; username: string }) => [u.id, u.username])));
+          const users = await api.getUsersSlim();
+          setUserIdToName(new Map(users.map((u) => [u.id, u.username])));
         } catch {
           setUserIdToName(new Map());
         }

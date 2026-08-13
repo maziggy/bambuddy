@@ -415,3 +415,184 @@ async def test_trashed_file_hidden_from_makerworld_dedupe(async_client: AsyncCli
         select(LibraryFile).where(LibraryFile.source_url == "https://makerworld.com/en/models/99#profileId-1")
     )
     assert direct.scalar_one_or_none() is not None
+
+
+# ---------------------------------------------------------------------------
+# Queued work must not be destroyed by a library delete (#2819)
+#
+# `print_queue.library_file_id` is ON DELETE CASCADE. SQLite does not enforce
+# it, so a queued job was left pointing at a row that no longer existed and
+# failed at the printer with "Library file not found", days later and with
+# nothing naming the delete that caused it. PostgreSQL does enforce it, so the
+# rows were deleted outright -- including finished ones, which is what a batch
+# order counts its progress from.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def queue_factory(db_session):
+    """Queue items on a throwaway printer."""
+    from backend.app.models.print_queue import PrintQueueItem
+    from backend.app.models.printer import Printer
+
+    printer = Printer(
+        name="Queue test printer",
+        serial_number="QUEUE-TEST-2819",
+        ip_address="127.0.0.1",
+        access_code="access-code",
+        model="X1C",
+    )
+    db_session.add(printer)
+    await db_session.commit()
+
+    async def _create(library_file, status="pending", **kwargs):
+        item = PrintQueueItem(printer_id=printer.id, library_file_id=library_file.id, status=status, **kwargs)
+        db_session.add(item)
+        await db_session.commit()
+        await db_session.refresh(item)
+        return item
+
+    return _create
+
+
+async def _reload(db_session, item):
+    """Re-read the row the request's own session wrote.
+
+    Expunged rather than expired: the delete happens in the app's session, so
+    this one holds a stale copy that must be dropped instead of refreshed.
+    """
+    from sqlalchemy import select
+
+    from backend.app.models.print_queue import PrintQueueItem
+
+    item_id = item.id
+    db_session.expunge_all()
+    return (await db_session.execute(select(PrintQueueItem).where(PrintQueueItem.id == item_id))).scalar_one_or_none()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_hard_delete_cancels_queued_items_and_names_the_file(
+    async_client: AsyncClient, file_factory, queue_factory, db_session
+):
+    """An external file is hard-deleted, so the jobs waiting on it are cancelled."""
+    f = await file_factory(filename="doomed.3mf", is_external=True)
+    waiting = await queue_factory(f)
+
+    response = await async_client.delete(f"/api/v1/library/files/{f.id}")
+    assert response.status_code == 200
+    assert response.json()["trashed"] is False
+
+    item = await _reload(db_session, waiting)
+    assert item is not None, "the cascade must not take the row with the file"
+    assert item.status == "cancelled"
+    # The point of cancelling here rather than letting it fail at the printer
+    # later: the message can still name what went.
+    assert "doomed.3mf" in item.error_message
+    assert item.library_file_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_hard_delete_leaves_finished_and_running_items_their_outcome(
+    async_client: AsyncClient, file_factory, queue_factory, db_session
+):
+    f = await file_factory(is_external=True)
+    done = await queue_factory(f, status="completed")
+    running = await queue_factory(f, status="printing")
+
+    await async_client.delete(f"/api/v1/library/files/{f.id}")
+
+    for item, expected in ((done, "completed"), (running, "printing")):
+        row = await _reload(db_session, item)
+        assert row is not None
+        # A finished run is a record, and a printing one is a job on a machine
+        # right now -- neither is cancelled. Only the dangling reference goes,
+        # which is what keeps the row out of the cascade.
+        assert row.status == expected
+        assert row.library_file_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_trashing_a_file_leaves_queued_items_alone(
+    async_client: AsyncClient, file_factory, queue_factory, db_session
+):
+    """Trash is reversible, so the queue is not rewritten on the way in."""
+    f = await file_factory()
+    waiting = await queue_factory(f)
+
+    response = await async_client.delete(f"/api/v1/library/files/{f.id}")
+    assert response.json()["trashed"] is True
+
+    item = await _reload(db_session, waiting)
+    assert item.status == "pending"
+    assert item.library_file_id == f.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_folder_delete_releases_items_anywhere_in_the_subtree(
+    async_client: AsyncClient, file_factory, queue_factory, db_session
+):
+    """The folder cascade reaches the whole tree, so the release has to as well."""
+    from backend.app.models.library import LibraryFolder
+
+    parent = LibraryFolder(name="parent")
+    db_session.add(parent)
+    await db_session.commit()
+    child = LibraryFolder(name="child", parent_id=parent.id)
+    db_session.add(child)
+    await db_session.commit()
+
+    nested = await file_factory(filename="nested.3mf", folder_id=child.id)
+    waiting = await queue_factory(nested)
+
+    response = await async_client.delete(f"/api/v1/library/folders/{parent.id}")
+    assert response.status_code == 200
+
+    item = await _reload(db_session, waiting)
+    assert item is not None
+    assert item.status == "cancelled"
+    assert item.library_file_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_sweeper_releases_items_before_hard_deleting(file_factory, queue_factory, db_session):
+    """The retention sweep is the usual way a managed file finally goes."""
+    from backend.app.services.library_trash import library_trash_service
+
+    f = await file_factory(filename="swept.3mf")
+    f.deleted_at = datetime.now(timezone.utc) - timedelta(days=400)
+    await db_session.commit()
+    waiting = await queue_factory(f)
+
+    swept = await library_trash_service._sweep(db_session)
+    assert swept == 1
+
+    item = await _reload(db_session, waiting)
+    assert item is not None
+    assert item.status == "cancelled"
+    assert "swept.3mf" in item.error_message
+    assert item.library_file_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_release_reports_and_cancels_every_copy_of_one_file(file_factory, queue_factory, db_session):
+    """The case this exists for: several copies queued from one file."""
+    from backend.app.services.library_trash import release_queue_references
+
+    f = await file_factory(filename="many-copies.3mf")
+    copies = [await queue_factory(f) for _ in range(3)]
+
+    # Counted in items, not files -- the caller logs it.
+    assert await release_queue_references(db_session, [f.id]) == 3
+    await db_session.commit()
+
+    for copy in copies:
+        row = await _reload(db_session, copy)
+        assert row.status == "cancelled"
+        assert "many-copies.3mf" in row.error_message
+        assert row.library_file_id is None

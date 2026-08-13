@@ -84,13 +84,31 @@ flipped back to `ghcr.io/afkfelix/orca-slicer-api`.
 
 ## Updating
 
+OrcaSlicer only (the default):
+
 ```bash
 docker compose pull
+docker compose up -d
+```
+
+With the Bambu Studio sidecar — the profile flag belongs on **both**
+commands:
+
+```bash
+docker compose --profile bambu pull
 docker compose --profile bambu up -d
 ```
 
-That's it — Compose pulls the current `:latest` (or whatever
-`SIDECAR_TAG` you've pinned to) and recreates the containers.
+`bambu-studio-api` sits behind `profiles: [bambu]`, and a bare
+`docker compose pull` skips profile-gated services silently: it reports
+success, `restart: unless-stopped` keeps the old container serving, and
+you stay on the old image no matter how often you repeat it. To update
+one sidecar only, name it — `docker compose pull bambu-studio-api &&
+docker compose up -d bambu-studio-api` — which enables its profile
+implicitly.
+
+Compose pulls the current `:latest` (or whatever `SIDECAR_TAG` you've
+pinned to) and recreates the containers.
 
 To roll back to the sidecar that shipped with a previous Bambuddy
 release, set `SIDECAR_TAG=bambuddy-X.Y.Z` in `.env` and re-run the two

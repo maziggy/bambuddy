@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import backend.app.models  # noqa: F401 - populate Base.metadata
@@ -11,7 +12,7 @@ import backend.app.services.print_scheduler as scheduler_module
 from backend.app.core.database import Base
 from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
-from backend.app.models.print_queue import PrintQueueItem
+from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
 from backend.app.models.printer import Printer
 from backend.app.services.print_scheduler import PrintScheduler
 
@@ -25,7 +26,7 @@ async def queue_factory(tmp_path):
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
     case_counter = 0
 
-    async def make_case(*, cleanup=True, is_external=False, thumbnail_path=None):
+    async def make_case(*, cleanup=True, is_external=False, thumbnail_path=None, siblings=()):
         nonlocal case_counter
         case_counter += 1
 
@@ -86,6 +87,65 @@ async def queue_factory(tmp_path):
                 nozzle_offset_cali="on",
             )
             db.add(item)
+            await db.flush()
+
+            # The other copies of a quantity>1 dispatch (#2819). Each entry is a
+            # dict of overrides: `status`, `own_archive` for a copy that already
+            # holds one, and `extra_variant` for a cross-model copy that keeps a
+            # candidate this cleanup does not consume.
+            sibling_ids = []
+            other_file = None
+            for spec in siblings:
+                sibling = PrintQueueItem(
+                    printer_id=printer.id,
+                    library_file_id=None if spec.get("variants") else library_file.id,
+                    status=spec.get("status", "pending"),
+                    cleanup_library_after_dispatch=cleanup,
+                )
+                if spec.get("own_archive"):
+                    own = PrintArchive(
+                        printer_id=printer.id,
+                        filename="already-dispatched.3mf",
+                        file_path="archives/already-dispatched.3mf",
+                        file_size=1,
+                        status="printing",
+                    )
+                    db.add(own)
+                    await db.flush()
+                    sibling.archive_id = own.id
+                db.add(sibling)
+                await db.flush()
+                if spec.get("variants"):
+                    db.add(
+                        PrintQueueVariant(
+                            queue_item_id=sibling.id,
+                            library_file_id=library_file.id,
+                            target_model="X1C",
+                            position=0,
+                        )
+                    )
+                    if spec.get("extra_variant"):
+                        if other_file is None:
+                            other_path = base_dir / "library" / f"other-{case_counter}.3mf"
+                            other_path.write_bytes(b"other source")
+                            other_file = LibraryFile(
+                                filename=f"other-{case_counter}.3mf",
+                                file_path=str(other_path),
+                                file_type="3mf",
+                                file_size=other_path.stat().st_size,
+                            )
+                            db.add(other_file)
+                            await db.flush()
+                        db.add(
+                            PrintQueueVariant(
+                                queue_item_id=sibling.id,
+                                library_file_id=other_file.id,
+                                target_model="P1S",
+                                position=1,
+                            )
+                        )
+                sibling_ids.append(sibling.id)
+
             await db.commit()
 
             return SimpleNamespace(
@@ -96,6 +156,8 @@ async def queue_factory(tmp_path):
                 printer_id=printer.id,
                 library_file_id=library_file.id,
                 queue_item_id=item.id,
+                sibling_ids=sibling_ids,
+                other_library_file_id=other_file.id if other_file is not None else None,
                 archive_path=None,
                 upload=AsyncMock(return_value=True),
                 start_print=MagicMock(return_value=True),
@@ -260,6 +322,150 @@ async def test_archive_copy_survives_library_cleanup(queue_factory):
     assert ctx.archive_path.read_bytes() == b"library source"
     uploaded_path = ctx.upload.await_args.args[2]
     assert uploaded_path == ctx.archive_path
+
+
+async def _sibling_snapshot(ctx):
+    async with ctx.session_maker() as db:
+        return [await db.get(PrintQueueItem, sid) for sid in ctx.sibling_ids]
+
+
+async def _variant_files(ctx, sibling_id):
+    async with ctx.session_maker() as db:
+        rows = await db.execute(
+            select(PrintQueueVariant.library_file_id).where(PrintQueueVariant.queue_item_id == sibling_id)
+        )
+        return sorted(rows.scalars().all())
+
+
+# ---------------------------------------------------------------------------
+# Sibling copies of the same library row (#2819)
+#
+# `quantity > 1` on the printer-card upload-and-print flow puts the cleanup flag
+# on every copy, and batch clones inherit `library_file_id`. Consuming the row
+# for the first copy used to leave the others pointing at it, which failed with
+# "Library file not found" on SQLite and deleted the rows outright on
+# PostgreSQL, where the FK cascade is enforced.
+#
+# These run on SQLite, so they cover the orphan half directly. The cascade half
+# was verified by hand against a real PostgreSQL 16, building this same fixture
+# on both backends and comparing every row: without the fix the copies were gone
+# after the delete -- including the finished ones a batch order counts its
+# progress from, and a copy already printing from its own archive. With it, the
+# two backends agree row for row. `print_archives.library_file_id` is SET NULL,
+# so it is cleared by the same delete, which is why looking the archive up by
+# the consumed library id -- the obvious alternative fix -- cannot work there.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_pending_copies_are_repointed_at_the_archive(queue_factory):
+    ctx = await queue_factory(cleanup=True, siblings=({}, {}))
+
+    await _dispatch_library_item(ctx)
+
+    item, library_file, archive = await _queue_snapshot(ctx)
+    assert library_file is None
+    for sibling in await _sibling_snapshot(ctx):
+        # Still queued -- the point is that they can now run, not that they run now.
+        assert sibling.status == "pending"
+        assert sibling.archive_id == archive.id
+        assert sibling.library_file_id is None
+        # Their file is already consumed; leaving this armed would delete
+        # whatever library row they were next given.
+        assert sibling.cleanup_library_after_dispatch is False
+
+
+@pytest.mark.asyncio
+async def test_copy_that_already_has_its_own_archive_keeps_it(queue_factory):
+    ctx = await queue_factory(cleanup=True, siblings=({"own_archive": True, "status": "printing"},))
+
+    await _dispatch_library_item(ctx)
+
+    _, _, archive = await _queue_snapshot(ctx)
+    (sibling,) = await _sibling_snapshot(ctx)
+    # It is mid-print from its own archive and does not need the library file.
+    # Re-pointing it would swap the file under a job already running.
+    assert sibling.archive_id != archive.id
+    assert sibling.status == "printing"
+    # Cleared all the same: on PostgreSQL a row still naming the file goes with
+    # it, and this one is a job that is currently printing.
+    assert sibling.library_file_id is None
+
+
+@pytest.mark.parametrize("status", ["completed", "failed", "cancelled", "aborted"])
+@pytest.mark.asyncio
+async def test_finished_copies_keep_their_outcome_and_survive_the_delete(queue_factory, status):
+    ctx = await queue_factory(cleanup=True, siblings=({"status": status},))
+
+    await _dispatch_library_item(ctx)
+
+    (sibling,) = await _sibling_snapshot(ctx)
+    # A finished row is a record of what happened, not a spare part -- it keeps
+    # its outcome and is not handed the archive.
+    assert sibling.status == status
+    assert sibling.archive_id is None
+    # But the reference has to go: it is the only thing tying the row to the
+    # cascade that would otherwise delete it, and a batch order counts its
+    # progress from rows exactly like this one.
+    assert sibling.library_file_id is None
+
+
+@pytest.mark.asyncio
+async def test_skipped_copy_is_repointed_because_it_can_come_back(queue_factory):
+    ctx = await queue_factory(cleanup=True, siblings=({"status": "skipped"},))
+
+    await _dispatch_library_item(ctx)
+
+    _, _, archive = await _queue_snapshot(ctx)
+    (sibling,) = await _sibling_snapshot(ctx)
+    # Clearing the printer's previous-success gate puts skipped items back to
+    # pending, so this one is only waiting -- not finished.
+    assert sibling.status == "skipped"
+    assert sibling.archive_id == archive.id
+    assert sibling.library_file_id is None
+
+
+@pytest.mark.asyncio
+async def test_copies_are_untouched_when_the_dispatch_does_not_consume_the_file(queue_factory):
+    ctx = await queue_factory(cleanup=False, siblings=({},))
+
+    await _dispatch_library_item(ctx)
+
+    item, library_file, _ = await _queue_snapshot(ctx)
+    assert library_file is not None
+    (sibling,) = await _sibling_snapshot(ctx)
+    assert sibling.library_file_id == ctx.library_file_id
+    assert sibling.archive_id is None
+
+
+@pytest.mark.asyncio
+async def test_cross_model_copy_keeps_its_other_candidate_instead_of_the_archive(queue_factory):
+    ctx = await queue_factory(cleanup=True, siblings=({"variants": True, "extra_variant": True},))
+
+    await _dispatch_library_item(ctx)
+
+    (sibling,) = await _sibling_snapshot(ctx)
+    # It still has somewhere to go, and that candidate carries its own target
+    # model -- pointing it at this archive would print a file the matcher never
+    # chose.
+    assert sibling.archive_id is None
+    assert sibling.library_file_id is None
+    assert await _variant_files(ctx, sibling.id) == [ctx.other_library_file_id]
+
+
+@pytest.mark.asyncio
+async def test_copy_whose_only_candidate_was_consumed_is_repointed(queue_factory):
+    ctx = await queue_factory(cleanup=True, siblings=({"variants": True},))
+
+    await _dispatch_library_item(ctx)
+
+    _, _, archive = await _queue_snapshot(ctx)
+    (sibling,) = await _sibling_snapshot(ctx)
+    # Its one candidate is gone. Without the re-point the resolver would hold it
+    # pending forever with nothing left to dispatch.
+    assert sibling.archive_id == archive.id
+    assert sibling.library_file_id is None
+    assert await _variant_files(ctx, sibling.id) == []
 
 
 @pytest.mark.asyncio

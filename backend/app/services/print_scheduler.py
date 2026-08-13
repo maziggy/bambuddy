@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import HTTPException
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, false, func, or_, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -4789,6 +4789,141 @@ class PrintScheduler:
 
         return prev_item.status in ("completed", "cancelled")
 
+    async def _repoint_siblings_at_archive(
+        self,
+        db: AsyncSession,
+        *,
+        consumed_library_file_id: int,
+        archive_id: int,
+        dispatched_item_id: int,
+    ) -> int:
+        """Move the other queue items off a library row that is about to be deleted (#2819).
+
+        ``cleanup_library_after_dispatch`` consumes the library row: the printer-card
+        upload-and-print flow uploads a transient file, prints it, and deletes it.
+        Queue creation happily puts that flag on every copy of a ``quantity > 1``
+        request, and ``_clone_queue_item`` copies ``library_file_id`` onto batch
+        clones, so the first dispatch could pull the file out from under rows that
+        had not run yet. What those rows did next depended on the database, and
+        neither answer was right: SQLite ships with ``PRAGMA foreign_keys`` off, so
+        the ``ON DELETE CASCADE`` on ``print_queue.library_file_id`` never fired and
+        they were left pointing at a row that no longer existed, failing with
+        "Library file not found" whenever someone started them -- or sitting
+        ``pending`` forever under ``manual_start``. PostgreSQL enforces the same
+        constraint, so there the rows were deleted outright and the queued copies
+        simply vanished, with no error and no history.
+
+        The archive holds its own copy of the 3MF, so the remaining copies can print
+        from it instead. Two things happen here, and both must happen *before* the
+        delete -- afterwards there is nothing left to repair on PostgreSQL:
+
+        * every row still naming the file has ``library_file_id`` cleared, which is
+          what takes it out of the cascade's reach. That covers rows this cannot
+          re-point as well -- a copy already printing from its own archive, and the
+          finished ones, which are not spare parts but the record a batch order
+          counts its progress from.
+        * the rows that still need something to print are pointed at the archive.
+
+        Returns how many items were re-pointed.
+        """
+        variant_item_ids = (
+            (
+                await db.execute(
+                    select(PrintQueueVariant.queue_item_id).where(
+                        PrintQueueVariant.library_file_id == consumed_library_file_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        # Candidate rows naming the consumed file have to go rather than be
+        # cleared: `library_file_id` is NOT NULL there, so there is no way to keep
+        # one out of the cascade. This is what PostgreSQL already does, and
+        # _candidates_for skips such a variant on SQLite anyway, so no selection
+        # outcome changes -- the two backends simply stop disagreeing about
+        # whether the row is still there.
+        #
+        # It also has to happen before the re-point below: a cross-model item
+        # (#671) picks a variant every pass and folds it onto the row, and
+        # _resolve_variant clears archive_id as it does so, which would undo the
+        # re-point on the very next lap.
+        await db.execute(delete(PrintQueueVariant).where(PrintQueueVariant.library_file_id == consumed_library_file_id))
+
+        # An item left with other candidates still has somewhere to go, and those
+        # carry their own target model -- pointing it at this archive would print a
+        # file the matcher never chose. It is excluded from the re-point and simply
+        # re-resolves against what is left.
+        surviving_variant_item_ids = set(
+            (
+                await db.execute(
+                    select(PrintQueueVariant.queue_item_id).where(
+                        PrintQueueVariant.queue_item_id.in_(variant_item_ids) if variant_item_ids else false()
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        repoint_ids = set(
+            (
+                await db.execute(
+                    select(PrintQueueItem.id)
+                    .where(PrintQueueItem.id != dispatched_item_id)
+                    .where(PrintQueueItem.archive_id.is_(None))
+                    # "skipped" belongs here with the two live states: it is not
+                    # terminal. Clearing a printer's previous-success gate puts
+                    # every item skipped by it back to "pending"
+                    # (resume_after_failure), and one restored onto a deleted
+                    # file is the same orphan by a slower route. "failed",
+                    # "cancelled", "aborted" and "completed" never return.
+                    .where(PrintQueueItem.status.in_(("pending", "printing", "skipped")))
+                    .where(
+                        PrintQueueItem.id.notin_(surviving_variant_item_ids) if surviving_variant_item_ids else true()
+                    )
+                    .where(
+                        or_(
+                            PrintQueueItem.library_file_id == consumed_library_file_id,
+                            PrintQueueItem.id.in_(variant_item_ids) if variant_item_ids else false(),
+                        )
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if repoint_ids:
+            await db.execute(
+                update(PrintQueueItem)
+                .where(PrintQueueItem.id.in_(repoint_ids))
+                .values(
+                    archive_id=archive_id,
+                    library_file_id=None,
+                    # The file this flag named is already consumed. Leaving it set
+                    # would arm every re-pointed copy to delete whatever library
+                    # row it is next given.
+                    cleanup_library_after_dispatch=False,
+                )
+            )
+            logger.info(
+                "Queue items %s: re-pointed at archive %s -- library file %s was consumed by item %s",
+                sorted(repoint_ids),
+                archive_id,
+                consumed_library_file_id,
+                dispatched_item_id,
+            )
+
+        # Everything else that still names the file: taken out of the cascade's
+        # reach without touching what it prints. The file is gone either way; what
+        # this preserves is the row.
+        await db.execute(
+            update(PrintQueueItem)
+            .where(PrintQueueItem.id != dispatched_item_id)
+            .where(PrintQueueItem.library_file_id == consumed_library_file_id)
+            .values(library_file_id=None)
+        )
+        return len(repoint_ids)
+
     async def _power_off_if_needed(self, db: AsyncSession, item: PrintQueueItem):
         """Schedule power-off if the queue item enabled auto_off_after.
 
@@ -5123,11 +5258,28 @@ class PrintScheduler:
             result = await db.execute(LibraryFile.active().where(LibraryFile.id == item.library_file_id))
             library_file = result.scalar_one_or_none()
             if not library_file:
+                # "Not found" covers two different situations and only one of
+                # them is recoverable, so say which. A trashed file is still
+                # there and restoring it makes a re-queued job work; a file that
+                # is really gone needs a different one. Neither is knowable from
+                # the queue, which is the whole complaint about this message.
+                trashed = (
+                    await db.execute(select(LibraryFile.filename).where(LibraryFile.id == item.library_file_id))
+                ).scalar_one_or_none()
                 item.status = "failed"
-                item.error_message = "Library file not found"
+                item.error_message = (
+                    f"'{trashed}' is in the library trash — restore it and queue the print again"
+                    if trashed
+                    else "Library file not found — it was deleted after this job was queued"
+                )
                 item.completed_at = datetime.now(timezone.utc)
                 await db.commit()
-                logger.error("Queue item %s: Library file %s not found", item.id, item.library_file_id)
+                logger.error(
+                    "Queue item %s: library file %s is %s",
+                    item.id,
+                    item.library_file_id,
+                    "in the trash" if trashed else "gone",
+                )
                 await self._power_off_if_needed(db, item)
                 return
             # Library files store absolute paths
@@ -5137,6 +5289,11 @@ class PrintScheduler:
 
             # Create archive from library file so usage tracking has access to the 3MF
             queue_item_id = item.id
+            # Held separately: a cleanup dispatch clears item.library_file_id
+            # below, and the log line at the end of this block reported that
+            # cleared field -- so every consumed print logged "from library
+            # file None", which is the one case worth being able to trace.
+            source_library_file_id = item.library_file_id
             try:
                 from backend.app.services.archive import ArchiveService
 
@@ -5156,6 +5313,7 @@ class PrintScheduler:
                     if budget_reservation is not None:
                         budget_reservation.print_archive_id = archive.id
                     if item.cleanup_library_after_dispatch and not library_file.is_external:
+                        consumed_library_file_id = library_file.id
                         item.library_file_id = None
                         cleanup_disk_paths.append(file_path)
                         if library_file.thumbnail_path:
@@ -5163,6 +5321,14 @@ class PrintScheduler:
                             if not thumb_path.is_absolute():
                                 thumb_path = settings.base_dir / library_file.thumbnail_path
                             cleanup_disk_paths.append(thumb_path)
+                        # Before the delete, not after: on PostgreSQL the FK
+                        # cascade would already have taken these rows (#2819).
+                        await self._repoint_siblings_at_archive(
+                            db,
+                            consumed_library_file_id=consumed_library_file_id,
+                            archive_id=archive.id,
+                            dispatched_item_id=item.id,
+                        )
                         await db.delete(library_file)
                         file_path = settings.base_dir / archive.file_path
                         filename = archive.filename
@@ -5176,7 +5342,7 @@ class PrintScheduler:
                         "Queue item %s: Created archive %s from library file %s",
                         item.id,
                         archive.id,
-                        item.library_file_id,
+                        source_library_file_id,
                     )
             except Exception as e:
                 logger.warning(

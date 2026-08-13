@@ -81,6 +81,7 @@ from backend.app.utils.threemf_tools import (
     extract_nozzle_mapping_from_3mf,
     extract_project_filaments_from_3mf,
     select_plate_gcode_name,
+    supports_enabled_in_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -369,6 +370,36 @@ def _resolve_slice_destination(target_folder: LibraryFolder | None, out_filename
         # must land in managed storage, never outside it.
         return get_library_files_dir() / f"{uuid.uuid4().hex}.gcode.3mf", False, "external_invalid_name"
     return dest, True, None
+
+
+async def _folder_tree_file_ids(db: AsyncSession, folder_id: int) -> list[int]:
+    """Every ``LibraryFile`` id under ``folder_id``, at any depth.
+
+    Deleting a folder cascades to its whole subtree, so anything that has to be
+    released before that delete (queue items, cross-model candidates) needs the
+    subtree, not just the folder's own files.
+
+    Trashed rows are included deliberately: they are still real rows and the
+    cascade takes them too.
+    """
+    file_ids: list[int] = []
+    pending = [folder_id]
+    # The API refuses to make a folder its own ancestor, so a loop here would
+    # mean the table is already corrupt -- but this walk runs inside a delete
+    # request, and hanging one is worse than the cost of a set.
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        file_ids.extend(
+            (await db.execute(select(LibraryFile.id).where(LibraryFile.folder_id == current))).scalars().all()
+        )
+        pending.extend(
+            (await db.execute(select(LibraryFolder.id).where(LibraryFolder.parent_id == current))).scalars().all()
+        )
+    return file_ids
 
 
 def _stored_file_path(abs_path: Path, is_external: bool) -> str:
@@ -1422,7 +1453,16 @@ async def delete_folder(
 
         return file_ids
 
-    await get_all_file_ids(folder_id)
+    doomed_file_ids = await get_all_file_ids(folder_id)
+
+    # The folder cascade hard-deletes every file row under it, so the queue has
+    # to be taken off them first — same as the single-file delete below (#2819).
+    # The return value used to be discarded here, which is why this never
+    # happened for a folder delete.
+    from backend.app.services.library_trash import delete_dependent_variants, release_queue_references
+
+    await delete_dependent_variants(db, doomed_file_ids)
+    await release_queue_references(db, doomed_file_ids)
 
     # Delete folder (cascade will handle files and subfolders)
     await db.delete(folder)
@@ -3583,6 +3623,16 @@ _SOURCE_PROCESS_SUPPORT_KEYS_TO_PRESERVE = (
 def _patch_process_support_settings(process_json: str, source_3mf_bytes: bytes) -> str:
     """Overlay the source 3MF's support configuration onto the process JSON.
 
+    The carry is deliberately one-way: a source can switch supports *on*,
+    never off (#2820). The original #1881 rule was "source wins in both
+    directions", which quietly stripped supports from every custom process
+    preset that enabled them — a MakerWorld download nearly always ships
+    `enable_support: 0`, so the reporter's own preset (supports on, normal
+    (auto)) came back out of the slicer disabled and set to tree(auto).
+    Nothing is lost by not carrying the off direction: a process preset
+    with supports *on* is by definition a deliberate user preset, since
+    Bambu's shipped ones all ship them off.
+
     Only fires on 3MF sources — STL / STEP don't carry `project_settings.
     config`. Silently no-ops when the source doesn't have the config, has
     a malformed one, or when the process JSON isn't parseable — the slice
@@ -3600,6 +3650,8 @@ def _patch_process_support_settings(process_json: str, source_3mf_bytes: bytes) 
         return process_json
     if not isinstance(src_cfg, dict):
         return process_json
+    if not supports_enabled_in_config(src_cfg):
+        return process_json
 
     try:
         process_cfg = json.loads(process_json)
@@ -3608,9 +3660,15 @@ def _patch_process_support_settings(process_json: str, source_3mf_bytes: bytes) 
     if not isinstance(process_cfg, dict):
         return process_json
 
-    for key in _SOURCE_PROCESS_SUPPORT_KEYS_TO_PRESERVE:
-        if key in src_cfg:
-            process_cfg[key] = src_cfg[key]
+    carried = {key: src_cfg[key] for key in _SOURCE_PROCESS_SUPPORT_KEYS_TO_PRESERVE if key in src_cfg}
+    process_cfg.update(carried)
+    # Logged because this is the one layer of the process JSON the user
+    # can't see coming: the slice modal shows the picked preset's values,
+    # so a carried key silently disagrees with what was on screen.
+    logger.info(
+        "Carried support settings from the source 3MF onto the process preset: %s",
+        dict(sorted(carried.items())),
+    )
 
     return json.dumps(process_cfg)
 
@@ -4885,9 +4943,10 @@ async def delete_file(
                 abs_thumb_path.unlink()
             except OSError as e:
                 logger.warning("Failed to delete thumbnail from disk: %s", e)
-        from backend.app.services.library_trash import delete_dependent_variants
+        from backend.app.services.library_trash import delete_dependent_variants, release_queue_references
 
         await delete_dependent_variants(db, [file.id])
+        await release_queue_references(db, [file.id])
         await db.delete(file)
         await db.commit()
         return {"status": "success", "message": "File deleted", "trashed": False}
@@ -5205,10 +5264,15 @@ async def bulk_delete(
 
     Files not owned by the user are skipped (unless user has *_all permission).
     """
+    from backend.app.services.library_trash import delete_dependent_variants, release_queue_references
+
     user, can_modify_all = auth_result
     deleted_files = 0
     deleted_folders = 0
     skipped_files = 0
+    # External files bypass the trash and are removed for good, so the queue has
+    # to come off them. Collected here and dealt with once, below the loop.
+    hard_deleted: list[LibraryFile] = []
 
     # Delete files first. Managed files go to trash (sweeper hard-deletes bytes
     # later); external files bypass trash since their disk state is outside our
@@ -5230,10 +5294,21 @@ async def bulk_delete(
                     abs_thumb_path.unlink()
                 except OSError as e:
                     logger.warning("Failed to delete thumbnail from disk: %s", e)
-            await db.delete(file)
+            hard_deleted.append(file)
         else:
             file.deleted_at = now
         deleted_files += 1
+
+    # After the loop and before any delete is issued (#2819). Order matters
+    # twice over: a query run while a delete is pending autoflushes it, taking
+    # the cascade with it, and releasing once for the whole set is a couple of
+    # statements rather than a couple per file.
+    if hard_deleted:
+        hard_deleted_ids = [f.id for f in hard_deleted]
+        await delete_dependent_variants(db, hard_deleted_ids)
+        await release_queue_references(db, hard_deleted_ids)
+        for file in hard_deleted:
+            await db.delete(file)
 
     # Delete folders (cascade will handle contents). Folders have no ownership
     # tracking, so users without *_all permission may only delete empty,
@@ -5252,6 +5327,9 @@ async def bulk_delete(
                 )
             )
             deleted_files += file_count_result.scalar() or 0
+            tree_file_ids = await _folder_tree_file_ids(db, folder_id)
+            await delete_dependent_variants(db, tree_file_ids)
+            await release_queue_references(db, tree_file_ids)
             await db.delete(folder)
             deleted_folders += 1
 

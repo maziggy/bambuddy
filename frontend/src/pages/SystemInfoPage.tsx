@@ -201,8 +201,11 @@ export function SystemInfoPage() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header. Same stacking as the Spool Inventory header (#2813) -- one
+          button rather than five, so it only just overflows at 390px, but the
+          overflow is the same. items-start keeps Refresh at its own width
+          while stacked instead of stretching it across the page. */}
+      <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">{t('system.title', 'System Information')}</h1>
           <p className="text-bambu-gray mt-1">

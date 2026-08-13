@@ -361,7 +361,7 @@ async def store_print_data(
         )
         filament_usage = extract_filament_usage_from_3mf(full_path, effective_plate_id) or None
 
-        layer_usage = extract_layer_filament_usage_from_3mf(full_path)
+        layer_usage = extract_layer_filament_usage_from_3mf(full_path, effective_plate_id)
         if layer_usage:
             # Convert int keys to string for JSON serialization
             layer_usage_json = {str(k): v for k, v in layer_usage.items()}

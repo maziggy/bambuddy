@@ -91,14 +91,28 @@ function renderWithTracker(props: Parameters<typeof SliceModal>[0]) {
   );
 }
 
-// SliceModal renders one extra combobox for the Slicer Pipelines (#1425)
-// "Apply pipeline" dropdown above the preset slots. Tests written before
-// pipelines landed assume selects[0] = printer; this helper drops the
-// pipeline combobox so those indices stay stable.
-function presetSelects(): HTMLSelectElement[] {
-  return (screen.getAllByRole('combobox') as HTMLSelectElement[]).filter(
-    (el) => el.getAttribute('aria-label') !== 'Apply pipeline',
-  );
+// Preset controls are custom listbox triggers; Build plate and Apply pipeline
+// remain native selects. Keep the preset/bed controls in DOM order and exclude
+// the unrelated pipeline selector so positional multi-filament assertions stay
+// stable.
+type PresetControl = HTMLButtonElement | HTMLSelectElement;
+
+function presetControls(): PresetControl[] {
+  return Array.from(
+    document.querySelectorAll<PresetControl>('button[aria-haspopup="listbox"], select'),
+  ).filter((element) => element.getAttribute('aria-label') !== 'Apply pipeline');
+}
+
+async function choosePreset(
+  user: { click: (element: Element) => Promise<void> },
+  control: PresetControl,
+  optionName: string,
+) {
+  if (!(control instanceof HTMLButtonElement)) {
+    throw new Error('Expected a custom preset trigger');
+  }
+  await user.click(control);
+  await user.click(screen.getByRole('option', { name: optionName }));
 }
 
 describe('SliceModal', () => {
@@ -155,18 +169,15 @@ describe('SliceModal', () => {
 
     // SliceModal-specific tier priority: imported (local) wins over cloud
     // and standard so the user's curated picks come first.
-    await waitFor(() => {
-      expect(screen.getByText('My Custom X1C')).toBeDefined();
-    });
-    // 4 selects: printer, process, bed-type (#1337), filament. bed-type sits
-    // between process and filament — it overrides curr_bed_type on the
-    // process preset so the related controls cluster — and defaults to "".
-    const selects = presetSelects();
-    expect(selects).toHaveLength(4);
-    expect(selects[0].value).toBe('local:1');
-    expect(selects[1].value).toBe('local:2');
-    expect(selects[2].value).toBe('');
-    expect(selects[3].value).toBe('local:3');
+    await screen.findByRole('button', { name: 'Printer profile' });
+    // The three preset triggers surround the one native Build plate select in
+    // DOM order. Auto-picks display the selected preset name on each trigger.
+    const controls = presetControls();
+    expect(controls).toHaveLength(4);
+    expect(controls[0]).toHaveTextContent('Imported X1C 0.4');
+    expect(controls[1]).toHaveTextContent('Imported 0.20mm');
+    expect(controls[2]).toHaveValue('');
+    expect(controls[3]).toHaveTextContent('Imported PLA Basic');
 
     // Slice button is enabled because all three slots auto-defaulted and
     // the preview-slice query has resolved (mock returns immediately).
@@ -174,31 +185,68 @@ describe('SliceModal', () => {
     expect((sliceBtn as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('renders Imported / Cloud / Standard sections via <optgroup>', async () => {
+  it('renders Imported / Cloud / Standard sections in the preset popover', async () => {
     renderWithTracker({
       source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('Imported X1C 0.4')).toBeDefined());
+    const user = userEvent.setup();
+    const printerTrigger = await screen.findByRole('button', { name: 'Printer profile' });
+    await user.click(printerTrigger);
 
-    const printerSelect = presetSelects()[0];
-    const groups = printerSelect.querySelectorAll('optgroup');
-    expect(Array.from(groups).map((g) => g.label)).toEqual([
+    const listbox = screen.getByRole('listbox', { name: 'Printer profile' });
+    const groups = Array.from(listbox.children) as HTMLElement[];
+    expect(groups.map((group) => group.firstElementChild?.textContent)).toEqual([
       'Imported',
       'Bambu Cloud',
       'Standard',
     ]);
 
-    // Each entry sits inside its own tier's group — pin the assignment so
-    // a future render-shape change can't quietly mix them. Order matches
+    // Each entry stays inside its tier. Order matches
     // SLICE_MODAL_TIER_ORDER (local → cloud → standard).
-    const localGroup = groups[0];
-    expect(within(localGroup as HTMLElement).getByText('Imported X1C 0.4')).toBeDefined();
-    const cloudGroup = groups[1];
-    expect(within(cloudGroup as HTMLElement).getByText('My Custom X1C')).toBeDefined();
-    const standardGroup = groups[2];
-    expect(within(standardGroup as HTMLElement).getByText('Bambu Lab X1 Carbon 0.4 nozzle')).toBeDefined();
+    expect(within(groups[0]).getByRole('option', { name: 'Imported X1C 0.4' })).toBeDefined();
+    expect(within(groups[1]).getByRole('option', { name: 'My Custom X1C' })).toBeDefined();
+    expect(
+      within(groups[2]).getByRole('option', {
+        name: 'Bambu Lab X1 Carbon 0.4 nozzle',
+      }),
+    ).toBeDefined();
+  });
+
+  it('filters, selects, clears, wraps, and closes the searchable preset popover', async () => {
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+      onClose: vi.fn(),
+    });
+
+    const user = userEvent.setup();
+    const printerTrigger = await screen.findByRole('button', { name: 'Printer profile' });
+    await user.click(printerTrigger);
+
+    const search = screen.getByRole('textbox', { name: 'Search presets...' });
+    await user.type(search, 'cArBoN');
+
+    const filteredOption = screen.getByRole('option', {
+      name: 'Bambu Lab X1 Carbon 0.4 nozzle',
+    });
+    expect(
+      screen.queryByRole('option', { name: 'Imported X1C 0.4' }),
+    ).not.toBeInTheDocument();
+    expect(filteredOption).toHaveClass('whitespace-normal', 'break-words');
+
+    await user.click(filteredOption);
+    expect(
+      screen.queryByRole('listbox', { name: 'Printer profile' }),
+    ).not.toBeInTheDocument();
+    expect(printerTrigger).toHaveTextContent('Bambu Lab X1 Carbon 0.4 nozzle');
+
+    await user.click(printerTrigger);
+    expect(screen.getByRole('textbox', { name: 'Search presets...' })).toHaveValue('');
+    await user.click(document.body);
+    expect(
+      screen.queryByRole('listbox', { name: 'Printer profile' }),
+    ).not.toBeInTheDocument();
   });
 
   it('falls back to local when cloud is empty (auto-pick respects priority)', async () => {
@@ -213,9 +261,8 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('Imported X1C 0.4')).toBeDefined());
-    const selects = presetSelects();
-    expect(selects[0].value).toBe('local:1');
+    const printerTrigger = await screen.findByRole('button', { name: 'Printer profile' });
+    expect(printerTrigger).toHaveTextContent('Imported X1C 0.4');
   });
 
   it('falls back to standard when both cloud and local are empty', async () => {
@@ -227,9 +274,8 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('Bambu Lab X1 Carbon 0.4 nozzle')).toBeDefined());
-    const selects = presetSelects();
-    expect(selects[0].value).toBe('standard:Bambu Lab X1 Carbon 0.4 nozzle');
+    const printerTrigger = await screen.findByRole('button', { name: 'Printer profile' });
+    expect(printerTrigger).toHaveTextContent('Bambu Lab X1 Carbon 0.4 nozzle');
   });
 
   it('sends source-aware refs (not legacy bare ints) on submit', async () => {
@@ -245,7 +291,7 @@ describe('SliceModal', () => {
       onClose,
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await screen.findByRole('button', { name: 'Printer profile' });
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
@@ -296,8 +342,8 @@ describe('SliceModal', () => {
 
     // All preset dropdowns are live until the toggle is on, then bypassed —
     // the printer included, so changing it can't silently drop the mode.
-    const printerSelect = presetSelects()[0];
-    const processSelect = presetSelects()[1];
+    const printerSelect = presetControls()[0];
+    const processSelect = presetControls()[1];
     expect(printerSelect.disabled).toBe(false);
     expect(processSelect.disabled).toBe(false);
     await user.click(toggle);
@@ -509,17 +555,11 @@ describe('SliceModal', () => {
       onClose,
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await screen.findByRole('button', { name: 'Printer profile' });
 
     const user = userEvent.setup();
-    // Order with the dropdown now sits between Process and Filament:
-    // printer (0), process (1), bed-type (2), filament (3+). Find the
-    // bed-type select by name rather than positional index so this stays
-    // green if the layout adds another control around it.
-    const bedSelect = presetSelects().find((el) =>
-      (el as HTMLSelectElement).options[0]?.textContent?.toLowerCase().includes('auto'),
-    ) as HTMLSelectElement;
-    expect(bedSelect).toBeDefined();
+    // Build plate intentionally remains the only native preset-area select.
+    const bedSelect = screen.getByRole('combobox', { name: 'Build plate' });
     await user.selectOptions(bedSelect, 'Textured PEI Plate');
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
 
@@ -544,7 +584,7 @@ describe('SliceModal', () => {
       onClose,
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await screen.findByRole('button', { name: 'Printer profile' });
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
@@ -567,7 +607,7 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await screen.findByRole('button', { name: 'Printer profile' });
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('checkbox', { name: /Auto-orient objects/ }));
@@ -595,7 +635,7 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await screen.findByRole('button', { name: 'Printer profile' });
 
     await userEvent.setup().click(screen.getByRole('button', { name: /^Slice$/ }));
 
@@ -619,11 +659,11 @@ describe('SliceModal', () => {
       onClose,
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await screen.findByRole('button', { name: 'Printer profile' });
 
     const user = userEvent.setup();
-    const selects = presetSelects();
-    await user.selectOptions(selects[0], 'standard:Bambu Lab X1 Carbon 0.4 nozzle');
+    const controls = presetControls();
+    await choosePreset(user, controls[0], 'Bambu Lab X1 Carbon 0.4 nozzle');
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
 
     await waitFor(() => {
@@ -649,7 +689,7 @@ describe('SliceModal', () => {
       onClose,
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await screen.findByRole('button', { name: 'Printer profile' });
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
@@ -669,7 +709,7 @@ describe('SliceModal', () => {
       onClose,
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await screen.findByRole('button', { name: 'Printer profile' });
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
@@ -737,7 +777,7 @@ describe('SliceModal', () => {
       source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
       onClose: vi.fn(),
     });
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await screen.findByRole('button', { name: 'Printer profile' });
     // No status-role banner should be rendered on the happy path.
     expect(screen.queryByRole('status')).toBeNull();
   });
@@ -816,7 +856,7 @@ describe('SliceModal', () => {
     });
 
     // Should jump straight to the profile dropdowns.
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await screen.findByRole('button', { name: 'Printer profile' });
   });
 
   it('passes the picked plate to the slice request', async () => {
@@ -838,7 +878,7 @@ describe('SliceModal', () => {
     await user.click(plate2Button);
 
     // Step 2: profile dropdowns are now visible.
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await screen.findByRole('button', { name: 'Printer profile' });
 
     // Step 3: submit and verify the plate index made it into the body.
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
@@ -867,7 +907,7 @@ describe('SliceModal', () => {
     const plate1Button = await screen.findByRole('button', { name: /Plate 1.*Cube/ });
     await user.click(plate1Button);
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await screen.findByRole('button', { name: 'Printer profile' });
 
     // The "Slice all plates" checkbox only appears for multi-plate sources.
     const toggle = await screen.findByRole('checkbox', { name: /Slice all 2 plates/i });
@@ -908,7 +948,7 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await screen.findByRole('button', { name: 'Printer profile' });
     expect(screen.queryByRole('checkbox', { name: /Slice all/i })).toBeNull();
   });
 
@@ -956,7 +996,7 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await screen.findByRole('button', { name: 'Printer profile' });
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
@@ -1038,7 +1078,7 @@ describe('SliceModal', () => {
 
     await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
     // 1 printer + 1 process + 2 filament + 1 bed-type (#1337) = 5 dropdowns.
-    expect(presetSelects()).toHaveLength(5);
+    expect(presetControls()).toHaveLength(5);
   });
 
   it('pre-picks each filament slot by matching colour metadata', async () => {
@@ -1086,7 +1126,7 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await screen.findByRole('button', { name: 'Printer profile' });
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
@@ -1119,12 +1159,12 @@ describe('SliceModal', () => {
     await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
 
     const user = userEvent.setup();
-    const selects = presetSelects();
+    const controls = presetControls();
     // Order: 0 printer, 1 process, 2 bed-type, 3 filament-1, 4 filament-2
     // (#1337). Auto-picks land on printer/process/filaments; bed-type
     // defaults to "". Swap filament-1 (index 3) from the auto-picked black
     // to white.
-    await user.selectOptions(selects[3], 'cloud:F-WHITE');
+    await choosePreset(user, controls[3], 'Cloud PLA White');
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
 
     await waitFor(() => {
@@ -1244,7 +1284,7 @@ describe('SliceModal', () => {
     // Both filament rows render — 1 printer + 1 process + 1 bed-type +
     // 2 filament (#1337) = 5. bed-type sits at index 2, filament slots
     // follow at 3 and 4.
-    const selects = presetSelects();
+    const selects = presetControls();
     expect(selects).toHaveLength(5);
     // Slot 1 (used) is editable, slot 2 (not used) is disabled.
     expect(selects[3].disabled).toBe(false);
@@ -1404,14 +1444,14 @@ describe('SliceModal', () => {
     await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
 
     // 1 printer + 1 process + 1 bed-type + 4 filament rows.
-    const selects = presetSelects();
-    expect(selects).toHaveLength(7);
+    const controls = presetControls();
+    expect(controls).toHaveLength(7);
     // Only slot 4 is selectable — the other three are the padding.
-    expect([selects[3].disabled, selects[4].disabled, selects[5].disabled]).toEqual([true, true, true]);
-    expect(selects[6].disabled).toBe(false);
+    expect([controls[3].disabled, controls[4].disabled, controls[5].disabled]).toEqual([true, true, true]);
+    expect(controls[6].disabled).toBe(false);
 
     const user = userEvent.setup();
-    await user.selectOptions(selects[6], 'cloud:F-PETG');
+    await choosePreset(user, controls[6], 'Cloud PETG');
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
 
     await waitFor(() => {
@@ -1713,7 +1753,14 @@ describe('SliceModal — presets filtered by the selected printer', () => {
   } as UnifiedPresetsResponse;
 
   const processOptionNames = () =>
-    Array.from(presetSelects()[1].options).map((o) => o.textContent);
+    within(screen.getByRole('listbox', { name: 'Process profile' }))
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+
+  const openProcessList = async () => {
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Process profile' }));
+    return screen.getByRole('listbox', { name: 'Process profile' });
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1730,21 +1777,23 @@ describe('SliceModal — presets filtered by the selected printer', () => {
 
   const open = async () => {
     renderWithTracker({ source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' }, onClose: vi.fn() });
-    await waitFor(() => expect(presetSelects().length).toBeGreaterThan(1));
+    await screen.findByRole('button', { name: 'Process profile' });
   };
 
   it('leaves out presets belonging to another printer', async () => {
     await open();
-    await waitFor(() => expect(processOptionNames()).toContain('0.20mm Standard @BBL X1C'));
+    await openProcessList();
+    expect(processOptionNames()).toContain('0.20mm Standard @BBL X1C');
     expect(processOptionNames()).not.toContain('0.20mm Standard @BBL H2D');
     expect(processOptionNames()).not.toContain('0.20mm Standard @BBL A1M');
   });
 
   it('keeps a preset whose compatibility cannot be determined', async () => {
     await open();
+    await openProcessList();
     // An untagged preset carries no evidence either way; hiding it would make
     // a user's own imported profiles vanish.
-    await waitFor(() => expect(processOptionNames()).toContain('My own profile'));
+    expect(processOptionNames()).toContain('My own profile');
   });
 
   it('says how many it held back and reveals them on request', async () => {
@@ -1755,7 +1804,8 @@ describe('SliceModal — presets filtered by the selected printer', () => {
     expect(hidden).toBeInTheDocument();
 
     await user.click(within(hidden.parentElement as HTMLElement).getByRole('button', { name: 'Show all' }));
-    await waitFor(() => expect(processOptionNames()).toContain('0.20mm Standard @BBL H2D'));
+    await openProcessList();
+    expect(processOptionNames()).toContain('0.20mm Standard @BBL H2D');
     expect(processOptionNames()).toContain('0.20mm Standard @BBL A1M');
   });
 
@@ -1764,7 +1814,8 @@ describe('SliceModal — presets filtered by the selected printer', () => {
     await open();
 
     await user.click((await screen.findAllByRole('button', { name: 'Show all' }))[0]);
-    await waitFor(() => expect(processOptionNames()).toContain('0.20mm Standard @BBL H2D'));
+    await openProcessList();
+    expect(processOptionNames()).toContain('0.20mm Standard @BBL H2D');
 
     await user.click(screen.getAllByRole('button', { name: 'Show fewer' })[0]);
     await waitFor(() => expect(processOptionNames()).not.toContain('0.20mm Standard @BBL H2D'));
@@ -1776,15 +1827,19 @@ describe('SliceModal — presets filtered by the selected printer', () => {
 
     // Reach a cross-printer preset, pick it, then collapse the list again.
     await user.click((await screen.findAllByRole('button', { name: 'Show all' }))[0]);
-    await waitFor(() => expect(processOptionNames()).toContain('0.20mm Standard @BBL H2D'));
-    await user.selectOptions(presetSelects()[1], 'standard:p-h2d');
+    const processList = await openProcessList();
+    await user.click(
+      within(processList).getByRole('option', { name: '0.20mm Standard @BBL H2D' }),
+    );
     await user.click(screen.getAllByRole('button', { name: 'Show fewer' })[0]);
 
-    // Dropping it from the options would blank the select and silently discard
-    // a deliberate cross-printer choice.
-    await waitFor(() => expect(processOptionNames()).toContain('0.20mm Standard @BBL H2D'));
-    expect(presetSelects()[1].value).toBe('standard:p-h2d');
-    // The one still-hidden preset is counted; the selected one is not.
+    // The selected cross-printer choice stays visible while the other remains hidden.
+    await openProcessList();
+    expect(processOptionNames()).toContain('0.20mm Standard @BBL H2D');
+    expect(processOptionNames()).not.toContain('0.20mm Standard @BBL A1M');
+    expect(screen.getByRole('button', { name: 'Process profile' })).toHaveTextContent(
+      '0.20mm Standard @BBL H2D',
+    );
     expect(screen.getByText('1 hidden')).toBeInTheDocument();
   });
 });

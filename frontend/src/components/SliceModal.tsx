@@ -1,5 +1,5 @@
-import { Cloud, CloudOff, Cog, Loader2, RefreshCw, X } from 'lucide-react';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { ChevronDown, Cloud, CloudOff, Cog, Loader2, RefreshCw, Search, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -45,8 +45,8 @@ interface SliceModalProps {
 }
 
 function toRefValue(ref: PresetRef | null): string {
-  // The HTML `<select>` value space is flat strings; encode source + id so
-  // the same preset name can live in multiple tiers without collision.
+  // The dropdown value space is flat strings; encode source + id so the
+  // same preset name can live in multiple tiers without collision.
   return ref ? `${ref.source}:${ref.id}` : '';
 }
 
@@ -1283,17 +1283,29 @@ function PresetDropdown({
   // than modal-wide: wanting a filament from another printer's library says
   // nothing about wanting its process profiles too.
   const [showAll, setShowAll] = useState(false);
-  // Binds the label to the select now that they are siblings rather than
-  // nested. Filament slots render several of these, so the id must be unique
-  // per instance rather than derived from the slot name.
-  const selectId = useId();
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleMouseDown = (event: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
+  }, [isOpen]);
 
   // Tier sections (imported → cloud → standard), plus — for a process /
   // filament slot with a selected printer — a trailing group of presets that
   // resolve to a different printer (#1325). Compatibility-unknown presets
   // stay in their tier, so a custom / untagged preset is never hidden, and
   // empty sections collapse out.
-  const { sections, otherEntries } = useMemo(() => {
+  const { sections: rawSections, otherEntries: rawOtherEntries } = useMemo(() => {
     const tiers: { key: keyof UnifiedPresetsResponse; label: string; fallback: string }[] = [
       { key: 'local', label: 'slice.tier.local', fallback: 'Imported' },
       { key: 'orca_cloud', label: 'slice.tier.orcaCloud', fallback: 'Orca Cloud' },
@@ -1334,28 +1346,74 @@ function PresetDropdown({
 
   // Other-printer presets are held back by default so the list shows what is
   // usable on the selected printer. Two things are never hidden: a preset whose
-  // compatibility is merely *unknown* (it never reaches otherEntries), and the
+  // compatibility is merely unknown (it never reaches rawOtherEntries), and the
   // one currently selected — a pipeline or an auto-pick can land on a
-  // cross-printer preset, and dropping it from the options would blank the
-  // select and silently discard the choice.
+  // cross-printer preset, and dropping it would silently discard the choice.
   const selectedRefValue = toRefValue(value);
   const visibleOther = useMemo(() => {
-    if (showAll) return otherEntries;
-    return otherEntries.filter((p) => `${p.source}:${p.id}` === selectedRefValue);
-  }, [showAll, otherEntries, selectedRefValue]);
+    if (showAll) return rawOtherEntries;
+    return rawOtherEntries.filter((preset) => `${preset.source}:${preset.id}` === selectedRefValue);
+  }, [showAll, rawOtherEntries, selectedRefValue]);
 
-  const hiddenCount = otherEntries.length - visibleOther.length;
-  const totalEntries =
-    sections.reduce((sum, s) => sum + s.entries.length, 0) + visibleOther.length;
+  const hiddenCount = rawOtherEntries.length - visibleOther.length;
+  const hasPresets =
+    rawSections.some((section) => section.entries.length > 0) || visibleOther.length > 0;
+
+  const { sections, otherEntries, totalFilteredEntries } = useMemo(() => {
+    const normalizedSearchTerm = searchTerm.toLowerCase();
+    const filteredSections = rawSections
+      .map((section) => ({
+        ...section,
+        entries: section.entries.filter((preset) =>
+          preset.name.toLowerCase().includes(normalizedSearchTerm),
+        ),
+      }))
+      .filter((section) => section.entries.length > 0);
+    const filteredOtherEntries = visibleOther.filter((preset) =>
+      preset.name.toLowerCase().includes(normalizedSearchTerm),
+    );
+
+    return {
+      sections: filteredSections,
+      otherEntries: filteredOtherEntries,
+      totalFilteredEntries:
+        filteredSections.reduce((sum, section) => sum + section.entries.length, 0) +
+        filteredOtherEntries.length,
+    };
+  }, [rawSections, visibleOther, searchTerm]);
+
+  const selectedPreset = findPreset(data, value, slot);
+  const selectedText =
+    selectedPreset?.name ??
+    (hasPresets ? t('slice.selectPreset') : t('slice.noPresetsForSlot'));
+
+  const renderOption = (preset: UnifiedPreset) => {
+    const refValue = `${preset.source}:${preset.id}`;
+    const isSelected = selectedRefValue === refValue;
+
+    return (
+      <button
+        key={refValue}
+        type="button"
+        role="option"
+        aria-selected={isSelected}
+        className={`w-full px-3 py-2 whitespace-normal text-left break-words text-sm hover:bg-bambu-dark-tertiary ${
+          isSelected ? 'bg-bambu-green/10 text-bambu-green' : 'text-white'
+        }`}
+        onClick={() => {
+          onChange(fromRefValue(refValue));
+          setSearchTerm('');
+          setIsOpen(false);
+        }}
+      >
+        {preset.name}
+      </button>
+    );
+  };
 
   return (
-    // A plain wrapper rather than a <label> around everything: the "Show all"
-    // control is a button, and a button inside a label that also wraps the
-    // select inherits the whole label as its accessible name (screen readers
-    // announced it as "Process profile 2 hidden 0.20mm Standard @BBL X1C") as
-    // well as being invalid HTML. The label is bound to the select by id.
-    <div className="block">
-      <div className="flex items-center gap-2 text-xs text-bambu-gray mb-1">
+    <div ref={wrapperRef} className="relative">
+      <span className="flex items-center gap-2 text-xs text-bambu-gray mb-1">
         {swatchColor && (
           <span
             className="inline-block w-3 h-3 rounded-full border border-bambu-dark-tertiary"
@@ -1363,7 +1421,7 @@ function PresetDropdown({
             aria-hidden
           />
         )}
-        <label htmlFor={selectId}>{label}</label>
+        <span>{label}</span>
         {(hiddenCount > 0 || showAll) && (
           <span className="ml-auto flex items-center gap-1.5 font-normal">
             {hiddenCount > 0 && (
@@ -1373,7 +1431,7 @@ function PresetDropdown({
             )}
             <button
               type="button"
-              onClick={() => setShowAll((v) => !v)}
+              onClick={() => setShowAll((current) => !current)}
               disabled={disabled}
               className="text-bambu-green hover:underline disabled:opacity-50 disabled:no-underline"
             >
@@ -1383,38 +1441,61 @@ function PresetDropdown({
             </button>
           </span>
         )}
-      </div>
-      <select
-        id={selectId}
-        value={toRefValue(value)}
-        onChange={(e) => onChange(fromRefValue(e.target.value))}
-        disabled={disabled || totalEntries === 0}
-        className="w-full px-3 py-2 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm focus:outline-none focus:border-bambu-gray disabled:opacity-50"
+      </span>
+      <button
+        type="button"
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        disabled={disabled || !hasPresets}
+        onClick={() => setIsOpen((open) => !open)}
+        className="w-full px-3 py-2 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm focus:outline-none focus:border-bambu-gray disabled:opacity-50 flex items-center justify-between gap-2 text-left"
       >
-        <option value="">
-          {totalEntries === 0
-            ? t('slice.noPresetsForSlot')
-            : t('slice.selectPreset')}
-        </option>
-        {sections.map((section) => (
-          <optgroup key={section.tierLabel} label={section.tierLabel}>
-            {section.entries.map((p) => (
-              <option key={`${p.source}:${p.id}`} value={`${p.source}:${p.id}`}>
-                {p.name}
-              </option>
+        <span className="truncate min-w-0">{selectedText}</span>
+        <ChevronDown className="w-4 h-4 flex-shrink-0 text-bambu-gray" aria-hidden />
+      </button>
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-1 bg-bambu-dark border border-bambu-dark-tertiary rounded-md shadow-lg max-h-60 overflow-y-auto">
+          <div className="sticky top-0 z-10 p-2 bg-bambu-dark border-b border-bambu-dark-tertiary">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray pointer-events-none" aria-hidden />
+              <input
+                type="text"
+                autoFocus
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                onClick={(event) => event.stopPropagation()}
+                aria-label={t('configureAmsSlot.searchPresets')}
+                placeholder={t('configureAmsSlot.searchPresets')}
+                className="w-full pl-8 pr-3 py-2 rounded-md bg-bambu-dark-secondary border border-bambu-dark-tertiary text-white text-sm placeholder:text-bambu-gray focus:outline-none focus:border-bambu-gray"
+              />
+            </div>
+          </div>
+          <div role="listbox" aria-label={label}>
+            {totalFilteredEntries === 0 && (
+              <div className="px-3 py-2 text-sm text-bambu-gray">
+                {t('configureAmsSlot.noMatchingPresets')}
+              </div>
+            )}
+            {sections.map((section) => (
+              <div key={section.tierLabel}>
+                <div className="px-3 py-1.5 text-xs font-semibold text-bambu-gray bg-bambu-dark-secondary">
+                  {section.tierLabel}
+                </div>
+                {section.entries.map(renderOption)}
+              </div>
             ))}
-          </optgroup>
-        ))}
-        {visibleOther.length > 0 && (
-          <optgroup label={t('slice.otherPrinters')}>
-            {visibleOther.map((p) => (
-              <option key={`${p.source}:${p.id}`} value={`${p.source}:${p.id}`}>
-                {p.name}
-              </option>
-            ))}
-          </optgroup>
-        )}
-      </select>
+            {otherEntries.length > 0 && (
+              <div>
+                <div className="px-3 py-1.5 text-xs font-semibold text-bambu-gray bg-bambu-dark-secondary">
+                  {t('slice.otherPrinters')}
+                </div>
+                {otherEntries.map(renderOption)}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -215,3 +215,67 @@ describe('computePopoverPosition (#1669, iOS Safari visualViewport)', () => {
     expect(pos.top).toBe(324);
   });
 });
+
+/**
+ * The drying popover's start-mode controls appear after the popover is
+ * positioned, so its real height can exceed the open-time estimate. The
+ * helper reports placement and the trigger-facing edge so an 'above'
+ * popover can be anchored by its bottom edge and carry an anchor arrow.
+ */
+describe('computePopoverPosition anchor metadata', () => {
+  const viewport = { viewportWidth: 1024, viewportHeight: 768 };
+
+  it('reports below placement with the anchor on the top edge', () => {
+    const trigger = { top: 300, bottom: 320, left: 400, right: 440 };
+    const pos = computePopoverPosition({
+      triggerRect: trigger,
+      popoverWidth: 240,
+      estimatedHeight: 320,
+      horizontalAlign: 'center',
+      ...viewport,
+    });
+    expect(pos.placement).toBe('below');
+    expect(pos.anchorY).toBe(pos.top); // 324
+  });
+
+  it('reports above placement with the anchor at the trigger-facing bottom edge', () => {
+    const trigger = { top: 680, bottom: 700, left: 400, right: 440 };
+    const pos = computePopoverPosition({
+      triggerRect: trigger,
+      popoverWidth: 240,
+      estimatedHeight: 320,
+      ...viewport,
+    });
+    expect(pos.placement).toBe('above');
+    expect(pos.anchorY).toBe(680 - 4); // trigger.top - gap
+  });
+
+  it('points the arrow at the trigger center', () => {
+    const trigger = { top: 300, bottom: 320, left: 400, right: 440 };
+    const pos = computePopoverPosition({
+      triggerRect: trigger,
+      popoverWidth: 240,
+      estimatedHeight: 320,
+      horizontalAlign: 'center',
+      ...viewport,
+    });
+    // Centered popover: the trigger center (420) sits mid-popover.
+    expect(pos.left + pos.arrowLeft).toBe(420);
+  });
+
+  it('clamps the arrow inside the corners when the popover is edge-clamped', () => {
+    // Trigger hugging the left viewport edge: popover clamps to left=8 while
+    // the trigger center stays at 30 — the arrow must stay clear of the
+    // rounded corner.
+    const trigger = { top: 300, bottom: 320, left: 10, right: 50 };
+    const pos = computePopoverPosition({
+      triggerRect: trigger,
+      popoverWidth: 240,
+      estimatedHeight: 320,
+      horizontalAlign: 'center',
+      ...viewport,
+    });
+    expect(pos.left).toBe(8);
+    expect(pos.arrowLeft).toBe(Math.max(14, 30 - 8));
+  });
+});

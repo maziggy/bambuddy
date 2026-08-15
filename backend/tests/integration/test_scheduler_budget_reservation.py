@@ -21,6 +21,7 @@ from backend.app.models.settings import Settings
 from backend.app.models.user import User
 from backend.app.services.finance_budget import validate_print_budget
 from backend.app.services.print_scheduler import PrintScheduler
+from backend.tests._fixtures.background_tasks import discarding_spawn_patch
 
 pytestmark = pytest.mark.integration
 
@@ -116,7 +117,7 @@ async def _dispatch(ctx, *, uploaded: bool = True, cancel_during_upload: bool = 
         patch("backend.app.services.print_scheduler.delete_file_async", AsyncMock(return_value=True)),
         patch("backend.app.services.print_scheduler.upload_file_async", upload),
         patch("backend.app.services.print_scheduler.cache_3mf_download", MagicMock()),
-        patch("backend.app.services.print_scheduler.spawn_background_task", MagicMock()),
+        discarding_spawn_patch(),
         patch("backend.app.services.notification_service.notification_service.on_queue_job_started", AsyncMock()),
         patch("backend.app.services.notification_service.notification_service.on_queue_job_failed", AsyncMock()),
         patch("backend.app.services.mqtt_relay.mqtt_relay.on_queue_job_started", AsyncMock()),

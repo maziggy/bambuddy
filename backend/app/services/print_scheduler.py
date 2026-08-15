@@ -5,12 +5,13 @@ import json
 import logging
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import HTTPException
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, false, func, or_, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -35,7 +36,7 @@ from backend.app.services.bambu_ftp import (
     upload_file_async,
     with_ftp_retry,
 )
-from backend.app.services.bambu_mqtt import HMS_MQTT_VERIFY_FAILED
+from backend.app.services.bambu_mqtt import HMS_MQTT_VERIFY_FAILED, resolve_rack_plan_mapping
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.finance_budget import (
     create_budget_reservation,
@@ -54,13 +55,18 @@ from backend.app.services.printer_manager import (
     supports_drying_while_printing,
 )
 from backend.app.services.smart_plug_manager import smart_plug_manager
+from backend.app.utils.color_utils import perceptual_color_distance
+from backend.app.utils.filament_types import canonical_filament_type
 from backend.app.utils.filename import derive_remote_filename
 from backend.app.utils.printer_models import (
     is_gcode_compatible,
     is_nozzle_rack_model,
     normalize_printer_model,
 )
-from backend.app.utils.threemf_tools import extract_slot_extruders_from_3mf
+from backend.app.utils.threemf_tools import (
+    extract_rack_plan_from_3mf,
+    extract_slot_extruders_from_3mf,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +79,94 @@ logger = logging.getLogger(__name__)
 # sub-200 ms files.
 _DISPATCH_PROGRESS_BYTE_STEP = 256 * 1024
 _DISPATCH_PROGRESS_MIN_INTERVAL_SECS = 0.2
+# How far back chamber temperature samples are retained. 2h comfortably spans
+# any soak a user can configure (capped at 30 min) plus the plate-clearing gap
+# before the next print.
+_CHAMBER_HISTORY_TTL_SECONDS = 7200
+# Fallback for `queue_keep_warm_max_minutes` — how long the bed may be held
+# warm on a printer sitting in FINISH before the heaters are shut off. Users
+# who clear plates promptly will want far less than this; it is deliberately
+# the cautious end, since the cost of it being too short is only a re-soak.
+_KEEP_WARM_MAX_MINUTES_DEFAULT = 120
+# Max acceptable gap between two consecutive chamber samples before we treat
+# the older one as belonging to a separate observation run (printer went
+# offline and came back). Above ~30s cadence with a safety margin.
+_CHAMBER_SAMPLE_MAX_GAP_SECONDS = 60.0
+# How long the chamber must read below target before we accept that it really
+# cooled. An enclosed chamber's thermal mass cannot lose and regain several
+# degrees quickly: measured on an X1C, falling from ~55°C to below 48°C took
+# 23-73 minutes (~0.2 C/min), while the fastest drop ever recorded was
+# 27 C/min — impossible for that mass, i.e. a sensor artifact. Brief
+# sub-target readings are therefore a door opening or noise, not lost soak,
+# and a plate swap (exactly when keep-warm is running) produces one. Six
+# minutes clears the longest such artifact observed (~5 min once bracketed by
+# its neighbouring samples) and still sits far below the 23-minute floor for
+# real cooling.
+_CHAMBER_DIP_GRACE_SECONDS = 360.0
+# How often the preheat stage re-checks that the item it is heating for still
+# wants to be printed. Cancelling only writes `status` to the database — it
+# cannot interrupt a coroutine parked in `asyncio.sleep` — so without this the
+# heaters run for the rest of max_wait + soak (45 min at the default settings)
+# and the printer stays in `busy_printers`, blocking every other queued item
+# behind a print that is not happening.
+_PREHEAT_CANCEL_CHECK_SECONDS = 10.0
+# set_airduct_mode modeId values (bambu_mqtt.py:5937 — 0 cooling, 1 heating).
+_AIRDUCT_MODE_COOLING = 0
+_AIRDUCT_MODE_HEATING = 1
+
+# How long a queue row may stay 'printing' while its printer sits in a terminal
+# state before the scheduler closes it itself (#2829).
+#
+# A real completion arrives within seconds of the printer going terminal, so
+# five minutes is far outside the normal path — this only ever sees a row whose
+# completion was refused or never delivered. It is the whole cost of the
+# failure to the user, though: a stranded row blocks every later job for that
+# printer, so it should not be raised without reason.
+_STRANDED_PRINTING_GRACE_SECONDS = 300.0
+
+# gcode_state values that mean the print is over, mapped to the queue status
+# they imply. Mirrors the mapping in bambu_mqtt's completion detection
+# (FINISH -> completed, FAILED -> failed, anything else terminal -> aborted,
+# which the queue calls cancelled) so a recovered row cannot disagree with one
+# closed by the normal path.
+_TERMINAL_STATE_QUEUE_STATUS = {
+    "FINISH": "completed",
+    "FAILED": "failed",
+    "IDLE": "cancelled",
+}
+
+
+def _terminal_queue_status(state) -> str | None:
+    """Queue status implied by *state*, or None if the print is not over.
+
+    None for a disconnected printer as well as a busy one: a printer we are not
+    talking to has a stale ``state`` field that proves nothing about what it is
+    doing now.
+    """
+    if state is None or not getattr(state, "connected", False):
+        return None
+    return _TERMINAL_STATE_QUEUE_STATUS.get(getattr(state, "state", None))
+
+
+@dataclass
+class _KeepWarmEntry:
+    """Per-printer keep-warm state.
+
+    - ``started``: monotonic time when keep-warm first fired for this printer.
+      Used by the max-duration timeout.
+    - ``held_target``: last bed target we successfully published. On release
+      we only send bed-off when firmware still reports this value, so a user
+      or subsequent print that changed the target isn't clobbered.
+    - ``expired``: latched True when the max-duration timeout fires. Prevents
+      re-engagement (and re-seeding of ``started``) on subsequent ticks. The
+      release sweep drops the entry entirely once the printer leaves the
+      candidate set.
+    """
+
+    started: float
+    held_target: int
+    expired: bool = False
+
 
 # Auto-drying re-arm guards (#2770).
 #
@@ -170,23 +264,6 @@ _ACTIVE_PRINT_STATES: frozenset[str] = frozenset({"PREPARE", "SLICING", "RUNNING
 # a lost MQTT publish on a half-broken session (#887/#936) is fixed by the
 # force-reconnect on the very next attempt — while still bounding the loop.
 DISPATCH_MAX_ATTEMPTS = 3
-
-# Filament type equivalence groups — types within the same group are
-# interchangeable on the printer side (Bambu Lab firmware treats them as compatible).
-_FILAMENT_TYPE_GROUPS: list[list[str]] = [
-    ["PA-CF", "PA12-CF", "PAHT-CF"],
-]
-_FILAMENT_EQUIV_MAP: dict[str, str] = {}
-for _group in _FILAMENT_TYPE_GROUPS:
-    _canonical = _group[0].upper()
-    for _t in _group:
-        _FILAMENT_EQUIV_MAP[_t.upper()] = _canonical
-
-
-def _canonical_filament_type(ftype: str) -> str:
-    """Return canonical type for equivalence matching."""
-    upper = ftype.upper()
-    return _FILAMENT_EQUIV_MAP.get(upper, upper)
 
 
 @dataclass(slots=True)
@@ -574,6 +651,40 @@ class PrintScheduler:
         # unsuccessful exit; a successful start removes the item id and leaves
         # the reservation for finance_billing to consume with the archive.
         self._unconfirmed_budget_reservations: set[int] = set()
+        # Chamber temperature history for smart soak-time reduction.
+        # printer_id -> deque of (monotonic_timestamp, celsius) sampled each scheduler tick.
+        # Entries older than _chamber_history_ttl are pruned on write.
+        self._chamber_history: dict[int, deque[tuple[float, float]]] = {}
+        self._chamber_history_ttl = _CHAMBER_HISTORY_TTL_SECONDS
+        # Per-printer keep-warm state (see `_KeepWarmEntry` at module top).
+        # Populated on engagement in `_apply_keep_warm`, cleared by
+        # `_sweep_keep_warm` when the printer leaves the candidate set (or
+        # when a gate setting toggles off mid-hold — the release publishes
+        # bed → 0 first).
+        self._keep_warm: dict[int, _KeepWarmEntry] = {}
+        # Preheat rollback registry: printer_id -> subset of
+        # {"bed", "chamber", "airduct"} listing which preheat commands
+        # actually fired for the in-flight dispatch. `_dispatch_one` unwinds
+        # every entry still present at exit unless the print successfully
+        # started, so a failed upload / cancel / exception never leaves the
+        # printer heating for a job that isn't happening.
+        self._preheat_pin: dict[int, set[str]] = {}
+        # Bed target (°C) that the pinned "bed" entry above actually set, so the
+        # rollback can tell its own target from one someone else has since
+        # chosen — the same guard `_release_keep_warm` applies to a keep-warm
+        # hold. Written wherever `"bed"` joins the pin, evicted alongside it.
+        self._preheat_pin_bed: dict[int, int] = {}
+        # Item ids whose in-flight dispatch has been cancelled or deleted while
+        # its preheat was still holding at temperature. Set by
+        # `notify_dispatch_cancelled` from the queue routes, consumed by
+        # `_preheat_sleep`, and cleared when the dispatch exits.
+        self._cancelled_dispatches: set[int] = set()
+        # printer_id -> monotonic time it was first seen terminal while one of
+        # its queue rows was still 'printing'. Reset by any non-terminal
+        # observation, so it measures an unbroken run rather than a total.
+        # In-memory on purpose: a restart re-arms the grace period, which only
+        # delays a recovery that is already the exceptional path (#2829).
+        self._terminal_since: dict[int, float] = {}
 
     async def run(self):
         """Main loop - check queue every interval."""
@@ -585,11 +696,13 @@ class PrintScheduler:
         while self._running:
             dispatched = False
             try:
+                self._sample_chamber_temps()
                 # No-op while any upload is in flight; on a quiet tick it releases
                 # a claim whose best-effort clear failed (e.g. the database was
                 # briefly unreachable), instead of leaving the row wedged until
                 # the next restart.
                 await self._clear_stale_dispatch_claims()
+                await self._close_stranded_printing_items()
                 dispatched = await self.check_queue()
             except Exception as e:
                 logger.error("Scheduler error: %s", e)
@@ -597,6 +710,90 @@ class PrintScheduler:
             # Re-check quickly after a productive pass so a draining batch does
             # not stall behind the idle interval; otherwise sleep normally (#2555).
             await asyncio.sleep(self._fast_check_interval if dispatched else self._check_interval)
+
+    async def _close_stranded_printing_items(self) -> None:
+        """Close a ``printing`` row the completion event never closed (#2829).
+
+        ``on_print_complete`` refuses to close a row when the completion's
+        subtask name disagrees with the file the row was dispatched with, so a
+        completion meant for something else (the printer's own
+        ``auto_pa_line_calib_mode`` run, say) cannot end someone's job early.
+        The refusal has no way back, though: nothing else ever closes the row,
+        and ``check_queue`` treats every ``printing`` row as a busy printer, so
+        one bad comparison wedges that printer's queue until a human presses
+        cancel. That is what #2829's reporters hit, and the guard's own
+        docstring already called stranding the worse of the two failures.
+
+        This is the way back. When a row has been ``printing`` while its
+        printer sat in a terminal state for the whole grace period, the print
+        is over however the event was read, and the row is closed with the
+        status the printer's own state implies.
+
+        Deliberately conservative:
+
+        * Only a connected printer counts. A disconnected one has a stale
+          ``state`` and proves nothing.
+        * The clock is reset by any non-terminal observation, so this cannot
+          fire on a printer that is merely between stages.
+        * The grace period is far longer than the gap between a printer
+          finishing and its completion arriving, so the normal path always
+          wins the race and this only ever sees genuine strandings.
+
+        What it does *not* do is replay the completion's side effects --
+        notifications, billing, auto-off. It restores the queue, which is the
+        harm being undone; the archive was updated by the normal path
+        regardless, since only the queue block refuses. A recovery that
+        silently re-fired notifications minutes late would be its own bug.
+        """
+        try:
+            async with async_session() as db:
+                result = await db.execute(
+                    select(PrintQueueItem)
+                    .where(PrintQueueItem.status == "printing")
+                    .where(PrintQueueItem.printer_id.is_not(None))
+                )
+                items = list(result.scalars().all())
+                if not items:
+                    self._terminal_since.clear()
+                    return
+
+                now = time.monotonic()
+                seen_printers: set[int] = set()
+                closed = False
+                for item in items:
+                    printer_id = item.printer_id
+                    seen_printers.add(printer_id)
+                    state = printer_manager.get_status(printer_id)
+                    status = _terminal_queue_status(state)
+                    if status is None:
+                        self._terminal_since.pop(printer_id, None)
+                        continue
+                    since = self._terminal_since.setdefault(printer_id, now)
+                    if now - since < _STRANDED_PRINTING_GRACE_SECONDS:
+                        continue
+
+                    item.status = status
+                    item.completed_at = datetime.now(timezone.utc)
+                    closed = True
+                    logger.warning(
+                        "Queue item %s was still 'printing' after printer %s reported %s for %.0fs — "
+                        "closing it as %s. Its completion event was never matched to it, which blocks "
+                        "every later job for this printer (#2829).",
+                        item.id,
+                        printer_id,
+                        getattr(state, "state", None),
+                        now - since,
+                        status,
+                    )
+                if closed:
+                    await db.commit()
+                for printer_id in list(self._terminal_since):
+                    if printer_id not in seen_printers:
+                        del self._terminal_since[printer_id]
+        except Exception as e:
+            # Best-effort, same as the claim sweep beside it: a recovery path
+            # that can itself break the scheduler loop is worse than the strand.
+            logger.error("Stranded-item sweep failed: %s", e)
 
     async def _clear_stale_dispatch_claims(self, *, at_startup: bool = False) -> None:
         """Clear dispatch claims with no live dispatch coroutine behind them (#2615).
@@ -725,6 +922,14 @@ class PrintScheduler:
                 # so it must not be auto-dried in the gap before the row flips to
                 # printing. Report the pass as productive while uploads run so the
                 # loop stays on the fast interval.
+                #
+                # Also release any keep-warm holds that got orphaned by the queue
+                # emptying — the normal sweep in `_apply_keep_warm` is skipped by
+                # this early return, so call it directly with an empty candidate
+                # set. Without this, a printer whose queued item was cancelled or
+                # deleted would keep its bed at target until the max-duration
+                # timeout expired.
+                self._sweep_keep_warm(active_candidates=set(), dispatched=set())
                 inflight_printers = {pid for (_task, pid) in self._inflight.values() if pid is not None}
                 await self._check_auto_drying(db, [], inflight_printers)
                 return bool(self._inflight)
@@ -1315,6 +1520,18 @@ class PrintScheduler:
                         awaiting,
                     )
 
+            # Keep-warm is a comfort feature; dispatch is not. It sits between
+            # selection and `_launch_uploads`, so anything raising here would
+            # discard this tick's selections — computed AMS mappings and all —
+            # and, on a persistent fault, stop the queue dispatching entirely.
+            # Same reasoning as the deficit check's guard below: never let an
+            # auxiliary check wedge the queue. The bed simply stays wherever it
+            # was, and the next tick tries again.
+            try:
+                await self._apply_keep_warm(db, items, dispatch_ids, busy_printers, require_plate_clear)
+            except Exception as e:
+                logger.warning("Keep-warm pass failed, continuing with dispatch: %s", e, exc_info=True)
+
             # Read the concurrency limit BEFORE the commit below, not inside
             # _dispatch_selected(). A SELECT on this session after the commit
             # implicitly opens a fresh transaction that nothing then closes, and
@@ -1399,20 +1616,29 @@ class PrintScheduler:
         )
 
         for item_id in to_launch:
-            task = spawn_background_task(self._dispatch_one(item_id), name=f"queue-upload-{item_id}")
+            task = spawn_background_task(
+                self._dispatch_one(item_id, item_printers.get(item_id)),
+                name=f"queue-upload-{item_id}",
+            )
             self._inflight[item_id] = (task, item_printers.get(item_id))
             # Prune on completion so the freed slot is refillable next tick.
             # spawn_background_task already logs any uncaught exception; this
             # only reclaims the pool slot (fires on success, failure, or cancel).
             task.add_done_callback(lambda _t, iid=item_id: self._inflight.pop(iid, None))
 
-    async def _dispatch_one(self, item_id: int) -> None:
+    async def _dispatch_one(self, item_id: int, selected_printer_id: int | None = None) -> None:
         """Upload + start one queue item in its own session (pool worker, #2602).
 
         Its own session: pool workers run concurrently and an AsyncSession is
         not safe to share across tasks; it also keeps a slow upload from pinning
         the scheduler's session (and, on SQLite, its transaction) open for the
         transfer's duration.
+
+        ``selected_printer_id`` is the printer this item was selected for, taken
+        from the same snapshot the caller used. It exists so the preheat pin can
+        be unwound on the paths that never reach the ``finally`` below — see the
+        claim failure a few lines down. Optional so the direct-call tests keep
+        working; when it is absent those paths simply behave as they did before.
         """
         async with async_session() as item_db:
             # Claim the row for dispatch BEFORE reading the printer snapshot or
@@ -1426,12 +1652,29 @@ class PrintScheduler:
                     "Queue item %s not claimable for dispatch (cancelled, removed, or already claimed) — skipping",
                     item_id,
                 )
+                # This return is outside the try/finally below, so the rollback
+                # has to happen here. Selecting this item already handed any
+                # keep-warm hold on its printer over to the preheat pin
+                # (`_sweep_keep_warm`), on the promise that this dispatch would
+                # unwind it. Bailing without doing so leaves the bed hot with
+                # nothing tracking it: the keep-warm entry is gone, so the
+                # max-duration cap no longer applies, and if this was the
+                # printer's last pending item nothing else will ever turn it
+                # off. Reachable whenever a cancel or delete lands between
+                # selection and the claim.
+                if selected_printer_id is not None:
+                    self._rollback_preheat_pin(item_id, selected_printer_id)
                 return
+            # Seeded from the caller's snapshot so the `item vanished` return
+            # below still unwinds the pin; overwritten with the row's own
+            # printer_id as soon as we have it.
+            item_printer_id: int | None = selected_printer_id
             try:
                 item = await item_db.get(PrintQueueItem, item_id)
                 if not item:
                     logger.info("Queue item %s vanished after claim — skipping", item_id)
                     return
+                item_printer_id = item.printer_id
                 await self._start_print(item_db, item)
             finally:
                 # Undo an expected-print registration whose print command never
@@ -1447,6 +1690,18 @@ class PrintScheduler:
                 # command. Failure, cancellation, deferral, and exceptions all
                 # release it here.
                 await asyncio.shield(self._release_unconfirmed_budget_reservation(item_id))
+                # Unwind preheat state (bed/chamber/airduct) if the
+                # dispatch aborted before the print's own gcode took over.
+                # `_start_print` clears the pin on successful `start_print()`;
+                # anything still present here is by definition an aborted
+                # dispatch and gets rolled back so the printer isn't left
+                # heating for a job that isn't happening.
+                if item_printer_id is not None:
+                    self._rollback_preheat_pin(item_id, item_printer_id)
+                # The cancellation flag only has meaning while this dispatch is
+                # running; drop it so the set cannot grow without bound and a
+                # re-queued item never inherits a stale cancellation.
+                self._cancelled_dispatches.discard(item_id)
                 # Release the claim on every exit. Once dispatch has finished the
                 # row's status carries the lock (printing/failed/cancelled are all
                 # != pending), so the token is only needed for the duration of the
@@ -1509,6 +1764,99 @@ class PrintScheduler:
                         )
                         return
                     await asyncio.sleep(0.5 * attempt)
+
+    @staticmethod
+    def _reported_bed_target(printer_id: int) -> int | None:
+        """The bed target firmware currently reports, or None if it can't be read.
+
+        None means "no evidence", not "zero" — callers must not treat it as a
+        temperature. Deliberately total: this feeds cleanup paths that run in a
+        ``finally``, where a malformed status must not become the exception the
+        caller sees.
+        """
+        try:
+            state = printer_manager.get_status(printer_id)
+            if state is None:
+                return None
+            temps = state.temperatures
+            if not isinstance(temps, dict):
+                return None
+            return int(float(temps.get("bed_target", 0) or 0))
+        except (TypeError, ValueError, AttributeError):
+            return None
+
+    def _rollback_preheat_pin(self, item_id: int, printer_id: int) -> None:
+        """Unwind everything preheat set when dispatch did NOT hand off to a running print.
+
+        Turns the bed heater off, the chamber heater off, and opens the
+        airduct flap back to cooling — for whichever of those preheat
+        actually applied. `_start_print` clears the pin on successful
+        `start_print()`; anything still present when `_dispatch_one` exits
+        is by definition an aborted dispatch and gets rolled back here.
+
+        The bed is the one action that can be declined: if firmware has since
+        been given a target other than the one we pinned, it belongs to someone
+        else and is left alone. See the comment at that branch.
+
+        Also called directly from `_dispatch_one`'s claim-failure return, which
+        never reaches the ``finally``.
+
+        Best-effort and never raises — this runs in the ``finally`` of dispatch.
+        """
+        pin = self._preheat_pin.pop(printer_id, set())
+        pinned_bed = self._preheat_pin_bed.pop(printer_id, None)
+        if not pin:
+            return
+        client = printer_manager.get_client(printer_id)
+        if client is None:
+            logger.info(
+                "Dispatch item %s (printer %d): preheat rollback skipped — no client",
+                item_id,
+                printer_id,
+            )
+            return
+        if "bed" in pin:
+            # Only undo our own target. If firmware reports something else, the
+            # user or another writer owns the bed now and zeroing it would
+            # clobber their choice -- the same guard `_release_keep_warm`
+            # applies to a keep-warm hold.
+            #
+            # Every uncertain case switches the bed off rather than leaving it:
+            # no recorded target (a pin written before this bookkeeping, or a
+            # setter that raised after pinning) and an unreadable status both
+            # fall through. A bed left hot with no owner is the worse failure,
+            # and this runs in a `finally` where raising would mask the real
+            # exception.
+            cur_bed_target = self._reported_bed_target(printer_id) if pinned_bed is not None else None
+            if cur_bed_target is not None and cur_bed_target != pinned_bed:
+                logger.info(
+                    "Dispatch item %s (printer %d): rollback skipped bed → 0 (firmware target %d != pinned %d)",
+                    item_id,
+                    printer_id,
+                    cur_bed_target,
+                    pinned_bed,
+                )
+            else:
+                try:
+                    client.set_bed_temperature(0)
+                except Exception as exc:
+                    logger.warning("Dispatch item %s: rollback bed → 0 failed: %s", item_id, exc)
+        if "chamber" in pin:
+            try:
+                client.set_chamber_temperature(0)
+            except Exception as exc:
+                logger.warning("Dispatch item %s: rollback chamber → 0 failed: %s", item_id, exc)
+        if "airduct" in pin:
+            try:
+                client.set_airduct_mode("cooling")
+            except Exception as exc:
+                logger.warning("Dispatch item %s: rollback airduct → cooling failed: %s", item_id, exc)
+        logger.info(
+            "Dispatch item %s (printer %d): preheat rollback → %s",
+            item_id,
+            printer_id,
+            sorted(pin),
+        )
 
     async def _claim_for_dispatch(self, db: AsyncSession, item_id: int) -> bool:
         """Atomically stamp ``dispatching_at`` on a still-pending, unclaimed row.
@@ -1925,18 +2273,16 @@ class PrintScheduler:
                 tray_type = tray.get("tray_type")
                 if tray_type:
                     color_norm = (tray.get("tray_color", "") or "").replace("#", "").lower()[:6]
-                    loaded.append(
-                        (_canonical_filament_type(tray_type), color_norm, tray.get("tray_info_idx", "") or "")
-                    )
+                    loaded.append((canonical_filament_type(tray_type), color_norm, tray.get("tray_info_idx", "") or ""))
         for vt in status.raw_data.get("vt_tray") or []:
             vt_type = vt.get("tray_type")
             if vt_type:
                 color_norm = (vt.get("tray_color", "") or "").replace("#", "").lower()[:6]
-                loaded.append((_canonical_filament_type(vt_type), color_norm, vt.get("tray_info_idx", "") or ""))
+                loaded.append((canonical_filament_type(vt_type), color_norm, vt.get("tray_info_idx", "") or ""))
 
         missing = []
         for o in force_overrides:
-            o_type = _canonical_filament_type(o.get("type") or "")
+            o_type = canonical_filament_type(o.get("type") or "")
             o_color = (o.get("color") or "").replace("#", "").lower()[:6]
             o_idx = o.get("tray_info_idx") or ""
             satisfied = any(
@@ -1973,18 +2319,18 @@ class PrintScheduler:
                 for tray in ams_unit.get("tray", []):
                     tray_type = tray.get("tray_type")
                     if tray_type:
-                        loaded_types.add(_canonical_filament_type(tray_type))
+                        loaded_types.add(canonical_filament_type(tray_type))
 
         # Check external spool(s) (virtual tray, stored in raw_data["vt_tray"] as list)
         for vt in status.raw_data.get("vt_tray") or []:
             vt_type = vt.get("tray_type")
             if vt_type:
-                loaded_types.add(_canonical_filament_type(vt_type))
+                loaded_types.add(canonical_filament_type(vt_type))
 
         # Find which required types are missing (using canonical type for equivalence)
         missing = []
         for req_type in required_types:
-            if _canonical_filament_type(req_type) not in loaded_types:
+            if canonical_filament_type(req_type) not in loaded_types:
                 missing.append(req_type)
 
         return missing
@@ -2053,6 +2399,7 @@ class PrintScheduler:
         item.plate_id = variant.plate_id
         item.ams_mapping = variant.ams_mapping
         item.nozzle_mapping = variant.nozzle_mapping
+        item.nozzle_rack_choice = variant.nozzle_rack_choice
         item.filament_overrides = variant.filament_overrides
         item.required_filament_types = variant.required_filament_types
         if variant.print_time_seconds is not None:
@@ -2643,6 +2990,26 @@ class PrintScheduler:
             return ""
         return color.replace("#", "").lower()[:6]
 
+    def _color_distance(self, color1: str | None, color2: str | None) -> float | None:
+        """Perceptual (CIEDE2000) distance, or None when either colour is unusable.
+
+        Ranks the candidates ``_colors_are_similar`` admits (#2804). Eligibility
+        stays the per-channel box that shipped — this only decides which of
+        several eligible spools is closest, so nothing becomes usable or
+        unusable because of it.
+
+        It ranks by how far apart the colours *look*, not how far apart their
+        numbers are. RGB distance overweights blue badly enough to invert the
+        answer: against a required ``#1E4821`` green, a purple ``#38202F`` is
+        the nearer of two eligible spools by RGB and the further by a factor of
+        four once measured perceptually.
+
+        Alpha is ignored, deliberately: the alpha a slicer writes for a
+        transparent filament is not a colour the user chose, and counting it
+        would stop a transparent filament matching itself.
+        """
+        return perceptual_color_distance(color1, color2)
+
     def _colors_are_similar(self, color1: str | None, color2: str | None, threshold: int = 40) -> bool:
         """Check if two colors are visually similar within a threshold."""
         hex1 = self._normalize_color_for_compare(color1)
@@ -2846,6 +3213,7 @@ class PrintScheduler:
             idx_match = None
             exact_match = None
             similar_match = None
+            similar_distance = float("inf")
             type_only_match = None
 
             # Get available trays (not already used)
@@ -2921,8 +3289,10 @@ class PrintScheduler:
                             if not exact_match:
                                 exact_match = f
                         elif self._colors_are_similar(f_color, req_color):
-                            if not similar_match:
+                            distance = self._color_distance(f_color, req_color)
+                            if distance is not None and distance < similar_distance:
                                 similar_match = f
+                                similar_distance = distance
                         elif not type_only_match:
                             type_only_match = f
 
@@ -2930,7 +3300,7 @@ class PrintScheduler:
             if not idx_match and not exact_match and not similar_match and not type_only_match:
                 for f in available:
                     f_type = (f.get("type") or "").upper()
-                    if _canonical_filament_type(f_type) != _canonical_filament_type(req_type):
+                    if canonical_filament_type(f_type) != canonical_filament_type(req_type):
                         continue
 
                     # Type matches - check color
@@ -2939,8 +3309,15 @@ class PrintScheduler:
                         if not exact_match:
                             exact_match = f
                     elif self._colors_are_similar(f_color, req_color):
-                        if not similar_match:
+                        # Nearest wins, not first-in-tray-order. `available` is
+                        # already in the caller's order (slot order, or the
+                        # prefer-lowest sort), and `<` keeps the earliest of
+                        # equally close spools — so that order survives as the
+                        # tie-break (#2804).
+                        distance = self._color_distance(f_color, req_color)
+                        if distance is not None and distance < similar_distance:
                             similar_match = f
+                            similar_distance = distance
                     elif not type_only_match:
                         type_only_match = f
 
@@ -2950,35 +3327,38 @@ class PrintScheduler:
                 comparisons.append({"slot_id": req.get("slot_id", 0), "global_tray_id": match["global_tray_id"]})
             else:
                 comparisons.append({"slot_id": req.get("slot_id", 0), "global_tray_id": -1})
-            if prefer_lowest:
-                # Pair with the "available (sorted)" log above so the reporter
-                # bundle shows BOTH what the matcher saw AND which match bucket
-                # won — fast triage when "Prefer Lowest Filament" picks the
-                # wrong slot (#1766).
-                if match:
-                    bucket = (
-                        "idx"
-                        if idx_match is not None
-                        else "exact_color"
-                        if exact_match is not None
-                        else "similar_color"
-                        if similar_match is not None
-                        else "type_only"
-                    )
-                    logger.info(
-                        "[prefer-lowest] picked gtid=%s via %s for req slot=%s",
-                        match["global_tray_id"],
-                        bucket,
-                        req.get("slot_id"),
-                    )
-                else:
-                    logger.info(
-                        "[prefer-lowest] NO MATCH for req slot=%s (type=%r color=%r tii=%r)",
-                        req.get("slot_id"),
-                        req_type,
-                        req_color,
-                        req_tray_info_idx,
-                    )
+            # Which bucket won, always — not only under Prefer Lowest (#2804).
+            # "Why did it pick that spool" is the question every wrong-filament
+            # report starts with, and a `similar_color` win is now a ranked
+            # choice among several eligible spools rather than whichever tray
+            # came first, so it is worth being able to see after the fact.
+            # Pairs with the "available (sorted)" log above when Prefer Lowest
+            # is on (#1766).
+            if match:
+                bucket = (
+                    "idx"
+                    if idx_match is not None
+                    else "exact_color"
+                    if exact_match is not None
+                    else "similar_color"
+                    if similar_match is not None
+                    else "type_only"
+                )
+                logger.info(
+                    "[ams-match] picked gtid=%s via %s for req slot=%s%s",
+                    match["global_tray_id"],
+                    bucket,
+                    req.get("slot_id"),
+                    f" (deltaE {similar_distance:.2f})" if bucket == "similar_color" else "",
+                )
+            else:
+                logger.info(
+                    "[ams-match] NO MATCH for req slot=%s (type=%r color=%r tii=%r)",
+                    req.get("slot_id"),
+                    req_type,
+                    req_color,
+                    req_tray_info_idx,
+                )
 
         # Build mapping array
         if not comparisons:
@@ -3831,14 +4211,427 @@ class PrintScheduler:
                     best = target
         return best
 
+    def _release_keep_warm(self, pid: int) -> None:
+        """Release keep-warm on a printer that left the candidate set.
+
+        Publishes ``set_bed_temperature(0)`` once — but only if firmware still
+        reports the target we set (``entry.held_target``), so a user or
+        subsequent print that changed the bed target since is not clobbered.
+        Best-effort, never raises.
+
+        The entry is kept, not dropped, when the printer cannot be reached
+        right now: a printer that is briefly offline still has a hot bed, and
+        holding the entry is what keeps the max-duration timeout applying and
+        lets a later tick retry the release. Only a printer that has left the
+        manager entirely gives up on that, in ``_sample_chamber_temps``.
+        """
+        entry = self._keep_warm.get(pid)
+        if entry is None:
+            return
+        state = printer_manager.get_status(pid)
+        client = printer_manager.get_client(pid)
+        if state is None or client is None:
+            logger.debug(
+                "Queue: keep-warm release for printer %d deferred — printer unreachable, entry kept",
+                pid,
+            )
+            return
+        cur_bed_target = float((state.temperatures or {}).get("bed_target", 0) or 0)
+        if int(cur_bed_target) != entry.held_target:
+            # Someone else owns the bed now, so there is nothing of ours to
+            # undo and nothing left to track.
+            logger.info(
+                "Queue: keep-warm release for printer %d skipped bed-off (firmware target %d != held %d)",
+                pid,
+                int(cur_bed_target),
+                entry.held_target,
+            )
+            self._keep_warm.pop(pid, None)
+            return
+        try:
+            client.set_bed_temperature(0)
+            logger.info("Queue: keep-warm released for printer %d (bed → 0)", pid)
+            self._keep_warm.pop(pid, None)
+        except Exception as exc:
+            # Keep the entry so the next tick tries again rather than leaving
+            # the bed hot with nothing tracking it.
+            logger.warning("Queue: keep-warm release for printer %d failed: %s", pid, exc)
+
+    def _sweep_keep_warm(self, active_candidates: set[int], dispatched: set[int]) -> None:
+        """Release printers that dropped out of the keep-warm candidate set.
+
+        Called from ``_apply_keep_warm`` on every tick (with the current
+        candidate set), and from ``check_queue``'s no-pending-items early
+        return (with an empty candidate set) so orphaned holds still get
+        released when the queue empties. Also called with an empty candidate
+        set when any of the three gate settings toggles off, so a printer
+        whose feature was disabled mid-hold gets its bed released.
+
+        Printers being dispatched this tick are excluded from the bed-off
+        publish: ``_preheat_and_soak`` owns the bed from that tick on, so a
+        transient 0 in between would just churn against preheat. Ownership of
+        the hot bed transfers to the preheat rollback pin instead — if the
+        dispatch aborts before the print starts (failed upload, cancelled
+        item), `_rollback_preheat_pin` turns the bed off; if preheat itself
+        skips (e.g. the item has no bed_temperature metadata) the pin entry
+        is the ONLY thing standing between an aborted dispatch and a bed
+        left hot with no owner. A successful print start clears the pin and
+        the print's own gcode takes over, as usual.
+        """
+        for _pid in list(self._keep_warm):
+            if _pid in active_candidates:
+                continue
+            if _pid in dispatched:
+                handed_over = self._keep_warm.pop(_pid, None)
+                self._preheat_pin.setdefault(_pid, set()).add("bed")
+                if handed_over is not None:
+                    self._preheat_pin_bed[_pid] = handed_over.held_target
+                continue
+            self._release_keep_warm(_pid)
+
+    async def _apply_keep_warm(
+        self,
+        db: AsyncSession,
+        items: list[PrintQueueItem],
+        dispatch_ids: list[int] | set[int],
+        busy_printers: set[int],
+        require_plate_clear: bool,
+    ) -> None:
+        """Hold the bed warm on FINISH printers whose next queued item needs chamber heat.
+
+        When a printer just finished a job (FINISH state) and the next queued
+        item needs chamber heating, hold the bed hot so the chamber stays warm
+        during the bed-clearing window. The bed is the chamber's heating
+        element here, not a print surface — nothing is printing during the
+        hold and the dispatched print's own preheat/gcode re-targets the bed —
+        so the hold temperature is ``queue_keep_warm_bed_temp`` (default 90°C,
+        chosen to sustain chamber warmth and to satisfy bed-threshold-linked
+        aftermarket chamber heaters), raised to the item's own parsed
+        bed_temperature when that is higher. Items whose archive metadata has
+        no bed temperature (e.g. OrcaSlicer gcode.3mf exports) therefore still
+        get a hold — chamber need is what gates the feature, not metadata.
+        Skips entirely for filaments that map to a 0°C chamber target
+        (PLA, PETG, etc.). Printers being dispatched this cycle are excluded:
+        ``_preheat_and_soak`` already handles their bed temperature.
+
+        Bounded by ``queue_keep_warm_max_minutes`` — on timeout the bed is
+        released to 0 and the entry is latched ``expired=True`` so
+        subsequent ticks neither re-engage nor re-seed the clock. Idempotent
+        MQTT: publish is skipped when firmware already has the target.
+
+        The release sweep runs BEFORE the engagement gate so a printer that
+        was owned by keep-warm still gets its bed released when any of the
+        three gate settings is toggled off mid-hold. The
+        ``check_queue`` early-return-when-no-items path also calls
+        ``_sweep_keep_warm`` directly to release orphaned holds.
+        """
+        dispatch_set = set(dispatch_ids)
+        dispatched_printers = {it.printer_id for it in items if it.id in dispatch_set and it.printer_id}
+        pending_printer_ids = {it.printer_id for it in items if it.printer_id}
+        warm_candidates = (pending_printer_ids & busy_printers) - dispatched_printers
+
+        keep_warm_enabled = await self._get_bool_setting(db, "queue_keep_bed_warm", default=False)
+        preheat_on = await self._get_bool_setting(db, "preheat_enabled", default=False)
+        gate_open = keep_warm_enabled and require_plate_clear and preheat_on
+
+        # Release sweep first — must run even when gate_open is False so a
+        # printer owned by keep-warm when a gate toggles off gets released.
+        self._sweep_keep_warm(
+            active_candidates=warm_candidates if gate_open else set(),
+            dispatched=dispatched_printers,
+        )
+
+        if not gate_open:
+            return
+
+        hold_temp = await self._get_int_setting(db, "queue_keep_warm_bed_temp", default=90)
+        max_hold_seconds = (
+            await self._get_int_setting(db, "queue_keep_warm_max_minutes", default=_KEEP_WARM_MAX_MINUTES_DEFAULT) * 60
+        )
+        now_mono = time.monotonic()
+        filament_targets: dict[str, int] | None = None
+        for pid in warm_candidates:
+            entry = self._keep_warm.get(pid)
+            # Latched-expired: max-duration timeout already fired for this
+            # printer. Skip until the release sweep drops the entry (i.e.
+            # until the printer leaves the candidate set).
+            if entry is not None and entry.expired:
+                continue
+            # These two guards sit ahead of the max-duration check below, so an
+            # engaged hold only ages out while its printer is still reachable
+            # and still in FINISH. That is deliberate rather than a hole: with
+            # no status or no client there is no M140 to send anyway, and the
+            # elapsed check runs off `entry.started` so it fires on the first
+            # tick after the printer comes back. Leaving FINISH means the plate
+            # was cleared, which drops the printer out of `warm_candidates` and
+            # hands it to `_release_keep_warm` instead. The invariant worth
+            # preserving if this is ever reordered: every path out of an
+            # engaged hold ends in a bed-off, whether by timeout or release.
+            state = printer_manager.get_status(pid)
+            if state is None or state.state != "FINISH":
+                continue
+            client = printer_manager.get_client(pid)
+            if client is None:
+                continue
+            next_item = next((it for it in items if it.printer_id == pid), None)
+            if next_item is None:
+                continue
+            # Hold temperature: the configured keep-warm temp, raised to the
+            # item's own bed temp when the metadata reports a higher one. A
+            # missing bed_temperature (Orca gcode.3mf exports parse without
+            # one) does NOT skip the hold — chamber need gates the feature.
+            archive = next_item.archive
+            item_bed = int(archive.bed_temperature) if archive and archive.bed_temperature else 0
+            bed_target = max(item_bed, hold_temp)
+            if bed_target <= 0:
+                continue
+            explicit = getattr(next_item, "preheat_chamber_target_override", None)
+            if explicit is not None:
+                chamber_needed = int(explicit) > 0
+            else:
+                if filament_targets is None:
+                    filament_targets = await self._get_preheat_filament_targets(db)
+                printer_obj = await self._get_printer(db, pid)
+                chamber_needed = (
+                    printer_obj is not None and self._derive_chamber_target(printer_obj, filament_targets) > 0
+                )
+            if not chamber_needed:
+                continue
+
+            # Seed the timer on first engagement; keep it on subsequent ticks
+            # (never re-seed — that would defeat the max-duration cap).
+            if entry is None:
+                entry = _KeepWarmEntry(started=now_mono, held_target=bed_target)
+                self._keep_warm[pid] = entry
+
+            elapsed = now_mono - entry.started
+            if elapsed > max_hold_seconds:
+                # Timeout: publish bed → 0 once (if firmware still holds our
+                # target) and latch expired. The entry stays until the release
+                # sweep drops it, preventing the next tick from re-seeding.
+                logger.warning(
+                    "Queue: keep-warm timeout for printer %d (held for %.0fs) — publishing bed → 0",
+                    pid,
+                    elapsed,
+                )
+                cur_bed_target = float((state.temperatures or {}).get("bed_target", 0) or 0)
+                if int(cur_bed_target) == entry.held_target:
+                    try:
+                        client.set_bed_temperature(0)
+                    except Exception as exc:
+                        logger.warning(
+                            "Queue: keep-warm timeout bed-off failed for printer %d: %s",
+                            pid,
+                            exc,
+                        )
+                else:
+                    logger.info(
+                        "Queue: keep-warm timeout for printer %d skipped bed-off (firmware target %d != held %d)",
+                        pid,
+                        int(cur_bed_target),
+                        entry.held_target,
+                    )
+                entry.expired = True
+                continue
+
+            # Idempotence: skip publish when firmware already has our target.
+            cur_bed_target = float((state.temperatures or {}).get("bed_target", 0) or 0)
+            if int(cur_bed_target) == bed_target:
+                entry.held_target = bed_target
+                continue
+            try:
+                client.set_bed_temperature(bed_target)
+                entry.held_target = bed_target
+                logger.info(
+                    "Queue: keeping bed warm at %d°C for printer %d (FINISH, next item needs chamber heat)",
+                    bed_target,
+                    pid,
+                )
+            except Exception as exc:
+                logger.warning("Queue: keep-warm bed command failed for printer %d: %s", pid, exc)
+
+    def _sample_chamber_temps(self) -> None:
+        """Record a chamber temperature sample for every connected printer.
+
+        Called once per scheduler tick (every 3–30 s). Entries older than
+        _chamber_history_ttl are pruned on each write so the deques stay bounded.
+        Also evicts per-printer state whose printer_id is no longer registered
+        (e.g. deleted from the DB), so nothing accumulates for gone printers.
+        """
+        now = time.monotonic()
+        cutoff = now - self._chamber_history_ttl
+        statuses = printer_manager.get_all_statuses()
+        known_pids = set(statuses.keys())
+        for pid, status in statuses.items():
+            if status is None or not status.connected:
+                continue
+            temps = status.temperatures or {}
+            chamber = temps.get("chamber")
+            if chamber is None:
+                continue
+            hist = self._chamber_history.setdefault(pid, deque())
+            hist.append((now, float(chamber)))
+            while hist and hist[0][0] < cutoff:
+                hist.popleft()
+        # Evict state for printers that are no longer registered with the manager.
+        # This is the one place a keep-warm entry is dropped without releasing
+        # the bed: the printer is gone from the manager, so there is no client
+        # left to send M140 to. `_release_keep_warm` deliberately keeps entries
+        # for printers that are merely unreachable, which is what makes this
+        # the terminal case rather than a silent leak.
+        for pid in list(self._chamber_history):
+            if pid not in known_pids:
+                self._chamber_history.pop(pid, None)
+        for pid in list(self._keep_warm):
+            if pid not in known_pids:
+                logger.info(
+                    "Queue: dropping keep-warm state for printer %d — no longer registered",
+                    pid,
+                )
+                self._keep_warm.pop(pid, None)
+        for pid in list(self._preheat_pin):
+            if pid not in known_pids:
+                self._preheat_pin.pop(pid, None)
+                self._preheat_pin_bed.pop(pid, None)
+
+    def _chamber_soak_remaining(
+        self,
+        printer_id: int,
+        chamber_target: float,
+        soak_seconds: int,
+        tolerance: float = 2.0,
+    ) -> int:
+        """Return how many seconds of soak time are still needed.
+
+        Credits the time the chamber has already spent at temperature against
+        the configured soak. The credit may not start earlier than any of:
+
+        * **The newest sample.** Nothing recent means the printer stopped
+          reporting mid-observation and the chamber may have cooled unseen, so
+          the full soak is required. (A 2 h history whose last reading is half
+          an hour old is not evidence of anything — the measured cooling rate
+          is fast enough to cross the threshold in that time.)
+        * **The most recent contiguous run of samples.** A gap wider than
+          ``_CHAMBER_SAMPLE_MAX_GAP_SECONDS`` is a disconnect, and time on its
+          far side is not evidence of temperature.
+        * **The end of the most recent real dip below the threshold.**
+
+        A dip only counts as real once it lasts ``_CHAMBER_DIP_GRACE_SECONDS``
+        — see that constant for the thermal reasoning. A stray low reading is
+        an artifact, and treating it as cooling would discard a soak that
+        actually happened.
+
+        Returns ``soak_seconds`` when nothing can be credited (no history,
+        stale history, or the chamber is below the threshold right now) and 0
+        once the credited time covers the whole soak.
+        """
+        hist = self._chamber_history.get(printer_id)
+        if not hist:
+            return soak_seconds
+
+        now = time.monotonic()
+        newest_ts, newest_temp = hist[-1]
+        if now - newest_ts > _CHAMBER_SAMPLE_MAX_GAP_SECONDS:
+            return soak_seconds  # stale — no fresh evidence to credit
+
+        threshold = chamber_target - tolerance
+        if newest_temp < threshold:
+            return soak_seconds  # below target right now; nothing is soaked
+
+        samples = list(hist)
+
+        # Earliest point we have unbroken observations for.
+        credit_from = samples[-1][0]
+        for i in range(len(samples) - 1, 0, -1):
+            if samples[i][0] - samples[i - 1][0] > _CHAMBER_SAMPLE_MAX_GAP_SECONDS:
+                break
+            credit_from = samples[i - 1][0]
+
+        # Pull the credit forward to the end of the last significant dip. Each
+        # excursion is measured between the in-range readings that bracket it,
+        # so a lone stray sample is charged one sampling interval rather than
+        # zero, and the comparison errs towards calling a dip real.
+        i = 0
+        while i < len(samples):
+            if samples[i][1] >= threshold:
+                i += 1
+                continue
+            j = i
+            while j < len(samples) and samples[j][1] < threshold:
+                j += 1
+            # `newest_temp >= threshold` was checked above, so j is in range.
+            opened_at = samples[i - 1][0] if i > 0 else samples[i][0]
+            if samples[j][0] - opened_at >= _CHAMBER_DIP_GRACE_SECONDS:
+                # Credit resumes at the last below-threshold sample rather than
+                # the first good one after it, so a recovered dip over-credits
+                # by up to one sampling interval — the opposite lean to the
+                # bracketing above. Both are bounded by the sample cadence and
+                # dwarfed by the grace period, so neither is worth the extra
+                # arithmetic to remove.
+                credit_from = max(credit_from, samples[j - 1][0])
+            i = j
+
+        return max(0, soak_seconds - int(now - credit_from))
+
+    def notify_dispatch_cancelled(self, item_id: int) -> None:
+        """Tell an in-flight dispatch that its item no longer wants to print.
+
+        Called by the queue's cancel and delete routes. Those only write to the
+        database, which a dispatch coroutine parked in ``asyncio.sleep`` cannot
+        observe — so preheat would keep heating for the rest of max_wait + soak
+        (45 minutes at the defaults) and keep the printer in ``busy_printers``,
+        blocking every other queued item behind a print that is not happening.
+
+        Signalling in memory rather than re-reading the row keeps this off the
+        database entirely: no second session, no transaction held across a long
+        sleep, and no snapshot staleness deciding whether a print goes ahead.
+        Bambuddy serves from a single uvicorn process with one scheduler task,
+        so the route and the dispatch always share this object. The flag is
+        advisory — dropping it (e.g. after a restart) only costs a wasted
+        preheat, never a wrongly-abandoned print.
+
+        Only ids with a dispatch actually in flight are recorded, so the set
+        stays bounded by the upload pool rather than growing once per cancelled
+        item for the life of the process. Skipping the rest loses nothing: an
+        item that is not in flight cannot start heating later either, because
+        ``_claim_for_dispatch`` only claims rows that are still ``pending`` and
+        the caller has already committed a terminal status (or deleted the row)
+        before calling this.
+        """
+        if item_id in self._inflight:
+            self._cancelled_dispatches.add(item_id)
+
+    async def _preheat_sleep(self, item_id: int, seconds: float) -> bool:
+        """Sleep in slices, returning False as soon as the item stops wanting preheat.
+
+        A single long ``asyncio.sleep`` cannot notice a cancellation that lands
+        while it is parked, so the wait is chopped into
+        ``_PREHEAT_CANCEL_CHECK_SECONDS`` slices with a check after each.
+        """
+        remaining = float(seconds)
+        while remaining > 0:
+            slice_secs = min(_PREHEAT_CANCEL_CHECK_SECONDS, remaining)
+            await asyncio.sleep(slice_secs)
+            remaining -= slice_secs
+            if item_id in self._cancelled_dispatches:
+                return False
+        return True
+
     async def _preheat_and_soak(
         self,
         db: AsyncSession,
         item: PrintQueueItem,
         printer: Printer,
         archive: PrintArchive | None,
-    ) -> None:
+    ) -> bool:
         """Run the per-printer preheat + heat-soak stage before FTP upload (#1468).
+
+        Returns True when the dispatch should carry on to the upload — including
+        every case where preheat is skipped, since a skipped preheat is not a
+        reason to abandon the print. Returns False only when the item stopped
+        wanting to be printed while the stage was waiting (cancelled or
+        deleted); the caller must then abandon the dispatch, and
+        ``_dispatch_one``'s rollback shuts the heaters off on the way out.
 
         Resolution order:
           1. `item.preheat_override` — 'off' skips entirely; 'inherit' falls back
@@ -3871,11 +4664,11 @@ class PrintScheduler:
         """
         override = (getattr(item, "preheat_override", None) or "inherit").lower()
         if override == "off":
-            return
+            return True
         if override == "inherit":
             enabled = await self._get_bool_setting(db, "preheat_enabled", default=False)
             if not enabled:
-                return
+                return True
         # override == "on" forces the stage on regardless of the global setting.
 
         max_wait = await self._get_int_setting(db, "preheat_max_wait_seconds", default=900)
@@ -3900,21 +4693,89 @@ class PrintScheduler:
 
         bed_target = int(archive.bed_temperature) if archive and archive.bed_temperature else 0
         if bed_target <= 0:
+            # No bed temperature in the slicer metadata. When the print needs a
+            # hot chamber the bed is simply how we heat it, so fall back to the
+            # configured chamber-heating bed temperature rather than skipping
+            # the whole stage — otherwise the print starts with a cold chamber,
+            # which is exactly what preheat exists to prevent. Without a chamber
+            # requirement there is nothing to preheat *for*, so skip as before
+            # rather than guess a bed temperature for the print itself.
+            if chamber_target <= 0:
+                logger.info(
+                    "Queue item %s: preheat skipped — archive has no bed_temperature metadata and no chamber target",
+                    item.id,
+                )
+                return True
+            bed_target = await self._get_int_setting(db, "queue_keep_warm_bed_temp", default=90)
             logger.info(
-                "Queue item %s: preheat skipped — archive has no bed_temperature metadata",
+                "Queue item %s: archive has no bed_temperature metadata — heating the bed to "
+                "%d°C to drive the chamber to %d°C",
                 item.id,
+                bed_target,
+                chamber_target,
             )
-            return
 
         client = printer_manager.get_client(printer.id)
         if client is None:
             logger.warning("Queue item %s: preheat skipped — printer client unavailable", item.id)
-            return
+            return True
 
         model = printer.model or ""
         has_heater = supports_chamber_heater(model)
         has_sensor = supports_chamber_temp(model)
         do_chamber = chamber_target > 0 and (has_heater or has_sensor)
+
+        # Fast path: if the chamber has been continuously above target for at
+        # least soak_seconds and the bed is already at temperature, skip the
+        # entire preheat stage. Typical case: keep-warm held the bed between
+        # consecutive same-material prints and the chamber never dropped.
+        if do_chamber and has_sensor and soak_seconds > 0:
+            remaining = self._chamber_soak_remaining(printer.id, float(chamber_target), soak_seconds)
+            if remaining == 0:
+                cur = printer_manager.get_status(printer.id)
+                if cur:
+                    cur_temps = cur.temperatures or {}
+                    if (
+                        float(cur_temps.get("bed", 0) or 0) >= bed_target - 2.0
+                        and float(cur_temps.get("chamber", 0) or 0) >= chamber_target - 2.0
+                    ):
+                        logger.info(
+                            "Queue item %s: preheat skipped — chamber has been above %d°C for ≥%ds "
+                            "and bed is already at temperature (chamber history fast-path)",
+                            item.id,
+                            chamber_target,
+                            soak_seconds,
+                        )
+                        # Still set targets to prevent cooling during the 3MF upload window.
+                        # Register each successful set in the preheat pin so `_dispatch_one`
+                        # unwinds them on any non-success exit.
+                        pin = self._preheat_pin.setdefault(printer.id, set())
+                        try:
+                            client.set_bed_temperature(bed_target)
+                            pin.add("bed")
+                            self._preheat_pin_bed[printer.id] = bed_target
+                        except Exception as exc:
+                            logger.warning("Queue item %s: fast-path bed M140 failed: %s", item.id, exc)
+                        if supports_airduct(model):
+                            cur_airduct = getattr(cur, "airduct_mode", None)
+                            if cur_airduct != _AIRDUCT_MODE_HEATING:
+                                try:
+                                    client.set_airduct_mode("heating")
+                                    # Only undo what we can see we replaced. `None`
+                                    # means no mode has been observed yet, and
+                                    # rolling that back to cooling would assert a
+                                    # state the printer never reported.
+                                    if cur_airduct == _AIRDUCT_MODE_COOLING:
+                                        pin.add("airduct")
+                                except Exception as exc:
+                                    logger.warning("Queue item %s: fast-path airduct failed: %s", item.id, exc)
+                        if has_heater:
+                            try:
+                                client.set_chamber_temperature(chamber_target)
+                                pin.add("chamber")
+                            except Exception as exc:
+                                logger.warning("Queue item %s: fast-path chamber M141 failed: %s", item.id, exc)
+                        return True
 
         logger.info(
             "Queue item %s: preheat starting — bed=%d°C chamber_target=%d°C (source=%s override=%s "
@@ -3931,14 +4792,23 @@ class PrintScheduler:
             soak_seconds,
         )
 
+        # Preheat rollback registry: everything we set below is recorded here so
+        # `_dispatch_one`'s finally clause can unwind the whole heating regime
+        # (bed off, chamber off, airduct back to cooling) on any non-success
+        # exit. Populated as each command succeeds; consumed and cleared by
+        # `_dispatch_one`.
+        pin = self._preheat_pin.setdefault(printer.id, set())
+
         # Dispatch heaters. set_bed_temperature / set_chamber_temperature already
         # cache the target locally so the polling reads below see consistent
         # state (firmware MQTT echoes lag by ~1s).
         try:
             client.set_bed_temperature(bed_target)
+            pin.add("bed")
+            self._preheat_pin_bed[printer.id] = bed_target
         except Exception as exc:
             logger.warning("Queue item %s: preheat bed M140 failed: %s", item.id, exc)
-            return
+            return True
 
         # Airduct mode (#1468 follow-up). Models with the cooling/heating flap
         # (H2C/H2D/H2D Pro/H2S/X2D/P2S) keep the flap whatever the user last
@@ -3953,12 +4823,17 @@ class PrintScheduler:
         # we want it.
         if supports_airduct(model):
             desired_airduct = "heating" if chamber_target > 0 else "cooling"
-            desired_id = 1 if desired_airduct == "heating" else 0
+            desired_id = _AIRDUCT_MODE_HEATING if desired_airduct == "heating" else _AIRDUCT_MODE_COOLING
             current_state = printer_manager.get_status(printer.id)
             current_airduct = getattr(current_state, "airduct_mode", None) if current_state else None
             if current_airduct != desired_id:
                 try:
                     client.set_airduct_mode(desired_airduct)
+                    # As in the fast path: only pin a rollback for a flap we
+                    # saw in cooling. `current_airduct` of None means no mode
+                    # has been observed, so there is nothing to restore to.
+                    if desired_airduct == "heating" and current_airduct == _AIRDUCT_MODE_COOLING:
+                        pin.add("airduct")
                 except Exception as exc:
                     logger.warning(
                         "Queue item %s: preheat airduct %s mode failed: %s",
@@ -3970,6 +4845,7 @@ class PrintScheduler:
         if do_chamber and has_heater:
             try:
                 client.set_chamber_temperature(chamber_target)
+                pin.add("chamber")
             except Exception as exc:
                 logger.warning("Queue item %s: preheat chamber M141 failed: %s", item.id, exc)
 
@@ -4032,13 +4908,43 @@ class PrintScheduler:
                 )
                 break
 
-            await asyncio.sleep(POLL_INTERVAL)
+            if not await self._preheat_sleep(item.id, POLL_INTERVAL):
+                logger.info(
+                    "Queue item %s: preheat aborted — item cancelled or deleted while waiting for temperature",
+                    item.id,
+                )
+                return False
 
         if soak_seconds > 0:
-            logger.info("Queue item %s: preheat soak — holding for %ds", item.id, soak_seconds)
-            await asyncio.sleep(soak_seconds)
+            if do_chamber and has_sensor:
+                remaining = self._chamber_soak_remaining(printer.id, float(chamber_target), soak_seconds)
+            else:
+                remaining = soak_seconds  # no sensor — can't verify history, run full soak
+            if remaining > 0:
+                logger.info(
+                    "Queue item %s: preheat soak — holding for %ds (of %ds configured; chamber "
+                    "has been above target for ~%ds already)",
+                    item.id,
+                    remaining,
+                    soak_seconds,
+                    soak_seconds - remaining,
+                )
+                if not await self._preheat_sleep(item.id, remaining):
+                    logger.info(
+                        "Queue item %s: preheat aborted — item cancelled or deleted during soak",
+                        item.id,
+                    )
+                    return False
+            else:
+                logger.info(
+                    "Queue item %s: preheat soak skipped — chamber has been above %d°C for ≥%ds",
+                    item.id,
+                    chamber_target,
+                    soak_seconds,
+                )
 
         logger.info("Queue item %s: preheat complete — proceeding to upload", item.id)
+        return True
 
     async def _power_on_and_wait(self, plug: SmartPlug, printer_id: int, db: AsyncSession) -> bool:
         """Turn on smart plug and wait for printer to connect.
@@ -4127,6 +5033,141 @@ class PrintScheduler:
             return True
 
         return prev_item.status in ("completed", "cancelled")
+
+    async def _repoint_siblings_at_archive(
+        self,
+        db: AsyncSession,
+        *,
+        consumed_library_file_id: int,
+        archive_id: int,
+        dispatched_item_id: int,
+    ) -> int:
+        """Move the other queue items off a library row that is about to be deleted (#2819).
+
+        ``cleanup_library_after_dispatch`` consumes the library row: the printer-card
+        upload-and-print flow uploads a transient file, prints it, and deletes it.
+        Queue creation happily puts that flag on every copy of a ``quantity > 1``
+        request, and ``_clone_queue_item`` copies ``library_file_id`` onto batch
+        clones, so the first dispatch could pull the file out from under rows that
+        had not run yet. What those rows did next depended on the database, and
+        neither answer was right: SQLite ships with ``PRAGMA foreign_keys`` off, so
+        the ``ON DELETE CASCADE`` on ``print_queue.library_file_id`` never fired and
+        they were left pointing at a row that no longer existed, failing with
+        "Library file not found" whenever someone started them -- or sitting
+        ``pending`` forever under ``manual_start``. PostgreSQL enforces the same
+        constraint, so there the rows were deleted outright and the queued copies
+        simply vanished, with no error and no history.
+
+        The archive holds its own copy of the 3MF, so the remaining copies can print
+        from it instead. Two things happen here, and both must happen *before* the
+        delete -- afterwards there is nothing left to repair on PostgreSQL:
+
+        * every row still naming the file has ``library_file_id`` cleared, which is
+          what takes it out of the cascade's reach. That covers rows this cannot
+          re-point as well -- a copy already printing from its own archive, and the
+          finished ones, which are not spare parts but the record a batch order
+          counts its progress from.
+        * the rows that still need something to print are pointed at the archive.
+
+        Returns how many items were re-pointed.
+        """
+        variant_item_ids = (
+            (
+                await db.execute(
+                    select(PrintQueueVariant.queue_item_id).where(
+                        PrintQueueVariant.library_file_id == consumed_library_file_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        # Candidate rows naming the consumed file have to go rather than be
+        # cleared: `library_file_id` is NOT NULL there, so there is no way to keep
+        # one out of the cascade. This is what PostgreSQL already does, and
+        # _candidates_for skips such a variant on SQLite anyway, so no selection
+        # outcome changes -- the two backends simply stop disagreeing about
+        # whether the row is still there.
+        #
+        # It also has to happen before the re-point below: a cross-model item
+        # (#671) picks a variant every pass and folds it onto the row, and
+        # _resolve_variant clears archive_id as it does so, which would undo the
+        # re-point on the very next lap.
+        await db.execute(delete(PrintQueueVariant).where(PrintQueueVariant.library_file_id == consumed_library_file_id))
+
+        # An item left with other candidates still has somewhere to go, and those
+        # carry their own target model -- pointing it at this archive would print a
+        # file the matcher never chose. It is excluded from the re-point and simply
+        # re-resolves against what is left.
+        surviving_variant_item_ids = set(
+            (
+                await db.execute(
+                    select(PrintQueueVariant.queue_item_id).where(
+                        PrintQueueVariant.queue_item_id.in_(variant_item_ids) if variant_item_ids else false()
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        repoint_ids = set(
+            (
+                await db.execute(
+                    select(PrintQueueItem.id)
+                    .where(PrintQueueItem.id != dispatched_item_id)
+                    .where(PrintQueueItem.archive_id.is_(None))
+                    # "skipped" belongs here with the two live states: it is not
+                    # terminal. Clearing a printer's previous-success gate puts
+                    # every item skipped by it back to "pending"
+                    # (resume_after_failure), and one restored onto a deleted
+                    # file is the same orphan by a slower route. "failed",
+                    # "cancelled", "aborted" and "completed" never return.
+                    .where(PrintQueueItem.status.in_(("pending", "printing", "skipped")))
+                    .where(
+                        PrintQueueItem.id.notin_(surviving_variant_item_ids) if surviving_variant_item_ids else true()
+                    )
+                    .where(
+                        or_(
+                            PrintQueueItem.library_file_id == consumed_library_file_id,
+                            PrintQueueItem.id.in_(variant_item_ids) if variant_item_ids else false(),
+                        )
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if repoint_ids:
+            await db.execute(
+                update(PrintQueueItem)
+                .where(PrintQueueItem.id.in_(repoint_ids))
+                .values(
+                    archive_id=archive_id,
+                    library_file_id=None,
+                    # The file this flag named is already consumed. Leaving it set
+                    # would arm every re-pointed copy to delete whatever library
+                    # row it is next given.
+                    cleanup_library_after_dispatch=False,
+                )
+            )
+            logger.info(
+                "Queue items %s: re-pointed at archive %s -- library file %s was consumed by item %s",
+                sorted(repoint_ids),
+                archive_id,
+                consumed_library_file_id,
+                dispatched_item_id,
+            )
+
+        # Everything else that still names the file: taken out of the cascade's
+        # reach without touching what it prints. The file is gone either way; what
+        # this preserves is the row.
+        await db.execute(
+            update(PrintQueueItem)
+            .where(PrintQueueItem.id != dispatched_item_id)
+            .where(PrintQueueItem.library_file_id == consumed_library_file_id)
+            .values(library_file_id=None)
+        )
+        return len(repoint_ids)
 
     async def _power_off_if_needed(self, db: AsyncSession, item: PrintQueueItem):
         """Schedule power-off if the queue item enabled auto_off_after.
@@ -4547,11 +5588,28 @@ class PrintScheduler:
             result = await db.execute(LibraryFile.active().where(LibraryFile.id == item.library_file_id))
             library_file = result.scalar_one_or_none()
             if not library_file:
+                # "Not found" covers two different situations and only one of
+                # them is recoverable, so say which. A trashed file is still
+                # there and restoring it makes a re-queued job work; a file that
+                # is really gone needs a different one. Neither is knowable from
+                # the queue, which is the whole complaint about this message.
+                trashed = (
+                    await db.execute(select(LibraryFile.filename).where(LibraryFile.id == item.library_file_id))
+                ).scalar_one_or_none()
                 item.status = "failed"
-                item.error_message = "Library file not found"
+                item.error_message = (
+                    f"'{trashed}' is in the library trash — restore it and queue the print again"
+                    if trashed
+                    else "Library file not found — it was deleted after this job was queued"
+                )
                 item.completed_at = datetime.now(timezone.utc)
                 await db.commit()
-                logger.error("Queue item %s: Library file %s not found", item.id, item.library_file_id)
+                logger.error(
+                    "Queue item %s: library file %s is %s",
+                    item.id,
+                    item.library_file_id,
+                    "in the trash" if trashed else "gone",
+                )
                 await self._power_off_if_needed(db, item)
                 return
             # Library files store absolute paths
@@ -4561,6 +5619,11 @@ class PrintScheduler:
 
             # Create archive from library file so usage tracking has access to the 3MF
             queue_item_id = item.id
+            # Held separately: a cleanup dispatch clears item.library_file_id
+            # below, and the log line at the end of this block reported that
+            # cleared field -- so every consumed print logged "from library
+            # file None", which is the one case worth being able to trace.
+            source_library_file_id = item.library_file_id
             try:
                 from backend.app.services.archive import ArchiveService
 
@@ -4580,6 +5643,7 @@ class PrintScheduler:
                     if budget_reservation is not None:
                         budget_reservation.print_archive_id = archive.id
                     if item.cleanup_library_after_dispatch and not library_file.is_external:
+                        consumed_library_file_id = library_file.id
                         item.library_file_id = None
                         cleanup_disk_paths.append(file_path)
                         if library_file.thumbnail_path:
@@ -4587,6 +5651,14 @@ class PrintScheduler:
                             if not thumb_path.is_absolute():
                                 thumb_path = settings.base_dir / library_file.thumbnail_path
                             cleanup_disk_paths.append(thumb_path)
+                        # Before the delete, not after: on PostgreSQL the FK
+                        # cascade would already have taken these rows (#2819).
+                        await self._repoint_siblings_at_archive(
+                            db,
+                            consumed_library_file_id=consumed_library_file_id,
+                            archive_id=archive.id,
+                            dispatched_item_id=item.id,
+                        )
                         await db.delete(library_file)
                         file_path = settings.base_dir / archive.file_path
                         filename = archive.filename
@@ -4600,7 +5672,7 @@ class PrintScheduler:
                         "Queue item %s: Created archive %s from library file %s",
                         item.id,
                         archive.id,
-                        item.library_file_id,
+                        source_library_file_id,
                     )
             except Exception as e:
                 logger.warning(
@@ -4694,7 +5766,13 @@ class PrintScheduler:
         # starts the actual print routine. Best-effort: any failure logs and
         # falls through to the normal upload+start path rather than turning a
         # configuration issue into a failed queue item.
-        await self._preheat_and_soak(db, item, printer, archive)
+        # Returns False only when the item was cancelled or deleted while the
+        # stage was holding at temperature. Uploading and starting it anyway
+        # would print a job the user has already called off, so abandon the
+        # dispatch here; `_dispatch_one`'s finally clause unwinds the heaters.
+        if not await self._preheat_and_soak(db, item, printer, archive):
+            logger.info("Queue item %s: dispatch abandoned — cancelled during preheat", item.id)
+            return
 
         # G-code injection for auto-print systems (#422)
         injected_path = None
@@ -5033,9 +6111,115 @@ class PrintScheduler:
         # Skipped when the item already carries a Bambu Studio capture: that
         # one wins downstream anyway, so reading the 3MF again would be work
         # thrown away on every dispatch.
-        nozzle_slot_extruders = None
+        # Rack position resolution (#1784), tried before the #2800 fallback
+        # below because it can express what that one cannot: a plate wanting a
+        # *different* hotend off the rack per filament group. The position per
+        # group is the operator's pick — the 3MF states it nowhere, proven by
+        # sending one plate twice with different picks and finding the two
+        # files identical bar float noise — so it is resolved here against the
+        # rack as it stands right now, after the upload, not at queue time.
+        resolved_nozzle_mapping = None
         if not item.nozzle_mapping and file_path is not None and is_nozzle_rack_model(printer.model):
-            slot_extruders = extract_slot_extruders_from_3mf(file_path)
+            rack_plan = extract_rack_plan_from_3mf(file_path, plate_id=item.plate_id or 1)
+            if rack_plan is not None:
+                try:
+                    stored_choice = json.loads(item.nozzle_rack_choice) if item.nozzle_rack_choice else {}
+                except (json.JSONDecodeError, TypeError):
+                    stored_choice = {}
+                    logger.warning(
+                        "Queue item %s: unreadable nozzle_rack_choice %r, assigning rack positions instead",
+                        item.id,
+                        item.nozzle_rack_choice,
+                    )
+                # JSON object keys are strings; the groups are ints.
+                choice: dict[int, int] = {}
+                for key, value in (stored_choice or {}).items():
+                    try:
+                        choice[int(key)] = int(value)
+                    except (TypeError, ValueError):
+                        continue
+
+                live_rack = getattr(printer_manager.get_status(item.printer_id), "nozzle_rack", None) or []
+                resolved_nozzle_mapping, rack_error = resolve_rack_plan_mapping(
+                    rack_plan.slot_groups, rack_plan.group_dicts(), choice, live_rack
+                )
+                if resolved_nozzle_mapping is None and choice:
+                    # An explicit pick that no longer holds stops the print. The
+                    # operator named a hotend; printing from a different one is
+                    # how a plate gets levelled on one nozzle and drawn with
+                    # another, millimetres above the bed. Nothing has been sent
+                    # to the printer yet, so failing here costs only the upload.
+                    item.status = "failed"
+                    item.error_message = (
+                        f"Nozzle rack pick no longer fits the printer: {rack_error}. "
+                        "Edit the item to choose another position."
+                    )
+                    item.completed_at = datetime.now(timezone.utc)
+                    await db.commit()
+                    logger.warning(
+                        "Queue item %s: refusing to dispatch to %s — %s (chose %s, rack %s)",
+                        item.id,
+                        printer.name,
+                        rack_error,
+                        choice,
+                        [slot.get("id") for slot in live_rack],
+                    )
+                    await notification_service.on_queue_job_failed(
+                        job_name=filename.replace(".gcode.3mf", "").replace(".3mf", ""),
+                        printer_id=printer.id,
+                        printer_name=printer.name,
+                        reason=item.error_message,
+                        db=db,
+                    )
+                    try:
+                        await ws_manager.send_queue_item_failed(
+                            user_id=toast_uid,
+                            queue_item_id=item.id,
+                            printer_id=item.printer_id,
+                            reason="nozzle_rack_pick_stale",
+                        )
+                    except Exception:
+                        pass  # Best-effort — don't fail the error handler
+                    # The file is already on the SD card by this point, and a
+                    # 3MF left there is a phantom print waiting to be started
+                    # from the touchscreen. Same cleanup the start_print
+                    # failure path below does, for the same reason.
+                    try:
+                        await delete_file_async(
+                            printer.ip_address,
+                            printer.access_code,
+                            remote_path,
+                            printer_model=printer.model,
+                        )
+                    except Exception:
+                        pass  # Best-effort — don't fail the error handler
+                    return
+                if resolved_nozzle_mapping is None:
+                    # Nothing was picked and nothing could be assigned. Falls
+                    # through to the #2800 path, which is what ran before this
+                    # existed — strictly not worse than today.
+                    logger.info(
+                        "Queue item %s: no rack positions assignable (%s); falling back",
+                        item.id,
+                        rack_error,
+                    )
+                else:
+                    logger.info(
+                        "Queue item %s: rack mapping %s (groups %s, chosen %s)",
+                        item.id,
+                        resolved_nozzle_mapping,
+                        rack_plan.slot_groups,
+                        choice or "auto",
+                    )
+
+        nozzle_slot_extruders = None
+        if (
+            not item.nozzle_mapping
+            and resolved_nozzle_mapping is None
+            and file_path is not None
+            and is_nozzle_rack_model(printer.model)
+        ):
+            slot_extruders = extract_slot_extruders_from_3mf(file_path, plate_id=item.plate_id or 1)
             if slot_extruders:
                 nozzle_slot_extruders = json.dumps(slot_extruders)
 
@@ -5057,7 +6241,8 @@ class PrintScheduler:
             timelapse=effective_timelapse,
             use_ams=item.use_ams,
             nozzle_offset_cali=item.nozzle_offset_cali,
-            nozzle_mapping=item.nozzle_mapping,
+            nozzle_mapping=item.nozzle_mapping
+            or (json.dumps(resolved_nozzle_mapping) if resolved_nozzle_mapping else None),
             nozzle_slot_extruders=nozzle_slot_extruders,
         )
 
@@ -5067,6 +6252,12 @@ class PrintScheduler:
             # rolled back.
             self._unconfirmed_expected_print.pop(item.id, None)
             self._unconfirmed_budget_reservations.discard(item.id)
+            # Handoff to the print's own gcode: keep whatever preheat set (bed
+            # target, chamber target, airduct heating) — the gcode owns
+            # heater/flap control from here. Clearing the pin prevents
+            # `_dispatch_one`'s finally from unwinding a live print.
+            self._preheat_pin.pop(item.printer_id, None)
+            self._preheat_pin_bed.pop(item.printer_id, None)
             logger.info("Queue item %s: Print started successfully - %s", item.id, filename)
             # No dispatch-toast event here: the legacy bg-dispatch path kept
             # status='processing' from upload start until the printer acked

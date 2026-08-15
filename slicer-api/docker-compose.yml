@@ -17,6 +17,11 @@
 #   docker compose up -d                       # starts OrcaSlicer only
 #   docker compose --profile bambu up -d       # starts both
 #
+# Updating: `docker compose pull` skips profile-gated services, so a bare
+# pull silently leaves bambu-studio-api on its old image (and restart:
+# unless-stopped keeps it serving). Use `docker compose --profile bambu pull`,
+# or name the service: `docker compose pull bambu-studio-api`.
+#
 # First start pulls pre-built images from GHCR (~110 MB OrcaSlicer,
 # ~220 MB BambuStudio). No local build, no git in the BuildKit worker,
 # works on QNAP / Synology / Container Station out of the box.

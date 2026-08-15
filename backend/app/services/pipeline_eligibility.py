@@ -36,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.local_preset import LocalPreset
 from backend.app.models.printer import Printer
 from backend.app.models.slicer_pipeline import SlicerPipeline
+from backend.app.utils.filament_types import canonical_filament_type
 
 IssueKind = Literal[
     "printer_not_set",
@@ -80,36 +81,13 @@ class EligibilityReport:
     printer_reports: tuple[PerPrinterReport, ...] = ()
 
 
-# Same equivalence map as print_scheduler._canonical_filament_type but kept
-# local so this module has no upward dependency on the scheduler. Mirrors the
-# scheduler's behaviour: BBL-prefixed product names normalise to the base type
-# (e.g. "PLA Basic" → "PLA"). When the scheduler's map gets a new alias, this
-# one needs the same entry.
-_FILAMENT_EQUIV_MAP = {
-    "PLA": "PLA",
-    "PLA BASIC": "PLA",
-    "PLA MATTE": "PLA",
-    "PLA SILK": "PLA",
-    "PLA PRO": "PLA",
-    "PLA TOUGH": "PLA",
-    "PETG": "PETG",
-    "PETG HF": "PETG",
-    "PETG BASIC": "PETG",
-    "PETG TRANSLUCENT": "PETG",
-    "ABS": "ABS",
-    "ASA": "ASA",
-    "TPU": "TPU",
-    "TPU 95A": "TPU",
-    "PC": "PC",
-    "PA": "PA",
-    "PA-CF": "PA",
-    "PVA": "PVA",
-}
-
-
-def _canonical(ftype: str) -> str:
-    upper = (ftype or "").strip().upper()
-    return _FILAMENT_EQUIV_MAP.get(upper, upper)
+# This module's whole job is to predict what the dispatch matcher will do, so
+# it reads type equivalence from the same table the matcher does rather than
+# keeping a copy. The copy it used to keep had drifted into disagreeing in both
+# directions — it aliased "PLA Basic" to "PLA" where the matcher does not, so a
+# job could pass here and then fail on type; and it lacked the PA12-CF/PAHT-CF
+# grouping the matcher has, so a job the matcher handles fine was flagged.
+_canonical = canonical_filament_type
 
 
 def _normalise_colour(colour: str | None) -> str:

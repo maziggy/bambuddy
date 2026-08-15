@@ -40,11 +40,25 @@ def _port_probe(overrides=None):
     return _probe
 
 
-def _state(*, connected=True, developer_mode=True, store_to_sdcard=True):
+def _state(
+    *,
+    connected=True,
+    developer_mode=True,
+    store_to_sdcard=True,
+    sdcard=True,
+    sdcard_reported=False,
+    last_project_url=None,
+):
+    # sdcard_reported defaults False — "the printer never mentioned its card",
+    # which is what every pre-#2780 test in this file assumes and what keeps
+    # the storage branches out of their way.
     return types.SimpleNamespace(
         connected=connected,
         developer_mode=developer_mode,
         store_to_sdcard=store_to_sdcard,
+        sdcard=sdcard,
+        sdcard_reported=sdcard_reported,
+        last_project_url=last_project_url,
     )
 
 
@@ -458,6 +472,88 @@ class TestExternalStorageCheck:
         with _Env(state=_state(store_to_sdcard=True)):
             result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="P1S"))
         assert _statuses(result)["external_storage"] == "pass"
+
+    # --- #2780: the toggle being on is not the same as it working ---------
+
+    async def test_fails_when_the_toggle_is_on_but_the_slot_is_empty(self):
+        """#2780's H2C reported `store_to_sdcard` set and `sdcard` False for
+        three solid weeks. The check called that a clean pass while every one
+        of its 23 archives came out blank -- the toggle can be on and still
+        achieve nothing with nothing in the slot.
+        """
+        with _Env(state=_state(store_to_sdcard=True, sdcard=False, sdcard_reported=True)):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="H2C"))
+        check = next(c for c in result.checks if c.id == "external_storage")
+        assert check.status == "fail"
+        assert check.params == {"reason": "no_media"}
+        assert result.overall == "problems"
+
+    async def test_warns_when_the_printer_kept_the_print_internally(self):
+        """Toggle on, card in, and the printer still used internal storage --
+        which is what H2-series and P2S firmware does. A pass would be a lie
+        and a fail would be unresolvable, so it warns."""
+        state = _state(
+            store_to_sdcard=True,
+            sdcard=True,
+            sdcard_reported=True,
+            last_project_url="brtc://emmc/Benchy.gcode.3mf",
+        )
+        with _Env(state=state):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="H2C"))
+        check = next(c for c in result.checks if c.id == "external_storage")
+        assert check.status == "warn"
+        assert check.params == {"reason": "internal_storage"}
+        assert result.overall == "warnings"
+
+    async def test_an_external_storage_dispatch_still_passes(self):
+        """The regression guard: an X1C dispatch says `ftp://`, and that must
+        read exactly as it did before any of this existed."""
+        state = _state(
+            store_to_sdcard=True,
+            sdcard=True,
+            sdcard_reported=True,
+            last_project_url="ftp://Benchy.gcode.3mf",
+        )
+        with _Env(state=state):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="X1C"))
+        assert _statuses(result)["external_storage"] == "pass"
+
+    async def test_a_p1_series_keeps_its_non_nagging_skip_with_no_card(self):
+        """#2524 outranks #2780 here. Current P1 firmware exposes no way to
+        turn the option on, so "insert a card" would promise a fix that
+        inserting a card does not deliver -- the unresolvable-fail nagging
+        that #2524 removed, back under a different label.
+        """
+        with _Env(state=_state(store_to_sdcard=False, sdcard=False, sdcard_reported=True)):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="P1S"))
+        check = next(c for c in result.checks if c.id == "external_storage")
+        assert check.status == "skip"
+        assert check.params == {"reason": "unsupported_model"}
+        assert result.overall == "ok"
+
+    async def test_a_model_with_a_reachable_toggle_does_report_the_empty_slot(self):
+        """The counterpart: on an X1C the advice is actionable, so give it."""
+        with _Env(state=_state(store_to_sdcard=False, sdcard=False, sdcard_reported=True)):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="X1C"))
+        check = next(c for c in result.checks if c.id == "external_storage")
+        assert check.status == "fail"
+        assert check.params == {"reason": "no_media"}
+
+    async def test_an_empty_slot_outranks_the_internal_storage_warning(self):
+        """Both apply on a stickless H2C. "Put a card in" is the one the
+        operator can act on, so it must not be masked by the softer warning.
+        """
+        state = _state(
+            store_to_sdcard=True,
+            sdcard=False,
+            sdcard_reported=True,
+            last_project_url="brtc://emmc/Benchy.gcode.3mf",
+        )
+        with _Env(state=state):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="H2C"))
+        check = next(c for c in result.checks if c.id == "external_storage")
+        assert check.status == "fail"
+        assert check.params == {"reason": "no_media"}
 
 
 class TestFtpsTlsProbe:

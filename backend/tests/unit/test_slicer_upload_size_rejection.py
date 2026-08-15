@@ -141,6 +141,33 @@ class TestTheMessageIsActionable:
         assert "100 MB" in message
 
     @pytest.mark.asyncio
+    async def test_the_update_command_names_the_service(self):
+        """A bare ``docker compose pull`` does not update the Bambu sidecar.
+
+        ``bambu-studio-api`` is declared with ``profiles: [bambu]``, and compose
+        skips profile-gated services unless the profile is enabled or the
+        service is named. The advice this message used to give was therefore a
+        no-op for Bambu Studio users -- they pulled, saw "up to date", restarted
+        into the same 100 MB image and came back to the issue (#2802).
+
+        Both commands are checked: pulling the right image is useless if the
+        ``up -d`` that follows leaves the old container running.
+        """
+        svc = _service(_responder(500, {"message": "File too large"}))
+
+        with pytest.raises(SlicerInputError) as excinfo:
+            await svc.slice_with_profiles(**SLICE_ARGS)
+
+        message = str(excinfo.value)
+        assert "docker compose pull orca-slicer-api" in message
+        assert "docker compose up -d orca-slicer-api" in message
+        assert "bambu-studio-api" in message
+        # The bare forms must not appear at all -- a reader who copies the first
+        # command they see must not get the one that silently does nothing.
+        assert "docker compose pull &&" not in message
+        assert "docker compose up -d'" not in message
+
+    @pytest.mark.asyncio
     async def test_a_current_sidecar_is_told_which_variable_to_set(self):
         """Once the image is current, the fix is one env var, not another pull."""
         svc = _service(

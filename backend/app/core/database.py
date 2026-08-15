@@ -250,6 +250,7 @@ async def get_db() -> AsyncSession:
 async def init_db():
     # Import models to register them with SQLAlchemy
     from backend.app.models import (  # noqa: F401
+        active_print_session,
         active_print_spoolman,
         ams_history,
         ams_label,
@@ -1680,6 +1681,16 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN nozzle_mapping TEXT")
     await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN nozzles_info TEXT")
 
+    # Migration: nozzle_rack_choice (#1784). Which rack position each filament
+    # group prints from, as JSON {group_id: 1-based position}. Kept separate
+    # from nozzle_mapping above because that one is BambuStudio's own expanded
+    # answer and rides to the printer verbatim, while this is the operator's
+    # pick and has to survive being re-checked against a rack that may have
+    # been re-loaded since. Also on the variants table so a batch clone does
+    # not silently lose it. Nullable TEXT, no Postgres / SQLite divergence.
+    await _safe_execute(conn, "ALTER TABLE print_queue ADD COLUMN nozzle_rack_choice TEXT")
+    await _safe_execute(conn, "ALTER TABLE print_queue_variants ADD COLUMN nozzle_rack_choice TEXT")
+
     # Migration: Add target_parts_count column to projects for tracking total parts needed
     await _safe_execute(conn, "ALTER TABLE projects ADD COLUMN target_parts_count INTEGER")
 
@@ -2363,6 +2374,7 @@ async def run_migrations(conn):
             layer_usage TEXT,
             filament_properties TEXT,
             tray_remain_start TEXT,
+            tray_now_at_start INTEGER,
             UNIQUE(printer_id, archive_id)
         )
         """
@@ -2378,6 +2390,7 @@ async def run_migrations(conn):
             layer_usage TEXT,
             filament_properties TEXT,
             tray_remain_start TEXT,
+            tray_now_at_start INTEGER,
             UNIQUE(printer_id, archive_id)
         )
         """,
@@ -2386,6 +2399,18 @@ async def run_migrations(conn):
     # the original schema: add tray_remain_start, and relax filament_usage's
     # NOT NULL so the no-3MF branch can persist a remain-only tracking row.
     await _safe_execute(conn, "ALTER TABLE active_print_spoolman ADD COLUMN tray_remain_start TEXT")
+    # Which slot the print was drawing from at the start, so the remain%-delta
+    # fallback can tell a slot this print used from one it never touched
+    # (#1820). Nullable, because a row written mid-upgrade has no answer to
+    # give. INTEGER is spelled the same either way; the branch is only for
+    # IF NOT EXISTS, which SQLite's ALTER TABLE does not accept.
+    if is_sqlite():
+        await _safe_execute(conn, "ALTER TABLE active_print_spoolman ADD COLUMN tray_now_at_start INTEGER")
+    else:
+        await _safe_execute(
+            conn,
+            "ALTER TABLE active_print_spoolman ADD COLUMN IF NOT EXISTS tray_now_at_start INTEGER",
+        )
     if is_sqlite():
         # SQLite can't ALTER COLUMN; patch sqlite_master directly. Mirrors the
         # users.password_hash NULL-relaxation a few hundred lines below — see
@@ -4412,10 +4437,14 @@ async def _migrate_backfill_variant_groups(conn) -> None:
         model_expr = "file_metadata::jsonb->>'sliced_for_model'"
 
     async with conn.begin_nested():
+        # nosec B608 — the only interpolated fragments are the two dialect
+        # literals assigned directly above; both branches are constants and no
+        # caller value reaches this string. They are JSON *expressions*, not
+        # values, so a bind parameter cannot express them.
         rows = (
             await conn.execute(
                 text(
-                    f"SELECT id, {source_expr} AS source_id, {model_expr} AS model "  # noqa: S608 — dialect literals
+                    f"SELECT id, {source_expr} AS source_id, {model_expr} AS model "  # nosec B608
                     "FROM library_files "
                     f"WHERE {source_expr} IS NOT NULL AND {model_expr} IS NOT NULL "
                     "AND variant_group_id IS NULL AND deleted_at IS NULL "

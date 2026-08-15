@@ -92,11 +92,20 @@ class DeleteResult(Enum):
 # handshake failed (#2780).
 #
 # ``WRONG_VERSION_NUMBER`` on port 990 means the printer answered with
-# something that is not a TLS record at all — its file service is wedged, and
-# no path, retry or SSL option can talk to it until the printer is restarted.
-# Two support bundles show that state lasting for days: one X2D served clean
-# FTPS for five days, flipped on 2026-07-19, and then failed every single
-# handshake for the next eight (zero successes, 3511 failures).
+# something that is not a TLS record at all, so no path, retry or SSL option
+# gets further. Two support bundles show that state lasting for days: one X2D
+# served clean FTPS for five days, flipped on 2026-07-19, and then failed every
+# single handshake for the next eight (zero successes, 3511 failures).
+#
+# What it is NOT is a wedged file service, which is what this comment used to
+# claim. #2780's reporter power-cycled both affected printers and the state
+# survived it, and ``openssl s_client`` against the same port completes a clean
+# handshake and returns a valid certificate while Bambuddy is failing. The
+# leading theory is now a connection-count refusal — vsFTPd answers one in
+# cleartext, which is exactly this error to an implicit-TLS client, and answers
+# the global limit by accepting and never speaking, which is the handshake
+# timeout we also see. Unproven: confirming it needs a capture taken while a
+# printer is in the failing state.
 #
 # Without a gate every candidate path re-runs the same doomed handshake: the
 # 3MF lookup alone walks 6 filename variants x 5 directories x 4 retries, and
@@ -324,33 +333,66 @@ class BambuFTPClient:
             return True
         except ftplib.error_perm as e:
             logger.warning("FTP connection permission error to %s: %s", self.ip_address, e)
-            self._ftp = None
+            self._abandon_connection()
             return False
         except TimeoutError as e:
             logger.warning("FTP connection timed out to %s: %s", self.ip_address, e)
-            self._ftp = None
+            self._abandon_connection()
             return False
         except ssl.SSLError as e:
             # Not a transient failure and not something another path or another
             # retry can route around: the printer's file service answered port
-            # 990 with something that isn't TLS. Say so once, in words the
-            # reporter can act on, and stop knocking for a while (#2780).
+            # 990 with something that isn't TLS. Say so once and stop knocking
+            # for a while (#2780).
+            #
+            # Deliberately no advice about what to do. This message used to
+            # tell the operator to restart the printer; #2780's reporter did
+            # that twice, to no effect, and a single manual connect to the
+            # same printer completes a clean handshake. We do not yet know the
+            # trigger, so stating the observation and stopping there beats
+            # sending people to do the one thing already known not to work.
             logger.warning(
-                "FTP SSL error connecting to %s: %s — the printer's file service is not answering "
-                "with TLS on port %s. Print files, covers and timelapses cannot be fetched from it "
-                "until the printer is restarted. Pausing FTP to this printer for %.0fs.",
+                "FTP SSL error connecting to %s: %s — the printer answered port %s with something "
+                "that is not TLS, so print files, covers and timelapses cannot be fetched from it. "
+                "Pausing FTP to this printer for %.0fs.",
                 self.ip_address,
                 e,
                 self.FTP_PORT,
                 _HANDSHAKE_COOLOFF_SECONDS,
             )
             self._handshake_blocked_until[self.ip_address] = time.monotonic() + _HANDSHAKE_COOLOFF_SECONDS
-            self._ftp = None
+            self._abandon_connection()
             return False
         except (OSError, ftplib.Error) as e:
             logger.warning("FTP connection failed to %s: %s (type: %s)", self.ip_address, e, type(e).__name__)
-            self._ftp = None
+            self._abandon_connection()
             return False
+
+    def _abandon_connection(self) -> None:
+        """Drop a connection that never became usable, closing its socket.
+
+        Every failure path in :meth:`connect` used to clear ``self._ftp`` and
+        nothing else, leaving a connected socket for the garbage collector.
+        That is survivable once; it is not survivable at this volume. A single
+        print used to walk ~110 candidate paths, so a printer refusing FTPS
+        got ~110 sockets opened and abandoned in a couple of minutes, and one
+        support bundle recorded 1813 of them in a day (#2780). If the refusal
+        is the printer running out of connection slots -- which fits the
+        evidence better than a wedged service, since a single manual connect
+        to the same printer succeeds -- then abandoning sockets is not just
+        untidy, it is what keeps the printer refusing.
+
+        Uses ``close()`` rather than ``quit()``: QUIT is a command, and there
+        is no working control channel to send it on.
+        """
+        ftp = self._ftp
+        self._ftp = None
+        if ftp is None:
+            return
+        try:
+            ftp.close()
+        except (OSError, ftplib.Error, EOFError):
+            pass  # Best-effort; the socket may already be gone
 
     def disconnect(self):
         """Disconnect from the FTP server."""
@@ -358,7 +400,10 @@ class BambuFTPClient:
             try:
                 self._ftp.quit()
             except (OSError, ftplib.Error, EOFError):
-                pass  # Best-effort FTP cleanup; connection may already be closed
+                # ``quit()`` sends QUIT and only then closes; when the send
+                # raises, ftplib never reaches its own close and the socket
+                # stays open. Close it here rather than leaving it to the GC.
+                self._abandon_connection()
             self._ftp = None
 
     def list_files(self, path: str = "/") -> list[dict]:

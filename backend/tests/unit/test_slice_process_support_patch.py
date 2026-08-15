@@ -13,10 +13,16 @@ but never used.
 The patch reads support-related fields from the source's
 project_settings.config and overlays them onto the process preset JSON,
 so the source's per-project support intent survives `--load-settings`.
+
+The carry is one-way (#2820): a source can switch supports on, never off.
+The original rule was symmetric, which meant any 3MF that shipped with
+supports disabled -- i.e. nearly every MakerWorld download -- stripped
+them back out of a custom process preset that deliberately enabled them.
 """
 
 import io
 import json
+import logging
 import zipfile
 
 from backend.app.api.routes.library import _patch_process_support_settings
@@ -65,24 +71,76 @@ class TestPatchProcessSupportSettings:
         assert result["layer_height"] == "0.20"
         assert result["name"] == "0.20mm Standard @BBL H2D"
 
-    def test_source_supports_off_beats_preset_supports_on(self):
-        # Symmetric: a source with supports explicitly disabled must win
-        # over a process preset that happens to have supports on. Rare in
-        # practice (Bambu's presets ship off) but the semantic is "source
-        # wins" regardless of direction — a user who exported without
-        # supports doesn't want a preset accidentally re-enabling them.
+    def test_preset_supports_on_survives_a_source_with_supports_off(self):
+        # #2820: the reporter's own process preset turns supports on with
+        # normal(auto); the MakerWorld source they sliced ships them off
+        # with tree(auto), like nearly every published 3MF. Carrying the
+        # off direction handed them a supportless tree(auto) slice, so the
+        # source is now only allowed to switch supports *on*.
         source = _make_3mf(
             {
                 "enable_support": "0",
                 "support_filament": "0",
                 "support_interface_filament": "0",
+                "support_type": "tree(auto)",
             }
         )
-        preset = json.dumps({"enable_support": "1", "support_filament": "2", "support_interface_filament": "2"})
+        preset = json.dumps(
+            {
+                "name": "Pokeball Fast - Buddy",
+                "enable_support": "1",
+                "support_filament": "2",
+                "support_interface_filament": "2",
+                "support_type": "normal(auto)",
+                "support_style": "snug",
+            }
+        )
         result = json.loads(_patch_process_support_settings(preset, source))
-        assert result["enable_support"] == "0"
-        assert result["support_filament"] == "0"
-        assert result["support_interface_filament"] == "0"
+        assert result["enable_support"] == "1"
+        assert result["support_filament"] == "2"
+        assert result["support_interface_filament"] == "2"
+        assert result["support_type"] == "normal(auto)"
+        assert result["support_style"] == "snug"
+
+    def test_source_without_enable_support_carries_nothing(self):
+        # A source that never declares enable_support gives us no support
+        # intent to act on, so its slot assignments stay out of the preset
+        # — same "supports off" branch, reached via the missing key.
+        source = _make_3mf({"support_filament": "3", "support_interface_filament": "3"})
+        preset = json.dumps({"support_filament": "0", "support_interface_filament": "0"})
+        result = json.loads(_patch_process_support_settings(preset, source))
+        assert result == {"support_filament": "0", "support_interface_filament": "0"}
+
+    def test_non_string_enable_support_still_counts_as_on(self):
+        # Forks and older BambuStudio builds write real booleans / ints
+        # instead of "1" — those must still carry (shared truthiness rule
+        # with extract_support_filament_slots_from_3mf).
+        for enabled in (True, 1, "1", "true"):
+            source = _make_3mf({"enable_support": enabled, "support_interface_filament": "2"})
+            preset = json.dumps({"enable_support": "0", "support_interface_filament": "0"})
+            result = json.loads(_patch_process_support_settings(preset, source))
+            assert result["enable_support"] == enabled, f"failed for {enabled!r}"
+            assert result["support_interface_filament"] == "2"
+
+    def test_carry_is_logged_with_the_keys_it_took(self, caplog):
+        # The slice modal shows the picked preset's values, so a carried
+        # key silently disagrees with what the user saw. #2820's reporter
+        # spent the bug report chasing an unrelated sanitiser line because
+        # this step logged nothing at all.
+        source = _make_3mf({"enable_support": "1", "support_interface_filament": "2"})
+        preset = json.dumps({"enable_support": "0", "support_interface_filament": "0"})
+        with caplog.at_level(logging.INFO, logger="backend.app.api.routes.library"):
+            _patch_process_support_settings(preset, source)
+        assert "Carried support settings" in caplog.text
+        assert "enable_support" in caplog.text
+        assert "support_interface_filament" in caplog.text
+
+    def test_no_log_when_the_source_has_supports_off(self, caplog):
+        source = _make_3mf({"enable_support": "0", "support_type": "tree(auto)"})
+        preset = json.dumps({"enable_support": "1"})
+        with caplog.at_level(logging.INFO, logger="backend.app.api.routes.library"):
+            _patch_process_support_settings(preset, source)
+        assert "Carried support settings" not in caplog.text
 
     def test_only_patches_keys_present_in_source(self):
         # Source with a partial support config (e.g. legacy 3MFs from an

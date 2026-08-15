@@ -26,6 +26,19 @@ logger = logging.getLogger(__name__)
 _ZERO_UUID = "00000000000000000000000000000000"
 _ZERO_TAG_UID = "0000000000000000"
 
+# Highest global tray id that names a real slot. 255 does not: it is
+# ``PrinterState.tray_now``'s initial value, what an unparseable reading falls
+# back to, and what the field reads while nothing is loaded. The external spool
+# reports 254 when it is actually in use, and ``bambu_mqtt`` applies the same
+# cut-off when it seeds the tray-change log. Treating 255 as a slot would put
+# ``(255, 1)`` into the "slots this print used" evidence and exclude every real
+# one -- silently disabling the very fallback this guard protects (#1820).
+#
+# Applied to ``tray_now`` only. A 255 in the print's mapping or its tray-change
+# log was written there by a print and is evidence, however odd; a 255 in
+# ``tray_now`` is the field at rest, which is the absence of evidence.
+_MAX_REAL_TRAY_ID = 254
+
 
 def _is_non_zero_identifier(value: str) -> bool:
     """Return True when identifier is non-empty and not all zeros."""
@@ -238,7 +251,7 @@ def build_ams_tray_lookup(raw_data: dict) -> dict[int, dict]:
     return lookup
 
 
-def _snapshot_tray_remain(raw_data: dict) -> dict[str, dict]:
+def _snapshot_tray_remain(raw_data: dict, skipped_out: list[str] | None = None) -> dict[str, dict]:
     """Capture per-slot ``remain%`` + ``tray_uuid`` at print start so the
     completion path can compute a remain-delta when 3MF data doesn't cover
     the slot (or there's no 3MF at all — #1820).
@@ -248,6 +261,12 @@ def _snapshot_tray_remain(raw_data: dict) -> dict[str, dict]:
     values mean the AMS hasn't read the spool yet and a delta would be
     meaningless. Mirrors the gate in
     ``usage_tracker.on_print_start:309``.
+
+    A rejected slot is appended to *skipped_out* when one is supplied, so the
+    caller can say which slots this print will not be able to charge. That is
+    not hypothetical: an AMS reports a negative ``remain`` on a nearly empty
+    spool, so the gate can drop the one slot that is about to do the printing
+    (#1820).
     """
     snapshot: dict[str, dict] = {}
     ams_raw = raw_data.get("ams", [])
@@ -266,6 +285,8 @@ def _snapshot_tray_remain(raw_data: dict) -> dict[str, dict]:
                     "remain": remain,
                     "tray_uuid": tray.get("tray_uuid", "") or "",
                 }
+            elif skipped_out is not None:
+                skipped_out.append(f"AMS{ams_id}-T{tray_id}(remain={remain})")
     vt_tray_raw = raw_data.get("vt_tray") or []
     if isinstance(vt_tray_raw, dict):
         vt_tray_raw = [vt_tray_raw]
@@ -281,6 +302,8 @@ def _snapshot_tray_remain(raw_data: dict) -> dict[str, dict]:
                 "remain": remain,
                 "tray_uuid": vt.get("tray_uuid", "") or "",
             }
+        elif skipped_out is not None:
+            skipped_out.append(f"VT{vt_id}(remain={remain})")
     return snapshot
 
 
@@ -329,7 +352,17 @@ async def store_print_data(
     tray_remain_start: dict[str, dict] = {}
     if state and state.raw_data:
         ams_trays = build_ams_tray_lookup(state.raw_data)
-        tray_remain_start = _snapshot_tray_remain(state.raw_data)
+        skipped_slots: list[str] = []
+        tray_remain_start = _snapshot_tray_remain(state.raw_data, skipped_slots)
+        if skipped_slots:
+            # Matches what usage_tracker.on_print_start reports for the
+            # internal inventory, so both backends name the slots that this
+            # print will not be able to charge at AMS granularity.
+            logger.info(
+                "[SPOOLMAN] Printer %s: slots with no usable remain%% at print start: %s",
+                printer_id,
+                ", ".join(skipped_slots),
+            )
 
     # Try to read per-slot filament estimates from the 3MF. Two paths can
     # leave ``filament_usage`` empty: (1) fallback archive (no .gcode.3mf
@@ -361,7 +394,7 @@ async def store_print_data(
         )
         filament_usage = extract_filament_usage_from_3mf(full_path, effective_plate_id) or None
 
-        layer_usage = extract_layer_filament_usage_from_3mf(full_path)
+        layer_usage = extract_layer_filament_usage_from_3mf(full_path, effective_plate_id)
         if layer_usage:
             # Convert int keys to string for JSON serialization
             layer_usage_json = {str(k): v for k, v in layer_usage.items()}
@@ -409,6 +442,11 @@ async def store_print_data(
         layer_usage=layer_usage_json,
         filament_properties=filament_properties,
         tray_remain_start=tray_remain_start or None,
+        # Which slot the printer was drawing from when this print began. For a
+        # print with no ams_mapping -- one started from the printer's own
+        # screen, which is the case this whole fallback exists for -- it is the
+        # only evidence of which slot the print used (#1820).
+        tray_now_at_start=getattr(state, "tray_now", None) if state else None,
     )
     db.add(tracking)
     await db.commit()
@@ -881,6 +919,7 @@ async def _report_partial_usage(
             current_lookup=current_lookup,
             handled_global_tray_ids=set(),
             archive_id=getattr(tracking, "archive_id", -1),
+            print_used_keys=_print_used_tray_keys(slot_to_tray, getattr(tracking, "tray_now_at_start", None), state),
         )
         return
 
@@ -1026,6 +1065,7 @@ async def report_usage(printer_id: int, archive_id: int):
         # on read.
         layer_usage_raw = getattr(tracking, "layer_usage", None) or {}
         filament_properties = getattr(tracking, "filament_properties", None) or {}
+        tray_now_at_start = getattr(tracking, "tray_now_at_start", None)
         printer_serial = await _get_printer_serial(printer_id)
 
         # Delete tracking row (we're done with it)
@@ -1177,6 +1217,7 @@ async def report_usage(printer_id: int, archive_id: int):
                 current_lookup=current_lookup,
                 handled_global_tray_ids=handled_global_tray_ids,
                 archive_id=archive_id,
+                print_used_keys=_print_used_tray_keys(slot_to_tray, tray_now_at_start, current),
                 slot_colors_out=slot_colors,
                 slot_materials_out=slot_materials,
             )
@@ -1197,6 +1238,49 @@ async def report_usage(printer_id: int, archive_id: int):
         await _apply_spool_types_to_archive(db, archive_id, filament_usage, slot_materials)
 
 
+def _print_used_tray_keys(
+    slot_to_tray: list | None,
+    tray_now_at_start: int | None,
+    state,
+) -> set[tuple[int, int]]:
+    """Which AMS slots this print actually drew from, as far as we can tell.
+
+    Mirrors the guard the internal tracker has carried since #1269. Without
+    it, swapping a spool in a slot the print never touched drops that slot's
+    ``remain%``, and the remain-delta path reads the drop as consumption and
+    charges it to whoever the slot is assigned to. That is a phantom write to
+    an uninvolved spool, and it is likeliest on exactly the prints this
+    fallback serves -- ones with no 3MF, where nothing else limits which slots
+    are considered.
+
+    Three sources, matching the internal tracker's:
+
+    - the print's ``ams_mapping``, stored here as ``slot_to_tray``;
+    - every tray the printer switched to mid-print;
+    - the tray it was drawing from at the start.
+
+    An empty result means no evidence, not "no slots" -- callers must then
+    consider every slot, as before, or a printer that reports none of the
+    three would silently stop being tracked at all.
+
+    Takes the two stored values rather than the tracking row: the caller
+    deletes that row before it gets this far, and everything read off it is
+    read into locals beforehand.
+    """
+    keys: set[tuple[int, int]] = set()
+    for global_tray_id in list(slot_to_tray or []):
+        if isinstance(global_tray_id, int) and global_tray_id >= 0:
+            keys.add(_global_tray_id_to_ams_slot(global_tray_id))
+    for change in getattr(state, "tray_change_log", None) or []:
+        if isinstance(change, (tuple, list)) and change:
+            global_tray_id = change[0]
+            if isinstance(global_tray_id, int) and global_tray_id >= 0:
+                keys.add(_global_tray_id_to_ams_slot(global_tray_id))
+    if isinstance(tray_now_at_start, int) and 0 <= tray_now_at_start <= _MAX_REAL_TRAY_ID:
+        keys.add(_global_tray_id_to_ams_slot(tray_now_at_start))
+    return keys
+
+
 async def _report_remain_delta_for_slots(
     client,
     *,
@@ -1205,6 +1289,7 @@ async def _report_remain_delta_for_slots(
     current_lookup: dict[str, dict],
     handled_global_tray_ids: set[int],
     archive_id: int,
+    print_used_keys: set[tuple[int, int]] | None = None,
     slot_colors_out: dict[int, str] | None = None,
     slot_materials_out: dict[int, str] | None = None,
 ) -> int:
@@ -1217,6 +1302,7 @@ async def _report_remain_delta_for_slots(
     unreliable ``tray_weight`` (which is the failure mode #1119 documented).
     """
     spools_updated = 0
+    not_in_print: list[str] = []
     for slot_key, start in tray_remain_start.items():
         try:
             ams_id_str, tray_id_str = slot_key.split("-", 1)
@@ -1236,9 +1322,24 @@ async def _report_remain_delta_for_slots(
         if global_tray_id in handled_global_tray_ids:
             continue
 
+        # Slots the print never touched (#1269's guard, see _print_used_tray_keys).
+        # Only enforced when there is evidence of which slots it did use.
+        # Collected rather than logged per slot: on a four-AMS farm a
+        # single-colour print leaves fifteen of these, and they are the
+        # expected case, unlike the "consumed but charged nothing" lines below.
+        if print_used_keys and (ams_id, tray_id) not in print_used_keys:
+            not_in_print.append(f"AMS{ams_id}-T{tray_id}")
+            continue
+
         current = current_lookup.get(slot_key)
         if not current:
-            logger.debug("[SPOOLMAN] AMS%d-T%d: no current remain%% at completion, skipping fallback", ams_id, tray_id)
+            # Reported at info, like the internal tracker's equivalent: on a
+            # near-empty spool the AMS reports a negative remain%, which the
+            # snapshot gate rejects, and the slot that was actually printing
+            # disappears from this path entirely (#1820).
+            logger.info(
+                "[SPOOLMAN] AMS%d-T%d: no valid remain%% at completion, nothing charged for this slot", ams_id, tray_id
+            )
             continue
 
         # Spool swap mid-print — tray_uuid changed. We don't know how much
@@ -1253,11 +1354,28 @@ async def _report_remain_delta_for_slots(
 
         delta_pct = start["remain"] - current["remain"]
         if delta_pct <= 0:
+            # A fresh spool reads 100% for the first tens of grams and the AMS
+            # estimate drifts upward on its own, so this covers a real print
+            # that simply left no trace at AMS granularity -- not only a refill.
+            # Said out loud so it can be told apart from having nothing to
+            # charge, which is what "no spools updated" alone looked like.
+            logger.info(
+                "[SPOOLMAN] AMS%d-T%d: remain%% did not fall over the print (%d%% -> %d%%), nothing charged",
+                ams_id,
+                tray_id,
+                start["remain"],
+                current["remain"],
+            )
             continue  # No consumption captured at AMS granularity, or refilled
 
         spool_id = await _resolve_spool_id_via_slot_assignment(printer_id, ams_id, tray_id)
         if spool_id is None:
-            logger.debug("[SPOOLMAN] AMS%d-T%d: no Spoolman slot assignment, skipping fallback", ams_id, tray_id)
+            logger.info(
+                "[SPOOLMAN] AMS%d-T%d: consumed %d%% but has no Spoolman slot assignment, nothing charged",
+                ams_id,
+                tray_id,
+                delta_pct,
+            )
             continue
 
         # Look up the spool's filament reference weight. Use a fresh GET so
@@ -1313,6 +1431,12 @@ async def _report_remain_delta_for_slots(
             delta_pct,
             ref_weight,
             spool_id,
+        )
+    if not_in_print:
+        logger.info(
+            "[SPOOLMAN] Archive %s: slots not part of this print, left alone: %s",
+            archive_id,
+            ", ".join(not_in_print),
         )
     return spools_updated
 

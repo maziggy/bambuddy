@@ -476,6 +476,9 @@ export const handlers = [
   http.get('/api/v1/notification-templates', () => HttpResponse.json([])),
   http.get('/api/v1/pending-uploads/', () => HttpResponse.json([])),
   http.get('/api/v1/printers/:id/ams-labels', () => HttpResponse.json([])),
+  http.get('/api/v1/printers/:id/inventory-remain', () =>
+    HttpResponse.json({ inventory_remain_g: {}, slot_materials: [] }),
+  ),
   http.get('/api/v1/printers/:id/slot-presets', () => HttpResponse.json([])),
   http.get('/api/v1/smart-plugs/by-printer/:id', () => HttpResponse.json([])),
   http.get('/api/v1/smart-plugs/by-printer/:id/scripts', () => HttpResponse.json([])),

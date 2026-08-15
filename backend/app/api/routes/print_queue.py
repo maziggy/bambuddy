@@ -366,6 +366,15 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         except json.JSONDecodeError:
             nozzle_mapping_parsed = None
 
+    # The operator's rack-position pick (#1784), keyed by filament group. Sent
+    # parsed so the print dialog can show which hotend each group will use.
+    nozzle_rack_choice_parsed = None
+    if item.nozzle_rack_choice:
+        try:
+            nozzle_rack_choice_parsed = json.loads(item.nozzle_rack_choice)
+        except json.JSONDecodeError:
+            nozzle_rack_choice_parsed = None
+
     nozzles_info_parsed = None
     if item.nozzles_info:
         try:
@@ -421,6 +430,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "gcode_injection": item.gcode_injection,
         # H2C rack-swap nozzle pick (#1780)
         "nozzle_mapping": nozzle_mapping_parsed,
+        "nozzle_rack_choice": nozzle_rack_choice_parsed,
         "nozzles_info": nozzles_info_parsed,
         "cleanup_library_after_dispatch": item.cleanup_library_after_dispatch,
         # Cross-model alternatives (#671). Guarded rather than read directly:
@@ -720,6 +730,7 @@ def _variant_values(
         "plate_id": spec.plate_id,
         "ams_mapping": json.dumps(spec.ams_mapping) if spec.ams_mapping else None,
         "nozzle_mapping": json.dumps(spec.nozzle_mapping) if spec.nozzle_mapping else None,
+        "nozzle_rack_choice": json.dumps(spec.nozzle_rack_choice) if spec.nozzle_rack_choice else None,
         "filament_overrides": filament_overrides_json,
         "required_filament_types": required_types,
         "print_time_seconds": print_time,
@@ -1033,6 +1044,8 @@ async def add_to_queue(
     )
 
     ams_mapping_json = json.dumps(data.ams_mapping) if data.ams_mapping else None
+    # Same Text-as-JSON convention for the rack-position pick (#1784).
+    nozzle_rack_choice_json = json.dumps(data.nozzle_rack_choice) if data.nozzle_rack_choice else None
     # Reprint fallback: the caller didn't specify an explicit ams_mapping (no
     # per-slot filament-mapping edit was made), but the archive carries the
     # slicer's own live-resolved AMS-slot pick from the original print (see
@@ -1096,6 +1109,7 @@ async def add_to_queue(
             manual_start=data.manual_start,
             skip_filament_check=data.skip_filament_check,
             ams_mapping=ams_mapping_json,
+            nozzle_rack_choice=nozzle_rack_choice_json,
             plate_id=data.plate_id,
             bed_levelling=data.bed_levelling,
             flow_cali=data.flow_cali,
@@ -1661,6 +1675,7 @@ async def cancel_batch(
     )
     pending_items = result.scalars().all()
     cancelled_count = 0
+    cancelled_ids: list[int] = []
     for item in pending_items:
         item.status = "cancelled"
         await release_budget_reservation(
@@ -1669,10 +1684,18 @@ async def cancel_batch(
             source_id=item.id,
             status="released",
         )
+        cancelled_ids.append(item.id)
         cancelled_count += 1
 
     batch.status = "cancelled"
     await db.commit()
+
+    # Same as the single-item path: a dispatch already preheating for one of
+    # these cannot see the status change on its own (#2727).
+    from backend.app.services.print_scheduler import scheduler as _scheduler
+
+    for _cancelled_id in cancelled_ids:
+        _scheduler.notify_dispatch_cancelled(_cancelled_id)
 
     return {"message": f"Batch cancelled, {cancelled_count} pending items cancelled"}
 
@@ -1914,6 +1937,13 @@ async def update_queue_item(
             json.dumps(update_data["nozzle_mapping"]) if update_data["nozzle_mapping"] else None
         )
 
+    # Same Text-as-JSON convention for the rack-position pick (#1784). An empty
+    # object clears it, which is how the UI says "assign these for me again".
+    if "nozzle_rack_choice" in update_data:
+        update_data["nozzle_rack_choice"] = (
+            json.dumps(update_data["nozzle_rack_choice"]) if update_data["nozzle_rack_choice"] else None
+        )
+
     trusted_estimated_cost = await _trusted_item_estimated_cost(
         db,
         item,
@@ -1986,6 +2016,12 @@ async def delete_queue_item(
     )
     await db.delete(item)
     await db.commit()
+
+    # Stop an in-flight preheat for this item: the dispatch coroutine is
+    # parked in a sleep and cannot see the status we just wrote (#2727).
+    from backend.app.services.print_scheduler import scheduler as _scheduler
+
+    _scheduler.notify_dispatch_cancelled(item_id)
 
     logger.info("Deleted queue item %s", item_id)
     return {"message": "Queue item deleted"}
@@ -2103,6 +2139,12 @@ async def cancel_queue_item(
         status="released",
     )
     await db.commit()
+
+    # Stop an in-flight preheat for this item: the dispatch coroutine is
+    # parked in a sleep and cannot see the status we just wrote (#2727).
+    from backend.app.services.print_scheduler import scheduler as _scheduler
+
+    _scheduler.notify_dispatch_cancelled(item_id)
 
     logger.info("Cancelled queue item %s", item_id)
     return {"message": "Queue item cancelled"}

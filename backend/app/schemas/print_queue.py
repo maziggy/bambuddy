@@ -60,6 +60,10 @@ class QueueVariantCreate(BaseModel):
     plate_id: int | None = None
     ams_mapping: list[int] | None = None
     nozzle_mapping: list[int] | None = None
+    # Which rack position each filament group prints from (#1784), as
+    # {group_id: 1-based position}. The operator's pick, re-checked against the
+    # live rack at dispatch; null means "assign them for me".
+    nozzle_rack_choice: dict[int, int] | None = None
     filament_overrides: list[dict] | None = None
 
 
@@ -116,6 +120,10 @@ class PrintQueueItemCreate(BaseModel):
     project_id: int | None = None
     cost_center_id: int | None = None
     estimated_cost: float | None = None
+    # Which rack position each filament group prints from (#1784), as
+    # {group_id: 1-based position}. The operator's pick, re-checked against the
+    # live rack at dispatch; null means "assign them for me".
+    nozzle_rack_choice: dict[int, int] | None = None
     # Direct printer-card uploads are temporary library files. The scheduler
     # deletes them after creating the durable archive copy.
     cleanup_library_after_dispatch: bool = False
@@ -157,6 +165,10 @@ class PrintQueueItemUpdate(BaseModel):
     # physical nozzle position IDs from BambuStudio's project_file MQTT
     # body; sent back to the printer verbatim on dispatch.
     nozzle_mapping: list[int] | None = None
+    # Which rack position each filament group prints from (#1784), as
+    # {group_id: 1-based position}. The operator's pick, re-checked against the
+    # live rack at dispatch; null means "assign them for me".
+    nozzle_rack_choice: dict[int, int] | None = None
 
 
 class QueueVariantSummary(BaseModel):
@@ -267,6 +279,10 @@ class PrintQueueItemResponse(BaseModel):
     # "edit print → choose nozzle" UI; null on every model except O1C2
     # uploads from BambuStudio.
     nozzle_mapping: list[int] | None = None
+    # Which rack position each filament group prints from (#1784), as
+    # {group_id: 1-based position}. The operator's pick, re-checked against the
+    # live rack at dispatch; null means "assign them for me".
+    nozzle_rack_choice: dict[int, int] | None = None
 
     class Config:
         from_attributes = True

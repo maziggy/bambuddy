@@ -13,7 +13,6 @@ import { CALIBRATION_MODES, CALIBRATION_MODE_ACTIVE, CALIBRATION_MODE_INACTIVE }
 import { PreheatFilamentTargetsEditor } from '../components/PreheatFilamentTargetsEditor';
 import type { APIKey, AppSettings, AppSettingsUpdate, PrinterHASensor, SmartPlug, SmartPlugStatus, NotificationProvider, NotificationTemplate, UpdateStatus, GitHubBackupStatus, CloudAuthStatus, UserCreate, UserUpdate, UserResponse, StorageUsageResponse, CalibrationMode } from '../api/client';
 import { Card, CardContent, CardDensityProvider, CardHeader } from '../components/Card';
-import { SlicerBundlesPanel } from '../components/SlicerBundlesPanel';
 import { SlicerPipelinesPanel } from '../components/SlicerPipelinesPanel';
 import { CameraTokensSection } from './CameraTokensPage';
 import { StreamOverlayBuilder } from '../components/StreamOverlayBuilder';
@@ -1091,6 +1090,9 @@ export function SettingsPage() {
       (baseline.preheat_filament_targets ?? '') !== (localSettings.preheat_filament_targets ?? '') ||
       (baseline.preheat_max_wait_seconds ?? 900) !== (localSettings.preheat_max_wait_seconds ?? 900) ||
       (baseline.preheat_soak_seconds ?? 300) !== (localSettings.preheat_soak_seconds ?? 300) ||
+      (baseline.queue_keep_bed_warm ?? false) !== (localSettings.queue_keep_bed_warm ?? false) ||
+      (baseline.queue_keep_warm_bed_temp ?? 90) !== (localSettings.queue_keep_warm_bed_temp ?? 90) ||
+      (baseline.queue_keep_warm_max_minutes ?? 120) !== (localSettings.queue_keep_warm_max_minutes ?? 120) ||
       (baseline.nozzle_temp_presets ?? '') !== (localSettings.nozzle_temp_presets ?? '') ||
       (baseline.bed_temp_presets ?? '') !== (localSettings.bed_temp_presets ?? '') ||
       (baseline.chamber_temp_presets ?? '') !== (localSettings.chamber_temp_presets ?? '') ||
@@ -1200,6 +1202,9 @@ export function SettingsPage() {
         preheat_filament_targets: localSettings.preheat_filament_targets,
         preheat_max_wait_seconds: localSettings.preheat_max_wait_seconds,
         preheat_soak_seconds: localSettings.preheat_soak_seconds,
+        queue_keep_bed_warm: localSettings.queue_keep_bed_warm,
+        queue_keep_warm_bed_temp: localSettings.queue_keep_warm_bed_temp,
+        queue_keep_warm_max_minutes: localSettings.queue_keep_warm_max_minutes,
         nozzle_temp_presets: localSettings.nozzle_temp_presets,
         bed_temp_presets: localSettings.bed_temp_presets,
         chamber_temp_presets: localSettings.chamber_temp_presets,
@@ -4930,6 +4935,64 @@ export function SettingsPage() {
                   </p>
                 </div>
               </div>
+              {/* Keep bed warm between consecutive queue prints */}
+              <div className="flex items-center justify-between pt-2 border-t border-bambu-dark-tertiary/50">
+                <div className="flex-1 mr-4">
+                  <p className="text-sm text-white">
+                    {t('settings.keepBedWarm', 'Keep bed warm between prints')}
+                  </p>
+                  <p className="text-xs text-bambu-gray mt-0.5">
+                    {t('settings.keepBedWarmDesc', 'While awaiting plate-clear, hold the bed at the keep-warm temperature below so the chamber stays hot — or at the next print\'s own bed temperature when that is higher. Only applies when the next print needs chamber heating (ASA, ABS, PA, PC etc.). Requires plate-clear confirmation to be enabled.')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.queue_keep_bed_warm ?? false}
+                    onChange={(e) => updateSetting('queue_keep_bed_warm', e.target.checked)}
+                    className="sr-only peer"
+                    disabled={!(localSettings.preheat_enabled ?? false) || !(localSettings.require_plate_clear ?? false)}
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                <div>
+                  <label className="block text-xs text-bambu-gray mb-1">
+                    {t('settings.keepWarmBedTemp', 'Keep-warm bed temperature (°C)')}
+                  </label>
+                  <input
+                    type="number"
+                    min={40}
+                    max={110}
+                    value={localSettings.queue_keep_warm_bed_temp ?? 90}
+                    onChange={(e) => updateSetting('queue_keep_warm_bed_temp', Math.max(40, Math.min(110, parseInt(e.target.value) || 90)))}
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green disabled:opacity-50"
+                    disabled={!(localSettings.preheat_enabled ?? false)}
+                  />
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.keepWarmBedTempHelp', 'Used whenever the bed\'s job is to heat the chamber — the keep-warm hold, and preheat when the print file carries no bed temperature. A higher bed temperature from the print file always wins.')}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs text-bambu-gray mb-1">
+                    {t('settings.keepWarmMaxMinutes', 'Stop keeping warm after (minutes)')}
+                  </label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={480}
+                    value={localSettings.queue_keep_warm_max_minutes ?? 120}
+                    onChange={(e) => updateSetting('queue_keep_warm_max_minutes', Math.max(5, Math.min(480, parseInt(e.target.value) || 120)))}
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm focus:outline-none focus:border-bambu-green disabled:opacity-50"
+                    disabled={!(localSettings.queue_keep_bed_warm ?? false) || !(localSettings.preheat_enabled ?? false) || !(localSettings.require_plate_clear ?? false)}
+                  />
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.keepWarmMaxMinutesHelp', 'If the plate is not cleared within this time, the heaters are switched off rather than held indefinitely.')}
+                  </p>
+                </div>
+              </div>
+
               {/* Per-filament chamber target editor (#1468) */}
               <div className="pt-2 border-t border-bambu-dark-tertiary/50">
                 <div className="flex items-center justify-between mb-1">
@@ -4958,113 +5021,6 @@ export function SettingsPage() {
                 <span className="font-medium text-bambu-gray/90">{t('settings.preheatHardwareTitle', 'Per-printer behaviour:')}</span>{' '}
                 {t('settings.preheatHardwareDetail', 'H2C/H2D/H2D Pro/H2S/X2D/X1E actively heat the chamber via M141. X1C/P2S read chamber temp but rely on bed-radiation heating. P1S/P1P/A1/A1 Mini have no chamber sensor — only the soak timer applies.')}
               </p>
-            </CardContent>
-          </Card>
-
-          {/* G-code Injection (#422) */}
-          <Card id="card-gcode">
-            <CardHeader>
-              <h3 className="text-base font-semibold text-white flex items-center gap-2">
-                <Code className="w-4 h-4 text-bambu-green" />
-                {t('settings.gcodeInjection', 'G-code Injection')}
-              </h3>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-xs text-bambu-gray">
-                {t('settings.gcodeInjectionDescription', 'Configure custom G-code to inject at the start and/or end of prints for auto-print systems like Farmloop, SwapMod, AutoClear, and Printflow 3D. Snippets are configured per printer model and applied when "Inject G-code" is enabled on a queue item.')}
-              </p>
-              {(() => {
-                const gcodeSnippets: Record<string, { start_gcode: string; end_gcode: string }> = (() => {
-                  try {
-                    return localSettings.gcode_snippets ? JSON.parse(localSettings.gcode_snippets) : {};
-                  } catch {
-                    return {};
-                  }
-                })();
-                const printerModels = [...new Set((printers || []).filter((p) => p.model).map((p) => p.model as string))].sort();
-
-                const updateSnippet = (model: string, field: 'start_gcode' | 'end_gcode', value: string) => {
-                  const updated = { ...gcodeSnippets };
-                  if (!updated[model]) {
-                    updated[model] = { start_gcode: '', end_gcode: '' };
-                  }
-                  updated[model][field] = value;
-                  // Remove model entry if both fields are empty
-                  if (!updated[model].start_gcode && !updated[model].end_gcode) {
-                    delete updated[model];
-                  }
-                  const newValue = Object.keys(updated).length > 0 ? JSON.stringify(updated) : '';
-                  // Update local state for immediate UI feedback, save on blur
-                  setLocalSettings(prev => prev ? { ...prev, gcode_snippets: newValue } : null);
-                  pendingGcodeSnippetsRef.current = newValue;
-                };
-
-                const saveGcodeSnippets = () => {
-                  if (pendingGcodeSnippetsRef.current !== null) {
-                    updateMutation.mutate({ gcode_snippets: pendingGcodeSnippetsRef.current });
-                    pendingGcodeSnippetsRef.current = null;
-                  }
-                };
-
-                if (printerModels.length === 0) {
-                  return (
-                    <p className="text-sm text-bambu-gray italic">
-                      {t('settings.gcodeInjectionNoPrinters', 'No printers found. Add printers to configure G-code snippets.')}
-                    </p>
-                  );
-                }
-
-                return printerModels.map((model) => {
-                  const snippet = gcodeSnippets[model] || { start_gcode: '', end_gcode: '' };
-                  const hasContent = !!(snippet.start_gcode || snippet.end_gcode);
-                  return (
-                    <Collapsible
-                      key={model}
-                      defaultOpen={hasContent}
-                      className="border border-bambu-dark-tertiary rounded-lg px-3 py-2"
-                      summary={
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-sm font-medium text-white">{model}</h4>
-                          {hasContent && (
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-bambu-green/20 text-bambu-green">
-                              {t('settings.gcodeConfigured', 'Configured')}
-                            </span>
-                          )}
-                        </div>
-                      }
-                    >
-                      <div className="space-y-2">
-                        <div>
-                          <label className="block text-xs text-bambu-gray mb-1">
-                            {t('settings.gcodeStartLabel', 'Start G-code')}
-                          </label>
-                          <textarea
-                            value={snippet.start_gcode}
-                            onChange={(e) => updateSnippet(model, 'start_gcode', e.target.value)}
-                            onBlur={saveGcodeSnippets}
-                            placeholder={t('settings.gcodeStartPlaceholder', 'G-code prepended before the print starts...')}
-                            rows={3}
-                            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs font-mono focus:outline-none focus:border-bambu-green resize-y"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-bambu-gray mb-1">
-                            {t('settings.gcodeEndLabel', 'End G-code')}
-                          </label>
-                          <textarea
-                            value={snippet.end_gcode}
-                            onChange={(e) => updateSnippet(model, 'end_gcode', e.target.value)}
-                            onBlur={saveGcodeSnippets}
-                            placeholder={t('settings.gcodeEndPlaceholder', 'G-code appended after the print ends...')}
-                            rows={3}
-                            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs font-mono focus:outline-none focus:border-bambu-green resize-y"
-                          />
-                        </div>
-                      </div>
-                    </Collapsible>
-                  );
-                });
-              })()}
             </CardContent>
           </Card>
 
@@ -5298,12 +5254,6 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
-
-          {/* Slicer Preset Bundles — only meaningful when the sidecar is in use,
-              since uploads / lists round-trip through it. Hide it entirely when
-              use_slicer_api is off so the Settings page doesn't show a panel that
-              can't do anything. */}
-          {(localSettings.use_slicer_api ?? false) && <SlicerBundlesPanel />}
 
           {/* Auto-Drying */}
           <Card>
@@ -5583,6 +5533,113 @@ export function SettingsPage() {
                   </table>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* G-code Injection (#422) */}
+          <Card id="card-gcode">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Code className="w-4 h-4 text-bambu-green" />
+                {t('settings.gcodeInjection', 'G-code Injection')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-bambu-gray">
+                {t('settings.gcodeInjectionDescription', 'Configure custom G-code to inject at the start and/or end of prints for auto-print systems like Farmloop, SwapMod, AutoClear, and Printflow 3D. Snippets are configured per printer model and applied when "Inject G-code" is enabled on a queue item.')}
+              </p>
+              {(() => {
+                const gcodeSnippets: Record<string, { start_gcode: string; end_gcode: string }> = (() => {
+                  try {
+                    return localSettings.gcode_snippets ? JSON.parse(localSettings.gcode_snippets) : {};
+                  } catch {
+                    return {};
+                  }
+                })();
+                const printerModels = [...new Set((printers || []).filter((p) => p.model).map((p) => p.model as string))].sort();
+
+                const updateSnippet = (model: string, field: 'start_gcode' | 'end_gcode', value: string) => {
+                  const updated = { ...gcodeSnippets };
+                  if (!updated[model]) {
+                    updated[model] = { start_gcode: '', end_gcode: '' };
+                  }
+                  updated[model][field] = value;
+                  // Remove model entry if both fields are empty
+                  if (!updated[model].start_gcode && !updated[model].end_gcode) {
+                    delete updated[model];
+                  }
+                  const newValue = Object.keys(updated).length > 0 ? JSON.stringify(updated) : '';
+                  // Update local state for immediate UI feedback, save on blur
+                  setLocalSettings(prev => prev ? { ...prev, gcode_snippets: newValue } : null);
+                  pendingGcodeSnippetsRef.current = newValue;
+                };
+
+                const saveGcodeSnippets = () => {
+                  if (pendingGcodeSnippetsRef.current !== null) {
+                    updateMutation.mutate({ gcode_snippets: pendingGcodeSnippetsRef.current });
+                    pendingGcodeSnippetsRef.current = null;
+                  }
+                };
+
+                if (printerModels.length === 0) {
+                  return (
+                    <p className="text-sm text-bambu-gray italic">
+                      {t('settings.gcodeInjectionNoPrinters', 'No printers found. Add printers to configure G-code snippets.')}
+                    </p>
+                  );
+                }
+
+                return printerModels.map((model) => {
+                  const snippet = gcodeSnippets[model] || { start_gcode: '', end_gcode: '' };
+                  const hasContent = !!(snippet.start_gcode || snippet.end_gcode);
+                  return (
+                    <Collapsible
+                      key={model}
+                      defaultOpen={hasContent}
+                      className="border border-bambu-dark-tertiary rounded-lg px-3 py-2"
+                      summary={
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-medium text-white">{model}</h4>
+                          {hasContent && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-bambu-green/20 text-bambu-green">
+                              {t('settings.gcodeConfigured', 'Configured')}
+                            </span>
+                          )}
+                        </div>
+                      }
+                    >
+                      <div className="space-y-2">
+                        <div>
+                          <label className="block text-xs text-bambu-gray mb-1">
+                            {t('settings.gcodeStartLabel', 'Start G-code')}
+                          </label>
+                          <textarea
+                            value={snippet.start_gcode}
+                            onChange={(e) => updateSnippet(model, 'start_gcode', e.target.value)}
+                            onBlur={saveGcodeSnippets}
+                            placeholder={t('settings.gcodeStartPlaceholder', 'G-code prepended before the print starts...')}
+                            rows={3}
+                            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs font-mono focus:outline-none focus:border-bambu-green resize-y"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-bambu-gray mb-1">
+                            {t('settings.gcodeEndLabel', 'End G-code')}
+                          </label>
+                          <textarea
+                            value={snippet.end_gcode}
+                            onChange={(e) => updateSnippet(model, 'end_gcode', e.target.value)}
+                            onBlur={saveGcodeSnippets}
+                            placeholder={t('settings.gcodeEndPlaceholder', 'G-code appended after the print ends...')}
+                            rows={3}
+                            className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-xs font-mono focus:outline-none focus:border-bambu-green resize-y"
+                          />
+                        </div>
+                      </div>
+                    </Collapsible>
+                  );
+                });
+              })()}
             </CardContent>
           </Card>
           </div>

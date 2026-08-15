@@ -302,7 +302,7 @@ async def _fetch_local_presets(db: AsyncSession) -> dict[str, list[UnifiedPreset
             # Precise compatibility link — the slicer's own compatible_printers
             # list, captured at import time. Lets the SliceModal filter the
             # process / filament dropdowns by the selected printer without
-            # falling back to the uploaded-bundle index.
+            # falling back to the @BBL name matcher.
             preset.compatible_printers = _parse_compatible_printers(p.compatible_printers)
         slots[slot].append(preset)
     return slots
@@ -330,7 +330,7 @@ def _content_compatible_printers(content: dict) -> list[str] | None:
 def _parse_compatible_printers(raw: str | None) -> list[str] | None:
     """``LocalPreset.compatible_printers`` stores a JSON array of printer-preset
     names. Return the parsed list, or ``None`` on missing / malformed data so
-    the SliceModal falls back to the uploaded-bundle index for that preset."""
+    the SliceModal falls back to the name-based matcher for that preset."""
     if not raw:
         return None
     try:
@@ -533,9 +533,9 @@ def list_printer_models() -> dict[str, str]:
     "Bambu Lab <model>" form that appears in 3MF metadata and in slicer
     printer-preset names, values are the normalized short codes used in
     BambuStudio's `@BBL <code>` cloud-preset filenames. The frontend uses this
-    mapping to classify cloud / standard presets against the selected printer
-    when no slicer bundle has been uploaded that covers the preset (#1325
-    follow-up) - avoiding a second, manually-maintained model table on the
+    mapping to classify cloud / standard presets against the selected printer,
+    which carry no ``compatible_printers`` of their own (#1325 follow-up) -
+    avoiding a second, manually-maintained model table on the
     frontend. No auth gate: this is a static reference dictionary, not
     user data.
     """

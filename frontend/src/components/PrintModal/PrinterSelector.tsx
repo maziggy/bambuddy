@@ -17,6 +17,7 @@ import { isGcodeCompatible } from '../../utils/printer';
 import {
   normalizeColorForCompare,
   colorsAreSimilar,
+  filamentTypesCompatible,
   autoMatchFilament,
   filterFilamentsByNozzle,
   effectivePreferLowest,
@@ -122,7 +123,7 @@ function InlineMappingEditor({
     // Determine status
     let status: 'match' | 'type_only' | 'mismatch' = 'mismatch';
     if (loaded) {
-      const typeMatch = loaded.type?.toUpperCase() === req.type?.toUpperCase();
+      const typeMatch = filamentTypesCompatible(loaded.type, req.type);
       const colorMatch =
         normalizeColorForCompare(loaded.color) === normalizeColorForCompare(req.color) ||
         colorsAreSimilar(loaded.color, req.color);

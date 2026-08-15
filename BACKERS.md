@@ -29,6 +29,7 @@ If you sponsor and your name isn't here within 48h, please write an email to mar
 - [@Rayvenhaus](https://github.com/Rayvenhaus)
 - [@TheUltimateC0der](https://github.com/TheUltimateC0der)
 - [@rstocks](https://github.com/rstocks)
+- [@Neasham21](https://github.com/Neasham21)
 
 ## Supporters ($15/mo+)
 

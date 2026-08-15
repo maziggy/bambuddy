@@ -16,6 +16,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
 
+# Parsing goes through defusedxml; the element type it hands back is the stdlib
+# one, and defusedxml does not re-export it, so annotations name it directly.
+from xml.etree.ElementTree import Element as XmlElement
+
 import defusedxml.ElementTree as ET
 
 logger = logging.getLogger(__name__)
@@ -161,11 +165,20 @@ def mm_to_grams(
     return volume_cm3 * density_g_cm3
 
 
-def extract_layer_filament_usage_from_3mf(file_path: Path) -> dict[int, dict[int, float]] | None:
+def extract_layer_filament_usage_from_3mf(
+    file_path: Path, plate_id: int | None = None
+) -> dict[int, dict[int, float]] | None:
     """Extract per-layer filament usage from a 3MF file's embedded G-code.
 
     Args:
         file_path: Path to the 3MF file
+        plate_id: Plate to read. Required for multi-plate files — zip member
+            order is whatever the slicer wrote, and Bambu Studio stores
+            ``plate_2.gcode`` ahead of ``plate_1.gcode``, so the old
+            "first member" behaviour read a different plate's layers than
+            the one that printed. Returns None rather than silently falling
+            back to another plate when the requested plate isn't in the
+            file; callers degrade to linear scaling, which is bounded.
 
     Returns:
         Dictionary mapping layers to filament usage, or None if parsing fails.
@@ -173,13 +186,18 @@ def extract_layer_filament_usage_from_3mf(file_path: Path) -> dict[int, dict[int
     """
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
-            # Find G-code file(s) - usually plate_1.gcode or Metadata/plate_1.gcode
-            gcode_files = [f for f in zf.namelist() if f.endswith(".gcode")]
-            if not gcode_files:
+            names = zf.namelist()
+            gcode_path = select_plate_gcode_name(names, plate_id)
+            if gcode_path is None:
+                # No plate asked for, or a file whose single G-code member
+                # doesn't follow the plate_N naming convention (non-Bambu
+                # slicers) — the lone member is unambiguous either way.
+                gcode_files = [f for f in names if f.endswith(".gcode")]
+                if plate_id is None or len(gcode_files) == 1:
+                    gcode_path = default_plate_gcode_name(names)
+            if gcode_path is None:
                 return None
 
-            # Use the first G-code file (typically only one per 3MF export)
-            gcode_path = gcode_files[0]
             gcode_content = zf.read(gcode_path).decode("utf-8", errors="ignore")
 
             return parse_gcode_layer_filament_usage(gcode_content)
@@ -316,7 +334,7 @@ def extract_embedded_presets_from_3mf(zf: zipfile.ZipFile) -> dict[str, str | No
 _MAX_DENSE_FILAMENT_SLOTS = 64
 
 
-def extract_slot_extruders_from_3mf(file_path: Path) -> list[int] | None:
+def extract_slot_extruders_from_3mf(file_path: Path, plate_id: int | None = None) -> list[int] | None:
     """Per-slot extruder assignment as a dense list, or None (#2800).
 
     Same data as :func:`extract_nozzle_mapping_from_3mf`, reshaped for the
@@ -326,6 +344,11 @@ def extract_slot_extruders_from_3mf(file_path: Path) -> list[int] | None:
     picking a nozzle themselves, which can level with one hotend and print
     with another, several millimetres off the bed.
 
+    ``plate_id`` scopes the answer to the plate actually being dispatched. A
+    multi-plate 3MF carries one filament list per plate and they need not
+    agree, so without it a slot can take its extruder from a plate this print
+    is not going to run.
+
     Takes a path rather than an open archive because the dispatcher is
     handling the file, not the zip, and a broken file there must not take the
     print down: an unreadable or non-3MF path returns None, and the caller
@@ -333,7 +356,7 @@ def extract_slot_extruders_from_3mf(file_path: Path) -> list[int] | None:
     """
     try:
         with zipfile.ZipFile(file_path) as zf:
-            by_slot = extract_nozzle_mapping_from_3mf(zf)
+            by_slot = extract_nozzle_mapping_from_3mf(zf, plate_id=plate_id)
     except (zipfile.BadZipFile, OSError) as exc:
         logger.warning("Failed to read nozzle mapping from %s: %s", file_path, exc)
         return None
@@ -357,7 +380,237 @@ def extract_slot_extruders_from_3mf(file_path: Path) -> list[int] | None:
     return [by_slot.get(slot, -1) for slot in range(1, highest_slot + 1)]
 
 
-def extract_nozzle_mapping_from_3mf(zf: zipfile.ZipFile) -> dict[int, int] | None:
+@dataclass(frozen=True)
+class RackGroup:
+    """One filament group on a nozzle-rack plate, and what hotend it needs.
+
+    A group is the slicer's *logical* nozzle. On an H2C the rack carriage hosts
+    six of them, so several groups share one extruder index -- which is exactly
+    the case ``extract_nozzle_mapping_from_3mf`` refuses to answer, because the
+    physical rack position per group is the operator's choice and is stated
+    nowhere in the file.
+    """
+
+    group_id: int
+    on_rack: bool
+    nozzle_diameter: str
+    volume_type: str
+    # Only a hint, for preferring a rack position already loaded with this
+    # colour. Excluded from equality on purpose: two filaments may share a
+    # group and differ in colour without the group being contradictory, and
+    # the agreement check below must not reject that file.
+    filament_color: str = field(default="", compare=False)
+
+
+@dataclass(frozen=True)
+class RackPlan:
+    """Everything a rack dispatch needs from the 3MF, short of the choice itself.
+
+    ``slot_groups`` is dense: index 0 is filament slot 1, and a slot the plate
+    does not print is ``-1``, matching :func:`extract_slot_extruders_from_3mf`.
+    ``groups`` is keyed by group id.
+    """
+
+    slot_groups: list[int]
+    groups: dict[int, RackGroup]
+
+    @property
+    def rack_group_ids(self) -> list[int]:
+        """Groups needing a rack position, lowest first, for stable assignment."""
+        return sorted(gid for gid, group in self.groups.items() if group.on_rack)
+
+    def group_dicts(self) -> dict[int, dict]:
+        """The groups as plain dicts, the form the resolver and the API take.
+
+        Keeps one definition of the shape rather than two that can drift: the
+        dispatcher resolves against it and the print dialog renders from it.
+        """
+        return {
+            gid: {
+                "on_rack": group.on_rack,
+                "nozzle_diameter": group.nozzle_diameter,
+                "volume_type": group.volume_type,
+                "filament_color": group.filament_color,
+            }
+            for gid, group in self.groups.items()
+        }
+
+
+def extract_rack_plan_from_3mf(file_path: Path, plate_id: int | None = None) -> RackPlan | None:
+    """What a nozzle-rack plate needs per group, or None (#1784).
+
+    :func:`extract_nozzle_mapping_from_3mf` answers "which carriage" and
+    withholds the whole mapping when a plate needs several hotends off one
+    rack. This answers the question underneath it -- which groups exist, which
+    of them are rack-bound, and what nozzle each one wants -- so the caller can
+    pair it with a chosen rack position and build a mapping the other function
+    cannot.
+
+    Measured basis (maintainer's H2C, 2026-08-14): the same plate was sent
+    twice with different rack picks and every member of the two 3MFs was
+    identical bar float noise -- ``group_id`` values, the toolchange stream and
+    the ``NOZZLE_CHANGE`` markers included. The pick lives only in the
+    dispatched ``nozzle_mapping``, so nothing here can or should derive it.
+
+    Returns None whenever the plate cannot be described completely: a partial
+    plan would place some slots and leave others at "not printed", which is the
+    contradiction the firmware rejects as HMS 0500-4047.
+
+    Takes a path rather than an open archive for the same reason
+    :func:`extract_slot_extruders_from_3mf` does -- the dispatcher is holding
+    the file, and a broken one must not take the print down.
+    """
+    try:
+        with zipfile.ZipFile(file_path) as zf:
+            return _rack_plan(zf, plate_id=plate_id)
+    except (zipfile.BadZipFile, OSError) as exc:
+        logger.warning("Failed to read rack plan from %s: %s", file_path, exc)
+        return None
+    except Exception:
+        logger.exception("Unreadable rack plan in %s", file_path)
+        return None
+
+
+def _rack_plan(zf: zipfile.ZipFile, plate_id: int | None) -> RackPlan | None:
+    """Body of :func:`extract_rack_plan_from_3mf`, on an already-open archive."""
+    names = zf.namelist()
+    if "Metadata/project_settings.config" not in names:
+        return None
+    if "Metadata/slice_info.config" not in names:
+        return None
+
+    data = json.loads(zf.read("Metadata/project_settings.config").decode())
+    physical_extruder_map = data.get("physical_extruder_map")
+    if not physical_extruder_map or len(physical_extruder_map) <= 1:
+        return None
+
+    # Which extruder index is the rack, taken from the file rather than a
+    # constant: the rack is the carriage that can address more than one nozzle.
+    # `extruder_max_nozzle_count` is ['1', '6'] on an H2C, and reading it here
+    # means a future rack of a different size needs no change.
+    rack_indices: set[int] = set()
+    for index, count in enumerate(data.get("extruder_max_nozzle_count") or []):
+        try:
+            if int(count) > 1:
+                rack_indices.add(index)
+        except (TypeError, ValueError):
+            return None
+    if not rack_indices:
+        return None
+
+    si_root = ET.fromstring(zf.read("Metadata/slice_info.config").decode())
+    plates = _plates_in_scope(si_root, plate_id)
+    group_extruders = _group_extruder_indices(plates)
+    if not group_extruders:
+        return None
+
+    filament_elems = [elem for plate in plates for elem in plate.findall(".//filament")]
+    if not filament_elems:
+        return None
+
+    slot_groups: dict[int, int] = {}
+    groups: dict[int, RackGroup] = {}
+    for elem in filament_elems:
+        group_id_str = elem.get("group_id")
+        slot_id_str = elem.get("id")
+        if group_id_str is None or not slot_id_str:
+            # One ungrouped filament makes the plan partial, and a partial plan
+            # dispatches the ungrouped slot as unprinted.
+            return None
+        try:
+            group_id = int(group_id_str)
+            slot_id = int(slot_id_str)
+        except (TypeError, ValueError):
+            return None
+
+        extruder_index = group_extruders.get(group_id)
+        if extruder_index is None or not 0 <= extruder_index < len(physical_extruder_map):
+            return None
+
+        # Two plates in scope may name the same slot; they must agree, or the
+        # dispatched plate is ambiguous.
+        if slot_groups.setdefault(slot_id, group_id) != group_id:
+            return None
+
+        group = RackGroup(
+            group_id=group_id,
+            on_rack=extruder_index in rack_indices,
+            nozzle_diameter=(elem.get("nozzle_diameter") or "").strip(),
+            volume_type=(elem.get("volume_type") or "").strip(),
+            filament_color=(elem.get("color") or "").strip(),
+        )
+        # Filaments sharing a group must want the same hotend, or "the group is
+        # one nozzle" is not true and no single position can serve them.
+        if groups.setdefault(group_id, group) != group:
+            return None
+
+    highest_slot = max(slot_groups)
+    if highest_slot < 1 or highest_slot > _MAX_DENSE_FILAMENT_SLOTS:
+        return None
+
+    return RackPlan(
+        slot_groups=[slot_groups.get(slot, -1) for slot in range(1, highest_slot + 1)],
+        groups=groups,
+    )
+
+
+def _plates_in_scope(si_root: XmlElement, plate_id: int | None) -> list[XmlElement]:
+    """The ``<plate>`` elements a lookup should read, narrowed to one if asked.
+
+    A 3MF holds every plate in the project, each with its own filament list, and
+    two plates may assign the same slot to different extruders. Falls back to
+    every plate when no id is given or none matches, which is what this module
+    did before plates were distinguished at all.
+    """
+    plates = si_root.findall(".//plate")
+    if not plates:
+        return [si_root]
+    if plate_id is None:
+        return plates
+    for plate in plates:
+        for metadata in plate.findall("metadata"):
+            if metadata.get("key") != "index":
+                continue
+            try:
+                if int(metadata.get("value") or "") == plate_id:
+                    return [plate]
+            except (TypeError, ValueError):
+                pass
+    return plates
+
+
+def _group_extruder_indices(plates: list[XmlElement]) -> dict[int, int] | None:
+    """Map each filament group to the slicer extruder index it prints on.
+
+    ``slice_info.config`` states this directly, as ``<nozzle id="<group>"
+    extruder_id="<1-based extruder>"/>``. Reading it matters on nozzle-rack
+    printers, where the group id is *not* an extruder index: the H2C's rack
+    carriage can host six hotends (``extruder_max_nozzle_count`` is ``['1',
+    '6']``), so the slicer emits more groups than the machine has extruders and
+    several groups share one carriage. A plate of the reporter's carried groups
+    0, 1 and 2 against a two-entry ``physical_extruder_map``.
+
+    Returns None when the file states no table, or when two plates in scope
+    disagree about a group — in which case the caller keeps treating the group
+    id as the extruder index, which is what every H2D file in practice wants
+    and what this module has always done.
+    """
+    table: dict[int, int] = {}
+    for plate in plates:
+        for nozzle in plate.findall(".//nozzle"):
+            try:
+                group_id = int(nozzle.get("id") or "")
+                extruder_index = int(nozzle.get("extruder_id") or "") - 1
+            except (TypeError, ValueError):
+                return None
+            if extruder_index < 0:
+                return None
+            if table.setdefault(group_id, extruder_index) != extruder_index:
+                return None
+    return table or None
+
+
+def extract_nozzle_mapping_from_3mf(zf: zipfile.ZipFile, plate_id: int | None = None) -> dict[int, int] | None:
     """Extract per-slot nozzle/extruder mapping from a 3MF file.
 
     On dual-nozzle printers (H2D, H2D Pro), each filament slot is assigned to a
@@ -366,17 +619,27 @@ def extract_nozzle_mapping_from_3mf(zf: zipfile.ZipFile) -> dict[int, int] | Non
     attributes, not from the user's filament_nozzle_map preference.
 
     Priority:
-        1. group_id on <filament> elements in slice_info.config (actual assignment)
+        1. group_id on <filament> elements in slice_info.config (actual assignment),
+           resolved through the file's own group-to-extruder table
         2. filament_nozzle_map in project_settings.config (user preference fallback)
 
     Both are mapped through physical_extruder_map to get MQTT extruder IDs (0=right, 1=left).
 
+    Returns None rather than a partial answer whenever a filament the plate
+    prints cannot be placed. The gap does not stay a gap downstream: the dense
+    form fills it with -1, which already means "slot not printed", and
+    dispatching that against an ams_mapping that *does* name a tray for the slot
+    is a contradiction the firmware rejects outright with HMS 0500-4047, "the
+    available hotend quantity or model does not match the sliced file". Giving
+    no mapping at all costs only the firmware's own nozzle pick.
+
     Args:
         zf: An open ZipFile of the 3MF archive
+        plate_id: 1-based plate to read, or None for every plate in the file
 
     Returns:
         Dictionary mapping {slot_id: extruder_id} for dual-nozzle files,
-        or None if single-nozzle, missing data, or parse error.
+        or None if single-nozzle, missing data, unplaceable, or parse error.
     """
     try:
         if "Metadata/project_settings.config" not in zf.namelist():
@@ -403,18 +666,43 @@ def extract_nozzle_mapping_from_3mf(zf: zipfile.ZipFile) -> dict[int, int] | Non
 
         # Parse slice_info once: needed by both the single-active shortcut
         # (to verify the slice is actually single-group, #1825) and Priority 1.
-        si_root: ET.Element | None = None
+        si_root: XmlElement | None = None
+        filament_elems: list[XmlElement] = []
+        group_extruders: dict[int, int] | None = None
         distinct_group_ids: set[int] = set()
         if "Metadata/slice_info.config" in zf.namelist():
             si_content = zf.read("Metadata/slice_info.config").decode()
             si_root = ET.fromstring(si_content)
-            for filament_elem in si_root.findall(".//filament"):
+            plates = _plates_in_scope(si_root, plate_id)
+            group_extruders = _group_extruder_indices(plates)
+            filament_elems = [elem for plate in plates for elem in plate.findall(".//filament")]
+            for filament_elem in filament_elems:
                 gid = filament_elem.get("group_id")
                 if gid is not None:
                     try:
                         distinct_group_ids.add(int(gid))
                     except (ValueError, TypeError):
                         pass
+
+            # Two groups on one extruder means that extruder is a nozzle rack,
+            # and the plate wants a *different* hotend from it per group. Which
+            # physical rack slot each group takes is the slicer's own choice
+            # against the rack's live contents and is stated nowhere in the
+            # file -- on the plate that prompted this, both rack groups carry
+            # identical nozzle_diameter and volume_type, and BambuStudio still
+            # dispatched them to positions 16 and 18 (captured 2026-08-13
+            # 17:20; that print completed). Nothing here can reproduce that
+            # choice, and answering anyway is what printed in mid-air, so the
+            # whole mapping is withheld and the firmware picks for itself.
+            if group_extruders and len(set(group_extruders.values())) < len(group_extruders):
+                logger.warning(
+                    "Ignoring nozzle mapping: groups %s share extruders %s, so the plate "
+                    "needs more than one nozzle from a rack and the physical positions "
+                    "are not derivable from the file",
+                    sorted(group_extruders),
+                    sorted(set(group_extruders.values())),
+                )
+                return None
 
         # Single-active shortcut: only safe when the slice actually uses one
         # group. extruder_nozzle_stats can under-report a second installed
@@ -426,29 +714,61 @@ def extract_nozzle_mapping_from_3mf(zf: zipfile.ZipFile) -> dict[int, int] | Non
             nozzle_mapping: dict[int, int] = {}
             active_idx = active_extruders.index(1)
             target_extruder = int(physical_extruder_map[active_idx])
-            if si_root is not None:
-                for filament_elem in si_root.findall(".//filament"):
-                    try:
-                        nozzle_mapping[int(filament_elem.get("id"))] = target_extruder
-                    except (ValueError, TypeError):
-                        pass
+            for filament_elem in filament_elems:
+                try:
+                    nozzle_mapping[int(filament_elem.get("id"))] = target_extruder
+                except (ValueError, TypeError):
+                    pass
             return nozzle_mapping or None
 
         # Priority 1: Use group_id from slice_info filament elements.
         # This reflects the actual slicer assignment (respects "Auto For Flush").
         nozzle_mapping: dict[int, int] = {}
-        if si_root is not None:
-            for filament_elem in si_root.findall(".//filament"):
-                group_id_str = filament_elem.get("group_id")
-                filament_id_str = filament_elem.get("id")
-                if group_id_str is not None and filament_id_str:
-                    try:
-                        group_id = int(group_id_str)
-                        slot_id = int(filament_id_str)
-                        if group_id < len(physical_extruder_map):
-                            nozzle_mapping[slot_id] = int(physical_extruder_map[group_id])
-                    except (ValueError, TypeError, IndexError):
-                        pass
+        ungrouped = 0
+        for filament_elem in filament_elems:
+            group_id_str = filament_elem.get("group_id")
+            filament_id_str = filament_elem.get("id")
+            if not filament_id_str:
+                continue
+            if group_id_str is None:
+                # Counted rather than returned on: a file where *no* filament
+                # carries a group falls through to Priority 2 as it always has.
+                # Only a file that groups some and not others is unplaceable.
+                ungrouped += 1
+                continue
+            try:
+                group_id = int(group_id_str)
+                slot_id = int(filament_id_str)
+            except (ValueError, TypeError):
+                logger.warning(
+                    "Ignoring nozzle mapping: unreadable filament id=%r group_id=%r",
+                    filament_id_str,
+                    group_id_str,
+                )
+                return None
+            # The group id is an extruder index only where the file states no
+            # table of its own — true of every H2D slice, not of an H2C one.
+            extruder_index = group_id if group_extruders is None else group_extruders.get(group_id)
+            if extruder_index is None or not 0 <= extruder_index < len(physical_extruder_map):
+                logger.warning(
+                    "Ignoring nozzle mapping: filament slot %s is in group %s, which "
+                    "resolves to extruder %r outside physical_extruder_map %r",
+                    slot_id,
+                    group_id,
+                    extruder_index,
+                    physical_extruder_map,
+                )
+                return None
+            nozzle_mapping[slot_id] = int(physical_extruder_map[extruder_index])
+
+        if nozzle_mapping and ungrouped:
+            logger.warning(
+                "Ignoring nozzle mapping: %d filament(s) carry no group_id while %d do, "
+                "so the ungrouped slots would dispatch as unprinted",
+                ungrouped,
+                len(nozzle_mapping),
+            )
+            return None
 
         if nozzle_mapping:
             return nozzle_mapping
@@ -749,21 +1069,54 @@ def _parse_3mf_gcode_header(content: str) -> dict[str, str]:
     return header
 
 
-def _select_plate_gcode_name(names: list[str], plate_id: int | None) -> str | None:
-    """Pick a plate's ``.gcode`` member out of a 3MF namelist.
+def _plate_number_of(name: str) -> int | None:
+    """Plate index encoded in a ``…/plate_<n>.gcode`` member, or None.
 
-    Prefers ``plate_<id>.gcode``, then falls back to the first ``.gcode``
-    member so single-plate files — and files from slicers that don't use the
-    plate naming convention — still resolve.
+    Parsed as an int rather than string-matched so a zero-padded
+    ``plate_01.gcode`` resolves to the same 1 the plates endpoint reports.
+    """
+    marker = "plate_"
+    idx = name.rfind(marker)
+    if idx < 0 or not name.endswith(".gcode"):
+        return None
+    try:
+        return int(name[idx + len(marker) : -len(".gcode")])
+    except ValueError:
+        return None
+
+
+def select_plate_gcode_name(names: list[str], plate_id: int | None) -> str | None:
+    """The ``.gcode`` member for exactly ``plate_id``, or None if it isn't there.
+
+    Returns None for a ``plate_id`` the file doesn't hold — callers that want a
+    fallback compose this with ``default_plate_gcode_name``; callers serving a
+    user's explicit plate choice want the None so they can 404 instead of
+    quietly rendering a different plate.
+    """
+    if plate_id is None:
+        return None
+    for name in names:
+        if name.endswith(".gcode") and _plate_number_of(name) == plate_id:
+            return name
+    return None
+
+
+def default_plate_gcode_name(names: list[str]) -> str | None:
+    """The ``.gcode`` member to show when no plate was asked for.
+
+    The lowest plate number, NOT the first member in the archive: zip order is
+    whatever the slicer happened to write, and Bambu Studio does not write
+    plates in order — a two-plate file measured here stores ``plate_2.gcode``
+    ahead of ``plate_1.gcode``, so taking the first member opened plate 2. Files
+    from slicers that don't use the plate naming convention keep the old
+    first-member behaviour, since there is no numbering to sort by.
     """
     gcodes = [n for n in names if n.endswith(".gcode")]
     if not gcodes:
         return None
-    if plate_id is not None:
-        suffix = f"plate_{plate_id}.gcode"
-        for name in gcodes:
-            if name.endswith(suffix):
-                return name
+    numbered = [(num, n) for n in gcodes if (num := _plate_number_of(n)) is not None]
+    if numbered:
+        return min(numbered)[1]
     return gcodes[0]
 
 
@@ -789,7 +1142,8 @@ def extract_max_z_height_from_3mf(file_path: Path, plate_id: int | None = None) 
     """
     try:
         with zipfile.ZipFile(file_path, "r") as zf:
-            target = _select_plate_gcode_name(zf.namelist(), plate_id)
+            names = zf.namelist()
+            target = select_plate_gcode_name(names, plate_id) or default_plate_gcode_name(names)
             if target is None:
                 return None
             with zf.open(target, "r") as fh:
@@ -911,8 +1265,9 @@ def inject_gcode_into_3mf(
     try:
         # Find the target gcode file inside the 3MF
         with zipfile.ZipFile(source_path, "r") as zf:
-            # Plate-specific gcode first, else the first one in the file.
-            target_gcode = _select_plate_gcode_name(zf.namelist(), plate_id)
+            # Plate-specific gcode first, else the lowest-numbered plate.
+            names = zf.namelist()
+            target_gcode = select_plate_gcode_name(names, plate_id) or default_plate_gcode_name(names)
             if target_gcode is None:
                 return None
 
@@ -1050,6 +1405,24 @@ def expand_to_project_slots(zf: zipfile.ZipFile, used: list[dict]) -> list[dict]
     return out
 
 
+# BambuStudio serialises bool config options as string "1"/"0" in
+# project_settings.config, but forks / older versions occasionally write real
+# booleans or ints — accept anything that isn't unambiguously falsy. A missing
+# key counts as off: a 3MF that never declares `enable_support` gives us no
+# support intent to act on.
+_SUPPORTS_DISABLED_VALUES = (False, 0, "0", "false", "False", "", None)
+
+
+def supports_enabled_in_config(cfg: dict[str, object]) -> bool:
+    """Whether a 3MF's ``project_settings.config`` has supports switched on.
+
+    Shared by the callers that read support intent out of a source file so
+    they agree on what "on" means: the slot extractor below and the slice
+    route's process-preset support carry-over (#1881 / #2820).
+    """
+    return cfg.get("enable_support") not in _SUPPORTS_DISABLED_VALUES
+
+
 def extract_support_filament_slots_from_3mf(zf: zipfile.ZipFile) -> set[int]:
     """Slots referenced by the process settings for support material.
 
@@ -1075,12 +1448,7 @@ def extract_support_filament_slots_from_3mf(zf: zipfile.ZipFile) -> set[int]:
         return set()
     if not isinstance(cfg, dict):
         return set()
-    # BambuStudio serialises bool config options as string "1"/"0" in
-    # project_settings.config, but forks / older versions occasionally
-    # write real booleans or ints — accept anything that isn't
-    # unambiguously falsy.
-    enable = cfg.get("enable_support")
-    if enable in (False, 0, "0", "false", "False", "", None):
+    if not supports_enabled_in_config(cfg):
         return set()
     out: set[int] = set()
     for key in ("support_filament", "support_interface_filament"):

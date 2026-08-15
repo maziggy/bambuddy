@@ -199,10 +199,22 @@ def _upload_size_rejection(response: httpx.Response, model_size_bytes: int | Non
             f"{common} Raise it by setting MAX_MODEL_UPLOAD_MB on the slicer-api service and "
             f"restarting it. Sidecar said: {detail}"
         )
+    # Naming the service in the compose commands is not a style choice. The
+    # Bambu Studio sidecar sits behind `profiles: [bambu]`, and a bare
+    # `docker compose pull` silently skips every profile-gated service — so the
+    # update this message asks for was a no-op for exactly the users who need
+    # it, and `restart: unless-stopped` kept the old container serving (#2802,
+    # second round). Naming a service enables its profile implicitly, for both
+    # pull and up. `--profile bambu` would also work, but on an OrcaSlicer-only
+    # host it downloads the 220 MB Bambu image and then *starts* a sidecar the
+    # user never asked for.
     return (
-        f"{common} This sidecar image predates the configurable cap and is fixed at 100 MB — "
-        "update it with 'cd slicer-api/ && docker compose pull && docker compose up -d', which "
-        "raises the default and adds MAX_MODEL_UPLOAD_MB for going higher still. "
+        f"{common} This sidecar image predates the configurable cap and is fixed at 100 MB. "
+        "Update it with 'cd slicer-api/ && docker compose pull orca-slicer-api && "
+        "docker compose up -d orca-slicer-api', substituting 'bambu-studio-api' if that is the "
+        "sidecar you slice with. Name the service in both commands — a bare 'docker compose pull' "
+        "skips the Bambu Studio sidecar, because it sits behind a compose profile. The new image "
+        "defaults to 512 MB and adds MAX_MODEL_UPLOAD_MB for going higher still. "
         f"Sidecar said: {detail}"
     )
 

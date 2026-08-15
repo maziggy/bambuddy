@@ -38,8 +38,8 @@ class UnifiedPreset(BaseModel):
     detail is fetched — rate limits) and standard (the sidecar's bundled
     listing doesn't expose it). The SliceModal uses it to filter the
     process / filament dropdowns by the selected printer (#1325); when it is
-    ``None`` the modal falls back to the user's uploaded Slicer Bundles, which
-    map each printer to the presets it ships.
+    ``None`` the modal falls back to matching the preset name against the
+    ``@BBL <code>`` printer-model registry.
     """
 
     id: str

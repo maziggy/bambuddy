@@ -222,7 +222,36 @@ export interface FilamentReqsData {
      *  = user custom). Used to resolve the "original" filament label in
      *  FilamentOverride against the builtin + cloud user-preset maps. #1718. */
     tray_info_idx?: string;
+    /** Which filament group this slot prints in, on a nozzle-rack machine
+     *  (#1784). The group is the slicer's logical nozzle, so it — not the slot
+     *  — is what a rack position is chosen for. Absent on every other model. */
+    group_id?: number;
+    /** What that group needs of a hotend. Only groups with `on_rack` get a
+     *  position picker; the rest are on the fixed carriage and have no choice
+     *  to make. */
+    group?: RackGroupInfo;
   }>;
+}
+
+/** A filament group's hotend requirements, from the 3MF (#1784). */
+export interface RackGroupInfo {
+  on_rack: boolean;
+  nozzle_diameter: string;
+  volume_type: string;
+  filament_color: string;
+}
+
+/** One position on the H2C's six-slot nozzle rack, as offered to the user. */
+export interface RackPositionOption {
+  /** 1-based, the way the printer card, BambuStudio and the operator count. */
+  position: number;
+  diameter: string;
+  nozzleType: string;
+  filamentColor: string;
+  /** False when the position is empty or holds the wrong nozzle for the group. */
+  eligible: boolean;
+  /** Why not, when `eligible` is false — shown as the option's title. */
+  reason?: string;
 }
 
 /**
@@ -257,6 +286,13 @@ export interface FilamentMappingProps {
    *  auto-match. Undefined/omitted when the archive has no saved mapping —
    *  the toggle is hidden and behaviour is unchanged. */
   archiveAmsMapping?: number[];
+  /** The operator's rack-position pick per filament group (#1784), keyed by
+   *  group id. Only meaningful on a nozzle-rack model; omit elsewhere and no
+   *  picker is rendered. A group absent from the object is assigned a position
+   *  by the dispatcher against the rack as it stands at dispatch. */
+  nozzleRackChoice?: Record<number, number>;
+  /** Called when a rack position is picked for a group. */
+  onNozzleRackChoiceChange?: (choice: Record<number, number>) => void;
 }
 
 /**

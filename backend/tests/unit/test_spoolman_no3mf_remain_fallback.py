@@ -127,6 +127,75 @@ class TestStorePrintDataNo3mf:
         }
 
     @pytest.mark.asyncio
+    async def test_records_the_tray_the_print_started_on(self):
+        """A print with no 3MF also has no ams_mapping, so the tray in use at
+        the start is the only evidence of which slot it drew from — and without
+        that, the completion path would charge every slot whose remain% moved,
+        including one a spool was merely swapped into (#1269's fault, on this
+        path)."""
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[MagicMock()])
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            tray_now=5,
+            raw_data={"ams": [{"id": 1, "tray": [{"id": 1, "tray_uuid": "AAAA", "remain": 80}]}]},
+        )
+
+        mock_settings = MagicMock()
+        mock_path = MagicMock()
+        mock_path.exists.return_value = False
+        mock_settings.base_dir.__truediv__.return_value = mock_path
+
+        with (
+            patch("backend.app.services.spoolman_tracking.app_settings", mock_settings),
+            patch("backend.app.api.routes.settings.get_setting", AsyncMock(return_value="true")),
+        ):
+            await store_print_data(
+                printer_id=1,
+                archive_id=42,
+                file_path="",
+                db=db,
+                printer_manager=printer_manager,
+            )
+
+        assert db.add.call_args.args[0].tray_now_at_start == 5
+
+    @pytest.mark.asyncio
+    async def test_a_printer_that_reports_no_tray_records_none(self):
+        """Nullable on purpose: no answer is not the same as slot 0."""
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[MagicMock()])
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+
+        printer_manager = MagicMock()
+        printer_manager.get_status.return_value = SimpleNamespace(
+            raw_data={"ams": [{"id": 0, "tray": [{"id": 0, "tray_uuid": "AAAA", "remain": 80}]}]},
+        )
+
+        mock_settings = MagicMock()
+        mock_path = MagicMock()
+        mock_path.exists.return_value = False
+        mock_settings.base_dir.__truediv__.return_value = mock_path
+
+        with (
+            patch("backend.app.services.spoolman_tracking.app_settings", mock_settings),
+            patch("backend.app.api.routes.settings.get_setting", AsyncMock(return_value="true")),
+        ):
+            await store_print_data(
+                printer_id=1,
+                archive_id=42,
+                file_path="",
+                db=db,
+                printer_manager=printer_manager,
+            )
+
+        assert db.add.call_args.args[0].tray_now_at_start is None
+
+    @pytest.mark.asyncio
     async def test_no_row_when_no_3mf_and_no_remain_data(self):
         """If the AMS has no slot with valid remain either (e.g. printer
         offline at print start), there's nothing to track. Don't create

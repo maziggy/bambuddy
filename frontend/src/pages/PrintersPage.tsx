@@ -134,6 +134,23 @@ import { Collapsible } from '../components/Collapsible';
 import { ConnectionDiagnosticModal, DiagnosticChecklist } from '../components/ConnectionDiagnostic';
 import { getColorName, parseFilamentColor, isLightColor } from '../utils/colors';
 
+// The status filter's options, and the only values it may hold. One list so a
+// saved filter cannot be validated against a set the dropdown has since moved
+// on from (#2833). Labels stay literal so they remain greppable.
+const STATUS_FILTER_OPTIONS = [
+  { value: 'all', labelKey: 'printers.filter.allStatuses' },
+  { value: 'printing', labelKey: 'printers.status.printing' },
+  { value: 'paused', labelKey: 'printers.status.paused' },
+  { value: 'idle', labelKey: 'printers.status.idle' },
+  { value: 'finished', labelKey: 'printers.status.finished' },
+  { value: 'error', labelKey: 'printers.status.error' },
+  { value: 'offline', labelKey: 'printers.status.offline' },
+] as const;
+
+function isKnownStatusFilter(value: string | null): boolean {
+  return STATUS_FILTER_OPTIONS.some(option => option.value === value);
+}
+
 export interface SpoolmanSlotAssignmentRow {
   printer_id: number;
   ams_id: number;
@@ -555,7 +572,13 @@ function NozzleRackCard({ slots, filamentInfo }: { slots: import('../api/client'
   );
 
   return (
-    <div className="text-center px-2.5 py-1.5 bg-bambu-dark rounded-lg flex-[2_1_190px] flex flex-col justify-center">
+    // Sized to its contents rather than growing: the six chips are a fixed
+    // width at any one card size, so extra width would be dead space taken
+    // from the temperature cards beside it — which are flex-1 with a 0 basis
+    // and wrap their values ("220° / 220°") as soon as they lose it. Shrink
+    // stays enabled so the card still gives way on a narrow printer card
+    // instead of overflowing.
+    <div className="text-center px-2.5 py-1.5 bg-bambu-dark rounded-lg flex-[0_1_auto] flex flex-col justify-center">
       <p className="text-[length:var(--pc-t9,9px)] text-bambu-gray mb-1">{t('printers.nozzleRack')}</p>
       <div className="flex gap-[3px] justify-center">
         {rackSlots.map((slot, i) => {
@@ -565,18 +588,30 @@ function NozzleRackCard({ slots, filamentInfo }: { slots: import('../api/client'
 
           return (
             <NozzleSlotHoverCard key={slot.id >= 0 ? slot.id : `empty-${i}`} slot={slot} index={i} filamentName={slot.filament_id ? filamentInfo?.[slot.filament_id]?.name : undefined}>
-              <div
-                className={`w-7 h-7 rounded flex items-center justify-center cursor-default transition-colors border-b-2 ${
-                  isEmpty
-                    ? 'bg-bambu-dark-tertiary/20 border-bambu-dark-tertiary/20'
-                    : 'bg-bambu-dark-tertiary/40 border-bambu-dark-tertiary/40'
-                }`}
-                style={filamentBg ? { backgroundColor: filamentBg } : undefined}
-              >
-                <span className={`text-[length:var(--pc-t10,10px)] font-semibold ${isEmpty ? 'text-bambu-gray/30' : lightBg ? 'text-black/80' : 'text-white'}`}
-                      style={filamentBg && !lightBg ? { textShadow: '0 1px 3px rgba(0,0,0,0.9)' } : undefined}
+              <div className="flex flex-col items-center gap-0.5">
+                <div
+                  className={`w-[var(--pc-i7,28px)] h-[var(--pc-i7,28px)] rounded flex items-center justify-center cursor-default transition-colors border-b-2 ${
+                    isEmpty
+                      ? 'bg-bambu-dark-tertiary/20 border-bambu-dark-tertiary/20'
+                      : 'bg-bambu-dark-tertiary/40 border-bambu-dark-tertiary/40'
+                  }`}
+                  style={filamentBg ? { backgroundColor: filamentBg } : undefined}
                 >
-                  {isEmpty ? '—' : (slot.nozzle_diameter || '?')}
+                  <span
+                    data-rack-diameter
+                    className={`text-[length:var(--pc-t10,10px)] font-semibold ${isEmpty ? 'text-bambu-gray/30' : lightBg ? 'text-black/80' : 'text-white'}`}
+                    style={filamentBg && !lightBg ? { textShadow: '0 1px 3px rgba(0,0,0,0.9)' } : undefined}
+                  >
+                    {isEmpty ? '—' : (slot.nozzle_diameter || '?')}
+                  </span>
+                </div>
+                {/* Physical rack position, so "swap the nozzle in slot 4" can be
+                    acted on without counting chips. Sits below the chip rather
+                    than inside it: the chip is barely wider than its own
+                    diameter text and already carries that over a
+                    filament-coloured background. */}
+                <span className="text-[length:var(--pc-t8,8px)] leading-none tabular-nums text-bambu-gray/70">
+                  {i + 1}
                 </span>
               </div>
             </NozzleSlotHoverCard>
@@ -925,7 +960,7 @@ function getEmptySlotKind(tray: { tray_type?: string | null; state?: number | nu
 const DRY_START_CONFIRM_MS = 30_000;
 
 
-function CoverImage({
+export function CoverImage({
   url,
   printName,
   className = 'w-20 h-20',
@@ -940,6 +975,7 @@ function CoverImage({
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const [showOverlay, setShowOverlay] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
 
   // Cache-bust the image URL when the print name changes so the browser
   // fetches the new cover instead of serving the stale cached image.
@@ -949,10 +985,34 @@ function CoverImage({
     return withStreamToken(`${url}${sep}v=${encodeURIComponent(printName || Date.now().toString())}`);
   }, [url, printName]);
 
-  // Reset loaded/error state when the image URL changes
+  // Re-evaluate load state when the image URL changes, and ask the element
+  // whether it is already showing something rather than assuming it is not.
+  //
+  // `onLoad` used to be the only thing that could set `loaded`, and this
+  // effect reset it to false unconditionally. That is right when the URL
+  // really changes, but it also runs on mount — and the two are not the same
+  // situation (#2826). The URL is cache-busted on the print *name*, which is
+  // constant for the duration of a print, so navigating away from the
+  // printers page and back re-mounts with a byte-identical src that the
+  // browser serves from its in-memory cache. The `load` event for a cache hit
+  // and React's passive-effect flush are both plain tasks with no ordering
+  // between them, so when `load` won, this effect ran afterwards and undid
+  // it: `loaded` stayed false, the img stayed `hidden`, and the placeholder
+  // sat there until a full reload. Nothing recovered it, because the URL
+  // never changes again during the print and so this effect never re-runs.
+  //
+  // Being a race, it reproduced every time for #2826's reporter and not at
+  // all here, which is also why the network panel showed no request: there
+  // was no request to show.
+  //
+  // Asking `complete && naturalWidth > 0` settles it without needing to know
+  // which of the two ran first. It is also correct for the case the reporter
+  // proposed (a `load` that fires before React's handler is live), so the
+  // fix stands whichever mechanism is really at work.
   useEffect(() => {
-    setLoaded(false);
     setError(false);
+    const el = imgRef.current;
+    setLoaded(Boolean(el?.complete && el.naturalWidth > 0));
   }, [cacheBustedUrl]);
 
   return (
@@ -964,6 +1024,7 @@ function CoverImage({
         {cacheBustedUrl && !error ? (
           <>
             <img
+              ref={imgRef}
               src={cacheBustedUrl}
               alt={t('printers.printPreview')}
               className={`w-full h-full object-cover ${loaded ? 'block' : 'hidden'}`}
@@ -1818,6 +1879,7 @@ function buildCardScaleStyle(cardSize: number): React.CSSProperties {
     '--pc-i35': px(14),
     '--pc-i4': px(16),
     '--pc-i5': px(20),
+    '--pc-i7': px(28),
   } as React.CSSProperties;
 }
 
@@ -8081,8 +8143,18 @@ export function PrintersPage() {
     }
   }, [compactDrilldownPrinterId, scrollPrinterIntoView]);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [locationFilter, setLocationFilter] = useState<string>('all');
+  // Both filters persist like every other preference on this page (#2833).
+  // `search` deliberately does not: a box that silently refills itself on
+  // return is more surprising than a dropdown that remembers.
+  const [statusFilter, setStatusFilter] = useState<string>(() => {
+    // Validated on read: a value the dropdown no longer offers would filter
+    // every printer out, and nothing would explain why.
+    const saved = localStorage.getItem('printerStatusFilter');
+    return isKnownStatusFilter(saved) ? (saved as string) : 'all';
+  });
+  const [locationFilter, setLocationFilter] = useState<string>(
+    () => localStorage.getItem('printerLocationFilter') || 'all'
+  );
   const [statusCacheVersion, setStatusCacheVersion] = useState(0);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
     try {
@@ -8441,6 +8513,16 @@ export function PrintersPage() {
     localStorage.setItem('printerSortBy', newSort);
   };
 
+  const handleStatusFilterChange = (value: string) => {
+    setStatusFilter(value);
+    localStorage.setItem('printerStatusFilter', value);
+  };
+
+  const handleLocationFilterChange = (value: string) => {
+    setLocationFilter(value);
+    localStorage.setItem('printerLocationFilter', value);
+  };
+
   const toggleSortDirection = () => {
     const newAsc = !sortAsc;
     setSortAsc(newAsc);
@@ -8523,6 +8605,19 @@ export function PrintersPage() {
     if (!printers) return [];
     return [...new Set(printers.map(p => p.location || '').filter(Boolean))].sort();
   }, [printers]);
+
+  // A saved location can outlive what it matched -- renamed, cleared, or the
+  // only printer that had it deleted. The dropdown is rendered only while some
+  // printer has a location, so a stale one would hide every printer *and* the
+  // control to undo it, leaving an empty page and no way back (#2833).
+  // Deliberately waits for `printers`: it is undefined while the query is in
+  // flight, and acting on the empty list that produces would throw the saved
+  // filter away every time the page loads.
+  useEffect(() => {
+    if (!printers || locationFilter === 'all' || availableLocations.includes(locationFilter)) return;
+    setLocationFilter('all');
+    localStorage.setItem('printerLocationFilter', 'all');
+  }, [printers, availableLocations, locationFilter]);
 
   // Sort printers based on selected option
   const sortedPrinters = useMemo(() => {
@@ -8722,17 +8817,9 @@ export function PrintersPage() {
       {printers && printers.length > 0 && (
         <ToolbarDropdown
           value={statusFilter}
-          onChange={setStatusFilter}
+          onChange={handleStatusFilterChange}
           fullWidth={inMenu}
-          options={[
-            { value: 'all', label: t('printers.filter.allStatuses') },
-            { value: 'printing', label: t('printers.status.printing') },
-            { value: 'paused', label: t('printers.status.paused') },
-            { value: 'idle', label: t('printers.status.idle') },
-            { value: 'finished', label: t('printers.status.finished') },
-            { value: 'error', label: t('printers.status.error') },
-            { value: 'offline', label: t('printers.status.offline') },
-          ]}
+          options={STATUS_FILTER_OPTIONS.map(option => ({ value: option.value, label: t(option.labelKey) }))}
         />
       )}
 
@@ -8740,7 +8827,7 @@ export function PrintersPage() {
       {printers && printers.length > 0 && availableLocations.length > 0 && (
         <ToolbarDropdown
           value={locationFilter}
-          onChange={setLocationFilter}
+          onChange={handleLocationFilterChange}
           fullWidth={inMenu}
           options={[
             { value: 'all', label: t('printers.filter.allLocations') },

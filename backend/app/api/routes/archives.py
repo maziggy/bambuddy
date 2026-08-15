@@ -30,13 +30,17 @@ from backend.app.schemas.print_log import PrintLogResponse
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.archive import ArchiveService
 from backend.app.services.design_settings import overrides_from_config
+from backend.app.services.filament_requirements import annotate_rack_groups
+from backend.app.services.print_storage import REASON_INTERNAL_STORAGE, REASON_NO_EXTERNAL_STORAGE
+from backend.app.utils.archive_paths import archive_photos_dir, find_archive_photo
 from backend.app.utils.http import build_content_disposition
-from backend.app.utils.safe_path import safe_join_under
 from backend.app.utils.threemf_tools import (
+    default_plate_gcode_name,
     expand_to_project_slots,
     extract_embedded_presets_from_3mf,
     extract_nozzle_mapping_from_3mf,
     extract_project_filaments_from_3mf,
+    select_plate_gcode_name,
 )
 
 logger = logging.getLogger(__name__)
@@ -509,10 +513,23 @@ async def no_3mf_warning(
         )
     ),
 ):
-    """Whether to nudge the user about install step 4 ("Store sent files on
-    external storage"). True iff any archive in the last 30 days was created
-    via the no-3MF fallback path — that's the deterministic symptom of the
-    slicer-side variant of the setting being off.
+    """Whether to nudge the user about a print that archived without its 3MF,
+    and why. True iff any archive in the last 30 days was created via the
+    no-3MF fallback path.
+
+    Also returns ``reason``, because the advice differs and the original
+    single-cause wording sent people the wrong way. Historically the only
+    known cause was install step 4 ("Store sent files on external storage")
+    being off in the slicer, so the banner said so unconditionally. On
+    H2-series and P2S that advice is actively wrong: the setting is already on
+    and turning it on again changes nothing, because the printer keeps the
+    sliced file on internal storage that FTPS does not serve at all (#2780).
+
+    ``reason`` is the slug from :mod:`print_storage` when we recorded one,
+    else None for the original slicer-setting case. When archives disagree the
+    most specific known reason wins — one printer storing internally is a real
+    finding worth explaining, and it should not be masked by another printer's
+    plain missing-file fallback.
 
     Complements the connection-diagnostic ``external_storage`` check, which
     only catches the printer-side variant of the setting. On older slicers
@@ -533,10 +550,24 @@ async def no_3mf_warning(
     if user is not None and not can_read_all:
         conditions.append(PrintArchive.created_by_id == user.id)
     result = await db.execute(select(PrintArchive.extra_data).where(*conditions))
+    reasons: set[str] = set()
+    has_fallback = False
     for (extra_data,) in result.all():
-        if extra_data and extra_data.get("no_3mf_available"):
-            return {"has_fallback": True}
-    return {"has_fallback": False}
+        if not extra_data or not extra_data.get("no_3mf_available"):
+            continue
+        has_fallback = True
+        reason = extra_data.get("no_3mf_reason")
+        if reason:
+            reasons.add(reason)
+    if not has_fallback:
+        return {"has_fallback": False, "reason": None}
+    # Most specific first. Archives predating this field carry no reason at
+    # all, so an install with one H2C and three older printers still gets the
+    # H2C explanation rather than the generic one.
+    for candidate in (REASON_INTERNAL_STORAGE, REASON_NO_EXTERNAL_STORAGE):
+        if candidate in reasons:
+            return {"has_fallback": True, "reason": candidate}
+    return {"has_fallback": True, "reason": None}
 
 
 @router.get("/slim", response_model=list[ArchiveSlim])
@@ -2344,14 +2375,14 @@ async def scan_timelapse(
     if not files:
         # "Couldn't reach the printer" and "the printer has no timelapse
         # directory" are different problems with different fixes, and both used
-        # to come back as one 500 (#2780). A printer whose file service stopped
-        # answering over TLS needs a restart, and nothing here will work until
-        # it gets one.
+        # to come back as one 500 (#2780). Nothing here will work while the
+        # printer's file service is not answering over TLS, so say that rather
+        # than reporting an empty directory.
         if ftps_handshake_blocked(printer.ip_address):
             raise HTTPException(
                 503,
                 f"Printer {printer.ip_address} is not answering its file service over TLS. "
-                "Restart the printer and try again.",
+                "Bambuddy will try again shortly.",
             )
         raise HTTPException(404, "No timelapse directory found on the printer")
 
@@ -2901,10 +2932,10 @@ async def upload_photo(
     if not file.filename or not file.filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
         raise HTTPException(400, "File must be an image (.jpg, .jpeg, .png, .webp)")
 
-    # Get archive directory
-    archive_dir = settings.base_dir / Path(archive.file_path).parent
-    photos_dir = archive_dir / "photos"
-    photos_dir.mkdir(exist_ok=True)
+    # Get archive directory. parents=True because an archive with no 3MF owns
+    # <archive_dir>/<id>/, which nothing else has necessarily created yet.
+    photos_dir = archive_photos_dir(archive)
+    photos_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate unique filename
     import uuid
@@ -2951,15 +2982,14 @@ async def get_photo(
     if not archive.photos or filename not in archive.photos:
         raise HTTPException(404, "Photo not found")
 
-    archive_dir = settings.base_dir / Path(archive.file_path).parent
-    photos_dir = archive_dir / "photos"
     # Defence-in-depth: even though the membership check above already
-    # constrains `filename` to UUID-generated names from upload, the
-    # resolve + containment check guards against future code paths that
-    # might populate `archive.photos` from a less-trusted source.
-    photo_path = safe_join_under(photos_dir, filename)
+    # constrains `filename` to UUID-generated names from upload,
+    # find_archive_photo resolves and containment-checks each candidate,
+    # guarding against future code paths that might populate
+    # `archive.photos` from a less-trusted source.
+    photo_path = find_archive_photo(archive, filename)
 
-    if not photo_path.exists():
+    if photo_path is None:
         raise HTTPException(404, "Photo not found")
 
     # Determine media type
@@ -2995,11 +3025,11 @@ async def delete_photo(
     if not archive.photos or filename not in archive.photos:
         raise HTTPException(404, "Photo not found")
 
-    # Delete file — same defence-in-depth as get_photo above.
-    archive_dir = settings.base_dir / Path(archive.file_path).parent
-    photos_dir = archive_dir / "photos"
-    photo_path = safe_join_under(photos_dir, filename)
-    if photo_path.exists():
+    # Delete file — same lookup as get_photo above, so a photo that is
+    # readable is also deletable. Removing the name while leaving the file is
+    # how a no-3MF archive accumulated photos nobody could see or remove.
+    photo_path = find_archive_photo(archive, filename)
+    if photo_path is not None:
         photo_path.unlink()
 
     # Update archive photos list
@@ -3315,8 +3345,9 @@ async def get_gcode(
 
     When *plate* is provided, returns the G-code for that specific plate
     (e.g. ``?plate=2`` returns ``Metadata/plate_2.gcode``). If omitted, falls
-    back to the first plate found in the archive (preserving the original
-    behaviour for callers that predate the multi-plate viewer).
+    back to the archive's lowest-numbered plate — not the first member in the
+    zip, which is whatever order the slicer wrote and routinely puts plate 2
+    ahead of plate 1.
     """
     user, can_read_all = auth_result
     service = ArchiveService(db)
@@ -3340,25 +3371,11 @@ async def get_gcode(
                 )
 
             if plate is not None:
-                # Resolve plate → filename via the same parsing the plates
-                # endpoint uses (int() on the suffix), so zero-padded names
-                # like plate_01.gcode are found when the plates endpoint
-                # reported index 1.
-                selected = None
-                for gf in gcode_files:
-                    if not gf.startswith("Metadata/plate_"):
-                        continue
-                    suffix = gf[len("Metadata/plate_") : -len(".gcode")]
-                    try:
-                        if int(suffix) == plate:
-                            selected = gf
-                            break
-                    except ValueError:
-                        continue
+                selected = select_plate_gcode_name(gcode_files, plate)
                 if selected is None:
                     raise HTTPException(404, f"Plate {plate} not found in this archive")
             else:
-                selected = gcode_files[0]
+                selected = default_plate_gcode_name(gcode_files)
 
             gcode_content = zf.read(selected).decode("utf-8")
             return Response(content=gcode_content, media_type="text/plain")
@@ -4136,6 +4153,11 @@ async def get_filament_requirements(
             if nozzle_mapping:
                 for filament in filaments:
                     filament["nozzle_id"] = nozzle_mapping.get(filament["slot_id"])
+
+            # Nozzle-rack machines (#1784): the print dialog offers a rack
+            # position per filament group, which needs the group table as well
+            # as the carriage above.
+            annotate_rack_groups(filaments, file_path, plate_id)
 
     except Exception as e:
         logger.warning("Failed to parse filament requirements from archive %s: %s", archive_id, e)

@@ -1397,3 +1397,51 @@ describe('colour verdict is independent of how the tray was found (#2687)', () =
     expect(item.colorMatch).toBe(false);
   });
 });
+
+describe('filament type equivalence groups reach the matcher', () => {
+  // The scheduler has always canonicalised types before comparing, so PA12-CF
+  // satisfies a PA-CF requirement at dispatch. The interface compared the raw
+  // strings, so it called the same pairing a type mismatch — the badge
+  // contradicted what the printer would actually do, and the manual override
+  // picker (which groups by canonical type) offered the very spool the badge
+  // then rejected. Both sides now use `filamentTypesCompatible`.
+  const wantPaCf = {
+    filaments: [{ slot_id: 1, type: 'PA-CF', color: '#1A1A1A', used_grams: 20 }],
+  };
+  const pa12Loaded = createPrinterStatus([
+    { id: 0, tray: [{ id: 0, tray_type: 'PA12-CF', tray_color: '1A1A1AFF' }] },
+  ]);
+
+  it('matches PA12-CF against a PA-CF requirement', () => {
+    const [item] = buildFilamentComparison(wantPaCf, buildLoadedFilaments(pa12Loaded), {});
+    expect(item.loaded?.globalTrayId).toBe(0);
+    expect(item.status).toBe('match');
+  });
+
+  it('agrees with the mapping the request is built from', () => {
+    expect(
+      buildAmsMapping(buildFilamentComparison(wantPaCf, buildLoadedFilaments(pa12Loaded), {})),
+    ).toEqual([0]);
+  });
+
+  it('still refuses a genuinely different material', () => {
+    const petg = createPrinterStatus([
+      { id: 0, tray: [{ id: 0, tray_type: 'PETG', tray_color: '1A1A1AFF' }] },
+    ]);
+    const [item] = buildFilamentComparison(wantPaCf, buildLoadedFilaments(petg), {});
+    expect(item.status).toBe('mismatch');
+  });
+
+  it('does not treat a product variant as an alias for the base material', () => {
+    // "PLA Silk" dries like PLA but does not print like it, so the matcher
+    // must not substitute one for the other. Matches the backend's rule.
+    const silk = createPrinterStatus([
+      { id: 0, tray: [{ id: 0, tray_type: 'PLA Silk', tray_color: 'FFFFFFFF' }] },
+    ]);
+    const wantPla = {
+      filaments: [{ slot_id: 1, type: 'PLA', color: '#FFFFFF', used_grams: 20 }],
+    };
+    const [item] = buildFilamentComparison(wantPla, buildLoadedFilaments(silk), {});
+    expect(item.status).toBe('mismatch');
+  });
+});

@@ -138,6 +138,90 @@ async def create_smart_plug(
     return plug
 
 
+def _is_script_plug(plug: SmartPlug) -> bool:
+    """Whether the plug is a Home Assistant script rather than a switchable device."""
+    return bool(plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script."))
+
+
+def _can_be_switched(plug: SmartPlug) -> bool:
+    """Whether ``control_smart_plug`` can actually turn this plug on and off.
+
+    Two kinds cannot, and the card's on/off button is useless on both:
+
+    - A Home Assistant script. It can be run, not switched.
+    - An MQTT plug. Bambuddy subscribes to it and never publishes, so the
+      control endpoint rejects it outright as monitor-only -- and an MQTT plug
+      is exactly the kind that reports watts, so without this it would win the
+      power tiebreak below and take the row off a plug that can be switched.
+    """
+    return not _is_script_plug(plug) and plug.plug_type != "mqtt"
+
+
+def _reports_power(plug: SmartPlug) -> bool:
+    """Whether the plug is configured with somewhere to read watts from (#2830).
+
+    Read from the configuration rather than measured: this runs on every printer
+    card render, and probing each plug would mean an HTTP round trip per plug.
+    So it is approximate in both directions -- an HA plug with no dedicated power
+    sensor may still report watts from the switch entity's own
+    ``current_power_w`` attribute, and a Tasmota device without energy metering
+    is counted here as if it had it. Only a live read could tell, and this is
+    used solely to break a tie between plugs that are otherwise equally
+    eligible, so neither miss can decide anything on its own.
+    """
+    if plug.plug_type == "homeassistant":
+        return bool(plug.ha_power_entity)
+    if plug.plug_type == "mqtt":
+        return bool(plug.mqtt_power_topic or plug.mqtt_topic)
+    if plug.plug_type == "rest":
+        return bool(plug.rest_power_path)
+    return True  # Tasmota, whose firmware reports power when the hardware has it
+
+
+def _main_plug_rank(plug: SmartPlug) -> tuple:
+    """Sort key for choosing the printer's main power plug, best first (#2830).
+
+    A printer's plugs are not interchangeable. The card's Power row carries the
+    power on/off and auto-off-after-print controls, so it has to land on the plug
+    that actually feeds the printer -- pointing those at an exhaust fan is the
+    same harm #2629 fixed for the scheduler's power-on. Ordered:
+
+    1. It can be switched at all -- see ``_can_be_switched``. The row's buttons
+       are the point of it.
+    2. ``controls_printer_power`` -- the flag that says this plug feeds the
+       printer, as opposed to an accessory that merely follows the print cycle.
+    3. ``enabled`` -- a disabled plug ignores automation, so its auto-off toggle
+       would sit there doing nothing.
+    4. ``show_on_printer_card`` -- ranked, not filtered: excluding hidden plugs
+       outright would strip the Power row, and with it the on/off button, from a
+       printer whose only plug has the flag off. It sorts below the power flag
+       because a display preference must not hand power control to an accessory.
+    5. Reports power, so the row shows watts rather than "--" where there is a
+       choice.
+    6. Lowest id, so the answer never depends on row order. The query had no
+       ORDER BY at all, which on Postgres means a plain UPDATE can move a row and
+       silently swap which plug the card calls the printer's power.
+    """
+    return (
+        not _can_be_switched(plug),
+        not plug.controls_printer_power,
+        not plug.enabled,
+        not plug.show_on_printer_card,
+        not _reports_power(plug),
+        plug.id,
+    )
+
+
+def _pick_main_plug(plugs: list[SmartPlug]) -> SmartPlug | None:
+    """The plug the printer card shows as its power, or None if there are none."""
+    return min(plugs, key=_main_plug_rank, default=None)
+
+
+async def _plugs_for_printer(db: AsyncSession, printer_id: int) -> list[SmartPlug]:
+    result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id).order_by(SmartPlug.id))
+    return list(result.scalars().all())
+
+
 @router.get("/by-printer/{printer_id}", response_model=SmartPlugResponse | None)
 async def get_smart_plug_by_printer(
     printer_id: int,
@@ -146,23 +230,11 @@ async def get_smart_plug_by_printer(
 ):
     """Get the main smart plug assigned to a printer.
 
-    When multiple plugs are assigned (e.g., a regular plug + script),
-    returns the main (non-script) plug for power control.
+    When several plugs are assigned -- a printer outlet, an enclosure fan, a
+    script -- returns the one that best fits the card's power controls. See
+    ``_main_plug_rank`` for the order and why.
     """
-    result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-    plugs = result.scalars().all()
-
-    if not plugs:
-        return None
-
-    # If multiple plugs, prefer the non-script one (main power plug)
-    for plug in plugs:
-        is_script = plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.ha_entity_id.startswith("script.")
-        if not is_script:
-            return plug
-
-    # All are scripts, return the first one
-    return plugs[0]
+    return _pick_main_plug(await _plugs_for_printer(db, printer_id))
 
 
 @router.get("/by-printer/{printer_id}/scripts", response_model=list[SmartPlugResponse])
@@ -176,13 +248,25 @@ async def get_script_plugs_by_printer(
     Returns HA entities (switches, scripts, lights, etc.) for the printer that have
     show_on_printer_card enabled.
     Used to display action buttons alongside the main power plug.
+
+    A switchable main plug is left out: it is rendered directly above this row
+    with its own on/off button, so listing it here draws the same entity twice
+    (#2830). A script is not, because a printer whose only entities are scripts
+    falls back to showing one of them in the power row -- taking it out of this
+    row too would cost the one-click run it has always had there.
     """
-    result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-    plugs = result.scalars().all()
+    plugs = await _plugs_for_printer(db, printer_id)
+    main_plug = _pick_main_plug(plugs)
+    duplicate_of_power_row = main_plug.id if main_plug and not _is_script_plug(main_plug) else None
 
     # Filter to HA entities with show_on_printer_card enabled
     ha_entities = [
-        plug for plug in plugs if plug.plug_type == "homeassistant" and plug.ha_entity_id and plug.show_on_printer_card
+        plug
+        for plug in plugs
+        if plug.plug_type == "homeassistant"
+        and plug.ha_entity_id
+        and plug.show_on_printer_card
+        and plug.id != duplicate_of_power_row
     ]
     return ha_entities
 

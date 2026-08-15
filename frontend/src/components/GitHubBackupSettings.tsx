@@ -1270,7 +1270,7 @@ export function GitHubBackupSettings() {
                       <input
                         type="time"
                         value={localBackupStatus?.time ?? '03:00'}
-                        className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none [color-scheme:dark]"
+                        className="w-full h-10 px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                         onChange={async (e) => {
                           try {
                             await api.updateSettings({ local_backup_time: e.target.value });

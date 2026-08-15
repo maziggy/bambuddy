@@ -240,9 +240,12 @@ DUAL_NOZZLE_MODELS = frozenset(
 # Why this needs its own set rather than reusing DUAL_NOZZLE_MODELS: on every
 # other dual-nozzle printer the dispatch `nozzle_mapping` values ARE the MQTT
 # extruder indices (0 = right, 1 = left). On a rack model the wire wants the
-# *physical* nozzle position, and the rack positions are reported by the
-# firmware as IDs 16-21 — see `device.nozzle.info` handling in bambu_mqtt.
-# Sending an extruder index where a rack position is expected makes the
+# *physical* nozzle position for both carriages: the rack positions the
+# firmware reports as IDs 16-21 — see `device.nozzle.info` handling in
+# bambu_mqtt — and 1 for the fixed hotend, which is not its extruder index.
+# Note the H2C does not follow the 0 = right convention either: extruder
+# index 1 is the rack side, confirmed on hardware in #2800.
+# Sending an extruder index where a physical position is expected makes the
 # printer clean and level with one nozzle and then print with another, at the
 # wrong Z (#2800).
 NOZZLE_RACK_MODELS = frozenset(

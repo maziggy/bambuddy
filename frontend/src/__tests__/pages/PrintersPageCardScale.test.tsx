@@ -185,6 +185,9 @@ describe('PrintersPage — printer card body scale (#1848)', () => {
     expect(style.getPropertyValue('--pc-t11')).toBe('13.2px');
     expect(style.getPropertyValue('--pc-i3')).toBe('14.4px');
     expect(style.getPropertyValue('--pc-i4')).toBe('19.2px');
+    // The H2C rack chips. They were a hard-coded 28px, so the rack read as a
+    // shrunken strip beside neighbours that had grown 20%.
+    expect(style.getPropertyValue('--pc-i7')).toBe('33.6px');
   });
 
   it('scales further at XL, where the card is full width', async () => {
@@ -195,7 +198,8 @@ describe('PrintersPage — printer card body scale (#1848)', () => {
     // Every property is set at every size, so a converted class can never
     // fall through to its fallback while sitting inside a card.
     for (const name of ['--pc-t8', '--pc-t9', '--pc-t10', '--pc-t11',
-      '--pc-i2', '--pc-i25', '--pc-i3', '--pc-i35', '--pc-i4', '--pc-i5']) {
+      '--pc-i2', '--pc-i25', '--pc-i3', '--pc-i35', '--pc-i4', '--pc-i5',
+      '--pc-i7']) {
       expect(style.getPropertyValue(name)).not.toBe('');
     }
   });

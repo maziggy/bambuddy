@@ -1811,14 +1811,13 @@ describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
         if (plateId === '2') return HttpResponse.json({ filaments: [{ ...SLOT_2_RED, used_grams: 40 }] });
         return HttpResponse.json({ filaments: [SLOT_1_RED, SLOT_2_RED] });
       }),
-      http.get('/api/v1/inventory/assignments', () =>
-        HttpResponse.json([
-          {
-            id: 1, spool_id: 1, printer_id: 1, printer_name: 'X1 Carbon', ams_id: 0, tray_id: 0,
-            fingerprint_color: null, fingerprint_type: null, configured: true,
-            spool: { id: 1, label_weight: 1000, weight_used: 940 },
-          },
-        ]),
+      http.get('/api/v1/printers/:id/inventory-remain', () =>
+        HttpResponse.json({
+          inventory_remain_g: { '0': 60 },
+          slot_materials: [
+            { ams_id: 0, tray_id: 0, global_tray_id: 0, material_key: 'preset:GFA00|color:FF0000', remaining_g: 60, extruder: 0 },
+          ],
+        }),
       ),
     );
 
@@ -1832,6 +1831,103 @@ describe('PrintModal — per-plate filament mapping (#2551 follow-up)', () => {
 
     // 80 g needed from a spool with 60 g left → the acknowledgement dialog, not a
     // silent queue.
+    await waitFor(() => expect(screen.getByText(/Not enough filament/i)).toBeInTheDocument());
+    expect(screen.getByText(/needs 80g, remaining 60g/i)).toBeInTheDocument();
+  });
+
+  // Two red trays holding the same material, so AMS Filament Backup can switch
+  // between them mid-print. Both tests below map both plates onto tray 0.
+  const twoRedTrays = (backupOn: boolean) =>
+    http.get('/api/v1/printers/:id/status', () =>
+      HttpResponse.json({
+        connected: true,
+        state: 'IDLE',
+        ams_filament_backup: backupOn,
+        ams: [{ id: 0, tray: [
+          { id: 0, tray_type: 'PLA', tray_color: 'FF0000' },
+          { id: 1, tray_type: 'PLA', tray_color: 'FF0000' },
+        ] }],
+        vt_tray: [],
+      }),
+    );
+
+  const redPool = (trayZeroGrams: number, trayOneGrams: number) =>
+    http.get('/api/v1/printers/:id/inventory-remain', () =>
+      HttpResponse.json({
+        inventory_remain_g: { '0': trayZeroGrams, '1': trayOneGrams },
+        slot_materials: [
+          { ams_id: 0, tray_id: 0, global_tray_id: 0, material_key: 'preset:GFA00|color:FF0000', remaining_g: trayZeroGrams, extruder: 0 },
+          { ams_id: 0, tray_id: 1, global_tray_id: 1, material_key: 'preset:GFA00|color:FF0000', remaining_g: trayOneGrams, extruder: 0 },
+        ],
+      }),
+    );
+
+  const bothPlatesNeedForty = http.get('/api/v1/archives/:id/filament-requirements', ({ request }) => {
+    const plateId = new URL(request.url).searchParams.get('plate_id');
+    if (plateId === '1') return HttpResponse.json({ filaments: [{ ...SLOT_1_RED, used_grams: 40 }] });
+    if (plateId === '2') return HttpResponse.json({ filaments: [{ ...SLOT_2_RED, used_grams: 40 }] });
+    return HttpResponse.json({ filaments: [SLOT_1_RED, SLOT_2_RED] });
+  });
+
+  it('lets the print through when AMS Filament Backup covers it from a peer spool', async () => {
+    // The reported block: two plates draw 80 g from a tray holding 60 g, but the
+    // slot next to it holds the same material. The firmware switches between
+    // them, and the dispatcher has pooled them since #1762 — the modal used to
+    // weigh the mapped slot alone and refused a print the dispatcher would run.
+    const queued: unknown[] = [];
+    server.use(
+      bothPlatesNeedForty,
+      twoRedTrays(true),
+      redPool(60, 1000),
+      http.post('/api/v1/queue/', async ({ request }) => {
+        queued.push(await request.json());
+        return HttpResponse.json({ id: queued.length, status: 'pending' });
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
+
+    await selectBothPlates(user);
+    await waitFor(() => expect(screen.getByText(/Filament Mapping — Plate 2/)).toBeInTheDocument());
+
+    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+    await waitFor(() => expect(queued.length).toBe(2));
+    expect(screen.queryByText(/Not enough filament/i)).not.toBeInTheDocument();
+  });
+
+  it('warns against the pooled total when AMS Filament Backup still cannot cover it', async () => {
+    // Backup is on but both spools together are short. The shortfall is real, so
+    // it still has to be raised — against the pool, not the one slot, or the
+    // numbers contradict the AMS the user is looking at.
+    server.use(bothPlatesNeedForty, twoRedTrays(true), redPool(60, 10));
+
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
+
+    await selectBothPlates(user);
+    await waitFor(() => expect(screen.getByText(/Filament Mapping — Plate 2/)).toBeInTheDocument());
+
+    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+    await waitFor(() => expect(screen.getByText(/Not enough filament/i)).toBeInTheDocument());
+    expect(screen.getByText(/needs 80g, 70g available across matching spools/i)).toBeInTheDocument();
+  });
+
+  it('keeps weighing the mapped slot alone when AMS Filament Backup is off', async () => {
+    // Same two spools, backup off: the firmware will not switch, so the peer's
+    // grams are not available to this print and the warning must still fire.
+    server.use(bothPlatesNeedForty, twoRedTrays(false), redPool(60, 1000));
+
+    const user = userEvent.setup();
+    render(<PrintModal mode="create" archiveId={1} archiveName="Two.gcode.3mf" onClose={mockOnClose} />);
+
+    await selectBothPlates(user);
+    await waitFor(() => expect(screen.getByText(/Filament Mapping — Plate 2/)).toBeInTheDocument());
+
+    await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
     await waitFor(() => expect(screen.getByText(/Not enough filament/i)).toBeInTheDocument());
     expect(screen.getByText(/needs 80g, remaining 60g/i)).toBeInTheDocument();
   });

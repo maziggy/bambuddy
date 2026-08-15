@@ -92,6 +92,17 @@ class PrintQueueItem(Base):
     nozzle_mapping: Mapped[str | None] = mapped_column(Text, nullable=True)
     nozzles_info: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Which rack position each filament group prints from, on a nozzle-rack
+    # machine (#1784). JSON object keyed by the 3MF's group id, valued with a
+    # 1-based rack position as the operator counts them.
+    #
+    # Deliberately not the expanded `nozzle_mapping` above, though that is what
+    # goes on the wire: the rack can be re-loaded between queueing and
+    # dispatch, and only the position-and-group form can be re-checked against
+    # what is actually mounted at the moment the job runs. NULL means nothing
+    # was picked, and the dispatcher assigns positions itself.
+    nozzle_rack_choice: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Printer-card direct uploads create transient library rows. When this is
     # true, the scheduler deletes the source row/files after archiving a copy.
     cleanup_library_after_dispatch: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -233,6 +244,7 @@ class PrintQueueVariant(Base):
     plate_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ams_mapping: Mapped[str | None] = mapped_column(Text, nullable=True)
     nozzle_mapping: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nozzle_rack_choice: Mapped[str | None] = mapped_column(Text, nullable=True)
     filament_overrides: Mapped[str | None] = mapped_column(Text, nullable=True)
     required_filament_types: Mapped[str | None] = mapped_column(Text, nullable=True)
     print_time_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)

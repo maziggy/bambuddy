@@ -57,6 +57,69 @@ def validate_print_filename(name: str) -> None:
         raise InvalidFilenameError(f"Filename exceeds {MAX_FILENAME_BYTES} bytes")
 
 
+def clean_display_name(name: str | None) -> str | None:
+    """Tidy a free-text display name on the way into the database (#2832).
+
+    A display name is allowed its punctuation: "Planter Pot with Drip Tray,
+    12 cm / 5 inches" is a perfectly good title and refusing the slash would
+    reject the very name this issue was reported about. What has no business
+    in one is a control character or a NUL -- neither renders, both can
+    truncate a string somewhere further down.
+
+    Path safety is *not* enforced here, deliberately. It belongs at each point
+    where a name becomes a path, because that is where the budget and the
+    fallback differ; see ``safe_path_component``. This is tidying, not a
+    boundary.
+
+    Returns None unchanged, and None for a name that was only whitespace.
+
+    Anything that is not a string is handed back untouched, so the schema this
+    runs in front of still applies its own type check. Iterating it here instead
+    would turn ``["a"]`` into the name ``"a"`` and a non-iterable into a 500,
+    where the field is meant to answer with a 422.
+    """
+    if not isinstance(name, str):
+        return name
+    cleaned = "".join(ch for ch in name if ord(ch) >= 0x20 and ch != "\x7f").strip()
+    return cleaned or None
+
+
+def safe_path_component(name: str, *, fallback: str, max_bytes: int = MAX_FILENAME_BYTES) -> str:
+    """Reduce a display name to something usable as one path component (#2832).
+
+    A print's display name is not a filename. It comes from the ``print_name``
+    embedded in the 3MF -- MakerWorld titles like "Planter Pot with Drip Tray,
+    12 cm / 5 inches" arrive verbatim -- and several places build a directory or
+    a file out of it. A ``/`` in such a name is a path separator: the join
+    silently gains a level, ``mkdir(parents=True)`` creates it, and the write
+    that follows fails on a parent that was never made. Worse, the name is
+    user-controlled, so ``..`` segments in one steer the write out of the
+    directory it was meant for.
+
+    Every character the SD-card rules already reject is replaced rather than
+    dropped, so the result still reads like the original: that set is exactly
+    the separators plus the Windows-reserved punctuation, which a Windows
+    install needs for the same reason Linux needs the separators. Leading and
+    trailing dots and spaces go too -- ``..`` reduces to nothing rather than to
+    a relative path -- and the result is capped to what one component may hold.
+
+    Returns *fallback* when nothing usable survives, so a name made entirely of
+    separators cannot produce an empty path component.
+
+    *max_bytes* is the budget for this component alone. Callers that wrap the
+    result in a prefix or an extension must subtract those, or the composed
+    name can still exceed what the filesystem accepts.
+    """
+    cleaned = "".join("-" if (ch in INVALID_FILENAME_CHARS or ord(ch) < 0x20 or ch == "\x7f") else ch for ch in name)
+    cleaned = cleaned.strip(" .")
+
+    if len(cleaned.encode("utf-8")) > max_bytes:
+        # Cut on the byte limit, then drop any partial character the cut left.
+        cleaned = cleaned.encode("utf-8")[:max_bytes].decode("utf-8", errors="ignore").strip(" .")
+
+    return cleaned or fallback
+
+
 def derive_remote_filename(filename: str) -> str:
     """Compute the SD-card filename used when uploading a sliced print file.
 

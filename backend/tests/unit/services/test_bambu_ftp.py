@@ -1689,9 +1689,15 @@ class TestHandshakeCoolOff:
         assert bambu_ftp.ftps_handshake_blocked("127.0.0.1") is True
         messages = [r.getMessage() for r in caplog.records]
         assert any("WRONG_VERSION_NUMBER" in m for m in messages)
-        # The warning has to name the remedy, not just the error: the port is
-        # open, so "unblock port 990" is the wrong advice.
-        assert any("restarted" in m for m in messages)
+        # The warning has to say more than the error: the port is open, so
+        # "unblock port 990" is the wrong reading and the operator needs to
+        # know what it actually costs them.
+        assert any("covers and timelapses cannot be fetched" in m for m in messages)
+        # It must NOT prescribe a restart. It used to, and #2780's reporter
+        # power-cycled both affected printers with no effect while a single
+        # manual connection to the same printers completed a clean handshake.
+        # Naming a remedy that is known not to work is worse than naming none.
+        assert not any("restart" in m.lower() for m in messages)
 
     def test_blocked_printer_is_not_contacted_again(self, plaintext_server):
         self._client(plaintext_server).connect()

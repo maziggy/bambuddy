@@ -1353,6 +1353,9 @@ export interface AppSettings {
   preheat_filament_targets: string;
   preheat_max_wait_seconds: number;
   preheat_soak_seconds: number;
+  queue_keep_bed_warm: boolean;
+  queue_keep_warm_bed_temp: number;
+  queue_keep_warm_max_minutes: number;
   // User-configurable presets for the printer-card popovers (JSON arrays of 3 ints).
   // Empty string = use built-in defaults.
   nozzle_temp_presets: string;
@@ -1857,6 +1860,11 @@ export interface SliceResponse {
   filament_used_g: number;
   filament_used_mm: number;
   used_embedded_settings: boolean;
+  /** Why the result could not be written to the external folder the source
+   * lives in, and so went to managed storage instead. Null on every normal
+   * slice. Surfaced to the user — a file filed somewhere they aren't looking
+   * with no signal is what made #2810 invisible from the UI. */
+  external_write_fallback?: string | null;
 }
 
 export interface SliceArchiveResponse {
@@ -2421,6 +2429,10 @@ export interface PrintQueueItem {
   // Auto-print G-code injection
   gcode_injection?: boolean;
   cleanup_library_after_dispatch?: boolean;
+  /** Which rack position each filament group prints from, on a nozzle-rack
+   *  machine (#1784): `{ [group_id]: 1-based position }`. Re-checked against
+   *  the live rack at dispatch; omit to have the dispatcher assign them. */
+  nozzle_rack_choice?: Record<number, number> | null;
 }
 
 export interface PrintBatchPlateTarget {
@@ -2526,6 +2538,10 @@ export interface PrintQueueItemCreate {
   // defeats the point) and with archive_id/library_file_id (these ARE the files).
   // Order is priority — index 0 wins when several printers are idle at once.
   variants?: QueueVariantCreate[];
+  /** Which rack position each filament group prints from, on a nozzle-rack
+   *  machine (#1784): `{ [group_id]: 1-based position }`. Re-checked against
+   *  the live rack at dispatch; omit to have the dispatcher assign them. */
+  nozzle_rack_choice?: Record<number, number> | null;
 }
 
 /** One candidate file for a cross-model queue item (#671). */
@@ -2597,6 +2613,10 @@ export interface PrintQueueItemUpdate {
   gcode_injection?: boolean;
   cost_center_id?: number | null;
   estimated_cost?: number | null;
+  /** Which rack position each filament group prints from, on a nozzle-rack
+   *  machine (#1784): `{ [group_id]: 1-based position }`. Re-checked against
+   *  the live rack at dispatch; omit to have the dispatcher assign them. */
+  nozzle_rack_choice?: Record<number, number> | null;
 }
 
 export interface PrintQueueBulkUpdate {
@@ -3455,6 +3475,27 @@ export interface SpoolKProfileInput {
   name?: string | null;
   cali_idx?: number | null;
   setting_id?: string | null;
+}
+
+/** One inventory-bound AMS slot, as returned by `/printers/{id}/inventory-remain`. */
+export interface SlotMaterial {
+  ams_id: number;
+  tray_id: number;
+  global_tray_id: number;
+  /** Opaque grouping key from the backend. Two slots back each other up under
+   *  AMS Filament Backup only when both `material_key` and `extruder` match.
+   *  Never parse it — the format belongs to the backend's identity rule. */
+  material_key: string;
+  remaining_g: number;
+  /** 0 = right / single nozzle, 1 = left. */
+  extruder: number;
+}
+
+export interface InventoryRemainResponse {
+  /** Currently-loaded, inventory-bound slots only — drives the prefer-lowest sort. */
+  inventory_remain_g: Record<string, number>;
+  /** Every inventory binding on the printer, with identity + extruder side. */
+  slot_materials: SlotMaterial[];
 }
 
 export interface SpoolAssignment {
@@ -4495,7 +4536,7 @@ export const api = {
   // when computing the AMS mapping; mirrors backend `_build_inventory_remain_overrides`
   // so internal and Spoolman modes both work uniformly.
   getInventoryRemain: (printerId: number) =>
-    request<{ inventory_remain_g: Record<string, number> }>(
+    request<InventoryRemainResponse>(
       `/printers/${printerId}/inventory-remain`,
     ),
 
@@ -4700,7 +4741,10 @@ export const api = {
     return request<Archive[]>(`/archives/search?${params}`);
   },
   rebuildSearchIndex: () => request<{ message: string }>('/archives/search/rebuild-index', { method: 'POST' }),
-  getNo3MFWarning: () => request<{ has_fallback: boolean }>('/archives/no-3mf-warning'),
+  getNo3MFWarning: () =>
+    request<{ has_fallback: boolean; reason: 'internal_storage' | 'no_external_storage' | null }>(
+      '/archives/no-3mf-warning',
+    ),
   updateArchive: (id: number, data: {
     printer_id?: number | null;
     project_id?: number | null;

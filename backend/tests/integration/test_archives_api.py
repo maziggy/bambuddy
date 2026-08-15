@@ -731,7 +731,7 @@ class TestNo3MFWarning:
         response = await async_client.get("/api/v1/archives/no-3mf-warning")
 
         assert response.status_code == 200
-        assert response.json() == {"has_fallback": True}
+        assert response.json() == {"has_fallback": True, "reason": None}
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -739,7 +739,7 @@ class TestNo3MFWarning:
         response = await async_client.get("/api/v1/archives/no-3mf-warning")
 
         assert response.status_code == 200
-        assert response.json() == {"has_fallback": False}
+        assert response.json() == {"has_fallback": False, "reason": None}
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -755,7 +755,7 @@ class TestNo3MFWarning:
         response = await async_client.get("/api/v1/archives/no-3mf-warning")
 
         assert response.status_code == 200
-        assert response.json() == {"has_fallback": False}
+        assert response.json() == {"has_fallback": False, "reason": None}
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -775,7 +775,7 @@ class TestNo3MFWarning:
         response = await async_client.get("/api/v1/archives/no-3mf-warning")
 
         assert response.status_code == 200
-        assert response.json() == {"has_fallback": False}
+        assert response.json() == {"has_fallback": False, "reason": None}
         # Sanity: row really is in the DB, we just don't surface it.
         assert (await db_session.get(PrintArchive, archive.id)) is not None
 
@@ -796,7 +796,99 @@ class TestNo3MFWarning:
         assert response.status_code == 200
         # Soft-deleted fallbacks have been actioned (user clearing the
         # evidence). Stop nudging.
-        assert response.json() == {"has_fallback": False}
+        assert response.json() == {"has_fallback": False, "reason": None}
+
+
+class TestNo3MFWarningReason:
+    """Which explanation the banner shows (#2780).
+
+    The endpoint used to return a bare boolean and the banner had one wording:
+    "Store sent files on external storage" is off in the slicer, go turn it on.
+    For H2-series and P2S that is wrong twice over -- the setting is already on
+    and turning it on changes nothing, because the printer keeps the file on
+    internal storage FTPS does not serve. Sending people to re-do a step that
+    cannot help is worse than saying nothing, so the reason travels with the
+    flag.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_internal_storage_is_reported(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        printer = await printer_factory()
+        await archive_factory(
+            printer.id,
+            extra_data={"no_3mf_available": True, "no_3mf_reason": "internal_storage"},
+        )
+
+        response = await async_client.get("/api/v1/archives/no-3mf-warning")
+
+        assert response.json() == {"has_fallback": True, "reason": "internal_storage"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_empty_slot_is_reported(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        printer = await printer_factory()
+        await archive_factory(
+            printer.id,
+            extra_data={"no_3mf_available": True, "no_3mf_reason": "no_external_storage"},
+        )
+
+        response = await async_client.get("/api/v1/archives/no-3mf-warning")
+
+        assert response.json() == {"has_fallback": True, "reason": "no_external_storage"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_known_reason_outranks_archives_that_carry_none(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Every archive written before this field exists carries no reason,
+        and a farm usually has more than one printer. One H2C among four
+        printers should still get the H2C explanation rather than have it
+        drowned out by older rows.
+        """
+        printer = await printer_factory()
+        await archive_factory(printer.id, extra_data={"no_3mf_available": True})
+        await archive_factory(printer.id, extra_data={"no_3mf_available": True, "no_3mf_reason": "internal_storage"})
+        await archive_factory(printer.id, extra_data={"no_3mf_available": True})
+
+        response = await async_client.get("/api/v1/archives/no-3mf-warning")
+
+        assert response.json() == {"has_fallback": True, "reason": "internal_storage"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_internal_storage_outranks_an_empty_slot(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Both are real, and only one of them is surprising. "Put a card in"
+        is advice the user can act on unprompted; "this model keeps prints
+        somewhere Bambuddy cannot read" is the one they need told.
+        """
+        printer = await printer_factory()
+        await archive_factory(printer.id, extra_data={"no_3mf_available": True, "no_3mf_reason": "no_external_storage"})
+        await archive_factory(printer.id, extra_data={"no_3mf_available": True, "no_3mf_reason": "internal_storage"})
+
+        response = await async_client.get("/api/v1/archives/no-3mf-warning")
+
+        assert response.json() == {"has_fallback": True, "reason": "internal_storage"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_reason_on_a_non_fallback_archive_is_not_reported(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """The reason only means anything alongside the flag it explains."""
+        printer = await printer_factory()
+        await archive_factory(printer.id, extra_data={"no_3mf_reason": "internal_storage"})
+
+        response = await async_client.get("/api/v1/archives/no-3mf-warning")
+
+        assert response.json() == {"has_fallback": False, "reason": None}
 
 
 class TestPrintLogEntryDelete:
@@ -1596,6 +1688,59 @@ class TestArchiveF3DEndpoints:
         """Verify filament-requirements with plate_id returns 404 for non-existent archive."""
         response = await async_client.get("/api/v1/archives/999999/filament-requirements?plate_id=1")
         assert response.status_code == 404
+
+    async def _two_plate_archive(self, archive_factory, printer_factory, tmp_path):
+        """An archive whose 3MF stores plate 2 ahead of plate 1, as Studio writes it."""
+        import zipfile
+
+        printer = await printer_factory()
+        path = tmp_path / "two_plates.gcode.3mf"
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("Metadata/plate_2.gcode", "; plate two\nG28\n")
+            zf.writestr("Metadata/plate_1.gcode", "; plate one\nG28\n")
+        # An absolute file_path collapses `settings.base_dir / file_path` onto
+        # itself, so the route reads the file written here.
+        return await archive_factory(printer.id, file_path=str(path), filename="two_plates.gcode.3mf")
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_gcode_without_a_plate_serves_the_first_plate(
+        self, async_client: AsyncClient, archive_factory, printer_factory, tmp_path
+    ):
+        """Zip order is whatever the slicer wrote, so the first member here is
+        plate 2. Callers that pass no plate must still land on plate 1."""
+        archive = await self._two_plate_archive(archive_factory, printer_factory, tmp_path)
+
+        response = await async_client.get(f"/api/v1/archives/{archive.id}/gcode")
+
+        assert response.status_code == 200
+        assert "plate one" in response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_gcode_serves_the_requested_plate(
+        self, async_client: AsyncClient, archive_factory, printer_factory, tmp_path
+    ):
+        archive = await self._two_plate_archive(archive_factory, printer_factory, tmp_path)
+
+        first = await async_client.get(f"/api/v1/archives/{archive.id}/gcode?plate=1")
+        second = await async_client.get(f"/api/v1/archives/{archive.id}/gcode?plate=2")
+
+        assert "plate one" in first.text
+        assert "plate two" in second.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_archive_gcode_rejects_a_plate_the_file_does_not_hold(
+        self, async_client: AsyncClient, archive_factory, printer_factory, tmp_path
+    ):
+        archive = await self._two_plate_archive(archive_factory, printer_factory, tmp_path)
+
+        missing = await async_client.get(f"/api/v1/archives/{archive.id}/gcode?plate=3")
+        zeroth = await async_client.get(f"/api/v1/archives/{archive.id}/gcode?plate=0")
+
+        assert missing.status_code == 404
+        assert zeroth.status_code == 400
 
     # ========================================================================
     # Tag Management endpoints (Issue #183)

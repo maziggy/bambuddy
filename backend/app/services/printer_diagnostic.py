@@ -21,6 +21,7 @@ from backend.app.services.bambu_mqtt import CONNECT_ERROR_AUTH_REJECTED
 from backend.app.services.camera import get_camera_port
 from backend.app.services.discovery import is_running_in_docker
 from backend.app.services.ftp_profiles import get_ftp_profile
+from backend.app.services.print_storage import REASON_INTERNAL_STORAGE, last_print_storage_verdict
 from backend.app.services.printer_manager import printer_manager
 from backend.app.utils.printer_models import has_external_storage, has_remote_storage_toggle
 
@@ -300,11 +301,14 @@ async def run_connection_diagnostic(
     store_to_sdcard = getattr(state, "store_to_sdcard", None) if state else None
     if not model_has_slot or state is None or not state.connected:
         checks.append(DiagnosticCheck(id="external_storage", status="skip"))
-    elif store_to_sdcard is True:
-        checks.append(DiagnosticCheck(id="external_storage", status="pass"))
     elif store_to_sdcard is False and not has_remote_storage_toggle(model):
         # Slot present but no way to enable it on this firmware — don't nag
         # with an unresolvable fail; explain why via the reason param.
+        #
+        # Ahead of the empty-slot check below on purpose (#2524 over #2780):
+        # on a P1-series the toggle cannot be switched on at all, so telling
+        # the operator to insert a card would promise a fix that inserting a
+        # card does not deliver.
         checks.append(
             DiagnosticCheck(
                 id="external_storage",
@@ -312,6 +316,33 @@ async def run_connection_diagnostic(
                 params={"reason": "unsupported_model"},
             )
         )
+    elif getattr(state, "sdcard_reported", False) and not getattr(state, "sdcard", False):
+        # The toggle can be on and still achieve nothing with an empty slot,
+        # and that combination used to report a clean pass — #2780's H2C had
+        # `store_to_sdcard` set and `sdcard` False for three solid weeks while
+        # every one of its archives came out blank. Report the empty slot,
+        # which is the part the operator can actually act on.
+        checks.append(
+            DiagnosticCheck(
+                id="external_storage",
+                status="fail",
+                params={"reason": "no_media"},
+            )
+        )
+    elif not last_print_storage_verdict(state).reachable:
+        # The toggle is on, a card is in, and the printer still put the last
+        # print on internal storage — which is what H2-series and P2S firmware
+        # does, and no setting here changes it (#2762 tracks reading that
+        # storage). A pass here would be a lie; a fail would be unresolvable.
+        checks.append(
+            DiagnosticCheck(
+                id="external_storage",
+                status="warn",
+                params={"reason": REASON_INTERNAL_STORAGE},
+            )
+        )
+    elif store_to_sdcard is True:
+        checks.append(DiagnosticCheck(id="external_storage", status="pass"))
     elif store_to_sdcard is False:
         checks.append(DiagnosticCheck(id="external_storage", status="fail"))
     else:

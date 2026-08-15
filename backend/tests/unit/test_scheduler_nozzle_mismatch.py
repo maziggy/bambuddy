@@ -28,6 +28,7 @@ from backend.app.services.print_scheduler import (
     _installed_nozzle_diameters,
     _nozzle_mismatch_message,
 )
+from backend.tests._fixtures.background_tasks import discarding_spawn_patch
 
 
 def _state(*diameters: str):
@@ -200,7 +201,7 @@ async def _run_start_print(ctx, *, installed_nozzles):
         patch("backend.app.services.print_scheduler.upload_file_async", ctx.upload),
         patch("backend.app.services.print_scheduler.delete_file_async", AsyncMock(return_value=True)),
         patch("backend.app.services.print_scheduler.cache_3mf_download", MagicMock()),
-        patch("backend.app.services.print_scheduler.spawn_background_task", MagicMock()),
+        discarding_spawn_patch(),
         patch(
             "backend.app.services.print_scheduler.get_ftp_retry_settings", AsyncMock(return_value=(False, 0, 0, 1.0))
         ),

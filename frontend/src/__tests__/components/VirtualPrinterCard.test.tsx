@@ -486,3 +486,90 @@ describe('VirtualPrinterCard - access code inherits from target', () => {
     expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument();
   });
 });
+
+// The collapsed header used to be a single flex row of flex-shrink-0 items,
+// so it was as wide as its contents and spilled past the card's border --
+// the reporter of #2808 saw an IP address and the enable toggle floating on
+// the page background. jsdom does no layout, so these pin the CSS contract
+// that makes wrapping possible rather than the pixels: a flexible, wrappable
+// metadata group, and no item that both refuses to shrink and claims it will
+// truncate.
+describe('VirtualPrinterCard - header does not overflow the card', () => {
+  const printers = [
+    {
+      id: 9,
+      // The name a printer adopted without one gets (discovery.py) -- 25
+      // unbreakable characters, and half of why this overflowed.
+      name: 'Printer at 192.168.30.210',
+      ip_address: '192.168.30.210',
+      access_code: 'TGTCODE1',
+      serial_number: '01P00A391800001',
+      model: 'H2C',
+      is_active: true,
+    },
+  ];
+
+  const twoVlanPrinter = () =>
+    createMockPrinter({
+      name: 'H2C',
+      mode: 'proxy',
+      model_name: 'H2C',
+      target_printer_id: 9,
+      // Both are populated only when Bambuddy and the printer sit on
+      // different subnets -- the reporter's case.
+      bind_ip: '192.168.20.175',
+      remote_interface_ip: '192.168.30.210',
+    });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(multiVirtualPrinterApi.update).mockResolvedValue(createMockPrinter());
+    vi.mocked(api.getPrinters).mockResolvedValue(printers as unknown as Awaited<ReturnType<typeof api.getPrinters>>);
+  });
+
+  it('keeps both IPs visible instead of truncating them away', async () => {
+    render(<VirtualPrinterCard printer={twoVlanPrinter()} models={models} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('192.168.20.175')).toBeInTheDocument();
+    });
+    // An operator opens this page to check exactly these two values, so the
+    // fix has to wrap them, not hide them.
+    expect(screen.getByText('192.168.30.210')).toBeInTheDocument();
+  });
+
+  it('puts the metadata in a shrinkable, wrapping group', async () => {
+    render(<VirtualPrinterCard printer={twoVlanPrinter()} models={models} />);
+
+    const bindIp = await screen.findByText('192.168.20.175');
+    const group = bindIp.parentElement as HTMLElement;
+
+    expect(group.className).toContain('flex-wrap');
+    // Without min-w-0 a flex item cannot shrink below its content, which is
+    // what defeated the name's `truncate` before.
+    expect(group.className).toContain('min-w-0');
+    expect(group.className).toContain('flex-1');
+  });
+
+  it('has no header item that is both unshrinkable and truncating', async () => {
+    render(<VirtualPrinterCard printer={twoVlanPrinter()} models={models} />);
+
+    const bindIp = await screen.findByText('192.168.20.175');
+    const group = bindIp.parentElement as HTMLElement;
+
+    const selfCancelling = Array.from(group.children).filter(
+      (el) => el.className.includes('flex-shrink-0') && el.className.includes('truncate')
+    );
+    expect(selfCancelling).toHaveLength(0);
+  });
+
+  it('clips at the card border as a backstop', async () => {
+    const { container } = render(<VirtualPrinterCard printer={twoVlanPrinter()} models={models} />);
+
+    await screen.findByText('192.168.20.175');
+    // Scoped to this card on purpose: cards elsewhere render menus that paint
+    // outside their own bounds, so this must not migrate into `Card`.
+    const card = container.querySelector('.rounded-xl') as HTMLElement;
+    expect(card.className).toContain('overflow-hidden');
+  });
+});

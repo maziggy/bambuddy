@@ -27,8 +27,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session
 from backend.app.models.library import LibraryFile
-from backend.app.models.print_queue import PrintQueueVariant
+from backend.app.models.print_queue import PrintQueueItem, PrintQueueVariant
 from backend.app.models.settings import Settings
+from backend.app.utils.local_time import utcnow_naive
 
 logger = logging.getLogger(__name__)
 
@@ -353,6 +354,7 @@ class LibraryTrashService:
             self._unlink_on_disk(row)
             deleted += 1
         await delete_dependent_variants(db, [r.id for r in rows])
+        await release_queue_references(db, [r.id for r in rows])
         # Single DELETE is faster than N await db.delete() round-trips; we
         # still need the Python loop above to unlink bytes on disk.
         await db.execute(delete(LibraryFile).where(LibraryFile.id.in_([r.id for r in rows])))
@@ -386,8 +388,84 @@ class LibraryTrashService:
         """Bypass retention and delete this trashed file + its bytes immediately."""
         self._unlink_on_disk(file)
         await delete_dependent_variants(db, [file.id])
+        await release_queue_references(db, [file.id])
         await db.delete(file)
         await db.commit()
+
+
+async def release_queue_references(db: AsyncSession, file_ids: list[int]) -> int:
+    """Take queued work off files that are about to be hard-deleted (#2819).
+
+    Call this before any statement that removes ``library_files`` rows — the
+    plain deletes in the routes, the folder cascade, and the sweeper. It is the
+    same repair the scheduler does when a dispatch consumes its own library row
+    (``_repoint_siblings_at_archive``), minus the part that cannot apply here:
+    nothing is being printed, so there is no archive to hand the work to.
+
+    Two things happen, and both matter on a different database:
+
+    * Items still waiting on one of these files are cancelled, saying which file
+      went. Without it a queued job sat there looking dispatchable and failed at
+      the printer with "Library file not found", days later and with nothing
+      naming the delete that caused it.
+    * Every remaining row referencing the file has ``library_file_id`` cleared.
+      That is what keeps it: ``print_queue.library_file_id`` is ``ON DELETE
+      CASCADE``, which SQLite does not enforce and PostgreSQL does, so those rows
+      were silently deleted there -- including finished ones, which is what a
+      batch order counts its progress from.
+
+    Rows already printing are left in place. One of those is a job on a machine
+    right now; the file being deleted is the copy in the library, not the copy
+    the printer is working from. Returns the number of items cancelled.
+    """
+    if not file_ids:
+        return 0
+
+    doomed: dict[int, list[int]] = {}
+    rows = (
+        await db.execute(
+            select(PrintQueueItem.id, PrintQueueItem.library_file_id)
+            .where(PrintQueueItem.library_file_id.in_(file_ids))
+            .where(PrintQueueItem.archive_id.is_(None))
+            # "skipped" is not terminal: clearing a printer's previous-success
+            # gate puts those items back to pending, onto a file that by then
+            # is gone.
+            .where(PrintQueueItem.status.in_(("pending", "skipped")))
+        )
+    ).all()
+    for item_id, lib_id in rows:
+        doomed.setdefault(lib_id, []).append(item_id)
+
+    if doomed:
+        names = dict(
+            (
+                await db.execute(select(LibraryFile.id, LibraryFile.filename).where(LibraryFile.id.in_(list(doomed))))
+            ).all()
+        )
+        # Naive UTC: `completed_at` is a naive column, and asyncpg rejects an
+        # aware value outright where SQLite silently drops the offset.
+        now = utcnow_naive()
+        # One statement per file rather than per item: the case this exists for
+        # is many copies of one file, and a folder delete can reach a lot of
+        # them at once.
+        for lib_id, item_ids in doomed.items():
+            await db.execute(
+                PrintQueueItem.__table__.update()
+                .where(PrintQueueItem.id.in_(item_ids))
+                .values(
+                    status="cancelled",
+                    completed_at=now,
+                    error_message=f"'{names.get(lib_id, 'The library file')}' was deleted from the library",
+                )
+            )
+        logger.info("Library delete: cancelled %d queued item(s) whose file was removed", len(rows))
+
+    await db.execute(
+        PrintQueueItem.__table__.update()
+        .where(PrintQueueItem.library_file_id.in_(file_ids))
+        .values(library_file_id=None)
+    )
+    return len(rows)
 
 
 async def delete_dependent_variants(db: AsyncSession, file_ids: list[int]) -> None:

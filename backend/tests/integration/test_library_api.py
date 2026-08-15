@@ -1630,6 +1630,73 @@ class TestPrintFileUploadValidation:
         # The whole point of #1709: must NOT be ZIP bytes shoved at the viewer.
         assert not response.content.startswith(b"PK")
 
+    async def _multi_plate_file(self, db_session):
+        """A two-plate `.gcode.3mf` written plate 2 first, as Bambu Studio does.
+
+        The member order is copied from the file this was reported on — taking
+        the first `.gcode` in the zip opened plate 2.
+        """
+        from backend.app.models.library import LibraryFile
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("Metadata/plate_2.gcode", "; plate two\nG28\n")
+            zf.writestr("Metadata/plate_1.gcode", "; plate one\nG28\n")
+        with tempfile.NamedTemporaryFile(suffix=".gcode.3mf", delete=False) as tmp:
+            tmp.write(buf.getvalue())
+            tmp_path = tmp.name
+
+        lib_file = LibraryFile(
+            filename="two-plates.gcode.3mf",
+            file_path=tmp_path,
+            file_type="gcode.3mf",
+            file_size=Path(tmp_path).stat().st_size,
+        )
+        db_session.add(lib_file)
+        await db_session.commit()
+        await db_session.refresh(lib_file)
+        return lib_file
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_library_gcode_serves_the_requested_plate(self, async_client: AsyncClient, db_session):
+        """The viewer has always sent ``?plate=``; this route took no such
+        parameter, and FastAPI drops unknown query parameters without a word —
+        so picking a plate did nothing at all."""
+        lib_file = await self._multi_plate_file(db_session)
+
+        first = await async_client.get(f"/api/v1/library/files/{lib_file.id}/gcode?plate=1")
+        second = await async_client.get(f"/api/v1/library/files/{lib_file.id}/gcode?plate=2")
+
+        assert first.status_code == 200
+        assert b"plate one" in first.content
+        assert second.status_code == 200
+        assert b"plate two" in second.content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_library_gcode_without_a_plate_serves_the_first_plate(self, async_client: AsyncClient, db_session):
+        """Not the first member in the zip — that is plate 2 in this file, and
+        opening a multi-plate file from the File Manager passes no plate."""
+        lib_file = await self._multi_plate_file(db_session)
+
+        response = await async_client.get(f"/api/v1/library/files/{lib_file.id}/gcode")
+
+        assert response.status_code == 200
+        assert b"plate one" in response.content
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_library_gcode_rejects_a_plate_the_file_does_not_hold(self, async_client: AsyncClient, db_session):
+        """404 rather than quietly rendering some other plate."""
+        lib_file = await self._multi_plate_file(db_session)
+
+        missing = await async_client.get(f"/api/v1/library/files/{lib_file.id}/gcode?plate=3")
+        zeroth = await async_client.get(f"/api/v1/library/files/{lib_file.id}/gcode?plate=0")
+
+        assert missing.status_code == 404
+        assert zeroth.status_code == 400
+
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_library_still_accepts_non_print_extensions(self, async_client: AsyncClient, db_session):

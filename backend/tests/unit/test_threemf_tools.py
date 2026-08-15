@@ -9,11 +9,14 @@ import json
 import math
 import zipfile
 
+import pytest
+
 from backend.app.utils.threemf_tools import (
     expand_to_project_slots,
     extract_bed_type_from_3mf,
     extract_embedded_presets_from_3mf,
     extract_filament_usage_from_3mf,
+    extract_layer_filament_usage_from_3mf,
     extract_max_z_height_from_3mf,
     extract_plate_extruder_set_from_3mf,
     extract_print_time_from_3mf,
@@ -1392,3 +1395,87 @@ class TestExtractMaxZHeightFrom3mf:
         gcode = _header(max_z_height="99.9") + "\n" + ("G1 X1 Y1 E0.1\n" * 400_000)
         path = _make_plate_3mf(tmp_path, {"Metadata/plate_1.gcode": gcode})
         assert extract_max_z_height_from_3mf(path, 1) == 99.9
+
+
+def _layer_gcode(per_layer_mm: float, layers: int) -> str:
+    """G-code extruding a fixed amount on filament 0 for each of ``layers``."""
+    lines = ["M620 S0"]
+    for layer in range(1, layers + 1):
+        lines.append(f"M73 L{layer}")
+        lines.append(f"G1 X1 Y1 E{per_layer_mm}")
+    return "\n".join(lines)
+
+
+class TestExtractLayerFilamentUsagePlateSelection:
+    """The per-layer extract feeds the mid-print tray split and partial-print
+    scaling, so reading a different plate than the one that printed silently
+    misattributes filament.
+
+    Bambu Studio writes ``plate_2.gcode`` ahead of ``plate_1.gcode`` in the
+    zip, so "first member" is not "first plate".
+    """
+
+    def test_reads_the_requested_plate_not_the_first_member(self, tmp_path):
+        path = _make_plate_3mf(
+            tmp_path,
+            {
+                "Metadata/plate_2.gcode": _layer_gcode(1.0, 5),
+                "Metadata/plate_1.gcode": _layer_gcode(10.0, 8),
+            },
+        )
+        usage = extract_layer_filament_usage_from_3mf(path, 1)
+        assert usage is not None
+        assert get_cumulative_usage_at_layer(usage, 8)[0] == pytest.approx(80.0)
+
+    def test_plate_two_reads_plate_two(self, tmp_path):
+        path = _make_plate_3mf(
+            tmp_path,
+            {
+                "Metadata/plate_2.gcode": _layer_gcode(1.0, 5),
+                "Metadata/plate_1.gcode": _layer_gcode(10.0, 8),
+            },
+        )
+        usage = extract_layer_filament_usage_from_3mf(path, 2)
+        assert usage is not None
+        assert get_cumulative_usage_at_layer(usage, 5)[0] == pytest.approx(5.0)
+
+    def test_no_plate_asked_for_takes_the_lowest_numbered_plate(self, tmp_path):
+        path = _make_plate_3mf(
+            tmp_path,
+            {
+                "Metadata/plate_2.gcode": _layer_gcode(1.0, 5),
+                "Metadata/plate_1.gcode": _layer_gcode(10.0, 8),
+            },
+        )
+        usage = extract_layer_filament_usage_from_3mf(path)
+        assert usage is not None
+        assert get_cumulative_usage_at_layer(usage, 8)[0] == pytest.approx(80.0)
+
+    def test_requested_plate_missing_returns_none_rather_than_another_plate(self, tmp_path):
+        """Callers degrade to linear scaling, which is bounded. Silently
+        reading a different plate's layers is not."""
+        path = _make_plate_3mf(
+            tmp_path,
+            {
+                "Metadata/plate_1.gcode": _layer_gcode(10.0, 8),
+                "Metadata/plate_2.gcode": _layer_gcode(1.0, 5),
+            },
+        )
+        assert extract_layer_filament_usage_from_3mf(path, 3) is None
+
+    def test_single_unnumbered_gcode_is_used_for_any_plate(self, tmp_path):
+        """Slicers outside Bambu's plate_N convention export one G-code member;
+        it is unambiguous whatever plate the queue recorded."""
+        path = _make_plate_3mf(tmp_path, {"whatever.gcode": _layer_gcode(2.0, 4)})
+        usage = extract_layer_filament_usage_from_3mf(path, 1)
+        assert usage is not None
+        assert get_cumulative_usage_at_layer(usage, 4)[0] == pytest.approx(8.0)
+
+    def test_no_gcode_member_returns_none(self, tmp_path):
+        path = _make_plate_3mf(tmp_path, {"Metadata/slice_info.config": "<config/>"})
+        assert extract_layer_filament_usage_from_3mf(path, 1) is None
+
+    def test_unreadable_file_returns_none(self, tmp_path):
+        path = tmp_path / "broken.3mf"
+        path.write_text("not a zip")
+        assert extract_layer_filament_usage_from_3mf(path, 1) is None

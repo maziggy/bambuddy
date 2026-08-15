@@ -78,6 +78,20 @@ def _global_to_ams_key(global_tray_id: int) -> tuple[int, int]:
     return (global_tray_id // 4, global_tray_id % 4)
 
 
+def _ams_key_to_global(ams_id: int, tray_id: int) -> int:
+    """Inverse of ``_global_to_ams_key``.
+
+    Mirrors the frontend ``getGlobalTrayId``: external / VT slots (``ams_id``
+    255) land at ``254 + tray_id``, AMS-HT units (``ams_id`` >= 128) use the
+    unit id directly, regular AMS slots use ``ams_id * 4 + tray_id``.
+    """
+    if ams_id >= 255:
+        return 254 + tray_id
+    if ams_id >= 128:
+        return ams_id
+    return ams_id * 4 + tray_id
+
+
 def _resolve_source_3mf(item: PrintQueueItem) -> Path | None:
     """Locate the 3MF file backing this queue item (archive or library).
 
@@ -285,6 +299,121 @@ async def _get_printer_backup_context(
     model = printer_manager.get_model(printer_id)
     is_dual = bool(model and is_dual_nozzle_model(model))
     return backup_on, ams_extruder_map, is_dual
+
+
+@dataclass(frozen=True)
+class SlotMaterial:
+    """One inventory-bound AMS slot: what's in it, how much is left, which side."""
+
+    ams_id: int
+    tray_id: int
+    global_tray_id: int
+    # Opaque grouping key. Two slots pool for AMS Filament Backup only when
+    # their keys AND extruder sides match. Never parse it — the format is an
+    # implementation detail of ``_material_identity_*``.
+    material_key: str
+    remaining_grams: float
+    extruder: int
+
+    def to_dict(self) -> dict:
+        return {
+            "ams_id": self.ams_id,
+            "tray_id": self.tray_id,
+            "global_tray_id": self.global_tray_id,
+            "material_key": self.material_key,
+            "remaining_g": self.remaining_grams,
+            "extruder": self.extruder,
+        }
+
+
+async def build_slot_materials(db: AsyncSession, printer_id: int) -> list[SlotMaterial]:
+    """Every inventory-bound slot on ``printer_id``, with identity and remaining grams.
+
+    Mode-agnostic: internal inventory resolves via ``SpoolAssignment`` joined to
+    ``Spool`` (``label_weight`` minus ``weight_used``), Spoolman mode via
+    ``SpoolmanSlotAssignment`` plus a live ``get_spool`` fetch. Slots whose
+    remaining weight can't be determined — no spool row, zero label weight,
+    Spoolman unreachable — are omitted entirely rather than reported as zero, so
+    a missing binding never manufactures a shortfall.
+
+    This is the pool the AMS-Filament-Backup accounting draws on (#1762), and
+    the same data the PrintModal pre-flight check consumes through
+    ``GET /printers/{id}/inventory-remain``. Both sides share it so the modal's
+    warning and the dispatcher's 409 can't disagree about what backs what up.
+    """
+    _, ams_extruder_map, is_dual = await _get_printer_backup_context(printer_id)
+    materials: list[SlotMaterial] = []
+
+    def _append(ams_id: int, tray_id: int, material_key: str, remaining: float) -> None:
+        materials.append(
+            SlotMaterial(
+                ams_id=ams_id,
+                tray_id=tray_id,
+                global_tray_id=_ams_key_to_global(ams_id, tray_id),
+                material_key=material_key,
+                remaining_grams=remaining,
+                extruder=_extruder_side_for_ams(ams_id, ams_extruder_map, is_dual),
+            )
+        )
+
+    if await _is_spoolman_mode(db):
+        sm_all = await db.execute(select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == printer_id))
+        from backend.app.services.spoolman import (
+            SpoolmanClientError,
+            SpoolmanNotFoundError,
+            get_spoolman_client,
+        )
+
+        try:
+            client = await get_spoolman_client()
+        except Exception:
+            client = None
+        if client is None:
+            return []
+        for sa in sm_all.scalars().all():
+            try:
+                spool_dict = await client.get_spool(sa.spoolman_spool_id)
+            except (SpoolmanNotFoundError, SpoolmanClientError):
+                continue
+            except Exception as e:
+                logger.debug("Spoolman pool fetch failed for spool %s: %s", sa.spoolman_spool_id, e)
+                continue
+            if not spool_dict:
+                continue
+            remaining: float | None = None
+            rw = spool_dict.get("remaining_weight")
+            if isinstance(rw, (int, float)) and rw >= 0:
+                remaining = float(rw)
+            else:
+                used = spool_dict.get("used_weight")
+                total = (spool_dict.get("filament") or {}).get("weight")
+                if isinstance(used, (int, float)) and isinstance(total, (int, float)) and total > 0:
+                    remaining = max(0.0, float(total) - float(used))
+            if remaining is None:
+                continue
+            _append(sa.ams_id, sa.tray_id, _material_identity_spoolman(spool_dict), remaining)
+        return materials
+
+    internal_all = await db.execute(
+        select(SpoolAssignment)
+        .options(selectinload(SpoolAssignment.spool))
+        .where(SpoolAssignment.printer_id == printer_id)
+    )
+    for assignment in internal_all.scalars().all():
+        spool = assignment.spool
+        if spool is None:
+            continue
+        label_weight = float(spool.label_weight or 0)
+        weight_used = float(spool.weight_used or 0)
+        if label_weight <= 0:
+            continue
+        _append(
+            assignment.ams_id,
+            assignment.tray_id,
+            _material_identity_internal(spool),
+            max(0.0, label_weight - weight_used),
+        )
+    return materials
 
 
 async def compute_deficit_for_queue_item(
@@ -498,64 +627,8 @@ async def compute_deficit_for_queue_item(
     pool_by_key: dict[tuple[str, int], float] = defaultdict(float)
     required_by_key: dict[tuple[str, int], float] = defaultdict(float)
 
-    if spoolman_mode:
-        sm_all = await db.execute(
-            select(SpoolmanSlotAssignment).where(SpoolmanSlotAssignment.printer_id == item.printer_id)
-        )
-        from backend.app.services.spoolman import (
-            SpoolmanClientError,
-            SpoolmanNotFoundError,
-            get_spoolman_client,
-        )
-
-        try:
-            client = await get_spoolman_client()
-        except Exception:
-            client = None
-        for sa in sm_all.scalars().all():
-            if client is None:
-                break
-            try:
-                spool_dict = await client.get_spool(sa.spoolman_spool_id)
-            except (SpoolmanNotFoundError, SpoolmanClientError):
-                continue
-            except Exception as e:
-                logger.debug("Spoolman pool fetch failed for spool %s: %s", sa.spoolman_spool_id, e)
-                continue
-            if not spool_dict:
-                continue
-            identity = _material_identity_spoolman(spool_dict)
-            rw = spool_dict.get("remaining_weight")
-            r: float | None = None
-            if isinstance(rw, (int, float)) and rw >= 0:
-                r = float(rw)
-            else:
-                used = spool_dict.get("used_weight")
-                total = (spool_dict.get("filament") or {}).get("weight")
-                if isinstance(used, (int, float)) and isinstance(total, (int, float)) and total > 0:
-                    r = max(0.0, float(total) - float(used))
-            if r is None:
-                continue
-            extruder = _extruder_side_for_ams(sa.ams_id, ams_extruder_map, is_dual)
-            pool_by_key[(identity, extruder)] += r
-    else:
-        internal_all = await db.execute(
-            select(SpoolAssignment)
-            .options(selectinload(SpoolAssignment.spool))
-            .where(SpoolAssignment.printer_id == item.printer_id)
-        )
-        for assignment in internal_all.scalars().all():
-            spool = assignment.spool
-            if spool is None:
-                continue
-            label_weight = float(spool.label_weight or 0)
-            weight_used = float(spool.weight_used or 0)
-            if label_weight <= 0:
-                continue
-            r = max(0.0, label_weight - weight_used)
-            identity = _material_identity_internal(spool)
-            extruder = _extruder_side_for_ams(assignment.ams_id, ams_extruder_map, is_dual)
-            pool_by_key[(identity, extruder)] += r
+    for slot in await build_slot_materials(db, item.printer_id):
+        pool_by_key[(slot.material_key, slot.extruder)] += slot.remaining_grams
 
     for row in resolved:
         required_by_key[(row.identity, row.extruder)] += row.required

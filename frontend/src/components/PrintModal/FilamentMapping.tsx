@@ -7,7 +7,8 @@ import { useFilamentMapping } from '../../hooks/useFilamentMapping';
 import { getGlobalTrayId, effectivePreferLowest } from '../../utils/amsHelpers';
 import { getColorName } from '../../utils/colors';
 import { useFilamentLabels } from './useFilamentLabels';
-import type { FilamentMappingProps } from './types';
+import { autoAssignRackPositions, rackOptionsForGroup } from '../../utils/nozzleRack';
+import type { FilamentMappingProps, RackGroupInfo } from './types';
 
 /**
  * Filament mapping UI for comparing required filaments with loaded AMS slots.
@@ -28,6 +29,8 @@ export function FilamentMapping({
   onForceColorMatchChange,
   plateLabel,
   archiveAmsMapping,
+  nozzleRackChoice,
+  onNozzleRackChoiceChange,
 }: FilamentMappingProps & { defaultExpanded?: boolean }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -194,6 +197,41 @@ export function FilamentMapping({
   const hasFilamentReqs = filamentReqs?.filaments && filamentReqs.filaments.length > 0;
   const isDualNozzle = filamentReqs?.filaments?.some((f) => f.nozzle_id != null) ?? false;
 
+  // Nozzle rack (#1784). The 3MF names a filament *group* per slot and says
+  // which groups need a hotend off the rack; which of the six positions each
+  // takes is the operator's to choose and is stated nowhere in the file. A
+  // group, not a slot, is the unit of choice — two slots sharing a group share
+  // one hotend and cannot point at different positions.
+  const rackGroups = useMemo(() => {
+    const groups = new Map<number, RackGroupInfo>();
+    for (const f of filamentReqs?.filaments ?? []) {
+      if (f.group_id != null && f.group) groups.set(f.group_id, f.group);
+    }
+    return groups;
+  }, [filamentReqs]);
+  const hasRack = (printerStatus?.nozzle_rack?.some((n) => n.id >= 16) ?? false)
+    && [...rackGroups.values()].some((g) => g.on_rack);
+
+  // What the dispatcher would assign if nothing were picked, shown as the
+  // pre-selection so the dialog states what will happen rather than leaving
+  // every picker blank. Explicit picks are pinned and the rest fill in around
+  // them, exactly as the backend does it.
+  const effectiveRackChoice = useMemo(() => {
+    if (!hasRack) return {};
+    return (
+      autoAssignRackPositions(printerStatus?.nozzle_rack, rackGroups, nozzleRackChoice ?? {})
+      ?? (nozzleRackChoice ?? {})
+    );
+  }, [hasRack, printerStatus?.nozzle_rack, rackGroups, nozzleRackChoice]);
+
+  const pickRackPosition = (groupId: number, position: number) => {
+    if (!onNozzleRackChoiceChange) return;
+    // Every group is written back, not just the edited one: leaving the others
+    // implicit would let the dispatcher re-assign them around the new pick and
+    // silently move a hotend the operator had already seen and accepted.
+    onNozzleRackChoiceChange({ ...effectiveRackChoice, [groupId]: position });
+  };
+
   // Filament Track Switch: when installed, AMS-to-extruder mapping is dynamic
   // (any slot can be routed to either extruder), so the per-nozzle dropdown
   // filter is suppressed. fila_switch.in_slots[track] = currently fed slot,
@@ -322,7 +360,17 @@ export function FilamentMapping({
             <div key={idx} className="space-y-1">
               <div
                 className="grid items-center gap-2 text-xs"
-                style={{ gridTemplateColumns: '16px minmax(70px, 1fr) auto 2fr 16px' }}
+                style={{
+                  // The rack picker sits inside the required-filament cell, so
+                  // on a rack machine that cell has to carry the name *and* an
+                  // ~85px dropdown. Raising only the floor (not the fraction)
+                  // keeps every other printer's layout exactly as it was, and
+                  // keeps the AMS dropdown — which names type, colour and
+                  // remaining weight — the widest column.
+                  gridTemplateColumns: hasRack
+                    ? '16px minmax(210px, 1.4fr) auto 2fr 16px'
+                    : '16px minmax(70px, 1fr) auto 2fr 16px',
+                }}
               >
                 {/* Required color */}
                 <span title={`Required: ${resolvedName} - ${colorLabel}`}>
@@ -332,14 +380,44 @@ export function FilamentMapping({
                     truncates; the gram usage is pinned (shrink-0) so it never
                     clips on narrow/mobile widths (#2669). */}
                 <span className="text-white flex items-center gap-1 min-w-0">
-                  {isDualNozzle && item.nozzle_id != null && (
+                  {hasRack && item.group_id != null && item.group ? (
+                    item.group.on_rack ? (
+                      <select
+                        value={effectiveRackChoice[item.group_id] ?? ''}
+                        onChange={(e) => pickRackPosition(item.group_id!, Number(e.target.value))}
+                        disabled={!onNozzleRackChoiceChange}
+                        title={t('printModal.rackPositionTooltip')}
+                        aria-label={t('printModal.rackPosition')}
+                        className="shrink-0 bg-bambu-dark-tertiary text-white text-[10px] font-bold rounded px-1 py-0.5 border border-bambu-dark-tertiary focus:border-bambu-green outline-none disabled:opacity-60"
+                      >
+                        {rackOptionsForGroup(printerStatus?.nozzle_rack, item.group, t).map((option) => (
+                          <option
+                            key={option.position}
+                            value={option.position}
+                            disabled={!option.eligible}
+                            title={option.reason}
+                          >
+                            R{option.position}
+                            {option.diameter ? ` · ${option.diameter}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span
+                        className="inline-flex items-center justify-center w-3.5 h-3.5 rounded text-[9px] font-bold leading-none bg-bambu-gray/20 text-bambu-gray shrink-0"
+                        title={t('printModal.leftNozzleTooltip')}
+                      >
+                        {t('printModal.leftNozzle')}
+                      </span>
+                    )
+                  ) : isDualNozzle && item.nozzle_id != null ? (
                     <span
                       className="inline-flex items-center justify-center w-3.5 h-3.5 rounded text-[9px] font-bold leading-none bg-bambu-gray/20 text-bambu-gray shrink-0"
                       title={item.nozzle_id === 1 ? t('printModal.leftNozzleTooltip') : t('printModal.rightNozzleTooltip')}
                     >
                       {item.nozzle_id === 1 ? t('printModal.leftNozzle') : t('printModal.rightNozzle')}
                     </span>
-                  )}
+                  ) : null}
                   <span className="truncate min-w-0" title={resolvedName}>{resolvedName}</span>
                   <span className="text-bambu-gray shrink-0 whitespace-nowrap">({item.used_grams}g)</span>
                 </span>

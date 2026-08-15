@@ -51,3 +51,14 @@ class ActivePrintSpoolman(Base):
     # ``tray_remain_start`` snapshot at usage_tracker.py:301.
     # Format: {"<ams_id>-<tray_id>": {"remain": int, "tray_uuid": str}, ...}
     tray_remain_start: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Global tray id the printer was drawing from when the print started.
+    # Evidence of which slot the print actually used, for the remain%-delta
+    # fallback (#1269 on the internal side, #1820 here): without it, a spool
+    # swapped in an untouched slot mid-print reads as consumption and is
+    # charged to whatever spool that slot was assigned. Often the only
+    # evidence there is — a print started from the printer's own screen
+    # carries no ams_mapping and may change tray never. Nullable: rows written
+    # before this column existed, and printers that report no tray_now, simply
+    # provide no evidence and are handled as before.
+    tray_now_at_start: Mapped[int | None] = mapped_column(nullable=True)

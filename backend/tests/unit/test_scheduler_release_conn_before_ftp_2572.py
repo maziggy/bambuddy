@@ -34,6 +34,7 @@ from backend.app.models.archive import PrintArchive
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.services.print_scheduler import PrintScheduler
+from backend.tests._fixtures.background_tasks import discarding_spawn_patch
 
 
 @pytest.fixture
@@ -107,7 +108,7 @@ async def test_connection_released_before_ftp_upload(dispatch_case):
             patch("backend.app.services.print_scheduler.delete_file_async", AsyncMock(return_value=True)),
             patch("backend.app.services.print_scheduler.upload_file_async", record_txn_state),
             patch("backend.app.services.print_scheduler.cache_3mf_download", MagicMock()),
-            patch("backend.app.services.print_scheduler.spawn_background_task", MagicMock()),
+            discarding_spawn_patch(),
             patch.object(scheduler, "_propagate_owner_to_printer_manager", AsyncMock()),
             patch.object(scheduler, "_power_off_if_needed", AsyncMock()),
             patch.object(scheduler, "_preheat_and_soak", AsyncMock()),

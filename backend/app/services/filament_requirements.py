@@ -20,7 +20,10 @@ import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
-from backend.app.utils.threemf_tools import extract_nozzle_mapping_from_3mf
+from backend.app.utils.threemf_tools import (
+    extract_nozzle_mapping_from_3mf,
+    extract_rack_plan_from_3mf,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -91,15 +94,55 @@ def extract_filament_requirements(file_path: Path, plate_id: int | None = None) 
             # Dual-nozzle printers (H2D / X2D) — annotate which extruder each
             # slot is fed into. Empty mapping for single-nozzle printers, in
             # which case we just don't add the key.
-            nozzle_mapping = extract_nozzle_mapping_from_3mf(zf)
+            # Same plate the filaments above were collected from: a multi-plate
+            # file can assign one slot to different extruders per plate, and
+            # annotating slot 2 with plate 3's nozzle is worse than not
+            # annotating it.
+            nozzle_mapping = extract_nozzle_mapping_from_3mf(zf, plate_id=plate_id)
             if nozzle_mapping:
                 for filament in filaments:
                     filament["nozzle_id"] = nozzle_mapping.get(filament["slot_id"])
+
+            annotate_rack_groups(filaments, file_path, plate_id)
     except Exception as e:
         logger.warning("Failed to parse filament requirements from %s: %s", file_path, e)
         return []
 
     return filaments
+
+
+def annotate_rack_groups(filaments: list[dict], file_path: Path, plate_id: int | None) -> None:
+    """Tag each filament with its group and that group's hotend needs (#1784).
+
+    `nozzle_id` says which *carriage*, which is all a two-hotend printer needs.
+    An H2C's rack carriage hosts six, so the print dialog also needs the
+    filament *group* — the slicer's logical nozzle — to offer a rack position
+    for it. Groups are the unit of choice, not slots: two slots in one group
+    share a hotend and cannot be pointed at different positions.
+
+    Annotated whenever the file describes a rack, independently of the nozzle
+    mapping, which is deliberately withheld for exactly the multi-rack plates
+    this is most needed for.
+
+    Mutates ``filaments`` in place and returns nothing, so every caller lands
+    on one implementation: the three filament-requirements paths (archive,
+    library and this module's own parser) each build their filament list
+    differently and would otherwise drift.
+    """
+    rack_plan = extract_rack_plan_from_3mf(file_path, plate_id=plate_id)
+    if rack_plan is None:
+        return
+
+    group_dicts = rack_plan.group_dicts()
+    for filament in filaments:
+        index = filament.get("slot_id", 0) - 1
+        if not 0 <= index < len(rack_plan.slot_groups):
+            continue
+        group_id = rack_plan.slot_groups[index]
+        if group_id < 0:
+            continue
+        filament["group_id"] = group_id
+        filament["group"] = group_dicts.get(group_id)
 
 
 def overrides_for_plate(

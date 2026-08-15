@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.app import main as main_module
+from backend.tests._fixtures.background_tasks import MAIN_TARGET, discarding_spawn_patch
 
 
 def _spawn_patch():
@@ -28,16 +29,11 @@ def _spawn_patch():
 
     `on_printer_status_change` builds `reconcile_stale_active_prints(...)` as
     a call argument, so the coroutine object is constructed whether or not the
-    replacement schedules it. A bare `MagicMock` keeps it alive in `call_args`
-    and it finalises unawaited during some *later* test's GC, surfacing as a
-    `PytestUnraisableExceptionWarning` attributed to an unrelated file.
-    Closing it here mirrors the real helper taking ownership of the coroutine,
-    while still keeping reconciliation from actually running.
+    replacement schedules it — see
+    `backend/tests/_fixtures/background_tasks.py` for what parking it in a
+    mock instead does to an unrelated test.
     """
-    return patch(
-        "backend.app.main.spawn_background_task",
-        side_effect=lambda coro, **kwargs: coro.close(),
-    )
+    return discarding_spawn_patch(MAIN_TARGET)
 
 
 def _state(connected: bool, state: str = "IDLE") -> SimpleNamespace:

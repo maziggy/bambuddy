@@ -1991,7 +1991,12 @@ async def start_drying(
     target_ams = drying_preflight.find_ams_unit(live_state, ams_id)
     blocking = drying_preflight.blocking_reason_codes(target_ams)
     if blocking:
-        raise HTTPException(409, drying_preflight.DRY_SF_REASON_MESSAGES[blocking[0]])
+        # Same pick the scheduled path makes, so both describe one blocked AMS
+        # the same way rather than differing on which code the firmware listed
+        # first.
+        raise HTTPException(
+            409, drying_preflight.DRY_SF_REASON_MESSAGES[drying_preflight.primary_reason_code(blocking)]
+        )
     filament = drying_preflight.resolve_filament(target_ams, filament)
 
     success = printer_manager.send_drying_command(

@@ -51,11 +51,17 @@ function waitingReasonKey(reason: string | null | undefined): string | undefined
   return reason ? WAITING_REASON_KEYS[reason] : undefined;
 }
 
-// Firmware cannot-dry codes 1 and 8 mean a power-supply problem; the rest
-// are transient (AMS busy, cooling down, filament at the outlet).
+// Which cannot-dry code to name when the firmware reports several at once.
+// Same priority as the backend's drying_preflight.primary_reason_code, so the
+// button's tooltip and a scheduled row's waiting reason describe one blocked
+// AMS the same way: codes 1 and 8 are a power-supply problem, 3 is filament
+// left at the outlet, and both need the user to go and do something. The rest
+// (AMS busy, cooling down) clear by themselves and share the generic wording.
 function dryingBlockedKey(reasons: Array<number | string> | undefined): string {
-  const powerRelated = (reasons ?? []).some(r => Number(r) === 1 || Number(r) === 8);
-  return powerRelated ? 'printers.drying.powerRequired' : 'printers.drying.cannotDryNow';
+  const codes = (reasons ?? []).map(r => Number(r));
+  if (codes.some(c => c === 1 || c === 8)) return 'printers.drying.powerRequired';
+  if (codes.includes(3)) return 'printers.drying.retractFilament';
+  return 'printers.drying.cannotDryNow';
 }
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';

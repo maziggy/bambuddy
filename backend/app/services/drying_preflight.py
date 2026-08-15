@@ -75,11 +75,29 @@ def blocking_reason_codes(unit: dict | None) -> list[int]:
     return codes
 
 
+def primary_reason_code(codes: list[int]) -> int | None:
+    """The one code to report when the AMS sets several at once.
+
+    Power and filament-at-the-outlet need the user to go and do something; the
+    rest clear on their own. Naming an actionable one is more use than whichever
+    the firmware happened to list first, and going through here keeps the
+    immediate endpoint's message and the scheduled row's waiting_reason
+    describing the same blocked AMS the same way.
+    """
+    for code in codes:
+        if code in POWER_REASON_CODES:
+            return code
+    if RETRACT_REASON_CODE in codes:
+        return RETRACT_REASON_CODE
+    return codes[0] if codes else None
+
+
 def waiting_reason_for_codes(codes: list[int]) -> str:
     """Map blocking codes onto the token the frontend translates."""
-    if any(code in POWER_REASON_CODES for code in codes):
+    code = primary_reason_code(codes)
+    if code in POWER_REASON_CODES:
         return WAITING_REASON_POWER
-    if RETRACT_REASON_CODE in codes:
+    if code == RETRACT_REASON_CODE:
         return WAITING_REASON_RETRACT
     return WAITING_REASON_BLOCKED
 

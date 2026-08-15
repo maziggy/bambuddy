@@ -332,4 +332,30 @@ describe('PrintersPage - drying start modes', () => {
     await user.click(screen.getByTestId('drying-popover-backdrop'));
     expect(screen.queryByTestId('drying-start-confirm')).not.toBeInTheDocument();
   });
+
+  // The flame button's tooltip is the only place an immediate drying attempt
+  // explains itself, and it has to name the same code the scheduled path would
+  // record — otherwise the same blocked AMS reads two different ways depending
+  // on which button you pressed.
+  it.each([
+    [[1], 'Connect AMS power adapter to enable drying'],
+    [[8], 'Connect AMS power adapter to enable drying'],
+    [[3], 'Retract the filament at the AMS outlet to start drying'],
+    [[2], "AMS can't start drying right now"],
+    // Both set: the power problem outranks the retract, as it does server-side.
+    [[3, 1], 'Connect AMS power adapter to enable drying'],
+    // Transient alongside an actionable one: name the one the user can fix.
+    [[2, 3], 'Retract the filament at the AMS outlet to start drying'],
+  ])('explains dry_sf_reason %j on the drying button', async (reasons, expected) => {
+    server.use(
+      http.get('/api/v1/printers/:id/status', () =>
+        HttpResponse.json({ ...IDLE, ams: [{ ...IDLE.ams[0], dry_sf_reason: reasons }] })
+      ),
+    );
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTitle(expected).length).toBeGreaterThan(0);
+    });
+  });
 });

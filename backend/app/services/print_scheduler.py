@@ -190,6 +190,12 @@ AUTO_DRY_MAX_UNPRODUCTIVE_CYCLES = 2
 
 # How long a finished scheduled drying row is kept before it is pruned.
 SCHEDULED_DRYING_RETENTION_DAYS = 7
+# How often that prune actually runs. The check itself is called on every queue
+# pass — every 3s while dispatching — and issuing the DELETE is what begins a
+# write transaction, which SQLite serialises against every other writer. Rows
+# only become prunable a week after they finish, so anything short of hourly is
+# paying that cost for nothing.
+SCHEDULED_DRYING_PRUNE_INTERVAL_SECONDS = 60 * 60
 
 
 class _UploadProgressBridge:
@@ -613,6 +619,9 @@ class PrintScheduler:
         # Auto-drying's stop-all branches must not stop or untrack these printers;
         # both features share _drying_in_progress.
         self._scheduled_drying_printer_ids: set[int] = set()
+        # Monotonic stamp of the last scheduled-drying prune. None = never, so
+        # the first pass after a restart reaps anything left behind.
+        self._last_scheduled_drying_prune: float | None = None
         # Defensive in-memory dispatch hold (#1157): a printer that just received
         # a project_file command must not get a second dispatch until either it
         # transitions out of pre_state OR the hard timeout expires. The H2D Pro
@@ -3989,13 +3998,22 @@ class PrintScheduler:
     async def _check_scheduled_dryings(self, db: AsyncSession):
         """Dispatch due scheduled drying runs and track running ones."""
         now = utcnow_naive()
-        await db.execute(
-            delete(ScheduledDrying).where(
-                ScheduledDrying.status.in_(("completed", "cancelled", "failed")),
-                ScheduledDrying.completed_at.is_not(None),
-                ScheduledDrying.completed_at < now - timedelta(days=SCHEDULED_DRYING_RETENTION_DAYS),
+
+        # Hourly, not every pass: see SCHEDULED_DRYING_PRUNE_INTERVAL_SECONDS.
+        # Monotonic, so a clock adjustment cannot park the prune for hours.
+        since_prune = time.monotonic()
+        if (
+            self._last_scheduled_drying_prune is None
+            or since_prune - self._last_scheduled_drying_prune >= SCHEDULED_DRYING_PRUNE_INTERVAL_SECONDS
+        ):
+            self._last_scheduled_drying_prune = since_prune
+            await db.execute(
+                delete(ScheduledDrying).where(
+                    ScheduledDrying.status.in_(("completed", "cancelled", "failed")),
+                    ScheduledDrying.completed_at.is_not(None),
+                    ScheduledDrying.completed_at < now - timedelta(days=SCHEDULED_DRYING_RETENTION_DAYS),
+                )
             )
-        )
 
         # Same order as the list route: with two rows due on one printer the
         # earliest scheduled wins rather than whatever the DB hands back first.
@@ -4009,6 +4027,9 @@ class PrintScheduler:
         # Rebuild from the DB every tick so route-side cancels and completions
         # show up. Auto-drying's stop-all branches check this set before
         # stopping anything (#2638).
+        # Kept from the previous pass so a run that ended between passes — a
+        # cancel through the route, say — can still be released below.
+        previously_running = self._scheduled_drying_printer_ids
         self._scheduled_drying_printer_ids = {row.printer_id for row in rows if row.status == "running"}
         running_printer_ids = set(self._scheduled_drying_printer_ids)
 
@@ -4092,6 +4113,19 @@ class PrintScheduler:
                 running_printer_ids.add(row.printer_id)
             else:
                 row.waiting_reason = "printer_offline"
+
+        # Release the printers whose run has ended. `_drying_in_progress` is
+        # shared with auto-drying, which prunes it in `_sync_drying_state()` —
+        # but that call sits behind the auto-drying enabled check, and this
+        # method is the one writer that runs whether auto-drying is on or not.
+        # With it off, nothing would ever drop the entry short of a print being
+        # dispatched to the same printer, so the next scheduled run would wait
+        # on "already_drying" forever and `queue_drying_block` would hold the
+        # printer's prints too. Covers a run that ended during this pass and one
+        # cancelled through the route between passes.
+        self._scheduled_drying_printer_ids = {row.printer_id for row in rows if row.status == "running"}
+        for printer_id in (previously_running | running_printer_ids) - self._scheduled_drying_printer_ids:
+            self._drying_in_progress.pop(printer_id, None)
 
         await db.commit()
 

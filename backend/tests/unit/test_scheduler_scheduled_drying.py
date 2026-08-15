@@ -7,7 +7,11 @@ import pytest
 from sqlalchemy import select
 
 from backend.app.models.scheduled_drying import ScheduledDrying
-from backend.app.services.print_scheduler import SCHEDULED_DRYING_RETENTION_DAYS, PrintScheduler
+from backend.app.services.print_scheduler import (
+    SCHEDULED_DRYING_PRUNE_INTERVAL_SECONDS,
+    SCHEDULED_DRYING_RETENTION_DAYS,
+    PrintScheduler,
+)
 
 
 def _utcnow_naive() -> datetime:
@@ -278,6 +282,140 @@ async def test_finished_rows_pruned_after_retention(scheduler, db_session, print
     remaining = (await db_session.execute(select(ScheduledDrying.id))).scalars().all()
     assert stale.id not in remaining
     assert recent.id in remaining
+
+
+@pytest.mark.asyncio
+async def test_prune_does_not_run_on_every_pass(scheduler, db_session, printer_factory):
+    """The prune is throttled, because issuing the DELETE is what starts a
+    write transaction and this method runs every 3s while the queue dispatches.
+    Rows only become prunable a week after they finish, so nothing is lost by
+    waiting an hour to reap them."""
+    printer = await printer_factory()
+
+    async def _stale_row() -> ScheduledDrying:
+        row = ScheduledDrying(
+            printer_id=printer.id,
+            ams_id=0,
+            temp=65,
+            duration_hours=8,
+            status="completed",
+            completed_at=_utcnow_naive() - timedelta(days=SCHEDULED_DRYING_RETENTION_DAYS + 1),
+        )
+        db_session.add(row)
+        await db_session.commit()
+        await db_session.refresh(row)
+        return row
+
+    with patch("backend.app.services.print_scheduler.printer_manager"):
+        # First pass after a restart always prunes, so rows left behind by the
+        # process that died are still reaped.
+        first = await _stale_row()
+        await scheduler._check_scheduled_dryings(db_session)
+        assert first.id not in (await db_session.execute(select(ScheduledDrying.id))).scalars().all()
+
+        # A second pass moments later leaves an equally stale row alone.
+        second = await _stale_row()
+        await scheduler._check_scheduled_dryings(db_session)
+        assert second.id in (await db_session.execute(select(ScheduledDrying.id))).scalars().all()
+
+        # ...and reaps it once the interval has elapsed.
+        scheduler._last_scheduled_drying_prune -= SCHEDULED_DRYING_PRUNE_INTERVAL_SECONDS
+        await scheduler._check_scheduled_dryings(db_session)
+        assert second.id not in (await db_session.execute(select(ScheduledDrying.id))).scalars().all()
+
+
+@pytest.mark.asyncio
+async def test_a_finished_run_releases_the_printer_without_auto_drying(scheduler, db_session, printer_factory):
+    """_drying_in_progress must not outlive the run that set it.
+
+    Auto-drying's _sync_drying_state() prunes that map, but it sits behind the
+    enabled check, so on a default install (both auto-drying modes off) it never
+    runs. Nothing else drops the entry unless a print is dispatched to the same
+    printer, and a nightly off-peak dry with no printing in between is exactly
+    the case this feature is for: the second night's run would sit on
+    "already_drying" forever, and with queue_drying_block on the printer would
+    stop taking prints as well.
+    """
+    row = await _make_row(
+        db_session, printer_factory, start_after=_utcnow_naive() - timedelta(minutes=1), duration_hours=1
+    )
+    printer_id = row.printer_id
+
+    with (
+        patch("backend.app.services.print_scheduler.printer_manager") as mock_pm,
+        patch.object(scheduler, "_is_printer_idle", return_value=True),
+    ):
+        mock_pm.get_status.return_value = _mock_state()
+        mock_pm.send_drying_command.return_value = True
+        await scheduler._check_scheduled_dryings(db_session)
+    await db_session.refresh(row)
+    assert row.status == "running"
+    assert printer_id in scheduler._drying_in_progress
+
+    # The firmware has stopped reporting a dry_time, well past the duration.
+    row.started_at = _utcnow_naive() - timedelta(hours=2)
+    await db_session.commit()
+    with (
+        patch("backend.app.services.print_scheduler.printer_manager") as mock_pm,
+        patch.object(scheduler, "_is_printer_idle", return_value=True),
+    ):
+        mock_pm.get_status.return_value = _mock_state(dry_time=0)
+        await scheduler._check_scheduled_dryings(db_session)
+    await db_session.refresh(row)
+    assert row.status == "completed"
+    assert printer_id not in scheduler._drying_in_progress
+
+    # And the next night's run still dispatches.
+    tomorrow = ScheduledDrying(
+        printer_id=printer_id,
+        ams_id=0,
+        temp=65,
+        duration_hours=8,
+        start_after=_utcnow_naive() - timedelta(minutes=1),
+    )
+    db_session.add(tomorrow)
+    await db_session.commit()
+    with (
+        patch("backend.app.services.print_scheduler.printer_manager") as mock_pm,
+        patch.object(scheduler, "_is_printer_idle", return_value=True),
+    ):
+        mock_pm.get_status.return_value = _mock_state()
+        mock_pm.send_drying_command.return_value = True
+        await scheduler._check_scheduled_dryings(db_session)
+    await db_session.refresh(tomorrow)
+    assert tomorrow.status == "running"
+    assert tomorrow.waiting_reason is None
+
+
+@pytest.mark.asyncio
+async def test_a_route_cancel_releases_the_printer(scheduler, db_session, printer_factory):
+    """The DELETE route flips the row to cancelled in the database and sends the
+    stop, but knows nothing about the scheduler's in-memory map. The next pass
+    has to notice the run is gone and release the printer, or it stays marked as
+    drying until a restart."""
+    row = await _make_row(db_session, printer_factory, start_after=_utcnow_naive() - timedelta(minutes=1))
+    printer_id = row.printer_id
+
+    with (
+        patch("backend.app.services.print_scheduler.printer_manager") as mock_pm,
+        patch.object(scheduler, "_is_printer_idle", return_value=True),
+    ):
+        mock_pm.get_status.return_value = _mock_state()
+        mock_pm.send_drying_command.return_value = True
+        await scheduler._check_scheduled_dryings(db_session)
+    assert printer_id in scheduler._drying_in_progress
+
+    # What DELETE /scheduled-dryings/{id} leaves behind.
+    row.status = "cancelled"
+    row.completed_at = _utcnow_naive()
+    await db_session.commit()
+
+    with patch("backend.app.services.print_scheduler.printer_manager") as mock_pm:
+        mock_pm.get_status.return_value = _mock_state()
+        await scheduler._check_scheduled_dryings(db_session)
+
+    assert printer_id not in scheduler._drying_in_progress
+    assert printer_id not in scheduler._scheduled_drying_printer_ids
 
 
 @pytest.mark.asyncio

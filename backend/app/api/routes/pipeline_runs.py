@@ -33,6 +33,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.config import settings as app_settings
 from backend.app.core.database import async_session, get_db
@@ -663,18 +664,30 @@ async def run_pipeline(
     pipeline_id: int,
     body: PipelineRunCreateRequest,
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_RUN),
+    api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
     db: AsyncSession = Depends(get_db),
 ):
     from backend.app.api.routes.settings import get_setting
     from backend.app.services.slice_dispatch import slice_dispatch
 
     pipeline = await _load_pipeline(db, pipeline_id)
+    # ``user=current_user`` deliberately, not the cloud owner below: an API-key
+    # caller has no per-row identity and must keep can_read_all, the same as
+    # every other read helper.
     src_kind, src_id, src_filename, src_path = await _resolve_source(
         db,
         library_file_id=body.source_library_file_id,
         archive_id=body.source_archive_id,
         user=current_user,
     )
+
+    # The permission gate answers an API-keyed request with current_user=None,
+    # so a pipeline built on Bambu/Orca Cloud presets would have nobody whose
+    # stored cloud token could resolve them. Fall back to the key's owner, the
+    # same fallback POST /library/files/{id}/slice makes (#1182 follow-up).
+    # Only keys with the cloud scope resolve to an owner here; everything else
+    # stays None and slices against local presets exactly as before.
+    creator = current_user or api_key_cloud_owner
 
     # Cap copies against the configured ceiling.
     raw_cap = await get_setting(db, "pipeline_max_copies")
@@ -712,7 +725,7 @@ async def run_pipeline(
         copies=body.copies,
         status="queued",
         eligibility_overridden=(not report.ok and body.force),
-        created_by=current_user.id if current_user else None,
+        created_by=creator.id if creator else None,
     )
     db.add(run)
     await db.flush()
@@ -737,14 +750,14 @@ async def run_pipeline(
         src_id=src_id,
         src_filename=src_filename,
         src_path=src_path,
-        creator_user_id=current_user.id if current_user else None,
+        creator_user_id=creator.id if creator else None,
         copies=body.copies,
     )
     slice_job = await slice_dispatch.enqueue(
         kind="library_file" if src_kind == "library_file" else "archive",
         source_id=src_id,
         source_name=src_filename,
-        owner_id=current_user.id if current_user else None,
+        owner_id=creator.id if creator else None,
         run=orchestrate,
     )
 
@@ -915,6 +928,7 @@ async def cancel_run(
 async def retry_failed(
     run_id: int,
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.PIPELINES_RUN),
+    api_key_cloud_owner: User | None = Depends(resolve_api_key_cloud_owner),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new run with copies = (failed + cancelled count) from the
@@ -955,8 +969,17 @@ async def retry_failed(
     )
 
     # Reuse the run_pipeline route logic via a direct call — keeps the
-    # orchestration single-sourced. The result inherits parent_run_id.
-    new_run_response = await run_pipeline(parent.pipeline_id, body, current_user=current_user, db=db)
+    # orchestration single-sourced. The result inherits parent_run_id. Every
+    # dependency it declares has to be forwarded explicitly: FastAPI resolves
+    # those only for a routed request, so an omitted one would arrive as the
+    # Depends() marker object itself rather than as None.
+    new_run_response = await run_pipeline(
+        parent.pipeline_id,
+        body,
+        current_user=current_user,
+        api_key_cloud_owner=api_key_cloud_owner,
+        db=db,
+    )
 
     # Stamp parent_run_id on the freshly-created run.
     new_row = (await db.execute(select(PipelineRun).where(PipelineRun.id == new_run_response.id))).scalar_one_or_none()

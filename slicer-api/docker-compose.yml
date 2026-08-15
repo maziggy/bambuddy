@@ -28,7 +28,10 @@
 #
 # Both images are linux/amd64 only. OrcaSlicer's ARM64 path is on hold
 # pending an upstream extraction fix; BambuStudio doesn't publish ARM64
-# at all.
+# at all. ARM64 hosts are best served by running the sidecar on a separate
+# x86_64 box; failing that, `docker-compose.arm64.yml` in this directory
+# runs these same images under QEMU emulation — experimental, ~3-6x slower,
+# and it needs binfmt set up on the host. See the README.
 
 services:
   orca-slicer-api:

@@ -980,3 +980,212 @@ class TestCancelTerminal:
         resp = await async_client.post(f"/api/v1/pipeline-runs/{run.id}/cancel")
         assert resp.status_code == 200
         assert resp.json()["status"] == "completed"  # unchanged
+
+
+class TestRunViaApiKey:
+    """An API key may run a pipeline (#1425 follow-up).
+
+    Every pipeline endpoint used to answer 403 for API keys — the three
+    permissions were parked as administrative in PR A, before the run dispatch
+    existed to decide about. ``pipelines:run`` now needs the key's Manage Queue
+    *and* Manage Library scopes together, because a run slices into the library
+    and then queues prints.
+    """
+
+    async def _admin_and_key(self, async_client: AsyncClient, db_session, **flags):
+        """Enable auth, then mint a key owned by the admin. The owner matters:
+        a key never out-ranks its owner, and only an owned key can stand in for
+        a user when a cloud preset has to be resolved."""
+        from sqlalchemy import select
+
+        from backend.app.core.auth import generate_api_key
+        from backend.app.models.api_key import APIKey
+        from backend.app.models.user import User
+
+        await async_client.post(
+            "/api/v1/auth/setup",
+            json={"auth_enabled": True, "admin_username": "pipeadmin", "admin_password": "AdminPass1!"},
+        )
+        admin = (await db_session.execute(select(User).where(User.username == "pipeadmin"))).scalar_one()
+
+        full_key, key_hash, key_prefix = generate_api_key()
+        db_session.add(
+            APIKey(
+                name="pipeline-runner",
+                key_hash=key_hash,
+                key_prefix=key_prefix,
+                user_id=admin.id,
+                enabled=True,
+                **{"can_read_status": False, "can_queue": False, "can_manage_library": False, **flags},
+            )
+        )
+        await db_session.commit()
+        return admin, full_key
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_scoped_key_runs_the_pipeline(
+        self,
+        async_client: AsyncClient,
+        pipeline_factory,
+        printer_factory,
+        library_file_factory,
+        db_session,
+    ):
+        from dataclasses import dataclass
+
+        @dataclass
+        class _FakeSliceJob:
+            id: int = 7777
+
+        printer = await printer_factory()
+        pipeline = await pipeline_factory(target_printer_id=printer.id)
+        src = await library_file_factory()
+        # Auth goes on only now: the factories above post as an anonymous
+        # caller, which is how every other test in this file works.
+        _, key = await self._admin_and_key(
+            async_client, db_session, can_read_status=True, can_queue=True, can_manage_library=True
+        )
+
+        live_status = {"connected": True, "raw_data": {"ams": []}}
+        with (
+            patch(
+                "backend.app.api.routes.pipeline_runs._load_printer_status",
+                new=AsyncMock(return_value=live_status),
+            ),
+            patch(
+                "backend.app.services.slice_dispatch.slice_dispatch.enqueue",
+                new=AsyncMock(return_value=_FakeSliceJob()),
+            ),
+        ):
+            resp = await async_client.post(
+                f"/api/v1/slicer-pipelines/{pipeline['id']}/run",
+                json={"source_library_file_id": src.id, "copies": 1, "force": True},
+                headers={"X-API-Key": key},
+            )
+
+        assert resp.status_code == 202, resp.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_key_without_manage_library_is_refused(
+        self,
+        async_client: AsyncClient,
+        pipeline_factory,
+        printer_factory,
+        library_file_factory,
+        db_session,
+    ):
+        """Queueing prints is only half of what a run does. The refusal names
+        the flag that is missing rather than calling the whole thing
+        administrative."""
+        printer = await printer_factory()
+        pipeline = await pipeline_factory(target_printer_id=printer.id)
+        src = await library_file_factory()
+        _, key = await self._admin_and_key(async_client, db_session, can_read_status=True, can_queue=True)
+
+        resp = await async_client.post(
+            f"/api/v1/slicer-pipelines/{pipeline['id']}/run",
+            json={"source_library_file_id": src.id, "copies": 1, "force": True},
+            headers={"X-API-Key": key},
+        )
+
+        assert resp.status_code == 403
+        assert "can_manage_library" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_cloud_scoped_key_slices_as_its_owner(
+        self,
+        async_client: AsyncClient,
+        pipeline_factory,
+        printer_factory,
+        library_file_factory,
+        db_session,
+    ):
+        """A pipeline can be built on Bambu/Orca Cloud presets, and resolving
+        those reads a cloud token off a user record. The permission gate hands
+        an API-keyed request ``current_user=None``, so without falling back to
+        the key's owner such a pipeline would have nobody to resolve against
+        and would fail at slice time — the same fallback the direct slice route
+        makes."""
+        from dataclasses import dataclass
+
+        @dataclass
+        class _FakeSliceJob:
+            id: int = 7778
+
+        printer = await printer_factory()
+        pipeline = await pipeline_factory(target_printer_id=printer.id)
+        src = await library_file_factory()
+        admin, key = await self._admin_and_key(
+            async_client,
+            db_session,
+            can_read_status=True,
+            can_queue=True,
+            can_manage_library=True,
+            can_access_cloud=True,
+        )
+
+        enqueue = AsyncMock(return_value=_FakeSliceJob())
+        live_status = {"connected": True, "raw_data": {"ams": []}}
+        with (
+            patch(
+                "backend.app.api.routes.pipeline_runs._load_printer_status",
+                new=AsyncMock(return_value=live_status),
+            ),
+            patch("backend.app.services.slice_dispatch.slice_dispatch.enqueue", new=enqueue),
+        ):
+            resp = await async_client.post(
+                f"/api/v1/slicer-pipelines/{pipeline['id']}/run",
+                json={"source_library_file_id": src.id, "copies": 1, "force": True},
+                headers={"X-API-Key": key},
+            )
+
+        assert resp.status_code == 202, resp.text
+        assert enqueue.await_args.kwargs["owner_id"] == admin.id
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_key_without_cloud_scope_stays_anonymous(
+        self,
+        async_client: AsyncClient,
+        pipeline_factory,
+        printer_factory,
+        library_file_factory,
+        db_session,
+    ):
+        """The fallback is the cloud scope's own opt-in, not a general identity
+        for API keys: a key without it slices unattributed, exactly as before."""
+        from dataclasses import dataclass
+
+        @dataclass
+        class _FakeSliceJob:
+            id: int = 7779
+
+        printer = await printer_factory()
+        pipeline = await pipeline_factory(target_printer_id=printer.id)
+        src = await library_file_factory()
+        # Same owner and same three scopes as the test above — only the cloud
+        # opt-in differs.
+        _, full_key = await self._admin_and_key(
+            async_client, db_session, can_read_status=True, can_queue=True, can_manage_library=True
+        )
+
+        enqueue = AsyncMock(return_value=_FakeSliceJob())
+        live_status = {"connected": True, "raw_data": {"ams": []}}
+        with (
+            patch(
+                "backend.app.api.routes.pipeline_runs._load_printer_status",
+                new=AsyncMock(return_value=live_status),
+            ),
+            patch("backend.app.services.slice_dispatch.slice_dispatch.enqueue", new=enqueue),
+        ):
+            resp = await async_client.post(
+                f"/api/v1/slicer-pipelines/{pipeline['id']}/run",
+                json={"source_library_file_id": src.id, "copies": 1, "force": True},
+                headers={"X-API-Key": full_key},
+            )
+
+        assert resp.status_code == 202, resp.text
+        assert enqueue.await_args.kwargs["owner_id"] is None

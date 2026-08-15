@@ -33,6 +33,7 @@ from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings  # noqa: F401 - registers the table
 from backend.app.services.print_scheduler import PrintScheduler
+from backend.tests._fixtures.background_tasks import discarding_spawn_patch
 
 pytestmark = pytest.mark.integration
 
@@ -144,7 +145,7 @@ async def _dispatch(ctx, ids, rack_slots):
                 AsyncMock(return_value=(False, 3, 2.0, 30.0)),
             ),
             patch("backend.app.services.print_scheduler.cache_3mf_download", MagicMock()),
-            patch("backend.app.services.print_scheduler.spawn_background_task", MagicMock()),
+            discarding_spawn_patch(),
             patch("backend.app.services.notification_service.notification_service.on_queue_job_started", AsyncMock()),
             patch("backend.app.services.notification_service.notification_service.on_queue_job_failed", AsyncMock()),
             patch("backend.app.services.mqtt_relay.mqtt_relay.on_queue_job_started", AsyncMock()),

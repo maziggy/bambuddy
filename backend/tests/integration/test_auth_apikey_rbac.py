@@ -178,6 +178,23 @@ class TestApiKeyDenylistIntegrity:
         assert not incorrectly_denied, f"Operational permissions incorrectly in API key denylist: {incorrectly_denied}"
 
 
+def _flags_in_use() -> set[str]:
+    """Every scope flag named anywhere in the allowlist.
+
+    A mapping value is normally one flag but may be a tuple of flags that must
+    all be held (PIPELINES_RUN). Reading ``.values()`` directly would put that
+    tuple into the set and make both drift checks below wrong in opposite
+    directions: an unknown-flag alarm for the tuple, and a false "dead flag"
+    for whichever flags only appear inside one.
+    """
+    from backend.app.core.auth import _APIKEY_SCOPE_BY_PERMISSION
+
+    flags: set[str] = set()
+    for value in _APIKEY_SCOPE_BY_PERMISSION.values():
+        flags.update((value,) if isinstance(value, str) else value)
+    return flags
+
+
 class TestApiKeyScopeAllowlist:
     """GHSA-r2qv-8222-hqg3 (CVSS 9.9) — allowlist-based scope enforcement.
 
@@ -233,7 +250,7 @@ class TestApiKeyScopeAllowlist:
             "can_manage_projects",
             "can_access_cloud",
         }
-        used_flags = set(_APIKEY_SCOPE_BY_PERMISSION.values())
+        used_flags = _flags_in_use()
         assert used_flags <= valid_flags, f"Unknown scope flags in mapping: {used_flags - valid_flags}"
         # And every flag must actually exist on the model.
         for flag in valid_flags:
@@ -265,9 +282,7 @@ class TestApiKeyScopeAllowlist:
     )
     def test_each_scope_flag_has_at_least_one_permission(self, scope_flag):
         """If a scope flag has no permissions, it's dead code — fail loudly."""
-        from backend.app.core.auth import _APIKEY_SCOPE_BY_PERMISSION
-
-        assert scope_flag in _APIKEY_SCOPE_BY_PERMISSION.values(), (
+        assert scope_flag in _flags_in_use(), (
             f"No permission maps to {scope_flag} — either remove the flag or classify a permission under it."
         )
 
@@ -361,6 +376,10 @@ class TestCheckApiKeyPermissionsMatrix:
         ("PROJECTS_CREATE", "can_manage_projects", "create a project"),
         ("PROJECTS_UPDATE", "can_manage_projects", "update a project / add archives"),
         ("PROJECTS_DELETE", "can_manage_projects", "delete a project"),
+        # Pipeline definitions and run history read as status/config, so they
+        # ride can_read_status. PIPELINES_RUN needs two flags and has its own
+        # class below; PIPELINES_WRITE stays admin-only (see _ADMIN_CASES).
+        ("PIPELINES_READ", "can_read_status", "list pipelines / read run history"),
     ]
 
     _ADMIN_CASES = [
@@ -381,6 +400,11 @@ class TestCheckApiKeyPermissionsMatrix:
         # print's stats contribution, mirroring LIBRARY_PURGE.
         "ARCHIVES_PURGE",
         "DISCOVERY_SCAN",
+        # PIPELINES_READ / PIPELINES_RUN became key-usable once PR C landed the
+        # run dispatch (#1425). Authoring did not: PIPELINES_WRITE rewrites the
+        # slicer settings and target printer a run then acts on, and clears run
+        # history.
+        "PIPELINES_WRITE",
     ]
 
     @pytest.mark.parametrize("perm_name,required_flag,_descr", _SCOPE_CASES)
@@ -500,3 +524,212 @@ class TestCheckApiKeyPermissionsMatrix:
                 [Permission.QUEUE_CREATE.value, Permission.PRINTERS_CONTROL.value],
             )
         assert exc.value.status_code == 403
+
+
+class TestMultiScopePermissions:
+    """A permission may require several scope flags at once (#1425 follow-up).
+
+    Running a slicer pipeline slices the source into a new library file and
+    then queues one print per copy. Those are two things an operator ticks
+    separately when minting a key, so PIPELINES_RUN maps to both
+    ``can_queue`` and ``can_manage_library`` — mapping it to either alone
+    would quietly hand that flag the other one's authority.
+    """
+
+    def _run_perm(self):
+        from backend.app.core.permissions import Permission
+
+        return Permission.PIPELINES_RUN.value
+
+    def test_both_flags_pass(self):
+        from backend.app.core.auth import _check_apikey_permissions
+
+        _check_apikey_permissions(_FakeApiKey(can_queue=True, can_manage_library=True), [self._run_perm()])
+
+    @pytest.mark.parametrize(
+        "flags",
+        [
+            {},
+            {"can_queue": True},
+            {"can_manage_library": True},
+            # Neither of the two required flags, however generous the rest.
+            {"can_read_status": True, "can_control_printer": True, "can_manage_projects": True},
+        ],
+    )
+    def test_a_partial_key_is_refused(self, flags):
+        """Half the authority is not authority. A queue-only key must not be
+        able to write into the library through a pipeline, and a library-only
+        key must not be able to spend filament through one."""
+        from fastapi import HTTPException
+
+        from backend.app.core.auth import _check_apikey_permissions
+
+        with pytest.raises(HTTPException) as exc:
+            _check_apikey_permissions(_FakeApiKey(**flags), [self._run_perm()])
+        assert exc.value.status_code == 403
+
+    def test_the_403_names_every_missing_flag(self):
+        """Reporting only the first would send the operator round the loop
+        twice, ticking one box per refusal with no hint a second is needed."""
+        from fastapi import HTTPException
+
+        from backend.app.core.auth import _check_apikey_permissions
+
+        with pytest.raises(HTTPException) as exc:
+            _check_apikey_permissions(_FakeApiKey(), [self._run_perm()])
+        assert "can_queue" in exc.value.detail
+        assert "can_manage_library" in exc.value.detail
+
+        with pytest.raises(HTTPException) as exc:
+            _check_apikey_permissions(_FakeApiKey(can_queue=True), [self._run_perm()])
+        assert "can_manage_library" in exc.value.detail
+        assert "can_queue" not in exc.value.detail
+
+    def test_single_scope_message_is_unchanged(self):
+        """Existing keys' 403 text is documented in the wiki and matched by
+        other tests; multi-scope support must not reword the common case."""
+        from fastapi import HTTPException
+
+        from backend.app.core.auth import _check_apikey_permissions
+        from backend.app.core.permissions import Permission
+
+        with pytest.raises(HTTPException) as exc:
+            _check_apikey_permissions(_FakeApiKey(), [Permission.QUEUE_CREATE.value])
+        assert exc.value.detail == "API key does not have 'can_queue' permission"
+
+    def test_require_any_still_passes_on_a_different_permission(self):
+        """An any-of route must not be blocked by the multi-scope member when
+        the key satisfies one of the others."""
+        from backend.app.core.auth import _check_apikey_permissions
+        from backend.app.core.permissions import Permission
+
+        _check_apikey_permissions(
+            _FakeApiKey(can_read_status=True),
+            [self._run_perm(), Permission.PRINTERS_READ.value],
+            require_any=True,
+        )
+
+    def test_effective_permissions_agree_with_the_gate(self):
+        """``/auth/me`` reports what a key can do by walking the same mapping.
+        If it ignored the second flag it would advertise pipelines:run to a
+        key the gate then refuses — the drift #1894 was about."""
+        from backend.app.core.auth import apikey_effective_permissions
+
+        assert self._run_perm() not in apikey_effective_permissions(_FakeApiKey(can_queue=True))
+        assert self._run_perm() not in apikey_effective_permissions(_FakeApiKey(can_manage_library=True))
+        assert self._run_perm() in apikey_effective_permissions(_FakeApiKey(can_queue=True, can_manage_library=True))
+
+    def test_effective_permissions_still_narrow_to_the_owner(self):
+        """A multi-scope permission is no exception to owner narrowing: both
+        flags set is still capped by what the key's owner may do."""
+
+        class _Owner:
+            def __init__(self, holds):
+                self._holds = holds
+
+            def has_permission(self, perm):
+                return perm in self._holds
+
+        from backend.app.core.auth import apikey_effective_permissions
+
+        key = _FakeApiKey(can_queue=True, can_manage_library=True)
+        assert self._run_perm() not in apikey_effective_permissions(key, _Owner(set()))
+        assert self._run_perm() in apikey_effective_permissions(key, _Owner({self._run_perm()}))
+
+
+class TestPipelineRoutesAcceptApiKeys:
+    """End-to-end: the routes themselves, not just the mapping.
+
+    Before this fix every pipeline endpoint answered 403 "API keys cannot be
+    used for administrative operations", because PR A parked all three
+    permissions on the denylist until the run dispatch landed. It landed in
+    PR C.
+    """
+
+    @pytest.fixture
+    async def auth_on(self, db_session):
+        from backend.app.models.settings import Settings
+
+        db_session.add(Settings(key="auth_enabled", value="true"))
+        await db_session.commit()
+
+    async def _key(self, db_session, **flags):
+        from backend.app.core.auth import generate_api_key
+        from backend.app.models.api_key import APIKey
+
+        full_key, key_hash, key_prefix = generate_api_key()
+        db_session.add(
+            APIKey(
+                name="pipeline-key",
+                key_hash=key_hash,
+                key_prefix=key_prefix,
+                enabled=True,
+                **{"can_read_status": False, "can_queue": False, "can_manage_library": False, **flags},
+            )
+        )
+        await db_session.commit()
+        return full_key
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_read_key_can_list_pipelines(self, async_client: AsyncClient, db_session, auth_on):
+        key = await self._key(db_session, can_read_status=True)
+
+        resp = await async_client.get("/api/v1/slicer-pipelines/", headers={"X-API-Key": key})
+
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_read_key_can_list_runs(self, async_client: AsyncClient, db_session, auth_on):
+        key = await self._key(db_session, can_read_status=True)
+
+        resp = await async_client.get("/api/v1/pipeline-runs", headers={"X-API-Key": key})
+
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_read_key_cannot_author_a_pipeline(self, async_client: AsyncClient, db_session, auth_on):
+        """PIPELINES_WRITE stays admin-only — reading pipelines must not imply
+        rewriting the slicer settings a run will act on."""
+        key = await self._key(db_session, can_read_status=True, can_queue=True, can_manage_library=True)
+
+        resp = await async_client.post(
+            "/api/v1/slicer-pipelines/",
+            json={"name": "x"},
+            headers={"X-API-Key": key},
+        )
+
+        assert resp.status_code == 403
+        assert "administrative operations" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_queue_only_key_cannot_run_a_pipeline(self, async_client: AsyncClient, db_session, auth_on):
+        key = await self._key(db_session, can_read_status=True, can_queue=True)
+
+        resp = await async_client.post(
+            "/api/v1/slicer-pipelines/1/run",
+            json={"source_library_file_id": 1},
+            headers={"X-API-Key": key},
+        )
+
+        assert resp.status_code == 403
+        assert "can_manage_library" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_fully_scoped_key_gets_past_the_gate(self, async_client: AsyncClient, db_session, auth_on):
+        """404 for the missing pipeline, not 403 — the permission check is
+        what this asserts, and only a request that cleared it reaches the
+        lookup."""
+        key = await self._key(db_session, can_read_status=True, can_queue=True, can_manage_library=True)
+
+        resp = await async_client.post(
+            "/api/v1/slicer-pipelines/999999/run",
+            json={"source_library_file_id": 1},
+            headers={"X-API-Key": key},
+        )
+
+        assert resp.status_code == 404

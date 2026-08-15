@@ -68,7 +68,13 @@ logger = logging.getLogger(__name__)
 #                           delete of admin resources, settings writes, user/
 #                           group/api-key/backup admin ops, discovery scan,
 #                           cloud auth, library ALL-ownership perms, purges
-_APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
+#
+# A value may be a tuple of scope flags, in which case ALL of them must be True
+# on the key. That is for the rare permission whose route spans two trust
+# dimensions the operator toggles separately — see ``PIPELINES_RUN`` below.
+# Prefer a single flag; a tuple is a statement that neither flag alone
+# authorises what the route does.
+_APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str | tuple[str, ...]] = {
     # can_read_status — read-only access to status, history, and configuration
     Permission.PRINTERS_READ: "can_read_status",
     # Legacy flat permissions retained for back-compat with custom API keys —
@@ -114,6 +120,10 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     # working (they need the UI-language setting via API key).
     Permission.SETTINGS_READ: "can_read_status",
     Permission.MAKERWORLD_VIEW: "can_read_status",
+    # Pipeline definitions and run history are configuration + status: listing
+    # pipelines, reading a run, and the (write-free) POST check-eligibility
+    # pre-flight. Authoring stays admin-only under PIPELINES_WRITE.
+    Permission.PIPELINES_READ: "can_read_status",
     Permission.WEBSOCKET_CONNECT: "can_read_status",
     # can_queue — queue write ops + reprint (which enqueues an existing archive)
     Permission.QUEUE_CREATE: "can_queue",
@@ -194,6 +204,17 @@ _APIKEY_SCOPE_BY_PERMISSION: dict[Permission, str] = {
     Permission.PROJECTS_CREATE: "can_manage_projects",
     Permission.PROJECTS_UPDATE: "can_manage_projects",
     Permission.PROJECTS_DELETE: "can_manage_projects",
+    # can_queue AND can_manage_library — running a pipeline does two things a
+    # key is separately trusted with. It slices the source into a new library
+    # file (``slice_and_persist``, the same write the direct
+    # ``POST /library/files/{id}/slice`` route gates on LIBRARY_UPLOAD →
+    # can_manage_library), then creates one PrintQueueItem per copy for the
+    # scheduler to dispatch (can_queue). Mapping it to either flag alone would
+    # hand that flag the other one's authority, so both are required. Cancelling
+    # a run is the same permission — whoever may start one may stop it. PR A
+    # parked all three pipeline permissions on the denylist "until the run
+    # dispatch lands"; it landed in PR C (#1425) and this is that follow-up.
+    Permission.PIPELINES_RUN: ("can_queue", "can_manage_library"),
     # can_access_cloud — narrow opt-in scope, gated by the router-level
     # ``_cloud_api_key_gate`` and additionally enforced here so the route-
     # level ``cloud_caller(Permission.CLOUD_AUTH)`` dep also fails closed
@@ -285,27 +306,34 @@ _APIKEY_DENIED_PERMISSIONS: frozenset[Permission] = frozenset(
         Permission.SMART_PLUGS_DELETE,
         # Network scanning — operator only (no API-key scope for this).
         Permission.DISCOVERY_SCAN,
-        # Slicer Pipelines (#1425) — admin authoring + the print-spending Run
-        # action. PR A only ships CRUD; PR B / PR C may move PIPELINES_RUN onto
-        # `can_queue` (it queues prints) once the run dispatch lands. PR A keeps
-        # all three denied so they fail closed for any API-key surface.
-        Permission.PIPELINES_READ,
+        # Slicer Pipelines (#1425) — authoring only. PIPELINES_READ and
+        # PIPELINES_RUN moved to the allowlist once PR C landed the run
+        # dispatch; PIPELINES_WRITE stays denied because it creates/edits/
+        # deletes the pipeline definition (slicer settings, target printer,
+        # fanout strategy) and, via `POST /pipeline-runs/clear`, drops run
+        # history. That is admin authoring, matching the other resource-CRUD
+        # entries here — a key that may run a pipeline cannot rewrite what it
+        # does.
         Permission.PIPELINES_WRITE,
-        Permission.PIPELINES_RUN,
     }
 )
 
 
-def _resolve_apikey_scope(perm_string: str) -> str | None:
-    """Return the scope-flag attribute name gating ``perm_string`` for API keys.
+def _required_apikey_scopes(perm_string: str) -> tuple[str, ...] | None:
+    """Return every scope flag a key must hold to exercise ``perm_string``.
 
-    None when the permission is unmapped (= admin-only / not API-key-usable).
+    None when the permission is unmapped (= admin-only / not API-key-usable),
+    which is distinct from an empty tuple — the latter would read as "no flags
+    needed" and must never be produced.
     """
     try:
         perm = Permission(perm_string)
     except ValueError:
         return None
-    return _APIKEY_SCOPE_BY_PERMISSION.get(perm)
+    scopes = _APIKEY_SCOPE_BY_PERMISSION.get(perm)
+    if scopes is None:
+        return None
+    return (scopes,) if isinstance(scopes, str) else tuple(scopes)
 
 
 def apikey_effective_permissions(api_key: APIKey, owner: User | None = None) -> list[str]:
@@ -321,10 +349,20 @@ def apikey_effective_permissions(api_key: APIKey, owner: User | None = None) -> 
     an owned key must pass the owner, or ``/auth/me`` will over-report and drift
     from the gate, which is the defect #1894 was about.
     """
+
+    def _granted(perm: Permission) -> bool:
+        scopes = _required_apikey_scopes(perm.value)
+        # An unmapped permission cannot occur here (we iterate the mapping
+        # itself), but treat it as denied rather than as "no flags to satisfy",
+        # which ``all(())`` would otherwise report as granted.
+        if not scopes:
+            return False
+        return all(getattr(api_key, flag, False) for flag in scopes)
+
     return sorted(
         perm.value
-        for perm, scope_attr in _APIKEY_SCOPE_BY_PERMISSION.items()
-        if getattr(api_key, scope_attr, False) and (owner is None or owner.has_permission(perm.value))
+        for perm in _APIKEY_SCOPE_BY_PERMISSION
+        if _granted(perm) and (owner is None or owner.has_permission(perm.value))
     )
 
 
@@ -379,8 +417,9 @@ def _check_apikey_permissions(
     """Raise 403 unless ``api_key`` is allowed to use ``perm_strings``.
 
     Allowlist semantics: every requested permission MUST be present in
-    ``_APIKEY_SCOPE_BY_PERMISSION`` AND its scope flag must be True on
-    ``api_key``. Unmapped permissions = administrative = 403.
+    ``_APIKEY_SCOPE_BY_PERMISSION`` AND every scope flag it maps to must be
+    True on ``api_key`` (most map to one; a few require several). Unmapped
+    permissions = administrative = 403.
 
     A key must not out-rank the user it belongs to, so when ``owner`` is given
     the permission must additionally be one the owner holds. Scope flags are
@@ -407,16 +446,20 @@ def _check_apikey_permissions(
 
     last_failure: HTTPException | None = None
     for perm_str in perm_strings:
-        scope_attr = _resolve_apikey_scope(perm_str)
-        if scope_attr is None:
+        scopes = _required_apikey_scopes(perm_str)
+        missing = [flag for flag in scopes or () if not getattr(api_key, flag, False)]
+        if not scopes:
             failure = HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="API keys cannot be used for administrative operations",
             )
-        elif not getattr(api_key, scope_attr, False):
+        elif missing:
+            # Name every flag the key is short of, not just the first: a
+            # permission requiring two scopes would otherwise send the operator
+            # round the loop twice, ticking one box per 403.
             failure = HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"API key does not have '{scope_attr}' permission",
+                detail=f"API key does not have {' and '.join(repr(flag) for flag in missing)} permission",
             )
         elif owner is not None and not owner.has_permission(perm_str):
             failure = HTTPException(

@@ -32,6 +32,7 @@ from backend.app.models.archive import PrintArchive
 from backend.app.models.print_queue import PrintQueueItem
 from backend.app.models.printer import Printer
 from backend.app.services.print_scheduler import PrintScheduler
+from backend.tests._fixtures.background_tasks import discarding_spawn_patch
 
 
 @pytest.fixture
@@ -131,7 +132,7 @@ async def _dispatch(ctx, *, upload_side_effect=None):
         patch("backend.app.services.print_scheduler.delete_file_async", ctx.delete_file),
         patch("backend.app.services.print_scheduler.upload_file_async", ctx.upload),
         patch("backend.app.services.print_scheduler.cache_3mf_download", MagicMock()),
-        patch("backend.app.services.print_scheduler.spawn_background_task", MagicMock()),
+        discarding_spawn_patch(),
         patch(
             "backend.app.services.notification_service.notification_service.on_queue_job_started",
             AsyncMock(),

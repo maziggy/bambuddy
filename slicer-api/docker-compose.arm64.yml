@@ -1,0 +1,27 @@
+# Override file for the slicer-api sidecar stack on ARM64 (experimental).
+#
+# Pins both sidecars to the linux/amd64 images so they run under QEMU
+# emulation on an ARM64 host. The host must have QEMU binfmt registered
+# first (qemu-user-static + binfmt-support on Debian/Ubuntu) or the
+# containers fail with "exec format error". Expect roughly 3-6x slower
+# slicing than native — a stopgap until native ARM64 images ship.
+#
+# This file is not meant to be used on its own. It is intended to be used in
+# combination with the default docker-compose file, for example:
+#   docker compose -f docker-compose.yml -f docker-compose.arm64.yml up -d
+#
+# Both -f flags are needed on EVERY compose command, not just the first, so
+# put this line in .env instead and the plain commands in the README work
+# unchanged:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.arm64.yml
+#
+# For any setup questions, see the 'Server-Side Slicing (Slicer API)' page in
+# the Bambuddy wiki. Also check the README and default compose file in this
+# directory for usage instructions and other details.
+
+services:
+  orca-slicer-api:
+    platform: linux/amd64
+
+  bambu-studio-api:
+    platform: linux/amd64

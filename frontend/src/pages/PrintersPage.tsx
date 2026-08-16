@@ -5302,6 +5302,17 @@ function PrinterCard({
                                     <div className="text-[length:var(--pc-t9,9px)] text-white font-bold truncate">
                                       {tray?.tray_type || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
                                     </div>
+                                    {/* K-Profile value, always visible (matches BambuStudio's own
+                                        per-slot display) rather than hidden behind hover-only.
+                                        Only rendered when filamentData exists (i.e. the slot is
+                                        loaded) — formatKValue() itself always returns a number
+                                        (defaulting to 0.020), so gating on filamentData avoids a
+                                        misleading "K 0.020" on a genuinely empty slot (#2532). */}
+                                    {filamentData && (
+                                      <div className="text-[length:var(--pc-t8,8px)] text-bambu-gray font-mono leading-none truncate">
+                                        K {filamentData.kFactor}
+                                      </div>
+                                    )}
                                     {/* Fill bar */}
                                     <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                                       {effectiveFill !== null && effectiveFill >= 0 && !isEmpty && tray && (
@@ -5594,6 +5605,13 @@ function PrinterCard({
                             <div className="text-[length:var(--pc-t9,9px)] text-white font-bold truncate">
                               {tray?.tray_type || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
                             </div>
+                            {/* K-Profile value, always visible — see matching comment on the
+                                primary AMS slot card above (#2532). */}
+                            {filamentData && (
+                              <div className="text-[length:var(--pc-t8,8px)] text-bambu-gray font-mono leading-none truncate">
+                                K {filamentData.kFactor}
+                              </div>
+                            )}
                             {/* Fill bar */}
                             <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                               {htEffectiveFill !== null && htEffectiveFill >= 0 && !isEmpty && (
@@ -5971,6 +5989,15 @@ function PrinterCard({
                                   <div className={`text-[length:var(--pc-t9,9px)] font-bold truncate ${isEmpty ? 'text-white/40' : 'text-white'}`}>
                                     {extTray.tray_type || t('ams.slotEmpty')}
                                   </div>
+                                  {/* K-Profile value, always visible — see matching comment on the
+                                      primary AMS slot card above (#2532). extFilamentData is built
+                                      unconditionally here (unlike filamentData elsewhere), so we
+                                      gate on isEmpty directly instead. */}
+                                  {!isEmpty && (
+                                    <div className="text-[length:var(--pc-t8,8px)] text-bambu-gray font-mono leading-none truncate">
+                                      K {extFilamentData.kFactor}
+                                    </div>
+                                  )}
                                   <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                                     {extEffectiveFill !== null && extEffectiveFill >= 0 && !isEmpty && (
                                       <div

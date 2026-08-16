@@ -416,6 +416,7 @@ export default {
     notInserted: 'Nicht eingelegt',
     totalPrintHours: 'Druckstunden',
     activeNozzle: 'Aktiv: {{nozzle}} Düse',
+    amsSwitchInletTooltip: 'Filamentweiche IN-{{inlet}} ({{side}}) — versorgt beide Düsen',
     nozzleRack: 'Düsenhalter',
     nozzleDocked: 'Angedockt',
     nozzleMounted: 'Montiert',
@@ -864,7 +865,7 @@ export default {
     incompatibleFile: 'Diese Datei wurde für {{slicedFor}} geslicet, aber dieser Drucker ist ein {{printerModel}}',
     dropNotPrintable: 'Nur .gcode- und .gcode.3mf-Dateien können gedruckt werden',
     dropToPrint: 'Zum Drucken ablegen',
-    cannotPrint: 'Drucker beschäftigt',
+    dropToQueue: 'Zum Einreihen ablegen',
   },
 
   // Archives page
@@ -3941,6 +3942,8 @@ export default {
     noPermissionSlice: 'Sie haben keine Berechtigung, Dateien zu slicen',
     noPermissionAddToQueue: 'Sie haben keine Berechtigung, zur Warteschlange hinzuzufügen',
     noPermissionDownload: 'Sie haben keine Berechtigung, Dateien herunterzuladen',
+    noPermissionPreview: 'Sie haben keine Berechtigung, Dateien in der Vorschau anzuzeigen',
+    preview3d: '3D-Vorschau',
     noPermissionRenameFile: 'Sie haben keine Berechtigung, diese Datei umzubenennen',
     noPermissionGenerateThumbnail: 'Sie haben keine Berechtigung, Vorschaubilder zu generieren',
     noPermissionDeleteFile: 'Sie haben keine Berechtigung, diese Datei zu löschen',
@@ -4949,6 +4952,7 @@ export default {
     rightNozzle: 'R',
     leftNozzleTooltip: 'Linke Düse',
     rightNozzleTooltip: 'Rechte Düse',
+    ftsSameInletHint: 'Alle Filamente für diesen Druck liegen an Filamentweiche IN-{{inlet}}. Wechsel zwischen Filamenten am selben Eingang dauern länger — verlege eines in ein AMS am anderen Eingang.',
     rackPosition: 'Wechslerposition',
     rackPositionTooltip: 'Welche Düse im Wechsler dieses Filament druckt. Die Positionen sind wie am Drucker nummeriert.',
     rackEmptyPosition: 'Diese Wechslerposition ist leer',
@@ -6988,6 +6992,9 @@ export default {
     thankYou: 'Vielen Dank!',
     submitted: 'Ihr Fehlerbericht wurde eingereicht.',
     viewIssue: 'Issue ansehen',
+    closeKeepsRecording: 'Sie können dieses Fenster schließen, während Sie das Problem reproduzieren — die Aufzeichnung läuft weiter, und beim erneuten Öffnen sind Sie wieder hier.',
+    resumeRecording: 'Fehlerbericht zeichnet auf — {{elapsed}}. Zum Abschließen klicken.',
+    resumeReport: 'Bericht fortsetzen',
     unexpectedError: 'Ein unerwarteter Fehler ist aufgetreten',
   },
   failureDetection: {

@@ -492,13 +492,20 @@ export interface PrintOptions {
 
 export interface FilaSwitchState {
   installed: boolean;
-  // in[track] = currently loaded slot for that track (-1 = empty)
+  // Raw wire arrays, ordered **In-B first, then In-A** (BambuStudio's SwitchPos
+  // enum). in[] values are snow-encoded (bits 8-15 = AMS id, bits 0-7 = slot,
+  // -1 = empty); out[] values are the extruder each *outlet* terminates at, or
+  // 0xE when unset. Neither array says which inlet is currently routed to which
+  // outlet — that pairing is not reported. For per-AMS side information use
+  // PrinterStatus.ams_switch_inlet instead.
   in_slots: number[];
-  // out[track] = extruder this track terminates at (0 = right, 1 = left)
   out_extruders: number[];
   stat: number;
   info: number;
 }
+
+// Which FTS inlet an AMS is plumbed into: 'A' | 'B'.
+export type FtsInlet = 'A' | 'B';
 
 export interface PrinterStatus {
   id: number;
@@ -565,6 +572,11 @@ export interface PrinterStatus {
   // AMS slots aren't tied to a specific extruder; the FTS routes any slot to
   // either extruder, so per-extruder slot filtering must be skipped.
   fila_switch: FilaSwitchState | null;
+  // Per-AMS FTS inlet binding, {ams_id: 'A' | 'B'}, as set on the printer's
+  // "Manual AMS Setup" screen. Empty unless a switch is installed. An AMS with
+  // an entry here reaches BOTH nozzles through the switch, which is why it has
+  // no ams_extruder_map entry and must not be badged left or right.
+  ams_switch_inlet: Record<string, FtsInlet>;
   // Currently loaded tray (global tray ID, 255 = no filament loaded, 254 = external spool)
   tray_now: number;
   // Runout / filament-replacement guidance (#2587). Populated only while PAUSED.

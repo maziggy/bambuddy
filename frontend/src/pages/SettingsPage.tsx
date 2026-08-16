@@ -1065,7 +1065,6 @@ export function SettingsPage() {
       baseline.ha_token !== localSettings.ha_token ||
       (baseline.library_archive_mode ?? 'ask') !== (localSettings.library_archive_mode ?? 'ask') ||
       Number(baseline.library_disk_warning_gb ?? 5) !== Number(localSettings.library_disk_warning_gb ?? 5) ||
-      (baseline.camera_view_mode ?? 'window') !== (localSettings.camera_view_mode ?? 'window') ||
       (baseline.preferred_slicer ?? 'bambu_studio') !== (localSettings.preferred_slicer ?? 'bambu_studio') ||
       resolveEngine(baseline.slice_engine) !== resolveEngine(localSettings.slice_engine) ||
       (baseline.open_in_slicer ?? null) !== (localSettings.open_in_slicer ?? null) ||
@@ -1177,7 +1176,6 @@ export function SettingsPage() {
         ha_token: localSettings.ha_token,
         library_archive_mode: localSettings.library_archive_mode,
         library_disk_warning_gb: localSettings.library_disk_warning_gb,
-        camera_view_mode: localSettings.camera_view_mode,
         preferred_slicer: localSettings.preferred_slicer,
         slice_engine: localSettings.slice_engine,
         open_in_slicer: localSettings.open_in_slicer,
@@ -2110,27 +2108,13 @@ export function SettingsPage() {
               </h2>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div>
-                <label className="block text-sm text-bambu-gray mb-1">
-                  {t('settings.cameraViewMode')}
-                </label>
-                <select
-                  value={localSettings.camera_view_mode ?? 'window'}
-                  onChange={(e) => updateSetting('camera_view_mode', e.target.value as 'window' | 'embedded')}
-                  className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
-                >
-                  <option value="window">{t('settings.newWindow')}</option>
-                  <option value="embedded">{t('settings.embeddedOverlay')}</option>
-                </select>
-                <p className="text-xs text-bambu-gray mt-1">
-                  {localSettings.camera_view_mode === 'embedded'
-                    ? t('settings.cameraOverlayDescription')
-                    : t('settings.cameraWindowDescription')}
-                </p>
-              </div>
+              {/* Camera View Mode used to live here. It is now the split
+                  camera button on each printer card, where the choice is made
+                  per stream instead of once for the whole install. The stored
+                  setting stays as the default a fresh browser starts from. */}
 
               {/* External Cameras Section */}
-              <div className="border-t border-bambu-dark-tertiary pt-4 mt-4">
+              <div>
                 <h3 className="text-sm font-medium text-white mb-2">{t('settings.externalCameras')}</h3>
                 <p className="text-xs text-bambu-gray mb-3">
                   {t('settings.externalCamerasDescription')}

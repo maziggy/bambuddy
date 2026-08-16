@@ -416,6 +416,7 @@ export default {
     notInserted: 'Non insérée',
     totalPrintHours: 'Heures d\'impression',
     activeNozzle: 'Active : buse {{nozzle}}',
+    amsSwitchInletTooltip: 'Sélecteur de chemin de filament IN-{{inlet}} ({{side}}) — alimente les deux buses',
     nozzleRack: 'Rack à buses',
     nozzleDocked: 'Rangée',
     nozzleMounted: 'Montée',
@@ -864,7 +865,7 @@ export default {
     incompatibleFile: 'Ce fichier a été tranché pour {{slicedFor}}, mais cette imprimante est une {{printerModel}}',
     dropNotPrintable: 'Seuls les fichiers .gcode et .gcode.3mf peuvent être imprimés',
     dropToPrint: 'Déposer pour imprimer',
-    cannotPrint: 'Imprimante occupée',
+    dropToQueue: 'Déposer pour mettre en file',
   },
 
   // Archives page
@@ -3930,6 +3931,8 @@ export default {
     noPermissionSlice: 'Vous n\'avez pas la permission de découper des fichiers',
     noPermissionAddToQueue: 'Pas d\'autorisation file',
     noPermissionDownload: 'Pas d\'autorisation téléchargement',
+    noPermissionPreview: 'Vous n\'avez pas la permission de prévisualiser les fichiers',
+    preview3d: 'Aperçu 3D',
     noPermissionRenameFile: 'Pas d\'autorisation renommage fichier',
     noPermissionGenerateThumbnail: 'Pas d\'autorisation vignettes',
     noPermissionDeleteFile: 'Pas d\'autorisation suppression fichier',
@@ -4938,6 +4941,7 @@ export default {
     rightNozzle: 'D',
     leftNozzleTooltip: 'Buse gauche',
     rightNozzleTooltip: 'Buse droite',
+    ftsSameInletHint: 'Tous les filaments de cette impression sont sur le sélecteur de chemin de filament IN-{{inlet}}. Changer entre des filaments d\'une même entrée est plus lent — déplacez-en un vers un AMS de l\'autre entrée.',
     rackPosition: 'Position du rack',
     rackPositionTooltip: "Quelle buse du rack imprime ce filament. Les positions sont numérotées comme sur l'imprimante.",
     rackEmptyPosition: 'Cette position du rack est vide',
@@ -6978,6 +6982,9 @@ export default {
     thankYou: 'Merci !',
     submitted: 'Votre rapport de bug a été soumis.',
     viewIssue: 'Voir l\'issue',
+    closeKeepsRecording: 'Vous pouvez fermer ce panneau pendant que vous reproduisez le problème : l\'enregistrement continue et sa réouverture vous ramènera ici.',
+    resumeRecording: 'Rapport de bogue en cours d\'enregistrement — {{elapsed}}. Cliquez pour terminer.',
+    resumeReport: 'Reprendre le rapport',
     unexpectedError: 'Une erreur inattendue est survenue',
   },
   failureDetection: {

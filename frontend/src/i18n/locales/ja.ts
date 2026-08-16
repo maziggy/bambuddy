@@ -415,6 +415,7 @@ export default {
     notInserted: '未挿入',
     totalPrintHours: '印刷時間',
     activeNozzle: 'アクティブ: {{nozzle}}ノズル',
+    amsSwitchInletTooltip: 'フィラメント経路切替器 IN-{{inlet}}（{{side}}）— 両方のノズルに供給できます',
     nozzleRack: 'ノズルラック',
     nozzleDocked: 'ドッキング中',
     nozzleMounted: 'マウント中',
@@ -863,7 +864,7 @@ export default {
     incompatibleFile: 'このファイルは{{slicedFor}}用にスライスされていますが、このプリンターは{{printerModel}}です',
     dropNotPrintable: '.gcodeおよび.gcode.3mfファイルのみ印刷できます',
     dropToPrint: 'ドロップして印刷',
-    cannotPrint: 'プリンター使用中',
+    dropToQueue: 'ドロップしてキューに追加',
   },
 
   // Archives page
@@ -3941,6 +3942,8 @@ export default {
     noPermissionSlice: 'ファイルをスライスする権限がありません',
     noPermissionAddToQueue: 'キューに追加する権限がありません',
     noPermissionDownload: 'ファイルをダウンロードする権限がありません',
+    noPermissionPreview: 'ファイルをプレビューする権限がありません',
+    preview3d: '3Dプレビュー',
     noPermissionRenameFile: 'このファイル名を変更する権限がありません',
     noPermissionGenerateThumbnail: 'サムネイルを生成する権限がありません',
     noPermissionDeleteFile: 'このファイルを削除する権限がありません',
@@ -4949,6 +4952,7 @@ export default {
     rightNozzle: 'R',
     leftNozzleTooltip: '左ノズル',
     rightNozzleTooltip: '右ノズル',
+    ftsSameInletHint: 'この印刷で使うフィラメントはすべてフィラメント経路切替器 IN-{{inlet}} にあります。同じ入口のフィラメント同士の交換は遅くなります。1 つをもう一方の入口の AMS に移すと速くなります。',
     rackPosition: 'ラック位置',
     rackPositionTooltip: 'このフィラメントを印刷するラック上のノズル。位置番号はプリンター本体と同じです。',
     rackEmptyPosition: 'このラック位置は空です',
@@ -6989,6 +6993,9 @@ export default {
     thankYou: 'ありがとうございます！',
     submitted: 'バグレポートが送信されました。',
     viewIssue: 'Issueを表示',
+    closeKeepsRecording: '問題を再現している間、このパネルを閉じても構いません。記録は続行され、再度開くとここに戻ります。',
+    resumeRecording: 'バグレポートを記録中 — {{elapsed}}。クリックして完了します。',
+    resumeReport: 'レポートを再開',
     unexpectedError: '予期しないエラーが発生しました',
   },
   failureDetection: {

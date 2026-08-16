@@ -416,6 +416,7 @@ export default {
     notInserted: 'Não inserido',
     totalPrintHours: 'Horas de impressão',
     activeNozzle: 'Ativo: {{nozzle}} bico',
+    amsSwitchInletTooltip: 'Comutador de trajeto de filamento IN-{{inlet}} ({{side}}) — alimenta os dois bicos',
     nozzleRack: 'Suporte de bicos',
     nozzleDocked: 'Acoplado',
     nozzleMounted: 'Montado',
@@ -864,7 +865,7 @@ export default {
     incompatibleFile: 'Este arquivo foi fatiado para {{slicedFor}}, mas esta impressora é uma {{printerModel}}',
     dropNotPrintable: 'Apenas arquivos .gcode e .gcode.3mf podem ser impressos',
     dropToPrint: 'Solte para imprimir',
-    cannotPrint: 'Impressora ocupada',
+    dropToQueue: 'Solte para adicionar à fila',
   },
 
   // Archives page
@@ -3929,6 +3930,8 @@ export default {
     noPermissionSlice: 'Você não tem permissão para fatiar arquivos',
     noPermissionAddToQueue: 'Você não tem permissão para adicionar à fila',
     noPermissionDownload: 'Você não tem permissão para baixar arquivos',
+    noPermissionPreview: 'Você não tem permissão para pré-visualizar arquivos',
+    preview3d: 'Pré-visualização 3D',
     noPermissionRenameFile: 'Você não tem permissão para renomear este arquivo',
     noPermissionGenerateThumbnail: 'Você não tem permissão para gerar miniaturas',
     noPermissionDeleteFile: 'Você não tem permissão para excluir este arquivo',
@@ -4937,6 +4940,7 @@ export default {
     rightNozzle: 'R',
     leftNozzleTooltip: 'Bico esquerdo',
     rightNozzleTooltip: 'Bico direito',
+    ftsSameInletHint: 'Todos os filamentos desta impressão estão no comutador de trajeto de filamento IN-{{inlet}}. Trocar entre filamentos da mesma entrada é mais lento — mova um para um AMS da outra entrada.',
     rackPosition: 'Posição no rack',
     rackPositionTooltip: 'Qual bico do rack imprime este filamento. As posições são numeradas como na impressora.',
     rackEmptyPosition: 'Esta posição do rack está vazia',
@@ -6977,6 +6981,9 @@ export default {
     thankYou: 'Obrigado!',
     submitted: 'Seu relatório de bug foi enviado.',
     viewIssue: 'Ver issue',
+    closeKeepsRecording: 'Você pode fechar este painel enquanto reproduz o problema: a gravação continua e, ao reabrir, você volta para cá.',
+    resumeRecording: 'Relatório de bug gravando — {{elapsed}}. Clique para concluir.',
+    resumeReport: 'Retomar relatório',
     unexpectedError: 'Ocorreu um erro inesperado',
   },
   failureDetection: {

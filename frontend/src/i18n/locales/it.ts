@@ -416,6 +416,7 @@ export default {
     notInserted: 'Non inserita',
     totalPrintHours: 'Ore di stampa',
     activeNozzle: 'Attivo: ugello {{nozzle}}',
+    amsSwitchInletTooltip: 'Filament Track Switch IN-{{inlet}} ({{side}}) — alimenta entrambi gli ugelli',
     nozzleRack: 'Rack Ugelli',
     nozzleDocked: 'Agganciato',
     nozzleMounted: 'Montato',
@@ -864,7 +865,7 @@ export default {
     incompatibleFile: 'Questo file è stato preparato per {{slicedFor}}, ma questa stampante è una {{printerModel}}',
     dropNotPrintable: 'Solo i file .gcode e .gcode.3mf possono essere stampati',
     dropToPrint: 'Rilascia per stampare',
-    cannotPrint: 'Stampante occupata',
+    dropToQueue: 'Rilascia per accodare',
   },
 
   // Archives page
@@ -3929,6 +3930,8 @@ export default {
     noPermissionSlice: 'Non hai il permesso di sezionare i file',
     noPermissionAddToQueue: 'Non hai il permesso di aggiungere alla coda',
     noPermissionDownload: 'Non hai il permesso di scaricare file',
+    noPermissionPreview: 'Non hai il permesso di visualizzare l\'anteprima dei file',
+    preview3d: 'Anteprima 3D',
     noPermissionRenameFile: 'Non hai il permesso di rinominare questo file',
     noPermissionGenerateThumbnail: 'Non hai il permesso di generare miniature',
     noPermissionDeleteFile: 'Non hai il permesso di eliminare questo file',
@@ -4937,6 +4940,7 @@ export default {
     rightNozzle: 'R',
     leftNozzleTooltip: 'Ugello sinistro',
     rightNozzleTooltip: 'Ugello destro',
+    ftsSameInletHint: 'Tutti i filamenti di questa stampa sono sul Filament Track Switch IN-{{inlet}}. Il cambio tra filamenti sullo stesso ingresso è più lento: spostane uno su un AMS dell\'altro ingresso.',
     rackPosition: 'Posizione nel rack',
     rackPositionTooltip: 'Quale ugello del rack stampa questo filamento. Le posizioni sono numerate come sulla stampante.',
     rackEmptyPosition: 'Questa posizione del rack è vuota',
@@ -6977,6 +6981,9 @@ export default {
     thankYou: 'Grazie!',
     submitted: 'La tua segnalazione bug è stata inviata.',
     viewIssue: 'Vedi issue',
+    closeKeepsRecording: 'Puoi chiudere questo pannello mentre riproduci il problema: la registrazione continua e riaprendolo tornerai qui.',
+    resumeRecording: 'Segnalazione in registrazione — {{elapsed}}. Fai clic per completare.',
+    resumeReport: 'Riprendi segnalazione',
     unexpectedError: 'Si è verificato un errore imprevisto',
   },
   failureDetection: {

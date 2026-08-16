@@ -102,6 +102,10 @@ def _fake_state(**overrides):
         "wifi_signal": None,
         "wired_network": None,
         "ams_filament_backup": None,
+        # Filament Track Switch. None means "no accessory", which is what
+        # printer_state_to_dict gates both of these on.
+        "fila_switch": None,
+        "ams_switch_inlet": {},
     }
     base.update(overrides)
     return SimpleNamespace(**base)

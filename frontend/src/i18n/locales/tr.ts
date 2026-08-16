@@ -416,6 +416,7 @@ export default {
     notInserted: 'Takılı değil',
     totalPrintHours: 'Baskı Saatleri',
     activeNozzle: 'Aktif: {{nozzle}} nozul',
+    amsSwitchInletTooltip: 'Filament Hattı Değiştirici IN-{{inlet}} ({{side}}) — her iki nozulu besler',
     nozzleRack: 'Nozul Rafı',
     nozzleDocked: 'Yuvalanmış',
     nozzleMounted: 'Takılı',
@@ -864,7 +865,7 @@ export default {
     incompatibleFile: 'Bu dosya {{slicedFor}} için dilimlendi, ancak bu yazıcı bir {{printerModel}}',
     dropNotPrintable: 'Yalnızca .gcode ve .gcode.3mf dosyaları yazdırılabilir',
     dropToPrint: 'Yazdırmak için bırakın',
-    cannotPrint: 'Yazıcı meşgul',
+    dropToQueue: 'Kuyruğa eklemek için bırakın',
   },
 
   // Arşivler sayfası
@@ -3936,6 +3937,8 @@ export default {
     noPermissionAddToQueue: 'Kuyruğa ekleme izniniz yok',
     noPermissionSlice: 'Dosyaları dilimleme izniniz yok',
     noPermissionDownload: 'Dosyaları indirme izniniz yok',
+    noPermissionPreview: 'Dosyaları önizleme izniniz yok',
+    preview3d: '3B Önizleme',
     noPermissionRenameFile: 'Bu dosyayı yeniden adlandırma izniniz yok',
     noPermissionGenerateThumbnail: 'Küçük resim oluşturma izniniz yok',
     noPermissionDeleteFile: 'Bu dosyayı silme izniniz yok',
@@ -4926,6 +4929,7 @@ export default {
     rightNozzle: 'R',
     leftNozzleTooltip: 'Sol nozul',
     rightNozzleTooltip: 'Sağ nozul',
+    ftsSameInletHint: 'Bu baskıdaki tüm filamentler Filament Hattı Değiştirici IN-{{inlet}} girişinde. Aynı girişteki filamentler arasında geçiş daha yavaştır — birini diğer girişteki bir AMS\'e taşıyın.',
     rackPosition: 'Rack konumu',
     rackPositionTooltip: 'Bu filamenti rack üzerindeki hangi nozulun basacağı. Konumlar yazıcıdaki gibi numaralandırılmıştır.',
     rackEmptyPosition: 'Bu rack konumu boş',
@@ -6927,6 +6931,9 @@ export default {
     thankYou: 'Teşekkürler!',
     submitted: 'Hata raporunuz gönderildi.',
     viewIssue: 'Sorunu Görüntüle',
+    closeKeepsRecording: 'Sorunu yeniden oluştururken bu paneli kapatabilirsiniz; kayıt devam eder ve yeniden açtığınızda buraya dönersiniz.',
+    resumeRecording: 'Hata raporu kaydediyor — {{elapsed}}. Tamamlamak için tıklayın.',
+    resumeReport: 'Rapora devam et',
     unexpectedError: 'Beklenmedik bir hata oluştu',
   },
   failureDetection: {

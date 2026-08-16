@@ -416,6 +416,7 @@ export default {
     notInserted: 'No insertada',
     totalPrintHours: 'Horas de impresión',
     activeNozzle: 'Activa: boquilla {{nozzle}}',
+    amsSwitchInletTooltip: 'Conmutador de ruta de filamento IN-{{inlet}} ({{side}}): alimenta ambas boquillas',
     nozzleRack: 'Soporte de boquillas',
     nozzleDocked: 'Acoplada',
     nozzleMounted: 'Montada',
@@ -864,7 +865,7 @@ export default {
     incompatibleFile: 'Este archivo se laminó para {{slicedFor}}, pero esta impresora es una {{printerModel}}',
     dropNotPrintable: 'Solo se pueden imprimir archivos .gcode y .gcode.3mf',
     dropToPrint: 'Suelte para imprimir',
-    cannotPrint: 'Impresora ocupada',
+    dropToQueue: 'Suelte para poner en cola',
   },
 
   // Archives page
@@ -3943,6 +3944,8 @@ export default {
     noPermissionAddToQueue: 'No tiene permiso para añadir a la cola',
     noPermissionSlice: 'No tiene permiso para laminar archivos',
     noPermissionDownload: 'No tiene permiso para descargar archivos',
+    noPermissionPreview: 'No tienes permiso para previsualizar archivos',
+    preview3d: 'Vista previa 3D',
     noPermissionRenameFile: 'No tiene permiso para renombrar este archivo',
     noPermissionGenerateThumbnail: 'No tiene permiso para generar miniaturas',
     noPermissionDeleteFile: 'No tiene permiso para eliminar este archivo',
@@ -4956,6 +4959,7 @@ export default {
     rightNozzle: 'D',
     leftNozzleTooltip: 'Boquilla izquierda',
     rightNozzleTooltip: 'Boquilla derecha',
+    ftsSameInletHint: 'Todos los filamentos de esta impresión están en el conmutador de ruta de filamento IN-{{inlet}}. Cambiar entre filamentos de la misma entrada es más lento: mueve uno a un AMS de la otra entrada.',
     rackPosition: 'Posición del carro',
     rackPositionTooltip: 'Qué boquilla del carro imprime este filamento. Las posiciones se numeran como en la impresora.',
     rackEmptyPosition: 'Esta posición del carro está vacía',
@@ -6996,6 +7000,9 @@ export default {
     thankYou: '¡Gracias!',
     submitted: 'Su informe de error se ha enviado.',
     viewIssue: 'Ver incidencia',
+    closeKeepsRecording: 'Puedes cerrar este panel mientras reproduces el problema: la grabación sigue en marcha y al volver a abrirlo regresarás aquí.',
+    resumeRecording: 'Informe de error grabando — {{elapsed}}. Haz clic para finalizar.',
+    resumeReport: 'Reanudar informe',
     unexpectedError: 'Se produjo un error inesperado',
   },
   failureDetection: {

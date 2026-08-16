@@ -59,13 +59,16 @@ class TestCalibrationPrintFiltering:
                     },
                 )
 
-                # Notification should still be sent
-                mock_notif_send.assert_called_once()
+                # And no notification. The event describes the printer
+                # calibrating itself, so "Print started: auto_cali_for_user" is
+                # as wrong as the archive would have been. This assertion used
+                # to demand the opposite.
+                mock_notif_send.assert_not_called()
 
         # Verify the skip was logged
         info_messages = [r.message for r in capture_logs.records if r.levelno >= 20]
-        skip_msgs = [m for m in info_messages if "internal printer file" in str(m)]
-        assert skip_msgs, "Should log that internal printer file was skipped"
+        skip_msgs = [m for m in info_messages if "internal printer job" in str(m)]
+        assert skip_msgs, "Should log that an internal printer job was skipped"
 
     @pytest.mark.asyncio
     async def test_usr_prefix_various_paths(self, capture_logs):
@@ -108,7 +111,7 @@ class TestCalibrationPrintFiltering:
 
                 await on_print_start(1, {"filename": path, "subtask_name": "test"})
 
-            skip_msgs = [r for r in capture_logs.records if "internal printer file" in str(r.message)]
+            skip_msgs = [r for r in capture_logs.records if "internal printer job" in str(r.message)]
             assert skip_msgs, f"Path {path} should be skipped"
             capture_logs.clear()
 

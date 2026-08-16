@@ -416,6 +416,7 @@ export default {
     notInserted: '未插入',
     totalPrintHours: '列印時長',
     activeNozzle: '目前：{{nozzle}} 噴嘴',
+    amsSwitchInletTooltip: '耗材變軌器 IN-{{inlet}}（{{side}}）— 可向兩個噴嘴供料',
     nozzleRack: '噴嘴架',
     nozzleDocked: '已停靠',
     nozzleMounted: '已安裝',
@@ -864,7 +865,7 @@ export default {
     incompatibleFile: '此檔案是為 {{slicedFor}} 切片的，但該印表機是 {{printerModel}}',
     dropNotPrintable: '只能列印 .gcode 和 .gcode.3mf 檔案',
     dropToPrint: '拖放以列印',
-    cannotPrint: '印表機忙碌',
+    dropToQueue: '拖放以加入佇列',
   },
 
   // Archives page
@@ -3929,6 +3930,8 @@ export default {
     noPermissionSlice: '您沒有切片檔案的權限',
     noPermissionAddToQueue: '您沒有新增到佇列的權限',
     noPermissionDownload: '您沒有下載檔案的權限',
+    noPermissionPreview: '您沒有預覽檔案的權限',
+    preview3d: '3D 預覽',
     noPermissionRenameFile: '您沒有重新命名此檔案的權限',
     noPermissionGenerateThumbnail: '您沒有產生縮圖的權限',
     noPermissionDeleteFile: '您沒有刪除此檔案的權限',
@@ -4937,6 +4940,7 @@ export default {
     rightNozzle: '右',
     leftNozzleTooltip: '左噴嘴',
     rightNozzleTooltip: '右噴嘴',
+    ftsSameInletHint: '本次列印的所有耗材都在耗材變軌器 IN-{{inlet}} 上。同一入口的耗材之間切換較慢，可將其中一捲移到另一入口的 AMS。',
     rackPosition: '刀架位置',
     rackPositionTooltip: '由刀架上的哪個噴嘴列印此耗材。位置編號與印表機上一致。',
     rackEmptyPosition: '此刀架位置為空',
@@ -6976,6 +6980,9 @@ export default {
     thankYou: '謝謝！',
     submitted: '您的錯誤報告已提交。',
     viewIssue: '檢視 Issue',
+    closeKeepsRecording: '重現問題時可以關閉此面板——記錄會繼續進行，重新開啟後會回到這一步。',
+    resumeRecording: '錯誤報告記錄中 — {{elapsed}}。點擊以完成。',
+    resumeReport: '繼續報告',
     unexpectedError: '發生了意外錯誤',
   },
   failureDetection: {

@@ -419,6 +419,7 @@ export default {
     notInserted: 'Not inserted',
     totalPrintHours: 'Print Hours',
     activeNozzle: 'Active: {{nozzle}} nozzle',
+    amsSwitchInletTooltip: 'Filament Track Switch IN-{{inlet}} ({{side}}) — feeds both nozzles',
     nozzleRack: 'Nozzle Rack',
     nozzleDocked: 'Docked',
     nozzleMounted: 'Mounted',
@@ -869,7 +870,7 @@ export default {
     incompatibleFile: 'This file was sliced for {{slicedFor}}, but this printer is a {{printerModel}}',
     dropNotPrintable: 'Only .gcode and .gcode.3mf files can be printed',
     dropToPrint: 'Drop to print',
-    cannotPrint: 'Printer busy',
+    dropToQueue: 'Drop to queue',
   },
 
   // Archives page
@@ -3971,6 +3972,8 @@ export default {
     noPermissionAddToQueue: 'You do not have permission to add to queue',
     noPermissionSlice: 'You do not have permission to slice files',
     noPermissionDownload: 'You do not have permission to download files',
+    noPermissionPreview: 'You do not have permission to preview files',
+    preview3d: '3D Preview',
     noPermissionRenameFile: 'You do not have permission to rename this file',
     noPermissionGenerateThumbnail: 'You do not have permission to generate thumbnails',
     noPermissionDeleteFile: 'You do not have permission to delete this file',
@@ -4993,6 +4996,7 @@ export default {
     rightNozzle: 'R',
     leftNozzleTooltip: 'Left nozzle',
     rightNozzleTooltip: 'Right nozzle',
+    ftsSameInletHint: 'All filaments for this print are on Filament Track Switch IN-{{inlet}}. Switching between filaments on the same inlet is slower — move one to an AMS on the other inlet to speed it up.',
     rackPosition: 'Rack position',
     rackPositionTooltip: 'Which nozzle on the rack prints this filament. Positions are numbered as on the printer.',
     rackEmptyPosition: 'This rack position is empty',
@@ -7038,6 +7042,9 @@ export default {
     thankYou: 'Thank you!',
     submitted: 'Your bug report has been submitted.',
     viewIssue: 'View Issue',
+    closeKeepsRecording: 'You can close this panel while you reproduce the problem — recording keeps running, and reopening brings you back here.',
+    resumeRecording: 'Bug report recording — {{elapsed}}. Click to finish.',
+    resumeReport: 'Resume report',
     unexpectedError: 'An unexpected error occurred',
   },
   failureDetection: {

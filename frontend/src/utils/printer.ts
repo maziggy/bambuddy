@@ -56,7 +56,23 @@ export function getWifiStrength(rssi: number): { labelKey: string; color: string
   return { labelKey: 'printers.wifiSignal.veryWeak', color: 'text-red-400', bars: 1 };
 }
 
-import type { PrintQueueItem } from '../api/client';
+import type { PrinterStatus, PrintQueueItem } from '../api/client';
+
+/**
+ * True when a queue item aimed at this printer would start now rather than wait.
+ *
+ * Every print Bambuddy sends goes through the queue, so this is not "can we
+ * print at all" — it is "will ASAP mean now". The PrintModal uses it to promise
+ * a later start, and the printer card uses it to say whether a dropped file
+ * prints or queues. Both must agree, or the card promises one thing and the
+ * modal immediately says another.
+ */
+export function isPrinterCurrentlyDispatchable(status: PrinterStatus | undefined): boolean {
+  if (!status?.connected) return false;
+  if (status.awaiting_plate_clear) return false;
+  if (status.ams?.some((ams) => ams.dry_time > 0)) return false;
+  return ['IDLE', 'FINISH', 'FAILED'].includes(status.state ?? '');
+}
 
 /**
  * Filters queue items based on printer compatibility (filament types and colors).

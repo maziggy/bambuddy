@@ -419,6 +419,7 @@ export default {
     notInserted: "Не вставлено",
     totalPrintHours: "Загальний час друку",
     activeNozzle: "Активне сопло: {{nozzle}}",
+    amsSwitchInletTooltip: "Перемикач тракту філаменту IN-{{inlet}} ({{side}}) — подає на обидва сопла",
     nozzleRack: "Стійка сопел",
     nozzleDocked: "У док-станції",
     nozzleMounted: "Установлено",
@@ -868,7 +869,7 @@ export default {
     incompatibleFile: "Цей файл нарізано для {{slicedFor}}, а модель цього принтера — {{printerModel}}",
     dropNotPrintable: "Можна роздрукувати лише файли .gcode і .gcode.3mf.",
     dropToPrint: "Відпустіть для друку",
-    cannotPrint: "Принтер зайнятий",
+    dropToQueue: "Відпустіть, щоб додати в чергу",
   },
 
   // Archives page
@@ -3969,6 +3970,8 @@ export default {
     noPermissionAddToQueue: "Ви не маєте дозволу на додавання в чергу",
     noPermissionSlice: "Ви не маєте дозволу нарізати файли",
     noPermissionDownload: "У вас немає дозволу на завантаження файлів",
+    noPermissionPreview: 'У вас немає дозволу на попередній перегляд файлів',
+    preview3d: '3D-перегляд',
     noPermissionRenameFile: "Ви не маєте дозволу на перейменування цього файлу",
     noPermissionGenerateThumbnail: "Ви не маєте дозволу створювати мініатюри",
     noPermissionDeleteFile: "Ви не маєте дозволу на видалення цього файлу",
@@ -4991,6 +4994,7 @@ export default {
     rightNozzle: "Р",
     leftNozzleTooltip: "Ліве сопло",
     rightNozzleTooltip: "Праве сопло",
+    ftsSameInletHint: "Усі філаменти для цього друку підключені до перемикача тракту філаменту IN-{{inlet}}. Зміна між філаментами на одному вході повільніша — перемістіть один в AMS на іншому вході.",
     rackPosition: "Позиція у стійці",
     rackPositionTooltip: "Яким соплом зі стійки друкувати цей філамент. Позиції нумеруються так само, як на принтері.",
     rackEmptyPosition: "Ця позиція у стійці порожня",
@@ -7031,6 +7035,9 @@ export default {
     thankYou: "дякую!",
     submitted: "Ваш звіт про помилку надіслано.",
     viewIssue: "Переглянути випуск",
+    closeKeepsRecording: 'Ви можете закрити цю панель, поки відтворюєте проблему: запис триває, і після повторного відкриття ви повернетеся сюди.',
+    resumeRecording: 'Триває запис звіту про помилку — {{elapsed}}. Натисніть, щоб завершити.',
+    resumeReport: 'Продовжити звіт',
     unexpectedError: "Сталася неочікувана помилка",
   },
   failureDetection: {

@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Circle, Check, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Palette } from 'lucide-react';
 import { api } from '../../api/client';
 import { useFilamentMapping } from '../../hooks/useFilamentMapping';
-import { getGlobalTrayId, effectivePreferLowest } from '../../utils/amsHelpers';
+import { getGlobalTrayId, effectivePreferLowest, FTS_INLET_SIDE } from '../../utils/amsHelpers';
 import { getColorName } from '../../utils/colors';
 import { useFilamentLabels } from './useFilamentLabels';
 import { autoAssignRackPositions, rackOptionsForGroup } from '../../utils/nozzleRack';
@@ -234,16 +234,39 @@ export function FilamentMapping({
 
   // Filament Track Switch: when installed, AMS-to-extruder mapping is dynamic
   // (any slot can be routed to either extruder), so the per-nozzle dropdown
-  // filter is suppressed. fila_switch.in_slots[track] = currently fed slot,
-  // fila_switch.out_extruders[track] = extruder that track terminates at. See #1162.
+  // filter is suppressed. See #1162.
+  //
+  // What a slot CAN be labelled with is the switch inlet its AMS is plumbed
+  // into (ams_switch_inlet, from AMS info bits 24-27). That is the stable
+  // relationship the printer's own "Manual AMS Setup" screen sets. The live
+  // inlet-to-outlet route is deliberately not shown: the firmware never reports
+  // which inlet is currently paired with which outlet, so any left/right label
+  // on a slot would be a guess.
   const ftsInstalled = printerStatus?.fila_switch?.installed === true;
-  const ftsExtruderForSlot = (globalTrayId: number): number | null => {
-    const fs = printerStatus?.fila_switch;
-    if (!fs?.installed) return null;
-    const track = fs.in_slots.indexOf(globalTrayId);
-    if (track < 0) return null;
-    return fs.out_extruders[track] ?? null;
-  };
+  const amsSwitchInlet = printerStatus?.ams_switch_inlet;
+  const ftsInletForAms = (amsId: number): 'A' | 'B' | null =>
+    (ftsInstalled && amsSwitchInlet?.[String(amsId)]) || null;
+
+  // Every filament for this print sitting behind one inlet is the case worth
+  // flagging. Bambu's own guidance: a change between two filaments on the same
+  // inlet has to retract the old one all the way back to its AMS before the new
+  // one can be fed through the shared tube, where a change across the two
+  // inlets only retracts as far as the switch. All-on-one-inlet means every
+  // single change in the job takes the slow path.
+  const sameInletWarning = useMemo(() => {
+    if (!ftsInstalled) return null;
+    const inlets = new Set<string>();
+    for (const item of filamentComparison) {
+      if (!item.loaded || item.loaded.isExternal) return null;
+      const inlet = ftsInletForAms(item.loaded.amsId);
+      if (!inlet) return null;
+      inlets.add(inlet);
+    }
+    if (filamentComparison.length < 2 || inlets.size !== 1) return null;
+    return [...inlets][0];
+    // ftsInletForAms is a stable closure over the two values already listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ftsInstalled, amsSwitchInlet, filamentComparison]);
 
   // Don't render if no filament requirements
   if (!hasFilamentReqs) {
@@ -345,6 +368,12 @@ export function FilamentMapping({
               </button>
             </div>
           </div>
+          {sameInletWarning && (
+            <div className="flex items-start gap-1.5 rounded border border-yellow-500/40 bg-yellow-500/10 px-2 py-1.5 text-xs text-yellow-700 dark:text-yellow-400">
+              <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+              <span>{t('printModal.ftsSameInletHint', { inlet: sameInletWarning })}</span>
+            </div>
+          )}
           {filamentComparison.map((item, idx) => {
             // #1717: surface the same per-slot force-color-match checkbox here
             // that FilamentOverride exposes for model-mode dispatch. The
@@ -460,16 +489,15 @@ export function FilamentMapping({
                             defaultValue: ` - ${remainingWeight}g left`,
                           })
                         : '';
-                      // FTS routing badge: if this slot is currently fed into an FTS
-                      // track, show the destination extruder. Idle (not-loaded) slots
-                      // get no badge — they can be routed to either extruder on demand.
-                      const ftsTargetExtruder = ftsInstalled
-                        ? ftsExtruderForSlot(f.globalTrayId)
-                        : null;
-                      const ftsBadge =
-                        ftsTargetExtruder == null
-                          ? ''
-                          : ` [${ftsTargetExtruder === 1 ? t('printModal.leftNozzle') : t('printModal.rightNozzle')}]`;
+                      // FTS badge: which switch inlet this slot's AMS feeds. Not a
+                      // nozzle — the slot reaches both through the switch — but it
+                      // is what decides whether a change to the next filament is
+                      // the fast cross-inlet one or the slow same-inlet one.
+                      const ftsInlet = ftsInletForAms(f.amsId);
+                      // Same L/R lettering the printer card uses for inlets, so the
+                      // two views agree. Not translated: L and R are the letters on
+                      // the machine.
+                      const ftsBadge = ftsInlet == null ? '' : ` [${FTS_INLET_SIDE[ftsInlet]}]`;
                       return (
                         <option key={f.globalTrayId} value={f.globalTrayId} className="bg-bambu-dark text-white">
                           {f.label}: {f.traySubBrands || f.type} ({f.colorName}){remainingLabel}{ftsBadge}

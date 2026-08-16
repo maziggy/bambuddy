@@ -78,6 +78,10 @@ async def test_unauthorized_active_print_triggers_stop(monkeypatch):
         temperatures={},
         raw_data={},
         stg_cur=0,
+        # Real PrinterState always carries these; the status-broadcast dedup
+        # key reads them so a Filament Track Switch rebind reaches the card.
+        fila_switch=None,
+        ams_switch_inlet={},
         cooling_fan_speed=None,
         big_fan1_speed=None,
         big_fan2_speed=None,
@@ -164,6 +168,10 @@ async def test_bambuddy_authorized_print_is_not_stopped(monkeypatch):
         temperatures={},
         raw_data={},
         stg_cur=0,
+        # Real PrinterState always carries these; the status-broadcast dedup
+        # key reads them so a Filament Track Switch rebind reaches the card.
+        fila_switch=None,
+        ams_switch_inlet={},
         cooling_fan_speed=None,
         big_fan1_speed=None,
         big_fan2_speed=None,
@@ -237,6 +245,10 @@ async def test_unauthorized_print_state_is_cleared_when_print_ends(monkeypatch):
         temperatures={},
         raw_data={},
         stg_cur=0,
+        # Real PrinterState always carries these; the status-broadcast dedup
+        # key reads them so a Filament Track Switch rebind reaches the card.
+        fila_switch=None,
+        ams_switch_inlet={},
         cooling_fan_speed=None,
         big_fan1_speed=None,
         big_fan2_speed=None,
@@ -260,6 +272,10 @@ async def test_unauthorized_print_state_is_cleared_when_print_ends(monkeypatch):
         temperatures={},
         raw_data={},
         stg_cur=0,
+        # Real PrinterState always carries these; the status-broadcast dedup
+        # key reads them so a Filament Track Switch rebind reaches the card.
+        fila_switch=None,
+        ams_switch_inlet={},
         cooling_fan_speed=None,
         big_fan1_speed=None,
         big_fan2_speed=None,
@@ -337,6 +353,10 @@ async def test_persisted_print_is_authorized_after_restart(monkeypatch, printer_
         temperatures={},
         raw_data={},
         stg_cur=0,
+        # Real PrinterState always carries these; the status-broadcast dedup
+        # key reads them so a Filament Track Switch rebind reaches the card.
+        fila_switch=None,
+        ams_switch_inlet={},
         cooling_fan_speed=None,
         big_fan1_speed=None,
         big_fan2_speed=None,

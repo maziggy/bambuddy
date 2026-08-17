@@ -52,7 +52,7 @@ from backend.app.services.bambu_ftp import (
     get_storage_info_async,
     list_files_async,
 )
-from backend.app.services.print_storage import print_file_reachable_over_ftp
+from backend.app.services.print_storage import ftp_probe_paths, print_file_reachable_over_ftp
 from backend.app.services.printer_diagnostic import run_connection_diagnostic
 from backend.app.services.printer_manager import (
     display_temperatures,
@@ -1231,13 +1231,21 @@ async def _produce_cover_image(
     temp_path = settings.archive_dir / "temp" / f"cover_{printer_id}_{temp_filename}"
     temp_path.parent.mkdir(parents=True, exist_ok=True)
 
+    storage = print_file_reachable_over_ftp(printer_manager.get_status(printer_id))
+
     # Cache check (#972): the archive-metadata flow in main.py may have already
     # downloaded this 3MF during the print-start handler. Reusing that file
     # avoids a second 36MB transfer competing with the printer's single FTP
     # socket (which produces the 425 errors that feed the retry storm).
+    #
+    # The dispatch's own filename is a candidate too: it is what the archive
+    # flow's probe cached the file under, and it does not always survive the
+    # trip through subtask_name (#2856).
     downloaded = False
     using_cached = False
-    for candidate_name in possible_filenames:
+    for candidate_name in (*possible_filenames, storage.probe_filename):
+        if not candidate_name:
+            continue
         cached = get_cached_3mf(printer_id, candidate_name)
         if cached:
             logger.info("Cover using cached 3MF from %s (avoided duplicate FTP)", cached)
@@ -1251,21 +1259,36 @@ async def _produce_cover_image(
         # When the printer kept the print on internal storage there is nothing
         # at any of these paths, and walking all sixteen of them just to end on
         # a 404 that reads as "this print has no cover" helps nobody (#2780).
-        storage = print_file_reachable_over_ftp(printer_manager.get_status(printer_id))
+        #
+        # Unless the printer is wrong about that, which an H2D with a card in
+        # routinely is (#2856). The dispatch names the file, so when it does,
+        # trade the immediate 404 for a five-path probe of that one name — same
+        # single connection, and it is the only way this endpoint ever recovers
+        # a cover for a print the archive flow did not see start.
+        max_retries = 2
         if not storage.reachable:
-            _cover_404_cache.setdefault(printer_id, set()).add(cache_key)
-            raise HTTPException(
-                404,
-                f"The print file for '{subtask_name}' is not on storage Bambuddy can read over FTPS "
-                f"({storage.reason}), so it has no cover to extract.",
-            )
+            if not storage.probe_filename:
+                _cover_404_cache.setdefault(printer_id, set()).add(cache_key)
+                raise HTTPException(
+                    404,
+                    f"The print file for '{subtask_name}' is not on storage Bambuddy can read over FTPS "
+                    f"({storage.reason}), so it has no cover to extract.",
+                )
+            remote_paths = ftp_probe_paths(storage.probe_filename)
+            # The dispatch's name is the authoritative one — a print whose
+            # subtask_name has been normalized or truncated would otherwise be
+            # cached under a key the archive flow never looks up.
+            temp_filename = storage.probe_filename
+            temp_path = settings.archive_dir / "temp" / f"cover_{printer_id}_{temp_filename}"
+            # One look, not three: the printer has already said this file is not
+            # here, so a retry storm on top of a hunch is exactly what #2780 was.
+            max_retries = 0
 
         logger.info(
             f"Trying to download cover for '{subtask_name}' from {printer.ip_address} (trying {len(remote_paths)} paths)"
         )
 
         # Retry logic for transient FTP failures
-        max_retries = 2
         last_error = None
 
         for attempt in range(max_retries + 1):
@@ -1304,6 +1327,15 @@ async def _produce_cover_image(
             # Remember this failure so subsequent requests for the same print
             # skip the 8-path FTP fan-out (#1420).
             _cover_404_cache.setdefault(printer_id, set()).add(cache_key)
+            if not storage.reachable:
+                # The probe looked and found nothing, so the printer's own
+                # account of where the file went is the answer after all —
+                # keep saying so rather than reporting a generic miss (#2780).
+                raise HTTPException(
+                    404,
+                    f"The print file for '{subtask_name}' is not on storage Bambuddy can read over FTPS "
+                    f"({storage.reason}), so it has no cover to extract.",
+                )
             raise HTTPException(
                 404,
                 f"Could not download 3MF file for '{subtask_name}' from printer {printer.ip_address}. Tried: {possible_filenames}",

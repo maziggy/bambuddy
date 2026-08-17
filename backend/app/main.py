@@ -91,6 +91,7 @@ from backend.app.services.bambu_ftp import (
     cache_3mf_download,
     clear_3mf_cache,
     download_file_async,
+    download_file_try_paths_async,
     ftps_handshake_blocked,
     get_cached_3mf,
     get_ftp_retry_settings,
@@ -109,7 +110,11 @@ from backend.app.services.notification_service import notification_service
 from backend.app.services.obico_detection import obico_detection_service
 from backend.app.services.print_cost_estimate import plate_scoped_run_estimate as _plate_scoped_run_estimate
 from backend.app.services.print_scheduler import scheduler as print_scheduler
-from backend.app.services.print_storage import external_storage_present, print_file_reachable_over_ftp
+from backend.app.services.print_storage import (
+    external_storage_present,
+    ftp_probe_paths,
+    print_file_reachable_over_ftp,
+)
 from backend.app.services.printer_manager import (
     init_printer_connections,
     parse_plate_id,
@@ -3566,16 +3571,62 @@ async def on_print_start(printer_id: int, data: dict):
         # retries, then the directory walk) is ~110 connections that cannot
         # succeed. Skip it and say why (#2780).
         storage = print_file_reachable_over_ftp(printer_manager.get_status(printer_id))
-        if not storage.reachable and not downloaded_filename:
-            logger.info(
-                "Skipping the 3MF lookup for printer %s: %s — the print file is not on storage "
-                "Bambuddy can read over FTPS, so no path would find it",
-                printer_id,
-                storage.reason,
-            )
 
         # Get FTP retry settings
         ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
+
+        # ...but "the printer put it on eMMC" is where it went, not whether we
+        # can read it. An H2D with a card in mirrors the job to /cache and
+        # serves it happily, and skipping on the URL alone cost that reporter
+        # every archive for two days (#2856). So ask the printer instead of
+        # guessing: the dispatch named the exact file, which is one connection
+        # walking five paths rather than the sweep's ~110. Only when the probe
+        # comes back empty does the verdict's reason stand.
+        if not storage.reachable and not downloaded_filename and storage.probe_filename:
+            if ftps_handshake_blocked(printer.ip_address):
+                logger.debug(
+                    "Not probing for %s on printer %s: its file service is not answering over TLS",
+                    storage.probe_filename,
+                    printer_id,
+                )
+            else:
+                probe_path = app_settings.archive_dir / "temp" / storage.probe_filename
+                probe_path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    probe_hit = await download_file_try_paths_async(
+                        printer.ip_address,
+                        printer.access_code,
+                        ftp_probe_paths(storage.probe_filename),
+                        probe_path,
+                        socket_timeout=ftp_timeout,
+                        printer_model=printer.model,
+                    )
+                except Exception as e:
+                    logger.debug("3MF probe for %s failed: %s", storage.probe_filename, e)
+                    probe_hit = False
+                if probe_hit:
+                    downloaded_filename = storage.probe_filename
+                    temp_path = probe_path
+                    cache_3mf_download(printer_id, downloaded_filename, probe_path)
+                    logger.info(
+                        "Found %s over FTPS for printer %s even though the printer reported %s",
+                        downloaded_filename,
+                        printer_id,
+                        storage.reason,
+                    )
+
+        if not storage.reachable and not downloaded_filename:
+            # Same opening words whether or not a probe ran, because that is
+            # the phrase support asks people to grep for — only the tail says
+            # which of the two happened.
+            logger.info(
+                "Skipping the 3MF lookup for printer %s: %s — %s",
+                printer_id,
+                storage.reason,
+                "no copy of it on external storage either"
+                if storage.probe_filename
+                else "the print file is not on storage Bambuddy can read over FTPS, so no path would find it",
+            )
 
         for try_filename in possible_names if not downloaded_filename and storage.reachable else []:
             if not try_filename.endswith(".3mf"):

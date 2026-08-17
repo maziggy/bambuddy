@@ -14,7 +14,7 @@
  * trays 0 and 2, with ASA in tray 1.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { PrinterStatus } from '../../api/client';
 
@@ -83,6 +83,11 @@ function render(
 }
 
 describe('useMultiPrinterFilamentMapping — per-printer mapping (#2799)', () => {
+  afterEach(() => {
+    statusByPrinter[9] = P2S_4;
+    statusByPrinter[10] = P2S_5;
+  });
+
   it('maps each printer against its own trays when nothing was overridden', () => {
     const { result } = render([9, 10], {}, null);
 
@@ -134,6 +139,8 @@ describe('useMultiPrinterFilamentMapping — per-printer mapping (#2799)', () =>
   });
 
   it('flags a printer that cannot satisfy a slot', () => {
+    // Restored in afterEach — the next test to be added here would otherwise
+    // inherit this two-tray P2S-5 and fail for a reason that is not its own.
     statusByPrinter[10] = status([
       { type: 'PETG', color: '76D9F4FF' },
       { type: 'ASA', color: '161616FF' },

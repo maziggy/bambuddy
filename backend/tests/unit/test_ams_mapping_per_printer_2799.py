@@ -130,6 +130,18 @@ class TestStoredMappingConflict:
         assert "ASA" in conflict
 
     @pytest.mark.asyncio
+    async def test_an_external_feed_does_not_excuse_the_rest_of_the_mapping(self):
+        """An unrecognised >=254 entry is absence of evidence about that slot
+        only. Bailing out of the whole pass on it let a foreign tray later in
+        the mapping through unexamined."""
+        scheduler = _scheduler(P2S_4_TRAYS)
+        with patch("backend.app.services.print_scheduler.printer_manager") as pm:
+            pm.get_status.return_value = MagicMock()
+            conflict = await scheduler._stored_mapping_conflict(AsyncMock(), 9, _item(), [254, -1, 7])
+        assert conflict is not None
+        assert "slot 3" in conflict
+
+    @pytest.mark.asyncio
     async def test_unresolved_required_slot_is_not_a_conflict(self):
         """-1 says the matcher had nothing, not that the mapping is foreign.
         Recomputing on it would discard the slots the user did resolve by hand;
@@ -142,8 +154,8 @@ class TestStoredMappingConflict:
 
     @pytest.mark.asyncio
     async def test_foreign_tray_is_caught_without_reading_the_3mf(self):
-        """The cheap pass runs on live status alone; the parse is not cached and
-        this method runs for every pending item on every tick."""
+        """The cheap pass runs on live status alone, so a foreign mapping is
+        rejected without opening the 3MF."""
         scheduler = _scheduler(P2S_4_TRAYS)
         with patch("backend.app.services.print_scheduler.printer_manager") as pm:
             pm.get_status.return_value = MagicMock()
@@ -327,30 +339,6 @@ class TestBlockOnUnmatchedFilament:
 
         assert blocked is True
 
-    @pytest.mark.asyncio
-    async def test_stale_hold_reason_is_cleared_once_the_spool_is_loaded(self):
-        """The route that clears manual_start does not clear waiting_reason, and
-        a held item never reaches this gate — so the pass that lets it through
-        has to drop its own stale message."""
-        scheduler = _scheduler(P2S_5_TRAYS)
-        item = _item(ams_mapping=json.dumps([0, -1, 2]), waiting_reason="Needs PETG #2850E0")
-        db = AsyncMock()
-
-        blocked = await scheduler._block_on_unmatched_filament(db, item)
-
-        assert blocked is False
-        assert item.waiting_reason is None
-        db.commit.assert_awaited()
-
-    @pytest.mark.asyncio
-    async def test_a_reason_set_by_another_path_is_left_alone(self):
-        scheduler = _scheduler(P2S_5_TRAYS)
-        item = _item(ams_mapping=json.dumps([0, -1, 2]), waiting_reason="Waiting for matching printer")
-
-        await scheduler._block_on_unmatched_filament(AsyncMock(), item)
-
-        assert item.waiting_reason == "Waiting for matching printer"
-
 
 class TestModelBasedVirtualPrinterMapping:
     """A model-based Virtual Printer stamps a mapping nothing can attribute.
@@ -402,3 +390,99 @@ class TestModelBasedVirtualPrinterMapping:
 
         assert json.loads(item.ams_mapping) == SHARED_MAPPING
         scheduler._compute_ams_mapping_for_printer.assert_not_awaited()
+
+
+class TestFilamentRequirementMemo:
+    """The two gates parse the same 3MF per dispatch attempt (#2799 review).
+
+    A one-file fan-out to many idle printers repeats that for every one of them
+    inside a single pass, each time a DB lookup plus a zip open and XML parse.
+    The memo is scoped to the pass so a file re-sliced between ticks is re-read.
+    """
+
+    @staticmethod
+    def _db_returning(archive):
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = archive
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=result)
+        return db
+
+    @pytest.fixture
+    def parsed(self, tmp_path, monkeypatch):
+        from backend.app.services import print_scheduler as ps
+
+        (tmp_path / "plate.3mf").write_bytes(b"")
+        monkeypatch.setattr(ps.settings, "base_dir", tmp_path)
+
+        calls = []
+
+        def fake_extract(path, plate_id=None):
+            calls.append((path, plate_id))
+            return [{"slot_id": 1, "type": "PETG", "color": "#76D9F4", "tray_info_idx": ""}]
+
+        monkeypatch.setattr(
+            "backend.app.services.filament_requirements.extract_filament_requirements",
+            fake_extract,
+        )
+        return calls
+
+    @pytest.mark.asyncio
+    async def test_the_same_plate_is_parsed_once_per_pass(self, parsed):
+        scheduler = PrintScheduler()
+        db = self._db_returning(MagicMock(file_path="plate.3mf"))
+        item = _item(archive_id=731, library_file_id=None, plate_id=22)
+
+        await scheduler._get_filament_requirements(db, item)
+        await scheduler._get_filament_requirements(db, item)
+
+        assert len(parsed) == 1
+
+    @pytest.mark.asyncio
+    async def test_each_caller_gets_its_own_copy(self, parsed):
+        """`_apply_filament_overrides` rewrites these dicts in place, so handing
+        out the cached list would leak one item's overrides into the next."""
+        scheduler = PrintScheduler()
+        db = self._db_returning(MagicMock(file_path="plate.3mf"))
+        item = _item(archive_id=731, library_file_id=None, plate_id=22)
+
+        first = await scheduler._get_filament_requirements(db, item)
+        first[0]["type"] = "ASA"  # an override applied by one caller
+
+        second = await scheduler._get_filament_requirements(db, item)
+        assert second[0]["type"] == "PETG"
+
+    @pytest.mark.asyncio
+    async def test_a_different_plate_is_parsed_separately(self, parsed):
+        scheduler = PrintScheduler()
+        db = self._db_returning(MagicMock(file_path="plate.3mf"))
+
+        await scheduler._get_filament_requirements(db, _item(archive_id=731, library_file_id=None, plate_id=22))
+        await scheduler._get_filament_requirements(db, _item(archive_id=731, library_file_id=None, plate_id=23))
+
+        assert len(parsed) == 2
+
+    @pytest.mark.asyncio
+    async def test_the_memo_does_not_outlive_the_pass(self, parsed):
+        """check_queue clears it at the top of every pass."""
+        scheduler = PrintScheduler()
+        db = self._db_returning(MagicMock(file_path="plate.3mf"))
+        item = _item(archive_id=731, library_file_id=None, plate_id=22)
+
+        await scheduler._get_filament_requirements(db, item)
+        scheduler._filament_req_memo.clear()
+        await scheduler._get_filament_requirements(db, item)
+
+        assert len(parsed) == 2
+
+    @pytest.mark.asyncio
+    async def test_an_unreadable_file_is_remembered_too(self, parsed):
+        """The miss is worth caching as well — otherwise a missing file costs a
+        DB lookup per gate per attempt for nothing."""
+        scheduler = PrintScheduler()
+        db = self._db_returning(None)
+        item = _item(archive_id=999, library_file_id=None, plate_id=1)
+
+        assert await scheduler._get_filament_requirements(db, item) is None
+        assert await scheduler._get_filament_requirements(db, item) is None
+        assert db.execute.await_count == 1

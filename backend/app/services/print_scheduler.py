@@ -516,13 +516,6 @@ def _nozzle_mismatch_message(sliced_nozzle: float | None, installed: list[float]
     )
 
 
-# Prefix for the queue row's "Waiting" text when a job is held because a slot the
-# plate prints has no usable tray (#2799). Human-readable because it renders in
-# the queue UI, and prefixed so a later pass can recognise its own message and
-# clear it once the spool has been loaded.
-_FILAMENT_HOLD_REASON_PREFIX = "Needs "
-
-
 def _describe_filament(entry: dict, nozzle_key: str) -> str:
     """One-line "PETG #000000 (left nozzle)" for an error message (#2771).
 
@@ -704,6 +697,12 @@ class PrintScheduler:
         # In-memory on purpose: a restart re-arms the grace period, which only
         # delays a recovery that is already the exceptional path (#2829).
         self._terminal_since: dict[int, float] = {}
+        # Per-pass memo for `_get_filament_requirements` (#2799 review). Two
+        # gates parse the same 3MF per dispatch attempt, and a one-file fan-out
+        # across idle printers repeats that for every one of them in a single
+        # pass. Cleared at the top of each pass so a re-sliced file is never
+        # served from a previous tick.
+        self._filament_req_memo: dict[tuple, list[dict] | None] = {}
 
     async def run(self):
         """Main loop - check queue every interval."""
@@ -863,6 +862,8 @@ class PrintScheduler:
         Returns True if this pass dispatched at least one item, so the caller
         can loop again quickly instead of sleeping the full interval (#2555).
         """
+        # Scoped to one pass: a file re-sliced between ticks must be re-read.
+        self._filament_req_memo.clear()
         async with async_session() as db:
             # Check if shortest-job-first scheduling is enabled
             sjf_enabled = await self._get_bool_setting(db, "queue_shortest_first")
@@ -1116,13 +1117,20 @@ class PrintScheduler:
                     # to shut the enclosure" need to read differently, and only
                     # one of them is something the user can fix.
                     #
-                    # The interlock is the only thing that writes a
-                    # waiting_reason on this branch — the model-based branch
-                    # nulls it at the moment it assigns a printer — so any
-                    # reason still standing once the hold lifts is stale and is
-                    # cleared here. Doing it at dispatch instead would leave a
-                    # shut door reading "Waiting on Enclosure Door" for as long
-                    # as the printer stayed busy with something else.
+                    # This is the single place a stale waiting_reason is
+                    # cleared on this branch, for both the things that write one:
+                    # the interlock itself, and the unmatched-filament hold at
+                    # dispatch (#2799). A held item never reaches here — it is
+                    # skipped on manual_start above, which is what keeps its
+                    # reason on screen while it waits — so by the time one does
+                    # arrive the hold has been lifted and its reason is stale.
+                    # The hold re-evaluates on this same pass and writes a fresh
+                    # one if the filament is still missing. The model-based
+                    # branch nulls it at the moment it assigns a printer.
+                    #
+                    # Doing it at dispatch instead would leave a shut door
+                    # reading "Waiting on Enclosure Door" for as long as the
+                    # printer stayed busy with something else.
                     interlock_reason = interlocked.get(item.printer_id)
                     reason = f"Waiting on {interlock_reason}" if interlock_reason else None
                     if item.waiting_reason != reason:
@@ -2566,8 +2574,8 @@ class PrintScheduler:
 
         # Cheap pass first, on live status alone: every tray the mapping names
         # has to exist here. This catches a foreign mapping without opening the
-        # 3MF, which matters because this runs for every pending item on every
-        # tick and the parse is not cached.
+        # 3MF, which is worth doing because the parse below is neither cached
+        # nor free.
         for index, tray in enumerate(stored_mapping):
             if not isinstance(tray, int) or tray < 0:
                 continue
@@ -2575,8 +2583,9 @@ class PrintScheduler:
                 continue
             if tray >= 254:
                 # An external feed we have not heard about is absence of
-                # evidence, not a foreign mapping.
-                return None
+                # evidence about *that slot* — the rest of the mapping is still
+                # worth judging, so skip it rather than abandoning the pass.
+                continue
             return f"slot {index + 1} points at tray {tray}, which this printer does not have loaded"
 
         # Only now is the 3MF worth opening: the type check needs to know what
@@ -2604,8 +2613,8 @@ class PrintScheduler:
             if loaded_tray is None:
                 continue
 
-            want = _canonical_filament_type((req.get("type") or "").upper())
-            have = _canonical_filament_type((loaded_tray.get("type") or "").upper())
+            want = canonical_filament_type(req.get("type"))
+            have = canonical_filament_type(loaded_tray.get("type"))
             if want and have and want != have:
                 return f"slot {slot_id} needs {req.get('type')} but tray {tray} holds {loaded_tray.get('type')}"
 
@@ -2875,6 +2884,15 @@ class PrintScheduler:
         """
         from backend.app.services.filament_requirements import extract_filament_requirements
 
+        # Callers rewrite these dicts in place via `_apply_filament_overrides`,
+        # so every caller gets its own copy — a shared list would leak one
+        # item's overrides into the next item that happens to print the same
+        # plate.
+        memo_key = (item.archive_id, item.library_file_id, item.plate_id)
+        if memo_key in self._filament_req_memo:
+            cached = self._filament_req_memo[memo_key]
+            return [dict(r) for r in cached] if cached else None
+
         file_path: Path | None = None
         if item.archive_id:
             result = await db.execute(select(PrintArchive).where(PrintArchive.id == item.archive_id))
@@ -2889,10 +2907,12 @@ class PrintScheduler:
                 file_path = lib_path if lib_path.is_absolute() else settings.base_dir / library_file.file_path
 
         if not file_path or not file_path.exists():
+            self._filament_req_memo[memo_key] = None
             return None
 
         filaments = extract_filament_requirements(file_path, plate_id=item.plate_id)
-        return filaments if filaments else None
+        self._filament_req_memo[memo_key] = filaments or None
+        return [dict(r) for r in filaments] if filaments else None
 
     def _build_loaded_filaments(self, status) -> list[dict]:
         """Build list of loaded filaments from printer status.
@@ -5590,19 +5610,15 @@ class PrintScheduler:
             if tray is None or (isinstance(tray, int) and tray < 0):
                 unmatched.append(req)
         if not unmatched:
-            # Everything matches now — drop a reason left by an earlier tick so
-            # the row stops reading "Waiting" once the spool has been loaded.
-            # The route that clears manual_start does not clear this, and while
-            # the item is held the scheduler never reaches here, so it has to be
-            # cleared on the pass that lets the item through.
-            if (item.waiting_reason or "").startswith(_FILAMENT_HOLD_REASON_PREFIX):
-                item.waiting_reason = None
-                await db.commit()
+            # No cleanup needed here: a lifted hold's stale reason is nulled by
+            # the interlock block earlier in this same pass, which owns that
+            # clearing for every reason written on this branch.
             return False
 
         wanted = ", ".join(_describe_filament(r, "nozzle_id") for r in unmatched)
         item.manual_start = True
-        item.waiting_reason = f"{_FILAMENT_HOLD_REASON_PREFIX}{wanted}"
+        # Human-readable: this renders on the queue row.
+        item.waiting_reason = f"Needs {wanted}"
         await db.commit()
 
         job_name = await self._get_job_name(db, item)

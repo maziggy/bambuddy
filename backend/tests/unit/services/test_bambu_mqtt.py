@@ -5854,6 +5854,137 @@ class TestFilamentTrackSwitchDetection:
         assert fs.out_extruders == []
 
 
+class TestFilamentTrackSwitchInletBinding:
+    """Which FTS inlet each AMS is plumbed into, from AMS ``info`` bits 24-27.
+
+    With a switch installed an AMS is no longer bound to one extruder — it is
+    bound to one of the switch's two *inlets*, and reaches both nozzles through
+    it. That binding is what the printer's "Manual AMS Setup" screen sets, and
+    it is the only per-AMS side information there is: ``ams_extruder_map`` is
+    empty on these machines because bits 8-11 read 0xE for every unit.
+
+    Bit layout and the 0=In-B / 1=In-A ordering are BambuStudio's
+    (``DevFilaSystem.cpp``, ``DevFilaSwitch::SwitchPos``), not inferred.
+    """
+
+    @pytest.fixture
+    def mqtt_client(self):
+        from backend.app.services.bambu_mqtt import BambuMQTTClient
+
+        return BambuMQTTClient(
+            ip_address="192.168.1.100",
+            serial_number="TEST123",
+            access_code="12345678",
+        )
+
+    @staticmethod
+    def _info(*, inlet_bits: int, extruder: int = 0xE, ams_type: int = 1) -> str:
+        """Build an AMS ``info`` hex string with the fields we read out of it."""
+        return f"{(inlet_bits << 24) | (extruder << 8) | ams_type:08X}"
+
+    @staticmethod
+    def _frame(client, ams_units: list[dict], *, fts: bool = True) -> None:
+        """Drive one push_status through the real entry point.
+
+        Deliberately goes through ``_process_message`` rather than calling the
+        AMS handler directly: the ordering between the switch block and the AMS
+        block is the thing most likely to break, and only this path exercises it.
+        """
+        print_data = {"gcode_state": "IDLE", "ams": {"ams": ams_units}}
+        if fts:
+            print_data["device"] = {"fila_switch": {"in": [-1, -1], "out": [1, 0], "stat": 0, "info": 0}}
+        client._process_message({"print": print_data})
+
+    def test_inlet_a_from_bits_24_27(self, mqtt_client):
+        self._frame(mqtt_client, [{"id": "0", "info": self._info(inlet_bits=1), "tray": []}])
+        assert mqtt_client.state.ams_switch_inlet == {"0": "A"}
+
+    def test_inlet_b_from_bits_24_27(self, mqtt_client):
+        """0 is In-B, not "unset" — the enum is ordered B first."""
+        self._frame(mqtt_client, [{"id": "0", "info": self._info(inlet_bits=0), "tray": []}])
+        assert mqtt_client.state.ams_switch_inlet == {"0": "B"}
+
+    def test_the_maintainers_layout(self, mqtt_client):
+        """Four units split across both inlets, as on the H2C in #1162's
+        follow-up: AMS-A and an AMS-HT on In-A, AMS-B and AMS-C on In-B."""
+        self._frame(
+            mqtt_client,
+            [
+                {"id": "0", "info": self._info(inlet_bits=1), "tray": []},
+                {"id": "1", "info": self._info(inlet_bits=0), "tray": []},
+                {"id": "2", "info": self._info(inlet_bits=0), "tray": []},
+                {"id": "128", "info": self._info(inlet_bits=1, ams_type=4), "tray": []},
+            ],
+        )
+        assert mqtt_client.state.ams_switch_inlet == {"0": "A", "1": "B", "2": "B", "128": "A"}
+        # Every unit reads 0xE, so the extruder map stays empty — which is
+        # exactly why a left/right label cannot be derived on these machines.
+        assert mqtt_client.state.ams_extruder_map == {}
+
+    def test_no_inlet_read_without_a_switch(self, mqtt_client):
+        """Without an FTS, 0xE means an uninitialised unit and bits 24-27 carry
+        nothing. Reading them anyway would invent inlet "B" for every AMS."""
+        self._frame(mqtt_client, [{"id": "0", "info": self._info(inlet_bits=0), "tray": []}], fts=False)
+        assert mqtt_client.state.ams_switch_inlet == {}
+
+    def test_a_normally_bound_ams_is_untouched(self, mqtt_client):
+        """An AMS that still reports a real extruder id keeps using it, switch
+        or no switch — only 0xE units are inlet-bound."""
+        self._frame(mqtt_client, [{"id": "0", "info": self._info(inlet_bits=1, extruder=1), "tray": []}])
+        assert mqtt_client.state.ams_extruder_map == {"0": 1}
+        assert mqtt_client.state.ams_switch_inlet == {}
+
+    def test_binding_survives_a_frame_without_the_switch_block(self, mqtt_client):
+        """Partial push_status frames carry the AMS block without device.*.
+        The switch stays installed (sticky) so the binding must not be dropped."""
+        self._frame(mqtt_client, [{"id": "0", "info": self._info(inlet_bits=1), "tray": []}])
+        mqtt_client._process_message(
+            {
+                "print": {
+                    "gcode_state": "IDLE",
+                    "ams": {"ams": [{"id": "0", "info": self._info(inlet_bits=1), "tray": []}]},
+                }
+            }
+        )
+        assert mqtt_client.state.ams_switch_inlet == {"0": "A"}
+
+    def test_a_rebind_is_picked_up(self, mqtt_client):
+        """ "Join IN-B" on the printer screen flips the bits; we must follow it
+        rather than keeping the first value we ever saw."""
+        self._frame(mqtt_client, [{"id": "0", "info": self._info(inlet_bits=1), "tray": []}])
+        self._frame(mqtt_client, [{"id": "0", "info": self._info(inlet_bits=0), "tray": []}])
+        assert mqtt_client.state.ams_switch_inlet == {"0": "B"}
+
+    def test_unparseable_info_is_skipped(self, mqtt_client):
+        self._frame(mqtt_client, [{"id": "0", "info": "not-hex", "tray": []}])
+        assert mqtt_client.state.ams_switch_inlet == {}
+
+
+class TestFilamentTrackSwitchInletSlotDecode:
+    """``fila_switch.in`` decoding — snow-encoded, and ordered B before A."""
+
+    def test_decodes_ams_and_slot(self):
+        from backend.app.services.bambu_mqtt import FilaSwitchState
+
+        # 0x0102 = AMS 1 slot 2 on In-A; 0x0003 = AMS 0 slot 3 on In-B.
+        fs = FilaSwitchState(installed=True, in_slots=[0x0003, 0x0102])
+        assert fs.inlet_slot("A") == (1, 2)
+        assert fs.inlet_slot("B") == (0, 3)
+
+    def test_empty_inlet_is_none(self):
+        from backend.app.services.bambu_mqtt import FilaSwitchState
+
+        fs = FilaSwitchState(installed=True, in_slots=[-1, 0x0102])
+        assert fs.inlet_slot("B") is None
+        assert fs.inlet_slot("A") == (1, 2)
+
+    def test_missing_or_unknown_inlet_is_none(self):
+        from backend.app.services.bambu_mqtt import FilaSwitchState
+
+        assert FilaSwitchState(installed=True).inlet_slot("A") is None
+        assert FilaSwitchState(installed=True, in_slots=[0x0003, 0x0102]).inlet_slot("C") is None
+
+
 class TestAmsLoadFilamentEncoding:
     """Per-target ams_change_filament command encoding (#891)."""
 

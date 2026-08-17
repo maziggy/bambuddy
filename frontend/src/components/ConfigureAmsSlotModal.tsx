@@ -103,8 +103,41 @@ function parsePresetName(name: string): { material: string; brand: string; varia
 // Identity of a K-profile inside the picker. Both profile lists are
 // deduplicated on name+k_value, so this is unique across the whole option set
 // — unlike the bare name, which two profiles can share (#2710).
+// Option identity. The extruder has to be in here: the printer's calibration
+// table is numbered per nozzle, so one filament calibrated on both hotends gives
+// two profiles with the same name — and on a Filament Track Switch machine they
+// are both offered, because such a slot can reach either nozzle. Keying on
+// name+K alone made the two indistinguishable and, when their K happened to
+// match, silently collapsed them into whichever came first.
 function kProfileOptionValue(profile: KProfile): string {
-  return `${profile.name}|${profile.k_value}`;
+  return `${profile.extruder_id ?? 0}|${profile.name}|${profile.k_value}`;
+}
+
+/**
+ * The profile a slot's `cali_idx` points at.
+ *
+ * An index is only meaningful together with a nozzle: the printer numbers its
+ * calibration table per hotend, so entry 16 exists on both and means a
+ * different profile on each. On the maintainer's H2C, index 16 is the left
+ * hotend's black PLA at K=0.018 and index 15 is the right's at K=0.020.
+ * Matching on the index alone returns whichever the printer listed first.
+ */
+function findProfileByCaliIdx(
+  profiles: KProfile[],
+  caliIdx: number,
+  extruderId: number | undefined
+): KProfile | undefined {
+  if (extruderId !== undefined) {
+    return profiles.find(p => p.slot_id === caliIdx && (p.extruder_id ?? 0) === extruderId);
+  }
+  return profiles.find(p => p.slot_id === caliIdx);
+}
+
+// Suffix naming the hotend a profile was calibrated on, for printers that have
+// more than one. Empty on single-nozzle machines, where it would be noise.
+function kProfileNozzleSuffix(profile: KProfile, isDualNozzle: boolean, t: (k: string) => string): string {
+  if (!isDualNozzle) return '';
+  return ` \u00b7 ${profile.extruder_id === 1 ? t('common.left') : t('common.right')}`;
 }
 
 // Check if a preset is a user preset (not built-in)
@@ -858,6 +891,14 @@ export function ConfigureAmsSlotModal({
     });
   }, [colorCatalog, selectedPresetInfo]);
 
+  // Dual-nozzle if the printer reported calibration profiles for more than one
+  // extruder. Self-contained, and exactly the condition under which naming the
+  // hotend on each option is worth the space.
+  const isDualNozzleProfiles = useMemo(
+    () => new Set((kprofilesData?.profiles ?? []).map(p => p.extruder_id ?? 0)).size > 1,
+    [kprofilesData?.profiles]
+  );
+
   const matchingKProfiles = useMemo(() => {
     if (!kprofilesData?.profiles) return [];
     if (!selectedPresetInfo) {
@@ -869,10 +910,7 @@ export function ConfigureAmsSlotModal({
       // instead of dropping to default 0.020 (#1689 follow-up).
       const activeIdx = slotInfo.caliIdx;
       if (activeIdx != null && activeIdx > 0) {
-        const active = kprofilesData.profiles.find(
-          p => p.slot_id === activeIdx
-            && (slotInfo.extruderId === undefined || p.extruder_id === slotInfo.extruderId),
-        );
+        const active = findProfileByCaliIdx(kprofilesData.profiles, activeIdx, slotInfo.extruderId);
         if (active) return [active];
       }
       return [];
@@ -955,18 +993,19 @@ export function ConfigureAmsSlotModal({
       return false;
     });
 
-    // Deduplicate profiles with same name and k_value (multi-nozzle printers have duplicates)
-    // Prefer the profile matching the slot's extruder (e.g. ext-R uses extruder 0, ext-L uses extruder 1)
+    // Scope to the slot's own nozzle when it is known: a K-profile calibrated on
+    // the other hotend is not a match for this slot, and offering it as one is
+    // how the wrong K got bound. Those profiles are still reachable below under
+    // "Other", where the option label names the hotend.
+    const onThisNozzle = slotInfo.extruderId === undefined
+      ? filtered
+      : filtered.filter(p => (p.extruder_id ?? 0) === slotInfo.extruderId);
+
+    // Deduplicate genuine duplicates — same nozzle, same name, same K.
     const seen = new Map<string, KProfile>();
-    for (const profile of filtered) {
-      const key = `${profile.name}|${profile.k_value}`;
-      const existing = seen.get(key);
-      if (!existing) {
-        seen.set(key, profile);
-      } else if (slotInfo.extruderId !== undefined && profile.extruder_id === slotInfo.extruderId && existing.extruder_id !== slotInfo.extruderId) {
-        // Replace with profile matching slot's extruder
-        seen.set(key, profile);
-      }
+    for (const profile of onThisNozzle) {
+      const key = kProfileOptionValue(profile);
+      if (!seen.has(key)) seen.set(key, profile);
     }
 
     const result = Array.from(seen.values());
@@ -979,10 +1018,7 @@ export function ConfigureAmsSlotModal({
     // card's hover-card correctly shows the active profile.
     const activeIdx = slotInfo.caliIdx;
     if (activeIdx != null && activeIdx > 0 && !result.some(p => p.slot_id === activeIdx)) {
-      const active = kprofilesData.profiles.find(
-        p => p.slot_id === activeIdx
-          && (slotInfo.extruderId === undefined || p.extruder_id === slotInfo.extruderId),
-      );
+      const active = findProfileByCaliIdx(kprofilesData.profiles, activeIdx, slotInfo.extruderId);
       if (active) result.unshift(active);
     }
 
@@ -1006,15 +1042,10 @@ export function ConfigureAmsSlotModal({
     for (const profile of kprofilesData.profiles) {
       const key = kProfileOptionValue(profile);
       if (matched.has(key)) continue;
-      const existing = seen.get(key);
-      if (!existing) {
-        seen.set(key, profile);
-      } else if (slotInfo.extruderId !== undefined && profile.extruder_id === slotInfo.extruderId && existing.extruder_id !== slotInfo.extruderId) {
-        seen.set(key, profile);
-      }
+      if (!seen.has(key)) seen.set(key, profile);
     }
     return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [kprofilesData?.profiles, matchingKProfiles, slotInfo.extruderId]);
+  }, [kprofilesData?.profiles, matchingKProfiles]);
 
   const hasAnyKProfile = matchingKProfiles.length > 0 || otherKProfiles.length > 0;
 
@@ -1081,20 +1112,23 @@ export function ConfigureAmsSlotModal({
   // Auto-select best matching K profile when preset changes
   useEffect(() => {
     if (matchingKProfiles.length > 0) {
-      // Prefer the currently-active K-profile (by cali_idx) if available
+      // Prefer the currently-active K-profile, resolved against this slot's own
+      // nozzle — the index alone is ambiguous across hotends.
       if (slotInfo.caliIdx != null && slotInfo.caliIdx > 0) {
-        const active = matchingKProfiles.find(p => p.slot_id === slotInfo.caliIdx);
+        const active = findProfileByCaliIdx(matchingKProfiles, slotInfo.caliIdx, slotInfo.extruderId);
         if (active) {
           setSelectedKProfile(active);
           return;
         }
       }
-      // Fallback: first matching profile
+      // Fallback: the first match. matchingKProfiles is already scoped to this
+      // slot's nozzle when we know which one it is, so this cannot hand over a
+      // profile calibrated on the other hotend.
       setSelectedKProfile(matchingKProfiles[0]);
     } else {
       setSelectedKProfile(null);
     }
-  }, [selectedPresetId, matchingKProfiles, slotInfo.caliIdx]);
+  }, [selectedPresetId, matchingKProfiles, slotInfo.caliIdx, slotInfo.extruderId]);
 
   // Escape key handler
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -1307,14 +1341,14 @@ export function ConfigureAmsSlotModal({
                         <option value="">{t('configureAmsSlot.noKProfile')}</option>
                         {matchingKProfiles.map((profile) => (
                           <option key={kProfileOptionValue(profile)} value={kProfileOptionValue(profile)}>
-                            {profile.name} (K={profile.k_value})
+                            {profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}{kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
                           </option>
                         ))}
                         {otherKProfiles.length > 0 && (
                           <optgroup label={t('configureAmsSlot.otherKProfiles')}>
                             {otherKProfiles.map((profile) => (
                               <option key={kProfileOptionValue(profile)} value={kProfileOptionValue(profile)}>
-                                {profile.name} (K={profile.k_value})
+                                {profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}{kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}{kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
                               </option>
                             ))}
                           </optgroup>
@@ -1552,14 +1586,14 @@ export function ConfigureAmsSlotModal({
                       <option value="">{t('configureAmsSlot.noKProfile')}</option>
                       {matchingKProfiles.map((profile) => (
                         <option key={kProfileOptionValue(profile)} value={kProfileOptionValue(profile)}>
-                          {profile.name} (K={profile.k_value})
+                          {profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
                         </option>
                       ))}
                       {otherKProfiles.length > 0 && (
                         <optgroup label={t('configureAmsSlot.otherKProfiles')}>
                           {otherKProfiles.map((profile) => (
                             <option key={kProfileOptionValue(profile)} value={kProfileOptionValue(profile)}>
-                              {profile.name} (K={profile.k_value})
+                              {profile.name} (K={profile.k_value}){kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}{kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}{kProfileNozzleSuffix(profile, isDualNozzleProfiles, t)}
                             </option>
                           ))}
                         </optgroup>

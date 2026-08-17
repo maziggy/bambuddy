@@ -338,6 +338,12 @@ class PrinterStatus(BaseModel):
     # Filament Track Switch (FTS) accessory — when installed, AMS reports
     # bits 8-11 = 0xE (uninitialized) and routing is dynamic via the FTS. See #1162.
     fila_switch: FilaSwitchResponse | None = None
+    # Per-AMS FTS inlet binding: {ams_id: "A" | "B"}, from AMS info bits 24-27.
+    # Which of the switch's two inlets each AMS is plumbed into, as set on the
+    # printer's "Manual AMS Setup" screen. Empty unless an FTS is installed —
+    # an FTS-bound AMS reaches BOTH nozzles, so it has no entry in
+    # ams_extruder_map and must not be labelled left or right.
+    ams_switch_inlet: dict[str, str] = {}
     # Currently loaded tray (global ID): 254 = external spool, 255 = no filament
     tray_now: int = 255
     # Runout / filament-replacement guidance (#2587). Populated only while the

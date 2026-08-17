@@ -76,14 +76,25 @@ jobs:
       - name: Build Docker image
         run: docker build -t bambuddy:security-scan .
 
+      # Bump `version` when it ages rather than leaving it. Old Trivy releases
+      # are deleted upstream — only the last handful of minors are kept — so a
+      # pin a few months stale still resolves as a tag but no longer has an
+      # asset behind it, and the install step exits 1 right after reporting it
+      # found the version (#2844).
+      #
+      # A green run here is not evidence the pin still works. On a repository
+      # that runs this often the binary comes back from the Actions cache and
+      # nothing is downloaded, so the breakage shows up first in forks, which
+      # have no cache, and reaches this repository only once the entry goes
+      # cold.
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: 'bambuddy:security-scan'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM'
-          version: 'v0.69.1'
+          version: 'v0.74.0'
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
@@ -92,15 +103,16 @@ jobs:
           sarif_file: trivy-results.sarif
           category: trivy
 
+      # Keep in step with the scan above — see the note there before changing.
       - name: Run Trivy for Dockerfile/IaC
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'config'
           scan-ref: '.'
           format: 'sarif'
           output: 'trivy-config-results.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM'
-          version: 'v0.69.1'
+          version: 'v0.74.0'
 
       - name: Upload Trivy config results
         uses: github/codeql-action/upload-sarif@v4

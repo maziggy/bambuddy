@@ -4263,8 +4263,15 @@ class TestCoverWhenThePrintIsOnInternalStorage:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
-    async def test_skips_the_fan_out_and_says_why(self, async_client: AsyncClient, printer_factory, db_session):
-        printer = await printer_factory(name="H2C")
+    async def test_probes_the_named_file_instead_of_fanning_out(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        """#2856 narrowed this from a skip to a bounded look. The dispatch
+        names the file, and an H2D with a card in serves that exact name from
+        /cache while reporting `brtc://emmc` -- so ask, but ask once: five
+        paths for one name, not sixteen, and no retries on top.
+        """
+        printer = await printer_factory(name="H2D")
         state = MagicMock(
             subtask_name="job",
             state="RUNNING",
@@ -4287,7 +4294,50 @@ class TestCoverWhenThePrintIsOnInternalStorage:
             response = await async_client.get(f"/api/v1/printers/{printer.id}/cover")
 
         assert response.status_code == 404, response.text
+        # A probe that found nothing leaves the printer's own account standing,
+        # so the reason still reaches the caller (#2780).
         assert "internal_storage" in response.json()["detail"]
+        assert mock_download.await_count == 1, "the probe is one look, not the retry loop"
+        assert mock_download.await_args.args[2] == [
+            "/job.gcode.3mf",
+            "/cache/job.gcode.3mf",
+            "/model/job.gcode.3mf",
+            "/data/job.gcode.3mf",
+            "/data/Metadata/job.gcode.3mf",
+        ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_skips_the_fan_out_and_says_why_with_nothing_to_probe_for(
+        self, async_client: AsyncClient, printer_factory, db_session
+    ):
+        """No dispatch to name a file and an empty slot: nothing to look for
+        and nothing to look on, so the route still short-circuits with the
+        reason the frontend explains (#2780)."""
+        printer = await printer_factory(name="H2C")
+        state = MagicMock(
+            subtask_name="job",
+            state="RUNNING",
+            gcode_file=None,
+            current_project_url=None,
+            sdcard=False,
+            sdcard_reported=True,
+        )
+
+        with (
+            patch("backend.app.api.routes.printers.printer_manager.get_status", return_value=state),
+            patch("backend.app.api.routes.printers.resolve_plate_id", return_value=1),
+            patch("backend.app.api.routes.printers.get_cached_3mf", return_value=None),
+            patch("backend.app.api.routes.printers.ftps_handshake_blocked", return_value=False),
+            patch(
+                "backend.app.api.routes.printers.download_file_try_paths_async",
+                new=AsyncMock(return_value=False),
+            ) as mock_download,
+        ):
+            response = await async_client.get(f"/api/v1/printers/{printer.id}/cover")
+
+        assert response.status_code == 404, response.text
+        assert "no_external_storage" in response.json()["detail"]
         mock_download.assert_not_called()
 
     @pytest.mark.asyncio

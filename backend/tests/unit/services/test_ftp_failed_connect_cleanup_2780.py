@@ -18,7 +18,7 @@ These tests assert the socket is closed, not merely dereferenced, because
 dereferencing is what the old code did and it looked identical from outside.
 """
 
-import ftplib
+import ftplib  # nosec B402 — tests need the real ftplib to construct its own error types
 import ssl
 from unittest.mock import MagicMock, patch
 

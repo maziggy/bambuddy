@@ -851,6 +851,43 @@ class TestPrinterStateToDict:
         state.firmware_version = None
         return state
 
+    def test_fila_switch_and_inlets_ride_the_websocket(self, mock_state):
+        """The FTS fields must be in the broadcast dict, not only the REST status.
+
+        The frontend shallow-merges each WebSocket push over its cached status,
+        so a field this dict omits keeps whatever the last full fetch left —
+        which is why the AMS inlet badges only ever changed on a page reload.
+        """
+        from backend.app.services.bambu_mqtt import FilaSwitchState
+
+        mock_state.fila_switch = FilaSwitchState(
+            installed=True, in_slots=[-1, 0x0102], out_extruders=[1, 0], stat=0, info=1
+        )
+        mock_state.ams_switch_inlet = {"0": "A", "1": "B"}
+
+        result = printer_state_to_dict(mock_state)
+
+        assert result["ams_switch_inlet"] == {"0": "A", "1": "B"}
+        assert result["fila_switch"] == {
+            "installed": True,
+            "in_slots": [-1, 0x0102],
+            "out_extruders": [1, 0],
+            "stat": 0,
+            "info": 1,
+        }
+
+    def test_inlets_are_dropped_without_a_switch(self, mock_state):
+        """A binding must not outlive the accessory being unplugged."""
+        from backend.app.services.bambu_mqtt import FilaSwitchState
+
+        mock_state.fila_switch = FilaSwitchState(installed=False)
+        mock_state.ams_switch_inlet = {"0": "A"}
+
+        result = printer_state_to_dict(mock_state)
+
+        assert result["fila_switch"] is None
+        assert result["ams_switch_inlet"] == {}
+
     def test_basic_conversion(self, mock_state):
         """Verify basic state fields are converted."""
         result = printer_state_to_dict(mock_state)

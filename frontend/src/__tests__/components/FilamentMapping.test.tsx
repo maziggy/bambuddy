@@ -74,6 +74,7 @@ describe('FilamentMapping — FTS routing', () => {
                 stat: 0,
                 info: 2,
               },
+              ams_switch_inlet: { '0': 'A' },
             }),
           ),
       ),
@@ -99,16 +100,45 @@ describe('FilamentMapping — FTS routing', () => {
     });
     expect(screen.getByText(/Bambu PETG/)).toBeInTheDocument();
 
-    // The slot currently fed into a track gets an [L]/[R] badge. AMS-0 slot 1
-    // (global tray ID 1) is in fila_switch.in_slots[1], whose track terminates
-    // at extruder 1 → the LEFT-nozzle short label appears in that option.
-    const petgOption = screen.getByText(/Bambu PETG/);
-    expect(petgOption.textContent).toMatch(/\[L\]/);
+    // Each slot is badged for the switch INLET its AMS is plumbed into, using
+    // the same L-for-In-A lettering as the printer card. Both slots are in
+    // AMS 0, which is on In-A.
+    expect(screen.getByText(/Bambu PETG/).textContent).toMatch(/\[L\]/);
+    expect(screen.getByText(/Bambu PLA/).textContent).toMatch(/\[L\]/);
+  });
 
-    // AMS-0 slot 0 (global tray ID 0) is NOT currently fed into any track —
-    // FTS routes it on demand, so no badge.
-    const plaOption = screen.getByText(/Bambu PLA/);
-    expect(plaOption.textContent).not.toMatch(/\[[LR]\]/);
+  it('does not badge slots whose AMS has no inlet binding yet', async () => {
+    // A switch that has been fitted but not set up on the printer's Manual AMS
+    // Setup screen reports no binding. Better a missing badge than a made-up one.
+    server.use(
+      http.get(
+        '/api/v1/printers/:id/status',
+        () =>
+          HttpResponse.json(
+            createStatus({
+              fila_switch: { installed: true, in_slots: [-1, 1], out_extruders: [0, 1], stat: 0, info: 2 },
+              ams_switch_inlet: {},
+            }),
+          ),
+      ),
+    );
+
+    render(
+      <FilamentMapping
+        printerId={1}
+        filamentReqs={mockFilamentReqs}
+        manualMappings={{}}
+        onManualMappingChange={() => {}}
+        currencySymbol="$"
+        defaultCostPerKg={0}
+        defaultExpanded
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Bambu PETG/)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Bambu PETG/).textContent).not.toMatch(/\[[LR]\]/);
   });
 
   it('renders the per-slot force-color-match checkbox in printer mode (#1717)', async () => {
@@ -339,5 +369,73 @@ describe('FilamentMapping — FTS routing', () => {
     // the grams with it.
     expect(name).not.toBe(grams);
     expect(grams.parentElement).toBe(name.parentElement);
+  });
+});
+
+describe('FilamentMapping — FTS same-inlet advisory', () => {
+  // Bambu's own guidance: a change between two filaments on the SAME switch
+  // inlet has to retract the outgoing one all the way back to its AMS before
+  // the incoming one can be fed up the shared tube. A change across the two
+  // inlets only retracts as far as the switch. When every filament a job needs
+  // sits behind one inlet, every change in that job takes the slow path — the
+  // one arrangement worth telling the operator about, since moving a single
+  // spool fixes it.
+  const twoFilamentReqs = {
+    filaments: [
+      { slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 20, used_meters: 7, nozzle_id: 0 },
+      { slot_id: 2, type: 'PETG', color: '#00FF00', used_grams: 25, used_meters: 8.5, nozzle_id: 1 },
+    ],
+  };
+
+  // Two AMS units, one filament matching in each, so the pick is unambiguous.
+  const twoAmsStatus = (amsSwitchInlet: Record<string, 'A' | 'B'>): Partial<PrinterStatus> => ({
+    ams: [
+      { id: 0, tray: [{ id: 0, tray_type: 'PLA', tray_color: 'FF0000', tray_info_idx: 'GFA00', tray_sub_brands: 'Bambu PLA' }] },
+      { id: 1, tray: [{ id: 0, tray_type: 'PETG', tray_color: '00FF00', tray_info_idx: 'GFG00', tray_sub_brands: 'Bambu PETG' }] },
+    ],
+    fila_switch: { installed: true, in_slots: [-1, -1], out_extruders: [1, 0], stat: 0, info: 0 },
+    ams_switch_inlet: amsSwitchInlet,
+  } as Partial<PrinterStatus>);
+
+  const renderWith = (amsSwitchInlet: Record<string, 'A' | 'B'>) => {
+    server.use(
+      http.get('/api/v1/printers/:id/spool-assignments', () => HttpResponse.json([])),
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json(createStatus(twoAmsStatus(amsSwitchInlet)))),
+    );
+    render(
+      <FilamentMapping
+        printerId={1}
+        filamentReqs={twoFilamentReqs}
+        manualMappings={{}}
+        onManualMappingChange={() => {}}
+        currencySymbol="$"
+        defaultCostPerKg={0}
+        defaultExpanded
+      />,
+    );
+  };
+
+  it('warns when every filament for the print is behind one inlet', async () => {
+    renderWith({ '0': 'A', '1': 'A' });
+    // Names the inlet, so the operator knows which spool to move.
+    expect(await screen.findByText(/on Filament Track Switch IN-A\./)).toBeInTheDocument();
+    expect(screen.getByText(/same inlet is slower/i)).toBeInTheDocument();
+  });
+
+  it('stays quiet when the filaments are split across both inlets', async () => {
+    renderWith({ '0': 'A', '1': 'B' });
+    await waitFor(() => {
+      expect(screen.getAllByText(/Bambu PETG/).length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText(/same inlet is slower/i)).not.toBeInTheDocument();
+  });
+
+  it('stays quiet when the bindings are not known', async () => {
+    // No advisory can be justified without knowing where the spools actually are.
+    renderWith({});
+    await waitFor(() => {
+      expect(screen.getAllByText(/Bambu PETG/).length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText(/same inlet is slower/i)).not.toBeInTheDocument();
   });
 });

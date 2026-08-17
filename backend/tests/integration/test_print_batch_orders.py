@@ -49,7 +49,7 @@ async def archive_factory(db_session):
         defaults = {
             "filename": f"batch_order_{counter}.3mf",
             "print_name": f"Batch Order {counter}",
-            "file_path": f"/tmp/batch_order_{counter}.3mf",
+            "file_path": f"/tmp/batch_order_{counter}.3mf",  # nosec B108
             "file_size": 2048,
             "content_hash": f"batchhash{counter:08d}",
             "status": "completed",

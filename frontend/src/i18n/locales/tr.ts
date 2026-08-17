@@ -877,7 +877,7 @@ export default {
       docsLink: 'Kurulum adımı 4\'ü görüntüle',
       docsLinkInternalStorage: 'Bu neden oluyor',
       titleInternalStorage: 'Bazı son baskılar yazıcının dahili depolamasında kaldı',
-      bodyInternalStorage: 'Yazıcı dilimlenmiş dosyayı karta değil kendi dahili depolamasına yazdı, bu yüzden Bambuddy\'nin FTP üzerinden okuyacağı bir şey yoktu. H2 serisi ve P2S donanım yazılımı bunu yapar ve «Gönderilen dosyaları harici depolamada sakla» bunu değiştirmez. Bu baskılar adları ve süreleriyle yine arşivlenir, yalnızca küçük resim ve dilimleyici meta verileri olmadan.',
+      bodyInternalStorage: 'Bambu Studio dilimlenmiş dosyayı karta değil yazıcının dahili depolamasına yazdı, bu yüzden Bambuddy\'nin FTP üzerinden okuyacağı bir şey yoktu. H2 serisi ve P2S\'de «Yazdır» düğmesi bunu her zaman yapar; seçim yalnızca «Gönder» ile mümkündür ve orada da varsayılan «Önbellek»tir. Bu baskılar adları ve süreleriyle yine arşivlenir, yalnızca küçük resim ve dilimleyici meta verileri olmadan. Eksiksiz arşivler için baskıyı Bambuddy üzerinden başlatın ya da OrcaSlicer ile dilimleyin; Bambu Studio kullanacaksanız «Gönder» ile «Harici» seçip baskıyı sonrasında başlatın. Hepsi yazıcıda kart ya da bellek gerektirir.',
       titleNoExternalStorage: 'Bazı son baskılar arşivlenemedi — yazıcıda depolama yok',
       bodyNoExternalStorage: 'Yazıcı yuvasında kart veya bellek bildirmiyor, bu yüzden dilimlenmiş dosyanın ineceği bir yer ve Bambuddy\'nin okuyacağı bir şey yoktu. Bir tane takın, sonraki baskı eksiksiz arşivlenecek.',
       dismissLabel: 'Bu bildirimi kapat',
@@ -6742,7 +6742,7 @@ export default {
         skip: 'Kontrol edilmedi — etkin bir MQTT bağlantısı gerekli. Bu ayarın yalnızca dilimleyicide bulunduğu eski dilimleyicilerde yazıcı bunu bildirmez, bu nedenle seçenek kapalı olsa bile bu kontrol geçer — kurulum adımı 4\'ü manuel olarak doğrulayın.',
         skip_unsupported_model: 'Bu modelde SD yuvası var ancak seçeneği açmanın bir yolu yok — mevcut P1 serisi bellenim, Bambu Studio\'da bu anahtarı göstermiyor ve yazıcının ekranı yok. Burada düzeltilecek bir şey yok; Bambu Lab bellenim desteği ekleyene kadar arşivlenen baskılarda küçük resimler ve dilimleyici meta verileri eksik olabilir.',
         fail_no_media: 'Seçenek açık, ancak yazıcı yuvasında kart veya bellek bildirmiyor, dolayısıyla gönderilen dosyaların gideceği bir yer yok. Bir tane takıp yeniden yazdırın — o zamana kadar arşivlenen her baskıda küçük resim ve dilimleyici meta verileri eksik olacak.',
-        warn_internal_storage: 'Seçenek açık ve depolama takılı, ancak bu yazıcı yine de son baskıyı Bambuddy\'nin okuyamadığı dahili depolamasında tuttu. H2 serisi ve P2S donanım yazılımı bunu yapar ve hiçbir ayar bunu değiştirmez. Baskılar adları ve süreleriyle arşivlenir, ancak küçük resim ve dilimleyici meta verileri olmadan.',
+        warn_internal_storage: 'Seçenek açık ve depolama takılı, ancak son baskı yine de Bambuddy\'nin okuyamadığı dahili depolamaya gitti. H2 serisi ve P2S\'de Bambu Studio\'nun «Yazdır» düğmesi bu ayardan bağımsız olarak her zaman oraya gönderir. Baskılar adları ve süreleriyle arşivlenir, ancak küçük resim ve dilimleyici meta verileri olmadan. Eksiksiz arşivler için baskıları Bambuddy üzerinden başlatın, OrcaSlicer ile dilimleyin ya da Bambu Studio\'da «Gönder» ile «Harici» seçip baskıyı sonrasında başlatın.',
       },
       port_rtsps: {
         title: 'Kamera portu ({{protocol}} {{port}})',

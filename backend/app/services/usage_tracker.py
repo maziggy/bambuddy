@@ -10,6 +10,7 @@ AMS remain% delta is the fallback for trays not covered by 3MF data.
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -738,7 +739,13 @@ async def on_print_complete(
 
         search_filename = data.get("filename") or data.get("subtask_name") or (session.print_name if session else "")
         if search_filename:
-            threemf_path = await _find_3mf_by_filename(printer_id, search_filename, db, app_settings.base_dir)
+            threemf_path = await _find_3mf_by_filename(
+                printer_id,
+                search_filename,
+                db,
+                app_settings.base_dir,
+                print_name=data.get("subtask_name") or (session.print_name if session else None),
+            )
 
     if archive_id or threemf_path:
         threemf_results = await _track_from_3mf(
@@ -830,6 +837,18 @@ async def on_print_complete(
                     continue  # Already tracked via 3MF
 
                 if key not in session.tray_remain_start:
+                    # No usable remain% when the print began, so there is no delta
+                    # to charge. Said out loud for the same reason as the branches
+                    # below: a slot the print used, holding a spool the operator
+                    # assigned, otherwise vanished from the accounting without a
+                    # word. Common on non-RFID spools, which report remain = -1
+                    # until a remaining amount is set by hand.
+                    if not print_used_keys or key in print_used_keys:
+                        logger.info(
+                            "[UsageTracker] %s: no valid remain%% at print start, nothing to charge for printer %d",
+                            tray_label,
+                            printer_id,
+                        )
                     continue
 
                 # Skip trays the print never touched. Only enforce when we have
@@ -994,6 +1013,60 @@ async def on_print_complete(
     return results
 
 
+# A running print's ``filename`` is the path the printer is executing, and on a
+# sliced job that is always ``…/Metadata/plate_<N>.gcode``. Its stem names the
+# *plate*, not the model, and every Bambu print in existence has one — so it
+# identifies nothing and must never be used to match a 3MF. It reached the
+# matcher for real on H2-series and P2S prints, where the file goes to internal
+# eMMC, no 3MF can be fetched, and the archive keeps the gcode path as its
+# filename: `plate_1` then matched an unrelated `lid_plate_1.gcode.3mf` and that
+# print's filament figures were read off a different model entirely.
+_GENERIC_PLATE_STEM = re.compile(r"^plate_?\d+$", re.IGNORECASE)
+
+
+def _like_escape(value: str) -> str:
+    """Escape LIKE metacharacters so a stem matches literally.
+
+    ``_`` is a single-character wildcard, and model names are full of them.
+    """
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _threemf_search_stem(*candidates: str | None) -> str | None:
+    """First candidate that names a model, or None if none of them do.
+
+    Candidates are tried in order and the generic plate name is skipped rather
+    than accepted, so a print that only has one falls through to "no match"
+    instead of matching everything.
+    """
+    for raw in candidates:
+        if not raw:
+            continue
+        stem = raw.split("/")[-1].strip()
+        for suffix in (".gcode.3mf", ".gcode", ".3mf"):
+            if stem.lower().endswith(suffix):
+                stem = stem[: -len(suffix)]
+                break
+        # Stripped only to judge the stem, never to change it: a real archive
+        # here is named "…Face Down .gcode.3mf", and a stem trimmed to
+        # "…Face Down" no longer matches the file it came from.
+        probe = stem.strip()
+        if probe and not _GENERIC_PLATE_STEM.match(probe):
+            return stem
+    return None
+
+
+def _stem_matches(column, stem: str):
+    """Filter matching *stem* at a filename boundary rather than anywhere.
+
+    ``ilike("%<stem>.%")`` also matched a *suffix* of a longer name, which is how
+    `plate_1` reached `lid_plate_1.gcode.3mf`. A name is either the whole
+    basename or the basename after a directory separator.
+    """
+    escaped = _like_escape(stem)
+    return column.ilike(f"{escaped}.%", escape="\\") | column.ilike(f"%/{escaped}.%", escape="\\")
+
+
 async def _resolve_3mf_fallback(archive, db: AsyncSession, base_dir):
     """Try to find a 3MF file from library or a previous archive when the current archive has none.
 
@@ -1005,13 +1078,9 @@ async def _resolve_3mf_fallback(archive, db: AsyncSession, base_dir):
     from backend.app.models.archive import PrintArchive
     from backend.app.models.library import LibraryFile
 
-    # Derive search name from archive filename (e.g. "benchy.3mf" or "benchy.gcode.3mf")
-    search_name = archive.filename or archive.print_name
-    if not search_name:
-        return None
-    # Normalize: strip path parts, get base name
-    search_name = search_name.split("/")[-1]
-    search_base = search_name.replace(".gcode.3mf", "").replace(".gcode", "").replace(".3mf", "")
+    # Derive search name from archive filename (e.g. "benchy.3mf" or "benchy.gcode.3mf"),
+    # falling back to the print name when the filename is only a plate path.
+    search_base = _threemf_search_stem(archive.filename, archive.print_name)
     if not search_base:
         return None
 
@@ -1019,7 +1088,7 @@ async def _resolve_3mf_fallback(archive, db: AsyncSession, base_dir):
     try:
         lib_result = await db.execute(
             LibraryFile.active()
-            .where(LibraryFile.file_path.ilike(f"%/{search_base}.%") | LibraryFile.file_path.ilike(f"{search_base}.%"))
+            .where(_stem_matches(LibraryFile.file_path, search_base))
             .where(LibraryFile.file_path.ilike("%.3mf"))
             .order_by(LibraryFile.created_at.desc())
             .limit(3)
@@ -1041,9 +1110,7 @@ async def _resolve_3mf_fallback(archive, db: AsyncSession, base_dir):
             .where(PrintArchive.printer_id == archive.printer_id)
             .where(PrintArchive.file_path != "")
             .where(PrintArchive.file_path.isnot(None))
-            .where(
-                PrintArchive.filename.ilike(f"%{search_base}.%") | PrintArchive.filename.ilike(f"{search_base}.%"),
-            )
+            .where(_stem_matches(PrintArchive.filename, search_base))
             .order_by(PrintArchive.created_at.desc())
             .limit(3)
         )
@@ -1067,19 +1134,22 @@ async def _find_3mf_by_filename(
     filename: str,
     db: AsyncSession,
     base_dir,
+    print_name: str | None = None,
 ):
     """Find a 3MF file by filename from library or previous archives.
 
     Used when auto-archive is disabled and there's no archive_id, but we still
     need the 3MF slicer data for filament usage tracking.
+
+    ``print_name`` is the model name to fall back to when ``filename`` is the
+    printer's plate path, which names no model at all.
     """
     from pathlib import Path
 
     from backend.app.models.archive import PrintArchive
     from backend.app.models.library import LibraryFile
 
-    search_name = filename.split("/")[-1] if "/" in filename else filename
-    search_base = search_name.replace(".gcode.3mf", "").replace(".gcode", "").replace(".3mf", "")
+    search_base = _threemf_search_stem(filename, print_name)
     if not search_base:
         return None
 
@@ -1087,7 +1157,7 @@ async def _find_3mf_by_filename(
     try:
         lib_result = await db.execute(
             LibraryFile.active()
-            .where(LibraryFile.file_path.ilike(f"%/{search_base}.%") | LibraryFile.file_path.ilike(f"{search_base}.%"))
+            .where(_stem_matches(LibraryFile.file_path, search_base))
             .where(LibraryFile.file_path.ilike("%.3mf"))
             .order_by(LibraryFile.created_at.desc())
             .limit(3)
@@ -1108,9 +1178,7 @@ async def _find_3mf_by_filename(
             .where(PrintArchive.printer_id == printer_id)
             .where(PrintArchive.file_path != "")
             .where(PrintArchive.file_path.isnot(None))
-            .where(
-                PrintArchive.filename.ilike(f"%{search_base}.%") | PrintArchive.filename.ilike(f"{search_base}.%"),
-            )
+            .where(_stem_matches(PrintArchive.filename, search_base))
             .order_by(PrintArchive.created_at.desc())
             .limit(3)
         )

@@ -18,6 +18,7 @@ from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
 from backend.app.models.filament import Filament
 from backend.app.models.printer import Printer
+from backend.app.utils.archive_paths import archive_dir as resolve_archive_dir
 from backend.app.utils.filename import clean_display_name
 from backend.app.utils.safe_path import PathTraversalError, safe_join_under
 
@@ -1605,11 +1606,17 @@ class ArchiveService:
         if not archive:
             return False
 
-        # Get archive directory
-        file_path = (
-            settings.base_dir / archive.file_path
-        )  # SEC-PATH-OK: archive.file_path is DB-stored, set by archive_print() under settings.archive_dir
-        archive_dir = file_path.parent
+        # Where this archive's files live. Deliberately the shared helper: an
+        # archive created without a 3MF has ``file_path == ""``, and deriving the
+        # directory here as ``(base_dir / "").parent`` resolved to the parent of
+        # base_dir — outside the data directory entirely. In Docker that is /app,
+        # so the write failed with EACCES and the timelapse was retried and
+        # discarded 25 times; where the parent happens to be writable it
+        # succeeded, dropped a stray video next to the install, and then failed
+        # anyway on the relative_to() below. Every H2-series and P2S print sent
+        # from the slicer takes that path, because the file goes to internal
+        # storage and no 3MF can be fetched.
+        archive_dir = resolve_archive_dir(archive)
 
         # Save timelapse - use thread pool to avoid blocking event loop
         # (timelapse files can be 100MB+, sync write blocks for seconds).
@@ -1629,6 +1636,10 @@ class ArchiveService:
                 archive_id,
             )
             return False
+        # Created only once the name has been vetted, so a rejected filename
+        # leaves nothing behind. A no-3MF archive has never had a directory of
+        # its own, and the timelapse can be the first thing to want one.
+        await asyncio.to_thread(lambda: timelapse_file.parent.mkdir(parents=True, exist_ok=True))
         await asyncio.to_thread(timelapse_file.write_bytes, timelapse_data)
 
         # Update archive record

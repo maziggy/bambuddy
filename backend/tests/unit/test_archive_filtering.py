@@ -687,9 +687,12 @@ class TestConvertTimelapseToMp4:
             patch("backend.app.services.camera.get_ffmpeg_path", return_value="/usr/bin/ffmpeg"),
             patch("backend.app.core.database.async_session", return_value=mock_session),
             patch("backend.app.services.archive.settings") as mock_settings,
+            patch("backend.app.utils.archive_paths.settings") as mock_paths_settings,
             patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
         ):
             mock_settings.base_dir = tmp_path
+            mock_paths_settings.base_dir = tmp_path
+            mock_paths_settings.archive_dir = tmp_path / "archive"
             mock_exec.return_value = mock_process
             # Create the expected output file (as FFmpeg would)
             mp4_path.write_bytes(b"fake mp4 output")
@@ -772,9 +775,12 @@ class TestAttachTimelapseBackgroundConversion:
 
         with (
             patch("backend.app.services.archive.settings") as mock_settings,
+            patch("backend.app.utils.archive_paths.settings") as mock_paths_settings,
             patch("asyncio.create_task") as mock_create_task,
         ):
             mock_settings.base_dir = tmp_path
+            mock_paths_settings.base_dir = tmp_path
+            mock_paths_settings.archive_dir = tmp_path / "archive"
 
             result = await service.attach_timelapse(1, b"fake mp4 data", "video.mp4")
 
@@ -798,9 +804,12 @@ class TestAttachTimelapseBackgroundConversion:
 
         with (
             patch("backend.app.services.archive.settings") as mock_settings,
+            patch("backend.app.utils.archive_paths.settings") as mock_paths_settings,
             patch("asyncio.create_task") as mock_create_task,
         ):
             mock_settings.base_dir = tmp_path
+            mock_paths_settings.base_dir = tmp_path
+            mock_paths_settings.archive_dir = tmp_path / "archive"
 
             result = await service.attach_timelapse(1, b"fake avi data", "video.avi")
 

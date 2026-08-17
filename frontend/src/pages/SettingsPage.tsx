@@ -378,14 +378,19 @@ export function SettingsPage() {
       for (const { plug, status } of statuses) {
         // For MQTT plugs, consider reachable if we have power data
         const hasMqttData = plug.plug_type === 'mqtt' && (status?.energy?.power != null);
-        const isReachable = (status?.reachable || hasMqttData) && status?.energy;
+        // Reachability is about the device answering, not about it measuring
+        // anything. Requiring `status.energy` here counted a perfectly online
+        // switch-only plug -- no power sensor, so the backend leaves `energy`
+        // null -- as offline, and the counter labelled "plugs online" quietly
+        // reported "plugs reporting energy" instead (#2859).
+        const isReachable = status?.reachable || hasMqttData;
 
         if (isReachable) {
           reachableCount++;
-          if (status.energy?.power != null) totalPower += status.energy.power;
-          if (status.energy?.today != null) totalToday += status.energy.today;
-          if (status.energy?.yesterday != null) totalYesterday += status.energy.yesterday;
-          if (status.energy?.total != null) totalLifetime += status.energy.total;
+          if (status?.energy?.power != null) totalPower += status.energy.power;
+          if (status?.energy?.today != null) totalToday += status.energy.today;
+          if (status?.energy?.yesterday != null) totalYesterday += status.energy.yesterday;
+          if (status?.energy?.total != null) totalLifetime += status.energy.total;
         }
       }
 

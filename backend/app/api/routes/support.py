@@ -42,6 +42,7 @@ from backend.app.services.log_reader import (
 )
 from backend.app.services.network_utils import get_network_interfaces
 from backend.app.services.printer_manager import printer_manager
+from backend.app.utils.local_time import utcnow_naive
 
 router = APIRouter(prefix="/support", tags=["support"])
 logger = logging.getLogger(__name__)
@@ -596,9 +597,12 @@ async def _collect_queue_info(db: AsyncSession) -> dict:
         )
     ).scalar_one_or_none()
     if oldest_row is not None:
-        # created_at is naive in this codebase (server_default=func.now()); compare
-        # against naive utc-now to get the actual age without TZ-conversion surprises.
-        age = (datetime.now() - oldest_row).total_seconds()
+        # created_at is naive in this codebase (server_default=func.now()) and holds
+        # UTC, so the clock on the other side of the subtraction has to be naive UTC
+        # too. datetime.now() is naive *local*: on a UTC+3 host it reported an item
+        # queued five minutes ago as three hours old, and went negative west of
+        # Greenwich (#2855).
+        age = (utcnow_naive() - oldest_row).total_seconds()
         info["oldest_pending_age_seconds"] = int(age)
     else:
         info["oldest_pending_age_seconds"] = None

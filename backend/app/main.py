@@ -83,7 +83,6 @@ from backend.app.core.config import APP_VERSION, settings as app_settings
 from backend.app.core.database import async_session, engine, init_db
 from backend.app.core.tasks import spawn_background_task
 from backend.app.core.websocket import ws_manager
-from backend.app.models.smart_plug import SmartPlug
 from backend.app.services import print_dispatch_context
 from backend.app.services.archive import ArchiveService, peek_plate_index_in_3mf, swap_plate_suffix
 from backend.app.services.archive_purge import archive_purge_service
@@ -98,6 +97,7 @@ from backend.app.services.bambu_ftp import (
     with_ftp_retry,
 )
 from backend.app.services.bambu_mqtt import PrinterState
+from backend.app.services.energy_plug import energy_plug_candidates, select_energy_reading
 from backend.app.services.github_backup import github_backup_service
 from backend.app.services.ha_sensor_manager import ha_sensor_manager
 from backend.app.services.homeassistant import homeassistant_service
@@ -131,6 +131,7 @@ from backend.app.services.spoolman_tracking import (
 from backend.app.services.tasmota import tasmota_service
 from backend.app.utils.ams_drying import is_drying_active, temperature_alarm_suppressed
 from backend.app.utils.fts_routing import extruder_for_inlet, slot_extruder as resolve_slot_extruder
+from backend.app.utils.local_time import utcnow_naive
 from backend.app.utils.print_jobs import is_internal_printer_job
 
 
@@ -895,21 +896,30 @@ async def _record_energy_start(archive, printer_id: int, db, *, context: str = "
     """
     _logger = logging.getLogger(__name__)
     try:
-        plug_result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-        plug = plug_result.scalar_one_or_none()
-        if not plug:
+        candidates = await energy_plug_candidates(db, printer_id)
+        if not candidates:
             _logger.info("[ENERGY] No smart plug for printer %s (archive %s)", printer_id, archive.id)
             return False
-        energy = await _get_plug_energy(plug, db)
-        if not energy or energy.get("total") is None:
-            _logger.warning("[ENERGY] No 'total' in energy response for archive %s", archive.id)
+        selected = await select_energy_reading(candidates, _get_plug_energy, db)
+        if selected is None:
+            # Naming the plugs matters here: with several linked to one printer
+            # this is the difference between "the meter is offline" and "you
+            # linked only accessories" (#2859).
+            _logger.warning(
+                "[ENERGY] No plug on printer %s reports a lifetime energy counter for archive %s (tried: %s)",
+                printer_id,
+                archive.id,
+                ", ".join(plug.name for plug in candidates),
+            )
             return False
+        plug, energy = selected
         archive.energy_start_kwh = float(energy["total"])
         await db.commit()
         _logger.info(
-            "[ENERGY] Recorded starting energy%s for archive %s: %s kWh",
+            "[ENERGY] Recorded starting energy%s for archive %s from plug '%s': %s kWh",
             f" ({context})" if context else "",
             archive.id,
+            plug.name,
             energy["total"],
         )
         return True
@@ -6344,17 +6354,23 @@ async def on_print_complete(printer_id: int, data: dict):
                     logger.info("[ENERGY-BG] No start kWh recorded for archive %s", archive_id)
                     return
 
-                plug_result = await db.execute(select(SmartPlug).where(SmartPlug.printer_id == printer_id))
-                plug = plug_result.scalar_one_or_none()
-                if plug is None:
+                candidates = await energy_plug_candidates(db, printer_id)
+                if not candidates:
                     logger.info("[ENERGY-BG] No smart plug for printer %s", printer_id)
                     return
 
-                energy = await _get_plug_energy(plug, db)
-                logger.info("[ENERGY-BG] Energy response: %s", energy)
-                if not energy or energy.get("total") is None:
-                    logger.warning("[ENERGY-BG] No 'total' in energy response")
+                # Same ordering as the start reading, so the delta below is
+                # against the counter that produced `starting_kwh` (#2859).
+                selected = await select_energy_reading(candidates, _get_plug_energy, db)
+                if selected is None:
+                    logger.warning(
+                        "[ENERGY-BG] No plug on printer %s reports a lifetime energy counter (tried: %s)",
+                        printer_id,
+                        ", ".join(plug.name for plug in candidates),
+                    )
                     return
+                plug, energy = selected
+                logger.info("[ENERGY-BG] Energy response from plug '%s': %s", plug.name, energy)
 
                 energy_used = round(energy["total"] - starting_kwh, 4)
                 logger.info("[ENERGY-BG] Per-print energy: %s kWh", energy_used)
@@ -7320,7 +7336,7 @@ async def record_ams_history():
                     setting = result.scalar_one_or_none()
                     retention_days = int(setting.value) if setting else AMS_HISTORY_RETENTION_DAYS
 
-                    cutoff = datetime.utcnow() - timedelta(days=retention_days)
+                    cutoff = utcnow_naive() - timedelta(days=retention_days)
                     result = await db.execute(delete(AMSSensorHistory).where(AMSSensorHistory.recorded_at < cutoff))
                     await db.commit()
                     if result.rowcount > 0:
@@ -7446,7 +7462,7 @@ async def record_printer_sensor_history():
                     setting = result.scalar_one_or_none()
                     retention_days = int(setting.value) if setting else PRINTER_SENSOR_HISTORY_RETENTION_DAYS
 
-                    cutoff = datetime.utcnow() - timedelta(days=retention_days)
+                    cutoff = utcnow_naive() - timedelta(days=retention_days)
                     cleanup = await db.execute(
                         delete(PrinterSensorHistory).where(PrinterSensorHistory.recorded_at < cutoff)
                     )

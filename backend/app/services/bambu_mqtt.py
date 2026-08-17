@@ -1267,6 +1267,11 @@ class BambuMQTTClient:
         # by await_cali_ack.
         self._pending_cali_acks: dict[str, dict | None] = {}
 
+        # Identifies the one project_file *we* dispatched, so its echo on the
+        # topic can be told apart from a slicer's. One-shot: consumed by the
+        # first frame that matches. See _project_file_key.
+        self._own_project_file_key: str | None = None
+
         # Xcam hold timers - OrcaSlicer pattern: ignore incoming data for 3 seconds after command
         # Key: module_name, Value: timestamp when command was sent
         self._xcam_hold_start: dict[str, float] = {}
@@ -1857,15 +1862,34 @@ class BambuMQTTClient:
             # Diagnostic for #1162 follow-up (X2D + FTS routing): when a
             # slicer-launched project_file passes through the request topic,
             # log the full payload so we can diff Studio's field set against
-            # ours. We pin our own sequence_id to "20000" (line ~3195), so
-            # any other value means the command came from Studio/Orca, not
-            # from us.
-            if print_data.get("sequence_id") != "20000":
+            # ours.
+            #
+            # This used to read `sequence_id != "20000"`, on the belief that
+            # 20000 was ours alone. It is not: 20000 is the slicer convention
+            # Bambuddy adopted -- bind_server documents the slicer sending it
+            # during detect, and measured on the wire OrcaSlicer dispatched
+            # 20000 then 20001 while BambuStudio was on 20009/20010, both
+            # counting up from the same base. So the test swallowed whichever
+            # slicer dispatch happened to land on 20000, which on a fresh
+            # slicer start is the first one. Match our own dispatch instead.
+            if self._project_file_key(print_data) == self._own_project_file_key:
+                self._own_project_file_key = None
+            else:
                 logger.info(
                     "[%s] External project_file payload: %s",
                     self.serial_number,
                     json.dumps(print_data),
                 )
+
+    @staticmethod
+    def _project_file_key(print_data: dict) -> str:
+        """Identity of a project_file dispatch, for telling ours from a slicer's.
+
+        Sequence id alone cannot do it -- every slicer counts up from the same
+        20000 -- so this also carries the file and its destination, which differ
+        between any two real dispatches.
+        """
+        return "|".join(str(print_data.get(field, "")) for field in ("sequence_id", "file", "url", "subtask_name"))
 
     def _debug_on_change(self, key: str, value: object, msg: str, *args: object) -> None:
         """``logger.debug``, but only when ``value`` differs from the last call for ``key``.
@@ -5844,6 +5868,9 @@ class BambuMQTTClient:
                         command["print"]["nozzle_mapping"] = resolved
 
             logger.info("[%s] Sending print command: %s", self.serial_number, json.dumps(command))
+            # Remember this dispatch so its echo on the topic is recognised as
+            # ours rather than logged as a slicer's.
+            self._own_project_file_key = self._project_file_key(command["print"])
             self._client.publish(self.topic_publish, json.dumps(command), qos=1)
             # Record what we dispatched so /cover can pick the right plate
             # thumbnail even when the printer's gcode_file echo is just the

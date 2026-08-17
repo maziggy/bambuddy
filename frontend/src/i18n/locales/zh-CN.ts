@@ -877,7 +877,7 @@ export default {
       docsLink: '查看安装步骤 4',
       docsLinkInternalStorage: '为什么会这样',
       titleInternalStorage: '最近有些打印留在了打印机的内部存储中',
-      bodyInternalStorage: '打印机把切片文件保存在自己的内部存储而不是存储卡上，因此 Bambuddy 通过 FTP 读不到任何东西。H2 系列和 P2S 固件就是这样，「将发送的文件存储到外部存储」也改变不了。这些打印仍会带着名称和时间归档，只是没有缩略图和切片元数据。',
+      bodyInternalStorage: 'Bambu Studio 把切片文件保存到了打印机的内部存储而不是存储卡上，因此 Bambuddy 通过 FTP 读不到任何东西。在 H2 系列和 P2S 上，「打印」按钮总是这样做，只有「发送」才提供选择，而它的默认值也是「缓存」。这些打印仍会带着名称和时间归档，只是没有缩略图和切片元数据。要获得完整归档，请从 Bambuddy 启动打印，或改用 OrcaSlicer 切片；若要继续用 Bambu Studio，请用「发送」并选择「外部存储」，之后再启动打印。以上都需要打印机中插有存储卡或 U 盘。',
       titleNoExternalStorage: '最近有些打印无法归档 — 打印机中没有存储介质',
       bodyNoExternalStorage: '打印机的插槽中未检测到存储卡或U盘，切片文件无处存放，Bambuddy 也无从读取。插入一个，下次打印就会完整归档。',
       dismissLabel: '关闭此通知',
@@ -6791,7 +6791,7 @@ export default {
         skip: '未检查 — 需要有效的 MQTT 连接。在该设置仅存在于切片机中的较旧切片机上，打印机不会报告此设置，因此即使选项已关闭，此检查也会通过 — 请手动验证安装步骤 4。',
         skip_unsupported_model: '此型号有 SD 卡槽，但无法开启该选项 — 当前 P1 系列固件不会在 Bambu Studio 中显示此开关，且打印机没有屏幕。这里无需修复；在 Bambu Lab 通过固件添加支持之前，存档的打印可能缺少缩略图和切片元数据。',
         fail_no_media: '该选项已开启，但打印机的插槽中未检测到存储卡或U盘，发送的文件无处存放。插入一个再打印一次 — 在此之前，每一次归档的打印都会缺少缩略图和切片元数据。',
-        warn_internal_storage: '该选项已开启且存储介质在位，但这台打印机仍把上一次打印留在了 Bambuddy 无法读取的内部存储中。H2 系列和 P2S 固件就是这样，任何设置都改变不了。打印会带着名称和时间归档，但没有缩略图和切片元数据。',
+        warn_internal_storage: '该选项已开启且存储介质在位，但上一次打印仍进入了 Bambuddy 无法读取的打印机内部存储。在 H2 系列和 P2S 上，无论此选项如何设置，Bambu Studio 的「打印」按钮总是发送到那里。打印会带着名称和时间归档，但没有缩略图和切片元数据。要获得完整归档，请从 Bambuddy 启动打印、改用 OrcaSlicer 切片，或在 Bambu Studio 中用「发送」选择「外部存储」后再启动打印。',
       },
       port_rtsps: {
         title: '摄像头端口（{{protocol}} {{port}}）',

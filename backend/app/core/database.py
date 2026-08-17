@@ -65,9 +65,43 @@ def _resolve_pool_kwargs() -> dict:
     return kwargs
 
 
+def _resolve_connect_args() -> dict:
+    """Connect args that pin a PostgreSQL session to UTC (issue #2855).
+
+    Bambuddy's ``DateTime`` columns are naive and hold UTC, and the frontend's
+    ``parseUTCDate()`` reads a timestamp with no offset as UTC. Python-side
+    writes honour that (``utcnow_naive()``), but ~96 columns take their value
+    from ``server_default=func.now()`` and the migration DDL has ~49 more on
+    ``DEFAULT CURRENT_TIMESTAMP`` — those are filled by the database, not by us.
+
+    On PostgreSQL ``now()`` is a ``timestamptz``, so storing it into a
+    ``timestamp without time zone`` column casts it through the session
+    ``TimeZone``. A Postgres container started with ``TZ=Europe/Istanbul`` bakes
+    that zone into ``postgresql.conf`` at initdb, and every defaulted timestamp
+    is then written as local wall-clock and rendered three hours in the future.
+    Pinning the session makes the cast a no-op regardless of the server's own
+    setting.
+
+    SQLite needs nothing: its ``CURRENT_TIMESTAMP`` is UTC by definition and has
+    no session timezone to get wrong. This makes Postgres match SQLite rather
+    than introducing a third convention.
+    """
+    if is_sqlite():
+        return {}
+    # asyncpg is the documented driver and sends these in the startup packet;
+    # anything else Postgres goes through libpq, which takes the same setting
+    # as a command-line option.
+    if "+asyncpg" in settings.database_url:
+        return {"server_settings": {"timezone": "UTC"}}
+    return {"options": "-c timezone=UTC"}
+
+
 def _create_engine():
     """Create the async engine with dialect-appropriate settings."""
     kwargs = _resolve_pool_kwargs()
+    connect_args = _resolve_connect_args()
+    if connect_args:
+        kwargs["connect_args"] = connect_args
 
     global _pool_config
     _pool_config = {

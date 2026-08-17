@@ -877,7 +877,7 @@ export default {
       docsLink: '檢視安裝步驟 4',
       docsLinkInternalStorage: '為什麼會這樣',
       titleInternalStorage: '最近有些列印留在了印表機的內部儲存中',
-      bodyInternalStorage: '印表機把切片檔案儲存在自己的內部儲存而不是記憶卡上，因此 Bambuddy 透過 FTP 讀不到任何東西。H2 系列與 P2S 韌體就是這樣，「將傳送的檔案儲存到外部儲存」也改變不了。這些列印仍會帶著名稱與時間歸檔，只是沒有縮圖與切片中繼資料。',
+      bodyInternalStorage: 'Bambu Studio 把切片檔案儲存到了印表機的內部儲存而不是記憶卡上，因此 Bambuddy 透過 FTP 讀不到任何東西。在 H2 系列與 P2S 上，「列印」按鈕總是這樣做，只有「傳送」才提供選擇，而它的預設值也是「快取」。這些列印仍會帶著名稱與時間歸檔，只是沒有縮圖與切片中繼資料。要取得完整歸檔，請從 Bambuddy 啟動列印，或改用 OrcaSlicer 切片；若要繼續用 Bambu Studio，請用「傳送」並選擇「外部儲存」，之後再啟動列印。以上都需要印表機中插有記憶卡或 USB 隨身碟。',
       titleNoExternalStorage: '最近有些列印無法歸檔 — 印表機中沒有儲存媒體',
       bodyNoExternalStorage: '印表機的插槽中未偵測到記憶卡或隨身碟，切片檔案無處存放，Bambuddy 也無從讀取。插入一個，下次列印就會完整歸檔。',
       dismissLabel: '關閉此通知',
@@ -6791,7 +6791,7 @@ export default {
         skip: '未檢查 — 需要有效的 MQTT 連線。在該設定僅存在於切片機中的較舊切片機上，印表機不會回報此設定，因此即使選項已關閉，此檢查也會通過 — 請手動驗證安裝步驟 4。',
         skip_unsupported_model: '此型號有 SD 卡槽，但無法開啟該選項 — 目前 P1 系列韌體不會在 Bambu Studio 中顯示此開關，且印表機沒有螢幕。這裡無需修復；在 Bambu Lab 透過韌體加入支援之前，封存的列印可能缺少縮圖和切片中繼資料。',
         fail_no_media: '該選項已開啟，但印表機的插槽中未偵測到記憶卡或隨身碟，傳送的檔案無處存放。插入一個再列印一次 — 在此之前，每一次歸檔的列印都會缺少縮圖與切片中繼資料。',
-        warn_internal_storage: '該選項已開啟且儲存媒體在位，但這台印表機仍把上一次列印留在了 Bambuddy 無法讀取的內部儲存中。H2 系列與 P2S 韌體就是這樣，任何設定都改變不了。列印會帶著名稱與時間歸檔，但沒有縮圖與切片中繼資料。',
+        warn_internal_storage: '該選項已開啟且儲存媒體在位，但上一次列印仍進入了 Bambuddy 無法讀取的印表機內部儲存。在 H2 系列與 P2S 上，無論此選項如何設定，Bambu Studio 的「列印」按鈕總是傳送到那裡。列印會帶著名稱與時間歸檔，但沒有縮圖與切片中繼資料。要取得完整歸檔，請從 Bambuddy 啟動列印、改用 OrcaSlicer 切片，或在 Bambu Studio 中用「傳送」選擇「外部儲存」後再啟動列印。',
       },
       port_rtsps: {
         title: '攝影機連接埠（{{protocol}} {{port}}）',

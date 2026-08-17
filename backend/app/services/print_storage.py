@@ -30,11 +30,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# The one URL scheme that means "on external storage, reachable over FTPS".
-# Anything else -- brtc://emmc today, whatever Bambu ships next -- is somewhere
-# port 990 does not serve. Matching the reachable value rather than the
-# unreachable one is what keeps a new scheme from silently reading as fine.
+# The scheme that means "uploaded to external storage, reachable over FTPS".
+# An unknown scheme -- whatever Bambu ships next -- must not read as fine, so
+# this matches the reachable value rather than the unreachable one.
 _EXTERNAL_STORAGE_SCHEME = "ftp"
+
+# ``file://`` means the file was already on the printer when the print started:
+# a reprint from the touchscreen, from Handy, or a Studio send-to-storage
+# followed by a print. The path says which storage, and only the printer's own
+# internal roots are out of reach of port 990. Measured on an H2D, 2026-08-17:
+# ``file:///media/usb0/foobar.gcode.3mf`` while that exact file was listable and
+# downloadable over FTPS.
+_LOCAL_FILE_SCHEME = "file"
+
+# Internal roots seen in ``file://`` paths. ``/userdata`` is where the model
+# cache lives (``/userdata/model/history/<name>``, confirmed via the printer's
+# own file listing), and port 990 does not serve it.
+_INTERNAL_FILE_PREFIXES = ("/userdata/",)
 
 # Reason slugs. These cross the API into the UI and into the connection
 # diagnostic, so they are part of the contract: the frontend maps each to its
@@ -68,13 +80,26 @@ def url_is_external_storage(project_url: str | None) -> bool | None:
     # string is not an answer.
     if not isinstance(project_url, str) or not project_url:
         return None
-    scheme, separator, _ = project_url.partition("://")
+    scheme, separator, path = project_url.partition("://")
     if not separator:
         # No scheme at all. Real dispatches always carry one, so rather than
         # guess at a bare path, decline to answer and let the caller fall
         # through to its existing behaviour.
         return None
-    return scheme.lower() == _EXTERNAL_STORAGE_SCHEME
+    scheme = scheme.lower()
+    if scheme == _EXTERNAL_STORAGE_SCHEME:
+        return True
+    if scheme == _LOCAL_FILE_SCHEME:
+        # Only a known-internal path is positive evidence of somewhere FTPS
+        # cannot reach. Anything else is unknown, which sweeps -- this module
+        # skips only on positive evidence, and a path we do not recognise is
+        # not that. Returning False here instead is what made a print of a file
+        # sitting on the stick report as internal storage and archive with no
+        # 3MF, when the sweep would have found it immediately.
+        if path.startswith(_INTERNAL_FILE_PREFIXES):
+            return False
+        return None
+    return False
 
 
 def external_storage_present(state: object | None) -> bool:

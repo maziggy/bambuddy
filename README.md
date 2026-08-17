@@ -48,6 +48,14 @@
 
 ---
 
+> [!IMPORTANT]
+> **H2-series and P2S owners — how you send a print decides what gets archived.**
+> Bambu Studio's **Print** button sends sliced files to the printer's internal memory, which Bambuddy cannot read — so those prints archive with a name and timing but no thumbnail, filament total or cost. The printer's "Store sent files on external storage" option does not change it (measured on an H2C and an H2D with it enabled); [BambuStudio#10481](https://github.com/bambulab/BambuStudio/issues/10481) tracks the default upstream.
+> **Start the print from Bambuddy, or slice in OrcaSlicer** — both put the file on the card in one step. Staying in Bambu Studio means using **Send** with **External** picked and starting the print afterwards, because Print itself offers no choice. All of them need a card or stick in the printer; X1 and P1 series are unaffected.
+> [Why this happens →](https://wiki.bambuddy.cool/reference/troubleshooting/#archive-card-has-only-a-name)
+
+---
+
 ## 📰 As Featured In
 
 > **"Bambuddy is the companion app that Bambu Lab should have built from day one."**

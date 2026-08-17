@@ -192,6 +192,19 @@ describe('SettingsPage', () => {
       });
     });
 
+    it('no longer offers Camera View Mode, which moved to the printer card', async () => {
+      // The camera button on each printer card is a split control now, so the
+      // choice is made per stream rather than once for the whole install. The
+      // External Cameras section is still here, which is what keeps this from
+      // passing merely because the Camera card failed to render.
+      render(<SettingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('External Cameras')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Camera View Mode')).toBeNull();
+    });
+
     it('shows default printer setting', async () => {
       render(<SettingsPage />);
 

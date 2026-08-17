@@ -86,6 +86,10 @@ export function Layout() {
   // whichever of them happens to be underneath. Moving out of the corner is
   // the only fix that covers in-flow content as well as fixed overlays.
   const [bugReportOpen, setBugReportOpen] = useState(false);
+  // A bug-report logging run survives the panel being closed (#2847). The
+  // floating disc shows that itself; the compact header's button and the
+  // debug-logging banner need telling.
+  const [bugReportLogging, setBugReportLogging] = useState(false);
 
   // Theme toggle: mode → icon and tooltip
   const ThemeIcon = { dark: Sun, light: Monitor, system: Moon }[mode];
@@ -517,11 +521,13 @@ export function Layout() {
           {/* Bug report — the compact-layout home of the floating bubble. */}
           <button
             onClick={() => setBugReportOpen(true)}
-            className="ml-auto p-2 -mr-2 rounded-lg text-red-500 hover:bg-bambu-dark-tertiary transition-colors"
-            title={t('bugReport.title')}
-            aria-label={t('bugReport.title')}
+            className={`ml-auto p-2 -mr-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors ${
+              bugReportLogging ? 'text-amber-500' : 'text-red-500'
+            }`}
+            title={bugReportLogging ? t('bugReport.resumeReport') : t('bugReport.title')}
+            aria-label={bugReportLogging ? t('bugReport.resumeReport') : t('bugReport.title')}
           >
-            <Bug className="w-5 h-5" />
+            <Bug className={`w-5 h-5 ${bugReportLogging ? 'animate-pulse' : ''}`} />
           </button>
         </header>
       )}
@@ -883,6 +889,18 @@ export function Layout() {
                   </span>
                 )}
               </span>
+              {/* A run started from the bug-report panel ends at that panel's
+                  Stop & Submit button, so send the user back there rather than
+                  to the System page's raw toggle, which would drop the logs
+                  and the description they already wrote (#2847). */}
+              {bugReportLogging && (
+                <button
+                  onClick={() => setBugReportOpen(true)}
+                  className="text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 font-medium underline ml-2"
+                >
+                  {t('bugReport.resumeReport')}
+                </button>
+              )}
               <button
                 onClick={() => navigate('/system')}
                 className="text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 font-medium underline ml-2"
@@ -1146,6 +1164,7 @@ export function Layout() {
         showTrigger={!isSidebarCompact}
         open={bugReportOpen}
         onOpenChange={setBugReportOpen}
+        onLoggingChange={setBugReportLogging}
       />
     </div>
   );

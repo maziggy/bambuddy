@@ -91,10 +91,9 @@ async def test_scan_timelapse_attaches_and_persists_via_fresh_session(
     # parent, then stores a base_dir-relative timelapse_path. Point base_dir at
     # tmp and stage the archive dir so the real write succeeds (mirrors
     # test_attach_timelapse_safe_path).
-    monkeypatch.setattr(
-        "backend.app.services.archive.settings",
-        MagicMock(base_dir=tmp_path),
-    )
+    fake_settings = MagicMock(base_dir=tmp_path, archive_dir=tmp_path / "archive")
+    monkeypatch.setattr("backend.app.services.archive.settings", fake_settings)
+    monkeypatch.setattr("backend.app.utils.archive_paths.settings", fake_settings)
     archive_dir = tmp_path / "archives" / "test"
     archive_dir.mkdir(parents=True)
 

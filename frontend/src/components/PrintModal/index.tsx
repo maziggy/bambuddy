@@ -2,7 +2,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { AlertCircle, AlertTriangle, Loader2, Pencil, Printer, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { CostCenterSummary, PrinterStatus, PrintQueueItemCreate, PrintQueueItemUpdate, SlotMaterial } from '../../api/client';
+import type { CostCenterSummary, PrintQueueItemCreate, PrintQueueItemUpdate, SlotMaterial } from '../../api/client';
 import { api } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, CardContent } from '../Card';
@@ -17,7 +17,7 @@ import {
 } from '../../hooks/useFilamentMapping';
 import { useMultiPrinterFilamentMapping, type PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
 import { getColorName } from '../../utils/colors';
-import { isGcodeCompatible } from '../../utils/printer';
+import { isGcodeCompatible, isPrinterCurrentlyDispatchable } from '../../utils/printer';
 import { getCurrencySymbol } from '../../utils/currency';
 import { getBedTypeInfo } from '../../utils/bedType';
 import { toDateTimeLocalValue, parseUTCDate } from '../../utils/date';
@@ -513,13 +513,6 @@ export function PrintModal({
     settings?.prefer_lowest_filament,
     printerStatus?.ams_filament_backup,
   );
-
-  const isPrinterCurrentlyDispatchable = (status: PrinterStatus | undefined): boolean => {
-    if (!status?.connected) return false;
-    if (status.awaiting_plate_clear) return false;
-    if (status.ams?.some((ams) => ams.dry_time > 0)) return false;
-    return ['IDLE', 'FINISH', 'FAILED'].includes(status.state ?? '');
-  };
 
   const asapToastShouldPromiseLaterStart = async (): Promise<boolean> => {
     if (scheduleOptions.scheduleType !== 'asap' || assignmentMode !== 'printer') return false;

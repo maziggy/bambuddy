@@ -25,10 +25,12 @@ async def test_attach_timelapse_rejects_dotdot_filename(tmp_path: Path, monkeypa
     archive_dir.mkdir(parents=True)
     # Repoint settings.base_dir so attach_timelapse's archive_dir = file_path.parent
     # resolves to our tmp directory.
-    monkeypatch.setattr(
-        "backend.app.services.archive.settings",
-        MagicMock(base_dir=tmp_path),
-    )
+    # Both the service and the shared archive_dir helper read settings, through
+    # separate module-level bindings — patch both or the helper keeps the real
+    # data directory and the write escapes tmp_path.
+    fake_settings = MagicMock(base_dir=tmp_path, archive_dir=tmp_path / "archive")
+    monkeypatch.setattr("backend.app.services.archive.settings", fake_settings)
+    monkeypatch.setattr("backend.app.utils.archive_paths.settings", fake_settings)
 
     db = MagicMock()
     db.commit = AsyncMock()
@@ -62,10 +64,12 @@ async def test_attach_timelapse_rejects_absolute_filename(tmp_path: Path, monkey
     """An absolute path in filename must not collapse the join."""
     archive_dir = tmp_path / "archive" / "1" / "20260101_test"
     archive_dir.mkdir(parents=True)
-    monkeypatch.setattr(
-        "backend.app.services.archive.settings",
-        MagicMock(base_dir=tmp_path),
-    )
+    # Both the service and the shared archive_dir helper read settings, through
+    # separate module-level bindings — patch both or the helper keeps the real
+    # data directory and the write escapes tmp_path.
+    fake_settings = MagicMock(base_dir=tmp_path, archive_dir=tmp_path / "archive")
+    monkeypatch.setattr("backend.app.services.archive.settings", fake_settings)
+    monkeypatch.setattr("backend.app.utils.archive_paths.settings", fake_settings)
 
     db = MagicMock()
     db.commit = AsyncMock()
@@ -90,10 +94,12 @@ async def test_attach_timelapse_accepts_legit_filename(tmp_path: Path, monkeypat
     """The legitimate happy path must still work — the fix isn't over-strict."""
     archive_dir = tmp_path / "archive" / "1" / "20260101_test"
     archive_dir.mkdir(parents=True)
-    monkeypatch.setattr(
-        "backend.app.services.archive.settings",
-        MagicMock(base_dir=tmp_path),
-    )
+    # Both the service and the shared archive_dir helper read settings, through
+    # separate module-level bindings — patch both or the helper keeps the real
+    # data directory and the write escapes tmp_path.
+    fake_settings = MagicMock(base_dir=tmp_path, archive_dir=tmp_path / "archive")
+    monkeypatch.setattr("backend.app.services.archive.settings", fake_settings)
+    monkeypatch.setattr("backend.app.utils.archive_paths.settings", fake_settings)
 
     db = MagicMock()
     db.commit = AsyncMock()

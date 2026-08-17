@@ -404,6 +404,7 @@ class PrinterManager:
         self._on_finish_photo_moment: Callable[[int, dict], None] | None = None
         self._on_status_change: Callable[[int, PrinterState], None] | None = None
         self._on_ams_change: Callable[[int, list], None] | None = None
+        self._on_fts_inlet_change: Callable[[int, int, str], None] | None = None
         self._on_layer_change: Callable[[int, int], None] | None = None
         self._on_print_progress: Callable[[int, int], None] | None = None
         self._on_bed_temp_update: Callable[[int, float], None] | None = None
@@ -626,6 +627,14 @@ class PrinterManager:
         """Set callback for AMS data change events."""
         self._on_ams_change = callback
 
+    def set_fts_inlet_change_callback(self, callback: Callable[[int, int, str], None]):
+        """Set callback for Filament Track Switch inlet moves.
+
+        Receives ``(printer_id, ams_id, inlet)``. Fired only when an AMS moves
+        between inlets, not on the first sighting of a binding.
+        """
+        self._on_fts_inlet_change = callback
+
     def set_layer_change_callback(self, callback: Callable[[int, int], None]):
         """Set callback for layer change events. Receives (printer_id, layer_num)."""
         self._on_layer_change = callback
@@ -720,6 +729,10 @@ class PrinterManager:
             if self._on_ams_change:
                 self._schedule_async(self._on_ams_change(printer_id, ams_data))
 
+        def on_fts_inlet_change(ams_id: int, inlet: str):
+            if self._on_fts_inlet_change:
+                self._schedule_async(self._on_fts_inlet_change(printer_id, ams_id, inlet))
+
         def on_layer_change(layer_num: int):
             if self._on_layer_change:
                 self._schedule_async(self._on_layer_change(printer_id, layer_num))
@@ -753,6 +766,7 @@ class PrinterManager:
             on_print_start=on_print_start,
             on_print_complete=on_print_complete,
             on_ams_change=on_ams_change,
+            on_fts_inlet_change=on_fts_inlet_change,
             on_layer_change=on_layer_change,
             on_print_progress=on_print_progress,
             on_bed_temp_update=on_bed_temp_update,
@@ -1507,6 +1521,25 @@ def printer_state_to_dict(
         ),
         # Per-AMS extruder map: {ams_id: extruder_id} where 0=right, 1=left
         "ams_extruder_map": ams_extruder_map,
+        # Filament Track Switch. Both fields have to travel on the WebSocket, not
+        # only on the REST status: the frontend shallow-merges each push over its
+        # cached status, so a field that is absent here keeps whatever the last
+        # full fetch left behind. Omitting them meant the AMS inlet badges only
+        # ever changed on a page reload.
+        "fila_switch": (
+            {
+                "installed": True,
+                "in_slots": list(state.fila_switch.in_slots),
+                "out_extruders": list(state.fila_switch.out_extruders),
+                "stat": state.fila_switch.stat,
+                "info": state.fila_switch.info,
+            }
+            if state.fila_switch and state.fila_switch.installed
+            else None
+        ),
+        # Per-AMS FTS inlet binding: {ams_id: "A" | "B"}. Gated on the accessory
+        # so a stale binding cannot outlive it being unplugged.
+        "ams_switch_inlet": (dict(state.ams_switch_inlet) if state.fila_switch and state.fila_switch.installed else {}),
         # WiFi signal strength
         "wifi_signal": state.wifi_signal,
         "wired_network": state.wired_network,

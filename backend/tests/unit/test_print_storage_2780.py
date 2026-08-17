@@ -77,6 +77,71 @@ class TestUrlScheme:
         """None is a third answer and must not collapse into False."""
         assert url_is_external_storage(url) is None
 
+
+class TestFileScheme:
+    """A print of a file that was already on the printer.
+
+    ``file://`` is what the printer reports for a reprint from its own screen,
+    from Handy, or after a slicer sends to storage and then prints. Measured on
+    an H2D 2026-08-17: ``file:///media/usb0/foobar.gcode.3mf`` while that exact
+    file was listable and downloadable over FTPS. Reading it as internal storage
+    skipped the sweep and produced an archive with no 3MF, for a file sitting
+    right there -- and it did so on every model, not just the H2 series.
+    """
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "file:///media/usb0/foobar.gcode.3mf",
+            "file:///media/sdcard/Benchy.gcode.3mf",
+            "file:///media/usb0/timelapse/video.mp4",
+        ],
+    )
+    def test_an_external_mount_is_not_evidence_of_internal_storage(self, url):
+        """None, not True: the path is good reason to look, and looking is what
+        the caller's default already does."""
+        assert url_is_external_storage(url) is None
+
+    def test_the_model_cache_is_internal(self):
+        """``/userdata/model/history/<name>`` is where the printer's own file
+        listing puts cached models, and port 990 does not serve it."""
+        assert url_is_external_storage("file:///userdata/model/history/Cube.gcode.3mf") is False
+
+    def test_an_unrecognised_path_sweeps_rather_than_skips(self):
+        """Skip only on positive evidence -- a path we do not know is not that."""
+        assert url_is_external_storage("file:///somewhere/new/Cube.3mf") is None
+
+    def test_the_sweep_runs_for_a_file_on_the_card(self):
+        """The regression in one assertion."""
+        state = FakeState(
+            current_project_url="file:///media/usb0/foobar.gcode.3mf",
+            sdcard=True,
+            sdcard_reported=True,
+        )
+        assert print_file_reachable_over_ftp(state).reachable is True
+
+    def test_an_empty_slot_still_wins(self):
+        """With nothing in the slot the file cannot be on it, whatever the path
+        says -- and the operator gets the reason they can act on."""
+        state = FakeState(
+            current_project_url="file:///media/usb0/foobar.gcode.3mf",
+            sdcard=False,
+            sdcard_reported=True,
+        )
+        verdict = print_file_reachable_over_ftp(state)
+        assert verdict.reachable is False
+        assert verdict.reason == REASON_NO_EXTERNAL_STORAGE
+
+    def test_the_model_cache_still_skips(self):
+        state = FakeState(
+            current_project_url="file:///userdata/model/history/Cube.gcode.3mf",
+            sdcard=True,
+            sdcard_reported=True,
+        )
+        verdict = print_file_reachable_over_ftp(state)
+        assert verdict.reachable is False
+        assert verdict.reason == REASON_INTERNAL_STORAGE
+
     @pytest.mark.parametrize("url", [12345, [], {}, object()])
     def test_a_non_string_url_declines_too(self, url):
         """The value arrives straight off the wire, so it is whatever the

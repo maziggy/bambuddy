@@ -1230,6 +1230,31 @@ describe('FileManagerPage', () => {
       expect(openInSlicer).not.toHaveBeenCalled();
     });
 
+    // #2846: the menu used to be an absolutely-positioned child of the card,
+    // and the card clipped its own overflow. A bare STL card is only about
+    // 270px tall -- thumbnail plus name and size -- which is shorter than the
+    // seven-entry menu, so the top entry was cut off. That entry is Slice,
+    // because Print is suppressed for an unsliced file. A 3MF card carries two
+    // more metadata rows and was tall enough, which is why the report said 3MF
+    // worked. Nothing about STL was special; the card was just the shortest.
+    it('keeps the first menu entry out of the card so it cannot be clipped (#2846)', async () => {
+      server.use(
+        http.get('/api/v1/settings/', () => HttpResponse.json({ use_slicer_api: true })),
+      );
+      const user = userEvent.setup();
+      render(<FileManagerPage />);
+
+      await waitFor(() => expect(screen.getByText('bracket.stl')).toBeInTheDocument());
+
+      const card = await openMenu(user, 'bracket.stl');
+      const menu = within(card).getByText('Slice').closest('.fixed');
+      // Viewport-positioned, so no ancestor's overflow can cut it down.
+      expect(menu).not.toBeNull();
+      expect(within(menu as HTMLElement).getAllByRole('button')[0]).toHaveTextContent('Slice');
+      // And the card itself no longer clips what its children draw.
+      expect(card.className).not.toContain('overflow-hidden');
+    });
+
     it('hides the slice item for already-sliced files', async () => {
       const user = userEvent.setup();
       render(<FileManagerPage />);

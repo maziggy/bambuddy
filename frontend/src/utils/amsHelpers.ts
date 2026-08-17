@@ -32,6 +32,48 @@ export function normalizeColorForCompare(color: string | undefined): string {
 }
 
 /**
+ * Which side letter stands for a Filament Track Switch inlet: In-A reads as L,
+ * In-B as R.
+ *
+ * This labels the inlet's position, not the nozzle it feeds — the switch can
+ * route either inlet to either nozzle, and it never reports which pairing is
+ * live. Anywhere this letter is shown next to a hover target, the tooltip names
+ * the inlet outright so the two cannot be confused.
+ */
+export const FTS_INLET_SIDE = { A: 'L', B: 'R' } as const;
+
+/**
+ * Which extruder each switch inlet feeds. Out-A is the left hotend and Out-B the
+ * right one (measured on an H2C), and the inlet pairs with its own outlet in the
+ * switch's rest position. Mirrors `backend/app/utils/fts_routing.py`, which
+ * carries the full reasoning and the reason `fila_switch.out` cannot be used.
+ */
+const FTS_INLET_EXTRUDER: Record<string, number> = { A: 1, B: 0 };
+
+/**
+ * The extruder an AMS slot feeds, or undefined when it genuinely cannot be told.
+ *
+ * Undefined is not the same as extruder 0. K-profiles are per-nozzle, so a slot
+ * whose nozzle is unknown must not be silently treated as right-hand — that is
+ * what bound a left-nozzle profile to a slot sitting on the right.
+ */
+export function resolveSlotExtruder(
+  amsId: number,
+  trayId: number,
+  amsExtruderMap: Record<string, number> | undefined,
+  amsSwitchInlet: Record<string, string> | undefined
+): number | undefined {
+  // External holder: the tray id names the side. 254/Ext-L feeds extruder 1.
+  if (amsId === 255) return trayId === 0 || trayId === 1 ? 1 - trayId : undefined;
+
+  const mapped = amsExtruderMap?.[String(amsId)];
+  if (mapped !== undefined) return mapped;
+
+  const inlet = amsSwitchInlet?.[String(amsId)];
+  return inlet ? FTS_INLET_EXTRUDER[inlet.toUpperCase()] : undefined;
+}
+
+/**
  * AMS unit label using the codebase convention: "AMS-A / AMS-B / ..." for
  * regular AMS, "HT-A / HT-B / ..." for AMS-HT (single-tray modules with
  * IDs starting at 128). `trayCount` is required because the type can't be

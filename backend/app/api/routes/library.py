@@ -1,5 +1,6 @@
 """API routes for File Manager (Library) functionality."""
 
+import asyncio
 import base64
 import binascii
 import contextlib
@@ -70,6 +71,7 @@ from backend.app.services.design_settings import (
     overrides_from_config,
 )
 from backend.app.services.filament_requirements import annotate_rack_groups
+from backend.app.services.mesh_export import MeshExportError, export_mesh_stl, is_exportable
 from backend.app.services.plate_thumbnail import inject_plate_thumbnails_if_missing
 from backend.app.services.process_overrides import apply_process_overrides
 from backend.app.services.slice_output_check import missing_start_gcode_message, start_gcode_is_missing
@@ -5036,6 +5038,74 @@ async def download_file(
         str(abs_path),
         filename=file.filename,
         media_type="application/octet-stream",
+    )
+
+
+@router.get("/files/{file_id}/mesh")
+async def get_file_mesh(
+    file_id: int,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple[User | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.LIBRARY_READ_ALL,
+            Permission.LIBRARY_READ_OWN,
+        )
+    ),
+):
+    """Return the file's geometry as a binary STL.
+
+    Lets a client show a model in 3D without implementing a container parser. A
+    `.3mf` is a ZIP holding an XML mesh, and Bambuddy already reads it to render
+    thumbnails — so serving the mesh here saves every client from shipping its own
+    ZIP and 3MF handling to reach geometry the server can already load.
+
+    Sliced `.gcode.3mf` files are refused with a 400: they carry toolpaths, which a
+    G-code viewer shows properly, and trimesh cannot read their scene graph anyway.
+    """
+    user, can_read_all = auth_result
+    result = await db.execute(LibraryFile.active().where(LibraryFile.id == file_id))
+    file = _ensure_library_file_visible(result.scalar_one_or_none(), user, can_read_all)
+
+    # Refused on the NAME before touching disk, so a caller asking for the mesh of a
+    # sliced file or a text file gets a specific status rather than a generic failure.
+    if not is_exportable(file.filename):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This file is not a model container Bambuddy can export a mesh from. "
+                "Sliced files carry toolpaths — use the G-code viewer for those."
+            ),
+        )
+
+    abs_path = to_absolute_path(file.file_path)
+    if not abs_path or not abs_path.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    # Off the event loop: parsing a 3MF and decimating it is CPU-bound and can take
+    # seconds on a dense model, which would otherwise stall every other request.
+    # `asyncio.to_thread` is how this codebase offloads blocking work elsewhere
+    # (`system.py`, `support.py`), so this follows suit rather than adding a second way.
+    try:
+        blob = await asyncio.to_thread(export_mesh_stl, abs_path)
+    except MeshExportError as e:
+        # 422 rather than 500: the request was well formed and the server is healthy —
+        # this particular file has no geometry to give, and the message says which.
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    stem = Path(file.filename).stem
+    if stem.lower().endswith(".gcode"):  # defensive; is_exportable already refused
+        stem = stem[: -len(".gcode")]
+
+    return Response(
+        content=blob,
+        media_type="model/stl",
+        headers={
+            "Content-Disposition": f'inline; filename="{stem}.stl"',
+            # The mesh is a pure function of the stored file, which is immutable once
+            # uploaded — so a client may keep it. Private because the bytes are behind
+            # a per-user permission check and must not land in a shared cache.
+            "Cache-Control": "private, max-age=86400",
+        },
     )
 
 

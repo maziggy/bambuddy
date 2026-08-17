@@ -42,6 +42,14 @@ _PLATE_PNG_SMALL_SIZE = 128
 _BAMBU_GREEN = "#00AE42"
 _BACKGROUND_COLOR = "#1a1a1a"
 
+# Same light stl_thumbnail.py uses, for the same reason and so that a plate
+# card and a library thumbnail of the same model look alike. Without a light
+# source ``Poly3DCollection`` fills every triangle with the identical colour
+# regardless of its normal, so the render comes out a flat silhouette and one
+# model is indistinguishable from another (issue #2816).
+_LIGHT_AZIMUTH_DEG = 225
+_LIGHT_ALTITUDE_DEG = 45
+
 # Above this vertex count, trimesh.simplify_quadric_decimation runs first.
 # Same cap stl_thumbnail.py uses; matplotlib's Poly3DCollection slows down
 # nonlinearly past ~100k faces and a plate thumbnail doesn't need detail
@@ -141,6 +149,7 @@ def _render_model_thumbnails(threemf_bytes: bytes) -> tuple[bytes | None, bytes 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import trimesh
+    from matplotlib.colors import LightSource
     from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
     loaded = trimesh.load(io.BytesIO(threemf_bytes), file_type="3mf", force="mesh")
@@ -167,17 +176,24 @@ def _render_model_thumbnails(threemf_bytes: bytes) -> tuple[bytes | None, bytes 
     faces = mesh.faces
     poly3d = [[scaled[v] for v in face] for face in faces]
 
-    large = _render_at_size(poly3d, _PLATE_PNG_SIZE, plt, Poly3DCollection)
-    small = _render_at_size(poly3d, _PLATE_PNG_SMALL_SIZE, plt, Poly3DCollection)
+    # Built once and shared: a LightSource is immutable configuration, and both
+    # sizes must be lit identically or the 128px card and the 512px view disagree.
+    lightsource = LightSource(azdeg=_LIGHT_AZIMUTH_DEG, altdeg=_LIGHT_ALTITUDE_DEG)
+
+    large = _render_at_size(poly3d, _PLATE_PNG_SIZE, plt, Poly3DCollection, lightsource)
+    small = _render_at_size(poly3d, _PLATE_PNG_SMALL_SIZE, plt, Poly3DCollection, lightsource)
     return large, small
 
 
-def _render_at_size(poly3d, size: int, plt, Poly3DCollection) -> bytes:
+def _render_at_size(poly3d, size: int, plt, Poly3DCollection, lightsource) -> bytes:
     """Render the prepared poly3d collection to an in-memory PNG."""
     fig = plt.figure(figsize=(size / 100, size / 100), dpi=100)
     fig.patch.set_facecolor(_BACKGROUND_COLOR)
     ax = fig.add_subplot(111, projection="3d")
     ax.set_facecolor(_BACKGROUND_COLOR)
+    # ``shade=True`` needs a real ``edgecolors``: matplotlib shades the edge
+    # colours alongside the face colours, and an empty array (``"none"``) makes
+    # it raise on the broadcast. Keep the two in step if either moves.
     ax.add_collection3d(
         Poly3DCollection(
             poly3d,
@@ -185,6 +201,8 @@ def _render_at_size(poly3d, size: int, plt, Poly3DCollection) -> bytes:
             edgecolors=_BAMBU_GREEN,
             linewidths=0.1,
             alpha=0.9,
+            shade=True,
+            lightsource=lightsource,
         )
     )
     ax.set_xlim(-0.6, 0.6)

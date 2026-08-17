@@ -54,6 +54,14 @@ def _configure_matplotlib_cache() -> None:
 BAMBU_GREEN = "#00AE42"
 BACKGROUND_COLOR = "#1a1a1a"
 
+# Direction of the synthetic light used to shade the mesh. Without a light
+# source ``Poly3DCollection`` fills every triangle with the identical colour
+# regardless of its normal, so the render comes out a flat silhouette and one
+# model is indistinguishable from another (issue #2816). Front-left and fairly
+# high, which keeps the lit face toward the default ``view_init`` camera.
+LIGHT_AZIMUTH_DEG = 225
+LIGHT_ALTITUDE_DEG = 45
+
 # Maximum vertices before simplification
 MAX_VERTICES = 100000
 
@@ -98,6 +106,7 @@ def generate_stl_thumbnail(
         # Use Agg backend for headless rendering
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        from matplotlib.colors import LightSource
         from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
         from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
@@ -156,12 +165,17 @@ def generate_stl_thumbnail(
         faces = mesh.faces
         poly3d = [[vertices_scaled[vertex] for vertex in face] for face in faces]
 
+        # ``shade=True`` needs a real ``edgecolors``: matplotlib shades the edge
+        # colours alongside the face colours, and an empty array (``"none"``)
+        # makes it raise on the broadcast. Keep the two in step if either moves.
         collection = Poly3DCollection(
             poly3d,
             facecolors=BAMBU_GREEN,
             edgecolors=BAMBU_GREEN,
             linewidths=0.1,
             alpha=0.9,
+            shade=True,
+            lightsource=LightSource(azdeg=LIGHT_AZIMUTH_DEG, altdeg=LIGHT_ALTITUDE_DEG),
         )
         ax.add_collection3d(collection)
 

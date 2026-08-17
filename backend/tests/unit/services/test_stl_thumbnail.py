@@ -1,10 +1,42 @@
 """Unit tests for the STL thumbnail service."""
 
+import io
 import os
 import tempfile
 from pathlib import Path
 
 import pytest
+
+
+def _distinct_surface_tones(png: bytes | Path, *, min_share: float = 0.02) -> int:
+    """Count the distinct colours covering the model's surface in a render.
+
+    Quantises to 5 bits per channel — at 8 bits, PNG dithering scatters a single
+    flat fill across dozens of near-identical values — keeps only pixels where
+    green dominates (that is the model; the background and the neutral edge
+    antialiasing are not), and ignores tones below ``min_share`` of that surface.
+
+    This is the regression guard for shading. An unshaded ``Poly3DCollection``
+    gives every triangle the identical colour whatever its normal, so a cube
+    comes back as **1**. Lit, its three visible faces each catch the light
+    differently and it comes back as **3**.
+    """
+    from PIL import Image
+
+    source = io.BytesIO(png) if isinstance(png, bytes) else png
+    image = Image.open(source).convert("RGB")
+
+    counts: dict[tuple[int, int, int], int] = {}
+    for r, g, b in image.getdata():
+        if g <= r or g <= b:
+            continue
+        key = (r >> 3, g >> 3, b >> 3)
+        counts[key] = counts.get(key, 0) + 1
+
+    surface = sum(counts.values())
+    if surface == 0:
+        return 0
+    return sum(1 for n in counts.values() if n / surface >= min_share)
 
 
 def _check_trimesh_available():
@@ -156,6 +188,32 @@ endsolid cube"""
             # If result is None, dependencies might not be fully functional
             # which is acceptable
 
+    @pytest.mark.skipif(
+        not _check_trimesh_available(),
+        reason="trimesh not installed",
+    )
+    def test_generated_thumbnail_is_shaded_not_flat(self):
+        """The render must be lit, not a flat silhouette (issue #2816).
+
+        Without ``shade=True`` every triangle is filled with BAMBU_GREEN
+        regardless of its normal, so any model renders as its own outline and
+        one file is indistinguishable from another in the File Manager.
+        """
+        import trimesh
+
+        from backend.app.services.stl_thumbnail import generate_stl_thumbnail
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            stl_path = Path(tmpdir) / "cube.stl"
+            trimesh.creation.box(extents=(10.0, 10.0, 10.0)).export(str(stl_path))
+
+            result = generate_stl_thumbnail(stl_path, Path(tmpdir))
+            assert result is not None
+
+            # Three faces of a cube face the camera at the default isometric
+            # view_init, and each one catches the light differently.
+            assert _distinct_surface_tones(Path(result)) >= 3
+
     def test_generate_stl_thumbnail_nonexistent_file(self):
         """Test thumbnail generation with nonexistent file."""
         from backend.app.services.stl_thumbnail import generate_stl_thumbnail
@@ -219,6 +277,18 @@ class TestStlThumbnailConstants:
         from backend.app.services.stl_thumbnail import BAMBU_GREEN
 
         assert BAMBU_GREEN == "#00AE42"
+
+    def test_light_direction_is_a_valid_direction(self):
+        """Azimuth is a compass bearing, altitude an angle above the horizon."""
+        from backend.app.services.stl_thumbnail import (
+            LIGHT_ALTITUDE_DEG,
+            LIGHT_AZIMUTH_DEG,
+        )
+
+        assert 0 <= LIGHT_AZIMUTH_DEG <= 360
+        # Above the horizon but not straight down, or the top face blows out and
+        # the sides go black.
+        assert 0 < LIGHT_ALTITUDE_DEG < 90
 
     def test_background_color(self):
         """Test that background color is defined."""

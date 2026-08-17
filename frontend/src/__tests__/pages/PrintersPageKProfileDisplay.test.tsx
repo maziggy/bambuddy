@@ -1,0 +1,228 @@
+/**
+ * Tests for #2532: K-profile value shown directly on the AMS slot card,
+ * not only inside the hover popup.
+ */
+
+import { describe, it, expect, beforeEach } from 'vitest';
+import { screen, waitFor } from '@testing-library/react';
+import { render } from '../utils';
+import { PrintersPage } from '../../pages/PrintersPage';
+import { http, HttpResponse } from 'msw';
+import { server } from '../mocks/server';
+
+const mockPrinters = [
+  {
+    id: 1,
+    name: 'X1 Carbon',
+    ip_address: '192.168.1.100',
+    serial_number: '00M09A350100001',
+    access_code: '12345678',
+    model: 'X1C',
+    enabled: true,
+    is_active: true,
+    nozzle_diameter: 0.4,
+    nozzle_type: 'hardened_steel',
+    location: 'Workshop',
+    auto_archive: true,
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  },
+];
+
+const mockPrinterStatus = {
+  connected: true,
+  state: 'IDLE',
+  awaiting_plate_clear: false,
+  progress: 0,
+  layer_num: 0,
+  total_layers: 0,
+  temperatures: { nozzle: 25, bed: 25, chamber: 25 },
+  remaining_time: 0,
+  filename: null,
+  wifi_signal: -50,
+  vt_tray: [],
+};
+
+describe('PrintersPage - K-profile always-visible display (#2532)', () => {
+  beforeEach(() => {
+    localStorage.removeItem('printerCardSize');
+
+    server.use(
+      http.get('/api/v1/printers/', () => HttpResponse.json(mockPrinters)),
+      http.get('/api/v1/settings/', () => HttpResponse.json({
+        auto_archive: true,
+        save_thumbnails: true,
+        capture_finish_photo: true,
+        default_filament_cost: 25.0,
+        currency: 'USD',
+        ams_humidity_good: 40,
+        ams_humidity_fair: 60,
+        ams_temp_good: 30,
+        ams_temp_fair: 35,
+        require_plate_clear: true,
+      })),
+      http.get('/api/v1/settings/ui-preferences', () => HttpResponse.json({
+        ams_humidity_good: 40,
+        ams_humidity_fair: 60,
+        ams_temp_good: 30,
+        ams_temp_fair: 35,
+        require_plate_clear: true,
+      })),
+      http.get('/api/v1/queue/', () => HttpResponse.json([])),
+      http.get('/api/v1/inventory/assignments', () => HttpResponse.json([])),
+      http.get('/api/v1/spoolman/settings', () => HttpResponse.json({
+        spoolman_enabled: 'false', spoolman_url: '',
+      })),
+    );
+  });
+
+  it('shows the K-value on a loaded standard AMS slot without hovering', async () => {
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+        ...mockPrinterStatus,
+        // A standard (non-HT) AMS unit has 4 trays — htAms in PrintersPage.tsx
+        // filters on tray.length === 1, so a single-tray mock here would
+        // silently exercise the AMS-HT code path instead of this one.
+        ams: [{
+          id: 0,
+          tray: [
+            {
+              id: 0,
+              tray_type: 'PETG',
+              tray_color: 'FF0000FF',
+              tray_sub_brands: 'Bambu PETG HF',
+              k: 0.024,
+            },
+            { id: 1, tray_type: null, state: 9 },
+            { id: 2, tray_type: null, state: 9 },
+            { id: 3, tray_type: null, state: 9 },
+          ],
+        }],
+      })),
+    );
+
+    render(<PrintersPage />);
+
+    // No hover/mouseEnter simulated here on purpose — the whole point of
+    // #2532 is that this must be readable without one.
+    await waitFor(() => {
+      expect(screen.getByText('K Factor 0.024')).toBeInTheDocument();
+    });
+  });
+
+  it('does not show a K-value on an empty slot', async () => {
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+        ...mockPrinterStatus,
+        ams: [{
+          id: 0,
+          tray: [
+            { id: 0, tray_type: null, state: 9 },
+            { id: 1, tray_type: null, state: 9 },
+            { id: 2, tray_type: null, state: 9 },
+            { id: 3, tray_type: null, state: 9 },
+          ],
+        }],
+      })),
+    );
+
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      // All 4 slots are empty, so several "Empty" labels render.
+      expect(screen.getAllByText('Empty').length).toBeGreaterThan(0);
+    });
+    // ... but formatKValue() defaults to 0.020 when there's no tray data,
+    // so this specifically guards against that default leaking onto an
+    // empty slot as a misleading "K Factor 0.020".
+    expect(screen.queryByText(/^K Factor 0\.020$/)).not.toBeInTheDocument();
+  });
+
+  it('does not show a fabricated K-value on a loaded slot with no reported K (review #2854)', async () => {
+    // Regression test for maziggy's review on #2854: a slot can be loaded
+    // (tray_type present) while the printer has simply never reported a K
+    // value for it — k is null, not merely absent. This is common on X1C,
+    // where K comes from a cali_idx lookup that can legitimately miss.
+    // formatKValue() defaults null to 0.020, which reads as a real measured
+    // value on this permanent, uncaptioned line, so the row must not render
+    // at all in this case rather than showing that default.
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+        ...mockPrinterStatus,
+        // 4 trays — see comment on the first test above re: htAms filtering.
+        ams: [{
+          id: 0,
+          tray: [
+            {
+              id: 0,
+              tray_type: 'PETG',
+              tray_color: 'FF0000FF',
+              tray_sub_brands: 'Bambu PETG HF',
+              k: null,
+            },
+            { id: 1, tray_type: null, state: 9 },
+            { id: 2, tray_type: null, state: 9 },
+            { id: 3, tray_type: null, state: 9 },
+          ],
+        }],
+      })),
+    );
+
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      // The slot itself is loaded and visible ...
+      expect(screen.getByText('PETG')).toBeInTheDocument();
+    });
+    // ... but no K-value line, fabricated or otherwise, should appear.
+    expect(screen.queryByText(/^K Factor/)).not.toBeInTheDocument();
+  });
+
+  it('shows the K-value on a loaded AMS-HT slot without hovering', async () => {
+    // AMS-HT units are identified by having exactly one tray in their
+    // `tray` array (vs. four for a standard AMS unit) — see the htAms
+    // filter in PrintersPage.tsx.
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+        ...mockPrinterStatus,
+        ams: [{
+          id: 1,
+          tray: [{
+            id: 0,
+            tray_type: 'ASA',
+            tray_color: 'FFFFFFFF',
+            tray_sub_brands: 'Bambu ASA',
+            k: 0.018,
+          }],
+        }],
+      })),
+    );
+
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('K Factor 0.018')).toBeInTheDocument();
+    });
+  });
+
+  it('shows the K-value on a loaded external/dual-nozzle slot without hovering', async () => {
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+        ...mockPrinterStatus,
+        vt_tray: [{
+          id: 254,
+          tray_type: 'PLA',
+          tray_color: '000000FF',
+          tray_sub_brands: 'Bambu PLA Basic',
+          k: 0.022,
+        }],
+      })),
+    );
+
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('K Factor 0.022')).toBeInTheDocument();
+    });
+  });
+});

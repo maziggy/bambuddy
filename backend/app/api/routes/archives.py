@@ -324,6 +324,7 @@ def archive_to_response(
         "duplicate_sequence": duplicate_sequence,
         "original_archive_id": original_archive_id,
         "print_name": archive.print_name,
+        "plate_id": archive.plate_id,
         "print_time_seconds": archive.print_time_seconds,
         "filament_used_grams": archive.filament_used_grams,
         "filament_type": archive.filament_type,

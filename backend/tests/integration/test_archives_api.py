@@ -217,6 +217,34 @@ class TestArchivesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_archive_response_exposes_selected_plate(
+        self, async_client: AsyncClient, archive_factory, printer_factory
+    ):
+        """Both archive endpoints must report the stored plate (#2796).
+
+        archive_to_response builds its response dict field by field and left
+        plate_id out. ArchiveResponse.plate_id defaults to None, so every
+        archive came back as plate_id: null and nothing raised an error.
+
+        List and detail share the helper, so both are checked here. The archive
+        without a plate guards a fix that substitutes a fallback plate.
+        """
+        printer = await printer_factory()
+        with_plate = await archive_factory(printer.id, print_name="Plate 22 of a multi-plate 3MF", plate_id=22)
+        without_plate = await archive_factory(printer.id, print_name="Single-plate print")
+
+        listed = await async_client.get("/api/v1/archives/")
+        assert listed.status_code == 200
+        rows = {a["id"]: a for a in listed.json()}
+        assert rows[with_plate.id]["plate_id"] == 22
+        assert rows[without_plate.id]["plate_id"] is None
+
+        detail = await async_client.get(f"/api/v1/archives/{with_plate.id}")
+        assert detail.status_code == 200
+        assert detail.json()["plate_id"] == 22
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_get_archive_not_found(self, async_client: AsyncClient):
         """Verify 404 for non-existent archive."""
         response = await async_client.get("/api/v1/archives/9999")

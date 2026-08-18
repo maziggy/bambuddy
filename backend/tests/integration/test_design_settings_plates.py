@@ -56,7 +56,12 @@ class TestArchivePlatesDesignOverrides:
         overrides = response.json()["design_overrides"]
         assert [o["key"] for o in overrides] == ["outer_wall_speed", "wall_loops"]
         by_key = {o["key"]: o for o in overrides}
-        assert by_key["wall_loops"] == {"key": "wall_loops", "value": "5", "printer_coupled": False}
+        assert by_key["wall_loops"] == {
+            "key": "wall_loops",
+            "value": "5",
+            "printer_coupled": False,
+            "preset_defining": False,
+        }
         assert by_key["outer_wall_speed"]["printer_coupled"] is True
         # The printer slot must never leak into the process list.
         assert "machine_start_gcode" not in by_key

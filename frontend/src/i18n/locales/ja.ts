@@ -4315,6 +4315,9 @@ export default {
     fromFileHint: 'この項目は元ファイルで設計者が変更しています。値は {{value}} です。',
     fromFilePrinterCoupled: '設計者のプリンター',
     fromFilePrinterCoupledHint: 'このファイルが設計されたプリンター向けの値です。お使いのプリンターでは不適切または範囲外になる場合があります。',
+    fromFileOverridesPreset: 'プリセットを上書き',
+    fromFileOverridesPresetHint:
+      'ファイルはこれを {{value}} に設定していますが、選択したプリセットは {{preset}} です。ファイルを優先する場合のみチェックしてください。',
     useFromFile: '{{option}} に元ファイルの値を使用する',
     otherFromFile: 'このファイルのその他の設定',
     loading: 'スライサー設定を読み込んでいます…',

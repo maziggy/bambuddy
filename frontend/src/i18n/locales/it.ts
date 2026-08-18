@@ -4303,6 +4303,9 @@ export default {
     fromFileHint: 'Il designer ha modificato questo parametro nel file di origine. Il valore è {{value}}.',
     fromFilePrinterCoupled: 'stampante del designer',
     fromFilePrinterCoupledHint: 'Tarato per la stampante per cui è stato progettato questo file: sulla tua può essere errato o fuori intervallo.',
+    fromFileOverridesPreset: 'sovrascrive il profilo',
+    fromFileOverridesPresetHint:
+      'Il file imposta {{value}} mentre il profilo scelto usa {{preset}}. Selezionalo solo se deve prevalere il file.',
     useFromFile: 'Usa il valore del file di origine per {{option}}',
     otherFromFile: 'Altre impostazioni da questo file',
     loading: 'Caricamento impostazioni dello slicer…',

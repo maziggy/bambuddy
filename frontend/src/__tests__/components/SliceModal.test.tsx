@@ -349,9 +349,9 @@ describe('SliceModal', () => {
     embedded_printer: 'Bambu Lab A1 0.4 nozzle',
     embedded_process: '0.20mm Standard @BBL A1',
     design_overrides: [
-      { key: 'wall_loops', value: '5', printer_coupled: false },
-      { key: 'sparse_infill_density', value: '100%', printer_coupled: false },
-      { key: 'outer_wall_speed', value: '200', printer_coupled: true },
+      { key: 'wall_loops', value: '5', printer_coupled: false, preset_defining: false },
+      { key: 'sparse_infill_density', value: '100%', printer_coupled: false, preset_defining: false },
+      { key: 'outer_wall_speed', value: '200', printer_coupled: true, preset_defining: false },
     ],
   };
 
@@ -399,6 +399,68 @@ describe('SliceModal', () => {
     await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
     const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as { design_overrides?: string[] };
     expect([...(payload.design_overrides ?? [])].sort()).toEqual(['sparse_infill_density', 'wall_loops']);
+  });
+
+  // The file's layer height is the one deviation that must not ride along: it
+  // *is* the process preset the user picked, so carrying it silently sliced a
+  // file at 0.2 while the process dropdown still read "0.08mm High Quality".
+  const designedWithLayerHeight = {
+    ...designedFor,
+    design_overrides: [
+      { key: 'wall_loops', value: '5', printer_coupled: false, preset_defining: false },
+      { key: 'layer_height', value: '0.2', printer_coupled: false, preset_defining: true },
+    ],
+  };
+
+  it("leaves the file's layer height off by default so the picked preset wins", async () => {
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+    mockApi.getLibraryFilePlates.mockResolvedValue(designedWithLayerHeight);
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Slice$/ })).toBeEnabled());
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+    await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
+    const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as { design_overrides?: string[] };
+    expect(payload.design_overrides).toEqual(['wall_loops']);
+  });
+
+  it('still applies the file\'s layer height when the user ticks it', async () => {
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+    mockApi.getLibraryFilePlates.mockResolvedValue(designedWithLayerHeight);
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Designed.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Slice$/ })).toBeEnabled());
+
+    const user = await openDesignSection();
+    // Search rather than page-hop: it cuts across every page. The tick's
+    // aria-label carries the option's schema label, not its key.
+    await user.type(screen.getByPlaceholderText('Search settings'), 'layer height');
+    await waitFor(() => expect(sourceCheckbox('Layer height')).toBeInTheDocument());
+    await user.click(sourceCheckbox('Layer height'));
+    await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+    await waitFor(() => expect(mockApi.sliceLibraryFile).toHaveBeenCalled());
+    const payload = mockApi.sliceLibraryFile.mock.calls[0][1] as { design_overrides?: string[] };
+    expect([...(payload.design_overrides ?? [])].sort()).toEqual(['layer_height', 'wall_loops']);
   });
 
   it('lists every changed setting with its value and flags the machine-coupled ones (#2622)', async () => {

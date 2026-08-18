@@ -492,9 +492,16 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   }, [canUseEmbedded]);
 
   // Pre-tick the printer-independent design settings once the source's list
-  // arrives. Machine-coupled keys stay off until the user opts in explicitly.
+  // arrives. Machine-coupled keys stay off until the user opts in explicitly,
+  // and so do the ones that define the picked preset (layer height, first
+  // layer height): pre-ticking those let a file's 0.2 quietly slice over an
+  // explicitly picked 0.08 preset while the dropdown still read 0.08.
   useEffect(() => {
-    setDesignKeys(new Set(designOverrides.filter((o) => !o.printer_coupled).map((o) => o.key)));
+    setDesignKeys(
+      new Set(
+        designOverrides.filter((o) => !o.printer_coupled && !o.preset_defining).map((o) => o.key),
+      ),
+    );
   }, [designOverrides]);
 
   // Printer pre-pick: defaults to the printer the 3MF was prepared for when

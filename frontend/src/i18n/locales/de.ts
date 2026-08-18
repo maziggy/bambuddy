@@ -4315,6 +4315,9 @@ export default {
     fromFileHint: 'Der Designer hat dies in der Quelldatei geändert. Wert: {{value}}.',
     fromFilePrinterCoupled: 'Drucker des Designers',
     fromFilePrinterCoupledHint: 'Auf den Drucker abgestimmt, für den diese Datei erstellt wurde – auf Ihrem kann der Wert falsch oder außerhalb des Bereichs sein.',
+    fromFileOverridesPreset: 'überschreibt Preset',
+    fromFileOverridesPresetHint:
+      'Die Datei setzt hier {{value}}, das gewählte Preset verwendet {{preset}}. Nur aktivieren, wenn die Datei Vorrang haben soll.',
     useFromFile: 'Wert aus der Quelldatei für {{option}} verwenden',
     otherFromFile: 'Weitere Einstellungen aus dieser Datei',
     loading: 'Slicer-Einstellungen werden geladen…',

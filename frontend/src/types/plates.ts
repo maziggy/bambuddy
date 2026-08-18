@@ -49,10 +49,15 @@ interface EmbeddedPresets {
 // One process setting the designer deviated on. `printer_coupled` marks the
 // values that only make sense on the machine they were tuned for (speeds,
 // accelerations, prime-tower geometry) — offered, but never pre-selected.
+// `preset_defining` marks the ones that *are* the picked process preset —
+// layer height and first layer height — which must not be carried over an
+// explicit preset pick without the user asking. Also offered, never
+// pre-selected.
 export interface DesignOverride {
   key: string;
   value: unknown;
   printer_coupled: boolean;
+  preset_defining: boolean;
 }
 
 export interface ArchivePlatesResponse extends EmbeddedPresets {

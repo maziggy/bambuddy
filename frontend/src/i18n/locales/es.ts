@@ -4317,6 +4317,9 @@ export default {
     fromFileHint: 'El diseñador cambió esto en el archivo de origen. Su valor es {{value}}.',
     fromFilePrinterCoupled: 'impresora del diseñador',
     fromFilePrinterCoupledHint: 'Ajustado para la impresora para la que se diseñó este archivo: en la tuya puede ser incorrecto o estar fuera de rango.',
+    fromFileOverridesPreset: 'anula el perfil',
+    fromFileOverridesPresetHint:
+      'El archivo lo fija en {{value}} mientras que el perfil elegido usa {{preset}}. Actívalo solo si debe mandar el archivo.',
     useFromFile: 'Usar el valor del archivo de origen para {{option}}',
     otherFromFile: 'Otros ajustes de este archivo',
     loading: 'Cargando ajustes del laminador…',

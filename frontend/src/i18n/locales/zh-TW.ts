@@ -4303,6 +4303,9 @@ export default {
     fromFileHint: '設計者在來源檔案中修改了此項，其值為 {{value}}。',
     fromFilePrinterCoupled: '設計者的印表機',
     fromFilePrinterCoupledHint: '針對該檔案設計時所用的印表機調校，在你的印表機上可能不正確或超出範圍。',
+    fromFileOverridesPreset: '覆寫預設',
+    fromFileOverridesPresetHint:
+      '檔案將其設為 {{value}}，而所選預設使用 {{preset}}。僅在應以檔案為準時才勾選。',
     useFromFile: '對 {{option}} 使用來源檔案中的值',
     otherFromFile: '此檔案中的其他設定',
     loading: '正在載入切片設定…',

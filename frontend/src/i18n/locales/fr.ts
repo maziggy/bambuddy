@@ -4304,6 +4304,9 @@ export default {
     fromFileHint: 'Le concepteur a modifié ce paramètre dans le fichier source. Sa valeur est {{value}}.',
     fromFilePrinterCoupled: 'imprimante du concepteur',
     fromFilePrinterCoupledHint: "Réglé pour l'imprimante pour laquelle ce fichier a été conçu — peut être incorrect ou hors plage sur la vôtre.",
+    fromFileOverridesPreset: 'remplace le profil',
+    fromFileOverridesPresetHint:
+      'Le fichier impose {{value}} alors que le profil choisi utilise {{preset}}. À cocher uniquement si le fichier doit primer.',
     useFromFile: 'Utiliser la valeur du fichier source pour {{option}}',
     otherFromFile: 'Autres paramètres de ce fichier',
     loading: 'Chargement des paramètres du trancheur…',

@@ -4106,6 +4106,9 @@ export default {
     fromFileHint: '디자이너가 원본 파일에서 이 항목을 변경했습니다. 값은 {{value}}입니다.',
     fromFilePrinterCoupled: '디자이너의 프린터',
     fromFilePrinterCoupledHint: '이 파일이 설계된 프린터에 맞춘 값입니다. 사용 중인 프린터에서는 잘못되거나 범위를 벗어날 수 있습니다.',
+    fromFileOverridesPreset: '프리셋 덮어쓰기',
+    fromFileOverridesPresetHint:
+      '파일은 이 값을 {{value}}(으)로 설정하지만 선택한 프리셋은 {{preset}}을(를) 사용합니다. 파일을 우선할 때만 선택하세요.',
     useFromFile: '{{option}}에 원본 파일의 값 사용',
     otherFromFile: '이 파일의 기타 설정',
     loading: '슬라이서 설정을 불러오는 중…',

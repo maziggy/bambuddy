@@ -4304,6 +4304,9 @@ export default {
     fromFileHint: 'Tasarımcı bunu kaynak dosyada değiştirdi. Değeri {{value}}.',
     fromFilePrinterCoupled: 'tasarımcının yazıcısı',
     fromFilePrinterCoupledHint: 'Bu dosyanın tasarlandığı yazıcıya göre ayarlanmıştır; sizinkinde yanlış veya aralık dışı olabilir.',
+    fromFileOverridesPreset: 'profili geçersiz kılar',
+    fromFileOverridesPresetHint:
+      'Dosya bunu {{value}} olarak ayarlıyor, seçtiğiniz profil ise {{preset}} kullanıyor. Yalnızca dosya öncelikli olacaksa işaretleyin.',
     useFromFile: '{{option}} için kaynak dosyadaki değeri kullan',
     otherFromFile: 'Bu dosyadaki diğer ayarlar',
     loading: 'Dilimleyici ayarları yükleniyor…',

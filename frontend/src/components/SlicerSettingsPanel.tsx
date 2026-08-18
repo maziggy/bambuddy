@@ -392,9 +392,11 @@ export default function SlicerSettingsPanel({
                     <span className="font-mono text-bambu-gray">{o.key}</span>
                     <span className="ml-1.5 text-white">{formatSourceValue(o.value)}</span>
                   </span>
-                  {o.printer_coupled && (
+                  {(o.printer_coupled || o.preset_defining) && (
                     <span className="shrink-0 rounded bg-amber-100 px-1 py-0.5 text-[10px] text-amber-700 dark:bg-amber-500/20 dark:text-amber-400">
-                      {t('slicerSettings.fromFilePrinterCoupled', "designer's printer")}
+                      {o.printer_coupled
+                        ? t('slicerSettings.fromFilePrinterCoupled', "designer's printer")
+                        : t('slicerSettings.fromFileOverridesPreset', 'overrides preset')}
                     </span>
                   )}
                 </label>
@@ -470,19 +472,27 @@ function OptionRow({
         {source && (
           <span
             className={`shrink-0 rounded px-1 py-0.5 text-[10px] ${
-              source.printer_coupled
+              source.printer_coupled || source.preset_defining
                 ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
                 : 'bg-bambu-green/15 text-bambu-green'
             }`}
             title={
               source.printer_coupled
                 ? t('slicerSettings.fromFilePrinterCoupledHint', "Tuned for the printer this file was designed for -- may be wrong or out of range on yours.")
-                : t('slicerSettings.fromFileHint', "The designer changed this in the source file. Its value is {{value}}.", { value: formatSourceValue(source.value) })
+                : source.preset_defining
+                  ? t(
+                      'slicerSettings.fromFileOverridesPresetHint',
+                      'The file sets this to {{value}} where the preset you picked uses {{preset}}. Tick it only if the file should win.',
+                      { value: formatSourceValue(source.value), preset: baselineForDisplay(option, presetValue) },
+                    )
+                  : t('slicerSettings.fromFileHint', "The designer changed this in the source file. Its value is {{value}}.", { value: formatSourceValue(source.value) })
             }
           >
             {source.printer_coupled
               ? t('slicerSettings.fromFilePrinterCoupled', "designer's printer")
-              : t('slicerSettings.fromFile', 'from file')}
+              : source.preset_defining
+                ? t('slicerSettings.fromFileOverridesPreset', 'overrides preset')
+                : t('slicerSettings.fromFile', 'from file')}
           </span>
         )}
       </label>

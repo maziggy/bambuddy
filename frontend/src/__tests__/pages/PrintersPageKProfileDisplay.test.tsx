@@ -106,8 +106,13 @@ describe('PrintersPage - K-profile always-visible display (#2532)', () => {
     // No hover/mouseEnter simulated here on purpose — the whole point of
     // #2532 is that this must be readable without one.
     await waitFor(() => {
-      expect(screen.getByText('K Factor 0.024')).toBeInTheDocument();
+      expect(screen.getByText('K 0.024')).toBeInTheDocument();
     });
+
+    // The short "K" label is intentional (round-2 review: the full "K
+    // Factor" label was clipping the value at narrow slot widths), but the
+    // full localized name should still be reachable via the title attribute.
+    expect(screen.getByText('K 0.024')).toHaveAttribute('title', 'K Factor');
   });
 
   it('does not show a K-value on an empty slot', async () => {
@@ -134,8 +139,8 @@ describe('PrintersPage - K-profile always-visible display (#2532)', () => {
     });
     // ... but formatKValue() defaults to 0.020 when there's no tray data,
     // so this specifically guards against that default leaking onto an
-    // empty slot as a misleading "K Factor 0.020".
-    expect(screen.queryByText(/^K Factor 0\.020$/)).not.toBeInTheDocument();
+    // empty slot as a misleading "K 0.020".
+    expect(screen.queryByText(/^K 0\.020$/)).not.toBeInTheDocument();
   });
 
   it('does not show a fabricated K-value on a loaded slot with no reported K (review #2854)', async () => {
@@ -175,7 +180,43 @@ describe('PrintersPage - K-profile always-visible display (#2532)', () => {
       expect(screen.getByText('PETG')).toBeInTheDocument();
     });
     // ... but no K-value line, fabricated or otherwise, should appear.
-    expect(screen.queryByText(/^K Factor/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^K /)).not.toBeInTheDocument();
+  });
+
+  it('does not show a K-value when the printer reports exactly 0 (review #2854, round 2)', async () => {
+    // maziggy's round-2 question: does tray.k != null let a real firmware
+    // "0" through as a misleading "K 0.000"? The backend's own kprofile_map
+    // (printer_manager.py) only admits truthy k_value entries when building
+    // the cali_idx lookup, so a stored K-profile of exactly 0 is already
+    // treated as "no calibration" upstream of this component. Matching that
+    // convention here means gating on a truthy tray.k, not just != null.
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+        ...mockPrinterStatus,
+        ams: [{
+          id: 0,
+          tray: [
+            {
+              id: 0,
+              tray_type: 'PETG',
+              tray_color: 'FF0000FF',
+              tray_sub_brands: 'Bambu PETG HF',
+              k: 0,
+            },
+            { id: 1, tray_type: null, state: 9 },
+            { id: 2, tray_type: null, state: 9 },
+            { id: 3, tray_type: null, state: 9 },
+          ],
+        }],
+      })),
+    );
+
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('PETG')).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/^K /)).not.toBeInTheDocument();
   });
 
   it('shows the K-value on a loaded AMS-HT slot without hovering', async () => {
@@ -201,7 +242,7 @@ describe('PrintersPage - K-profile always-visible display (#2532)', () => {
     render(<PrintersPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('K Factor 0.018')).toBeInTheDocument();
+      expect(screen.getByText('K 0.018')).toBeInTheDocument();
     });
   });
 
@@ -222,7 +263,7 @@ describe('PrintersPage - K-profile always-visible display (#2532)', () => {
     render(<PrintersPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('K Factor 0.022')).toBeInTheDocument();
+      expect(screen.getByText('K 0.022')).toBeInTheDocument();
     });
   });
 });

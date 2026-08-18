@@ -4936,6 +4936,7 @@ export default {
     externalSpool: "Зовнішня котушка",
     profile: "Профіль",
     kFactor: "Фактор K",
+    kFactorShort: "K",
     fill: "Рівень заповнення",
     configure: "Налаштувати",
     used: "використовується",

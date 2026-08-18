@@ -4882,6 +4882,7 @@ export default {
     externalSpool: '外接耗材',
     profile: '設定',
     kFactor: 'K 值',
+    kFactorShort: 'K 值',
     fill: '填充',
     configure: '設定',
     used: '已使用',

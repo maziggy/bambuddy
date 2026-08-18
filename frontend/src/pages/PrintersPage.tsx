@@ -5448,16 +5448,30 @@ function PrinterCard({
                                     </div>
                                     {/* K-Profile value, always visible (matches BambuStudio's own
                                         per-slot display) rather than hidden behind hover-only.
-                                        Gated on filamentData (slot loaded) AND tray.k != null
+                                        Gated on filamentData (slot loaded) AND a truthy tray.k
                                         (a real value was actually reported) — formatKValue()
                                         defaults to 0.020 when k is null/undefined, which is fine
                                         inside the captioned hover card but would read as a real
                                         measured value on this permanent, uncaptioned line, so we
                                         check the raw tray.k here rather than the already-defaulted
-                                        filamentData.kFactor (#2532). */}
-                                    {filamentData && tray?.k != null && (
-                                      <div className="text-[length:var(--pc-t8,8px)] text-bambu-gray font-mono leading-none truncate">
-                                        {t('ams.kFactor')} {filamentData.kFactor}
+                                        filamentData.kFactor (#2532). Truthy rather than != null:
+                                        the backend's own kprofile_map only admits k_value entries
+                                        that are themselves truthy (printer_manager.py ~1284), so a
+                                        stored K-profile of exactly 0 is already treated as "no
+                                        calibration" upstream — matching that convention here closes
+                                        the same misleading-reading gap for a hypothetical firmware-
+                                        reported literal 0 (review on #2854, round 2).
+                                        Short label (kFactorShort) + title with the full localized
+                                        name: measured in Chromium, the full "K Factor"/"K-Faktor"/
+                                        "Facteur K" label was clipping the actual value — the whole
+                                        point of the feature — on narrow slot widths (~<350px card).
+                                        The short form keeps every locale's label a single glyph. */}
+                                    {filamentData && tray?.k && (
+                                      <div
+                                        className="text-[length:var(--pc-t8,8px)] text-bambu-gray tabular-nums leading-none truncate"
+                                        title={t('ams.kFactor')}
+                                      >
+                                        {t('ams.kFactorShort')} {filamentData.kFactor}
                                       </div>
                                     )}
                                     {/* Fill bar */}
@@ -5749,10 +5763,13 @@ function PrinterCard({
                               {tray?.tray_type || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
                             </div>
                             {/* K-Profile value, always visible — see matching comment on the
-                                primary AMS slot card above (#2532). */}
-                            {filamentData && tray?.k != null && (
-                              <div className="text-[length:var(--pc-t8,8px)] text-bambu-gray font-mono leading-none truncate">
-                                {t('ams.kFactor')} {filamentData.kFactor}
+                                primary AMS slot card above (#2532, review round 2). */}
+                            {filamentData && tray?.k && (
+                              <div
+                                className="text-[length:var(--pc-t8,8px)] text-bambu-gray tabular-nums leading-none truncate"
+                                title={t('ams.kFactor')}
+                              >
+                                {t('ams.kFactorShort')} {filamentData.kFactor}
                               </div>
                             )}
                             {/* Fill bar */}
@@ -6141,14 +6158,19 @@ function PrinterCard({
                                     {extTray.tray_type || t('ams.slotEmpty')}
                                   </div>
                                   {/* K-Profile value, always visible — see matching comment on the
-                                      primary AMS slot card above (#2532). extFilamentData is built
-                                      unconditionally here (unlike filamentData elsewhere), so we
-                                      gate on isEmpty AND extTray.k != null instead — a loaded slot
-                                      with no reported K value should not show the fabricated
-                                      formatKValue() default of 0.020. */}
-                                  {!isEmpty && extTray.k != null && (
-                                    <div className="text-[length:var(--pc-t8,8px)] text-bambu-gray font-mono leading-none truncate">
-                                      {t('ams.kFactor')} {extFilamentData.kFactor}
+                                      primary AMS slot card above (#2532, review round 2).
+                                      extFilamentData is built unconditionally here (unlike
+                                      filamentData elsewhere), so we gate on isEmpty AND a truthy
+                                      extTray.k instead — a loaded slot with no reported K value
+                                      should not show the fabricated formatKValue() default of
+                                      0.020, and a stored K-profile of exactly 0 is already treated
+                                      as "no calibration" by the backend's own kprofile_map. */}
+                                  {!isEmpty && extTray.k && (
+                                    <div
+                                      className="text-[length:var(--pc-t8,8px)] text-bambu-gray tabular-nums leading-none truncate"
+                                      title={t('ams.kFactor')}
+                                    >
+                                      {t('ams.kFactorShort')} {extFilamentData.kFactor}
                                     </div>
                                   )}
                                   <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">

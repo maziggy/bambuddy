@@ -4938,6 +4938,7 @@ export default {
     externalSpool: 'External Spool',
     profile: 'Profile',
     kFactor: 'K Factor',
+    kFactorShort: 'K',
     fill: 'Fill',
     configure: 'Configure',
     used: 'used',

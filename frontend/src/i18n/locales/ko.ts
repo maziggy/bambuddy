@@ -4663,6 +4663,7 @@ export default {
     externalSpool: '외부 스풀',
     profile: '프로필',
     kFactor: 'K 계수',
+    kFactorShort: 'K',
     fill: '채우기',
     configure: '구성',
     used: '사용됨',

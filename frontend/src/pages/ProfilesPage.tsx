@@ -501,7 +501,7 @@ function PresetListItem({
       </button>
       <button
         onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
-        className="opacity-0 group-hover:opacity-100 text-bambu-gray hover:text-white transition-all p-1"
+        className="can-hover:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-bambu-gray hover:text-white transition-all p-1"
         title={t('profiles.presets.duplicate')}
       >
         <Copy className="w-4 h-4" />

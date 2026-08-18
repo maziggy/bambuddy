@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 import zipfile
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
@@ -465,10 +466,16 @@ async def get_printer_status(
 
     state = printer_manager.get_status(printer_id)
     if not state:
+        # No MQTT client state — the printer was never connected this run, or it
+        # was disconnected manually. The plate-clear gate is Bambuddy-side and
+        # persisted, so it still has a truthful value here (#2864); reporting the
+        # schema default instead told clients the plate was clean and hid the
+        # only control that can release the gate.
         return PrinterStatus(
             id=printer_id,
             name=printer.name,
             connected=False,
+            awaiting_plate_clear=printer_manager.is_awaiting_plate_clear(printer_id),
         )
 
     # Determine cover URL if there's an active print (including paused)
@@ -1077,6 +1084,41 @@ def clear_cover_cache(printer_id: int) -> None:
     _cover_404_cache.pop(printer_id, None)
 
 
+async def _running_print_archive_file(printer_id: int, state) -> Path | None:
+    """Path to the 3MF of the print this printer is running, if we have it.
+
+    Bambuddy archives the sliced file when the print starts, so the copy the
+    printer is executing is usually already on disk. Anchored on ``subtask_id``,
+    which the firmware mints per print: a leftover ``status="printing"`` row from
+    a completion that was never seen must not lend its file to another job.
+
+    Opens its own short-lived session, like the caller does, so the pooled
+    connection is not held across the FTP work that follows.
+    """
+    subtask_id = str(getattr(state, "subtask_id", "") or "").strip()
+    if subtask_id in ("", "0"):
+        return None
+
+    from backend.app.models.archive import PrintArchive
+
+    async with database.async_session() as db:
+        archive = await db.scalar(
+            select(PrintArchive)
+            .where(
+                PrintArchive.printer_id == printer_id,
+                PrintArchive.status == "printing",
+                PrintArchive.subtask_id == subtask_id,
+            )
+            .order_by(PrintArchive.created_at.desc())
+            .limit(1)
+        )
+    if archive is None or not archive.file_path:
+        return None
+
+    path = settings.base_dir / archive.file_path
+    return path if path.is_file() and str(path).endswith(".3mf") else None
+
+
 @router.get("/{printer_id}/cover")
 async def get_printer_cover(
     printer_id: int,
@@ -1169,7 +1211,16 @@ async def get_printer_cover(
     fut: asyncio.Future = asyncio.get_event_loop().create_future()
     _cover_inflight[inflight_key] = fut
     try:
-        image_data = await _produce_cover_image(printer, printer_id, subtask_name, view, view_key, plate_num, cache_key)
+        image_data = await _produce_cover_image(
+            printer,
+            printer_id,
+            subtask_name,
+            view,
+            view_key,
+            plate_num,
+            cache_key,
+            archive_path=await _running_print_archive_file(printer_id, state),
+        )
         return Response(content=image_data, media_type="image/png")
     finally:
         if not fut.done():
@@ -1185,6 +1236,7 @@ async def _produce_cover_image(
     view_key: str,
     plate_num: int | None,
     cache_key: tuple[str, str],
+    archive_path: Path | None = None,
 ) -> bytes:
     """Download the active-print 3MF and extract its cover thumbnail (#2572).
 
@@ -1192,7 +1244,9 @@ async def _produce_cover_image(
     can single-flight through it (see ``_cover_inflight``). Returns the PNG bytes
     on success (also filling ``_cover_cache``) and raises ``HTTPException`` on
     failure (filling ``_cover_404_cache`` for the definitive 404s). Does no DB
-    work — the caller already released the pooled connection before this runs.
+    work — the caller already released the pooled connection before this runs,
+    which is also why ``archive_path`` arrives resolved rather than looked up
+    here.
     """
     # Build possible 3MF filenames from subtask_name
     # Bambu printers may store files as "name.gcode.3mf" (sliced via Bambu Studio)
@@ -1253,6 +1307,20 @@ async def _produce_cover_image(
             downloaded = True
             using_cached = True
             break
+
+    if not downloaded:
+        # Same idea, one step further back: that in-memory cache dies with the
+        # process, but the archive of the print that is still running holds the
+        # very 3MF on disk. Without this, reopening a card or the skip-objects
+        # plate after a restart pulls the whole file back off a printer that is
+        # mid-print — measured at three concurrent fan-outs, thirteen seconds
+        # and a 0-byte read on the maintainer's H2C, which is exactly the
+        # single-socket contention #972 was about.
+        if archive_path is not None:
+            logger.info("Cover using the running print's archived 3MF at %s (no FTP)", archive_path)
+            temp_path = archive_path
+            downloaded = True
+            using_cached = True
 
     if not downloaded:
         # The cover lives inside the 3MF, so it is only reachable if the 3MF is.
@@ -3104,8 +3172,12 @@ async def clear_plate(
     if not printer:
         raise HTTPException(404, "Printer not found")
 
-    if not printer_manager.is_connected(printer_id):
-        raise HTTPException(400, "Printer not connected")
+    # Deliberately NOT gated on the printer being connected. Acknowledging the plate
+    # only mutates Bambuddy-side state — no MQTT command is sent — and with Auto Power
+    # Off the normal end-of-print state is exactly this: gate up, printer powered down.
+    # The guard this replaces was inherited from the sibling stop/pause/resume handlers,
+    # where reaching the printer IS required, and left farms with no way to release the
+    # gate short of powering each printer back on by hand (#2864).
 
     # Accept the acknowledgment whenever the printer is awaiting it — not only when the
     # reported state is FINISH/FAILED. After a power cycle the printer boots into IDLE
@@ -3653,6 +3725,47 @@ async def get_printable_objects(
 
     # Reload objects from 3MF if requested or no objects loaded
     if reload or not client.state.printable_objects:
+        # The archive of a running print normally holds the very file the
+        # printer is executing, so ask the disk before asking the printer:
+        # the fan-out below pulls the whole 3MF over FTPS from a machine that
+        # is mid-print — 15 MB on the print this was written for — and on a
+        # printer that kept the file on internal storage it cannot succeed at
+        # all. skipped_objects is deliberately left alone: a reload is
+        # not a new print, and the list of what the user already skipped only
+        # lives here.
+        from backend.app.models.archive import PrintArchive
+        from backend.app.services.archive import extract_printable_objects_from_archive
+
+        subtask_id = str(getattr(client.state, "subtask_id", "") or "").strip()
+        if subtask_id not in ("", "0"):
+            archive = await db.scalar(
+                select(PrintArchive)
+                .where(
+                    PrintArchive.printer_id == printer_id,
+                    PrintArchive.status == "printing",
+                    PrintArchive.subtask_id == subtask_id,
+                )
+                .order_by(PrintArchive.created_at.desc())
+                .limit(1)
+            )
+            if archive is not None:
+                objects, bbox_all = extract_printable_objects_from_archive(
+                    settings.base_dir / archive.file_path,
+                    plate_number=resolve_plate_id(client.state),
+                )
+                if objects:
+                    client.state.printable_objects = objects
+                    client.state.printable_objects_bbox_all = bbox_all
+                    logger.info(
+                        "Reloaded %s objects for printer %s from archive %s",
+                        len(objects),
+                        printer_id,
+                        archive.id,
+                    )
+
+    # Only when the disk could not answer: a `reload=true` that the archive
+    # satisfied has already refreshed from the file the printer is running.
+    if not client.state.printable_objects:
         subtask_name = client.state.subtask_name
         if subtask_name:
             from backend.app.services.archive import extract_printable_objects_from_3mf

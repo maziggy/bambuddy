@@ -82,12 +82,13 @@ def _state(current_project_url, sdcard=True, sdcard_reported=True):
     )
 
 
-async def _run_print_start(state, added, probe_hit=False):
+async def _run_print_start(state, added, probe_hit=None):
     """Drive on_print_start for a print with no matching archive, capturing
     whatever rows it adds and whether it reached the FTP layer.
 
-    ``probe_hit`` is what the bounded internal-storage probe finds (#2856);
-    False is the #2780 case where the file really is out of reach.
+    ``probe_hit`` is the path the bounded internal-storage probe serves the
+    file from (#2856), or None for the #2780 case where the file really is out
+    of reach.
     """
     printer = _printer()
 

@@ -1157,8 +1157,15 @@ async def download_file_try_paths_async(
     socket_timeout: float | None = None,
     printer_model: str | None = None,
     timeout: float = 90.0,
-) -> bool:
+) -> str | None:
     """Try downloading a file from multiple paths using a single connection.
+
+    Returns the path that served the file, or ``None``. The path rather than a
+    bare flag because the caller usually cannot tell afterwards which candidate
+    hit, and on a printer that keeps uploads around for weeks that is the
+    difference between a diagnosable stale-copy match and an invisible one
+    (#1820). Callers testing it for truth are unaffected: a served path is
+    always a non-empty string.
 
     Args:
         socket_timeout: FTP socket timeout for slow connections (e.g., A1 printers)
@@ -1177,7 +1184,7 @@ async def download_file_try_paths_async(
     def _download():
         client = BambuFTPClient(ip_address, access_code, timeout=socket_timeout, printer_model=printer_model)
         if not client.connect():
-            return False
+            return None
 
         try:
             # FileNotOnPrinterError signals "try the next path", not "give up" —
@@ -1186,10 +1193,10 @@ async def download_file_try_paths_async(
             for remote_path in remote_paths:
                 try:
                     if client.download_to_file(remote_path, local_path):
-                        return True
+                        return remote_path
                 except FileNotOnPrinterError:
                     continue
-            return False
+            return None
         finally:
             client.disconnect()
 
@@ -1197,7 +1204,7 @@ async def download_file_try_paths_async(
         return await asyncio.wait_for(loop.run_in_executor(_ftp_executor, _download), timeout=timeout)
     except TimeoutError:
         logger.warning("FTP download_try_paths exceeded its %ss cap for %s (#2572)", timeout, ip_address)
-        return False
+        return None
 
 
 def _upload_deadline(local_path: Path) -> float:

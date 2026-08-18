@@ -1177,6 +1177,30 @@ async def get_archive_stats(
     )
     prints_by_printer = {str(k): v for k, v in printer_result.all()}
 
+    # Names for printers the client can no longer look up. The breakdowns above
+    # key on the id each run recorded, and deleting a printer while keeping its
+    # history leaves that id pointing at nothing, so a chart that used to read
+    # "Ultron" fell back to "Printer 1" (#2873). Every run also stored the name
+    # it printed on, so the last one recorded is what that id was called. The
+    # client still prefers a live printer's current name, which keeps a rename
+    # showing up straight away.
+    last_named_run = (
+        select(func.max(PrintLogEntry.id).label("entry_id"))
+        .where(
+            PrintLogEntry.printer_id.isnot(None),
+            PrintLogEntry.printer_name.isnot(None),
+            *base_conditions,
+        )
+        .group_by(PrintLogEntry.printer_id)
+        .subquery()
+    )
+    name_result = await db.execute(
+        select(PrintLogEntry.printer_id, PrintLogEntry.printer_name).join(
+            last_named_run, PrintLogEntry.id == last_named_run.c.entry_id
+        )
+    )
+    printer_names = {str(printer_id): name for printer_id, name in name_result.all()}
+
     # Time accuracy — compare each completed run's actual duration to the
     # slicer's estimate on the linked archive. Runs without a linked archive
     # (NULL archive_id) or without an estimate are excluded.
@@ -1276,6 +1300,7 @@ async def get_archive_stats(
         total_cost=round(total_cost, 2),
         prints_by_filament_type=prints_by_filament,
         prints_by_printer=prints_by_printer,
+        printer_names=printer_names,
         average_time_accuracy=average_accuracy,
         time_accuracy_by_printer=accuracy_by_printer if accuracy_by_printer else None,
         total_energy_kwh=round(total_energy_kwh, 3),
@@ -1660,7 +1685,7 @@ async def update_archive(
         )
     ),
 ):
-    """Update archive metadata (tags, notes, cost, is_favorite, project_id)."""
+    """Update archive metadata (tags, notes, cost, filament grams, is_favorite, project_id)."""
     from sqlalchemy.orm import selectinload
 
     user, can_modify_all = auth_result
@@ -1679,6 +1704,10 @@ async def update_archive(
         if archive.created_by_id != user.id:
             raise HTTPException(403, "You can only update your own archives")
 
+    # Read before the writes below: the mirror needs to know whether the run's
+    # figure was inherited from this archive or measured on its own (#1820).
+    previous_filament_grams = archive.filament_used_grams
+
     update_payload = update_data.model_dump(exclude_unset=True)
     for field, value in update_payload.items():
         setattr(archive, field, value)
@@ -1693,7 +1722,12 @@ async def update_archive(
     # entry either. Only the latest entry is touched because that's the run
     # the modal is implicitly showing (archive.failure_reason / status are
     # overwritten on each reprint to reflect the latest run's outcome).
-    mirror_fields = {"failure_reason", "status"}
+    # filament_used_grams rides along for the same reason (#1820): the filament
+    # totals on the Projects page and in the Prometheus metrics sum the LOG
+    # ENTRY's grams, not the archive's, so correcting only the archive would fix
+    # the card and leave every aggregate reading the old figure -- or, for a
+    # print that archived without its 3MF, no figure at all.
+    mirror_fields = {"failure_reason", "status", "filament_used_grams"}
     to_mirror = {k: v for k, v in update_payload.items() if k in mirror_fields}
     if to_mirror:
         from backend.app.models.print_log import PrintLogEntry
@@ -1705,6 +1739,18 @@ async def update_archive(
             .limit(1)
         )
         if latest_entry is not None:
+            # ...but never over a figure the run measured for itself. A run's
+            # grams come from the tracked spool delta when there is one, and
+            # only fall back to copying the archive's estimate when there is
+            # not (see _compute_run_filament_grams). Overwriting a measurement
+            # with a typed estimate would lose the better number; the case this
+            # edit exists for -- a print archived with no 3MF -- leaves the run
+            # with nothing at all, so it is covered by the None arm.
+            if "filament_used_grams" in to_mirror and not (
+                latest_entry.filament_used_grams is None or latest_entry.filament_used_grams == previous_filament_grams
+            ):
+                del to_mirror["filament_used_grams"]
+
             for field, value in to_mirror.items():
                 setattr(latest_entry, field, value)
 

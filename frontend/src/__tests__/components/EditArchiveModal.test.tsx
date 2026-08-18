@@ -253,4 +253,138 @@ describe('EditArchiveModal', () => {
       });
     });
   });
+
+  describe('filament grams (#1820)', () => {
+    // A print archived without its 3MF carries no weight at all, and no rescan
+    // can supply one — there is no file to read. Typing it here is the only
+    // route, so the field has to reach the API, and an untouched save must not
+    // overwrite a figure that came from a real slice.
+
+    function patchSpy() {
+      const seen: { body?: Record<string, unknown> } = {};
+      server.use(
+        http.patch('/api/v1/archives/:id', async ({ request }) => {
+          seen.body = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ...mockArchive, ...seen.body });
+        }),
+      );
+      return seen;
+    }
+
+    it('sends a figure typed for an archive that has none', async () => {
+      const user = userEvent.setup();
+      const seen = patchSpy();
+
+      render(<EditArchiveModal archive={mockArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+      await user.type(screen.getByLabelText(/filament used/i), '46.16');
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => {
+        expect(seen.body?.filament_used_grams).toBe(46.16);
+      });
+    });
+
+    it('leaves the field out of a save that did not touch it', async () => {
+      const user = userEvent.setup();
+      const seen = patchSpy();
+      const weighed = { ...mockArchive, filament_used_grams: 50 };
+
+      render(<EditArchiveModal archive={weighed} onClose={mockOnClose} onSave={mockOnSave} />);
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => {
+        expect(seen.body).toBeDefined();
+      });
+      expect(seen.body).not.toHaveProperty('filament_used_grams');
+    });
+
+    it('accepts a decimal comma, which a number input would have swallowed', async () => {
+      const user = userEvent.setup();
+      const seen = patchSpy();
+
+      render(<EditArchiveModal archive={mockArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+      await user.type(screen.getByLabelText(/filament used/i), '46,16');
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => {
+        expect(seen.body?.filament_used_grams).toBe(46.16);
+      });
+    });
+
+    it('refuses characters that could never reach the API as a number', async () => {
+      const user = userEvent.setup();
+
+      render(<EditArchiveModal archive={mockArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+      const field = screen.getByLabelText(/filament used/i) as HTMLInputElement;
+      await user.type(field, '4a6-1..2');
+
+      expect(field.value).toBe('461.2');
+    });
+
+    it('clamps to the bound the API enforces, so a save cannot be refused', async () => {
+      const user = userEvent.setup();
+      const seen = patchSpy();
+
+      render(<EditArchiveModal archive={mockArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+      await user.type(screen.getByLabelText(/filament used/i), '999999');
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => {
+        expect(seen.body?.filament_used_grams).toBe(100000);
+      });
+    });
+
+    it('does not read a half-typed value as a clear', async () => {
+      // Enter submits without the field ever losing focus, so the blur-time
+      // tidy-up has not run and the state still holds what was typed.
+      const user = userEvent.setup();
+      const seen = patchSpy();
+      const weighed = { ...mockArchive, filament_used_grams: 50 };
+
+      render(<EditArchiveModal archive={weighed} onClose={mockOnClose} onSave={mockOnSave} />);
+      const field = screen.getByLabelText(/filament used/i);
+      await user.clear(field);
+      await user.type(field, '.{Enter}');
+
+      await waitFor(() => {
+        expect(seen.body).toBeDefined();
+      });
+      expect(seen.body).not.toHaveProperty('filament_used_grams');
+    });
+
+    it('refreshes the print log, which the mirrored figure lands in', async () => {
+      const user = userEvent.setup();
+      let runFetches = 0;
+      server.use(
+        http.get('/api/v1/archives/:id/runs', () => {
+          runFetches += 1;
+          return HttpResponse.json({ items: [], total: 0 });
+        }),
+      );
+
+      render(<EditArchiveModal archive={mockArchive} onClose={mockOnClose} onSave={mockOnSave} />);
+      await waitFor(() => expect(runFetches).toBe(1));
+
+      await user.type(screen.getByLabelText(/filament used/i), '46.16');
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      // Without the invalidation the table keeps serving its cached rows, so
+      // the run the edit just corrected still shows the old figure.
+      await waitFor(() => expect(runFetches).toBe(2));
+    });
+
+    it('clears the figure when the field is emptied', async () => {
+      const user = userEvent.setup();
+      const seen = patchSpy();
+      const weighed = { ...mockArchive, filament_used_grams: 50 };
+
+      render(<EditArchiveModal archive={weighed} onClose={mockOnClose} onSave={mockOnSave} />);
+      await user.clear(screen.getByLabelText(/filament used/i));
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      await waitFor(() => {
+        expect(seen.body?.filament_used_grams).toBeNull();
+      });
+    });
+  });
 });

@@ -235,6 +235,26 @@ class TestEmitFanOut:
         publish.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_falls_back_to_the_db_when_no_client_is_registered(self):
+        """A printer disconnected outright has no cached info, but the gate can
+        still be released through the API (#2864) — the retained topic must not
+        be left asserting a state that is no longer true."""
+        manager = PrinterManager()
+
+        publish = AsyncMock()
+        with (
+            patch("backend.app.services.mqtt_relay.mqtt_relay.on_plate_clear_state", publish),
+            patch.object(
+                PrinterManager,
+                "_printer_info_from_db",
+                AsyncMock(return_value=SimpleNamespace(name="Powered-off X1C", serial_number="01P00A000000009")),
+            ),
+        ):
+            await manager._emit_plate_clear_change(9, False)
+
+        publish.assert_awaited_once_with(9, "Powered-off X1C", "01P00A000000009", False)
+
+    @pytest.mark.asyncio
     async def test_mqtt_failure_does_not_block_the_notification(self):
         manager = PrinterManager()
         manager._printer_info[7] = SimpleNamespace(name="X1C", serial_number="01P00A000000001")

@@ -493,7 +493,14 @@ class PrinterManager:
         """
         printer = self.get_printer(printer_id)
         if not printer:
-            return
+            # No cached info means no client is registered — the printer was
+            # disconnected outright rather than merely powered off. The gate is
+            # still releasable from the API in that state (#2864), and a retained
+            # MQTT topic left saying "awaiting" would outlive the truth, so fall
+            # back to the row rather than dropping the emission.
+            printer = await self._printer_info_from_db(printer_id)
+            if not printer:
+                return
 
         try:
             from backend.app.services.mqtt_relay import mqtt_relay
@@ -515,6 +522,20 @@ class PrinterManager:
                 await notification_service.on_plate_clear_required(printer_id, printer.name, db)
         except Exception as e:
             logger.warning("Failed to send plate-clear notification for printer %d: %s", printer_id, e)
+
+    async def _printer_info_from_db(self, printer_id: int) -> PrinterInfo | None:
+        """Name and serial for a printer with no registered client."""
+        from backend.app.core.database import async_session
+
+        try:
+            async with async_session() as db:
+                row = (
+                    await db.execute(select(Printer.name, Printer.serial_number).where(Printer.id == printer_id))
+                ).first()
+        except Exception as e:
+            logger.warning("Failed to load printer %d info from DB: %s", printer_id, e)
+            return None
+        return PrinterInfo(row[0], row[1]) if row else None
 
     async def _broadcast_status_change(self, printer_id: int) -> None:
         """Emit a ``printer_status`` WebSocket update for this printer (#1128).

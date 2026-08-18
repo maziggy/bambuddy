@@ -26,6 +26,16 @@
 /* Enable class-based dark mode for Tailwind v4 */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Hover-capable pointer only (#2865).  Tailwind v4 compiles `hover:` AND
+   `group-hover:` inside `@media (hover: hover)`, so on a touch-only device the
+   reveal rule is never applied at all — a control written as
+   `opacity-0 group-hover:opacity-100` stays invisible forever, which is how the
+   project card's action menu became unreachable on a phone.  Gating the HIDING
+   half on this variant is what fixes it: with no hover-capable pointer the
+   element simply keeps its natural opacity.  Same query the history thumbnail
+   preview already uses further down. */
+@custom-variant can-hover (@media (hover: hover) and (pointer: fine));
+
 /* Restore the pointer cursor on interactive controls (#2791).  Tailwind v3's
    Preflight set `button { cursor: pointer }`; v4 dropped it to match the
    browser default of `cursor: default`, so every button in the app looked

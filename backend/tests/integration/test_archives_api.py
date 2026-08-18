@@ -289,6 +289,135 @@ class TestArchivesAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_filament_grams_can_be_set_by_hand(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """#1820: a print that archived without its 3MF has no filament figure
+        and no way to recover one — rescan needs a file this archive does not
+        have. The edit is the only route, so it has to reach the log entry too:
+        the Projects roll-up and the Prometheus counter sum PrintLogEntry, not
+        the archive.
+        """
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, print_name="JOB_C")
+
+        response = await async_client.patch(
+            f"/api/v1/archives/{archive.id}",
+            json={"filament_used_grams": 46.16},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["filament_used_grams"] == 46.16
+
+        mirrored = (
+            await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        ).scalar_one()
+        assert mirrored.filament_used_grams == 46.16
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_clearing_the_figure_takes_the_mirrored_copy_with_it(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """Undo has to be as complete as the correction: a run that only holds
+        the figure because this archive gave it one must not keep it after the
+        archive's is cleared, or the totals stay wrong with nothing on the card
+        to explain them."""
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, filament_used_grams=None)
+        entry = (
+            await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        ).scalar_one()
+        assert entry.filament_used_grams is None
+
+        await async_client.patch(f"/api/v1/archives/{archive.id}", json={"filament_used_grams": 46.16})
+        await db_session.refresh(entry)
+        assert entry.filament_used_grams == 46.16
+
+        response = await async_client.patch(f"/api/v1/archives/{archive.id}", json={"filament_used_grams": None})
+
+        assert response.status_code == 200, response.text
+        await db_session.refresh(entry)
+        assert entry.filament_used_grams is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_a_measured_run_keeps_its_own_filament_figure(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """A run whose grams came from the tracked spool delta measured itself.
+        The archive's number is an estimate, so an edit of the estimate must not
+        overwrite the measurement — the mirror only fills in a run that has no
+        figure, or one that was copied from this archive in the first place.
+        """
+        from sqlalchemy import select
+
+        from backend.app.models.print_log import PrintLogEntry
+
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, filament_used_grams=50.0)
+        entry = (
+            await db_session.execute(select(PrintLogEntry).where(PrintLogEntry.archive_id == archive.id))
+        ).scalar_one()
+        entry.filament_used_grams = 48.2  # what the spool actually lost
+        await db_session.commit()
+
+        response = await async_client.patch(
+            f"/api/v1/archives/{archive.id}",
+            json={"filament_used_grams": 61.0},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["filament_used_grams"] == 61.0
+
+        await db_session.refresh(entry)
+        assert entry.filament_used_grams == 48.2
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_filament_grams_refuses_a_negative_figure(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """It feeds the filament totals, so a value that would subtract from
+        them is rejected rather than stored."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id)
+
+        response = await async_client.patch(
+            f"/api/v1/archives/{archive.id}",
+            json={"filament_used_grams": -5},
+        )
+
+        assert response.status_code == 422, response.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_an_edit_that_leaves_filament_grams_alone_does_not_clear_it(
+        self, async_client: AsyncClient, archive_factory, printer_factory, db_session
+    ):
+        """The field is optional on the schema, so an ordinary save of some
+        other field must not read as "set grams to null"."""
+        printer = await printer_factory()
+        archive = await archive_factory(printer.id, filament_used_grams=12.5)
+
+        response = await async_client.patch(
+            f"/api/v1/archives/{archive.id}",
+            json={"notes": "left the grams alone"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["filament_used_grams"] == 12.5
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_update_archive_failure_reason_mirrors_to_print_log_entry(
         self, async_client: AsyncClient, archive_factory, printer_factory, db_session
     ):

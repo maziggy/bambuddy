@@ -813,6 +813,9 @@ export interface ArchiveStats {
   total_cost: number;
   prints_by_filament_type: Record<string, number>;
   prints_by_printer: Record<string, number>;
+  // Name each printer id was last recorded under in the print log, so history
+  // belonging to a deleted printer keeps its label.
+  printer_names?: Record<string, string>;
   average_time_accuracy: number | null;
   time_accuracy_by_printer: Record<string, number> | null;
   total_energy_kwh: number;
@@ -4809,6 +4812,7 @@ export const api = {
     status?: string;
     quantity?: number;
     external_url?: string | null;
+    filament_used_grams?: number | null;
   }) =>
     request<Archive>(`/archives/${id}`, {
       method: 'PATCH',

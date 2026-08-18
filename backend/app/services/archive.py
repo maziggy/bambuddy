@@ -603,6 +603,26 @@ class ThreeMFParser:
                 break
 
 
+def extract_printable_objects_from_archive(
+    file_path: Path, plate_number: int | None = None
+) -> tuple[dict[int, dict], list | None]:
+    """Objects and plate bbox for an archived print, read off local disk.
+
+    The archive of a running print usually holds the very 3MF the printer is
+    executing, so the object list can be rebuilt without asking the printer for
+    a file we already have -- 15 MB over FTPS from a machine that is mid-print,
+    in the case this was written for. Returns empty when the archive has
+    no readable 3MF, which is the caller's signal to fall back to the printer.
+    """
+    if not file_path.is_file() or not str(file_path).endswith(".3mf"):
+        return {}, None
+    try:
+        data = file_path.read_bytes()
+    except OSError:
+        return {}, None
+    return extract_printable_objects_from_3mf(data, plate_number=plate_number, include_positions=True)
+
+
 def extract_printable_objects_from_3mf(
     data: bytes, plate_number: int | None = None, include_positions: bool = False
 ) -> dict[int, str] | dict[int, dict] | tuple[dict[int, dict], list | None]:

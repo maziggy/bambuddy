@@ -1027,7 +1027,9 @@ class TestAsyncWrappers:
             local,
             printer_model="X1C",
         )
-        assert result is True
+        # The path, not a flag: the caller logs which candidate served the file
+        # so a stale same-named copy is diagnosable (#1820).
+        assert result == "/cache/try1.bin"
         assert local.read_bytes() == b"first path"
 
     @pytest.mark.asyncio
@@ -1043,7 +1045,7 @@ class TestAsyncWrappers:
             local,
             printer_model="X1C",
         )
-        assert result is True
+        assert result == "/cache/second.bin"
         assert local.read_bytes() == b"second path"
 
     @pytest.mark.asyncio

@@ -91,6 +91,7 @@ from backend.app.services.bambu_ftp import (
     cache_3mf_download,
     clear_3mf_cache,
     download_file_async,
+    download_file_try_paths_async,
     ftps_handshake_blocked,
     get_cached_3mf,
     get_ftp_retry_settings,
@@ -109,7 +110,11 @@ from backend.app.services.notification_service import notification_service
 from backend.app.services.obico_detection import obico_detection_service
 from backend.app.services.print_cost_estimate import plate_scoped_run_estimate as _plate_scoped_run_estimate
 from backend.app.services.print_scheduler import scheduler as print_scheduler
-from backend.app.services.print_storage import external_storage_present, print_file_reachable_over_ftp
+from backend.app.services.print_storage import (
+    external_storage_present,
+    ftp_probe_paths,
+    print_file_reachable_over_ftp,
+)
 from backend.app.services.printer_manager import (
     init_printer_connections,
     parse_plate_id,
@@ -2855,32 +2860,71 @@ async def _dispatch_user_print_email(
 def _load_objects_from_archive(archive, printer_id: int, logger) -> None:
     """Extract printable objects from an archive's 3MF file and store in printer state."""
     try:
-        from backend.app.services.archive import extract_printable_objects_from_3mf
+        from backend.app.services.archive import extract_printable_objects_from_archive
 
         client = printer_manager.get_client(printer_id)
         if not client:
             return
 
-        file_path = app_settings.base_dir / archive.file_path
-        if file_path.is_file() and str(file_path).endswith(".3mf"):
-            with open(file_path, "rb") as f:
-                threemf_data = f.read()
-            # Extract with positions for UI overlay, scoped to the plate that
-            # is printing — resolve_plate_id is the same resolver /cover uses,
-            # so the object list can't disagree with the thumbnail it is drawn
-            # over (#2522).
-            printable_objects, bbox_all = extract_printable_objects_from_3mf(
-                threemf_data,
-                plate_number=resolve_plate_id(client.state),
-                include_positions=True,
-            )
-            if printable_objects:
-                client.state.printable_objects = printable_objects
-                client.state.printable_objects_bbox_all = bbox_all
-                client.state.skipped_objects = []
-                logger.info("Loaded %s printable objects for printer %s", len(printable_objects), printer_id)
+        # Extract with positions for UI overlay, scoped to the plate that
+        # is printing — resolve_plate_id is the same resolver /cover uses,
+        # so the object list can't disagree with the thumbnail it is drawn
+        # over (#2522).
+        printable_objects, bbox_all = extract_printable_objects_from_archive(
+            app_settings.base_dir / archive.file_path,
+            plate_number=resolve_plate_id(client.state),
+        )
+        if printable_objects:
+            client.state.printable_objects = printable_objects
+            client.state.printable_objects_bbox_all = bbox_all
+            client.state.skipped_objects = []
+            logger.info("Loaded %s printable objects for printer %s", len(printable_objects), printer_id)
     except Exception as e:
         logger.debug("Failed to extract printable objects from archive: %s", e)
+
+
+async def _restore_printable_objects(printer_id: int, state, db, logger) -> None:
+    """Put the skip-objects list back after a restart mid-print.
+
+    ``PrinterState.printable_objects`` is in-memory only, and the only thing
+    that fills it is ``_load_objects_from_archive`` on the print-start paths —
+    which the #1304 guard suppresses on the first RUNNING push after startup.
+    Everything else this hook restores (the archive, the usage-tracking session,
+    the timelapse baseline) was already handled; the object list was not, so a
+    restart mid-print took skip-objects away for the rest of that print.
+
+    Nothing recovered it either: the printer card gates its Skip button on the
+    object count, and the one endpoint that can rebuild the list is reachable
+    only from the modal that button opens.
+
+    Anchored on ``subtask_id``, which the firmware mints per print, so a
+    leftover ``status="printing"`` row from a completion we never saw cannot
+    hand this print someone else's objects. Without one, nothing is loaded
+    rather than guessed — the reload path on ``GET /print/objects`` covers that
+    case on demand.
+    """
+    client = printer_manager.get_client(printer_id)
+    if client is None or client.state.printable_objects:
+        return
+
+    subtask_id = str(getattr(state, "subtask_id", "") or "").strip()
+    if subtask_id in ("", "0"):
+        return
+
+    from backend.app.models.archive import PrintArchive
+
+    archive = await db.scalar(
+        select(PrintArchive)
+        .where(
+            PrintArchive.printer_id == printer_id,
+            PrintArchive.status == "printing",
+            PrintArchive.subtask_id == subtask_id,
+        )
+        .order_by(PrintArchive.created_at.desc())
+        .limit(1)
+    )
+    if archive is not None:
+        _load_objects_from_archive(archive, printer_id, logger)
 
 
 async def on_print_start(printer_id: int, data: dict):
@@ -3566,16 +3610,67 @@ async def on_print_start(printer_id: int, data: dict):
         # retries, then the directory walk) is ~110 connections that cannot
         # succeed. Skip it and say why (#2780).
         storage = print_file_reachable_over_ftp(printer_manager.get_status(printer_id))
-        if not storage.reachable and not downloaded_filename:
-            logger.info(
-                "Skipping the 3MF lookup for printer %s: %s — the print file is not on storage "
-                "Bambuddy can read over FTPS, so no path would find it",
-                printer_id,
-                storage.reason,
-            )
 
         # Get FTP retry settings
         ftp_retry_enabled, ftp_retry_count, ftp_retry_delay, ftp_timeout = await get_ftp_retry_settings()
+
+        # ...but "the printer put it on eMMC" is where it went, not whether we
+        # can read it. An H2D with a card in mirrors the job to /cache and
+        # serves it happily, and skipping on the URL alone cost that reporter
+        # every archive for two days (#2856). So ask the printer instead of
+        # guessing: the dispatch named the exact file, which is one connection
+        # walking five paths rather than the sweep's ~110. Only when the probe
+        # comes back empty does the verdict's reason stand.
+        if not storage.reachable and not downloaded_filename and storage.probe_filename:
+            if ftps_handshake_blocked(printer.ip_address):
+                logger.debug(
+                    "Not probing for %s on printer %s: its file service is not answering over TLS",
+                    storage.probe_filename,
+                    printer_id,
+                )
+            else:
+                probe_path = app_settings.archive_dir / "temp" / storage.probe_filename
+                probe_path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    probe_hit = await download_file_try_paths_async(
+                        printer.ip_address,
+                        printer.access_code,
+                        ftp_probe_paths(storage.probe_filename),
+                        probe_path,
+                        socket_timeout=ftp_timeout,
+                        printer_model=printer.model,
+                    )
+                except Exception as e:
+                    logger.debug("3MF probe for %s failed: %s", storage.probe_filename, e)
+                    probe_hit = False
+                if probe_hit:
+                    downloaded_filename = storage.probe_filename
+                    temp_path = probe_path
+                    cache_3mf_download(printer_id, downloaded_filename, probe_path)
+                    # Naming the path, not just the file: a printer that keeps
+                    # uploads around for weeks can serve a same-named copy of an
+                    # earlier slice, and without the directory in the log that
+                    # mismatch is invisible rather than merely rare (#1820).
+                    logger.info(
+                        "Found %s at %s over FTPS for printer %s even though the printer reported %s",
+                        downloaded_filename,
+                        probe_hit,
+                        printer_id,
+                        storage.reason,
+                    )
+
+        if not storage.reachable and not downloaded_filename:
+            # Same opening words whether or not a probe ran, because that is
+            # the phrase support asks people to grep for — only the tail says
+            # which of the two happened.
+            logger.info(
+                "Skipping the 3MF lookup for printer %s: %s — %s",
+                printer_id,
+                storage.reason,
+                "no copy of it on external storage either"
+                if storage.probe_filename
+                else "the print file is not on storage Bambuddy can read over FTPS, so no path would find it",
+            )
 
         for try_filename in possible_names if not downloaded_filename and storage.reachable else []:
             if not try_filename.endswith(".3mf"):
@@ -4742,6 +4837,7 @@ async def on_print_running_observed(printer_id: int, data: dict):
                 logger.info("[RESTART] Restored active Bambuddy print for printer %s", printer_id)
 
             await _restore_usage_tracking_session(printer_id, state, db, logger)
+            await _restore_printable_objects(printer_id, state, db, logger)
 
         result = await db.execute(select(Printer).where(Printer.id == printer_id))
         printer = result.scalar_one_or_none()

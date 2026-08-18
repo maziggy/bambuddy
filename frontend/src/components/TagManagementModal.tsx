@@ -257,7 +257,7 @@ export function TagManagementModal({ onClose }: TagManagementModalProps) {
                         <span className="px-2 py-0.5 rounded-full bg-bambu-dark-tertiary text-bambu-gray text-xs">
                           {tag.count}
                         </span>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1 can-hover:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                           <button
                             onClick={() => startEdit(tag)}
                             className="p-1.5 rounded hover:bg-bambu-dark text-bambu-gray hover:text-white transition-colors"

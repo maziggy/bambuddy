@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, Save, Tag, Camera, Trash2, Loader2, Plus, FolderKanban, Hash, Link } from 'lucide-react';
+import { X, Save, Tag, Camera, Trash2, Loader2, Plus, FolderKanban, Hash, Link, Weight } from 'lucide-react';
 import { api } from '../api/client';
 import type { Archive } from '../api/client';
 import { Button } from './Button';
@@ -28,6 +28,12 @@ export const FAILURE_REASON_KEYS = [
 
 // Keys for archive statuses - translated at render time
 const ARCHIVE_STATUS_KEYS = ['completed', 'failed', 'aborted', 'printing'] as const;
+
+// Mirrors the API's own bound on filament_used_grams. Clamped here as well so
+// the field cannot produce a request the backend would reject with a 422 —
+// this modal has no error surface, so a refused save looks like nothing
+// happened at all (#1820).
+const MAX_FILAMENT_GRAMS = 100000;
 
 interface EditArchiveModalProps {
   archive: Archive;
@@ -67,6 +73,12 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
   });
   const [status, setStatus] = useState(archive.status);
   const [quantity, setQuantity] = useState(archive.quantity ?? 1);
+  // Kept as a string so the field can be genuinely empty: a print archived
+  // without its 3MF has no figure at all, and "" has to stay distinguishable
+  // from 0 both on the way in and on the way out (#1820).
+  const [filamentGrams, setFilamentGrams] = useState(
+    archive.filament_used_grams != null ? String(archive.filament_used_grams) : ''
+  );
   const [photos, setPhotos] = useState<string[]>(archive.photos || []);
   const [externalUrl, setExternalUrl] = useState(archive.external_url || '');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -151,6 +163,12 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
       // This form can change the archive's project, so the project detail
       // views need refreshing too — not just the overview cards (#2731).
       invalidateArchiveAndProjectViews(queryClient);
+      // Some of what this form writes is mirrored onto the archive's most
+      // recent run — status and failure reason since #1444, filament grams
+      // since #1820 — and the Print Log this modal renders at its top reads
+      // the runs through their own query. Without this it serves the cached
+      // pre-edit row, so the correction looks like it did not take.
+      queryClient.invalidateQueries({ queryKey: ['archive-runs', archive.id] });
       onClose();
     },
   });
@@ -200,6 +218,22 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
     // Only include status if changed
     if (status !== archive.status) {
       updateData.status = status;
+    }
+
+    // Sent only when the user actually touched it, so an ordinary save of an
+    // archive that has its 3MF cannot overwrite the sliced figure with a
+    // rounded one from the input.
+    const trimmedGrams = filamentGrams.trim();
+    const typedGrams = trimmedGrams === '' ? null : Number(trimmedGrams);
+    // An empty field means "no figure" and clears the stored one; a field that
+    // holds something unparseable (a lone decimal point, mid-typing) means the
+    // user is not finished, and must not read as a clear. Clamped here as well
+    // as on blur because Enter submits without the field losing focus.
+    const gramsUnparseable = typedGrams !== null && !Number.isFinite(typedGrams);
+    const parsedGrams = typedGrams === null ? null : Math.min(Math.max(typedGrams, 0), MAX_FILAMENT_GRAMS);
+    const originalGrams = archive.filament_used_grams ?? null;
+    if (!gramsUnparseable && parsedGrams !== originalGrams) {
+      updateData.filament_used_grams = parsedGrams;
     }
 
     // Handle failure_reason based on status
@@ -307,6 +341,43 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
             />
             <p className="text-xs text-bambu-gray mt-1">
               {t('editArchive.itemsPrintedHelp')}
+            </p>
+          </div>
+
+          {/* Filament used - the only way to supply a figure for a print that
+              archived without its 3MF, which no rescan can repair (#1820). */}
+          <div>
+            <label className="block text-sm text-bambu-gray mb-1" htmlFor="archive-filament-grams">
+              <Weight className="w-4 h-4 inline mr-1" />
+              {t('editArchive.filamentUsed')}
+            </label>
+            <input
+              id="archive-filament-grams"
+              type="text"
+              inputMode="decimal"
+              value={filamentGrams}
+              // Text rather than number, and filtered on the way in. A number
+              // input reports an empty string for anything the browser judges
+              // malformed — including a decimal comma in a locale it doesn't
+              // expect — which would read here as "the user cleared it" and
+              // wipe a good figure. Filtering keeps what is displayed and what
+              // would be sent the same thing, and keeps the value inside the
+              // range the API accepts: this modal shows nothing at all when a
+              // save is refused, so it must not be able to send a refusable one.
+              onChange={(e) => {
+                const next = e.target.value.replace(',', '.');
+                if (next === '' || /^\d*\.?\d*$/.test(next)) setFilamentGrams(next);
+              }}
+              onBlur={() => setFilamentGrams((current) => {
+                const parsed = Number(current);
+                if (current === '' || !Number.isFinite(parsed)) return '';
+                return String(Math.min(parsed, MAX_FILAMENT_GRAMS));
+              })}
+              className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+              placeholder={t('editArchive.filamentUsedPlaceholder')}
+            />
+            <p className="text-xs text-bambu-gray mt-1">
+              {t('editArchive.filamentUsedHelp')}
             </p>
           </div>
 
@@ -466,7 +537,7 @@ export function EditArchiveModal({ archive, onClose, existingTags = [] }: EditAr
                   <button
                     type="button"
                     onClick={() => handlePhotoDelete(filename)}
-                    className="absolute -top-1 -right-1 p-1 bg-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute -top-1 -right-1 p-1 bg-red-500 rounded-full can-hover:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
                   >
                     <Trash2 className="w-3 h-3 text-white" />
                   </button>

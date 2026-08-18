@@ -4,10 +4,12 @@ The unit tests around ``print_storage`` pin the decision; this pins that
 ``on_print_start`` actually acts on it. Two things have to hold and neither is
 visible from the helper alone:
 
-* No FTP is attempted. The sweep is six filename variants across five
-  directories with up to four retries, and on the reporter's P2S every one of
-  those failed -- 1813 failures in a day against a printer that, on the leading
-  theory, was refusing precisely because of the connection volume.
+* The sweep does not run. It is six filename variants across five directories
+  with up to four retries, and on the reporter's P2S every one of those failed
+  -- 1813 failures in a day against a printer that, on the leading theory, was
+  refusing precisely because of the connection volume. What replaced it for an
+  internal-storage URL is a single probe of the one name the dispatch gave
+  (#2856); the bound is what mattered here, not the silence.
 * The fallback archive records *which* reason applied. Without it the archives
   banner falls back to its original wording, which tells the user to switch on
   a setting that in this case is already on and would not have helped.
@@ -80,9 +82,13 @@ def _state(current_project_url, sdcard=True, sdcard_reported=True):
     )
 
 
-async def _run_print_start(state, added):
+async def _run_print_start(state, added, probe_hit=None):
     """Drive on_print_start for a print with no matching archive, capturing
     whatever rows it adds and whether it reached the FTP layer.
+
+    ``probe_hit`` is the path the bounded internal-storage probe serves the
+    file from (#2856), or None for the #2780 case where the file really is out
+    of reach.
     """
     printer = _printer()
 
@@ -109,6 +115,7 @@ async def _run_print_start(state, added):
     session.add = MagicMock(side_effect=added.append)
 
     download = AsyncMock(return_value=False)
+    probe = AsyncMock(return_value=probe_hit)
 
     with (
         patch("backend.app.main.async_session") as session_maker,
@@ -118,6 +125,7 @@ async def _run_print_start(state, added):
         patch("backend.app.main.mqtt_relay") as relay,
         patch("backend.app.main.printer_manager") as pm,
         patch("backend.app.main.download_file_async", new=download),
+        patch("backend.app.main.download_file_try_paths_async", new=probe),
         patch("backend.app.main.with_ftp_retry", new=AsyncMock(return_value=False)) as retry,
         patch("backend.app.main.get_cached_3mf", return_value=None),
         # Imported inside the function, so it has to be patched at its source
@@ -147,7 +155,7 @@ async def _run_print_start(state, added):
             {"filename": "/data/Metadata/plate_1.gcode", "subtask_name": "Halterung"},
         )
 
-    return download, retry
+    return download, retry, probe
 
 
 def _fallback(added):
@@ -160,11 +168,22 @@ def _fallback(added):
 
 
 @pytest.mark.asyncio
-async def test_a_print_on_internal_storage_never_touches_ftp():
+async def test_a_print_on_internal_storage_probes_once_instead_of_sweeping():
+    """The sweep stays off, but the claim gets checked (#2856): one connection
+    walking the five known directories for the one name the dispatch gave,
+    against the sweep's ~110 that cannot succeed."""
     added = []
 
-    download, retry = await _run_print_start(_state("brtc://emmc/Halterung.gcode.3mf"), added)
+    download, retry, probe = await _run_print_start(_state("brtc://emmc/Halterung.gcode.3mf"), added)
 
+    probe.assert_awaited_once()
+    assert probe.await_args.args[2] == [
+        "/Halterung.gcode.3mf",
+        "/cache/Halterung.gcode.3mf",
+        "/model/Halterung.gcode.3mf",
+        "/data/Halterung.gcode.3mf",
+        "/data/Metadata/Halterung.gcode.3mf",
+    ]
     download.assert_not_called()
     retry.assert_not_called()
 
@@ -175,12 +194,15 @@ async def test_a_print_on_internal_storage_never_touches_ftp():
 
 @pytest.mark.asyncio
 async def test_an_empty_slot_never_touches_ftp():
+    """No URL, no card: nothing to probe with and nothing to serve it, so this
+    one stays a pure short-circuit."""
     added = []
 
-    download, retry = await _run_print_start(_state(None, sdcard=False, sdcard_reported=True), added)
+    download, retry, probe = await _run_print_start(_state(None, sdcard=False, sdcard_reported=True), added)
 
     download.assert_not_called()
     retry.assert_not_called()
+    probe.assert_not_awaited()
     assert _fallback(added).extra_data["no_3mf_reason"] == "no_external_storage"
 
 
@@ -190,7 +212,7 @@ async def test_a_print_on_external_storage_still_sweeps():
     the download exactly as it did before the gate existed."""
     added = []
 
-    download, _ = await _run_print_start(_state("ftp://Halterung.gcode.3mf"), added)
+    download, _retry, _probe = await _run_print_start(_state("ftp://Halterung.gcode.3mf"), added)
 
     download.assert_called()
 
@@ -202,7 +224,7 @@ async def test_a_printer_that_said_nothing_still_sweeps():
     either -- that install must behave exactly as before."""
     added = []
 
-    download, _ = await _run_print_start(_state(None, sdcard=False, sdcard_reported=False), added)
+    download, _retry, _probe = await _run_print_start(_state(None, sdcard=False, sdcard_reported=False), added)
 
     download.assert_called()
 

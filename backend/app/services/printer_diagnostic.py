@@ -17,11 +17,17 @@ import ssl
 
 from backend.app.models.printer import Printer
 from backend.app.schemas.printer import DiagnosticCheck, PrinterDiagnosticResult
+from backend.app.services.bambu_ftp import find_remote_file_async
 from backend.app.services.bambu_mqtt import CONNECT_ERROR_AUTH_REJECTED
 from backend.app.services.camera import get_camera_port
 from backend.app.services.discovery import is_running_in_docker
 from backend.app.services.ftp_profiles import get_ftp_profile
-from backend.app.services.print_storage import REASON_INTERNAL_STORAGE, last_print_storage_verdict
+from backend.app.services.print_storage import (
+    REASON_INTERNAL_STORAGE,
+    StorageVerdict,
+    ftp_probe_paths,
+    last_print_storage_verdict,
+)
 from backend.app.services.printer_manager import printer_manager
 from backend.app.utils.printer_models import has_external_storage, has_remote_storage_toggle
 
@@ -34,6 +40,12 @@ PORT_RTSPS = 322  # RTSPS — camera stream; optional.
 PORT_CHAMBER_IMAGE = 6000  # Chamber image protocol — A1/P1 camera stream; optional.
 
 _PORT_PROBE_TIMEOUT = 3.0
+
+# Cap for the storage probe (#2856). One connection and a handful of directory
+# listings, so a healthy printer answers in well under a second. Kept short on
+# purpose: this check sits inside the support bundle's 15s-per-printer budget,
+# and in the interactive run it is spinner time the user is watching.
+_STORAGE_PROBE_TIMEOUT = 6.0
 
 # Default seconds the `printer_publishing` check will wait for the first
 # report-topic message before declaring fail. Bambu printers in idle publish
@@ -114,6 +126,53 @@ async def _check_ftps_tls(ip: str, model: str | None, timeout: float = _PORT_PRO
                 await writer.wait_closed()
             except Exception:
                 pass
+
+
+async def _last_print_file_is_reachable(
+    printer: Printer | None,
+    verdict: StorageVerdict,
+    *,
+    ftps_ok: bool,
+) -> bool:
+    """Did the last print's file turn up on external storage after all? (#2856)
+
+    ``verdict`` is read off the dispatch URL, which says where the printer
+    *put* the file, not whether port 990 can serve it: an H2D with a card in
+    the slot reports ``brtc://emmc/<name>`` and then hands the same file over
+    from ``/cache`` without complaint. Warning that the file is out of reach
+    while that user's archives are quietly complete would send them chasing a
+    setting that is already right.
+
+    So check before saying it -- one connection, one listing per candidate
+    directory, no transfer, and only for the check that is about to warn.
+    "Could not check" returns False and leaves the warning standing, which is
+    the safe direction: it is a warn, not a fail.
+    """
+    if not ftps_ok or not verdict.probe_filename or printer is None:
+        return False
+    # Attribute reads inside the guard too: this also runs from the support
+    # bundle, where the row may outlive its session, and a detached-instance
+    # error there is "could not check", not a broken diagnostic.
+    ip_address = None
+    try:
+        ip_address = getattr(printer, "ip_address", None)
+        access_code = getattr(printer, "access_code", None)
+        if not ip_address or not access_code:
+            return False
+        found = await find_remote_file_async(
+            ip_address,
+            access_code,
+            ftp_probe_paths(verdict.probe_filename),
+            timeout=_STORAGE_PROBE_TIMEOUT,
+            socket_timeout=_STORAGE_PROBE_TIMEOUT,
+            printer_model=getattr(printer, "model", None),
+        )
+    except Exception as e:
+        logger.debug("Could not probe %s for %s: %s", ip_address, verdict.probe_filename, e)
+        return False
+    if found:
+        logger.debug("Last print file is on external storage at %s despite %s", found, verdict.reason)
+    return found is not None
 
 
 def _auth_reason_params(reason: str | None) -> dict:
@@ -329,11 +388,14 @@ async def run_connection_diagnostic(
                 params={"reason": "no_media"},
             )
         )
-    elif not last_print_storage_verdict(state).reachable:
-        # The toggle is on, a card is in, and the printer still put the last
-        # print on internal storage — which is what H2-series and P2S firmware
-        # does, and no setting here changes it (#2762 tracks reading that
-        # storage). A pass here would be a lie; a fail would be unresolvable.
+    elif not (last_verdict := last_print_storage_verdict(state)).reachable and not await _last_print_file_is_reachable(
+        printer, last_verdict, ftps_ok=ftps_state == "ok"
+    ):
+        # The toggle is on, a card is in, the printer said it put the last print
+        # on internal storage — and a probe confirmed the file really is out of
+        # reach. That is what H2-series and P2S firmware does, and no setting
+        # here changes it (#2762 tracks reading that storage). A pass here would
+        # be a lie; a fail would be unresolvable.
         checks.append(
             DiagnosticCheck(
                 id="external_storage",
@@ -341,6 +403,12 @@ async def run_connection_diagnostic(
                 params={"reason": REASON_INTERNAL_STORAGE},
             )
         )
+    elif not last_verdict.reachable:
+        # Reached only when the probe above found the file: the printer named
+        # internal storage and served it over FTPS anyway. What this check is
+        # for is whether Bambuddy can read the print file, and it demonstrably
+        # can — so pass, whatever the toggle happens to say (#2856).
+        checks.append(DiagnosticCheck(id="external_storage", status="pass"))
     elif store_to_sdcard is True:
         checks.append(DiagnosticCheck(id="external_storage", status="pass"))
     elif store_to_sdcard is False:

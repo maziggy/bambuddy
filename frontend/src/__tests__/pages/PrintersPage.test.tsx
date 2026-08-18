@@ -496,6 +496,47 @@ describe('PrintersPage', () => {
       expect(screen.getAllByRole('button', { name: 'Mark plate as cleared' }).length).toBeGreaterThan(0);
     });
 
+    it('offers the clear action on a powered-down printer (#2864)', async () => {
+      // Auto Power Off leaves exactly this: gate up, printer unreachable. The
+      // control used to be hidden here, so a plate cleared by hand could not be
+      // acknowledged until the printer was powered back on.
+      let awaitingPlateClear = true;
+      let cleared = false;
+
+      server.use(
+        http.get('/api/v1/printers/', () => {
+          return HttpResponse.json([mockPrinters[0]]);
+        }),
+        http.get('/api/v1/printers/:id/status', () => {
+          return HttpResponse.json({
+            ...mockPrinterStatus,
+            connected: false,
+            state: 'unknown',
+            awaiting_plate_clear: awaitingPlateClear,
+          });
+        }),
+        http.post('/api/v1/printers/:id/clear-plate', () => {
+          cleared = true;
+          awaitingPlateClear = false;
+          return HttpResponse.json({ success: true, message: 'Plate cleared' });
+        })
+      );
+
+      render(<PrintersPage />);
+
+      const clearButton = await screen.findByRole('button', { name: 'Mark plate as cleared' });
+
+      fireEvent.click(clearButton);
+
+      await waitFor(() => {
+        expect(cleared).toBe(true);
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: 'Mark plate as cleared' })).not.toBeInTheDocument();
+      });
+    });
+
     it('updates the plate clear status after using the printer card action', async () => {
       let awaitingPlateClear = true;
 

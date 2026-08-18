@@ -2615,7 +2615,10 @@ function PrinterCard({
   const lastPrint = lastPrints?.[0];
   const isPrintingOrPaused = status?.state === 'RUNNING' || status?.state === 'PAUSE';
   const needsPlateClear = requirePlateClear && status?.awaiting_plate_clear === true;
-  const showClearPlateButton = status?.connected && needsPlateClear && !isPrintingOrPaused;
+  // Not gated on `connected`: the plate-clear gate is Bambuddy-side state, and with
+  // Auto Power Off the printer is powered down exactly when the operator clears the
+  // plate. Hiding the control there left no way to release the gate (#2864).
+  const showClearPlateButton = needsPlateClear && !isPrintingOrPaused;
   const activePrintName = status?.current_print && isPrintingOrPaused
     ? formatPrintName(status.subtask_name || status.current_print || null, status.gcode_file, t, activePlateLabel)
     : null;
@@ -2628,6 +2631,9 @@ function PrinterCard({
     }
   }, [activePrintName, needsPlateClear, status?.cover_url]);
   const plateStatus = (() => {
+    // Connected-only because the pill's only render site sits inside the live-status
+    // panel. For a powered-down printer the plate-clear button itself carries the
+    // state — see the standalone slot below the status block (#2864).
     if (!requirePlateClear || !status?.connected) return null;
     if (isPrintingOrPaused) {
       return {
@@ -2824,6 +2830,26 @@ function PrinterCard({
     },
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToSendCommand'), 'error'),
   });
+
+  // Rendered from two places: inside the live-status block for a connected printer,
+  // and standalone below it for a powered-down one, whose status block isn't rendered
+  // at all (#2864). Shared so the two can't drift apart.
+  const expandedClearPlateButton = (
+    <button
+      type="button"
+      onClick={() => clearPlateMutation.mutate()}
+      disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
+      className="mt-2 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-300 dark:border-yellow-400/40 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs font-medium disabled:opacity-50"
+      title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
+    >
+      {clearPlateMutation.isPending ? (
+        <Loader2 className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] animate-spin" />
+      ) : (
+        <PlateClearedIcon className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
+      )}
+      {t('printers.plateStatus.markCleared')}
+    </button>
+  );
 
   const nozzleTemperatureMutation = useMutation({
     mutationFn: ({ target, nozzle }: { target: number; nozzle: number }) =>
@@ -4232,13 +4258,23 @@ function PrinterCard({
                   const coverUrl = isActivePrint ? status.cover_url : showRetainedPrint ? retainedPrintJob.coverUrl : null;
                   const progress = isActivePrint ? (status.progress || 0) : showRetainedPrint ? 100 : 0;
 
+                  // A running print always has at least one object, so a count of
+                  // zero means "not loaded", not "nothing to skip" — after a
+                  // restart mid-print the list is empty until something rebuilds
+                  // it. Treating that as nothing-to-skip disabled the only
+                  // control that opens the modal, and the modal's own fetch is
+                  // what rebuilds the list, so the print could never get it back.
+                  // Exactly one object is the real nothing-to-skip case.
+                  const objectCount = status.printable_objects_count ?? 0;
+                  const canSkipObjects = isActivePrint && objectCount !== 1 && hasPermission('printers:control');
+
                   return (
                     <div className="p-2 bg-bambu-dark rounded-[10px] relative overflow-hidden">
                       <button
                         onClick={() => setShowSkipObjectsModal(true)}
-                        disabled={!isActivePrint || (status.printable_objects_count ?? 0) < 2 || !hasPermission('printers:control')}
+                        disabled={!canSkipObjects}
                         className={`absolute top-2 right-2 p-1.5 rounded transition-colors z-10 ${
-                          isActivePrint && (status.printable_objects_count ?? 0) >= 2 && hasPermission('printers:control')
+                          canSkipObjects
                             ? 'text-bambu-gray hover:text-white hover:bg-white/10'
                             : 'text-bambu-gray/30 cursor-not-allowed'
                         }`}
@@ -4247,9 +4283,9 @@ function PrinterCard({
                             ? t('printers.permission.noControl')
                             : !isActivePrint
                               ? t('printers.skipObjects.onlyWhilePrinting')
-                              : (status.printable_objects_count ?? 0) >= 2
-                                ? t('printers.skipObjects.tooltip')
-                                : t('printers.skipObjects.requiresMultiple')
+                              : objectCount === 1
+                                ? t('printers.skipObjects.requiresMultiple')
+                                : t('printers.skipObjects.tooltip')
                         }
                       >
                         <SkipObjectsIcon className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
@@ -4692,22 +4728,7 @@ function PrinterCard({
               );
             })()}
 
-            {viewMode === 'expanded' && showClearPlateButton && (
-              <button
-                type="button"
-                onClick={() => clearPlateMutation.mutate()}
-                disabled={clearPlateMutation.isPending || !hasPermission('printers:clear_plate')}
-                className="mt-2 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-300 dark:border-yellow-400/40 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 transition-colors text-xs font-medium disabled:opacity-50"
-                title={!hasPermission('printers:clear_plate') ? t('printers.permission.noControl') : t('printers.plateStatus.markCleared')}
-              >
-                {clearPlateMutation.isPending ? (
-                  <Loader2 className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] animate-spin" />
-                ) : (
-                  <PlateClearedIcon className="w-[var(--pc-i4,1rem)] h-[var(--pc-i4,1rem)]" />
-                )}
-                {t('printers.plateStatus.markCleared')}
-              </button>
-            )}
+            {viewMode === 'expanded' && showClearPlateButton && expandedClearPlateButton}
 
             {/* Controls */}
             {viewMode === 'expanded' && (() => {
@@ -6285,6 +6306,14 @@ function PrinterCard({
           </>
         )}
 
+        {/* Powered-down printer with a dirty plate: the status block above renders
+            nothing without a live connection, so the plate-clear control gets its own
+            slot here. Auto Power Off makes this the ordinary end-of-print state, and
+            the gate is Bambuddy-side — releasing it never touches the printer (#2864). */}
+        {printer.is_active !== false && !status?.connected && viewMode === 'expanded' && showClearPlateButton && (
+          expandedClearPlateButton
+        )}
+
         {/* Bottom block (power row + action bar). Wrapped together so the
             power row hugs the action bar at the card bottom instead of
             floating up when there's less filament content above. */}
@@ -6656,7 +6685,7 @@ function PrinterCard({
                         {/* Delete button */}
                         <button
                           onClick={() => handleDeleteRef(ref.index)}
-                          className="absolute top-1 right-1 p-0.5 bg-red-500/80 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="absolute top-1 right-1 p-0.5 bg-red-500/80 rounded can-hover:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
                           title={t('printers.plateDetection.deleteReference')}
                         >
                           <X className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] text-white" />
@@ -8895,12 +8924,15 @@ export function PrintersPage() {
     // Filter to only applicable printers based on cached state
     const applicableIds = ids.filter(id => {
       const status = queryClient.getQueryData<{ connected: boolean; state: string | null; hms_errors?: HMSError[] }>(['printerStatus', id]);
+      // clearPlate is checked before the connection filter: it only releases a
+      // Bambuddy-side gate, so it applies to a printer Auto Power Off has shut
+      // down — every other action here needs to reach the machine (#2864).
+      if (action === 'clearPlate') return !!(status as { awaiting_plate_clear?: boolean } | undefined)?.awaiting_plate_clear;
       if (!status?.connected) return false;
       switch (action) {
         case 'stop': return status.state === 'RUNNING' || status.state === 'PAUSE';
         case 'pause': return status.state === 'RUNNING';
         case 'resume': return status.state === 'PAUSE';
-        case 'clearPlate': return !!(status as { awaiting_plate_clear?: boolean }).awaiting_plate_clear;
         case 'clearHMS': return status.hms_errors && filterKnownHMSErrors(status.hms_errors).length > 0;
         default: return false;
       }

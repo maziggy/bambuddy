@@ -77,6 +77,7 @@ class _Env:
         test_connection_success=True,
         report_messages_since_connect: int | None = 5,
         connect_error: str | None = None,
+        file_found: str | None = None,
     ):
         self.ports = ports or _port_probe()
         # What the FTPS probe reports: "ok", "closed" or "no_tls" (#2780).
@@ -92,6 +93,13 @@ class _Env:
         # CONNACK-refusal slug the live client reports, or None when the last
         # connection attempt was never refused (#2698).
         self.connect_error = connect_error
+        # Remote path the storage probe finds for the last print's file, or
+        # None for "not there" (#2856). Patched unconditionally: without it
+        # the internal-storage branch opens a real FTPS connection to a
+        # printer that does not exist and every such test waits out the
+        # socket timeout.
+        self.file_found = file_found
+        self.find_remote_file = AsyncMock(return_value=file_found)
         self._stack = ExitStack()
 
     def __enter__(self):
@@ -116,6 +124,7 @@ class _Env:
         self._stack.enter_context(patch(f"{MOD}._detect_docker_network_mode", return_value=self.network_mode))
         self._stack.enter_context(patch(f"{MOD}._get_host_ip", return_value=self.host_ip))
         self._stack.enter_context(patch(f"{MOD}.printer_manager", manager))
+        self._stack.enter_context(patch(f"{MOD}.find_remote_file_async", new=self.find_remote_file))
         return self
 
     def __exit__(self, *exc):
@@ -123,8 +132,10 @@ class _Env:
         return False
 
 
-def _printer(ip="192.168.1.50", model=None):
-    return types.SimpleNamespace(id=1, ip_address=ip, model=model)
+def _printer(ip="192.168.1.50", model=None, access_code="12345678"):
+    # access_code is what the storage probe needs to reach port 990 (#2856);
+    # a printer without one can only be reported on, not checked.
+    return types.SimpleNamespace(id=1, ip_address=ip, model=model, access_code=access_code)
 
 
 class TestSameSubnet:
@@ -489,21 +500,86 @@ class TestExternalStorageCheck:
         assert result.overall == "problems"
 
     async def test_warns_when_the_printer_kept_the_print_internally(self):
-        """Toggle on, card in, and the printer still used internal storage --
-        which is what H2-series and P2S firmware does. A pass would be a lie
-        and a fail would be unresolvable, so it warns."""
+        """Toggle on, card in, the printer used internal storage -- and the
+        probe confirmed the file is not on the card either. A pass would be a
+        lie and a fail would be unresolvable, so it warns."""
         state = _state(
             store_to_sdcard=True,
             sdcard=True,
             sdcard_reported=True,
             last_project_url="brtc://emmc/Benchy.gcode.3mf",
         )
-        with _Env(state=state):
+        with _Env(state=state) as env:
             result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="H2C"))
         check = next(c for c in result.checks if c.id == "external_storage")
         assert check.status == "warn"
         assert check.params == {"reason": "internal_storage"}
         assert result.overall == "warnings"
+        # It asked before it warned, with the name the dispatch gave.
+        paths = env.find_remote_file.await_args.args[2]
+        assert paths[:2] == ["/Benchy.gcode.3mf", "/cache/Benchy.gcode.3mf"]
+
+    async def test_the_internal_storage_warning_yields_to_the_file_being_there(self):
+        """#2856. The URL says where the printer *put* the file, not whether
+        port 990 can serve it: an H2D with a card in reports `brtc://emmc` and
+        then hands the same file over from /cache. Warning that reader's
+        archives are unreachable -- while they are demonstrably complete --
+        sends them chasing a setting that is already right.
+        """
+        state = _state(
+            store_to_sdcard=True,
+            sdcard=True,
+            sdcard_reported=True,
+            last_project_url="brtc://emmc/Benchy.gcode.3mf",
+        )
+        with _Env(state=state, file_found="/cache/Benchy.gcode.3mf"):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="H2D"))
+        assert _statuses(result)["external_storage"] == "pass"
+
+    async def test_the_file_being_there_outranks_the_toggle(self):
+        """Same printer with the toggle off. The check exists to say whether
+        Bambuddy can read the print file, and the probe just proved it can --
+        telling this user to switch something on would be advice for a problem
+        they do not have.
+        """
+        state = _state(
+            store_to_sdcard=False,
+            sdcard=True,
+            sdcard_reported=True,
+            last_project_url="brtc://emmc/Benchy.gcode.3mf",
+        )
+        with _Env(state=state, file_found="/cache/Benchy.gcode.3mf"):
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="H2D"))
+        assert _statuses(result)["external_storage"] == "pass"
+
+    async def test_no_probe_when_the_file_service_is_not_answering(self):
+        """The probe is one FTPS connection, and #2780's printer refused those
+        by the hundred. If port 990 is not answering there is nothing to learn
+        and the warning stands on the URL alone."""
+        state = _state(
+            store_to_sdcard=True,
+            sdcard=True,
+            sdcard_reported=True,
+            last_project_url="brtc://emmc/Benchy.gcode.3mf",
+        )
+        with _Env(state=state, ftps="no_tls") as env:
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="H2C"))
+        env.find_remote_file.assert_not_awaited()
+        assert _statuses(result)["external_storage"] == "warn"
+
+    async def test_a_probe_that_cannot_run_leaves_the_warning_in_place(self):
+        """ "Could not check" must not read as "the file is fine" -- the check
+        keeps warning, which is the recoverable direction for a warn."""
+        state = _state(
+            store_to_sdcard=True,
+            sdcard=True,
+            sdcard_reported=True,
+            last_project_url="brtc://emmc/Benchy.gcode.3mf",
+        )
+        with _Env(state=state) as env:
+            env.find_remote_file.side_effect = OSError("connection reset")
+            result = await run_connection_diagnostic("192.168.1.50", printer=_printer(model="H2C"))
+        assert _statuses(result)["external_storage"] == "warn"
 
     async def test_an_external_storage_dispatch_still_passes(self):
         """The regression guard: an X1C dispatch says `ftp://`, and that must

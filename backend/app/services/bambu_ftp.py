@@ -1157,8 +1157,15 @@ async def download_file_try_paths_async(
     socket_timeout: float | None = None,
     printer_model: str | None = None,
     timeout: float = 90.0,
-) -> bool:
+) -> str | None:
     """Try downloading a file from multiple paths using a single connection.
+
+    Returns the path that served the file, or ``None``. The path rather than a
+    bare flag because the caller usually cannot tell afterwards which candidate
+    hit, and on a printer that keeps uploads around for weeks that is the
+    difference between a diagnosable stale-copy match and an invisible one
+    (#1820). Callers testing it for truth are unaffected: a served path is
+    always a non-empty string.
 
     Args:
         socket_timeout: FTP socket timeout for slow connections (e.g., A1 printers)
@@ -1177,7 +1184,7 @@ async def download_file_try_paths_async(
     def _download():
         client = BambuFTPClient(ip_address, access_code, timeout=socket_timeout, printer_model=printer_model)
         if not client.connect():
-            return False
+            return None
 
         try:
             # FileNotOnPrinterError signals "try the next path", not "give up" —
@@ -1186,10 +1193,10 @@ async def download_file_try_paths_async(
             for remote_path in remote_paths:
                 try:
                     if client.download_to_file(remote_path, local_path):
-                        return True
+                        return remote_path
                 except FileNotOnPrinterError:
                     continue
-            return False
+            return None
         finally:
             client.disconnect()
 
@@ -1197,7 +1204,7 @@ async def download_file_try_paths_async(
         return await asyncio.wait_for(loop.run_in_executor(_ftp_executor, _download), timeout=timeout)
     except TimeoutError:
         logger.warning("FTP download_try_paths exceeded its %ss cap for %s (#2572)", timeout, ip_address)
-        return False
+        return None
 
 
 def _upload_deadline(local_path: Path) -> float:
@@ -1401,6 +1408,54 @@ async def list_files_async(
     except TimeoutError:
         logger.warning("FTP list_files timed out after %ss for %s", timeout, path)
         return []
+
+
+async def find_remote_file_async(
+    ip_address: str,
+    access_code: str,
+    remote_paths: list[str],
+    timeout: float = 30.0,
+    socket_timeout: float | None = None,
+    printer_model: str | None = None,
+) -> str | None:
+    """First of *remote_paths* the printer actually has, or None.
+
+    Answers "is this file there?" without fetching it, over a single
+    connection: one listing per distinct directory, reused across the
+    candidates that share it, and stops at the first hit. Written for the
+    connection diagnostic (#2856), which needs the answer for a file that can
+    be tens of megabytes and has no use for its contents.
+
+    Listing rather than ``SIZE``: LIST is what every Bambu firmware here is
+    known to answer, and a ``SIZE`` the server simply does not implement would
+    read as "the file is missing".
+    """
+    loop = asyncio.get_event_loop()
+
+    def _find() -> str | None:
+        client = BambuFTPClient(ip_address, access_code, timeout=socket_timeout, printer_model=printer_model)
+        if not client.connect():
+            return None
+        try:
+            listed: dict[str, set[str]] = {}
+            for remote_path in remote_paths:
+                directory, _, name = remote_path.rpartition("/")
+                directory = directory or "/"
+                if directory not in listed:
+                    listed[directory] = {
+                        entry.get("name") for entry in client.list_files(directory) if not entry.get("is_directory")
+                    }
+                if name in listed[directory]:
+                    return remote_path
+            return None
+        finally:
+            client.disconnect()
+
+    try:
+        return await asyncio.wait_for(loop.run_in_executor(_ftp_executor, _find), timeout=timeout)
+    except TimeoutError:
+        logger.warning("FTP find_remote_file timed out after %ss on %s", timeout, ip_address)
+        return None
 
 
 async def delete_file_async(

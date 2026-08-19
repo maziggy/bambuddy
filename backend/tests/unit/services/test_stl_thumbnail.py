@@ -1,42 +1,10 @@
 """Unit tests for the STL thumbnail service."""
 
-import io
 import os
 import tempfile
 from pathlib import Path
 
 import pytest
-
-
-def _distinct_surface_tones(png: bytes | Path, *, min_share: float = 0.02) -> int:
-    """Count the distinct colours covering the model's surface in a render.
-
-    Quantises to 5 bits per channel — at 8 bits, PNG dithering scatters a single
-    flat fill across dozens of near-identical values — keeps only pixels where
-    green dominates (that is the model; the background and the neutral edge
-    antialiasing are not), and ignores tones below ``min_share`` of that surface.
-
-    This is the regression guard for shading. An unshaded ``Poly3DCollection``
-    gives every triangle the identical colour whatever its normal, so a cube
-    comes back as **1**. Lit, its three visible faces each catch the light
-    differently and it comes back as **3**.
-    """
-    from PIL import Image
-
-    source = io.BytesIO(png) if isinstance(png, bytes) else png
-    image = Image.open(source).convert("RGB")
-
-    counts: dict[tuple[int, int, int], int] = {}
-    for r, g, b in image.getdata():
-        if g <= r or g <= b:
-            continue
-        key = (r >> 3, g >> 3, b >> 3)
-        counts[key] = counts.get(key, 0) + 1
-
-    surface = sum(counts.values())
-    if surface == 0:
-        return 0
-    return sum(1 for n in counts.values() if n / surface >= min_share)
 
 
 def _check_trimesh_available():
@@ -192,7 +160,7 @@ endsolid cube"""
         not _check_trimesh_available(),
         reason="trimesh not installed",
     )
-    def test_generated_thumbnail_is_shaded_not_flat(self):
+    def test_generated_thumbnail_is_shaded_not_flat(self, distinct_surface_tones):
         """The render must be lit, not a flat silhouette (issue #2816).
 
         Without ``shade=True`` every triangle is filled with BAMBU_GREEN
@@ -211,8 +179,102 @@ endsolid cube"""
             assert result is not None
 
             # Three faces of a cube face the camera at the default isometric
-            # view_init, and each one catches the light differently.
-            assert _distinct_surface_tones(Path(result)) >= 3
+            # view_init, and with the light on the camera's side each catches it
+            # differently. This held at 3 before only because ``alpha=0.9`` let a
+            # back face bleed through two IDENTICALLY lit front faces — re-render
+            # at alpha=1.0 then and the count fell to 2. It is shading now.
+            assert distinct_surface_tones(Path(result).read_bytes()) >= 3
+
+    @pytest.mark.skipif(
+        not _check_trimesh_available(),
+        reason="trimesh not installed",
+    )
+    def test_backwards_wound_triangles_render_the_same(self):
+        """Vertex ORDER must not change the picture.
+
+        matplotlib takes its normals from winding, so an inverted triangle shades
+        as though it faced away — the model comes out patchy, like camouflage.
+        Unshaded this was invisible, which makes it a regression the shading
+        introduced rather than one it revealed, and the File Manager accepts
+        whatever STL a user uploads.
+
+        Asserted as "same picture as the correctly wound mesh", because the
+        obvious assertion does not work: broken winding produces MORE distinct
+        tones, not fewer, so a tone count cannot see it.
+        """
+        import numpy as np
+        import trimesh
+        from PIL import Image
+
+        from backend.app.services.stl_thumbnail import generate_stl_thumbnail
+
+        good = trimesh.creation.icosphere(subdivisions=3, radius=5.0)
+        faces = good.faces.copy()
+        faces[::2] = faces[::2][:, ::-1]
+        bad = trimesh.Trimesh(vertices=good.vertices.copy(), faces=faces)
+        assert not bad.is_winding_consistent, "fixture is supposed to be broken"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = Path(tmpdir)
+            rendered = []
+            for name, mesh in (("good", good), ("bad", bad)):
+                path = out / f"{name}.stl"
+                mesh.export(str(path))
+                result = generate_stl_thumbnail(path, out)
+                assert result is not None
+                rendered.append(np.asarray(Image.open(result).convert("RGB"), dtype=float))
+
+            assert rendered[0].shape == rendered[1].shape
+            mean_delta = float(np.abs(rendered[0] - rendered[1]).mean())
+
+        # Repaired they are the same mesh, so this is ~0. Without the repair the
+        # inverted half renders dark against the lit half and it is an order of
+        # magnitude higher.
+        assert mean_delta < 1.0, f"winding changed the render (mean delta {mean_delta:.2f})"
+
+    @pytest.mark.skipif(
+        not _check_trimesh_available(),
+        reason="trimesh not installed",
+    )
+    def test_degenerate_mesh_still_renders(self):
+        """A mesh with no shadeable face must render flat, not fail.
+
+        matplotlib's ``_shade_colors`` falls back to returning the colour it was
+        given when every normal is degenerate, and for a colour STRING that is a
+        0-d array — ``to_rgba_array`` then raises ``TypeError: len() of unsized
+        object``. So these files rendered fine while the output was flat, and
+        turning the light on would have broken them.
+
+        They are not hypothetical: stub and truncated STLs reach here, and
+        ``batch_generate_stl_thumbnails`` walks a whole folder with no
+        minimum-size pre-skip, so each one would show as a failure in the UI.
+        """
+        import struct
+
+        from backend.app.services.stl_thumbnail import generate_stl_thumbnail
+
+        def write_binary_stl(path, triangles):
+            # Written by hand rather than via trimesh.export, which drops
+            # degenerate facets and would quietly defeat the test.
+            with open(path, "wb") as fh:
+                fh.write(b"\0" * 80)
+                fh.write(struct.pack("<I", len(triangles)))
+                for tri in triangles:
+                    fh.write(struct.pack("<3f", 0.0, 0.0, 0.0))
+                    for vertex in tri:
+                        fh.write(struct.pack("<3f", *vertex))
+                    fh.write(b"\0\0")
+
+        cases = {
+            "zero_area": [[(0, 0, 0), (0, 0, 0), (0, 0, 0)]],
+            "collinear": [[(0, 0, 0), (1, 1, 1), (2, 2, 2)]],
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = Path(tmpdir)
+            for name, triangles in cases.items():
+                path = out / f"{name}.stl"
+                write_binary_stl(path, triangles)
+                assert generate_stl_thumbnail(path, out) is not None, f"{name} used to render and must still render"
 
     def test_generate_stl_thumbnail_nonexistent_file(self):
         """Test thumbnail generation with nonexistent file."""
@@ -278,16 +340,49 @@ class TestStlThumbnailConstants:
 
         assert BAMBU_GREEN == "#00AE42"
 
-    def test_light_direction_is_a_valid_direction(self):
-        """Azimuth is a compass bearing, altitude an angle above the horizon."""
+    def test_light_gives_the_two_visible_faces_different_shades(self):
+        """The whole point of lighting: adjacent visible faces must differ.
+
+        Both halves are asserted because neither alone is the property.
+
+        A positive dot product only says the light is not BEHIND the model, and
+        that is not sufficient: azdeg=45 — "put the light where the camera is",
+        the most natural next edit anyone would make — scores the HIGHEST dot
+        product of any azimuth (+0.94) and lights both visible faces to the
+        identical 0.825, which is a cube with no contrast down its front edge.
+        The original bug (225) failed the other way, at -0.34.
+
+        Shade factors are matplotlib's own: ``Normalize(-1, 1)`` into
+        ``Normalize(0.3, 1).inverse``, i.e. ``0.3 + 0.7 * (dot + 1) / 2``.
+        """
+        import numpy as np
+        from matplotlib.colors import LightSource
+
         from backend.app.services.stl_thumbnail import (
             LIGHT_ALTITUDE_DEG,
             LIGHT_AZIMUTH_DEG,
+            VIEW_AZIM_DEG,
+            VIEW_ELEV_DEG,
         )
 
-        assert 0 <= LIGHT_AZIMUTH_DEG <= 360
-        # Above the horizon but not straight down, or the top face blows out and
-        # the sides go black.
+        elev, azim = np.radians(VIEW_ELEV_DEG), np.radians(VIEW_AZIM_DEG)
+        camera = np.array([np.cos(elev) * np.cos(azim), np.cos(elev) * np.sin(azim), np.sin(elev)])
+        light = LightSource(azdeg=LIGHT_AZIMUTH_DEG, altdeg=LIGHT_ALTITUDE_DEG).direction
+
+        assert float(light @ camera) > 0, "the light is behind the model"
+
+        def shade(normal):
+            return 0.3 + 0.7 * ((float(np.array(normal) @ light) + 1) / 2)
+
+        # The two faces of an axis-aligned box that face the default camera.
+        assert abs(shade([1, 0, 0]) - shade([0, 1, 0])) > 0.05, (
+            "both visible faces are lit the same — the front edge disappears"
+        )
+
+    def test_light_is_above_the_horizon(self):
+        """Grazing or overhead both collapse the contrast the shading exists for."""
+        from backend.app.services.stl_thumbnail import LIGHT_ALTITUDE_DEG
+
         assert 0 < LIGHT_ALTITUDE_DEG < 90
 
     def test_background_color(self):

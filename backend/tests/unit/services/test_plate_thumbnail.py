@@ -15,36 +15,6 @@ import zipfile
 import pytest
 
 
-def _distinct_surface_tones(png: bytes, *, min_share: float = 0.02) -> int:
-    """Count the distinct colours covering the model's surface in a render.
-
-    Quantises to 5 bits per channel — at 8 bits, PNG dithering scatters a single
-    flat fill across dozens of near-identical values — keeps only pixels where
-    green dominates (that is the model; the background and the neutral edge
-    antialiasing are not), and ignores tones below ``min_share`` of that surface.
-
-    This is the regression guard for shading. An unshaded ``Poly3DCollection``
-    gives every triangle the identical colour whatever its normal, so a cube
-    comes back as **1**. Lit, its three visible faces each catch the light
-    differently and it comes back as **3**.
-    """
-    from PIL import Image
-
-    image = Image.open(io.BytesIO(png)).convert("RGB")
-
-    counts: dict[tuple[int, int, int], int] = {}
-    for r, g, b in image.getdata():
-        if g <= r or g <= b:
-            continue
-        key = (r >> 3, g >> 3, b >> 3)
-        counts[key] = counts.get(key, 0) + 1
-
-    surface = sum(counts.values())
-    if surface == 0:
-        return 0
-    return sum(1 for n in counts.values() if n / surface >= min_share)
-
-
 def _trimesh_available() -> bool:
     try:
         import trimesh  # noqa: F401
@@ -165,7 +135,7 @@ class TestInjectPlateThumbnails:
         assert 480 <= large_w <= 540 and 480 <= large_h <= 540
         assert 100 <= small_w <= 140 and 100 <= small_h <= 140
 
-    def test_injected_thumbnail_is_shaded_not_flat(self):
+    def test_injected_thumbnail_is_shaded_not_flat(self, distinct_surface_tones):
         """Injected plate renders must be lit, same as library thumbnails (#2816).
 
         The archive card and the File Manager tile show the same model through
@@ -180,7 +150,7 @@ class TestInjectPlateThumbnails:
             large = zf.read("Metadata/plate_1.png")
 
         # _build_sliced_3mf embeds a cube: three faces visible, three tones.
-        assert _distinct_surface_tones(large) >= 3
+        assert distinct_surface_tones(large) >= 3
 
     def test_injects_for_every_missing_plate_in_multi_plate_3mf(self):
         """Three plates, plate_2 already has a thumbnail; only plates 1 + 3 get rendered."""

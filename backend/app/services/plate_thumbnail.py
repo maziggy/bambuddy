@@ -42,14 +42,6 @@ _PLATE_PNG_SMALL_SIZE = 128
 _BAMBU_GREEN = "#00AE42"
 _BACKGROUND_COLOR = "#1a1a1a"
 
-# Same light stl_thumbnail.py uses, for the same reason and so that a plate
-# card and a library thumbnail of the same model look alike. Without a light
-# source ``Poly3DCollection`` fills every triangle with the identical colour
-# regardless of its normal, so the render comes out a flat silhouette and one
-# model is indistinguishable from another (issue #2816).
-_LIGHT_AZIMUTH_DEG = 225
-_LIGHT_ALTITUDE_DEG = 45
-
 # Above this vertex count, trimesh.simplify_quadric_decimation runs first.
 # Same cap stl_thumbnail.py uses; matplotlib's Poly3DCollection slows down
 # nonlinearly past ~100k faces and a plate thumbnail doesn't need detail
@@ -140,7 +132,16 @@ def _render_model_thumbnails(threemf_bytes: bytes) -> tuple[bytes | None, bytes 
     # Local imports so a `import backend.app.services.plate_thumbnail` from
     # an environment without matplotlib/trimesh doesn't fail at import time —
     # the function will simply degrade to no-op via the exception branch.
-    from backend.app.services.stl_thumbnail import _configure_matplotlib_cache
+    #
+    # The light angle is IMPORTED rather than mirrored like the palette above.
+    # "A plate card and a library thumbnail of the same model look alike" is the
+    # whole reason these two renderers share a look, and a second copy of the
+    # angle is exactly how that silently stops being true. A palette can afford a
+    # copy; a number nobody would notice drifting cannot.
+    from backend.app.services.stl_thumbnail import (
+        _configure_matplotlib_cache,
+        _shade_kwargs,
+    )
 
     _configure_matplotlib_cache()
 
@@ -173,20 +174,43 @@ def _render_model_thumbnails(threemf_bytes: bytes) -> tuple[bytes | None, bytes 
     max_extent = (bounds_max - bounds_min).max()
     scaled = centered / max_extent if max_extent > 0 else centered
 
+    # Same reason as stl_thumbnail: matplotlib takes normals from vertex order, so
+    # backwards-wound triangles shade inside-out and the plate reads as camouflage.
+    # Cheap to check, seconds to repair, so only broken meshes pay for it.
+    try:
+        if not mesh.is_winding_consistent:
+            logger.debug("plate_thumbnail: repairing inconsistent winding before render")
+            trimesh.repair.fix_winding(mesh)
+            # ...then fix_inversion, because fix_winding may settle on the INWARD
+            # orientation — consistent, and consistently lit from inside. See
+            # stl_thumbnail for the measurement.
+            trimesh.repair.fix_inversion(mesh)
+    except Exception as e:  # best-effort, as the whole module is
+        logger.debug("plate_thumbnail: winding repair skipped (%s)", e)
+
+    # ndarray, not a list of lists — shading walks this to build normals, and the
+    # list form is ~30x slower to construct. Paid twice per plate: once per size.
     faces = mesh.faces
-    poly3d = [[scaled[v] for v in face] for face in faces]
+    poly3d = scaled[faces]
 
-    # Built once and shared: a LightSource is immutable configuration, and both
-    # sizes must be lit identically or the 128px card and the 512px view disagree.
-    lightsource = LightSource(azdeg=_LIGHT_AZIMUTH_DEG, altdeg=_LIGHT_ALTITUDE_DEG)
+    # Resolved once and shared: both sizes must be lit identically or the 128px
+    # card and the 512px view disagree. Empty for a mesh matplotlib cannot shade,
+    # which keeps such a plate rendering flat instead of failing — see
+    # ``_shade_kwargs``.
+    shade_kw = _shade_kwargs(poly3d, LightSource)
 
-    large = _render_at_size(poly3d, _PLATE_PNG_SIZE, plt, Poly3DCollection, lightsource)
-    small = _render_at_size(poly3d, _PLATE_PNG_SMALL_SIZE, plt, Poly3DCollection, lightsource)
+    large = _render_at_size(poly3d, _PLATE_PNG_SIZE, plt, Poly3DCollection, shade_kw)
+    small = _render_at_size(poly3d, _PLATE_PNG_SMALL_SIZE, plt, Poly3DCollection, shade_kw)
     return large, small
 
 
-def _render_at_size(poly3d, size: int, plt, Poly3DCollection, lightsource) -> bytes:
+def _render_at_size(poly3d, size: int, plt, Poly3DCollection, shade_kw: dict) -> bytes:
     """Render the prepared poly3d collection to an in-memory PNG."""
+    # Local, like every other import in this module, so importing plate_thumbnail
+    # in an environment without matplotlib still works. stl_thumbnail's own
+    # module level is import-light, so this costs nothing after the first call.
+    from backend.app.services.stl_thumbnail import VIEW_AZIM_DEG, VIEW_ELEV_DEG
+
     fig = plt.figure(figsize=(size / 100, size / 100), dpi=100)
     fig.patch.set_facecolor(_BACKGROUND_COLOR)
     ax = fig.add_subplot(111, projection="3d")
@@ -201,14 +225,13 @@ def _render_at_size(poly3d, size: int, plt, Poly3DCollection, lightsource) -> by
             edgecolors=_BAMBU_GREEN,
             linewidths=0.1,
             alpha=0.9,
-            shade=True,
-            lightsource=lightsource,
+            **shade_kw,
         )
     )
     ax.set_xlim(-0.6, 0.6)
     ax.set_ylim(-0.6, 0.6)
     ax.set_zlim(-0.6, 0.6)
-    ax.view_init(elev=25, azim=45)
+    ax.view_init(elev=VIEW_ELEV_DEG, azim=VIEW_AZIM_DEG)
     ax.set_axis_off()
     ax.grid(False)
     plt.subplots_adjust(left=0, right=1, top=1, bottom=0)

@@ -4303,6 +4303,9 @@ export default {
     fromFileHint: 'O designer alterou isto no arquivo de origem. O valor é {{value}}.',
     fromFilePrinterCoupled: 'impressora do designer',
     fromFilePrinterCoupledHint: 'Ajustado para a impressora para a qual este arquivo foi projetado — pode estar errado ou fora de faixa na sua.',
+    fromFileOverridesPreset: 'substitui o perfil',
+    fromFileOverridesPresetHint:
+      'O arquivo define {{value}} enquanto o perfil escolhido usa {{preset}}. Marque apenas se o arquivo deve prevalecer.',
     useFromFile: 'Usar o valor do arquivo de origem para {{option}}',
     otherFromFile: 'Outras configurações deste arquivo',
     loading: 'Carregando configurações do fatiador…',
@@ -4882,6 +4885,7 @@ export default {
     externalSpool: 'Carretel Externo',
     profile: 'Perfil',
     kFactor: 'Fator K',
+    kFactorShort: 'K',
     fill: 'Preencher',
     configure: 'Configurar',
     used: 'usado',

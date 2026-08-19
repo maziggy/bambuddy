@@ -6250,8 +6250,12 @@ export const api = {
     request<{ status: string }>(`/inventory/locations/${id}`, { method: 'DELETE' }),
   getColorCatalog: () =>
     request<ColorCatalogEntry[]>('/inventory/colors'),
+  /** Flat hex→name map, plus the names collapsing it loses. ``by_material`` is
+   *  keyed ``"<material>|<hex>"`` and only carries entries that differ from the
+   *  flat answer (e.g. ``"pla matte|ffffff" -> "Ivory White"`` where the flat
+   *  map says "Jade White"). #2875. */
   getColorNameMap: () =>
-    request<{ colors: Record<string, string> }>('/inventory/colors/map'),
+    request<{ colors: Record<string, string>; by_material?: Record<string, string> }>('/inventory/colors/map'),
   addColorEntry: (data: {
     manufacturer: string;
     color_name: string;

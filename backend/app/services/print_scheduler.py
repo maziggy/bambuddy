@@ -309,6 +309,44 @@ def _sliced_for_model(archive, library_file) -> str | None:
     return None
 
 
+def _filament_constraints(candidate: _ModelCandidate) -> tuple[list[str] | None, list[dict] | None]:
+    """The filament a candidate needs, as ``(types, overrides)``.
+
+    Both columns are JSON text written by the slicer step. Malformed content is
+    treated as no constraint rather than as an error: a job whose overrides
+    cannot be parsed still prints, it just gets no filament-based narrowing.
+
+    Overrides carry their own types, so the returned type list is the union of
+    the two — an override on one slot must not drop the requirements of the
+    slots it says nothing about.
+
+    Shared by the matcher and by the smart-plug wake step so both ask a printer
+    for the same filament (#2876). Waking a printer the matcher would then
+    reject on colour is the bug this exists to prevent.
+    """
+    required_types = None
+    if candidate.required_filament_types:
+        try:
+            required_types = json.loads(candidate.required_filament_types)
+        except json.JSONDecodeError:
+            pass
+
+    filament_overrides = None
+    if candidate.filament_overrides:
+        try:
+            filament_overrides = json.loads(candidate.filament_overrides)
+        except json.JSONDecodeError:
+            pass
+
+    effective_types = required_types
+    if filament_overrides:
+        override_types = sorted({o["type"] for o in filament_overrides if "type" in o})
+        if override_types:
+            effective_types = sorted(set(required_types or []) | set(override_types))
+
+    return effective_types, filament_overrides
+
+
 def _candidates_for(item: PrintQueueItem) -> list[_ModelCandidate]:
     """Candidate files for ``item``, best first.
 
@@ -1300,29 +1338,7 @@ class PrintScheduler:
                         )
 
                     for candidate in candidates:
-                        # Parse required filament types if present
-                        required_types = None
-                        if candidate.required_filament_types:
-                            try:
-                                required_types = json.loads(candidate.required_filament_types)
-                            except json.JSONDecodeError:
-                                pass  # Ignore malformed filament types; treat as no constraint
-
-                        # Parse filament overrides if present
-                        filament_overrides = None
-                        if candidate.filament_overrides:
-                            try:
-                                filament_overrides = json.loads(candidate.filament_overrides)
-                            except json.JSONDecodeError:
-                                pass
-
-                        # If overrides exist, use override types for validation instead
-                        effective_types = required_types
-                        if filament_overrides:
-                            override_types = sorted({o["type"] for o in filament_overrides if "type" in o})
-                            if override_types:
-                                # Merge: keep original types for non-overridden slots, add override types
-                                effective_types = sorted(set(required_types or []) | set(override_types))
+                        effective_types, filament_overrides = _filament_constraints(candidate)
 
                         # Cross-model safety gate (#2578): never hand a 3MF sliced
                         # for an incompatible model to a printer, no matter how the
@@ -1987,10 +2003,15 @@ class PrintScheduler:
         from "we tried and it did not come up" (only ``attempted_id`` — the
         boot timeout has already been spent).
 
-        Deliberately does NOT go on to match the job: AMS trays arrive with the
-        first status push after connect, so a filament check against a printer
-        that booted seconds ago can reject the printer we just woke. The next
-        queue pass matches it with live state.
+        A printer whose last known trays cannot satisfy the job is passed over
+        rather than woken (#2876): the colours are readable while it is off, so
+        switching a farm on one machine at a time to discover them wakes
+        printers that could never have taken the job.
+
+        Deliberately does NOT go on to match the job once a printer is up: AMS
+        trays arrive with the first status push after connect, so a filament
+        check against a printer that booted seconds ago can reject the printer
+        we just woke. The next queue pass matches it with live state.
 
         At most one printer per pass. Each wake blocks the queue loop for the
         boot wait, and a queue of ten class-targeted jobs must not switch on
@@ -1999,6 +2020,7 @@ class PrintScheduler:
         for candidate in candidates:
             if not candidate.target_model:
                 continue
+            required_types, filament_overrides = _filament_constraints(candidate)
             printers = await self._printers_for_model(db, candidate.target_model, target_location)
             for printer in sorted(printers, key=lambda p: p.id):
                 if printer.id in exclude_ids or printer.id not in wakeable_ids:
@@ -2020,6 +2042,16 @@ class PrintScheduler:
                         "Not powering on printer %s for a %s job: it is awaiting plate-clear acknowledgment",
                         printer.id,
                         candidate.target_model,
+                    )
+                    continue
+
+                shortfall = self._cached_filament_shortfall(printer.id, required_types, filament_overrides)
+                if shortfall:
+                    logger.info(
+                        "Not powering on printer %s for a %s job: last known filament cannot satisfy it (needs %s)",
+                        printer.id,
+                        candidate.target_model,
+                        ", ".join(shortfall),
                     )
                     continue
 
@@ -2124,7 +2156,15 @@ class PrintScheduler:
             is_idle = self._is_printer_idle(printer.id, require_plate_clear) if is_connected else False
 
             if not is_connected:
-                if wakeable_ids is not None and printer.id not in wakeable_ids:
+                # An offline printer whose last known filament cannot run this
+                # job is reported as needing filament rather than as offline
+                # (#2876). It is also the printer the smart-plug step will now
+                # decline to switch on, and "Offline:" on its own would leave
+                # that decision looking like nothing happening at all.
+                shortfall = self._cached_filament_shortfall(printer.id, required_filament_types, filament_overrides)
+                if shortfall:
+                    printers_missing_filament.append((printer.name, shortfall))
+                elif wakeable_ids is not None and printer.id not in wakeable_ids:
                     printers_offline_no_plug.append(printer.name)
                 else:
                     printers_offline.append(printer.name)
@@ -2214,10 +2254,14 @@ class PrintScheduler:
                 # but only if there are no busy printers that DO have the matching color.
                 # If a printer has the right color but is busy, surface "Busy" instead so
                 # the user knows the job will start automatically once that printer is free.
-                if not printers_busy:
+                # Same for a printer that is merely offline: Bambuddy switches that one on
+                # by itself, so the job is not actually waiting on anybody to change a
+                # spool (#2876 — offline printers reach this list now that a switched-off
+                # printer's own filament is read).
+                if not printers_busy and not printers_offline:
                     all_missing = sorted({c for _, cols in printers_missing_filament for c in cols})
                     return None, f"No matching material/color. Waiting on {', '.join(all_missing)}"
-                # else: fall through — printers_busy will be appended below
+                # else: fall through — the self-resolving entries are appended below
             else:
                 names_and_missing = [
                     f"{name} (needs {', '.join(missing)})" for name, missing in printers_missing_filament
@@ -2246,7 +2290,9 @@ class PrintScheduler:
         parts = [p.strip() for p in waiting_reason.split(" | ")]
         return all(p.startswith("Busy:") for p in parts)
 
-    def _get_missing_force_color_slots(self, printer_id: int, force_overrides: list[dict]) -> list[str]:
+    def _get_missing_force_color_slots(
+        self, printer_id: int, force_overrides: list[dict], raw_data: dict | None = None
+    ) -> list[str]:
         """Return descriptive strings for force_color_match slots not satisfied by the printer.
 
         Each entry in ``force_overrides`` must have ``type`` and ``color`` fields and is expected
@@ -2264,19 +2310,21 @@ class PrintScheduler:
         Returns:
             List of ``"TYPE (color)"`` strings for unmatched slots (empty list means all match).
         """
-        status = printer_manager.get_status(printer_id)
-        if not status:
-            return [f"{o.get('type', '?')} ({o.get('color_name') or o.get('color', '?')})" for o in force_overrides]
+        if raw_data is None:
+            status = printer_manager.get_status(printer_id)
+            if not status:
+                return [f"{o.get('type', '?')} ({o.get('color_name') or o.get('color', '?')})" for o in force_overrides]
+            raw_data = status.raw_data
 
         # Build loaded (type, colour, tray_info_idx) triples from AMS and external spool.
         loaded: list[tuple[str, str, str]] = []
-        for ams_unit in status.raw_data.get("ams", []):
+        for ams_unit in raw_data.get("ams", []):
             for tray in ams_unit.get("tray", []):
                 tray_type = tray.get("tray_type")
                 if tray_type:
                     color_norm = (tray.get("tray_color", "") or "").replace("#", "").lower()[:6]
                     loaded.append((canonical_filament_type(tray_type), color_norm, tray.get("tray_info_idx", "") or ""))
-        for vt in status.raw_data.get("vt_tray") or []:
+        for vt in raw_data.get("vt_tray") or []:
             vt_type = vt.get("tray_type")
             if vt_type:
                 color_norm = (vt.get("tray_color", "") or "").replace("#", "").lower()[:6]
@@ -2296,7 +2344,9 @@ class PrintScheduler:
                 missing.append(f"{o_type} ({color_label})")
         return missing
 
-    def _get_missing_filament_types(self, printer_id: int, required_types: list[str]) -> list[str]:
+    def _get_missing_filament_types(
+        self, printer_id: int, required_types: list[str], raw_data: dict | None = None
+    ) -> list[str]:
         """Get the list of required filament types that are not loaded on the printer.
 
         Args:
@@ -2306,16 +2356,18 @@ class PrintScheduler:
         Returns:
             List of missing filament types (empty if all are loaded)
         """
-        status = printer_manager.get_status(printer_id)
-        if not status:
-            return required_types  # Can't determine, assume all missing
+        if raw_data is None:
+            status = printer_manager.get_status(printer_id)
+            if not status:
+                return required_types  # Can't determine, assume all missing
+            raw_data = status.raw_data
 
         # Collect all filament types loaded on this printer (AMS units + external spool)
         # Use canonical types so equivalence groups (e.g. PA-CF/PA12-CF/PAHT-CF) match.
         loaded_types: set[str] = set()
 
         # Check AMS units (stored in raw_data["ams"])
-        ams_data = status.raw_data.get("ams", [])
+        ams_data = raw_data.get("ams", [])
         if ams_data:
             for ams_unit in ams_data:
                 for tray in ams_unit.get("tray", []):
@@ -2324,7 +2376,7 @@ class PrintScheduler:
                         loaded_types.add(canonical_filament_type(tray_type))
 
         # Check external spool(s) (virtual tray, stored in raw_data["vt_tray"] as list)
-        for vt in status.raw_data.get("vt_tray") or []:
+        for vt in raw_data.get("vt_tray") or []:
             vt_type = vt.get("tray_type")
             if vt_type:
                 loaded_types.add(canonical_filament_type(vt_type))
@@ -2337,25 +2389,32 @@ class PrintScheduler:
 
         return missing
 
-    def _count_override_color_matches(self, printer_id: int, overrides: list[dict]) -> int:
+    def _count_override_color_matches(
+        self, printer_id: int, overrides: list[dict], raw_data: dict | None = None
+    ) -> int:
         """Count how many filament overrides have an exact color match on the printer.
 
         Used to prefer printers that already have the desired override colors loaded.
         """
-        status = printer_manager.get_status(printer_id)
-        if not status:
-            return 0
+        if raw_data is None:
+            status = printer_manager.get_status(printer_id)
+            if not status:
+                return 0
+            raw_data = status.raw_data
 
         # Collect loaded filaments' type+color pairs
         loaded: set[tuple[str, str]] = set()
-        for ams_unit in status.raw_data.get("ams", []):
+        for ams_unit in raw_data.get("ams", []):
             for tray in ams_unit.get("tray", []):
                 tray_type = tray.get("tray_type")
-                tray_color = tray.get("tray_color", "")
+                # `or ""`, not a dict default: a slot can carry the key with a
+                # null value, and this now runs against switched-off printers
+                # too, where nobody is watching for the AttributeError.
+                tray_color = tray.get("tray_color") or ""
                 if tray_type:
                     color_norm = tray_color.replace("#", "").lower()[:6]
                     loaded.add((tray_type.upper(), color_norm))
-        for vt in status.raw_data.get("vt_tray") or []:
+        for vt in raw_data.get("vt_tray") or []:
             vt_type = vt.get("tray_type")
             if vt_type:
                 color_norm = (vt.get("tray_color", "") or "").replace("#", "").lower()[:6]
@@ -2368,6 +2427,89 @@ class PrintScheduler:
             if (o_type, o_color) in loaded:
                 matches += 1
         return matches
+
+    @staticmethod
+    def _tray_reading(printer_id: int) -> dict:
+        """The best tray reading available for a printer that is not printing.
+
+        Live status first: a printer keeps its last status after the power
+        goes, because ``mark_power_off`` blanks ``connected`` and ``state`` and
+        leaves ``raw_data`` alone. The manager's own record is the fallback,
+        for when the client itself has been dropped and taken its status with
+        it — which is what every power-on attempt does.
+
+        An empty result means "we have never heard", not "nothing is loaded":
+        the two are indistinguishable from here, and only the second would be
+        safe to act on.
+        """
+        status = printer_manager.get_status(printer_id)
+        raw = (status.raw_data if status else None) or {}
+        for ams_unit in raw.get("ams") or []:
+            if any(tray.get("tray_type") for tray in ams_unit.get("tray", [])):
+                return raw
+        if any(vt.get("tray_type") for vt in raw.get("vt_tray") or []):
+            return raw
+        return printer_manager.last_known_trays(printer_id)
+
+    def _cached_filament_shortfall(
+        self,
+        printer_id: int,
+        required_types: list[str] | None,
+        filament_overrides: list[dict] | None,
+    ) -> list[str]:
+        """What a switched-off printer's last known filament cannot provide (#2876).
+
+        The smart-plug wake step used to consider only the model, so a job for a
+        colour loaded on the last printer in ID order switched on every earlier
+        one in turn, evaluated it, rejected it on colour and left it running.
+        Bambuddy knew those colours the whole time. This asks the same three
+        questions the matcher asks a live printer — required types, forced
+        colours, preferred colours — of the trays it last reported, and returns
+        the answers in the same shape the "Waiting for filament" reason uses.
+
+        Empty means the printer may still be able to take the job.
+
+        Fails open, and deliberately: with no tray reading (never connected
+        since Bambuddy started, or the cache dropped by a reconnect) this
+        returns nothing to report and the printer is treated as it was before.
+        A farm restarted while its printers were off must not conclude that
+        none of them can print.
+        """
+        if not required_types and not filament_overrides:
+            return []
+
+        raw_data = self._tray_reading(printer_id)
+        if not raw_data:
+            return []
+
+        force_overrides = [o for o in (filament_overrides or []) if o.get("force_color_match")]
+        pref_overrides = [o for o in (filament_overrides or []) if not o.get("force_color_match")]
+
+        if required_types:
+            missing = self._get_missing_filament_types(printer_id, required_types, raw_data)
+            if missing:
+                # Same enrichment the live path applies: a bare "PLA" is not
+                # much help when what is missing is a particular PLA.
+                force_color_map = {
+                    (o.get("type") or "").upper(): o.get("color_name") or o.get("color", "?") for o in force_overrides
+                }
+                return [
+                    f"{t} ({force_color_map[t_upper]})" if (t_upper := t.upper()) in force_color_map else t
+                    for t in missing
+                ]
+
+        if force_overrides:
+            missing_colors = self._get_missing_force_color_slots(printer_id, force_overrides, raw_data)
+            if missing_colors:
+                return missing_colors
+
+        # Preference overrides read as a preference but the matcher treats zero
+        # matches as a skip, so a printer with none of the wanted colours is
+        # rejected there too. Waking it would only produce that same rejection.
+        if pref_overrides and self._count_override_color_matches(printer_id, pref_overrides, raw_data) == 0:
+            return [f"{o.get('type', '?')} ({o.get('color_name') or o.get('color', '?')})" for o in pref_overrides]
+
+        return []
 
     def _resolve_variant(self, item: PrintQueueItem, candidate: _ModelCandidate) -> None:
         """Fold the winning candidate's file and settings onto the queue row (#671).

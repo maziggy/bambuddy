@@ -44,7 +44,7 @@ export function buildLoadedFilaments(printerStatus: PrinterStatus | undefined): 
         filaments.push({
           type: tray.tray_type,
           color,
-          colorName: getColorName(color),
+          colorName: getColorName(color, tray.tray_sub_brands),
           amsId: amsUnit.id,
           trayId: tray.id,
           isHt,
@@ -69,7 +69,7 @@ export function buildLoadedFilaments(printerStatus: PrinterStatus | undefined): 
       filaments.push({
         type: extTray.tray_type,
         color,
-        colorName: getColorName(color),
+        colorName: getColorName(color, extTray.tray_sub_brands),
         amsId: -1,
         trayId: trayId - 254,
         isHt: false,

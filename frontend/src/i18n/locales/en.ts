@@ -4350,6 +4350,9 @@ export default {
     fromFileHint: 'The designer changed this in the source file. Its value is {{value}}.',
     fromFilePrinterCoupled: "designer's printer",
     fromFilePrinterCoupledHint: 'Tuned for the printer this file was designed for -- may be wrong or out of range on yours.',
+    fromFileOverridesPreset: 'overrides preset',
+    fromFileOverridesPresetHint:
+      'The file sets this to {{value}} where the preset you picked uses {{preset}}. Tick it only if the file should win.',
     useFromFile: "Use the source file's value for {{option}}",
     otherFromFile: 'Other settings from this file',
     loading: 'Loading slicer settings…',
@@ -4938,6 +4941,7 @@ export default {
     externalSpool: 'External Spool',
     profile: 'Profile',
     kFactor: 'K Factor',
+    kFactorShort: 'K',
     fill: 'Fill',
     configure: 'Configure',
     used: 'used',

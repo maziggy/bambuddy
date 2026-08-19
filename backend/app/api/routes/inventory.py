@@ -744,6 +744,21 @@ async def get_color_name_map(
     Normalized to lowercase 6-char hex without '#'. When multiple catalog entries
     share the same hex (different materials or manufacturers), Bambu Lab wins,
     then default entries, then the first encountered.
+
+    ``by_material`` carries the names that collapsing loses. A hex is not one
+    colour in Bambu's range: #FFFFFF is Jade White in PLA Basic, Ivory White in
+    PLA Matte and plain White in six more, and #000000 is Black except in PLA
+    Matte where it is Charcoal. A caller that knows the material — an AMS slot
+    knows it as ``tray_sub_brands`` — looks up ``"<material>|<hex>"`` there
+    first and falls back to ``colors`` (#2875).
+
+    An entry is included only when it recovers a name the *same manufacturer's*
+    own range lost. Two conditions, both load-bearing: a name equal to the
+    collapsed one is pure weight, and a name from a different manufacturer is
+    not a recovery at all — it would put Prusament's "Pristine White" on every
+    generic white PLA slot in place of Bambu's "Jade White", trading one
+    arbitrary answer for another. What survives is the handful of cases this
+    exists for.
     """
     result = await db.execute(
         select(
@@ -751,24 +766,43 @@ async def get_color_name_map(
             ColorCatalogEntry.color_name,
             ColorCatalogEntry.manufacturer,
             ColorCatalogEntry.is_default,
+            ColorCatalogEntry.material,
         )
     )
-    mapping: dict[str, tuple[str, int]] = {}  # hex → (name, priority); higher priority wins
-    for hex_color, color_name, manufacturer, is_default in result.all():
+    # hex → (name, priority, manufacturer); higher priority wins, first on a tie
+    mapping: dict[str, tuple[str, int, str]] = {}
+    by_material: dict[str, tuple[str, int, str]] = {}  # "material|hex" → same
+    for hex_color, color_name, manufacturer, is_default, material in result.all():
         if not hex_color or not color_name:
             continue
         key = hex_color.lstrip("#").lower()[:6]
         if len(key) != 6:
             continue
+        brand = (manufacturer or "").strip().lower()
         priority = 0
-        if manufacturer and manufacturer.strip().lower() == "bambu lab":
+        if brand == "bambu lab":
             priority += 2
         if is_default:
             priority += 1
         existing = mapping.get(key)
         if existing is None or priority > existing[1]:
-            mapping[key] = (color_name, priority)
-    return {"colors": {k: v[0] for k, v in mapping.items()}}
+            mapping[key] = (color_name, priority, brand)
+        material_key = (material or "").strip().lower()
+        if material_key:
+            # Split on the LAST separator when reading these back: a material is
+            # free text and may itself contain a '|'.
+            qualified = f"{material_key}|{key}"
+            existing = by_material.get(qualified)
+            if existing is None or priority > existing[1]:
+                by_material[qualified] = (color_name, priority, brand)
+
+    colors = {k: v[0] for k, v in mapping.items()}
+    qualified_colors = {}
+    for qualified, (name, _, brand) in by_material.items():
+        flat = mapping.get(qualified.rsplit("|", 1)[1])
+        if flat and flat[0] != name and flat[2] == brand:
+            qualified_colors[qualified] = name
+    return {"colors": colors, "by_material": qualified_colors}
 
 
 @router.post("/colors", response_model=ColorEntryResponse)

@@ -16,6 +16,7 @@ from backend.app.services.design_settings import (
     DesignOverride,
     apply_design_overrides,
     extract_design_process_overrides,
+    is_preset_defining,
     is_printer_coupled,
     overrides_from_config,
 )
@@ -86,6 +87,43 @@ class TestClassification:
             "precise_z_height",
         ):
             assert is_printer_coupled(key) is True, key
+
+
+class TestPresetDefining:
+    """Keys that *are* the picked preset must never be carried without asking.
+
+    "0.08mm High Quality" is its layer height; carrying a file's 0.2 onto it
+    produced a 0.2 slice while the modal's dropdown still read 0.08 — the
+    report this class exists for.
+    """
+
+    def test_layer_heights_define_the_preset(self):
+        assert is_preset_defining("layer_height") is True
+        assert is_preset_defining("initial_layer_print_height") is True
+
+    def test_ordinary_design_tweaks_do_not(self):
+        for key in ("wall_loops", "sparse_infill_density", "brim_type", "outer_wall_speed"):
+            assert is_preset_defining(key) is False, key
+
+    def test_extraction_marks_them(self):
+        config = _config(
+            layer_height="0.2",
+            different_settings_to_system=["wall_loops;layer_height", "", "", ""],
+        )
+        by_key = {o.key: o for o in overrides_from_config(config)}
+
+        assert by_key["layer_height"].preset_defining is True
+        assert by_key["layer_height"].printer_coupled is False
+        assert by_key["wall_loops"].preset_defining is False
+
+    def test_they_still_apply_when_explicitly_selected(self):
+        # Offered, not withheld: a re-slice that genuinely wants the design's
+        # layer height gets it by ticking the box.
+        overrides = [DesignOverride("layer_height", "0.2", False, True)]
+
+        result = apply_design_overrides('{"inherits": "0.08mm High Quality @BBL H2C"}', overrides, ["layer_height"])
+
+        assert json.loads(result)["layer_height"] == "0.2"
 
 
 class TestExtraction:

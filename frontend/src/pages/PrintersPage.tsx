@@ -214,6 +214,36 @@ function formatKValue(k: number | null | undefined): string {
   return value.toFixed(3);
 }
 
+// K-profile value shown on the slot card itself (#2532) rather than only inside
+// the hover popup, the way BambuStudio shows it per slot.
+//
+// `k` arrives already gated on the slot being loaded; falsy means the printer
+// never reported a calibration for it. formatKValue() substitutes 0.020 for a
+// missing value, which is captioned inside the hover card but would read as a
+// real measurement on this permanent, uncaptioned line -- so an uncalibrated
+// slot gets no value at all. A ternary rather than `k && <div/>`: a firmware-
+// reported 0 makes that expression evaluate to the number 0, and React renders
+// numbers, putting a bare "0" under the material name.
+//
+// `reserve` holds the row's height open on the slots without a value whenever
+// some other slot on the same card has one, so every fill bar stays on one line.
+function KValueLine({ k, reserve }: { k: number | null | undefined; reserve: boolean }) {
+  const { t } = useTranslation();
+  const className = 'text-[length:var(--pc-t8,8px)] text-bambu-gray tabular-nums leading-none truncate';
+  if (!k) {
+    return reserve ? <div className={className} aria-hidden="true">&nbsp;</div> : null;
+  }
+  // Short label, full localized name on the title: "K Factor" / "K-Faktor" /
+  // "Facteur K" clipped the value itself below ~70px, and the slot grid floor is
+  // 3.5rem. tabular-nums rather than font-mono, which resolved to a different
+  // family per browser and so measured differently in Safari.
+  return (
+    <div className={className} title={t('ams.kFactor')}>
+      {t('ams.kFactorShort')} {formatKValue(k)}
+    </div>
+  );
+}
+
 // Nozzle side indicators (Bambu Lab style - square badge with L/R)
 function NozzleBadge({ side }: { side: 'L' | 'R' }) {
   const { mode } = useTheme();
@@ -2489,6 +2519,13 @@ function PrinterCard({
     }
   }, [status?.ams]);
   const amsData = (status?.ams && status.ams.length > 0) ? status.ams : cachedAmsData.current;
+  // #2532: the K-profile line only exists on slots the printer has actually
+  // calibrated. The AMS units and the external-spool group are flex siblings in
+  // one row, so on a card that shows a value anywhere, the slots without one
+  // reserve the same height -- otherwise their fill bars sit a line above their
+  // neighbours'. A card with no calibrated slot at all is unaffected.
+  const anySlotHasKValue = amsData.some(unit => unit.tray.some(tray => tray.k))
+    || (status?.vt_tray ?? []).some(tray => tray.k);
 
   // Confirm a drying cycle actually started (#2533). Firmware answers
   // ams_filament_drying with result=success even when it then silently declines,
@@ -5407,7 +5444,7 @@ function PrinterCard({
                                   // vendor-less form. Strip the "@<printer>..." suffix that
                                   // BambuStudio appends to user-preset names.
                                   profile: slotPreset?.preset_name || (slotSpoolForFill ? [slotSpoolForFill.brand, slotSpoolForFill.slicer_filament_name?.split('@')[0].trim() || slotSpoolForFill.material].filter(Boolean).join(' ').trim() : null) || inventoryAssignment?.spool?.slicer_filament_name || cloudInfo?.name || tray.tray_sub_brands || tray.tray_type,
-                                  colorName: getColorName(tray.tray_color || ''),
+                                  colorName: getColorName(tray.tray_color || '', tray.tray_sub_brands),
                                   colorHex: tray.tray_color || null,
                                   kFactor: formatKValue(tray.k),
                                   fillLevel: effectiveFill,
@@ -5467,6 +5504,7 @@ function PrinterCard({
                                     <div className="text-[length:var(--pc-t9,9px)] text-white font-bold truncate">
                                       {tray?.tray_type || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
                                     </div>
+                                    <KValueLine k={filamentData ? tray?.k : null} reserve={anySlotHasKValue} />
                                     {/* Fill bar */}
                                     <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                                       {effectiveFill !== null && effectiveFill >= 0 && !isEmpty && tray && (
@@ -5695,7 +5733,7 @@ function PrinterCard({
                         const filamentData = tray?.tray_type ? {
                           vendor: (isBambuLabSpool(tray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                           profile: slotPreset?.preset_name || (htSlotSpoolForFill ? [htSlotSpoolForFill.brand, htSlotSpoolForFill.slicer_filament_name?.split('@')[0].trim() || htSlotSpoolForFill.material].filter(Boolean).join(' ').trim() : null) || htInventoryAssignment?.spool?.slicer_filament_name || cloudInfo?.name || tray.tray_sub_brands || tray.tray_type,
-                          colorName: getColorName(tray.tray_color || ''),
+                          colorName: getColorName(tray.tray_color || '', tray.tray_sub_brands),
                           colorHex: tray.tray_color || null,
                           kFactor: formatKValue(tray.k),
                           fillLevel: htEffectiveFill,
@@ -5755,6 +5793,7 @@ function PrinterCard({
                             <div className="text-[length:var(--pc-t9,9px)] text-white font-bold truncate">
                               {tray?.tray_type || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
                             </div>
+                            <KValueLine k={filamentData ? tray?.k : null} reserve={anySlotHasKValue} />
                             {/* Fill bar */}
                             <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                               {htEffectiveFill !== null && htEffectiveFill >= 0 && !isEmpty && (
@@ -6114,7 +6153,7 @@ function PrinterCard({
                               const extFilamentData = {
                                 vendor: (isBambuLabSpool(extTray) ? 'Bambu Lab' : 'Generic') as 'Bambu Lab' | 'Generic',
                                 profile: extSlotPreset?.preset_name || (extSlotSpoolForFill ? [extSlotSpoolForFill.brand, extSlotSpoolForFill.slicer_filament_name?.split('@')[0].trim() || extSlotSpoolForFill.material].filter(Boolean).join(' ').trim() : null) || extInventoryAssignment?.spool?.slicer_filament_name || extCloudInfo?.name || extTray.tray_sub_brands || extTray.tray_type || 'Unknown',
-                                colorName: getColorName(extTray.tray_color || ''),
+                                colorName: getColorName(extTray.tray_color || '', extTray.tray_sub_brands),
                                 colorHex: extTray.tray_color || null,
                                 kFactor: formatKValue(extTray.k),
                                 fillLevel: extEffectiveFill,
@@ -6140,6 +6179,7 @@ function PrinterCard({
                                   <div className={`text-[length:var(--pc-t9,9px)] font-bold truncate ${isEmpty ? 'text-white/40' : 'text-white'}`}>
                                     {extTray.tray_type || t('ams.slotEmpty')}
                                   </div>
+                                  <KValueLine k={isEmpty ? null : extTray.k} reserve={anySlotHasKValue} />
                                   <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                                     {extEffectiveFill !== null && extEffectiveFill >= 0 && !isEmpty && (
                                       <div

@@ -4348,6 +4348,9 @@ export default {
     fromFileHint: 'Автор моделі змінив цей параметр у вихідному файлі. Значення: {{value}}.',
     fromFilePrinterCoupled: 'принтер автора',
     fromFilePrinterCoupledHint: 'Підібрано під принтер, для якого створено файл, — на вашому значення може бути хибним або поза діапазоном.',
+    fromFileOverridesPreset: 'перевизначає пресет',
+    fromFileOverridesPresetHint:
+      'У файлі задано {{value}}, а вибраний пресет використовує {{preset}}. Позначайте, лише якщо перевагу має файл.',
     useFromFile: 'Використовувати значення з вихідного файлу для «{{option}}»',
     otherFromFile: 'Інші параметри з цього файлу',
     loading: 'Завантаження налаштувань слайсера…',
@@ -4936,6 +4939,7 @@ export default {
     externalSpool: "Зовнішня котушка",
     profile: "Профіль",
     kFactor: "Фактор K",
+    kFactorShort: "K",
     fill: "Рівень заповнення",
     configure: "Налаштувати",
     used: "використовується",

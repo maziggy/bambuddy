@@ -179,17 +179,20 @@ describe('PrintersPage - K-profile always-visible display (#2532)', () => {
       // The slot itself is loaded and visible ...
       expect(screen.getByText('PETG')).toBeInTheDocument();
     });
-    // ... but no K-value line, fabricated or otherwise, should appear.
-    expect(screen.queryByText(/^K /)).not.toBeInTheDocument();
+    // ... but no K-value line, fabricated or otherwise, should appear. Read the
+    // slot's own text rather than only querying for a "K " label: a guard that
+    // leaks a value without the label would pass the label query.
+    expect(screen.getByText('PETG').parentElement).toHaveTextContent(/^1PETG$/);
   });
 
   it('does not show a K-value when the printer reports exactly 0 (review #2854, round 2)', async () => {
-    // maziggy's round-2 question: does tray.k != null let a real firmware
-    // "0" through as a misleading "K 0.000"? The backend's own kprofile_map
-    // (printer_manager.py) only admits truthy k_value entries when building
-    // the cali_idx lookup, so a stored K-profile of exactly 0 is already
-    // treated as "no calibration" upstream of this component. Matching that
-    // convention here means gating on a truthy tray.k, not just != null.
+    // maziggy's round-2 question: does tray.k != null let a real firmware "0"
+    // through as a misleading "K 0.000"? It does -- printer_manager.py assigns
+    // the tray's own reported k verbatim and only filters falsy values when
+    // falling back to a stored K-profile, so a 0 does reach this component.
+    // Gate on a truthy tray.k, and render it through a ternary: `tray.k && ...`
+    // evaluates to the number 0, and React renders numbers, so the guard itself
+    // would print a bare "0" where the value belongs.
     server.use(
       http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
         ...mockPrinterStatus,
@@ -216,7 +219,28 @@ describe('PrintersPage - K-profile always-visible display (#2532)', () => {
     await waitFor(() => {
       expect(screen.getByText('PETG')).toBeInTheDocument();
     });
-    expect(screen.queryByText(/^K /)).not.toBeInTheDocument();
+    // The slot number and the material, and nothing else -- no "K 0.000", and
+    // no stray "0" leaked by the guard.
+    expect(screen.getByText('PETG').parentElement).toHaveTextContent(/^1PETG$/);
+  });
+
+  it('does not leak a stray 0 on an external or AMS-HT slot reporting exactly 0', async () => {
+    // Same guard, same defect, on the two other slot types.
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+        ...mockPrinterStatus,
+        ams: [{ id: 1, tray: [{ id: 0, tray_type: 'ASA', tray_color: 'FFFFFFFF', k: 0 }] }],
+        vt_tray: [{ id: 254, tray_type: 'PLA', tray_color: '000000FF', k: 0 }],
+      })),
+    );
+
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('ASA')).toBeInTheDocument();
+    });
+    expect(screen.getByText('ASA').parentElement).toHaveTextContent(/^1ASA$/);
+    expect(screen.getByText('PLA').parentElement).toHaveTextContent(/^1PLA$/);
   });
 
   it('shows the K-value on a loaded AMS-HT slot without hovering', async () => {
@@ -265,5 +289,40 @@ describe('PrintersPage - K-profile always-visible display (#2532)', () => {
     await waitFor(() => {
       expect(screen.getByText('K 0.022')).toBeInTheDocument();
     });
+  });
+
+  it('reserves the row on slots without a K-value so fill bars stay aligned', async () => {
+    // The K line is an extra block child, so on a partially calibrated unit --
+    // the normal state, not an edge case -- the calibrated slot's fill bar would
+    // sit a line below its neighbours'. The slots without a value hold the row
+    // open instead. A card with no calibrated slot anywhere keeps its old
+    // height, which the tests above assert.
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json({
+        ...mockPrinterStatus,
+        ams: [{
+          id: 0,
+          tray: [
+            { id: 0, tray_type: 'PETG', tray_color: 'FF0000FF', k: 0.024 },
+            { id: 1, tray_type: 'PLA', tray_color: '00FF00FF', k: null },
+            { id: 2, tray_type: null, state: 9 },
+            { id: 3, tray_type: null, state: 9 },
+          ],
+        }],
+      })),
+    );
+
+    render(<PrintersPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('K 0.024')).toBeInTheDocument();
+    });
+
+    const calibrated = screen.getByText('PETG').parentElement as HTMLElement;
+    const uncalibrated = screen.getByText('PLA').parentElement as HTMLElement;
+    // Same number of children, so the fill bar sits at the same offset in both.
+    expect(uncalibrated.children.length).toBe(calibrated.children.length);
+    // The reserved row carries no readable text of its own.
+    expect(uncalibrated).toHaveTextContent(/^2PLA$/);
   });
 });

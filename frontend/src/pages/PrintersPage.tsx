@@ -214,6 +214,36 @@ function formatKValue(k: number | null | undefined): string {
   return value.toFixed(3);
 }
 
+// K-profile value shown on the slot card itself (#2532) rather than only inside
+// the hover popup, the way BambuStudio shows it per slot.
+//
+// `k` arrives already gated on the slot being loaded; falsy means the printer
+// never reported a calibration for it. formatKValue() substitutes 0.020 for a
+// missing value, which is captioned inside the hover card but would read as a
+// real measurement on this permanent, uncaptioned line -- so an uncalibrated
+// slot gets no value at all. A ternary rather than `k && <div/>`: a firmware-
+// reported 0 makes that expression evaluate to the number 0, and React renders
+// numbers, putting a bare "0" under the material name.
+//
+// `reserve` holds the row's height open on the slots without a value whenever
+// some other slot on the same card has one, so every fill bar stays on one line.
+function KValueLine({ k, reserve }: { k: number | null | undefined; reserve: boolean }) {
+  const { t } = useTranslation();
+  const className = 'text-[length:var(--pc-t8,8px)] text-bambu-gray tabular-nums leading-none truncate';
+  if (!k) {
+    return reserve ? <div className={className} aria-hidden="true">&nbsp;</div> : null;
+  }
+  // Short label, full localized name on the title: "K Factor" / "K-Faktor" /
+  // "Facteur K" clipped the value itself below ~70px, and the slot grid floor is
+  // 3.5rem. tabular-nums rather than font-mono, which resolved to a different
+  // family per browser and so measured differently in Safari.
+  return (
+    <div className={className} title={t('ams.kFactor')}>
+      {t('ams.kFactorShort')} {formatKValue(k)}
+    </div>
+  );
+}
+
 // Nozzle side indicators (Bambu Lab style - square badge with L/R)
 function NozzleBadge({ side }: { side: 'L' | 'R' }) {
   const { mode } = useTheme();
@@ -2489,6 +2519,13 @@ function PrinterCard({
     }
   }, [status?.ams]);
   const amsData = (status?.ams && status.ams.length > 0) ? status.ams : cachedAmsData.current;
+  // #2532: the K-profile line only exists on slots the printer has actually
+  // calibrated. The AMS units and the external-spool group are flex siblings in
+  // one row, so on a card that shows a value anywhere, the slots without one
+  // reserve the same height -- otherwise their fill bars sit a line above their
+  // neighbours'. A card with no calibrated slot at all is unaffected.
+  const anySlotHasKValue = amsData.some(unit => unit.tray.some(tray => tray.k))
+    || (status?.vt_tray ?? []).some(tray => tray.k);
 
   // Confirm a drying cycle actually started (#2533). Firmware answers
   // ams_filament_drying with result=success even when it then silently declines,
@@ -5467,34 +5504,7 @@ function PrinterCard({
                                     <div className="text-[length:var(--pc-t9,9px)] text-white font-bold truncate">
                                       {tray?.tray_type || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
                                     </div>
-                                    {/* K-Profile value, always visible (matches BambuStudio's own
-                                        per-slot display) rather than hidden behind hover-only.
-                                        Gated on filamentData (slot loaded) AND a truthy tray.k
-                                        (a real value was actually reported) — formatKValue()
-                                        defaults to 0.020 when k is null/undefined, which is fine
-                                        inside the captioned hover card but would read as a real
-                                        measured value on this permanent, uncaptioned line, so we
-                                        check the raw tray.k here rather than the already-defaulted
-                                        filamentData.kFactor (#2532). Truthy rather than != null:
-                                        the backend's own kprofile_map only admits k_value entries
-                                        that are themselves truthy (printer_manager.py ~1284), so a
-                                        stored K-profile of exactly 0 is already treated as "no
-                                        calibration" upstream — matching that convention here closes
-                                        the same misleading-reading gap for a hypothetical firmware-
-                                        reported literal 0 (review on #2854, round 2).
-                                        Short label (kFactorShort) + title with the full localized
-                                        name: measured in Chromium, the full "K Factor"/"K-Faktor"/
-                                        "Facteur K" label was clipping the actual value — the whole
-                                        point of the feature — on narrow slot widths (~<350px card).
-                                        The short form keeps every locale's label a single glyph. */}
-                                    {filamentData && tray?.k && (
-                                      <div
-                                        className="text-[length:var(--pc-t8,8px)] text-bambu-gray tabular-nums leading-none truncate"
-                                        title={t('ams.kFactor')}
-                                      >
-                                        {t('ams.kFactorShort')} {filamentData.kFactor}
-                                      </div>
-                                    )}
+                                    <KValueLine k={filamentData ? tray?.k : null} reserve={anySlotHasKValue} />
                                     {/* Fill bar */}
                                     <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                                       {effectiveFill !== null && effectiveFill >= 0 && !isEmpty && tray && (
@@ -5783,16 +5793,7 @@ function PrinterCard({
                             <div className="text-[length:var(--pc-t9,9px)] text-white font-bold truncate">
                               {tray?.tray_type || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
                             </div>
-                            {/* K-Profile value, always visible — see matching comment on the
-                                primary AMS slot card above (#2532, review round 2). */}
-                            {filamentData && tray?.k && (
-                              <div
-                                className="text-[length:var(--pc-t8,8px)] text-bambu-gray tabular-nums leading-none truncate"
-                                title={t('ams.kFactor')}
-                              >
-                                {t('ams.kFactorShort')} {filamentData.kFactor}
-                              </div>
-                            )}
+                            <KValueLine k={filamentData ? tray?.k : null} reserve={anySlotHasKValue} />
                             {/* Fill bar */}
                             <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                               {htEffectiveFill !== null && htEffectiveFill >= 0 && !isEmpty && (
@@ -6178,22 +6179,7 @@ function PrinterCard({
                                   <div className={`text-[length:var(--pc-t9,9px)] font-bold truncate ${isEmpty ? 'text-white/40' : 'text-white'}`}>
                                     {extTray.tray_type || t('ams.slotEmpty')}
                                   </div>
-                                  {/* K-Profile value, always visible — see matching comment on the
-                                      primary AMS slot card above (#2532, review round 2).
-                                      extFilamentData is built unconditionally here (unlike
-                                      filamentData elsewhere), so we gate on isEmpty AND a truthy
-                                      extTray.k instead — a loaded slot with no reported K value
-                                      should not show the fabricated formatKValue() default of
-                                      0.020, and a stored K-profile of exactly 0 is already treated
-                                      as "no calibration" by the backend's own kprofile_map. */}
-                                  {!isEmpty && extTray.k && (
-                                    <div
-                                      className="text-[length:var(--pc-t8,8px)] text-bambu-gray tabular-nums leading-none truncate"
-                                      title={t('ams.kFactor')}
-                                    >
-                                      {t('ams.kFactorShort')} {extFilamentData.kFactor}
-                                    </div>
-                                  )}
+                                  <KValueLine k={isEmpty ? null : extTray.k} reserve={anySlotHasKValue} />
                                   <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
                                     {extEffectiveFill !== null && extEffectiveFill >= 0 && !isEmpty && (
                                       <div

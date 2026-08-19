@@ -10,10 +10,16 @@
 // arrives instead of staying stuck on the HSL fallback.
 
 let runtimeColorCatalog: Record<string, string> = {};
+// Names a plain hex lookup cannot reach, keyed "<material>|<hex>". A hex is not
+// one colour in Bambu's range -- #FFFFFF is Jade White in PLA Basic and Ivory
+// White in PLA Matte -- so a caller that knows the material (an AMS slot knows
+// it as tray_sub_brands) gets the right one instead of whichever row the
+// backend's collapse happened to keep (#2875).
+let runtimeMaterialCatalog: Record<string, string> = {};
 let catalogVersion = 0;
 const catalogListeners = new Set<() => void>();
 
-export function setColorCatalog(map: Record<string, string>): void {
+export function setColorCatalog(map: Record<string, string>, byMaterial?: Record<string, string>): void {
   // Normalize keys to lowercase 6-char hex (no '#'), defensively. Backend already
   // does this, but the frontend contract is explicit so callers from tests or
   // future integrations can't accidentally break lookups.
@@ -23,7 +29,19 @@ export function setColorCatalog(map: Record<string, string>): void {
     const hex = key.replace('#', '').toLowerCase().slice(0, 6);
     if (hex.length === 6) normalized[hex] = value;
   }
+  const normalizedByMaterial: Record<string, string> = {};
+  for (const [key, value] of Object.entries(byMaterial || {})) {
+    if (!key || !value) continue;
+    // Split on the LAST separator: a material is free text (users edit the
+    // catalog) and may itself contain a '|'.
+    const cut = key.lastIndexOf('|');
+    if (cut <= 0) continue;
+    const material = key.slice(0, cut).trim().toLowerCase();
+    const cleanHex = key.slice(cut + 1).replace('#', '').toLowerCase().slice(0, 6);
+    if (material && cleanHex.length === 6) normalizedByMaterial[`${material}|${cleanHex}`] = value;
+  }
   runtimeColorCatalog = normalized;
+  runtimeMaterialCatalog = normalizedByMaterial;
   catalogVersion += 1;
   // Snapshot listeners to avoid mutation-during-iteration if a listener unsubscribes.
   for (const listener of Array.from(catalogListeners)) {
@@ -45,6 +63,7 @@ export function getColorCatalogVersion(): number {
 /** Test-only hook: reset the catalog to empty so unit tests can exercise fallbacks. */
 export function __resetColorCatalogForTests(): void {
   runtimeColorCatalog = {};
+  runtimeMaterialCatalog = {};
   catalogVersion = 0;
   catalogListeners.clear();
 }
@@ -210,12 +229,23 @@ export function colorSortKey(rgba: string | null | undefined): string {
 /**
  * Get color name from hex color.
  * Looks up the runtime color catalog (backend-sourced), then falls back to HSL.
+ *
+ * Pass `material` whenever the caller knows which variant the colour belongs to
+ * -- for an AMS slot that is the printer's own `tray_sub_brands` ("PLA Matte").
+ * Without it a white Matte spool reads "Jade White", the PLA Basic name that
+ * shares its hex, because the flat map can only keep one name per hex (#2875).
+ * An unknown material falls through to the flat lookup, so passing one can only
+ * ever improve the answer.
  */
-export function getColorName(hexColor: string): string {
+export function getColorName(hexColor: string, material?: string | null): string {
   if (!hexColor) return hexToColorName(hexColor);
   const clean = hexColor.replace('#', '').toLowerCase();
   if (clean.length === 8 && clean.substring(6, 8) === '00') return 'Clear';
   const hex = clean.substring(0, 6);
+  if (material) {
+    const qualified = runtimeMaterialCatalog[`${material.trim().toLowerCase()}|${hex}`];
+    if (qualified) return qualified;
+  }
   const mapped = runtimeColorCatalog[hex];
   if (mapped) return mapped;
   return hexToColorName(hexColor);

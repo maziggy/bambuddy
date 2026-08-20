@@ -12,7 +12,8 @@ class TestPoolConfiguration:
     """P0: env-configurable, dialect-aware pool sizing."""
 
     def test_sqlite_defaults_when_unset(self, monkeypatch):
-        """SQLite keeps 20 + 200 when no env override is set."""
+        """SQLite defaults are 10 + 20 when no env override is set (#2883:
+        caps the WAL parked-fd bound at ~30 instead of ~220)."""
         from backend.app.core import database
 
         for attr in ("db_pool_size", "db_max_overflow", "db_pool_timeout", "db_pool_recycle"):
@@ -20,8 +21,8 @@ class TestPoolConfiguration:
         monkeypatch.setattr(database, "is_sqlite", lambda: True)
 
         kwargs = database._resolve_pool_kwargs()
-        assert kwargs["pool_size"] == 20
-        assert kwargs["max_overflow"] == 200
+        assert kwargs["pool_size"] == 10
+        assert kwargs["max_overflow"] == 20
         # No server-socket recycle/pre-ping for a local file.
         assert "pool_pre_ping" not in kwargs
         assert "pool_recycle" not in kwargs

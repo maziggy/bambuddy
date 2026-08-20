@@ -522,6 +522,25 @@ async def test_obico_test_connection_refuses_metadata_without_a_request(target: 
     assert "cloud metadata" in result["error"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target", ["http://169.254.169.254", "http://metadata.google.internal"])
+async def test_bedcheck_ai_test_connection_refuses_metadata_without_a_request(target: str, monkeypatch):
+    """Same shape again: bedcheck_ai_base_url is guarded when saved via
+    settings, but POST /bedcheck-ai/test-connection takes the URL fresh from
+    the request body and must re-apply the guard before issuing a request."""
+    from backend.app.services.bedcheck_ai import test_connection
+
+    def _fail_if_called(*_a, **_kw):
+        raise AssertionError("outbound request should not have been attempted")
+
+    monkeypatch.setattr(httpx, "AsyncClient", _fail_if_called)
+    result = await test_connection(target, "some-model")
+
+    assert result["ok"] is False
+    assert result["verdict"] is None
+    assert "cloud metadata" in result["error"]
+
+
 # ---------------------------------------------------------------------------
 # Drift backstop, part 2: URLs that arrive in a request body
 # ---------------------------------------------------------------------------

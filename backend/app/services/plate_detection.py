@@ -795,6 +795,7 @@ async def check_plate_empty(
     use_external: bool = False,
     roi: tuple[float, float, float, float] | None = None,
     external_camera_snapshot_url: str | None = None,
+    backend_override: str | None = None,
 ) -> PlateDetectionResult:
     """Check if the build plate is empty for a printer.
 
@@ -817,7 +818,13 @@ async def check_plate_empty(
     # obico_detection.py's own settings read, and neither is held open across
     # the camera-capture I/O between them, so there's no long-lived connection
     # held open across blocking work.
-    backend = await get_bedcheck_backend()
+    # Per-printer override wins over the global setting; anything but a valid
+    # value (None from an un-overridden printer, or a stale/garbage string)
+    # falls through to the global read, which itself defaults to 'opencv'.
+    if backend_override in ("opencv", "ai"):
+        backend = backend_override
+    else:
+        backend = await get_bedcheck_backend()
 
     if backend == "opencv":
         return await _check_plate_empty_opencv(

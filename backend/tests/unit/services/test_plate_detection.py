@@ -322,6 +322,88 @@ class TestSelectorDispatch:
             assert result.confidence == 0.0
             assert "Failed to capture camera frame" in result.message
 
+    @pytest.mark.asyncio
+    async def test_per_printer_override_ai_beats_global_opencv(self):
+        """backend_override='ai' dispatches to the AI path even when the global
+        bedcheck_backend row says 'opencv' -- and the global read is skipped
+        entirely (no DB dependency when an override is present)."""
+        with patch.dict("sys.modules", {"cv2": cv2_mock, "numpy": np_mock}):
+            import importlib
+
+            import backend.app.services.plate_detection as pd_module
+
+            importlib.reload(pd_module)
+
+            sentinel = pd_module.PlateDetectionResult(
+                is_empty=True, confidence=0.9, difference_percent=0.0, message="ai result", backend="ai"
+            )
+            with (
+                patch("backend.app.core.database.async_session", _mock_async_session(row_value="opencv")),
+                patch.object(pd_module, "capture_camera_image", AsyncMock(return_value=(b"\xff\xd8fake", "built-in"))),
+                patch.object(pd_module, "_check_plate_empty_opencv", AsyncMock()) as mock_opencv,
+                patch.object(pd_module, "get_bedcheck_backend", AsyncMock()) as mock_global_read,
+                patch(
+                    "backend.app.services.bedcheck_ai.check_bed_ai", AsyncMock(return_value=sentinel)
+                ) as mock_check_bed_ai,
+            ):
+                result = await pd_module.check_plate_empty(1, "10.0.0.5", "code", "X1C", backend_override="ai")
+
+            mock_check_bed_ai.assert_awaited_once()
+            mock_opencv.assert_not_awaited()
+            mock_global_read.assert_not_awaited()
+            assert result is sentinel
+
+    @pytest.mark.asyncio
+    async def test_per_printer_override_opencv_beats_global_ai(self):
+        """backend_override='opencv' pins the OpenCV path even when the global
+        setting says 'ai'."""
+        with patch.dict("sys.modules", {"cv2": cv2_mock, "numpy": np_mock}):
+            import importlib
+
+            import backend.app.services.plate_detection as pd_module
+
+            importlib.reload(pd_module)
+
+            sentinel = pd_module.PlateDetectionResult(
+                is_empty=True, confidence=1.0, difference_percent=0.0, message="opencv result"
+            )
+            with (
+                patch("backend.app.core.database.async_session", _mock_async_session(row_value="ai")),
+                patch.object(pd_module, "_check_plate_empty_opencv", AsyncMock(return_value=sentinel)) as mock_opencv,
+                patch("backend.app.services.bedcheck_ai.check_bed_ai", AsyncMock()) as mock_check_bed_ai,
+            ):
+                result = await pd_module.check_plate_empty(1, "10.0.0.5", "code", "X1C", backend_override="opencv")
+
+            mock_opencv.assert_awaited_once()
+            mock_check_bed_ai.assert_not_awaited()
+            assert result is sentinel
+
+    @pytest.mark.parametrize("bad_override", ["both", "", "AI", "OpenCV", "nonsense"])
+    @pytest.mark.asyncio
+    async def test_invalid_override_falls_back_to_global_setting(self, bad_override):
+        """A stale/garbage override value is ignored -- the dispatcher falls
+        back to the global setting (here 'opencv') instead of guessing."""
+        with patch.dict("sys.modules", {"cv2": cv2_mock, "numpy": np_mock}):
+            import importlib
+
+            import backend.app.services.plate_detection as pd_module
+
+            importlib.reload(pd_module)
+
+            sentinel = pd_module.PlateDetectionResult(
+                is_empty=True, confidence=1.0, difference_percent=0.0, message="opencv result"
+            )
+            with (
+                patch("backend.app.core.database.async_session", _mock_async_session(row_value="opencv")),
+                patch.object(pd_module, "_check_plate_empty_opencv", AsyncMock(return_value=sentinel)) as mock_opencv,
+                patch("backend.app.services.bedcheck_ai.check_bed_ai", AsyncMock()) as mock_check_bed_ai,
+            ):
+                result = await pd_module.check_plate_empty(1, "10.0.0.5", "code", "X1C", backend_override=bad_override)
+
+            mock_opencv.assert_awaited_once()
+            mock_check_bed_ai.assert_not_awaited()
+            assert result is sentinel
+
     @pytest.mark.parametrize("garbage_value", ["both", "nonsense", "", "OpenCV", "AI"])
     @pytest.mark.asyncio
     async def test_unknown_backend_value_falls_back_to_opencv(self, garbage_value):
@@ -404,3 +486,29 @@ class TestSelectorDispatch:
                 backend = await pd_module.get_bedcheck_backend()
 
             assert backend == "opencv"
+
+
+class TestBedcheckBackendOverrideSchema:
+    """PrinterUpdate.bedcheck_backend_override accepts only 'opencv'/'ai'/None."""
+
+    def test_accepts_valid_values_and_null(self):
+        from backend.app.schemas.printer import PrinterUpdate
+
+        assert PrinterUpdate(bedcheck_backend_override="ai").bedcheck_backend_override == "ai"
+        assert PrinterUpdate(bedcheck_backend_override="opencv").bedcheck_backend_override == "opencv"
+        assert PrinterUpdate(bedcheck_backend_override=None).bedcheck_backend_override is None
+
+    def test_omitted_field_is_unset_so_updates_leave_it_alone(self):
+        from backend.app.schemas.printer import PrinterUpdate
+
+        upd = PrinterUpdate(plate_detection_enabled=True)
+        assert "bedcheck_backend_override" not in upd.model_dump(exclude_unset=True)
+
+    def test_rejects_garbage(self):
+        import pytest as _pytest
+
+        from backend.app.schemas.printer import PrinterUpdate
+
+        for bad in ("both", "AI", "OpenCV", "", "auto"):
+            with _pytest.raises(ValueError):
+                PrinterUpdate(bedcheck_backend_override=bad)

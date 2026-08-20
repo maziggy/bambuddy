@@ -3081,6 +3081,17 @@ function PrinterCard({
     onError: (error: Error) => showToast(error.message || t('printers.toast.failedToUpdateSetting'), 'error'),
   });
 
+  // Per-printer bed-check backend override; null = follow the global setting.
+  const bedcheckBackendMutation = useMutation({
+    mutationFn: (backendOverride: 'opencv' | 'ai' | null) =>
+      api.updatePrinter(printer.id, { bedcheck_backend_override: backendOverride }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['printers'] });
+      showToast(t('printers.plateDetection.decision.modeSaved'));
+    },
+    onError: (error: Error) => showToast(error.message || t('printers.toast.failedToUpdateSetting'), 'error'),
+  });
+
   // Maintenance mode toggle (#1476). Wraps the `is_active` backend field that
   // already gates MQTT connection, queue dispatch, scheduler eligibility,
   // metrics, and the print picker — so flipping this flag puts the printer
@@ -6725,6 +6736,27 @@ function PrinterCard({
                       {t('printers.plateDetection.decision.aiConfigHint')}
                     </p>
                   )}
+                  {/* Per-printer backend mode — writes printers.bedcheck_backend_override */}
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-sm text-bambu-gray" htmlFor={`bedcheck-mode-${printer.id}`}>
+                      {t('printers.plateDetection.decision.modeLabel')}
+                    </label>
+                    <select
+                      id={`bedcheck-mode-${printer.id}`}
+                      value={printer.bedcheck_backend_override ?? ''}
+                      disabled={bedcheckBackendMutation.isPending || !hasPermission('printers:update')}
+                      onChange={(e) =>
+                        bedcheckBackendMutation.mutate(
+                          e.target.value === '' ? null : (e.target.value as 'opencv' | 'ai')
+                        )
+                      }
+                      className="bg-bambu-dark border border-bambu-dark-tertiary rounded-lg px-2 py-1 text-sm text-white"
+                    >
+                      <option value="">{t('printers.plateDetection.decision.modeGlobal')}</option>
+                      <option value="opencv">{t('printers.plateDetection.decision.backendOpencv')}</option>
+                      <option value="ai">{t('printers.plateDetection.decision.backendAi')}</option>
+                    </select>
+                  </div>
                   {plateCheckResult.debug_image_url && (
                     <div>
                       <p className="text-sm text-bambu-gray mb-2">{t('printers.plateDetection.analysisPreview')}</p>

@@ -3078,6 +3078,7 @@ async def on_print_start(printer_id: int, data: dict):
                     external_camera_type=printer.external_camera_type,
                     use_external=printer.external_camera_enabled,
                     roi=roi,
+                    backend_override=printer.bedcheck_backend_override,
                     external_camera_snapshot_url=printer.external_camera_snapshot_url,
                 )
 

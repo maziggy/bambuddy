@@ -374,6 +374,8 @@ export interface Printer {
   camera_rotation: number;  // 0, 90, 180, 270 degrees
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
+  // Per-printer bed-check backend; null = follow the global bedcheck_backend setting.
+  bedcheck_backend_override?: 'opencv' | 'ai' | null;
   created_at: string;
   updated_at: string;
 }
@@ -643,6 +645,8 @@ export interface PrinterCreate {
   camera_rotation?: number;
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
+  // Omit to leave unchanged; null clears the override (follow global setting).
+  bedcheck_backend_override?: 'opencv' | 'ai' | null;
 }
 
 // Plate Detection

@@ -115,6 +115,8 @@ registerSettingsSearch({ labelKey: 'failureDetection.statusTitle', labelFallback
 registerSettingsSearch({ labelKey: 'failureDetection.historyTitle', labelFallback: 'Detection History', tab: 'failure-detection', keywords: 'failure detection history log events', anchor: 'card-fd-history' });
 registerSettingsSearch({ labelKey: 'settings.tabs.buildPlateCheck', labelFallback: 'Build Plate Check', tab: 'build-plate-check', keywords: 'build plate check bed empty occupancy detection backend', anchor: 'card-build-plate-check' });
 registerSettingsSearch({ labelKey: 'bedcheckAi.title', labelFallback: 'Build Plate Check — AI Backend', tab: 'build-plate-check', keywords: 'ai bed check plate occupancy vision model ollama openai vlm build plate empty', anchor: 'card-bedcheck-ai' });
+registerSettingsSearch({ labelKey: 'bedcheckAi.printersTitle', labelFallback: 'Monitored printers', tab: 'build-plate-check', keywords: 'plate check per printer monitored printers backend override enable', anchor: 'card-bedcheck-printers' });
+registerSettingsSearch({ labelKey: 'bedcheckAi.statusTitle', labelFallback: 'Status', tab: 'build-plate-check', keywords: 'plate check status effective backend per printer', anchor: 'card-bedcheck-status' });
 // Email auth sub-cards (subTab=email)
 registerSettingsSearch({ labelKey: 'settings.email.advancedAuth', labelFallback: 'Advanced Email Authentication', tab: 'users', subTab: 'email', keywords: 'email authentication advanced password reset self-service forgot', anchor: 'card-email-advanced-auth' });
 registerSettingsSearch({ labelKey: 'settings.email.testConnection', labelFallback: 'Test SMTP Connection', tab: 'users', subTab: 'email', keywords: 'email smtp test connection send check', anchor: 'card-email-test' });

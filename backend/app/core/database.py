@@ -2139,6 +2139,10 @@ async def run_migrations(conn):
     # Migration: Add plate_detection_enabled column to printers
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN plate_detection_enabled BOOLEAN DEFAULT 0")
 
+    # Migration: per-printer bed-check backend override (NULL = follow the
+    # global bedcheck_backend setting)
+    await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN bedcheck_backend_override VARCHAR(10)")
+
     # Migration: Add plate detection ROI columns to printers
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN plate_detection_roi_x REAL")
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN plate_detection_roi_y REAL")

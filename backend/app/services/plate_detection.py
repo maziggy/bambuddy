@@ -580,6 +580,61 @@ class PlateDetector:
             )
 
 
+def get_reference_image_paths(printer_id: int) -> list[Path]:
+    """List existing calibration reference image paths for a printer, slot order.
+
+    Duplicates PlateDetector._get_reference_paths() (lines 127-135) minus the
+    mkdir, deliberately: that instance method is behind an OpenCV-raising
+    __init__ (line 92), and this needs to run without OpenCV installed at all.
+    Works regardless of OPENCV_AVAILABLE — reference images are plain files on
+    disk; only *comparing* pixels against them needs OpenCV.
+
+    D1 NOTE: only wired in if the Phase-4 bench shows a measurable accuracy
+    gain for few-shot over zero-shot. If not, this function, MAX_FEWSHOT_REFERENCES,
+    and USER_PROMPT_INTRO_WITH_REFS in bedcheck_ai.py are all cut before filing.
+    """
+    calib_dir = _get_calibration_dir()
+    paths: list[Path] = []
+    for i in range(PlateDetector.MAX_REFERENCES):
+        p = calib_dir / f"printer_{printer_id}_ref_{i}.jpg"
+        if p.exists():
+            paths.append(p)
+    return paths
+
+
+async def get_bedcheck_backend() -> str:
+    """Read the bedcheck_backend setting. Absent row / unrecognized value / DB
+    read failure all resolve to 'opencv' (matches the pre-feature behavior
+    exactly — existing installs see zero change).
+
+    Wrapped in try/except deliberately: check_plate_empty() today performs zero
+    DB work before capturing a frame. Letting a DB hiccup (pool exhaustion,
+    locked SQLite, disconnected engine) raise out of this function would be a
+    fail-CLOSED regression on camera.py's manual-check route, which holds no
+    try/except around its call to check_plate_empty (verified: no try/except
+    wraps `result = await do_check(...)` at camera.py:1520 on dev, identical to
+    main) -- a DB blip there would turn a normal plate check into an HTTP 500
+    instead of silently falling back to the OpenCV path it always used before
+    this feature existed. main.py's call site is already protected by its own
+    blanket `except Exception as plate_err` (dev main.py:3121-3123), but this
+    function must not rely on the caller for that.
+    """
+    from sqlalchemy import select
+
+    from backend.app.core.database import async_session
+    from backend.app.models.settings import Settings
+
+    try:
+        async with async_session() as db:
+            result = await db.execute(select(Settings).where(Settings.key == "bedcheck_backend"))
+            row = result.scalar_one_or_none()
+        value = row.value if row else "opencv"
+    except Exception as e:
+        logger.warning("bedcheck_backend read failed, defaulting to opencv: %s", e)
+        return "opencv"
+    return value if value in ("opencv", "ai") else "opencv"
+
+
 async def capture_camera_image(
     printer_id: int,
     ip_address: str,
@@ -671,7 +726,7 @@ async def capture_camera_image(
     return image_data, camera_source
 
 
-async def check_plate_empty(
+async def _check_plate_empty_opencv(
     printer_id: int,
     ip_address: str,
     access_code: str,
@@ -736,6 +791,84 @@ async def check_plate_empty(
     result.message = f"[{camera_source}] {result.message}"
 
     return result
+
+
+async def check_plate_empty(
+    printer_id: int,
+    ip_address: str,
+    access_code: str,
+    model: str,
+    plate_type: str | None = None,
+    include_debug_image: bool = False,
+    external_camera_url: str | None = None,
+    external_camera_type: str | None = None,
+    use_external: bool = False,
+    roi: tuple[float, float, float, float] | None = None,
+    external_camera_snapshot_url: str | None = None,
+) -> PlateDetectionResult:
+    """Check if the build plate is empty for a printer.
+
+    Dispatches on the bedcheck_backend setting ('opencv' | 'ai', default
+    'opencv' -- an absent row, or a DB read failure, behaves identically to
+    'opencv', so existing installs see zero behavior change on upgrade):
+
+    - 'opencv': calibration-based pixel-difference detection, unchanged
+      (_check_plate_empty_opencv).
+    - 'ai': one snapshot sent to a configured OpenAI-compatible vision model
+      (services/bedcheck_ai.py). Fails open (is_empty=True) on any error.
+
+    Same args and return shape regardless of backend.
+    """
+    # NOTE D (advisor design note): when backend == 'ai', this opens the FIRST of
+    # two short, sequential DB sessions for one check -- this one (bedcheck_backend),
+    # then a second inside bedcheck_ai._analyze_frame_ai -> _load_ai_settings (the
+    # 3 connection keys). Deliberate, not an oversight: each is a narrow,
+    # independently-committed `async with async_session()` read, same shape as
+    # obico_detection.py's own settings read, and neither is held open across the
+    # camera-capture I/O between them. Categorically unlike this fork's own
+    # WAL/parked-fd exhaustion incident (long-lived connections held open across
+    # blocking work) -- see /Users/rowdyer/Coding/Homelab memory
+    # project_bambuddy_db_corruption_2026-08-19.md. See §2's concurrent-session
+    # note for the related (and separately adjudicated) camera.py-route point.
+    backend = await get_bedcheck_backend()
+
+    if backend == "opencv":
+        return await _check_plate_empty_opencv(
+            printer_id,
+            ip_address,
+            access_code,
+            model,
+            plate_type,
+            include_debug_image,
+            external_camera_url,
+            external_camera_type,
+            use_external,
+            roi,
+            external_camera_snapshot_url=external_camera_snapshot_url,
+        )
+
+    # backend == "ai" -- needs one captured frame, independent of OPENCV_AVAILABLE.
+    image_data, camera_source = await capture_camera_image(
+        printer_id,
+        ip_address,
+        access_code,
+        model,
+        external_camera_url,
+        external_camera_type,
+        use_external,
+        external_camera_snapshot_url=external_camera_snapshot_url,
+    )
+    if image_data is None:
+        return PlateDetectionResult(
+            is_empty=True,  # Default to empty on error
+            confidence=0.0,
+            difference_percent=0.0,
+            message="Failed to capture camera frame from any source",
+        )
+
+    from backend.app.services.bedcheck_ai import check_bed_ai
+
+    return await check_bed_ai(printer_id, image_data, camera_source)
 
 
 async def calibrate_plate(

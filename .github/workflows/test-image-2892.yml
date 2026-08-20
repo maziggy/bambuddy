@@ -1,0 +1,33 @@
+name: Test Bambuddy PR 2892 image
+
+on:
+  push:
+    branches:
+      - feat/inventory-only-assignment
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ghcr.io/mikefox303/bambuddy:1.2.5.3-test.2892.1
+          labels: |
+            org.opencontainers.image.source=https://github.com/maziggy/bambuddy
+            org.opencontainers.image.revision=15a9b323dd14de94d222663ad996c9a1067c5e21
+            org.opencontainers.image.version=1.2.5.3-test.2892.1

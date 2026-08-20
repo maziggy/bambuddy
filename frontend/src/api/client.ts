@@ -665,6 +665,11 @@ export interface PlateDetectionResult {
   reference_count?: number;
   max_references?: number;
   roi?: PlateDetectionROI;
+  // Which backend produced the verdict; absent on servers predating the
+  // AI bed-check feature, so treat undefined as 'opencv'.
+  backend?: 'opencv' | 'ai';
+  // The vision model's stated reason (AI backend only).
+  ai_reason?: string | null;
 }
 
 export interface PlateDetectionStatus {

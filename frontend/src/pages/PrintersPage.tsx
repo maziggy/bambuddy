@@ -2319,6 +2319,9 @@ function PrinterCard({
     reference_count?: number;
     max_references?: number;
     roi?: { x: number; y: number; w: number; h: number };
+    // Absent on servers predating the AI bed-check feature → treat as 'opencv'.
+    backend?: 'opencv' | 'ai';
+    ai_reason?: string | null;
   } | null>(null);
   const [isCheckingPlate, setIsCheckingPlate] = useState(false);
   const [isCalibrating, setIsCalibrating] = useState(false);
@@ -6682,10 +6685,46 @@ function PrinterCard({
                     <p className={`font-medium ${plateCheckResult.is_empty ? 'text-green-700 dark:text-green-400' : 'text-yellow-700 dark:text-yellow-400'}`}>
                       {plateCheckResult.is_empty ? t('printers.plateDetection.plateEmpty') : t('printers.plateDetection.objectsDetected')}
                     </p>
-                    <p className="text-sm text-bambu-gray mt-1">
-                      {t('printers.plateDetection.confidence')}: {Math.round(plateCheckResult.confidence * 100)}% | {t('printers.plateDetection.difference')}: {plateCheckResult.difference_percent.toFixed(1)}%
-                    </p>
                   </div>
+                  {/* Decision matrix — how the active backend reached this verdict.
+                      `backend` is absent on servers predating the AI bed-check
+                      feature; treat undefined as the OpenCV path (the only one
+                      that existed then). */}
+                  <div className="rounded-lg border border-bambu-dark-tertiary overflow-hidden">
+                    <div className="px-3 py-2 bg-bambu-dark-tertiary/50 flex items-center gap-2">
+                      <p className="text-sm font-medium text-white">{t('printers.plateDetection.decision.title')}</p>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${plateCheckResult.backend === 'ai' ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'}`}>
+                        {plateCheckResult.backend === 'ai' ? t('printers.plateDetection.decision.backendAi') : t('printers.plateDetection.decision.backendOpencv')}
+                      </span>
+                    </div>
+                    <div className="divide-y divide-bambu-dark-tertiary text-sm">
+                      <div className="grid grid-cols-[8rem_1fr] gap-2 px-3 py-1.5">
+                        <span className="text-bambu-gray">{t('printers.plateDetection.decision.verdict')}</span>
+                        <span className="text-white">{plateCheckResult.is_empty ? t('printers.plateDetection.plateEmpty') : t('printers.plateDetection.objectsDetected')}</span>
+                      </div>
+                      <div className="grid grid-cols-[8rem_1fr] gap-2 px-3 py-1.5">
+                        <span className="text-bambu-gray">{t('printers.plateDetection.confidence')}</span>
+                        <span className="text-white">{Math.round(plateCheckResult.confidence * 100)}%</span>
+                      </div>
+                      {plateCheckResult.backend !== 'ai' && (
+                        <div className="grid grid-cols-[8rem_1fr] gap-2 px-3 py-1.5">
+                          <span className="text-bambu-gray">{t('printers.plateDetection.difference')}</span>
+                          <span className="text-white">{plateCheckResult.difference_percent.toFixed(1)}%</span>
+                        </div>
+                      )}
+                      {plateCheckResult.backend === 'ai' && plateCheckResult.ai_reason && (
+                        <div className="grid grid-cols-[8rem_1fr] gap-2 px-3 py-1.5">
+                          <span className="text-bambu-gray">{t('printers.plateDetection.decision.reason')}</span>
+                          <span className="text-white">{plateCheckResult.ai_reason}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {plateCheckResult.backend === 'ai' && (
+                    <p className="text-xs text-bambu-gray">
+                      {t('printers.plateDetection.decision.aiConfigHint')}
+                    </p>
+                  )}
                   {plateCheckResult.debug_image_url && (
                     <div>
                       <p className="text-sm text-bambu-gray mb-2">{t('printers.plateDetection.analysisPreview')}</p>

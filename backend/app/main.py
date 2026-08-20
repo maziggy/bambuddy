@@ -22,6 +22,7 @@ from backend.app.api.routes import (
     archive_purge,
     archives,
     auth,
+    bedcheck_ai,
     bug_report,
     camera,
     camwall,
@@ -9042,6 +9043,7 @@ app.include_router(firmware.router, prefix=app_settings.api_prefix)
 app.include_router(github_backup.router, prefix=app_settings.api_prefix)
 app.include_router(local_backup.router, prefix=app_settings.api_prefix)
 app.include_router(obico.router, prefix=app_settings.api_prefix)
+app.include_router(bedcheck_ai.router, prefix=app_settings.api_prefix)
 app.include_router(metrics.router, prefix=app_settings.api_prefix)
 app.include_router(virtual_printers.router, prefix=app_settings.api_prefix)
 app.include_router(spoolbuddy.router, prefix=app_settings.api_prefix)

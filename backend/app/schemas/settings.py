@@ -18,7 +18,13 @@ from backend.app.utils.printer_models import MAX_CHAMBER_TEMP_C
 # tests/unit/test_outbound_url_ssrf_guards.py can import the real list and
 # cannot drift from it. Any new outbound-URL setting belongs here (or, if it
 # must be reachable on the public internet, on the stricter OIDC guard).
-LAN_SERVICE_URL_SETTINGS = ("ha_url", "obico_ml_url", "orcaslicer_api_url", "bambu_studio_api_url")
+LAN_SERVICE_URL_SETTINGS = (
+    "ha_url",
+    "obico_ml_url",
+    "orcaslicer_api_url",
+    "bambu_studio_api_url",
+    "bedcheck_ai_base_url",
+)
 
 # ``docker_compose_dir`` is unusual among the string settings: it is not
 # consumed by Bambuddy at all, it is interpolated into a shell command that
@@ -599,6 +605,30 @@ class AppSettings(BaseModel):
         description="JSON array of printer IDs to monitor (empty = all connected printers)",
     )
 
+    # AI bed-check -- selectable backend for check_plate_empty() (build plate empty check)
+    bedcheck_backend: str = Field(
+        default="opencv",
+        description=(
+            "Build plate check backend: 'opencv' (local calibration-diff detection, default) "
+            "or 'ai' (send a snapshot to a configured vision model)"
+        ),
+    )
+    bedcheck_ai_base_url: str = Field(
+        default="",
+        description=(
+            "OpenAI-compatible base URL for the bed-check vision model, e.g. "
+            "http://192.168.1.20:11434/v1 (local Ollama) or https://api.openai.com/v1"
+        ),
+    )
+    bedcheck_ai_model: str = Field(
+        default="",
+        description="Model name sent in the chat/completions request, e.g. qwen2.5vl:7b for local Ollama",
+    )
+    bedcheck_ai_api_key: str = Field(
+        default="",
+        description="Bearer token for the AI backend. Leave empty for a local server that requires none",
+    )
+
     # Inventory forecasting
     forecast_global_lead_time_days: int = Field(
         default=0,
@@ -746,6 +776,10 @@ class AppSettingsUpdate(BaseModel):
     obico_action: str | None = None
     obico_poll_interval: int | None = Field(default=None, ge=5, le=120)
     obico_enabled_printers: str | None = None
+    bedcheck_backend: str | None = None
+    bedcheck_ai_base_url: str | None = None
+    bedcheck_ai_model: str | None = None
+    bedcheck_ai_api_key: str | None = None
     default_sidebar_order: str | None = None
     forecast_global_lead_time_days: int | None = Field(default=None, ge=0)
 
@@ -755,12 +789,12 @@ class AppSettingsUpdate(BaseModel):
         """Reject SSRF-unsafe outbound service URLs on save.
 
         Empty (and whitespace-only) is the documented "not configured / fall
-        back to the env var" value for all four fields and must keep passing.
+        back to the env var" value for all five fields and must keep passing.
 
         Values that are not absolute URLs at all ("192.168.1.10:3333",
         "localhost:3333") are left alone rather than rejected. Two reasons:
 
-        - They are inert. Every consumer of these four settings goes through
+        - They are inert. Every consumer of these five settings goes through
           httpx, which raises UnsupportedProtocol for a URL with no scheme, so
           no request is ever issued and there is nothing to guard against.
         - They were storable before this validator existed, and the settings
@@ -912,6 +946,15 @@ class AppSettingsUpdate(BaseModel):
             return v
         if v not in ("notify", "pause", "pause_and_off"):
             raise ValueError("obico_action must be 'notify', 'pause', or 'pause_and_off'")
+        return v
+
+    @field_validator("bedcheck_backend")
+    @classmethod
+    def validate_bedcheck_backend(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if v not in ("opencv", "ai"):
+            raise ValueError("bedcheck_backend must be 'opencv' or 'ai'")
         return v
 
     @field_validator("default_sidebar_order")

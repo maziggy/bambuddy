@@ -42,6 +42,8 @@ class PlateDetectionResult:
         message: str,
         debug_image: bytes | None = None,
         needs_calibration: bool = False,
+        backend: str = "opencv",
+        ai_reason: str | None = None,
     ):
         self.is_empty = is_empty
         self.confidence = confidence  # 0.0 to 1.0
@@ -49,6 +51,14 @@ class PlateDetectionResult:
         self.message = message
         self.debug_image = debug_image  # Optional annotated image for debugging
         self.needs_calibration = needs_calibration  # True if no reference image exists
+        # Which backend produced this verdict ('opencv' | 'ai'). Structured so
+        # the UI can render the decision breakdown without parsing `message`.
+        # Defaults to 'opencv' so every pre-existing construction site keeps
+        # its meaning unmodified.
+        self.backend = backend
+        # The vision model's own stated reason (AI backend only, None for
+        # OpenCV) -- surfaced verbatim in the plate-check modal.
+        self.ai_reason = ai_reason
 
     def to_dict(self) -> dict:
         return {
@@ -58,6 +68,8 @@ class PlateDetectionResult:
             "message": self.message,
             "has_debug_image": self.debug_image is not None,
             "needs_calibration": bool(self.needs_calibration),
+            "backend": self.backend,
+            "ai_reason": self.ai_reason,
         }
 
 
@@ -839,6 +851,7 @@ async def check_plate_empty(
             confidence=0.0,
             difference_percent=0.0,
             message="Failed to capture camera frame from any source",
+            backend="ai",
         )
 
     from backend.app.services.bedcheck_ai import check_bed_ai

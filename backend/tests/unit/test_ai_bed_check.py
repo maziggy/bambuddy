@@ -258,6 +258,29 @@ class TestVerdictMapping:
         assert isinstance(d["confidence"], float)
         assert isinstance(d["difference_percent"], float)
 
+    def test_ai_result_carries_structured_backend_and_reason(self):
+        """The decision-matrix UI reads these fields instead of parsing message."""
+        result = build_ai_result(
+            is_empty=False, confidence=0.8, reason="a spool is on the plate", camera_source="built-in"
+        )
+        d = result.to_dict()
+        assert d["backend"] == "ai"
+        assert d["ai_reason"] == "a spool is on the plate"
+
+    def test_ai_result_empty_reason_serializes_as_none(self):
+        result = build_ai_result(is_empty=True, confidence=1.0, reason="", camera_source="built-in")
+        assert result.to_dict()["ai_reason"] is None
+
+    def test_default_backend_is_opencv_for_unmodified_construction(self):
+        """Every pre-existing PlateDetectionResult construction site (all the
+        OpenCV paths) passes no backend kwarg -- the default must keep them
+        reporting 'opencv' with no ai_reason."""
+        from backend.app.services.plate_detection import PlateDetectionResult
+
+        d = PlateDetectionResult(is_empty=True, confidence=1.0, difference_percent=0.0, message="m").to_dict()
+        assert d["backend"] == "opencv"
+        assert d["ai_reason"] is None
+
 
 class TestFailOpenPerErrorClass:
     """The universal-fail-open requirement -- one test per failure class.
@@ -276,6 +299,10 @@ class TestFailOpenPerErrorClass:
         assert result.difference_percent == 0.0
         assert result.needs_calibration is False
         assert result.message == expected_message
+        # Even a failed AI check must self-identify as the AI backend so the
+        # decision-matrix UI attributes the fail-open verdict correctly.
+        assert result.backend == "ai"
+        assert result.ai_reason is None
 
     @pytest.mark.asyncio
     async def test_fails_open_on_timeout(self):

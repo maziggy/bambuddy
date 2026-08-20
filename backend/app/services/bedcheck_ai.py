@@ -307,6 +307,8 @@ def build_ai_result(is_empty: bool, confidence: float, reason: str, camera_sourc
         # missing, and this preserves main.py's existing needs_calibration
         # pause-gate behavior unchanged.
         needs_calibration=False,
+        backend="ai",
+        ai_reason=reason or None,
     )
 
 
@@ -352,6 +354,7 @@ async def check_bed_ai(printer_id: int, image_data: bytes, camera_source: str) -
             difference_percent=0.0,
             needs_calibration=False,
             message=f"[{camera_source}] AI bed-check unavailable: {_generic_fail_open_reason(e)}",
+            backend="ai",
         )
     return build_ai_result(is_empty, confidence, reason, camera_source)
 

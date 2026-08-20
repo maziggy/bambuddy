@@ -1,12 +1,41 @@
 """Unit tests for plate detection service."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 # Mock cv2 and numpy before importing the module
 cv2_mock = MagicMock()
 np_mock = MagicMock()
+
+
+def _mock_async_session(row_value=None, raise_on_enter=None):
+    """Build a mock 'async_session' callable shaped like the real
+    backend.app.core.database.async_session -- an async-context-manager
+    factory whose session's .execute(select(...)).scalar_one_or_none()
+    returns an object with .value == row_value (or None for "no row").
+
+    get_bedcheck_backend() resolves async_session via a *local* import
+    inside its own function body (from backend.app.core.database import
+    async_session), so this file -- which carries no DB fixture of its own
+    -- patches the real source attribute, backend.app.core.database.async_session,
+    rather than anything on the reloaded plate_detection module.
+
+    If raise_on_enter is given, entering the context manager raises it
+    (simulates a DB connection failure before any query runs).
+    """
+    mock_cm = MagicMock()
+    if raise_on_enter is not None:
+        mock_cm.__aenter__ = AsyncMock(side_effect=raise_on_enter)
+    else:
+        mock_result = MagicMock()
+        row = MagicMock(value=row_value) if row_value is not None else None
+        mock_result.scalar_one_or_none.return_value = row
+        mock_db = MagicMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
+    mock_cm.__aexit__ = AsyncMock(return_value=False)
+    return MagicMock(return_value=mock_cm)
 
 
 class TestPlateDetectionResult:
@@ -196,3 +225,182 @@ class TestDeleteCalibration:
 
             result = pd_module.delete_calibration(1)
             assert result is False
+
+
+class TestSelectorDispatch:
+    """Tests for check_plate_empty()'s bedcheck_backend dispatcher (AI bed-check).
+
+    get_bedcheck_backend() reads its one setting via a *local* import inside
+    its own function body -- `from backend.app.core.database import
+    async_session` at call time, not a module-level binding -- so it always
+    resolves whatever backend.app.core.database.async_session currently is,
+    including the mock installed by _mock_async_session() below. This file
+    carries no DB fixture of its own (verified: no db/async_session/conftest
+    reference anywhere else in it), so that guarded, always-resolving read is
+    the only way these tests can exercise the dispatcher at all.
+    """
+
+    @pytest.mark.asyncio
+    async def test_default_backend_is_opencv(self):
+        """No bedcheck_backend row in DB -> get_bedcheck_backend() returns
+        'opencv' -> check_plate_empty() dispatches to _check_plate_empty_opencv
+        and never touches the bedcheck_ai module."""
+        with patch.dict("sys.modules", {"cv2": cv2_mock, "numpy": np_mock}):
+            import importlib
+
+            import backend.app.services.plate_detection as pd_module
+
+            importlib.reload(pd_module)
+
+            sentinel = pd_module.PlateDetectionResult(
+                is_empty=True, confidence=0.0, difference_percent=0.0, message="opencv result"
+            )
+            with (
+                patch("backend.app.core.database.async_session", _mock_async_session(row_value=None)),
+                patch.object(pd_module, "_check_plate_empty_opencv", AsyncMock(return_value=sentinel)) as mock_opencv,
+                patch("backend.app.services.bedcheck_ai.check_bed_ai", AsyncMock()) as mock_check_bed_ai,
+            ):
+                result = await pd_module.check_plate_empty(1, "10.0.0.5", "code", "X1C")
+
+            mock_opencv.assert_awaited_once()
+            mock_check_bed_ai.assert_not_awaited()
+            assert result is sentinel
+
+    @pytest.mark.asyncio
+    async def test_ai_backend_dispatches_to_check_bed_ai(self):
+        """bedcheck_backend='ai' row present -> check_plate_empty() captures a
+        frame and dispatches to bedcheck_ai.check_bed_ai with it, never calls
+        _check_plate_empty_opencv."""
+        with patch.dict("sys.modules", {"cv2": cv2_mock, "numpy": np_mock}):
+            import importlib
+
+            import backend.app.services.plate_detection as pd_module
+
+            importlib.reload(pd_module)
+
+            sentinel = pd_module.PlateDetectionResult(
+                is_empty=False, confidence=0.9, difference_percent=90.0, message="ai result"
+            )
+            with (
+                patch("backend.app.core.database.async_session", _mock_async_session(row_value="ai")),
+                patch.object(
+                    pd_module, "capture_camera_image", AsyncMock(return_value=(b"\xff\xd8fake", "built-in"))
+                ) as mock_capture,
+                patch.object(pd_module, "_check_plate_empty_opencv", AsyncMock()) as mock_opencv,
+                patch(
+                    "backend.app.services.bedcheck_ai.check_bed_ai", AsyncMock(return_value=sentinel)
+                ) as mock_check_bed_ai,
+            ):
+                result = await pd_module.check_plate_empty(1, "10.0.0.5", "code", "X1C")
+
+            mock_capture.assert_awaited_once()
+            mock_check_bed_ai.assert_awaited_once_with(1, b"\xff\xd8fake", "built-in")
+            mock_opencv.assert_not_awaited()
+            assert result is sentinel
+
+    @pytest.mark.asyncio
+    async def test_ai_backend_fails_open_when_capture_fails(self):
+        """bedcheck_backend='ai' but no frame captured -> the same
+        'Failed to capture camera frame from any source' fail-open result as
+        the opencv path uses, and bedcheck_ai.check_bed_ai is never called."""
+        with patch.dict("sys.modules", {"cv2": cv2_mock, "numpy": np_mock}):
+            import importlib
+
+            import backend.app.services.plate_detection as pd_module
+
+            importlib.reload(pd_module)
+
+            with (
+                patch("backend.app.core.database.async_session", _mock_async_session(row_value="ai")),
+                patch.object(pd_module, "capture_camera_image", AsyncMock(return_value=(None, "unknown"))),
+                patch("backend.app.services.bedcheck_ai.check_bed_ai", AsyncMock()) as mock_check_bed_ai,
+            ):
+                result = await pd_module.check_plate_empty(1, "10.0.0.5", "code", "X1C")
+
+            mock_check_bed_ai.assert_not_awaited()
+            assert result.is_empty is True
+            assert result.confidence == 0.0
+            assert "Failed to capture camera frame" in result.message
+
+    @pytest.mark.parametrize("garbage_value", ["both", "nonsense", "", "OpenCV", "AI"])
+    @pytest.mark.asyncio
+    async def test_unknown_backend_value_falls_back_to_opencv(self, garbage_value):
+        """Any unrecognized bedcheck_backend row value (including 'both' --
+        regression coverage that removing 'both' mode, D4, didn't leave a
+        dangling code path that half-handles it) resolves to 'opencv', never
+        raises."""
+        with patch.dict("sys.modules", {"cv2": cv2_mock, "numpy": np_mock}):
+            import importlib
+
+            import backend.app.services.plate_detection as pd_module
+
+            importlib.reload(pd_module)
+
+            sentinel = pd_module.PlateDetectionResult(
+                is_empty=True, confidence=0.0, difference_percent=0.0, message="opencv result"
+            )
+            with (
+                patch("backend.app.core.database.async_session", _mock_async_session(row_value=garbage_value)),
+                patch.object(pd_module, "_check_plate_empty_opencv", AsyncMock(return_value=sentinel)) as mock_opencv,
+                patch("backend.app.services.bedcheck_ai.check_bed_ai", AsyncMock()) as mock_check_bed_ai,
+            ):
+                result = await pd_module.check_plate_empty(1, "10.0.0.5", "code", "X1C")
+
+            mock_opencv.assert_awaited_once()
+            mock_check_bed_ai.assert_not_awaited()
+            assert result is sentinel
+
+    @pytest.mark.asyncio
+    async def test_backend_read_failure_falls_back_to_opencv(self):
+        """A DB error inside get_bedcheck_backend()'s read (pool exhaustion,
+        locked SQLite, disconnected engine) must not propagate -- it falls
+        back to 'opencv' and check_plate_empty() still returns a normal
+        result instead of raising. This is the test that most directly
+        defends the 'no new fail-closed path' requirement (REVISION 1 SS2,
+        a BLOCKER-level design point): camera.py's manual-check route holds
+        no try/except around its call to check_plate_empty."""
+        with patch.dict("sys.modules", {"cv2": cv2_mock, "numpy": np_mock}):
+            import importlib
+
+            import backend.app.services.plate_detection as pd_module
+
+            importlib.reload(pd_module)
+
+            sentinel = pd_module.PlateDetectionResult(
+                is_empty=True, confidence=0.0, difference_percent=0.0, message="opencv result"
+            )
+            db_error = ConnectionError("pool exhausted")
+            with (
+                patch(
+                    "backend.app.core.database.async_session",
+                    _mock_async_session(raise_on_enter=db_error),
+                ),
+                patch.object(pd_module, "_check_plate_empty_opencv", AsyncMock(return_value=sentinel)) as mock_opencv,
+                patch("backend.app.services.bedcheck_ai.check_bed_ai", AsyncMock()) as mock_check_bed_ai,
+            ):
+                # Must not raise.
+                result = await pd_module.check_plate_empty(1, "10.0.0.5", "code", "X1C")
+
+            mock_opencv.assert_awaited_once()
+            mock_check_bed_ai.assert_not_awaited()
+            assert result is sentinel
+
+    @pytest.mark.asyncio
+    async def test_get_bedcheck_backend_read_failure_returns_opencv_directly(self):
+        """Narrower unit check on get_bedcheck_backend() itself (not routed
+        through the dispatcher): a raising DB session resolves to 'opencv',
+        never propagates."""
+        with patch.dict("sys.modules", {"cv2": cv2_mock, "numpy": np_mock}):
+            import importlib
+
+            import backend.app.services.plate_detection as pd_module
+
+            importlib.reload(pd_module)
+
+            with patch(
+                "backend.app.core.database.async_session",
+                _mock_async_session(raise_on_enter=RuntimeError("db down")),
+            ):
+                backend = await pd_module.get_bedcheck_backend()
+
+            assert backend == "opencv"

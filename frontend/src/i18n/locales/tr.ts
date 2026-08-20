@@ -6980,6 +6980,26 @@ export default {
     noHistory: 'Henüz algılama yok.',
   },
 
+  bedcheckAi: {
+    title: 'Baskı Plakası Kontrolü — AI Arka Ucu',
+    description: 'Bambuddy\'nin bir baskı başlamadan önce plakanın boş olup olmadığına nasıl karar vereceğini seçin: yerleşik OpenCV karşılaştırması veya bir AI görüntü modeli.',
+    backendLabel: 'Algılama arka ucu',
+    backendOpencv: 'OpenCV (varsayılan)',
+    backendAi: 'AI',
+    backendHint: 'OpenCV: hızlı, yerel, ağ çağrısı yok; kurduğunuz algılama alanını ve kalibrasyon referans fotoğraflarını kullanır. AI: yapılandırdığınız bir görüntü modeline anlık görüntü gönderir; kameranın tüm karesini değerlendirir ve algılama alanını veya kalibrasyon ayarlarını kullanmaz.',
+    baseUrlLabel: 'AI arka ucu URL\'si',
+    baseUrlHint: 'OpenAI uyumlu uç nokta, örn. yerel bir Ollama sunucusu (http://192.168.1.20:11434/v1) veya barındırılan bir API (https://api.openai.com/v1).',
+    modelLabel: 'Model adı',
+    modelHint: 'Her istekle birlikte gönderilen model adı, örn. yerel Ollama için qwen2.5vl:7b.',
+    apiKeyLabel: 'API anahtarı (isteğe bağlı)',
+    apiKeyHint: 'Yerel sunucunuz gerektirmiyorsa boş bırakın.',
+    apiKeyPlaceholder: 'Uç nokta anahtar gerektirmiyorsa boş bırakın',
+    testButton: 'Bağlantıyı test et',
+    testSuccess: 'Arka uca ulaşıldı — sonuç {{ms}}ms içinde alındı.',
+    testFailed: 'AI arka ucundan sonuç alınamadı.',
+    privacyWarning: 'Bu URL yerel ağınızda değil. Baskı plakası kontrolü her çalıştığında yazıcınızın kamera anlık görüntüleri bu adrese gönderilir. Anlık görüntülerinizi gizli tutmak için yerel bir sunucu kullanın (örn. kendi ağınızdaki Ollama) veya bu uç noktaya güveniyorsanız devam edin.',
+  },
+
   makerworld: {
     title: 'MakerWorld',
     description: 'Bambu Handy uygulamasına gitmeden — doğrudan Bambuddy\'den içe aktarmak ve yazdırmak için bir MakerWorld model URL\'si yapıştırın.',

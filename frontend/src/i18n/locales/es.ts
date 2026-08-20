@@ -7049,6 +7049,26 @@ export default {
     noHistory: 'Aún no hay detecciones.',
   },
 
+  bedcheckAi: {
+    title: 'Comprobación de la cama — backend de IA',
+    description: 'Elija cómo decide Bambuddy si la cama está vacía antes de iniciar una impresión: la comparación integrada con OpenCV o un modelo de visión con IA.',
+    backendLabel: 'Backend de detección',
+    backendOpencv: 'OpenCV (predeterminado)',
+    backendAi: 'IA',
+    backendHint: 'OpenCV: rápido, local, sin llamadas de red; usa el área de detección y las fotos de referencia de calibración que configuró. IA: envía una instantánea a un modelo de visión que usted configure; evalúa el fotograma completo de la cámara y no usa el área de detección ni los ajustes de calibración.',
+    baseUrlLabel: 'URL del backend de IA',
+    baseUrlHint: 'Punto de conexión compatible con OpenAI, p. ej. un servidor Ollama local (http://192.168.1.20:11434/v1) o una API alojada (https://api.openai.com/v1).',
+    modelLabel: 'Nombre del modelo',
+    modelHint: 'Nombre del modelo enviado con cada solicitud, p. ej. qwen2.5vl:7b para Ollama local.',
+    apiKeyLabel: 'Clave de API (opcional)',
+    apiKeyHint: 'Déjelo vacío si su servidor local no la requiere.',
+    apiKeyPlaceholder: 'Déjelo vacío si el punto de conexión no requiere clave',
+    testButton: 'Probar conexión',
+    testSuccess: 'Backend accesible — veredicto recibido en {{ms}} ms.',
+    testFailed: 'No se pudo obtener un veredicto del backend de IA.',
+    privacyWarning: 'Esta URL no está en su red local. Cada vez que se ejecute la comprobación de la cama, se enviarán instantáneas de la cámara de su impresora a esta dirección. Use un servidor local (p. ej. Ollama en su propia red) para mantener sus instantáneas privadas, o continúe si confía en este punto de conexión.',
+  },
+
   makerworld: {
     title: 'MakerWorld',
     description: 'Pegue la URL de un modelo de MakerWorld para importarlo e imprimirlo directamente desde Bambuddy — sin tener que salir a la aplicación Bambu Handy.',

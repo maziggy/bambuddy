@@ -247,9 +247,19 @@ async def _post_chat(base_url: str, model: str, api_key: str, messages: list[dic
         body = resp.json()
 
     try:
-        return body["choices"][0]["message"]["content"]
+        content = body["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as e:
         raise AiBedCheckError("invalid response from AI backend") from e
+
+    if not isinstance(content, str):
+        # A tool-call-only message returns "content": null (or a list-shaped
+        # content) alongside "tool_calls" on some OpenAI-compatible backends --
+        # the lookup above succeeds without raising, so this needs its own
+        # check to actually cover the content-less-message case this
+        # function's docstring claims to handle.
+        raise AiBedCheckError("invalid response from AI backend")
+
+    return content
 
 
 async def _load_ai_settings() -> dict:

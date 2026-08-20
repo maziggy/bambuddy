@@ -416,6 +416,20 @@ class TestFailOpenPerErrorClass:
         self._assert_fail_open_shape(result, "[built-in] AI bed-check unavailable: invalid response from AI backend")
 
     @pytest.mark.asyncio
+    async def test_fails_open_on_null_content(self):
+        """A 200 response with "content": null -- a tool-call-only message on
+        some OpenAI-compat backends. The choices[0].message.content lookup
+        succeeds without raising, so this needs its own type check to fail
+        open instead of a TypeError escaping out of the JSON-verdict parser."""
+        resp = _mock_200_response({"choices": [{"message": {"content": None, "tool_calls": []}}]})
+        with (
+            _patch_settings(),
+            patch("backend.app.services.bedcheck_ai.httpx.AsyncClient", return_value=_mock_client(post_result=resp)),
+        ):
+            result = await check_bed_ai(1, FAKE_JPEG, "built-in")
+        self._assert_fail_open_shape(result, "[built-in] AI bed-check unavailable: invalid response from AI backend")
+
+    @pytest.mark.asyncio
     async def test_fails_open_on_settings_load_failure(self):
         """A DB error inside _load_ai_settings() (e.g. sqlalchemy's
         OperationalError, which can embed a connection string) is caught by

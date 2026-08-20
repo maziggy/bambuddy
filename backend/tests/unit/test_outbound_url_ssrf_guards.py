@@ -210,7 +210,7 @@ def test_settings_urls_permit_lan_hosts(field: str, url: str):
 @pytest.mark.parametrize("field", LAN_SERVICE_SETTINGS)
 @pytest.mark.parametrize("empty", ["", "   "])
 def test_settings_urls_accept_empty_meaning_not_configured(field: str, empty: str):
-    """Empty is the documented "fall back to the env var" value for all four."""
+    """Empty is the documented "fall back to the env var" value for all five."""
     assert AppSettingsUpdate(**{field: empty})
 
 
@@ -563,10 +563,12 @@ def _request_body_url_fields() -> set[tuple[str, str]]:
 # the two tiers before any request is issued.
 GUARDED_BODY_URLS = {
     ("AppSettingsUpdate", "bambu_studio_api_url"),
+    ("AppSettingsUpdate", "bedcheck_ai_base_url"),
     ("AppSettingsUpdate", "ha_url"),
     ("AppSettingsUpdate", "obico_ml_url"),
     ("AppSettingsUpdate", "orcaslicer_api_url"),
     ("AppSettingsUpdate", "spoolman_url"),  # assert_safe_spoolman_url at each consumer
+    ("BedcheckAiTestConnectionRequest", "base_url"),  # bedcheck_ai.test_connection
     ("HATestConnectionRequest", "url"),  # homeassistant._validate_url
     ("RESTTestConnectionRequest", "url"),  # rest_smart_plug._validate_url
     ("TestConnectionRequest", "url"),  # obico_detection.test_connection

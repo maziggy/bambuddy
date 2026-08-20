@@ -187,6 +187,11 @@ class _KeepWarmEntry:
 # manual or firmware-run dry is untouched.
 AUTO_DRY_REARM_COOLDOWN_SECONDS = 30 * 60
 AUTO_DRY_MAX_UNPRODUCTIVE_CYCLES = 2
+# Sustained-humidity wait (#2518): an above-threshold streak is only
+# "continuous" if some pass observed it within this many seconds. A unit that
+# goes unobserved longer (print running, printer disconnected, sensor silent)
+# restarts its streak rather than inheriting a stale one.
+AUTO_DRY_SUSTAINED_GAP_SECONDS = 120
 
 # How long a finished scheduled drying row is kept before it is pruned.
 SCHEDULED_DRYING_RETENTION_DAYS = 7
@@ -652,6 +657,16 @@ class PrintScheduler:
         #                  still above the threshold
         #   suspended    — we have stopped arming this unit and said so
         self._auto_dry_units: dict[tuple[int, int], dict[str, object]] = {}
+        # Sustained-humidity streaks for the ambient-drying wait (#2518). Keyed
+        # like _auto_dry_units but deliberately a SEPARATE dict: membership in
+        # _auto_dry_units means "Bambuddy armed a cycle on this unit", and the
+        # print-takes-priority stop, the manual-cycle adoption guard, and the
+        # arming setdefault all act on that meaning -- a unit that is merely
+        # waiting out its streak must not become stoppable or judgeable.
+        #   since -- monotonic stamp when the current continuous above-threshold
+        #            streak began
+        #   last  -- monotonic stamp of the last pass that observed the streak
+        self._auto_dry_above: dict[tuple[int, int], dict[str, float]] = {}
         # Printers with a "running" scheduled drying row (#2638). Rebuilt from the
         # DB on every _check_scheduled_dryings call so route-side cancels show up.
         # Auto-drying's stop-all branches must not stop or untrack these printers;
@@ -3641,6 +3656,7 @@ class PrintScheduler:
         queue_drying_enabled = await self._get_bool_setting(db, "queue_drying_enabled")
         ambient_drying_enabled = await self._get_bool_setting(db, "ambient_drying_enabled")
         print_drying_enabled = await self._get_bool_setting(db, "print_drying_enabled")
+        sustained_minutes = await self._get_int_setting(db, "ambient_drying_sustained_minutes", default=0)
         if not queue_drying_enabled and not ambient_drying_enabled:
             # Stop active drying on all printers if both features disabled
             if self._drying_in_progress:
@@ -3834,6 +3850,11 @@ class PrintScheduler:
                 # values from reading as progress every other cycle.
                 if unit_state is not None and unit_state.pop("running", False):
                     unit_state["ended_at"] = time.monotonic()
+                    # The streak that armed this cycle is spent; the next one
+                    # starts fresh (and accumulates through the re-arm cooldown
+                    # below, so the wait overlaps the cooldown, never stacks on
+                    # top of it).
+                    self._auto_dry_above.pop(unit_key, None)
                     if humidity is not None and humidity > humidity_threshold:
                         best = unit_state.get("best_end_humidity")
                         if isinstance(best, int) and humidity < best:
@@ -3884,6 +3905,24 @@ class PrintScheduler:
                         unit_state.pop("suspended", None)
                         unit_state.pop("unproductive", None)
                         unit_state.pop("best_end_humidity", None)
+                    # A real below-threshold reading ends any sustained-wait
+                    # streak (#2518) -- "continuously above" means exactly that.
+                    # An absent reading (humidity is None) is no-information and
+                    # leaves the streak alone; the observation-gap guard handles
+                    # a prolonged sensor silence.
+                    if humidity is not None:
+                        _above = self._auto_dry_above.pop(unit_key, None)
+                        if _above is not None and sustained_minutes > 0:
+                            logger.info(
+                                "Auto-drying: printer %d AMS %d — humidity fell back to %s%% after "
+                                "%.0fs of the required %dm above the %d%% threshold; not drying",
+                                pid,
+                                ams_id,
+                                humidity,
+                                time.monotonic() - _above["since"],
+                                sustained_minutes,
+                                humidity_threshold,
+                            )
                     logger.debug(
                         "Auto-drying: printer %d AMS %d skipped — humidity %s <= threshold %d",
                         pid,
@@ -3892,6 +3931,21 @@ class PrintScheduler:
                         humidity_threshold,
                     )
                     continue
+
+                # Sustained-humidity streak (#2518): updated on every pass that
+                # observes the reading above the threshold, BEFORE the
+                # suspension/cooldown gates below -- a suspended or cooling-down
+                # unit still accumulates streak time, so the wait overlaps those
+                # gates instead of stacking after them.
+                _now = time.monotonic()
+                _above = self._auto_dry_above.get(unit_key)
+                if _above is None or _now - _above["last"] > AUTO_DRY_SUSTAINED_GAP_SECONDS:
+                    # Fresh streak: first observation, or the unit went
+                    # unobserved long enough (print ran, printer disconnected)
+                    # that "continuously above" can no longer be claimed.
+                    self._auto_dry_above[unit_key] = {"since": _now, "last": _now}
+                else:
+                    _above["last"] = _now
 
                 if unit_state is not None:
                     if unit_state.get("suspended"):
@@ -3931,6 +3985,28 @@ class PrintScheduler:
                             pid,
                             ams_id,
                             AUTO_DRY_REARM_COOLDOWN_SECONDS,
+                        )
+                        continue
+
+                # Sustained-humidity wait (#2518): only pure ambient starts
+                # wait. Queue-scheduled drying runs ahead of a scheduled print
+                # and mid-print drying has its own gating -- both keep the
+                # instant behavior. (ambient_drying_enabled is implied here: a
+                # non-mid-print printer without scheduled items was already
+                # skipped above when ambient mode is off.)
+                if sustained_minutes > 0 and not mid_print and pid not in printers_with_scheduled:
+                    _above = self._auto_dry_above.get(unit_key)
+                    _waited = time.monotonic() - _above["since"] if _above else 0.0
+                    if _waited < sustained_minutes * 60:
+                        logger.debug(
+                            "Auto-drying: printer %d AMS %d waiting — humidity %s%% above the %d%% "
+                            "threshold for %.0fs of the required %dm",
+                            pid,
+                            ams_id,
+                            humidity,
+                            humidity_threshold,
+                            _waited,
+                            sustained_minutes,
                         )
                         continue
 
@@ -4041,6 +4117,9 @@ class PrintScheduler:
         if state is not None:
             state.pop("running", None)
             state["ended_at"] = time.monotonic()
+        # A stopped cycle spends the streak that armed it, same as a completed
+        # one (#2518).
+        self._auto_dry_above.pop((printer_id, ams_id), None)
 
     def _sync_drying_state(self):
         """Drop printers from ``_drying_in_progress`` that are no longer drying.
@@ -4075,6 +4154,11 @@ class PrintScheduler:
         # inherit a suspension it never earned.
         for key in [k for k in self._auto_dry_units if printer_manager.get_status(k[0]) is None]:
             self._auto_dry_units.pop(key, None)
+        # Same for sustained-wait streaks (#2518): a deleted-and-re-added
+        # printer starts a fresh wait, and vanished printers do not leak
+        # entries.
+        for key in [k for k in self._auto_dry_above if printer_manager.get_status(k[0]) is None]:
+            self._auto_dry_above.pop(key, None)
 
     async def _drying_may_continue_through_print(self, db: AsyncSession, printer_id: int) -> bool:
         """True when a running cycle can be left alone while the next print runs.

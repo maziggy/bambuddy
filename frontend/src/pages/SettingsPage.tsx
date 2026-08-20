@@ -1046,6 +1046,7 @@ export function SettingsPage() {
       (baseline.queue_drying_enabled ?? false) !== (localSettings.queue_drying_enabled ?? false) ||
       (baseline.queue_drying_block ?? false) !== (localSettings.queue_drying_block ?? false) ||
       (baseline.ambient_drying_enabled ?? false) !== (localSettings.ambient_drying_enabled ?? false) ||
+      (baseline.ambient_drying_sustained_minutes ?? 0) !== (localSettings.ambient_drying_sustained_minutes ?? 0) ||
       (baseline.print_drying_enabled ?? false) !== (localSettings.print_drying_enabled ?? false) ||
       (baseline.drying_presets ?? '') !== (localSettings.drying_presets ?? '') ||
       (baseline.ams_humidity_thresholds ?? '') !== (localSettings.ams_humidity_thresholds ?? '') ||
@@ -1157,6 +1158,7 @@ export function SettingsPage() {
         queue_drying_enabled: localSettings.queue_drying_enabled,
         queue_drying_block: localSettings.queue_drying_block,
         ambient_drying_enabled: localSettings.ambient_drying_enabled,
+        ambient_drying_sustained_minutes: localSettings.ambient_drying_sustained_minutes,
         print_drying_enabled: localSettings.print_drying_enabled,
         drying_presets: localSettings.drying_presets,
         ams_humidity_thresholds: localSettings.ams_humidity_thresholds,
@@ -5315,6 +5317,42 @@ export function SettingsPage() {
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
                 </label>
               </div>
+              {localSettings.ambient_drying_enabled && (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-sm text-white">
+                      {t('settings.ambientDryingSustainedEnabled')}
+                    </label>
+                    <p className="text-xs text-bambu-gray mt-0.5">
+                      {t('settings.ambientDryingSustainedDescription')}
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={(localSettings.ambient_drying_sustained_minutes ?? 0) > 0}
+                      onChange={(e) => updateSetting('ambient_drying_sustained_minutes', e.target.checked ? 10 : 0)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                  </label>
+                </div>
+              )}
+              {localSettings.ambient_drying_enabled && (localSettings.ambient_drying_sustained_minutes ?? 0) > 0 && (
+                <div>
+                  <label className="block text-sm text-bambu-gray mb-1">
+                    {t('settings.ambientDryingSustainedMinutes')}
+                  </label>
+                  <input
+                    type="number"
+                    min="5"
+                    max="240"
+                    value={localSettings.ambient_drying_sustained_minutes ?? 10}
+                    onChange={(e) => updateSetting('ambient_drying_sustained_minutes', Math.max(5, Math.min(240, parseInt(e.target.value) || 10)))}
+                    className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                  />
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <div>
                   <label className="block text-sm text-white">

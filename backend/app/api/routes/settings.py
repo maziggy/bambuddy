@@ -232,6 +232,7 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "queue_keep_warm_bed_temp",
             "queue_keep_warm_max_minutes",
             "queue_max_concurrent_uploads",
+            "ambient_drying_sustained_minutes",
         ]:
             settings_dict[setting.key] = int(setting.value)
         elif setting.key == "default_printer_id":

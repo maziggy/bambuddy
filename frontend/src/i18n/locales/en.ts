@@ -7091,6 +7091,26 @@ export default {
     noHistory: 'No detections yet.',
   },
 
+  bedcheckAi: {
+    title: 'Build Plate Check — AI Backend',
+    description: 'Choose how Bambuddy decides whether the build plate is empty before a print starts: the built-in OpenCV comparison, or an AI vision model.',
+    backendLabel: 'Detection backend',
+    backendOpencv: 'OpenCV (default)',
+    backendAi: 'AI',
+    backendHint: 'OpenCV: fast, local, no network calls; uses the region-of-interest and calibration reference photos you set up. AI: sends a snapshot to a vision model you configure; evaluates the full camera frame and does not use the region-of-interest or calibration settings.',
+    baseUrlLabel: 'AI backend URL',
+    baseUrlHint: 'OpenAI-compatible endpoint, e.g. a local Ollama server (http://192.168.1.20:11434/v1) or a hosted API (https://api.openai.com/v1).',
+    modelLabel: 'Model name',
+    modelHint: 'Model name sent with each request, e.g. qwen2.5vl:7b for local Ollama.',
+    apiKeyLabel: 'API key (optional)',
+    apiKeyHint: "Leave empty for a local server that doesn't require one.",
+    apiKeyPlaceholder: 'Leave empty if the endpoint requires no key',
+    testButton: 'Test connection',
+    testSuccess: 'Backend reachable — verdict received in {{ms}}ms.',
+    testFailed: 'Could not get a verdict from the AI backend.',
+    privacyWarning: 'This URL is not on your local network. Camera snapshots of your printer will be sent to this address whenever the build plate check runs. Use a local server (e.g. Ollama on your own network) to keep snapshots private, or continue if you trust this endpoint.',
+  },
+
   makerworld: {
     title: 'MakerWorld',
     description: 'Paste a MakerWorld model URL to import and print it directly from Bambuddy — without leaving for the Bambu Handy app.',

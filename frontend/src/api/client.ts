@@ -1414,6 +1414,10 @@ export interface AppSettings {
   obico_action: 'notify' | 'pause' | 'pause_and_off';
   obico_poll_interval: number;
   obico_enabled_printers: string;
+  bedcheck_backend: 'opencv' | 'ai';
+  bedcheck_ai_base_url: string;
+  bedcheck_ai_model: string;
+  bedcheck_ai_api_key: string;
   // Inventory forecasting global lead time
   forecast_global_lead_time_days: number;
 }
@@ -3186,6 +3190,13 @@ export interface ObicoTestConnection {
   // Whether the ML API accepted the token. null = not determined (the health
   // check failed first, or the token probe itself errored).
   auth_ok: boolean | null;
+}
+
+export interface BedcheckAiTestConnection {
+  ok: boolean;
+  error: string | null;
+  latency_ms: number | null;
+  verdict: { is_empty: boolean; confidence: number; reason: string } | null;
 }
 
 export interface GitHubTestConnectionResponse {
@@ -7282,6 +7293,17 @@ export const api = {
     request<ObicoTestConnection>('/obico/test-connection', {
       method: 'POST',
       body: JSON.stringify(token === undefined ? { url } : { url, token }),
+    }),
+
+  // Omitting apiKey makes the backend fall back to the saved key; "" tests with no key at all.
+  testBedcheckAiConnection: (baseUrl: string, model: string, apiKey?: string) =>
+    request<BedcheckAiTestConnection>('/bedcheck-ai/test-connection', {
+      method: 'POST',
+      body: JSON.stringify({
+        base_url: baseUrl,
+        model,
+        ...(apiKey === undefined ? {} : { api_key: apiKey }),
+      }),
     }),
 
   // Slicer API — slice in the background. Both endpoints return 202 + a

@@ -7041,6 +7041,26 @@ export default {
     noHistory: 'Noch keine Erkennungen.',
   },
 
+  bedcheckAi: {
+    title: 'Plattenprüfung — KI-Backend',
+    description: 'Legen Sie fest, wie Bambuddy vor Druckbeginn erkennt, ob die Druckplatte leer ist: der integrierte OpenCV-Vergleich oder ein KI-Vision-Modell.',
+    backendLabel: 'Erkennungs-Backend',
+    backendOpencv: 'OpenCV (Standard)',
+    backendAi: 'KI',
+    backendHint: 'OpenCV: schnell, lokal, keine Netzwerkaufrufe; verwendet den eingerichteten Erkennungsbereich und die Kalibrierungs-Referenzfotos. KI: sendet einen Snapshot an ein von Ihnen konfiguriertes Vision-Modell; wertet das gesamte Kamerabild aus und verwendet weder den Erkennungsbereich noch die Kalibrierungseinstellungen.',
+    baseUrlLabel: 'URL des KI-Backends',
+    baseUrlHint: 'OpenAI-kompatibler Endpunkt, z. B. ein lokaler Ollama-Server (http://192.168.1.20:11434/v1) oder eine gehostete API (https://api.openai.com/v1).',
+    modelLabel: 'Modellname',
+    modelHint: 'Modellname, der mit jeder Anfrage gesendet wird, z. B. qwen2.5vl:7b für lokales Ollama.',
+    apiKeyLabel: 'API-Schlüssel (optional)',
+    apiKeyHint: 'Leer lassen, wenn Ihr lokaler Server keinen benötigt.',
+    apiKeyPlaceholder: 'Leer lassen, wenn der Endpunkt keinen Schlüssel erfordert',
+    testButton: 'Verbindung testen',
+    testSuccess: 'Backend erreichbar — Ergebnis in {{ms}} ms erhalten.',
+    testFailed: 'Vom KI-Backend konnte kein Ergebnis abgerufen werden.',
+    privacyWarning: 'Diese URL liegt nicht in Ihrem lokalen Netzwerk. Bei jeder Plattenprüfung werden Kamera-Snapshots Ihres Druckers an diese Adresse gesendet. Verwenden Sie einen lokalen Server (z. B. Ollama im eigenen Netzwerk), damit Ihre Snapshots privat bleiben, oder fahren Sie fort, wenn Sie diesem Endpunkt vertrauen.',
+  },
+
   makerworld: {
     title: 'MakerWorld',
     description: 'Füge eine MakerWorld-Modell-URL ein, um es direkt aus Bambuddy zu importieren und zu drucken — ohne die Bambu Handy App zu öffnen.',

@@ -38,6 +38,7 @@ import { VirtualPrinterList } from '../components/VirtualPrinterList';
 import { SpoolBuddySettings } from '../components/SpoolBuddySettings';
 import { GitHubBackupSettings } from '../components/GitHubBackupSettings';
 import { FailureDetectionSettings } from '../components/FailureDetectionSettings';
+import { BedCheckAiSettings } from '../components/BedCheckAiSettings';
 import { EmailSettings } from '../components/EmailSettings';
 import { LDAPSettings } from '../components/LDAPSettings';
 import { TwoFactorSettings } from '../components/TwoFactorSettings';
@@ -112,6 +113,7 @@ registerSettingsSearch({ labelKey: 'settings.tabs.failureDetection', labelFallba
 registerSettingsSearch({ labelKey: 'failureDetection.perPrinterTitle', labelFallback: 'Per-Printer Settings', tab: 'failure-detection', keywords: 'failure detection per printer enable per-printer sensitivity', anchor: 'card-fd-perprinter' });
 registerSettingsSearch({ labelKey: 'failureDetection.statusTitle', labelFallback: 'Detection Status', tab: 'failure-detection', keywords: 'failure detection status running connection', anchor: 'card-fd-status' });
 registerSettingsSearch({ labelKey: 'failureDetection.historyTitle', labelFallback: 'Detection History', tab: 'failure-detection', keywords: 'failure detection history log events', anchor: 'card-fd-history' });
+registerSettingsSearch({ labelKey: 'bedcheckAi.title', labelFallback: 'Build Plate Check — AI Backend', tab: 'failure-detection', keywords: 'ai bed check plate occupancy vision model ollama openai vlm build plate empty', anchor: 'card-bedcheck-ai' });
 // Email auth sub-cards (subTab=email)
 registerSettingsSearch({ labelKey: 'settings.email.advancedAuth', labelFallback: 'Advanced Email Authentication', tab: 'users', subTab: 'email', keywords: 'email authentication advanced password reset self-service forgot', anchor: 'card-email-advanced-auth' });
 registerSettingsSearch({ labelKey: 'settings.email.testConnection', labelFallback: 'Test SMTP Connection', tab: 'users', subTab: 'email', keywords: 'email smtp test connection send check', anchor: 'card-email-test' });
@@ -7096,6 +7098,9 @@ export function SettingsPage() {
       {activeTab === 'failure-detection' && (
         <div id="card-failure-detection">
           <FailureDetectionSettings />
+          <div id="card-bedcheck-ai" className="mt-4">
+            <BedCheckAiSettings />
+          </div>
         </div>
       )}
 

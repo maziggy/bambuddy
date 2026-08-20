@@ -27,13 +27,13 @@ from backend.app.services.plate_detection import PlateDetectionResult
 logger = logging.getLogger(__name__)
 
 DOWNSCALE_MAX_EDGE = 768
-# Conditional, D1 -- only wired in (get_reference_image_paths called, few-shot
-# branch of _build_messages used) if the Phase-4 accuracy bench shows a
+# Conditional -- only wired in (get_reference_image_paths called, few-shot
+# branch of _build_messages used) if a future accuracy comparison shows a
 # measurable gain over zero-shot. Not used by _analyze_frame_ai's default call.
 MAX_FEWSHOT_REFERENCES = 3
-# D6 -- module constant, not a user setting. 27.84s measured cold-start
-# (model evicted from VRAM) on the pinned Ollama target justifies ~2x headroom;
-# warm calls measure 0.8-1.5s at 768px, so this costs nothing on the common path.
+# Module constant, not a user setting. 27.84s measured cold-start (model
+# evicted from VRAM) on the pinned Ollama target justifies ~2x headroom; warm
+# calls measure 0.8-1.5s at 768px, so this costs nothing on the common path.
 DEFAULT_TIMEOUT = 60.0
 
 VERDICT_JSON_SCHEMA = {
@@ -83,9 +83,9 @@ USER_PROMPT_INTRO_NO_REFS = (
     "filament, a tool, debris, or anything else on it?"
 )
 
-# D1: few-shot prompt text -- implemented per spec, not wired into
-# _analyze_frame_ai's default (zero-shot) call path unless the few-shot gate
-# (Phase-4 bench) clears.
+# Few-shot prompt text -- implemented, but not wired into _analyze_frame_ai's
+# default (zero-shot) call path unless a future accuracy comparison shows
+# few-shot is worth the extra reference-photo requests.
 USER_PROMPT_INTRO_WITH_REFS = (
     "The following photos are of the SAME 3D printer's build plate. The first {n} "
     "photo(s) are reference photos confirmed to show the plate EMPTY. The final photo "
@@ -114,8 +114,9 @@ def _downscale_jpeg(image_data: bytes) -> bytes:
 
     Pillow, not OpenCV -- bedcheck_ai.py never touches cv2, so it works
     identically whether or not OPENCV_AVAILABLE. Raises AiBedCheckError on a
-    truncated/non-image payload (capture_camera_image can hand back a partial
-    MJPEG frame grab) -- design §4 failure matrix, class 6.
+    truncated/non-image payload -- capture_camera_image can hand back a
+    partial MJPEG frame grab, and that must fail closed here rather than be
+    sent to the vision model as garbage.
     """
     try:
         img = Image.open(io.BytesIO(image_data))
@@ -142,11 +143,11 @@ def _data_uri(jpeg_bytes: bytes) -> str:
 def _build_messages(image_data: bytes, reference_paths: list[Path] | None = None) -> list[dict]:
     """Build the chat/completions `messages` list for one verdict request.
 
-    Zero-shot (reference_paths falsy -- the v1 default, D1) sends a single
+    Zero-shot (reference_paths falsy -- the v1 default) sends a single
     user-prompt text part plus the live snapshot. The few-shot branch below is
-    implemented per the design's exact spec but not called with references by
-    _analyze_frame_ai -- it ships only if/when the Phase-4 accuracy bench
-    shows a measurable gain over zero-shot.
+    fully implemented but not called with references by _analyze_frame_ai --
+    it ships only if/when a future accuracy comparison shows a measurable
+    gain over zero-shot.
     """
     live_uri = _data_uri(_downscale_jpeg(image_data))
 
@@ -185,7 +186,7 @@ def _parse_verdict_json(raw: str) -> dict:
     instructions). Raises AiBedCheckError("invalid response from AI backend")
     if neither parses, or the parsed object is missing required keys / has a
     non-bool is_empty -- the caller treats this identically to a parse
-    failure and retries once (design §4, classes 1-3).
+    failure and retries once.
     """
     try:
         data = json.loads(raw.strip())
@@ -207,9 +208,7 @@ def _parse_verdict_json(raw: str) -> dict:
 
 
 def _clamp_confidence(value) -> float:
-    """Exact algorithm per C5's measured failure mode (design §4).
-
-    Guards against a schema-valid but semantically-wrong percentage-style
+    """Guards against a schema-valid but semantically-wrong percentage-style
     value (e.g. 95 instead of 0.95) reaching main.py's `:.0%` format.
     """
     try:
@@ -225,11 +224,11 @@ async def _post_chat(base_url: str, model: str, api_key: str, messages: list[dic
     """POST one chat/completions request, return the raw message content string.
 
     Network/timeout/non-2xx failures are raised unwrapped (httpx exception
-    types) -- the caller does not retry these (design §4 failure matrix,
-    class 5). A malformed 200 envelope (missing choices, content-less
-    message, an {"error": ...} body returned with status 200) is raised as
-    AiBedCheckError("invalid response from AI backend") -- treated as a parse
-    failure by the caller, so the one retry still applies (class 7).
+    types) -- the caller does not retry these. A malformed 200 envelope
+    (missing choices, content-less message, an {"error": ...} body returned
+    with status 200) is raised as AiBedCheckError("invalid response from AI
+    backend") -- treated as a parse failure by the caller, so the one retry
+    still applies.
     """
     payload = {
         "model": model,
@@ -277,13 +276,13 @@ async def _analyze_frame_ai(image_data: bytes, printer_id: int) -> tuple[bool, f
     """The raising primitive: (is_empty, confidence, reason), or raises AiBedCheckError.
 
     printer_id is accepted (unused for now) to keep the call signature stable
-    for the few-shot path (D1) -- get_reference_image_paths(printer_id) would
-    be called here if/when few-shot ships.
+    for the few-shot path -- get_reference_image_paths(printer_id) would be
+    called here if/when few-shot ships.
     """
     cfg = await _load_ai_settings()
     if not cfg["base_url"] or not cfg["model"]:
-        # Design §4 failure matrix, class 8 -- both empty base_url and empty
-        # model short-circuit with no network call attempted.
+        # Both empty base_url and empty model short-circuit with no network
+        # call attempted.
         raise AiBedCheckError("AI backend not configured")
 
     messages = _build_messages(image_data)
@@ -294,8 +293,7 @@ async def _analyze_frame_ai(image_data: bytes, printer_id: int) -> tuple[bool, f
     except AiBedCheckError:
         # One retry only, on parse/schema failure (malformed JSON, missing
         # keys, or a malformed-but-200 envelope) -- never on timeout/non-2xx,
-        # which raise as bare httpx exceptions and propagate unwrapped
-        # (design §4, classes 4/5/7).
+        # which raise as bare httpx exceptions and propagate unwrapped.
         retry_messages = [
             *messages,
             {
@@ -323,7 +321,10 @@ def build_ai_result(is_empty: bool, confidence: float, reason: str, camera_sourc
         confidence=confidence,
         difference_percent=difference_percent,
         message=message,
-        needs_calibration=False,  # always -- see C4, preserves main.py dev:3088's pause gate exactly
+        # Always False -- the AI backend has no calibration reference to be
+        # missing, and this preserves main.py's existing needs_calibration
+        # pause-gate behavior unchanged.
+        needs_calibration=False,
     )
 
 
@@ -384,8 +385,8 @@ def _synthetic_test_frame() -> bytes:
 async def test_connection(base_url: str, model: str, api_key: str = "") -> dict:
     """Send one synthetic frame through the real verdict pipeline. Never raises.
 
-    Returns {ok, error, latency_ms, verdict}. No `timeout` parameter (D6) --
-    always DEFAULT_TIMEOUT. Applies assert_safe_lan_service_url before any
+    Returns {ok, error, latency_ms, verdict}. No `timeout` parameter -- always
+    DEFAULT_TIMEOUT. Applies assert_safe_lan_service_url before any
     request, mirroring obico_detection.py:420-425's own re-assertion at
     request time -- the stored setting is validated at save time by the
     Pydantic field_validator, but a URL accepted fresh in a request body needs

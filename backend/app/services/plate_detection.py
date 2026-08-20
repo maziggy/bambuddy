@@ -589,9 +589,10 @@ def get_reference_image_paths(printer_id: int) -> list[Path]:
     Works regardless of OPENCV_AVAILABLE — reference images are plain files on
     disk; only *comparing* pixels against them needs OpenCV.
 
-    D1 NOTE: only wired in if the Phase-4 bench shows a measurable accuracy
-    gain for few-shot over zero-shot. If not, this function, MAX_FEWSHOT_REFERENCES,
-    and USER_PROMPT_INTRO_WITH_REFS in bedcheck_ai.py are all cut before filing.
+    Only wired in if a future accuracy comparison shows a measurable gain for
+    few-shot (reference photos included) over zero-shot. Until then this
+    function, MAX_FEWSHOT_REFERENCES, and USER_PROMPT_INTRO_WITH_REFS in
+    bedcheck_ai.py are unused by the default call path.
     """
     calib_dir = _get_calibration_dir()
     paths: list[Path] = []
@@ -819,17 +820,14 @@ async def check_plate_empty(
 
     Same args and return shape regardless of backend.
     """
-    # NOTE D (advisor design note): when backend == 'ai', this opens the FIRST of
-    # two short, sequential DB sessions for one check -- this one (bedcheck_backend),
-    # then a second inside bedcheck_ai._analyze_frame_ai -> _load_ai_settings (the
-    # 3 connection keys). Deliberate, not an oversight: each is a narrow,
+    # When backend == 'ai', this opens the first of two short, sequential DB
+    # sessions for one check -- this one (bedcheck_backend), then a second
+    # inside bedcheck_ai._analyze_frame_ai -> _load_ai_settings (the 3
+    # connection keys). Deliberate, not an oversight: each is a narrow,
     # independently-committed `async with async_session()` read, same shape as
-    # obico_detection.py's own settings read, and neither is held open across the
-    # camera-capture I/O between them. Categorically unlike this fork's own
-    # WAL/parked-fd exhaustion incident (long-lived connections held open across
-    # blocking work) -- see /Users/rowdyer/Coding/Homelab memory
-    # project_bambuddy_db_corruption_2026-08-19.md. See §2's concurrent-session
-    # note for the related (and separately adjudicated) camera.py-route point.
+    # obico_detection.py's own settings read, and neither is held open across
+    # the camera-capture I/O between them, so there's no long-lived connection
+    # held open across blocking work.
     backend = await get_bedcheck_backend()
 
     if backend == "opencv":

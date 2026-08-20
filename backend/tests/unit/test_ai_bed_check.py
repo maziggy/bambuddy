@@ -69,7 +69,8 @@ def _mock_200_response(body: dict):
 def _http_status_error(status_code: int) -> httpx.HTTPStatusError:
     """A real httpx.HTTPStatusError, so isinstance() checks in
     _generic_fail_open_reason work, and whose str() embeds the configured
-    request URL -- exactly the leak advisor Edit 2 guards against."""
+    request URL -- exactly what _generic_fail_open_reason must strip out
+    before the message reaches the user."""
     request = httpx.Request("POST", f"{CONFIGURED_URL}/chat/completions")
     response = httpx.Response(status_code, request=request, text="unauthorized" if status_code == 401 else "error")
     return httpx.HTTPStatusError(
@@ -85,8 +86,8 @@ def _patch_settings(base_url=CONFIGURED_URL, model="qwen2.5vl:7b", api_key=""):
 
 
 class TestSettingsSchemaValidators:
-    """Guard rails on the new bedcheck_* AppSettings fields (D4: two values
-    only, 'opencv'/'ai' -- no 'both')."""
+    """Guard rails on the new bedcheck_* AppSettings fields (two values only,
+    'opencv'/'ai' -- no 'both')."""
 
     def test_backend_accepts_valid_values(self):
         for value in ("opencv", "ai"):
@@ -98,8 +99,8 @@ class TestSettingsSchemaValidators:
             AppSettingsUpdate(bedcheck_backend="nonsense")
 
     def test_backend_rejects_both(self):
-        """Regression coverage that 'both' mode (D4, cut from v1) really was
-        removed from the schema, not just left undocumented."""
+        """Regression coverage that 'both' mode (considered and cut before
+        v1) really was removed from the schema, not just left undocumented."""
         with pytest.raises(ValueError, match="bedcheck_backend"):
             AppSettingsUpdate(bedcheck_backend="both")
 
@@ -110,9 +111,9 @@ class TestSettingsSchemaValidators:
 
     def test_base_url_model_api_key_accept_free_strings(self):
         """bedcheck_ai_model / bedcheck_ai_api_key are free strings (no
-        validator, D6/D7); bedcheck_ai_base_url is exercised by the
-        LAN-service-URL parametrized suite in test_outbound_url_ssrf_guards.py
-        (REVISION 1 SS G11) rather than duplicated here."""
+        validator); bedcheck_ai_base_url is exercised by the LAN-service-URL
+        parametrized suite in test_outbound_url_ssrf_guards.py rather than
+        duplicated here."""
         u = AppSettingsUpdate(
             bedcheck_ai_base_url="http://192.168.1.20:11434/v1",
             bedcheck_ai_model="qwen2.5vl:7b",
@@ -124,10 +125,9 @@ class TestSettingsSchemaValidators:
 
 
 class TestConfidenceClamp:
-    """_clamp_confidence's exact algorithm, per C5's measured failure mode
-    (design SS4): a schema-valid but semantically-wrong percentage-style
-    value (e.g. 95 instead of 0.95) must never reach main.py's `:.0%` format
-    unclamped."""
+    """_clamp_confidence's exact algorithm: a schema-valid but
+    semantically-wrong percentage-style value (e.g. 95 instead of 0.95) must
+    never reach main.py's `:.0%` format unclamped."""
 
     def test_fraction_passes_through(self):
         assert _clamp_confidence(0.87) == 0.87
@@ -177,8 +177,7 @@ class TestConfidenceClamp:
 class TestVerdictParsing:
     """_parse_verdict_json: clean JSON, markdown-fenced JSON, and the two
     malformed-but-parseable shapes that must be treated as parse failures
-    (missing required key, non-bool is_empty) -- design SS4 failure matrix,
-    classes 1-3."""
+    (missing required key, non-bool is_empty)."""
 
     def test_clean_json_parses(self):
         raw = '{"is_empty": true, "confidence": 0.9, "reason": "bare plate"}'
@@ -214,10 +213,10 @@ class TestVerdictParsing:
 
 class TestVerdictMapping:
     """build_ai_result: pure formatter mapping a verdict onto
-    PlateDetectionResult (design SS4, D2's confidence*100 formula)."""
+    PlateDetectionResult, including the confidence*100 formula."""
 
     def test_occupied_verdict_sets_difference_percent_from_confidence(self):
-        """D2: difference_percent = confidence * 100 when occupied, not
+        """difference_percent = confidence * 100 when occupied, not
         (1 - confidence) * 100 -- a confident occupied detection must render
         a high, not low, difference number."""
         result = build_ai_result(is_empty=False, confidence=0.95, reason="a print is on it", camera_source="built-in")
@@ -230,8 +229,8 @@ class TestVerdictMapping:
         assert result.difference_percent == 0.0
 
     def test_needs_calibration_always_false(self):
-        """C4: the AI backend never needs calibration -- must preserve
-        main.py's pause gate exactly regardless of verdict."""
+        """The AI backend never needs calibration -- must preserve main.py's
+        pause gate exactly regardless of verdict."""
         empty = build_ai_result(is_empty=True, confidence=0.5, reason="", camera_source="external")
         occupied = build_ai_result(is_empty=False, confidence=0.5, reason="", camera_source="external")
         assert empty.needs_calibration is False
@@ -261,15 +260,14 @@ class TestVerdictMapping:
 
 
 class TestFailOpenPerErrorClass:
-    """The C18 universal-fail-open requirement (design SS4 failure matrix,
-    extended per REVISION 1 SS G5) -- one test per class. Every case asserts
-    the full fail-open shape (is_empty=True, confidence=0.0,
-    difference_percent=0.0, needs_calibration=False) plus, per advisor Edit
-    2: (1) message equals the exact expected generic string, not a substring
+    """The universal-fail-open requirement -- one test per failure class.
+    Every case asserts the full fail-open shape (is_empty=True,
+    confidence=0.0, difference_percent=0.0, needs_calibration=False) plus:
+    (1) message equals the exact expected generic string, not a substring
     match, so a future accidental str(e) reintroduction is caught even if it
     happens to still contain the right phrase as a substring; (2) wherever a
     real (mocked) HTTP call is involved, the configured base URL is asserted
-    ABSENT from message -- the regression Edit 2 exists to prevent.
+    ABSENT from message -- the leak this whole class exists to prevent.
     """
 
     def _assert_fail_open_shape(self, result, expected_message):
@@ -307,7 +305,7 @@ class TestFailOpenPerErrorClass:
     async def test_fails_open_on_non_2xx(self):
         """Also asserts the configured base URL is absent from message --
         this is exactly the case httpx.HTTPStatusError.__str__() would leak
-        it in, absent advisor Edit 2's fix."""
+        it in if _generic_fail_open_reason ever returned str(e) directly."""
         resp = MagicMock()
         resp.raise_for_status = MagicMock(side_effect=_http_status_error(500))
         with (
@@ -342,7 +340,7 @@ class TestFailOpenPerErrorClass:
     @pytest.mark.asyncio
     async def test_fails_open_on_unparseable_json_after_retry(self):
         """Both the initial attempt and the one retry return prose -- no
-        retry loop, exactly one retry (design SS4 class 4)."""
+        retry loop, exactly one retry."""
         resp = _mock_200_response({"choices": [{"message": {"content": "I cannot say."}}]})
         client = _mock_client(post_result=resp)
         with (
@@ -367,7 +365,7 @@ class TestFailOpenPerErrorClass:
 
     @pytest.mark.asyncio
     async def test_fails_open_on_empty_base_url(self):
-        """No network call attempted -- design SS4 class 8."""
+        """No network call attempted -- an empty base_url short-circuits before any request is built."""
         with _patch_settings(base_url=""):
             with patch("backend.app.services.bedcheck_ai.httpx.AsyncClient") as mock_ac:
                 result = await check_bed_ai(1, FAKE_JPEG, "built-in")
@@ -376,9 +374,8 @@ class TestFailOpenPerErrorClass:
 
     @pytest.mark.asyncio
     async def test_fails_open_on_empty_model(self):
-        """Same short-circuit path as empty base_url, same generic message
-        (design SS4 class 8, extended per REVISION 1 SS G5 to also cover
-        model, not just base_url)."""
+        """Same short-circuit path as empty base_url, same generic message --
+        the empty-config check covers model, not just base_url."""
         with _patch_settings(model=""):
             with patch("backend.app.services.bedcheck_ai.httpx.AsyncClient") as mock_ac:
                 result = await check_bed_ai(1, FAKE_JPEG, "built-in")
@@ -387,7 +384,7 @@ class TestFailOpenPerErrorClass:
 
     @pytest.mark.asyncio
     async def test_fails_open_on_undecodable_frame(self):
-        """_downscale_jpeg fed truncated/non-JPEG bytes -- design SS4 class 6."""
+        """_downscale_jpeg fed truncated/non-JPEG bytes."""
         with _patch_settings():
             with patch("backend.app.services.bedcheck_ai.httpx.AsyncClient") as mock_ac:
                 result = await check_bed_ai(1, b"not a jpeg at all", "built-in")
@@ -396,8 +393,8 @@ class TestFailOpenPerErrorClass:
 
     @pytest.mark.asyncio
     async def test_fails_open_on_empty_choices(self):
-        """A 200 response with 'choices': [] -- design SS4 class 7 (a
-        well-formed 200 with a malformed envelope)."""
+        """A 200 response with 'choices': [] -- a well-formed 200 with a
+        malformed envelope."""
         resp = _mock_200_response({"choices": []})
         with (
             _patch_settings(),
@@ -422,10 +419,10 @@ class TestFailOpenPerErrorClass:
     async def test_fails_open_on_settings_load_failure(self):
         """A DB error inside _load_ai_settings() (e.g. sqlalchemy's
         OperationalError, which can embed a connection string) is caught by
-        check_bed_ai's outer except Exception -- design SS4 class 9. Asserts
-        both the standard fail-open shape AND that the DB error's own text
-        (including anything connection-string-shaped) is absent from
-        message, not merely that *some* generic message was returned."""
+        check_bed_ai's outer except Exception. Asserts both the standard
+        fail-open shape AND that the DB error's own text (including anything
+        connection-string-shaped) is absent from message, not merely that
+        *some* generic message was returned."""
         db_error_text = "connection to server at postgresql://user:hunter2@10.0.20.1 failed"
         with patch(
             "backend.app.services.bedcheck_ai._load_ai_settings",
@@ -438,24 +435,24 @@ class TestFailOpenPerErrorClass:
 
     @pytest.mark.asyncio
     async def test_mutation_proof_str_e_leak_would_fail_url_absence_assertion(self):
-        """Red-proof for advisor Edit 2 itself: demonstrate that the
-        pre-Edit-2 `str(e)` wrapper this design explicitly reversed WOULD
-        have failed the URL-absence assertion used throughout this class --
-        i.e. that these tests actually catch the regression, not merely
-        exercise a code path that happens to already be safe."""
+        """Red-proof for the URL-absence assertions used throughout this
+        class: demonstrate that a naive `str(e)` wrapper (a plausible but
+        wrong implementation of _generic_fail_open_reason) WOULD have failed
+        them -- i.e. that these tests actually catch the regression, not
+        merely exercise a code path that happens to already be safe."""
         error = _http_status_error(500)
 
-        def pre_edit_2_reason(e: Exception) -> str:
-            # The exact mechanism round-1/REVISION-1 shipped and advisor
-            # Edit 2 reversed: detail = str(e) or type(e).__name__.
+        def naive_str_reason(e: Exception) -> str:
+            # A plausible-but-wrong implementation: echoing the raw
+            # exception text (or its type name) straight to the user.
             return str(e) or type(e).__name__
 
-        leaky_message = f"[built-in] AI bed-check unavailable: {pre_edit_2_reason(error)}"
+        leaky_message = f"[built-in] AI bed-check unavailable: {naive_str_reason(error)}"
         # The real, fixed function must NOT reproduce this leak...
-        assert _generic_fail_open_reason(error) != pre_edit_2_reason(error)
+        assert _generic_fail_open_reason(error) != naive_str_reason(error)
         # ...and the leaky variant this test constructs to prove the point
         # does in fact contain the configured URL, confirming the assertion
-        # style used above would have caught the pre-fix behavior.
+        # style used above would have caught the naive behavior.
         assert CONFIGURED_URL in leaky_message
 
 

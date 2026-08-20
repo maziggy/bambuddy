@@ -326,9 +326,9 @@ class TestSelectorDispatch:
     @pytest.mark.asyncio
     async def test_unknown_backend_value_falls_back_to_opencv(self, garbage_value):
         """Any unrecognized bedcheck_backend row value (including 'both' --
-        regression coverage that removing 'both' mode, D4, didn't leave a
-        dangling code path that half-handles it) resolves to 'opencv', never
-        raises."""
+        regression coverage that removing the earlier-considered 'both' mode
+        didn't leave a dangling code path that half-handles it) resolves to
+        'opencv', never raises."""
         with patch.dict("sys.modules", {"cv2": cv2_mock, "numpy": np_mock}):
             import importlib
 
@@ -356,9 +356,9 @@ class TestSelectorDispatch:
         locked SQLite, disconnected engine) must not propagate -- it falls
         back to 'opencv' and check_plate_empty() still returns a normal
         result instead of raising. This is the test that most directly
-        defends the 'no new fail-closed path' requirement (REVISION 1 SS2,
-        a BLOCKER-level design point): camera.py's manual-check route holds
-        no try/except around its call to check_plate_empty."""
+        defends the 'no new fail-closed path' requirement: camera.py's
+        manual-check route holds no try/except around its call to
+        check_plate_empty."""
         with patch.dict("sys.modules", {"cv2": cv2_mock, "numpy": np_mock}):
             import importlib
 

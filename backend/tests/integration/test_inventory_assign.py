@@ -60,6 +60,46 @@ class TestAssignSpoolTrayInfoIdx:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_inventory_only_persists_assignment_without_printer_writes(
+        self, async_client: AsyncClient, printer_factory, spool_factory, db_session: AsyncSession
+    ):
+        printer = await printer_factory(name="X2D")
+        spool = await spool_factory(slicer_filament="GFL99")
+        mock_client = MagicMock()
+        status = _make_mock_status(
+            ams_data=[{"id": 0, "tray": [{"id": 0, "tray_type": "PLA", "state": 11}]}]
+        )
+
+        with patch("backend.app.services.printer_manager.printer_manager") as mock_pm:
+            mock_pm.get_client.return_value = mock_client
+            mock_pm.get_status.return_value = status
+            response = await async_client.post(
+                "/api/v1/inventory/assignments",
+                json={
+                    "spool_id": spool.id,
+                    "printer_id": printer.id,
+                    "ams_id": 0,
+                    "tray_id": 0,
+                    "apply_to_printer": False,
+                },
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["apply_to_printer"] is False
+        assert body["configured"] is False
+        mock_client.ams_set_filament_setting.assert_not_called()
+        mock_client.extrusion_cali_sel.assert_not_called()
+        mock_client.register_assignment_verification.assert_not_called()
+
+        from backend.app.models.spool_assignment import SpoolAssignment
+
+        assignment = await db_session.get(SpoolAssignment, body["id"])
+        assert assignment is not None
+        assert assignment.apply_to_printer is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_pfus_slicer_filament_falls_back_to_generic(
         self, async_client: AsyncClient, printer_factory, spool_factory
     ):

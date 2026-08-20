@@ -1943,7 +1943,12 @@ async def on_ams_change(printer_id: int, ams_data: list):
                     # explicit "empty" signals authoritative over any stale
                     # tray_type that might survive the relay's auto-clearing.
                     loaded = cur_state == 11 or (cur_state not in (9, 10) and cur_type.strip())
-                    if not fp_type.strip() and loaded and assignment.spool:
+                    if (
+                        assignment.apply_to_printer
+                        and not fp_type.strip()
+                        and loaded
+                        and assignment.spool
+                    ):
                         try:
                             from backend.app.api.routes.inventory import (
                                 apply_spool_to_slot_via_mqtt,
@@ -2184,7 +2189,7 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                         if fallback_kp is None:
                                             fallback_kp = kp
                                     chosen_kp = matching_kp or fallback_kp
-                                    if chosen_kp is not None:
+                                    if chosen_kp is not None and assignment.apply_to_printer:
                                         live_cali_idx = tray.get("cali_idx")
                                         # Only fire MQTT when the printer's live
                                         # cali_idx differs from the stored value.
@@ -2257,6 +2262,11 @@ async def on_ams_change(printer_id: int, ams_data: list):
                                 printer_manager,
                                 db,
                                 tray_info_idx=tray_info_idx,
+                                apply_to_printer=(
+                                    existing_assignment.apply_to_printer
+                                    if existing_assignment is not None
+                                    else True
+                                ),
                             )
                             await db.commit()
                             await ws_manager.broadcast(

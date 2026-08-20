@@ -1312,6 +1312,19 @@ async def run_migrations(conn):
     # Migration: Add location column to printers for grouping
     await _safe_execute(conn, "ALTER TABLE printers ADD COLUMN location VARCHAR(100)")
 
+    # Migration: preserve whether an inventory assignment may write to the
+    # physical printer. Existing rows retain legacy full-write behaviour.
+    if is_sqlite():
+        await _safe_execute(
+            conn,
+            "ALTER TABLE spool_assignment ADD COLUMN apply_to_printer BOOLEAN DEFAULT 1",
+        )
+    else:
+        await _safe_execute(
+            conn,
+            "ALTER TABLE spool_assignment ADD COLUMN apply_to_printer BOOLEAN DEFAULT TRUE",
+        )
+
     # Migration: Add interval_type column to maintenance_types
     await _safe_execute(conn, "ALTER TABLE maintenance_types ADD COLUMN interval_type VARCHAR(20) DEFAULT 'hours'")
 

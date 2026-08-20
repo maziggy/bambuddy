@@ -447,6 +447,7 @@ async def auto_assign_spool(
     printer_manager,
     db: AsyncSession,
     tray_info_idx: str = "",
+    apply_to_printer: bool = True,
 ) -> SpoolAssignment:
     """Create a SpoolAssignment and auto-configure the AMS slot via MQTT.
 
@@ -484,6 +485,9 @@ async def auto_assign_spool(
         )
     )
     old = existing.scalar_one_or_none()
+    if old is not None and apply_to_printer is True:
+        # Preserve an existing inventory-only policy across an RFID refresh.
+        apply_to_printer = old.apply_to_printer
     if old:
         await db.delete(old)
         await db.flush()
@@ -495,6 +499,7 @@ async def auto_assign_spool(
         tray_id=tray_id,
         fingerprint_color=fingerprint_color,
         fingerprint_type=fingerprint_type,
+        apply_to_printer=apply_to_printer,
     )
     db.add(assignment)
     await db.flush()
@@ -505,6 +510,8 @@ async def auto_assign_spool(
     # configuration from the RFID tag. Sending ams_set_filament_setting would
     # destroy the RFID-detected state (eye → pen icon in BambuStudio/OrcaSlicer).
     try:
+        if not apply_to_printer:
+            return assignment
         client = printer_manager.get_client(printer_id)
         if client:
             # Apply K-profile if available

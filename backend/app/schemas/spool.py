@@ -226,6 +226,7 @@ class SpoolAssignmentCreate(BaseModel):
     printer_id: int
     ams_id: int
     tray_id: int
+    apply_to_printer: bool = True
 
 
 class SpoolAssignmentResponse(BaseModel):
@@ -237,6 +238,7 @@ class SpoolAssignmentResponse(BaseModel):
     tray_id: int
     fingerprint_color: str | None = None
     fingerprint_type: str | None = None
+    apply_to_printer: bool = True
     created_at: datetime
     spool: SpoolResponse | None = None
     configured: bool = False

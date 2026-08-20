@@ -1764,6 +1764,7 @@ async def assign_spool(
         tray_id=data.tray_id,
         fingerprint_color=fingerprint_color,
         fingerprint_type=fingerprint_type,
+        apply_to_printer=data.apply_to_printer,
     )
     db.add(assignment)
     await db.commit()
@@ -1804,7 +1805,7 @@ async def assign_spool(
     # source of truth for those slots.
     slot_is_definitely_empty = tray_state == 9 or tray_state == 10
     configured = False
-    if not slot_is_definitely_empty:
+    if data.apply_to_printer and not slot_is_definitely_empty:
         try:
             configured = await apply_spool_to_slot_via_mqtt(
                 db=db,
@@ -1834,7 +1835,7 @@ async def assign_spool(
     # firmware said empty, OR when MQTT couldn't actually publish (printer
     # offline, no client, transient failure). on_ams_change replay re-fires
     # the config in either case once the AMS reports a non-empty fingerprint.
-    pending_config = slot_is_definitely_empty or not configured
+    pending_config = data.apply_to_printer and (slot_is_definitely_empty or not configured)
 
     # Return assignment with spool data
     result = await db.execute(

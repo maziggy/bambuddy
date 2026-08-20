@@ -580,29 +580,6 @@ class PlateDetector:
             )
 
 
-def get_reference_image_paths(printer_id: int) -> list[Path]:
-    """List existing calibration reference image paths for a printer, slot order.
-
-    Duplicates PlateDetector._get_reference_paths() (lines 127-135) minus the
-    mkdir, deliberately: that instance method is behind an OpenCV-raising
-    __init__ (line 92), and this needs to run without OpenCV installed at all.
-    Works regardless of OPENCV_AVAILABLE — reference images are plain files on
-    disk; only *comparing* pixels against them needs OpenCV.
-
-    Only wired in if a future accuracy comparison shows a measurable gain for
-    few-shot (reference photos included) over zero-shot. Until then this
-    function, MAX_FEWSHOT_REFERENCES, and USER_PROMPT_INTRO_WITH_REFS in
-    bedcheck_ai.py are unused by the default call path.
-    """
-    calib_dir = _get_calibration_dir()
-    paths: list[Path] = []
-    for i in range(PlateDetector.MAX_REFERENCES):
-        p = calib_dir / f"printer_{printer_id}_ref_{i}.jpg"
-        if p.exists():
-            paths.append(p)
-    return paths
-
-
 async def get_bedcheck_backend() -> str:
     """Read the bedcheck_backend setting. Absent row / unrecognized value / DB
     read failure all resolve to 'opencv' (matches the pre-feature behavior

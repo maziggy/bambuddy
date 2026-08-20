@@ -14,7 +14,6 @@ import logging
 import re
 import time
 from base64 import b64encode
-from pathlib import Path
 
 import httpx
 from PIL import Image, UnidentifiedImageError
@@ -27,10 +26,6 @@ from backend.app.services.plate_detection import PlateDetectionResult
 logger = logging.getLogger(__name__)
 
 DOWNSCALE_MAX_EDGE = 768
-# Conditional -- only wired in (get_reference_image_paths called, few-shot
-# branch of _build_messages used) if a future accuracy comparison shows a
-# measurable gain over zero-shot. Not used by _analyze_frame_ai's default call.
-MAX_FEWSHOT_REFERENCES = 3
 # Module constant, not a user setting. 27.84s measured cold-start (model
 # evicted from VRAM) on the pinned Ollama target justifies ~2x headroom; warm
 # calls measure 0.8-1.5s at 768px, so this costs nothing on the common path.
@@ -83,17 +78,6 @@ USER_PROMPT_INTRO_NO_REFS = (
     "filament, a tool, debris, or anything else on it?"
 )
 
-# Few-shot prompt text -- implemented, but not wired into _analyze_frame_ai's
-# default (zero-shot) call path unless a future accuracy comparison shows
-# few-shot is worth the extra reference-photo requests.
-USER_PROMPT_INTRO_WITH_REFS = (
-    "The following photos are of the SAME 3D printer's build plate. The first {n} "
-    "photo(s) are reference photos confirmed to show the plate EMPTY. The final photo "
-    "is the current live snapshot. Decide: is the build plate empty and ready for a "
-    "new print in the live snapshot, or is there a finished/failed print, loose "
-    "filament, a tool, debris, or anything else on it?"
-)
-
 
 class AiBedCheckError(Exception):
     """Internal failure signal for the AI bed-check pipeline.
@@ -140,33 +124,21 @@ def _data_uri(jpeg_bytes: bytes) -> str:
     return f"data:image/jpeg;base64,{b64encode(jpeg_bytes).decode('ascii')}"
 
 
-def _build_messages(image_data: bytes, reference_paths: list[Path] | None = None) -> list[dict]:
+def _build_messages(image_data: bytes) -> list[dict]:
     """Build the chat/completions `messages` list for one verdict request.
 
-    Zero-shot (reference_paths falsy -- the v1 default) sends a single
-    user-prompt text part plus the live snapshot. The few-shot branch below is
-    fully implemented but not called with references by _analyze_frame_ai --
-    it ships only if/when a future accuracy comparison shows a measurable
-    gain over zero-shot.
+    Zero-shot only: a single user-prompt text part plus the live snapshot.
+    (A reference-photo prompt variant was benched against this and measured
+    no accuracy gain, so it was cut rather than shipped as dead code -- see
+    the bed-check A/B bench notes in fork history if a fuller comparison ever
+    warrants resurrecting it.)
     """
     live_uri = _data_uri(_downscale_jpeg(image_data))
 
-    if not reference_paths:
-        user_content = [
-            {"type": "text", "text": USER_PROMPT_INTRO_NO_REFS},
-            {"type": "image_url", "image_url": {"url": live_uri}},
-        ]
-    else:
-        refs = reference_paths[:MAX_FEWSHOT_REFERENCES]
-        n = len(refs)
-        user_content = [{"type": "text", "text": USER_PROMPT_INTRO_WITH_REFS.format(n=n)}]
-        for i, ref_path in enumerate(refs, start=1):
-            with open(ref_path, "rb") as f:
-                ref_bytes = f.read()
-            user_content.append({"type": "text", "text": f"Reference photo {i} of {n} — empty build plate:"})
-            user_content.append({"type": "image_url", "image_url": {"url": _data_uri(_downscale_jpeg(ref_bytes))}})
-        user_content.append({"type": "text", "text": "Live snapshot — evaluate this one:"})
-        user_content.append({"type": "image_url", "image_url": {"url": live_uri}})
+    user_content = [
+        {"type": "text", "text": USER_PROMPT_INTRO_NO_REFS},
+        {"type": "image_url", "image_url": {"url": live_uri}},
+    ]
 
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -285,9 +257,9 @@ async def _load_ai_settings() -> dict:
 async def _analyze_frame_ai(image_data: bytes, printer_id: int) -> tuple[bool, float, str]:
     """The raising primitive: (is_empty, confidence, reason), or raises AiBedCheckError.
 
-    printer_id is accepted (unused for now) to keep the call signature stable
-    for the few-shot path -- get_reference_image_paths(printer_id) would be
-    called here if/when few-shot ships.
+    printer_id is accepted but currently unused -- kept on the signature so
+    callers don't need to change if a per-printer variant of this check is
+    ever added.
     """
     cfg = await _load_ai_settings()
     if not cfg["base_url"] or not cfg["model"]:

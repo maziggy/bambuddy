@@ -189,6 +189,11 @@ export function SettingsPage() {
   // so intermediate values ("", "3", "5") are not eaten by the [5, 95] clamp
   // while the user is mid-typing.
   const [humidityDrafts, setHumidityDrafts] = useState<Record<string, string>>({});
+  // Same transient-draft treatment for the ambient-drying sustained-minutes
+  // input: committed (clamped 5..240) on blur, so clearing the field or typing
+  // an intermediate value ("", "2" on the way to "25") is not rewritten by the
+  // clamp mid-keystroke. Empty/non-numeric on blur reverts to the saved value.
+  const [sustainedDraft, setSustainedDraft] = useState<string | null>(null);
   const [showPlugModal, setShowPlugModal] = useState(false);
   const [editingPlug, setEditingPlug] = useState<SmartPlug | null>(null);
   const [showHASensorModal, setShowHASensorModal] = useState(false);
@@ -5311,7 +5316,10 @@ export function SettingsPage() {
                   <input
                     type="checkbox"
                     checked={localSettings.ambient_drying_enabled ?? false}
-                    onChange={(e) => updateSetting('ambient_drying_enabled', e.target.checked)}
+                    onChange={(e) => {
+                      setSustainedDraft(null);
+                      updateSetting('ambient_drying_enabled', e.target.checked);
+                    }}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
@@ -5331,7 +5339,10 @@ export function SettingsPage() {
                     <input
                       type="checkbox"
                       checked={(localSettings.ambient_drying_sustained_minutes ?? 0) > 0}
-                      onChange={(e) => updateSetting('ambient_drying_sustained_minutes', e.target.checked ? 10 : 0)}
+                      onChange={(e) => {
+                        setSustainedDraft(null);
+                        updateSetting('ambient_drying_sustained_minutes', e.target.checked ? 10 : 0);
+                      }}
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
@@ -5347,8 +5358,20 @@ export function SettingsPage() {
                     type="number"
                     min="5"
                     max="240"
-                    value={localSettings.ambient_drying_sustained_minutes ?? 10}
-                    onChange={(e) => updateSetting('ambient_drying_sustained_minutes', Math.max(5, Math.min(240, parseInt(e.target.value) || 10)))}
+                    value={sustainedDraft ?? String(localSettings.ambient_drying_sustained_minutes ?? 10)}
+                    onChange={(e) => setSustainedDraft(e.target.value)}
+                    onBlur={(e) => {
+                      const parsed = parseInt(e.target.value, 10);
+                      if (!Number.isNaN(parsed)) {
+                        updateSetting('ambient_drying_sustained_minutes', Math.max(5, Math.min(240, parsed)));
+                      }
+                      setSustainedDraft(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        (e.currentTarget as HTMLInputElement).blur();
+                      }
+                    }}
                     className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                   />
                 </div>

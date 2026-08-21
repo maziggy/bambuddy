@@ -3988,13 +3988,18 @@ class PrintScheduler:
                         )
                         continue
 
-                # Sustained-humidity wait (#2518): only pure ambient starts
-                # wait. Queue-scheduled drying runs ahead of a scheduled print
-                # and mid-print drying has its own gating -- both keep the
-                # instant behavior. (ambient_drying_enabled is implied here: a
-                # non-mid-print printer without scheduled items was already
-                # skipped above when ambient mode is off.)
-                if sustained_minutes > 0 and not mid_print and pid not in printers_with_scheduled:
+                # Sustained-humidity wait (#2518): ambient-triggered starts
+                # wait; only a printer with a scheduled queue item pending
+                # keeps the instant behavior, because that drying has a real
+                # deadline. Mid-print is deliberately NOT exempt: print_drying
+                # is a permission overlay, not a trigger -- an ambient start on
+                # a printer that happens to be printing is the same
+                # transient-vulnerable humidity trigger as on an idle one
+                # (proven live: a 2-point threshold crossing mid-print bought a
+                # parked 12h command). (ambient_drying_enabled is implied here
+                # for the non-mid-print path: a printer without scheduled items
+                # was already skipped above when ambient mode is off.)
+                if sustained_minutes > 0 and pid not in printers_with_scheduled:
                     _above = self._auto_dry_above.get(unit_key)
                     _waited = time.monotonic() - _above["since"] if _above else 0.0
                     if _waited < sustained_minutes * 60:

@@ -2052,9 +2052,12 @@ class TestAmbientDryingSustainedDelay(_DryingTestBase):
 
     @pytest.mark.asyncio
     @patch("backend.app.services.print_scheduler.printer_manager")
-    async def test_mid_print_drying_is_exempt_from_the_wait(self, mock_pm, scheduler):
-        """Mid-print drying keeps the instant behavior even with the delay set —
-        the sustained wait gates pure-ambient starts only."""
+    async def test_mid_print_ambient_start_waits_like_any_ambient_start(self, mock_pm, scheduler):
+        """print_drying is a permission overlay, not a trigger: an ambient
+        start on a printer that happens to be printing is still an ambient
+        start and must serve the sustained wait. (The original exemption here
+        was disproven live — a 2-point threshold crossing mid-print bought a
+        parked 12h command instantly.)"""
         state = self._state()
         state.state = "RUNNING"
         mock_pm.get_status.return_value = state
@@ -2076,9 +2079,51 @@ class TestAmbientDryingSustainedDelay(_DryingTestBase):
         db = AsyncMock()
         db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
 
+        # First pass: the streak arms; no instant start.
         await scheduler._check_auto_drying(db, [], {1})
+        mock_pm.send_drying_command.assert_not_called()
+        assert self.UNIT_KEY in scheduler._auto_dry_above
 
-        # Instant, at the mid-print capped temperature: max(40, 45 - 5) = 40.
+        # Streak matured: the start fires, at the mid-print capped
+        # temperature max(40, 45 - 5) = 40.
+        scheduler._auto_dry_above[self.UNIT_KEY]["since"] = time.monotonic() - (5 * 60 + 5)
+        scheduler._auto_dry_above[self.UNIT_KEY]["last"] = time.monotonic() - 5
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+        await scheduler._check_auto_drying(db, [], {1})
+        mock_pm.send_drying_command.assert_called_once_with(1, 0, 40, 12, mode=1, filament="PLA")
+
+    @pytest.mark.asyncio
+    @patch("backend.app.services.print_scheduler.printer_manager")
+    async def test_mid_print_with_scheduled_item_stays_instant(self, mock_pm, scheduler):
+        """The instant exemption keys on the pending schedule — a printer
+        drying ahead of a scheduled job keeps it whether idle or printing."""
+        state = self._state()
+        state.state = "RUNNING"
+        mock_pm.get_status.return_value = state
+        mock_pm.is_connected.return_value = True
+        mock_pm.get_model.return_value = "H2D"
+        mock_pm.send_drying_command.return_value = True
+        scheduler._is_printer_idle = MagicMock(return_value=False)
+        state.firmware_version = "01.03.00.00"
+
+        settings_returns = {
+            "queue_drying_enabled": self._make_setting("false"),
+            "ambient_drying_enabled": self._make_setting("true"),
+            "print_drying_enabled": self._make_setting("true"),
+            "ambient_drying_sustained_minutes": self._make_setting("5"),
+            "ams_humidity_fair": self._make_setting("60"),
+            "queue_drying_block": self._make_setting("false"),
+            "drying_presets": None,
+        }
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=self._make_db_side_effect(settings_returns))
+
+        item = MagicMock()
+        item.printer_id = 1
+        item.scheduled_time = MagicMock()
+        item.manual_start = False
+
+        await scheduler._check_auto_drying(db, [item], {1})
         mock_pm.send_drying_command.assert_called_once_with(1, 0, 40, 12, mode=1, filament="PLA")
 
     @patch("backend.app.services.print_scheduler.printer_manager")

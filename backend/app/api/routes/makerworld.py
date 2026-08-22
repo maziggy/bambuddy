@@ -19,8 +19,6 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
-from typing import Any
 from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -28,11 +26,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.routes.cloud import (
-    get_stored_token,
-    is_cloud_token_invalid,
-    resolve_api_key_cloud_owner,
-)
+from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
 from backend.app.api.routes.library import save_3mf_bytes_to_library
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
@@ -47,39 +41,64 @@ from backend.app.schemas.makerworld import (
     MakerWorldResolveRequest,
     MakerWorldStatus,
 )
-from backend.app.services.model_providers import registry
+from backend.app.services.model_providers import makerworld_provider, registry
 from backend.app.services.model_providers.base import (
+    ModelProvider,
     ProviderAuthError,
     ProviderError,
     ProviderForbiddenError,
     ProviderNotFoundError,
     ProviderResourceRef,
+    ProviderService,
     ProviderUnavailableError,
     ProviderUrlError,
 )
-from backend.app.services.model_providers.base import ModelProvider
+from backend.app.services.model_providers.makerworld.service import MakerWorldService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/makerworld", tags=["makerworld"])
 
-SOURCE_TYPE: str | None = None
+
+def _provider_for_url(url: str) -> ModelProvider:
+    """Return the registered model provider that claims *url*.
+
+    A pasted link for an unsupported host is a clean 400 — the registry is
+    the routing seam, and "nobody supports this URL" is a client-input
+    problem, not a server error.
+    """
+    provider = registry.find_for_url(url)
+    if provider is None:
+        msg = f"No registered model provider supports {url!r}"
+        raise HTTPException(status_code=400, detail=msg)
+    return provider
+
+
+def _provider_for_source(source_type: str) -> ModelProvider:
+    """Return the registered model provider with this ``source_type``.
+
+    Import identifies a resource by numeric id, not by URL, so there is
+    nothing to route on except the source type the caller names.
+    """
+    try:
+        return registry.get(source_type)
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 async def _build_service(
-    db: AsyncSession, user: User | None, url: str,
-) -> MakerWorldService:
-    """Construct a per-request service using the provider registered for *url*.
+    db: AsyncSession,
+    provider: ModelProvider,
+    current_user: User | None,
+    api_key_cloud_owner: User | None = None,
+) -> ProviderService:
+    """Construct a per-request service via *provider*.
 
-    The provider is resolved via the :class:`ModelProviderRegistry` so the
-    route stays provider-agnostic — adding a new model host only requires
-    registering a new :class:`ModelProvider`, not changing these routes.
+    Identity resolution (JWT user vs API-key owner vs anonymous) and
+    credential seeding live inside ``provider.build_service`` — the single
+    place every provider resolves them, so the routes never re-implement it.
     """
-    provider: ModelProvider | None = registry.find_for_url(url)
-    if provider is None:
-        msg = f"No provider registered for URL: {url}"
-        raise HTTPException(status_code=400, detail=msg)
-    return await provider.build_service(db=db, user=user)
+    return await provider.build_service(db=db, user=current_user, api_key_owner=api_key_cloud_owner)
 
 
 def _canonical_url(
@@ -170,18 +189,18 @@ async def get_status(
     stored token rather than always reporting ``False`` (#1777, same shape
     as the cloud-presets fix in #1182).
     """
-    cloud_token_user = current_user or api_key_cloud_owner
-    token, _email, _region = await get_stored_token(db, cloud_token_user)
-    has_token = bool(token)
-    # A token Bambu has already rejected downloads nothing. ``can_download``
-    # used to be a bare alias for ``has_cloud_token``, so the import button
-    # stayed enabled against a dead credential and the user found out via a
-    # 401 toast (#2562 follow-up).
-    expired = has_token and await is_cloud_token_invalid(db, cloud_token_user)
+    service = await _build_service(db, makerworld_provider, current_user, api_key_cloud_owner)
+    try:
+        status = await service.get_status(db)
+    finally:
+        await service.close()
     return MakerWorldStatus(
-        has_cloud_token=has_token,
-        can_download=has_token and not expired,
-        sign_in_expired=expired,
+        has_cloud_token=status.authenticated,
+        can_download=status.can_download,
+        # ``auth_error`` is set exactly when a stored token exists *and* was
+        # rejected — the "sign-in expired" state. No token means there is no
+        # sign-in to have expired.
+        sign_in_expired=status.auth_error is not None,
     )
 
 
@@ -199,8 +218,7 @@ async def resolve_url(
     badge and skip a redundant download.
     """
     # Strategy pattern: select provider based on URL instead of hardcoding.
-    provider = registry.find_for_url(body.url)
-    source_type = provider.source_type if provider else "makerworld"
+    provider = _provider_for_url(body.url)
     try:
         ref = provider.parse_url(body.url)
     except ProviderError as exc:
@@ -208,60 +226,18 @@ async def resolve_url(
     model_id = int(ref.external_id)
     profile_id = int(ref.sub_id) if ref.sub_id else None
 
-    # API-keyed callers carry identity on the key, not in current_user — see
-    # the /status handler comment and #1777 / #1182.
-    cloud_token_user = current_user or api_key_cloud_owner
-    service = await _build_service(db, cloud_token_user, body.url)
+    service = await _build_service(db, provider, current_user, api_key_cloud_owner)
     try:
-        design = await service.get_design(model_id)
-        instances_envelope = await service.get_design_instances(model_id)
+        resolved = await service.resolve(ref)
     except ProviderError as exc:
         raise _map_service_error(exc) from exc
     finally:
         await service.close()
 
-    # MakerWorld's instances payload is ``{"total": N, "hits": [...]}``; callers
-    # only care about the hits, and we normalise the null case to an empty list
-    # so the frontend doesn't have to handle null vs [] both ways.
-    instances = instances_envelope.get("hits") or []
-    if not isinstance(instances, list):
-        instances = []
-
-    # /instances/hits omits the per-instance printer compatibility info that
-    # /design.instances[].extention.modelInfo carries (compatibility +
-    # otherCompatibility). Merge it in so the frontend can show "this
-    # instance was sliced for A1" + "also marked compatible with: H2D, P1S,
-    # …" before the user picks one — without that, every instance row looks
-    # identical in the UI and users blindly pick the first one regardless of
-    # whether it matches their printer.
-    design_instances = design.get("instances") or []
-    if isinstance(design_instances, list):
-        compat_by_id = {}
-        for di in design_instances:
-            if not isinstance(di, dict):
-                continue
-            iid = di.get("id")
-            if iid is None:
-                continue
-            ext = (di.get("extention") or {}).get("modelInfo") or {}
-            compat_by_id[iid] = {
-                "compatibility": ext.get("compatibility"),
-                "otherCompatibility": ext.get("otherCompatibility"),
-            }
-        for inst in instances:
-            if not isinstance(inst, dict):
-                continue
-            iid = inst.get("id")
-            extra = compat_by_id.get(iid)
-            if extra:
-                inst["compatibility"] = extra["compatibility"]
-                inst["otherCompatibility"] = extra["otherCompatibility"]
-
     # Find every library row whose source_url is either the model-level
     # canonical URL (legacy whole-model imports) or any plate-level URL
     # (``...#profileId-{n}``) under this model. The frontend surfaces this
     # to mark imported plates in the instance picker.
-    provider = registry.find_for_url(body.url)
     model_prefix = _canonical_url(provider, model_id)
     existing_q = await db.execute(
         select(LibraryFile.id).where(
@@ -274,8 +250,8 @@ async def resolve_url(
     return MakerWorldResolvedModel(
         model_id=model_id,
         profile_id=profile_id,
-        design=design,
-        instances=instances,
+        design=resolved.design,
+        instances=resolved.instances,
         already_imported_library_ids=already_imported,
     )
 
@@ -324,73 +300,55 @@ async def import_instance(
             await db.flush()
         effective_folder_id = mw_folder.id
 
-    # API-keyed callers carry identity on the key, not in current_user — see
-    # the /status handler comment and #1777 / #1182. The same resolved user
-    # is reused for owner_id on save_3mf_bytes_to_library below so the
-    # library row is attributed to the key's owner rather than NULL.
-    cloud_token_user = current_user or api_key_cloud_owner
-    service = await _build_service(db, cloud_token_user, body.url)
+    # Import identifies a model by numeric id, not by URL — the request names
+    # the provider via ``source_type`` (default: MakerWorld).
+    provider = _provider_for_source(body.source_type)
+    service = await _build_service(db, provider, current_user, api_key_cloud_owner)
 
     # YASTL#51's iot-service endpoint needs the *alphanumeric* modelId
-    # (e.g. "US2bb73b106683e5"), not the integer design id from /models/{N}.
-    # Fetch design metadata to resolve it, and — in the same call — pick a
-    # default profileId from the response if the frontend didn't specify one.
+    # (e.g. "US2bb73b106683e5"), not the integer design id from /models/{N} —
+    # resolving that, plus picking a default profile when the frontend didn't
+    # specify one, lives inside ``get_download``. The route only orchestrates
+    # dedupe + persistence so every provider shares those concerns here.
+    ref = ProviderResourceRef(
+        source_type=provider.source_type,
+        external_id=str(body.model_id),
+        sub_id=str(body.profile_id) if body.profile_id else None,
+    )
+
     try:
-        design = await service.get_design(body.model_id)
-    except ProviderError as exc:
-        await service.close()
-        raise _map_service_error(exc) from exc
+        info = await service.get_download(ref)
+        # The provider enriches ``sub_id`` with the actually-resolved profile
+        # when the caller omitted one.
+        resolved_profile_id = int(info.ref.sub_id) if info.ref.sub_id else None
 
-    alphanumeric_model_id = design.get("modelId")
-    if not isinstance(alphanumeric_model_id, str) or not alphanumeric_model_id:
-        await service.close()
-        raise HTTPException(
-            status_code=502,
-            detail="MakerWorld design metadata missing the modelId field",
-        )
+        # Canonical URL includes profile_id so each plate gets its own library
+        # entry (see ``_canonical_url`` docstring).
+        source_url = provider.canonical_url(info.ref)
 
-    profile_id = body.profile_id
-    if profile_id is None:
-        for instance in design.get("instances") or []:
-            pid = instance.get("profileId")
-            if isinstance(pid, int) and pid > 0:
-                profile_id = pid
-                break
-        if profile_id is None:
-            try:
-                envelope = await service.get_design_instances(body.model_id)
-            except ProviderError as exc:
-                await service.close()
-                raise _map_service_error(exc) from exc
-            for hit in envelope.get("hits") or []:
-                pid = hit.get("profileId")
-                if isinstance(pid, int) and pid > 0:
-                    profile_id = pid
-                    break
-        if profile_id is None:
-            await service.close()
-            raise HTTPException(
-                status_code=502,
-                detail="MakerWorld returned no instances for this model",
+        # Dedupe check upfront so we don't burn bandwidth re-downloading.
+        existing_q = await db.execute(LibraryFile.active().where(LibraryFile.source_url == source_url).limit(1))
+        existing_row = existing_q.scalar_one_or_none()
+        if existing_row is not None:
+            return MakerWorldImportResponse(
+                library_file_id=existing_row.id,
+                filename=existing_row.filename,
+                folder_id=existing_row.folder_id,
+                profile_id=resolved_profile_id,
+                was_existing=True,
             )
 
-    # Canonical URL includes profile_id so each plate gets its own library
-    # entry (see ``_canonical_url`` docstring).
-    provider = registry.find_for_url(body.url)
-    source_url = _canonical_url(provider, body.model_id, profile_id)
-
-    try:
-        manifest = await service.get_profile_download(profile_id, alphanumeric_model_id)
+        download = await service.download(info)
     except ProviderError as exc:
-        await service.close()
         raise _map_service_error(exc) from exc
+    finally:
+        await service.close()
 
-    signed_url = manifest.get("url")
     # Basename-strip any path components from the upstream filename so a
     # malicious response (``name: "../../evil.3mf"``) can't persist a suspect
     # string into the library row or the UI. On-disk storage uses a UUID
     # filename regardless (see library.py), so this is defence-in-depth.
-    raw_name = manifest.get("name")
+    raw_name = info.suggested_filename
     if isinstance(raw_name, str) and raw_name.strip():
         # MakerWorld emits percent-encoded names (`%20` for spaces, etc.)
         # because the same string round-trips through HTTP URLs in the
@@ -400,44 +358,24 @@ async def import_instance(
         suggested_name = os.path.basename(unquote(raw_name.strip())) or f"makerworld-{body.model_id}.3mf"
     else:
         suggested_name = f"makerworld-{body.model_id}.3mf"
-    if not signed_url or not isinstance(signed_url, str):
-        await service.close()
-        raise HTTPException(status_code=502, detail="MakerWorld did not return a download URL")
-
-    # Dedupe check upfront so we don't burn bandwidth re-downloading.
-    if source_url:
-        existing_q = await db.execute(LibraryFile.active().where(LibraryFile.source_url == source_url).limit(1))
-        existing_row = existing_q.scalar_one_or_none()
-        if existing_row is not None:
-            await service.close()
-            return MakerWorldImportResponse(
-                library_file_id=existing_row.id,
-                filename=existing_row.filename,
-                folder_id=existing_row.folder_id,
-                profile_id=profile_id,
-                was_existing=True,
-            )
-
-    try:
-        file_bytes, download_filename = await service.download_3mf(signed_url)
-    except ProviderError as exc:
-        await service.close()
-        raise _map_service_error(exc) from exc
-    finally:
-        await service.close()
 
     # Prefer the server-provided human-readable filename; the signed URL's
     # path ends in a UUID that's not meaningful to users. Decode the
     # fallback path-tail too — same percent-encoding round-trip applies
     # there as on the manifest-supplied name.
-    filename = suggested_name if suggested_name.endswith(".3mf") else unquote(download_filename)
+    filename = suggested_name if suggested_name.endswith(".3mf") else unquote(download.filename)
 
+    # API-keyed callers carry identity on the key, not in current_user (#1777);
+    # this collapse stays route-side solely so the library row is attributed
+    # to the key's owner rather than NULL. Credential identity is resolved
+    # inside the provider.
+    cloud_token_user = current_user or api_key_cloud_owner
     library_file, was_existing = await save_3mf_bytes_to_library(
         db,
-        file_bytes=file_bytes,
+        file_bytes=download.file_bytes,
         filename=filename,
         folder_id=effective_folder_id,
-        source_type=source_type,
+        source_type=provider.source_type,
         source_url=source_url,
         owner_id=cloud_token_user.id if cloud_token_user else None,
     )
@@ -446,7 +384,7 @@ async def import_instance(
         library_file_id=library_file.id,
         filename=library_file.filename,
         folder_id=library_file.folder_id,
-        profile_id=profile_id,
+        profile_id=resolved_profile_id,
         was_existing=was_existing,
     )
 
@@ -457,25 +395,20 @@ async def recent_imports(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.MAKERWORLD_VIEW),
 ):
-    """Last N imports from all registered model providers, newest first.
+    """Last N MakerWorld imports, newest first.
 
-    Surfaces recent ``LibraryFile`` rows across all registered providers
-    (MakerWorld, Thingiverse, etc.) so the UI can show a 'Recent imports'
-    sidebar that persists across resolves.
+    Surfaces files whose ``source_type`` is ``"makerworld"`` so the MakerWorld
+    page can show a 'Recent imports' sidebar that persists across resolves.
+    Widening this to all registered providers is a behaviour change that
+    belongs with the provider that needs it.
     ``limit`` is clamped to ``[1, 50]`` to keep payloads sensible.
     """
-    from backend.app.services.model_providers.registry import registry as _registry
-
     _ = current_user  # permission gate only
     capped = max(1, min(50, int(limit)))
 
-    # Collect all source types from registered providers for a single query.
-    source_types = [provider.source_type for provider in _registry.all()]
-
-    # Single query: recent imports across all providers, sorted globally.
     result = await db.execute(
         LibraryFile.active()
-        .where(LibraryFile.source_type.in_(source_types))
+        .where(LibraryFile.source_type == makerworld_provider.source_type)
         .order_by(LibraryFile.created_at.desc())
         .limit(capped)
     )

@@ -73,7 +73,9 @@ class MakerWorldProvider(ModelProvider):
         (see ``resolve_api_key_cloud_owner``); MakerWorld uses it as the
         fallback identity when ``user`` is None. Like the cloud integration, a
         rejected token is recorded so the whole app agrees the sign-in is dead
-        rather than each feature failing on its own.
+        rather than each feature failing on its own — including auth-disabled
+        single-user installs, where ``user_id=None`` records the *global*
+        flag those installs read back on the status endpoints.
         """
         identity = user if user is not None else api_key_owner
         token, _email, _region = await get_stored_token(db, identity)
@@ -82,7 +84,7 @@ class MakerWorldProvider(ModelProvider):
             client=client,
             auth_token=token,
             user=identity,
-            on_auth_failure=None if user_id is None else lambda: mark_cloud_token_invalid(user_id),
+            on_auth_failure=lambda: mark_cloud_token_invalid(user_id),
         )
 
     def parse_url(self, url: str) -> ProviderResourceRef:

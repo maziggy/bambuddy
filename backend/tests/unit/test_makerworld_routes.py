@@ -16,11 +16,19 @@ import pytest
 
 from backend.app.api.routes.makerworld import _canonical_url
 from backend.app.models.library import LibraryFile, LibraryFolder
-from backend.app.services.model_providers.base import ModelProvider, ProviderResourceRef
+from backend.app.services.model_providers.base import (
+    ModelProvider,
+    ProviderDownload,
+    ProviderDownloadInfo,
+    ProviderResolvedModel,
+    ProviderResourceRef,
+)
 
 
 class _MockProvider:
     """Mock provider for testing _canonical_url without real MakerWorld logic."""
+
+    source_type = "makerworld"
 
     def canonical_url(self, ref: ProviderResourceRef) -> str:
         if ref.sub_id:
@@ -29,6 +37,21 @@ class _MockProvider:
 
 
 _MOCK_PROVIDER = _MockProvider()
+
+
+def _download_info(
+    model_id: int = 1400373,
+    profile_id: int = 298919107,
+    name: str = "benchy.3mf",
+    url: str = "https://makerworld.bblmw.com/makerworld/model/X/Y/f.3mf?exp=1&key=k",
+) -> ProviderDownloadInfo:
+    """What ``service.get_download`` hands the route: signed URL + raw upstream
+    name + the enriched resource ref (``sub_id`` carries the resolved profile)."""
+    return ProviderDownloadInfo(
+        ref=ProviderResourceRef(source_type="makerworld", external_id=str(model_id), sub_id=str(profile_id)),
+        url=url,
+        suggested_filename=name,
+    )
 
 
 def _fake_service(**stubs):
@@ -43,37 +66,20 @@ def _fake_service(**stubs):
     return svc
 
 
-def _default_design(alphanumeric: str = "US2bb73b106683e5", model_id: int = 1400373):
-    """Shape the backend needs from ``/design/{id}``: the alphanumeric
-    ``modelId`` field that iot-service requires, plus at least one instance
-    so the importer has a ``profile_id`` to fall back on."""
-    return {
-        "id": model_id,
-        "modelId": alphanumeric,
-        "title": "Seed Starter",
-        "instances": [{"profileId": 298919107, "title": "9 cells"}],
-    }
-
-
-def _default_manifest(name: str = "benchy.3mf"):
-    return {
-        "name": name,
-        "url": "https://makerworld.bblmw.com/makerworld/model/X/Y/f.3mf?exp=1&key=k",
-    }
-
-
 class TestCanonicalUrl:
     """Unit test the dedupe-key builder directly — regressions break dedupe
     silently so it's worth pinning the exact shape."""
 
     def test_without_profile_id(self):
-        assert _canonical_url(1400373, provider=_MOCK_PROVIDER) == "https://makerworld.com/models/1400373"
+        assert _canonical_url(_MOCK_PROVIDER, 1400373) == "https://makerworld.com/models/1400373"
 
     def test_without_profile_id_when_none(self):
-        assert _canonical_url(1400373, None, provider=_MOCK_PROVIDER) == "https://makerworld.com/models/1400373"
+        assert _canonical_url(_MOCK_PROVIDER, 1400373, None) == "https://makerworld.com/models/1400373"
 
     def test_with_profile_id(self):
-        assert _canonical_url(1400373, 298919107, provider=_MOCK_PROVIDER) == ("https://makerworld.com/models/1400373#profileId-298919107")
+        assert _canonical_url(_MOCK_PROVIDER, 1400373, 298919107) == (
+            "https://makerworld.com/models/1400373#profileId-298919107"
+        )
 
 
 class TestStatus:
@@ -115,20 +121,25 @@ class TestResolve:
             "/api/v1/makerworld/resolve",
             json={"url": "https://thingiverse.com/thing/1"},
         )
+        # A pasted link for an unsupported host is a clean client-input 400,
+        # never a 500 — the registry guard runs before any provider call.
         assert resp.status_code == 400
-        assert "makerworld" in resp.json()["detail"].lower()
+        assert "provider" in resp.json()["detail"].lower()
 
     @pytest.mark.asyncio
     async def test_happy_path_returns_design_and_instances(self, async_client):
         design_payload = {"id": 1400373, "title": "Seed Starter"}
-        instances_payload = {
-            "total": 2,
-            "hits": [
-                {"id": 1452154, "profileId": 298919107, "title": "9 cells"},
-                {"id": 1452158, "profileId": 298919564, "title": "12 cells"},
-            ],
-        }
-        svc = _fake_service(get_design=design_payload, get_design_instances=instances_payload)
+        instances_payload = [
+            {"id": 1452154, "profileId": 298919107, "title": "9 cells"},
+            {"id": 1452158, "profileId": 298919564, "title": "12 cells"},
+        ]
+        svc = _fake_service(
+            resolve=ProviderResolvedModel(
+                ref=ProviderResourceRef(source_type="makerworld", external_id="1400373", sub_id="1452154"),
+                design=design_payload,
+                instances=instances_payload,
+            )
+        )
 
         with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
             resp = await async_client.post(
@@ -159,8 +170,11 @@ class TestResolve:
         await db_session.refresh(existing)
 
         svc = _fake_service(
-            get_design={"id": 1400373},
-            get_design_instances={"total": 0, "hits": []},
+            resolve=ProviderResolvedModel(
+                ref=ProviderResourceRef(source_type="makerworld", external_id="1400373"),
+                design={"id": 1400373},
+                instances=[],
+            )
         )
 
         with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
@@ -170,92 +184,6 @@ class TestResolve:
             )
         assert resp.status_code == 200, resp.text
         assert resp.json()["already_imported_library_ids"] == [existing.id]
-
-    @pytest.mark.asyncio
-    async def test_merges_compatibility_from_design_into_instances(self, async_client):
-        """Per-instance printer compatibility info lives on
-        ``design.instances[].extention.modelInfo`` but not on
-        ``/instances/hits``. Resolve enriches each hit with both
-        ``compatibility`` (primary printer the instance was sliced for) and
-        ``otherCompatibility`` (extra printers the uploader marked it
-        compatible with) so the frontend can show "sliced for A1 / also
-        marked compatible with: H2D, P1S".
-        """
-        design_payload = {
-            "id": 1400373,
-            "title": "Seed Starter",
-            "instances": [
-                {
-                    "id": 1452154,
-                    "extention": {
-                        "modelInfo": {
-                            "compatibility": ["A1"],
-                            "otherCompatibility": ["H2D", "P1S"],
-                        }
-                    },
-                },
-                {
-                    "id": 1452158,
-                    "extention": {
-                        "modelInfo": {
-                            "compatibility": ["X1 Carbon"],
-                            "otherCompatibility": [],
-                        }
-                    },
-                },
-            ],
-        }
-        instances_payload = {
-            "total": 2,
-            "hits": [
-                {"id": 1452154, "profileId": 298919107, "title": "9 cells"},
-                {"id": 1452158, "profileId": 298919564, "title": "12 cells"},
-            ],
-        }
-        svc = _fake_service(get_design=design_payload, get_design_instances=instances_payload)
-
-        with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
-            resp = await async_client.post(
-                "/api/v1/makerworld/resolve",
-                json={"url": "https://makerworld.com/en/models/1400373"},
-            )
-        assert resp.status_code == 200, resp.text
-        instances = resp.json()["instances"]
-        by_id = {i["id"]: i for i in instances}
-        assert by_id[1452154]["compatibility"] == ["A1"]
-        assert by_id[1452154]["otherCompatibility"] == ["H2D", "P1S"]
-        assert by_id[1452158]["compatibility"] == ["X1 Carbon"]
-        assert by_id[1452158]["otherCompatibility"] == []
-
-    @pytest.mark.asyncio
-    async def test_resolve_handles_missing_compatibility_gracefully(self, async_client):
-        """Older designs (or hits without a matching design.instances entry)
-        must not crash the resolve response — they just don't get the
-        compat fields."""
-        design_payload = {"id": 1400373, "instances": [{"id": 1452154}]}  # no extention
-        instances_payload = {
-            "total": 2,
-            "hits": [
-                {"id": 1452154, "profileId": 298919107},
-                {"id": 9999999, "profileId": 298919999},  # no design.instances match
-            ],
-        }
-        svc = _fake_service(get_design=design_payload, get_design_instances=instances_payload)
-
-        with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
-            resp = await async_client.post(
-                "/api/v1/makerworld/resolve",
-                json={"url": "https://makerworld.com/en/models/1400373"},
-            )
-        assert resp.status_code == 200, resp.text
-        instances = resp.json()["instances"]
-        # First instance: design entry exists but no extention → fields absent or None.
-        first = next(i for i in instances if i["id"] == 1452154)
-        assert first.get("compatibility") is None
-        assert first.get("otherCompatibility") is None
-        # Second instance: no design entry at all → no enrichment, no crash.
-        second = next(i for i in instances if i["id"] == 9999999)
-        assert "compatibility" not in second or second["compatibility"] is None
 
 
 class TestImport:
@@ -283,11 +211,8 @@ class TestImport:
         await db_session.commit()
         await db_session.refresh(existing)
 
-        svc = _fake_service(
-            get_design=_default_design(),
-            get_profile_download=_default_manifest(),
-        )
-        svc.download_3mf = AsyncMock()  # must remain uncalled
+        svc = _fake_service(get_download=_download_info())
+        svc.download = AsyncMock()  # must remain uncalled
 
         with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
             resp = await async_client.post(
@@ -300,16 +225,35 @@ class TestImport:
         assert body["library_file_id"] == existing.id
         assert body["was_existing"] is True
         assert body["profile_id"] == 298919107
-        svc.download_3mf.assert_not_called()
+        svc.download.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unknown_source_type_is_a_clean_400(self, async_client, db_session):
+        """``source_type`` names the provider (there is no URL to route on);
+        an unregistered value is a client-input problem — 400 before any
+        service is built or bytes downloaded."""
+        svc = _fake_service(
+            get_download=_download_info(),
+            download=ProviderDownload(file_bytes=self._FAKE_3MF_BYTES, filename="benchy.3mf"),
+        )
+        svc.download = AsyncMock()
+
+        with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
+            resp = await async_client.post(
+                "/api/v1/makerworld/import",
+                json={"model_id": 1400373, "source_type": "thingiverse"},
+            )
+        assert resp.status_code == 400, resp.text
+        assert "thingiverse" in resp.json()["detail"].lower()
+        svc.download.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_autocreates_makerworld_folder_when_folder_id_none(self, async_client, db_session):
         """Default destination — a top-level "MakerWorld" folder — is created
         on first import so users don't have to set it up."""
         svc = _fake_service(
-            get_design=_default_design(),
-            get_profile_download=_default_manifest(),
-            download_3mf=(self._FAKE_3MF_BYTES, "benchy.3mf"),
+            get_download=_download_info(),
+            download=ProviderDownload(file_bytes=self._FAKE_3MF_BYTES, filename="benchy.3mf"),
         )
 
         with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
@@ -338,9 +282,8 @@ class TestImport:
         await db_session.refresh(folder)
 
         svc = _fake_service(
-            get_design=_default_design(),
-            get_profile_download=_default_manifest(),
-            download_3mf=(self._FAKE_3MF_BYTES, "benchy.3mf"),
+            get_download=_download_info(),
+            download=ProviderDownload(file_bytes=self._FAKE_3MF_BYTES, filename="benchy.3mf"),
         )
 
         with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
@@ -356,9 +299,8 @@ class TestImport:
         """The saved row's ``source_url`` must include ``#profileId-`` so two
         plates of the same model become two library rows (dedupe is per-plate)."""
         svc = _fake_service(
-            get_design=_default_design(),
-            get_profile_download=_default_manifest(),
-            download_3mf=(self._FAKE_3MF_BYTES, "benchy.3mf"),
+            get_download=_download_info(),
+            download=ProviderDownload(file_bytes=self._FAKE_3MF_BYTES, filename="benchy.3mf"),
         )
 
         with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
@@ -382,12 +324,8 @@ class TestImport:
         library row. On-disk storage uses a UUID already, this is belt-and-
         braces protection for the human-readable field."""
         svc = _fake_service(
-            get_design=_default_design(),
-            get_profile_download={
-                "name": "../../evil.3mf",
-                "url": "https://makerworld.bblmw.com/makerworld/model/X/Y/f.3mf?exp=1&key=k",
-            },
-            download_3mf=(self._FAKE_3MF_BYTES, "fallback.3mf"),
+            get_download=_download_info(name="../../evil.3mf"),
+            download=ProviderDownload(file_bytes=self._FAKE_3MF_BYTES, filename="fallback.3mf"),
         )
 
         with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
@@ -404,9 +342,8 @@ class TestImport:
         response field must always be populated, even when the caller provided
         it explicitly (rather than the backend falling back to design defaults)."""
         svc = _fake_service(
-            get_design=_default_design(),
-            get_profile_download=_default_manifest(),
-            download_3mf=(self._FAKE_3MF_BYTES, "benchy.3mf"),
+            get_download=_download_info(),
+            download=ProviderDownload(file_bytes=self._FAKE_3MF_BYTES, filename="benchy.3mf"),
         )
 
         with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
@@ -439,9 +376,8 @@ class TestImport:
         await db_session.refresh(folder)
 
         svc = _fake_service(
-            get_design=_default_design(),
-            get_profile_download=_default_manifest("seed-starter.3mf"),
-            download_3mf=(self._FAKE_3MF_BYTES, "seed-starter.3mf"),
+            get_download=_download_info(name="seed-starter.3mf"),
+            download=ProviderDownload(file_bytes=self._FAKE_3MF_BYTES, filename="seed-starter.3mf"),
         )
 
         with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
@@ -466,8 +402,8 @@ class TestImport:
 
     @pytest.mark.asyncio
     async def test_import_to_readonly_external_rejected_at_route(self, async_client, db_session, tmp_path):
-        """The route-layer gate at ``makerworld.py:256-260`` rejects read-only
-        externals with 403 before any download happens — so MakerWorld
+        """The route-layer gate in ``import_instance`` rejects read-only
+        external folders with 403 before any download happens — so MakerWorld
         credentials and the upstream download bandwidth aren't wasted."""
         ext_dir = tmp_path / "nas-readonly"
         ext_dir.mkdir()
@@ -482,11 +418,8 @@ class TestImport:
         await db_session.commit()
         await db_session.refresh(folder)
 
-        svc = _fake_service(
-            get_design=_default_design(),
-            get_profile_download=_default_manifest(),
-        )
-        svc.download_3mf = AsyncMock()
+        svc = _fake_service(get_download=_download_info())
+        svc.download = AsyncMock()
 
         with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
             resp = await async_client.post(
@@ -494,7 +427,7 @@ class TestImport:
                 json={"model_id": 1400373, "profile_id": 298919107, "folder_id": folder.id},
             )
         assert resp.status_code == 403, resp.text
-        svc.download_3mf.assert_not_called()
+        svc.download.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_import_to_external_with_missing_path_returns_400(self, async_client, db_session, tmp_path):
@@ -514,9 +447,8 @@ class TestImport:
         await db_session.refresh(folder)
 
         svc = _fake_service(
-            get_design=_default_design(),
-            get_profile_download=_default_manifest(),
-            download_3mf=(self._FAKE_3MF_BYTES, "benchy.3mf"),
+            get_download=_download_info(),
+            download=ProviderDownload(file_bytes=self._FAKE_3MF_BYTES, filename="benchy.3mf"),
         )
 
         with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):
@@ -548,9 +480,8 @@ class TestImport:
         await db_session.refresh(folder)
 
         svc = _fake_service(
-            get_design=_default_design(),
-            get_profile_download=_default_manifest("benchy.3mf"),
-            download_3mf=(self._FAKE_3MF_BYTES, "benchy.3mf"),
+            get_download=_download_info(name="benchy.3mf"),
+            download=ProviderDownload(file_bytes=self._FAKE_3MF_BYTES, filename="benchy.3mf"),
         )
 
         with patch("backend.app.api.routes.makerworld._build_service", AsyncMock(return_value=svc)):

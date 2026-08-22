@@ -91,9 +91,12 @@ class TestBuildService:
             await svc.close()
 
     @pytest.mark.asyncio
-    async def test_anonymous_user_gets_no_auth_callback(self):
-        """No user, no token → nothing to invalidate; the callback must be
-        absent so ``_note_auth_failure`` stays a no-op."""
+    async def test_anonymous_user_still_gets_auth_callback(self):
+        """No user ≠ nothing to invalidate. Auth-disabled single-user installs
+        hold their token in global Settings (``get_stored_token(db, None)``
+        reads it), so a rejection must still be recorded — ``user_id=None``
+        writes the global flag (review blocker 5). The callback stays wired;
+        only a *stray* non-expiry 401 keeps it a no-op."""
         db = AsyncMock()
         with (
             patch(
@@ -107,9 +110,11 @@ class TestBuildService:
         ):
             svc = await makerworld_provider.build_service(db=db, user=None)
 
-        assert svc._auth_token is None
-        assert svc._on_auth_failure is None
-        mark_invalid.assert_not_awaited()
+            assert svc._auth_token is None
+            assert svc._on_auth_failure is not None
+            # Firing it records the *global* flag (user_id=None), not a per-user row.
+            await svc._on_auth_failure()
+            mark_invalid.assert_awaited_once_with(None)
         await svc.close()
 
     @pytest.mark.asyncio
